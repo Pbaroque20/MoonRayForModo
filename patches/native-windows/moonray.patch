@@ -1,0 +1,2178 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 34bf67f..6d9b338 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -171,7 +171,9 @@ endif()
+ 
+ # Create include/${PACKAGE_NAME} link in the build directory for generated headers.
+ file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/include)
+-file(CREATE_LINK ../lib ${PROJECT_BINARY_DIR}/include/${PACKAGE_NAME} SYMBOLIC)
++if(NOT IS_DIRECTORY ${PROJECT_BINARY_DIR}/include/${PACKAGE_NAME})
++    file(CREATE_LINK ../lib ${PROJECT_BINARY_DIR}/include/${PACKAGE_NAME} SYMBOLIC)
++endif()
+ 
+ include(${PROJECT_NAME}CompileDefinitions)
+ include(${PROJECT_NAME}CompileFeatures)
+diff --git a/cmake/MoonrayCompileOptions.cmake b/cmake/MoonrayCompileOptions.cmake
+index b719930..b8a5792 100644
+--- a/cmake/MoonrayCompileOptions.cmake
++++ b/cmake/MoonrayCompileOptions.cmake
+@@ -13,7 +13,7 @@ function(${PROJECT_NAME}_cxx_compile_options target)
+                 -fno-strict-aliasing            # TODO: add a note
+                 -fno-var-tracking-assignments   # Turn off variable tracking
+                 -fpermissive                    # Downgrade some diagnostics about nonconformant code from errors to warnings.
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+                 -pipe                           # Use pipes rather than intermediate files.
+                 -pthread                        # Define additional macros required for using the POSIX threads library.
+@@ -38,7 +38,7 @@ function(${PROJECT_NAME}_cxx_compile_options target)
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -fdelayed-template-parsing      # Shader.h has a template method that uses a moonray class which is no available to scene_rdl2 and is only used in moonray+
+                 -Wno-deprecated-declarations    # disable auto_ptr deprecated warnings from log4cplus-1.
+                 -Wno-unused-value               # caused by opt-debug build and MNRY_VERIFY.
+@@ -55,7 +55,7 @@ function(${PROJECT_NAME}_cxx_compile_options target)
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx
+                 -Qoption,cpp,--print_include_stack
+                 -fmerge-debug-strings
+diff --git a/cmd/raas_cmd/moonray/moonray.cc b/cmd/raas_cmd/moonray/moonray.cc
+index 2e73a05..ed37f89 100644
+--- a/cmd/raas_cmd/moonray/moonray.cc
++++ b/cmd/raas_cmd/moonray/moonray.cc
+@@ -114,6 +114,11 @@ RaasCommandLineApplication::run()
+ {
+     // Run global init (creates a RenderDriver) This *must* be called on the same thread we
+     // intend to call RenderContext::startFrame from.
++    // Release rendering threads before Windows enters DLL shutdown, including
++    // when scene preparation or image writing throws an exception.
++    struct DriverCleanup {
++        ~DriverCleanup() { rndr::cleanUpGlobalDriver(); }
++    } driverCleanup;
+     rndr::initGlobalDriver(mOptions);
+ 
+     logInitMessages();
+@@ -142,7 +147,6 @@ RaasCommandLineApplication::run()
+         }
+     }
+ 
+-    rndr::cleanUpGlobalDriver();
+ }
+ 
+ } // namespace
+diff --git a/lib/application/RaasApplication.cc b/lib/application/RaasApplication.cc
+index f57738c..781848a 100644
+--- a/lib/application/RaasApplication.cc
++++ b/lib/application/RaasApplication.cc
+@@ -32,7 +32,11 @@
+ #include <limits>
+ #include <stdint.h>
+ #include <string>
++#ifdef _WIN32
++#include <windows.h>
++#else
+ #include <sys/ioctl.h>
++#endif
+ #include <signal.h>
+ #include <time.h>
+ #include <unistd.h>
+@@ -169,8 +173,15 @@ RaasApplication::printStatusLine(rndr::RenderContext& renderContext, double star
+     if (isatty(STDOUT_FILENO)) {
+ 
+         // Get the terminal width.
+-        winsize win;
++#ifdef _WIN32
++        struct { int ws_col; } win{80};
++        CONSOLE_SCREEN_BUFFER_INFO consoleInfo{};
++        if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &consoleInfo))
++            win.ws_col = consoleInfo.srWindow.Right - consoleInfo.srWindow.Left + 1;
++#else
++        winsize win{};
+         ioctl(STDOUT_FILENO, TIOCGWINSZ, &win);
++#endif
+ 
+         if (win.ws_col == 0) {
+             win.ws_col = 80; // situation like emacs shell
+diff --git a/lib/common/mcrt_util/AlignedElementArray.h b/lib/common/mcrt_util/AlignedElementArray.h
+index b65e2b4..0b62b32 100644
+--- a/lib/common/mcrt_util/AlignedElementArray.h
++++ b/lib/common/mcrt_util/AlignedElementArray.h
+@@ -11,6 +11,7 @@
+ #include <utility>
+ 
+ #include <stdlib.h> // posix_memalign
++#include <scene_rdl2/common/platform/Platform.h>
+ 
+ 
+ namespace moonray {
+@@ -529,20 +530,14 @@ public:
+ private:
+     [[gnu::alloc_size(1)]] [[gnu::malloc]] static void* doAllocate(std::size_t bytes)
+     {
+-        void* mem;
+-        if (int error = posix_memalign(std::addressof(mem), kAlignment, bytes)) {
+-            if (error == EINVAL) {
+-                throw std::invalid_argument{"Bad alignment"};
+-            } else {
+-                throw std::bad_alloc{};
+-            }
+-        }
++        void* mem = scene_rdl2::util::alignedMalloc(bytes, kAlignment);
++        if (!mem) throw std::bad_alloc{};
+         return mem;
+     };
+ 
+     static void doFree(void* ptr) noexcept
+     {
+-        free(ptr);
++        scene_rdl2::util::alignedFree(ptr);
+     }
+ 
+     static T* checkAlignment(T* p) noexcept
+diff --git a/lib/common/mcrt_util/CMakeLists.txt b/lib/common/mcrt_util/CMakeLists.txt
+index 23a57e8..89d7889 100644
+--- a/lib/common/mcrt_util/CMakeLists.txt
++++ b/lib/common/mcrt_util/CMakeLists.txt
+@@ -8,6 +8,9 @@ set(exportGroup ${PROJECT_NAME}Targets)
+ 
+ add_library(${component} SHARED "")
+ add_library(${PROJECT_NAME}::${component} ALIAS ${component})
++if(WIN32)
++    target_link_libraries(${component} PRIVATE psapi PUBLIC synchronization)
++endif()
+ 
+ target_sources(${component}
+     PRIVATE
+diff --git a/lib/common/mcrt_util/CPUID.h b/lib/common/mcrt_util/CPUID.h
+index 5b77f43..26ba929 100644
+--- a/lib/common/mcrt_util/CPUID.h
++++ b/lib/common/mcrt_util/CPUID.h
+@@ -18,6 +18,14 @@
+ #include <cpuid.h>
+ #endif
+ 
++// Newer GCC headers omit the retired Knights Landing feature names.
++#ifndef bit_AVX512PF
++#define bit_AVX512PF (1u << 26)
++#endif
++#ifndef bit_AVX512ER
++#define bit_AVX512ER (1u << 27)
++#endif
++
+ #pragma warning push
+ #pragma warning(disable:1711) // Assignment to static variable
+ 
+diff --git a/lib/common/mcrt_util/ProcessStats.cc b/lib/common/mcrt_util/ProcessStats.cc
+index 16a3617..ae40db6 100644
+--- a/lib/common/mcrt_util/ProcessStats.cc
++++ b/lib/common/mcrt_util/ProcessStats.cc
+@@ -6,6 +6,10 @@
+ #include "ProcessStats.h"
+ 
+ #include <unistd.h>
++#ifdef _WIN32
++#include <windows.h>
++#include <psapi.h>
++#endif
+ #ifdef __APPLE__
+ #include <libproc.h>
+ #include <mach/mach_time.h>
+@@ -18,7 +22,9 @@ namespace util {
+ int64
+ ProcessUtilization::getUserSeconds(const ProcessUtilization &start) const
+ {
+-#ifdef __APPLE__
++#if defined(_WIN32)
++    return (this->userTime - start.userTime) / 10000000; // FILETIME 100-ns ticks
++#elif defined(__APPLE__)
+     return (this->userTime - start.userTime) / 1E9; // Nano to Sec
+ #else
+     return (this->userTime - start.userTime) / sysconf(_SC_CLK_TCK);
+@@ -28,7 +34,9 @@ ProcessUtilization::getUserSeconds(const ProcessUtilization &start) const
+ int64
+ ProcessUtilization::getSystemSeconds(const ProcessUtilization &start) const
+ {
+-#ifdef __APPLE__
++#if defined(_WIN32)
++    return (this->systemTime - start.systemTime) / 10000000;
++#elif defined(__APPLE__)
+     return (this->systemTime - start.systemTime) / 1E9; // Nano to Sec
+ #else
+     return (this->systemTime - start.systemTime) / sysconf(_SC_CLK_TCK);
+@@ -37,7 +45,7 @@ ProcessUtilization::getSystemSeconds(const ProcessUtilization &start) const
+ 
+ ProcessStats::ProcessStats()
+ {
+-#ifdef __APPLE__
++#if defined(__APPLE__) || defined(_WIN32)
+     // Don't need to try to open /proc
+ #else
+     mStatmFile.open("/proc/self/statm");
+@@ -53,7 +61,11 @@ ProcessStats::getBytesRead() const
+     std::string inStr;
+     int64  bytesRead = 0;
+ 
+-#ifdef __APPLE__
++#if defined(_WIN32)
++    IO_COUNTERS counters{};
++    if (GetProcessIoCounters(GetCurrentProcess(), &counters))
++        bytesRead = static_cast<int64>(counters.ReadTransferCount);
++#elif defined(__APPLE__)
+ 
+     // TODO: figure a way to gets the process bytes read
+ 
+@@ -81,7 +93,11 @@ ProcessStats::getProcessMemory() const
+ {
+     int64 currentMemoryUsage = 0;
+ 
+-#ifdef __APPLE__
++#if defined(_WIN32)
++    PROCESS_MEMORY_COUNTERS counters{};
++    if (GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)))
++        currentMemoryUsage = static_cast<int64>(counters.WorkingSetSize);
++#elif defined(__APPLE__)
+ 
+     pid_t pid;
+     struct proc_taskinfo info;
+@@ -129,10 +145,16 @@ ProcessUtilization
+ ProcessStats::getProcessUtilization() const
+ {
+ 
+-    ProcessUtilization result;
++    ProcessUtilization result{};
+     std::string inStr;
+ 
+-#ifdef __APPLE__
++#if defined(_WIN32)
++    FILETIME created{}, exited{}, kernel{}, user{};
++    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) {
++        result.userTime = static_cast<int64>((static_cast<uint64_t>(user.dwHighDateTime) << 32) | user.dwLowDateTime);
++        result.systemTime = static_cast<int64>((static_cast<uint64_t>(kernel.dwHighDateTime) << 32) | kernel.dwLowDateTime);
++    }
++#elif defined(__APPLE__)
+ 
+     pid_t pid;
+     struct proc_taskinfo info;
+diff --git a/lib/common/mcrt_util/Wait.h b/lib/common/mcrt_util/Wait.h
+index b9930a8..0114d21 100644
+--- a/lib/common/mcrt_util/Wait.h
++++ b/lib/common/mcrt_util/Wait.h
+@@ -14,7 +14,7 @@
+ #include <thread>
+ #include <type_traits>
+ 
+-#if defined(_MSC_FULL_VER)
++#if defined(_WIN32)
+ #include <windows.h>
+ #elif defined (__ICC)
+ #include <immintrin.h>
+@@ -23,7 +23,7 @@
+ // Much of this code mimics the code in GCC 12.1's atomic_wait code. The general problem is that futexes are only
+ // defined on 32-bit integers, and we have to make it work on the general types supported by std::atomic.
+ 
+-#if defined(__GNUC__) && !defined(__clang__)
++#if defined(__GNUC__) && !defined(__clang__) && !defined(_WIN32)
+ #include <climits>
+ #include <linux/futex.h>
+ #include <sys/syscall.h>
+@@ -34,7 +34,7 @@
+ #endif
+ #endif
+ 
+-#if defined(__clang__)
++#if defined(__clang__) && !defined(_WIN32)
+ #include <climits>
+ #include <sys/syscall.h>
+ #include <unistd.h>
+@@ -42,7 +42,7 @@
+ 
+ inline void do_pause()
+ {
+-#if defined(_MSC_FULL_VER)
++#if defined(_WIN32)
+     YieldProcessor();
+ #elif defined (__ICC)
+     _mm_pause();
+@@ -124,7 +124,7 @@ inline bool spin_lock(Pred pred) noexcept
+     return atomic_spin(pred, []{ return true; });
+ }
+ 
+-#if defined(__GNUC__) && !defined(__clang__)
++#if defined(__GNUC__) && !defined(__clang__) && !defined(_WIN32)
+ template <typename T>
+ inline bool wait_aligned(const T* ptr) noexcept
+ {
+@@ -395,9 +395,15 @@ void atomic_notify_address(const T* addr, bool all) noexcept
+ template <typename T>
+ inline void wait(const std::atomic<T>& a, T old, std::memory_order order = std::memory_order_seq_cst) noexcept
+ {
+-#if defined(__cpp_lib_atomic_wait)
++#if defined(_WIN32)
++    static_assert(sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8,
++                  "Windows address wait requires a 1, 2, 4 or 8 byte atomic");
++    static_assert(sizeof(a) == sizeof(T), "Atomic storage must match Windows wait size");
++    while (wait_impl::atomic_compare(a.load(order), old))
++        WaitOnAddress(const_cast<std::atomic<T>*>(std::addressof(a)), &old, sizeof(T), INFINITE);
++#elif defined(__cpp_lib_atomic_wait)
+     a.wait(old, order);
+-#elif defined(__GNUC__) && !defined(__clang__)
++#elif defined(__GNUC__) && !defined(__clang__) && !defined(_WIN32)
+     const T* const addr = reinterpret_cast<const T*>(std::addressof(a));
+     wait_impl::atomic_wait_address_v(addr, old, [order, &a] { return a.load(order); });
+ #else
+@@ -408,9 +414,11 @@ inline void wait(const std::atomic<T>& a, T old, std::memory_order order = std::
+ template <typename T>
+ inline void notify_one(std::atomic<T>& a) noexcept
+ {
+-#if defined(__cpp_lib_atomic_wait)
++#if defined(_WIN32)
++    WakeByAddressSingle(std::addressof(a));
++#elif defined(__cpp_lib_atomic_wait)
+     a.notify_one();
+-#elif defined(__GNUC__) && !defined(__clang__)
++#elif defined(__GNUC__) && !defined(__clang__) && !defined(_WIN32)
+     const T* const addr = reinterpret_cast<const T*>(std::addressof(a));
+     wait_impl::atomic_notify_address(addr, false);
+ #endif
+@@ -419,9 +427,11 @@ inline void notify_one(std::atomic<T>& a) noexcept
+ template <typename T>
+ inline void notify_all(std::atomic<T>& a) noexcept
+ {
+-#if defined(__cpp_lib_atomic_wait)
++#if defined(_WIN32)
++    WakeByAddressAll(std::addressof(a));
++#elif defined(__cpp_lib_atomic_wait)
+     a.notify_all();
+-#elif defined(__GNUC__) && !defined(__clang__)
++#elif defined(__GNUC__) && !defined(__clang__) && !defined(_WIN32)
+ #pragma warning push
+ #pragma warning disable 444 // destructor for base class isn't virtual
+     const T* const addr = reinterpret_cast<const T*>(std::addressof(a));
+diff --git a/lib/common/noise/CMakeLists.txt b/lib/common/noise/CMakeLists.txt
+index 006bd21..145130a 100644
+--- a/lib/common/noise/CMakeLists.txt
++++ b/lib/common/noise/CMakeLists.txt
+@@ -26,7 +26,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     LINKER_LANGUAGE CXX
+ )
+diff --git a/lib/deepfile/CMakeLists.txt b/lib/deepfile/CMakeLists.txt
+index ba6bab2..3606752 100644
+--- a/lib/deepfile/CMakeLists.txt
++++ b/lib/deepfile/CMakeLists.txt
+@@ -8,6 +8,9 @@ set(exportGroup ${PROJECT_NAME}Targets)
+ 
+ add_library(${component} SHARED "")
+ add_library(Moonray::${component} ALIAS ${component})
++if(WIN32)
++    target_compile_definitions(${component} PRIVATE DWA_OPENDCX_EXPORTS)
++endif()
+ 
+ target_sources(${component}
+     PRIVATE
+diff --git a/lib/map/primvar/CMakeLists.txt b/lib/map/primvar/CMakeLists.txt
+index ce959ed..86aca14 100644
+--- a/lib/map/primvar/CMakeLists.txt
++++ b/lib/map/primvar/CMakeLists.txt
+@@ -23,7 +23,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}/ispc
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/ispc
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     LINKER_LANGUAGE CXX
+ )
+diff --git a/lib/rendering/displayfilter/CMakeLists.txt b/lib/rendering/displayfilter/CMakeLists.txt
+index 1b3ea6a..94cfb04 100644
+--- a/lib/rendering/displayfilter/CMakeLists.txt
++++ b/lib/rendering/displayfilter/CMakeLists.txt
+@@ -25,7 +25,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     # If we don't request the C++ linker, cmake will complain about
+     # a missing variable CMAKE_ISPC_CREATE_SHARED_LIBRARY. This seems
+diff --git a/lib/rendering/geom/prim/LineSegments.cc b/lib/rendering/geom/prim/LineSegments.cc
+index 3b216fa..0cdcc13 100644
+--- a/lib/rendering/geom/prim/LineSegments.cc
++++ b/lib/rendering/geom/prim/LineSegments.cc
+@@ -366,7 +366,7 @@ LineSegments::computeIntersectCurvature(const mcrt_common::Ray& ray,
+     uint32_t id1, id2, id3;
+     intersection.getIds(id1, id2, id3);
+ 
+-    const uint vertexOffset = id1;
++    const unsigned int vertexOffset = id1;
+ 
+     Vec3fa cv0, cv1;
+     if (!isMotionBlurOn()) {
+diff --git a/lib/rendering/geom/prim/Mesh.cc b/lib/rendering/geom/prim/Mesh.cc
+index 831e7d5..4321b42 100644
+--- a/lib/rendering/geom/prim/Mesh.cc
++++ b/lib/rendering/geom/prim/Mesh.cc
+@@ -305,7 +305,7 @@ Mesh::createVelocityGrid(const float interiorBandwidth,
+ }
+ 
+ bool
+-Mesh::faceHasAssignment(uint faceId)
++Mesh::faceHasAssignment(unsigned int faceId)
+ {
+     // check if the part this face belongs to has the material assigned
+     int assignmentId = mLayerAssignmentId.getType() == LayerAssignmentId::Type::CONSTANT ?
+diff --git a/lib/rendering/geom/prim/Mesh.h b/lib/rendering/geom/prim/Mesh.h
+index 808dbdd..3814962 100644
+--- a/lib/rendering/geom/prim/Mesh.h
++++ b/lib/rendering/geom/prim/Mesh.h
+@@ -216,7 +216,7 @@ protected:
+                                           float vertexW3,
+                                           const mcrt_common::Ray &ray) const;
+ 
+-    bool faceHasAssignment(uint faceId);
++    bool faceHasAssignment(unsigned int faceId);
+ 
+     template<typename T> void
+     computeVaryingAttributeDerivatives(shading::TypedAttributeKey<T> key,
+diff --git a/lib/rendering/geom/prim/OpenSubdivMesh.cc b/lib/rendering/geom/prim/OpenSubdivMesh.cc
+index 3f7e1a1..1e6fb48 100644
+--- a/lib/rendering/geom/prim/OpenSubdivMesh.cc
++++ b/lib/rendering/geom/prim/OpenSubdivMesh.cc
+@@ -1541,7 +1541,7 @@ generatePatchCvs(const OpenSubdiv::Far::TopologyRefiner* refiner,
+                  std::vector<PatchCV>& patchCvs,
+                  std::vector<TextureCV>& textureCvs,
+                  bool requireUniformFix,
+-                 uint motionSampleCount)
++                 unsigned int motionSampleCount)
+ {
+     // compute the total number of points we need to evaluate patchTable
+     // we use local points around extraordinary features.
+@@ -1754,7 +1754,7 @@ evalLimitSurface(const OpenSubdiv::Far::PatchTable* patchTable,
+                  VertexBuffer<Vec3f, InterleavedTraits>& surfaceDpdt,
+                  std::vector<DisplacementFootprint>& displacementFootprints,
+                  bool& hasBadDerivatives, bool requireUniformFix,
+-                 uint motionSampleCount)
++                 unsigned int motionSampleCount)
+ {
+     // allocate tessellated vertex/index buffer to hold the evaluation result
+     size_t tessellatedVertexCount = limitSurfaceSamples.size();
+@@ -2905,10 +2905,10 @@ OpenSubdivMesh::bakePosMap(int width,
+     const int faceVertexCount = 4; // tessellated mesh is always quads
+     for (size_t faceId = 0; faceId < getTessellatedMeshFaceCount(); ++faceId) {
+         // vertex ids of quad
+-        const uint vid0 = mTessellatedIndices[faceVertexCount * faceId];
+-        const uint vid1 = mTessellatedIndices[faceVertexCount * faceId + 1];
+-        const uint vid2 = mTessellatedIndices[faceVertexCount * faceId + 2];
+-        const uint vid3 = mTessellatedIndices[faceVertexCount * faceId + 3];
++        const unsigned int vid0 = mTessellatedIndices[faceVertexCount * faceId];
++        const unsigned int vid1 = mTessellatedIndices[faceVertexCount * faceId + 1];
++        const unsigned int vid2 = mTessellatedIndices[faceVertexCount * faceId + 2];
++        const unsigned int vid3 = mTessellatedIndices[faceVertexCount * faceId + 3];
+ 
+         // texture coordinates for this quad
+         Vec2f st0, st1, st2, st3;
+diff --git a/lib/rendering/geom/prim/PolyMeshCalcNv.cc b/lib/rendering/geom/prim/PolyMeshCalcNv.cc
+index f729162..a5d8f6f 100644
+--- a/lib/rendering/geom/prim/PolyMeshCalcNv.cc
++++ b/lib/rendering/geom/prim/PolyMeshCalcNv.cc
+@@ -162,13 +162,13 @@ TriMeshCalcNv::setupVFlink()
+ {
+     mVFlink.resize(mVCount);
+     for (size_t fId = 0; fId < mFCount; ++fId) {
+-        uint fv0Id = fId * 3;
+-        uint fv1Id = fv0Id + 1;
+-        uint fv2Id = fv0Id + 2;
++        unsigned int fv0Id = fId * 3;
++        unsigned int fv1Id = fv0Id + 1;
++        unsigned int fv2Id = fv0Id + 2;
+ 
+-        uint v0Id = mFVid[fv0Id];
+-        uint v1Id = mFVid[fv1Id];
+-        uint v2Id = mFVid[fv2Id];
++        unsigned int v0Id = mFVid[fv0Id];
++        unsigned int v1Id = mFVid[fv1Id];
++        unsigned int v2Id = mFVid[fv2Id];
+ 
+         mVFlink[v0Id].push_back(fId);
+         mVFlink[v1Id].push_back(fId);
+@@ -178,10 +178,10 @@ TriMeshCalcNv::setupVFlink()
+ void
+ TriMeshCalcNv::computeFn(size_t fId)
+ {
+-    uint baseId = fId * 3;
+-    uint v0Id = mFVid[baseId    ];
+-    uint v1Id = mFVid[baseId + 1];
+-    uint v2Id = mFVid[baseId + 2];
++    unsigned int baseId = fId * 3;
++    unsigned int v0Id = mFVid[baseId    ];
++    unsigned int v1Id = mFVid[baseId + 1];
++    unsigned int v2Id = mFVid[baseId + 2];
+ 
+     for (size_t t = 0; t < mMotionSampleCount; ++t) {
+         Vec3f &v0 = mVtx[v0Id * mMotionSampleCount + t];
+@@ -212,15 +212,15 @@ QuadMeshCalcNv::setupVFlink()
+ {
+     mVFlink.resize(mVCount);
+     for (size_t fId = 0; fId < mFCount; ++fId) {
+-        uint fv0Id = fId * 4;
+-        uint fv1Id = fv0Id + 1;
+-        uint fv2Id = fv0Id + 2;
+-        uint fv3Id = fv0Id + 3;
++        unsigned int fv0Id = fId * 4;
++        unsigned int fv1Id = fv0Id + 1;
++        unsigned int fv2Id = fv0Id + 2;
++        unsigned int fv3Id = fv0Id + 3;
+ 
+-        uint v0Id = mFVid[fv0Id];
+-        uint v1Id = mFVid[fv1Id];
+-        uint v2Id = mFVid[fv2Id];
+-        uint v3Id = mFVid[fv3Id];
++        unsigned int v0Id = mFVid[fv0Id];
++        unsigned int v1Id = mFVid[fv1Id];
++        unsigned int v2Id = mFVid[fv2Id];
++        unsigned int v3Id = mFVid[fv3Id];
+ 
+         mVFlink[v0Id].push_back(fId);
+         mVFlink[v1Id].push_back(fId);
+@@ -232,11 +232,11 @@ QuadMeshCalcNv::setupVFlink()
+ void
+ QuadMeshCalcNv::computeFn(size_t fId)
+ {
+-    uint baseId = fId * 4;
+-    uint v0Id = mFVid[baseId    ];
+-    uint v1Id = mFVid[baseId + 1];
+-    uint v2Id = mFVid[baseId + 2];
+-    uint v3Id = mFVid[baseId + 3];
++    unsigned int baseId = fId * 4;
++    unsigned int v0Id = mFVid[baseId    ];
++    unsigned int v1Id = mFVid[baseId + 1];
++    unsigned int v2Id = mFVid[baseId + 2];
++    unsigned int v3Id = mFVid[baseId + 3];
+ 
+     for (size_t t = 0; t < mMotionSampleCount; ++t) {
+         Vec3f &v0 = mVtx[v0Id * mMotionSampleCount + t];
+diff --git a/lib/rendering/geom/prim/PolyMeshCalcNv.h b/lib/rendering/geom/prim/PolyMeshCalcNv.h
+index e49b7e5..10ef4c4 100644
+--- a/lib/rendering/geom/prim/PolyMeshCalcNv.h
++++ b/lib/rendering/geom/prim/PolyMeshCalcNv.h
+@@ -33,7 +33,7 @@ public:
+ 
+     size_t getVCount() const { return mVCount; }
+ 
+-    const float *getVn(uint vId,
++    const float *getVn(unsigned int vId,
+                        size_t timeIndex = 0) const {
+         return (const float *)&mVnv[vId * mMotionSampleCount + timeIndex];
+     }
+@@ -64,10 +64,10 @@ protected:
+     std::vector<Vec3f> mVtx; // input vtx position
+     std::vector<Vec3f> mVnv; // vertex normals
+ 
+-    std::vector<uint> mFVid; // face vertex id array
++    std::vector<unsigned int> mFVid; // face vertex id array
+     std::vector<Vec3f> mFnv; // work memory for vn computation
+ 
+-    std::vector< std::vector<uint> > mVFlink; // work memory for vn computation : vtx -> face link
++    std::vector< std::vector<unsigned int> > mVFlink; // work memory for vn computation : vtx -> face link
+     bool mFixInvalid;
+ };
+ 
+diff --git a/lib/rendering/lpe/CMakeLists.txt b/lib/rendering/lpe/CMakeLists.txt
+index e77f2ff..bf36ebe 100644
+--- a/lib/rendering/lpe/CMakeLists.txt
++++ b/lib/rendering/lpe/CMakeLists.txt
+@@ -23,7 +23,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     LINKER_LANGUAGE CXX
+ )
+diff --git a/lib/rendering/mcrt_common/CMakeLists.txt b/lib/rendering/mcrt_common/CMakeLists.txt
+index 80a81c8..ac00c0e 100644
+--- a/lib/rendering/mcrt_common/CMakeLists.txt
++++ b/lib/rendering/mcrt_common/CMakeLists.txt
+@@ -24,7 +24,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     LINKER_LANGUAGE CXX
+ )
+diff --git a/lib/rendering/mcrt_common/Util.cc b/lib/rendering/mcrt_common/Util.cc
+index 7b6cc82..ac62788 100644
+--- a/lib/rendering/mcrt_common/Util.cc
++++ b/lib/rendering/mcrt_common/Util.cc
+@@ -4,8 +4,12 @@
+ //
+ #include "Util.h"
+ 
++#ifdef _WIN32
++#include <windows.h>
++#else
+ #include <execinfo.h>  // backtrace
+ #include <sys/syscall.h>
++#endif
+ #include <tbb/mutex.h>
+ 
+ #include <cstring>
+@@ -17,7 +21,7 @@ namespace mcrt_common {
+ void
+ threadSleep()
+ {
+-    usleep(500);
++    std::this_thread::sleep_for(std::chrono::microseconds(500));
+ }
+ 
+ void
+@@ -30,10 +34,14 @@ void
+ debugPrintThreadID(const char *contextString)
+ {
+     if (!contextString) contextString = "-- Thread ID = ";
+-    pid_t tid = syscall(SYS_gettid);
++#ifdef _WIN32
++    unsigned long tid = GetCurrentThreadId();
++#else
++    unsigned long tid = syscall(SYS_gettid);
++#endif
+ 
+     // This printing is thread safe.
+-    std::printf("%s%d\n", contextString, tid);
++    std::printf("%s%lu\n", contextString, tid);
+     std::fflush(stdout);
+ }
+ 
+@@ -50,6 +58,10 @@ debugPrintCallstack(const char *contextString)
+     const int MAX_BACKTRACE_SYMBOLS = 64;
+     void *pointers[MAX_BACKTRACE_SYMBOLS];
+ 
++#ifdef _WIN32
++    const auto size = CaptureStackBackTrace(0, MAX_BACKTRACE_SYMBOLS, pointers, nullptr);
++    for (unsigned i = 0; i < size; ++i) std::printf("%u: %p\n", i, pointers[i]);
++#else
+     size_t size = backtrace(pointers, MAX_BACKTRACE_SYMBOLS);
+     char **strings = backtrace_symbols(pointers, size);
+ 
+@@ -71,6 +83,7 @@ debugPrintCallstack(const char *contextString)
+     std::fflush(stdout);
+ 
+     free(strings);
++#endif
+ 
+     mutex.unlock();
+ }
+diff --git a/lib/rendering/pbr/CMakeLists.txt b/lib/rendering/pbr/CMakeLists.txt
+index 3101e16..8266d94 100644
+--- a/lib/rendering/pbr/CMakeLists.txt
++++ b/lib/rendering/pbr/CMakeLists.txt
+@@ -9,11 +9,16 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+ set(stlVersion 6)
+ 
+ set(component rendering_pbr)
++set(pbr_library_type SHARED)
++if(MOONRAY_WINDOWS_DESKTOP)
++    set(component rendering_pbr_objects)
++    set(pbr_library_type OBJECT)
++endif()
+ 
+ set(installIncludeDir ${PACKAGE_NAME}/rendering/pbr)
+ set(exportGroup ${PROJECT_NAME}Targets)
+ 
+-add_library(${component} SHARED "")
++add_library(${component} ${pbr_library_type} "")
+ add_library(${PROJECT_NAME}::${component} ALIAS ${component})
+ 
+ # ----------------------------------------
+@@ -84,7 +89,7 @@ function(make_ispc_target target sources stubsDestination)
+ 
+     set_target_properties(${target} PROPERTIES
+         ISPC_HEADER_SUFFIX _ispc_stubs.h
+-        ISPC_HEADER_DIRECTORY /${relBinDir}/${stubsDestination}
++        ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${stubsDestination}
+         ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+ 	LINKER_LANGUAGE CXX
+     )
+@@ -181,7 +186,7 @@ function(symbolsFromBinFilename binFile resultStart resultEnd)
+         string(CONCAT start "_binary_" ${base} )
+         string(CONCAT end "_binary_" ${base} "_len")
+     else()
+-        string(REGEX REPLACE "[\/\.\-]" "_" base ${binFile})
++        string(REGEX REPLACE "[^a-zA-Z0-9_]" "_" base "${binFile}")
+         string(CONCAT start "_binary_" ${base} "_start")
+         string(CONCAT end "_binary_" ${base} "_end")
+     endif()
+@@ -223,13 +228,13 @@ if(${MOONRAY_SAMPLING} MATCHES "^PMJ02$")
+     add_custom_command(
+         OUTPUT ${bin_pmj02_best_candidate}
+         DEPENDS ${chunks}
+-        COMMAND ${CMAKE_COMMAND}
+-            -DINPUT_FILES="${chunks}"
+-            -DOUTPUT_FILE="${temp_pmj02_best_candidate}"
+-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ConcatenateBinaryFiles.cmake
++        COMMAND "${PYTHON_EXECUTABLE}"
++            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ConcatenateBinaryFiles.py"
++            "${temp_pmj02_best_candidate}" ${chunks}
+         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${temp_pmj02_best_candidate} ${bin_pmj02_best_candidate}
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+         COMMENT "Concatenating PMJ02 sampling binary chunks"
++        VERBATIM
+     )
+ 
+     # Add to list for objcopy ( .bin -> .o )
+@@ -263,6 +268,10 @@ endif()
+ include(${PROJECT_NAME}SamplingDefinitions)
+ writeSamplingDefinitionsHeader("${headerDefs}") # passing a list requires quotes
+ 
++set(sampling_object_format elf64-x86-64)
++if(WIN32)
++    set(sampling_object_format pe-x86-64)
++endif()
+ # translate ".bin" source files to ".o" files
+ foreach(binFile ${binFiles})
+     get_filename_component(baseName ${binFile} NAME_WLE)
+@@ -273,15 +282,17 @@ foreach(binFile ${binFiles})
+         add_custom_command(
+             OUTPUT  ${objFile}
+             DEPENDS ${binFile}
+-            COMMAND xxd -i -n _binary_${baseName} "${binFile}" "${srcFile}" && cc -c "${srcFile}" -o "${objFile}")
++            COMMAND xxd -i -n _binary_${baseName} "${binFile}" "${srcFile}" && cc -c "${srcFile}" -o "${objFile}"
++            VERBATIM)
+     else()
+         add_custom_command(
+             OUTPUT  ${objFile}
+             DEPENDS ${binFile}
+             COMMAND objcopy --input-target=binary --binary-architecture=i386
+-                            --output-target=elf64-x86-64
++                            --output-target=${sampling_object_format}
+                             "${binFile}"
+-                            "${objFile}")
++                            "${objFile}"
++            VERBATIM)
+     endif()
+ 
+     # build a list of the results
+@@ -396,7 +407,6 @@ target_link_libraries(${component}
+         ${PROJECT_NAME}::rendering_geom
+         ${PROJECT_NAME}::rendering_lpe
+         ${PROJECT_NAME}::rendering_mcrt_common
+-        ${PROJECT_NAME}::rendering_rt
+         ${PROJECT_NAME}::rendering_shading
+         ${PROJECT_NAME}::shading_eval_ispc
+         ${PROJECT_NAME}::shading_ispc
+@@ -503,3 +513,17 @@ install(TARGETS ${component}
+ #     NAMESPACE ${PROJECT_NAME}::
+ #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
+ # )
++
++if(MOONRAY_WINDOWS_DESKTOP)
++    target_link_libraries(${component} PRIVATE rendering_rt_objects)
++else()
++    target_link_libraries(${component} PUBLIC ${PROJECT_NAME}::rendering_rt)
++endif()
++
++if(MOONRAY_WINDOWS_DESKTOP)
++    set_property(TARGET ${component} PROPERTY DESKTOP_SAMPLING_OBJECTS "${samplerObjs}")
++    add_library(rendering_pbr INTERFACE)
++    add_library(${PROJECT_NAME}::rendering_pbr ALIAS rendering_pbr)
++    target_link_libraries(rendering_pbr INTERFACE rendering_rndr)
++    install(TARGETS rendering_pbr EXPORT ${exportGroup})
++endif()
+diff --git a/lib/rendering/pbr/light/LightTree.cc b/lib/rendering/pbr/light/LightTree.cc
+index 392ca34..ade8c56 100644
+--- a/lib/rendering/pbr/light/LightTree.cc
++++ b/lib/rendering/pbr/light/LightTree.cc
+@@ -396,8 +396,8 @@ void LightTree::printRecurse(uint32_t nodeIndex, int depth) const
+         return;
+     }
+ 
+-    uint iL = nodeIndex + 1;
+-    uint iR = node.getRightNodeIndex();
++    unsigned int iL = nodeIndex + 1;
++    unsigned int iR = node.getRightNodeIndex();
+     std::cout << "\n";
+ 
+     printRecurse(iL, depth+1);
+@@ -416,4 +416,4 @@ void LightTree::printBuckets(const LightTreeBucket* buckets, int numBuckets) con
+ }
+ 
+ } // end namespace pbr
+-} // end namespace moonray
+\ No newline at end of file
++} // end namespace moonray
+diff --git a/lib/rendering/pbr/light/LightTree.hh b/lib/rendering/pbr/light/LightTree.hh
+index 44c7b8c..b30a3f2 100644
+--- a/lib/rendering/pbr/light/LightTree.hh
++++ b/lib/rendering/pbr/light/LightTree.hh
+@@ -55,7 +55,7 @@
+     HUD_PTR(const HUD_UNIFORM Light * const HUD_UNIFORM *, mUnboundedLights);   \
+     HUD_MEMBER(uint32_t, mUnboundedLightCount);                                 \
+     HUD_PTR(LightTreeNode*, mNodesPtr);                                         \
+-    HUD_PTR(uint*, mLightIndicesPtr);                                           \
++    HUD_PTR(unsigned int*, mLightIndicesPtr);                                   \
+     HUD_MEMBER(float, mSamplingThreshold)
+ 
+ 
+@@ -70,4 +70,4 @@
+     HUD_VALIDATE(LightTree, mSamplingThreshold);     \
+     HUD_END_VALIDATION
+ 
+-//----------------------------------------------------------------------------
+\ No newline at end of file
++//----------------------------------------------------------------------------
+diff --git a/lib/rendering/rndr/CMakeLists.txt b/lib/rendering/rndr/CMakeLists.txt
+index b6eace6..b19dd62 100644
+--- a/lib/rendering/rndr/CMakeLists.txt
++++ b/lib/rendering/rndr/CMakeLists.txt
+@@ -118,8 +118,6 @@ target_link_libraries(${component}
+         ${PROJECT_NAME}::rendering_displayfilter
+         ${PROJECT_NAME}::rendering_mcrt_common
+         ${PROJECT_NAME}::rendering_geom
+-        ${PROJECT_NAME}::rendering_pbr
+-        ${PROJECT_NAME}::rendering_rt
+         ${PROJECT_NAME}::statistics
+         ${PROJECT_NAME}::texturing_sampler
+         OpenImageIO::OpenImageIO
+@@ -173,3 +171,18 @@ install(TARGETS ${component}
+ #     NAMESPACE ${PROJECT_NAME}::
+ #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
+ # )
++
++if(MOONRAY_WINDOWS_DESKTOP)
++    target_link_libraries(rendering_rndr PUBLIC rendering_pbr_objects rendering_rt_objects)
++    foreach(part 00 01 02 03 04 05)
++        target_sources(rendering_rndr PRIVATE $<TARGET_OBJECTS:rendering_pbr_ispc_${part}>)
++    endforeach()
++    get_target_property(sampling rendering_pbr_objects DESKTOP_SAMPLING_OBJECTS)
++    get_target_property(pbr_binary rendering_pbr_objects BINARY_DIR)
++    foreach(object IN LISTS sampling)
++        set_source_files_properties("${pbr_binary}/${object}" PROPERTIES GENERATED TRUE EXTERNAL_OBJECT TRUE)
++        target_sources(rendering_rndr PRIVATE "${pbr_binary}/${object}")
++    endforeach()
++else()
++    target_link_libraries(rendering_rndr PUBLIC ${PROJECT_NAME}::rendering_pbr ${PROJECT_NAME}::rendering_rt)
++endif()
+diff --git a/lib/rendering/rndr/CheckpointSigIntHandler.cc b/lib/rendering/rndr/CheckpointSigIntHandler.cc
+index adf26fa..94f7781 100644
+--- a/lib/rendering/rndr/CheckpointSigIntHandler.cc
++++ b/lib/rendering/rndr/CheckpointSigIntHandler.cc
+@@ -10,10 +10,22 @@
+ #include <cstdlib> // EXIT_FAILURE
+ #include <cstring> // memset
+ #include <signal.h>
++#ifdef _WIN32
++#include <windows.h>
++#endif
+ 
+ namespace moonray {
+ namespace rndr {
+ 
++#ifdef _WIN32
++static std::atomic<bool> checkpointConsoleRegistered{false};
++static BOOL WINAPI checkpointConsoleHandler(DWORD event) {
++    if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT) return FALSE;
++    const CheckpointSignalInfo info{SIGINT, static_cast<int>(event), -1, -1};
++    ImageWriteDriver::get()->interruptBySignal(info);
++    return TRUE;
++}
++#else
+ static
+ void
+ checkpointSigActionFunction(int /*sig*/, siginfo_t *info, void */*ctx*/)
+@@ -21,6 +33,8 @@ checkpointSigActionFunction(int /*sig*/, siginfo_t *info, void */*ctx*/)
+     ImageWriteDriver::get()->interruptBySignal(*info);
+ }
+ 
++#endif
++
+ #ifdef TEST_SCENE_CONTEXT_DUMP
+ static
+ void
+@@ -55,6 +69,11 @@ CheckpointSigIntHandler::enable()
+ // setup handler for SIGINT
+ //
+ {
++#ifdef _WIN32
++    if (!checkpointConsoleRegistered.load() && !SetConsoleCtrlHandler(checkpointConsoleHandler, TRUE))
++        throw std::runtime_error("Cannot register Windows checkpoint console handler");
++    checkpointConsoleRegistered.store(true);
++#else
+     struct sigaction newSigIntAction;
+     std::memset(&newSigIntAction, 0, sizeof(newSigIntAction));
+ 
+@@ -71,6 +90,8 @@ CheckpointSigIntHandler::enable()
+         exit(EXIT_FAILURE);
+     }
+ 
++#endif
++
+     // We need tmp directory projection for signal-based checkpointing.
+     // We have to create DO_NOT_TMP_CLEAR file in the tmp directory with the proper expiration timestamp.
+     constexpr float maxDeltaTime = 15.0f; // Longest expiration duration to set for DO_NOT_TMP_CLEAR.
+@@ -108,6 +129,10 @@ CheckpointSigIntHandler::disable()
+     }
+     if (!msg.empty()) scene_rdl2::logging::Logger::info(msg + '\n');    
+ 
++#ifdef _WIN32
++    if (checkpointConsoleRegistered.exchange(false) && !SetConsoleCtrlHandler(checkpointConsoleHandler, FALSE))
++        throw std::runtime_error("Cannot remove Windows checkpoint console handler");
++#else
+     struct sigaction newSigIntAction;
+     std::memset(&newSigIntAction, 0, sizeof(newSigIntAction));
+ 
+@@ -118,6 +143,8 @@ CheckpointSigIntHandler::disable()
+         scene_rdl2::logging::Logger::fatal("fall back to default SIGINT handler failed.");
+         exit(EXIT_FAILURE);
+     }
++#endif
++
+ }
+ 
+ // static function
+diff --git a/lib/rendering/rndr/Error.cc b/lib/rendering/rndr/Error.cc
+index ad064bd..a214dc3 100644
+--- a/lib/rendering/rndr/Error.cc
++++ b/lib/rendering/rndr/Error.cc
+@@ -22,7 +22,9 @@ const std::string
+ getErrorDescription()
+ {
+     std::array<char, 1024> errbuf;
+-#if __APPLE__ || (_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600) && ! _GNU_SOURCE
++#if defined(_WIN32)
++    return strerror_s(errbuf.data(), errbuf.size(), errno) == 0 ? std::string(errbuf.data()) : "Unknown error";
++#elif __APPLE__ || (_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600) && ! _GNU_SOURCE
+     std::string e("Unknown error");
+     if (strerror_r(errno, errbuf.data(), errbuf.size()) >= 0) {
+         e = errbuf.data();
+diff --git a/lib/rendering/rndr/FrameState.h b/lib/rendering/rndr/FrameState.h
+index 811a0c3..87916b3 100644
+--- a/lib/rendering/rndr/FrameState.h
++++ b/lib/rendering/rndr/FrameState.h
+@@ -61,7 +61,7 @@ struct FrameState : public pbr::FrameState
+     int                     mDeepFormat;
+     float                   mDeepCurvatureTolerance;
+     float                   mDeepZTolerance;
+-    uint                    mDeepVolCompressionRes;
++    unsigned int            mDeepVolCompressionRes;
+     std::vector<std::string> *mDeepIDChannelNames;
+ 
+     float mFps; // The desired frames per second for RENDER_MODE_PROGRESSIVE and RENDER_MODE_REALTIME modes.
+diff --git a/lib/rendering/rndr/ImageWriteCache.cc b/lib/rendering/rndr/ImageWriteCache.cc
+index 4ca596a..c077aae 100644
+--- a/lib/rendering/rndr/ImageWriteCache.cc
++++ b/lib/rendering/rndr/ImageWriteCache.cc
+@@ -18,7 +18,11 @@
+ #include <errno.h>              // errno
+ #include <fcntl.h>              // open
+ #include <string.h>             // strerror
+-#ifndef __APPLE__
++#if defined(_WIN32)
++#include <windows.h>
++#include <io.h>
++#include <filesystem>
++#elif !defined(__APPLE__)
+ #include <malloc.h>             // malloc_trim
+ #include <sys/sendfile.h>       // sendfile
+ #else
+@@ -457,13 +461,20 @@ ImageWriteCacheTmpFileItem::openTmpFileAndUnlink()
+ {
+     if (mTmpFilename.empty()) return false;
+ 
++#ifdef _WIN32
++    mTmpFileFd = _wopen(std::filesystem::u8path(mTmpFilename).c_str(),
++                       _O_RDONLY | _O_BINARY | _O_TEMPORARY);
++#else
+     mTmpFileFd = open(mTmpFilename.c_str(), O_RDONLY, 0);
++#endif
+     if (mTmpFileFd == -1) {
+         return false;
+     }
++#ifndef _WIN32
+     if (unlink(mTmpFilename.c_str()) == -1) {
+         return false;
+     }
++#endif
+     return true;
+ }
+ 
+@@ -499,14 +510,41 @@ ImageWriteCacheTmpFileItem::copyFile(const std::string &dstName, std::string &er
+ 
+     std::string copyDestName = genCopyDestName(dstName);
+ 
+-    int dstFd = open(copyDestName.c_str(), O_WRONLY | O_CREAT, 0666);
++#ifdef _WIN32
++    int dstFd = _wopen(std::filesystem::u8path(copyDestName).c_str(),
++                      _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
++#else
++    int dstFd = open(copyDestName.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
++#endif
+     if (dstFd < 0) {
+         errMsg = scene_rdl2::util::buildString("Could not create copy destination file '",
+                                    copyDestName.c_str(), "' ", strerror(errno));
+         return false;
+     }
+ 
+-#ifdef __APPLE__
++#ifdef _WIN32
++    HANDLE source = reinterpret_cast<HANDLE>(_get_osfhandle(mTmpFileFd));
++    HANDLE destination = reinterpret_cast<HANDLE>(_get_osfhandle(dstFd));
++    LARGE_INTEGER length{};
++    bool copied = GetFileSizeEx(source, &length) != FALSE;
++    std::vector<char> buffer(1024 * 1024);
++    for (uint64_t offset = 0; copied && offset < static_cast<uint64_t>(length.QuadPart);) {
++        OVERLAPPED position{};
++        position.Offset = static_cast<DWORD>(offset);
++        position.OffsetHigh = static_cast<DWORD>(offset >> 32);
++        DWORD count = static_cast<DWORD>(std::min<uint64_t>(buffer.size(), length.QuadPart - offset));
++        DWORD readBytes = 0, writtenBytes = 0;
++        copied = ReadFile(source, buffer.data(), count, &readBytes, &position) && readBytes == count;
++        if (copied) copied = WriteFile(destination, buffer.data(), count, &writtenBytes, nullptr) && writtenBytes == count;
++        offset += count;
++    }
++    if (!copied) {
++        const DWORD error = GetLastError();
++        close(dstFd);
++        errMsg = "Windows checkpoint copy failed: " + copyDestName + " (error " + std::to_string(error) + ")";
++        return false;
++    }
++#elif defined(__APPLE__)
+     int result = fcopyfile(mTmpFileFd, dstFd, NULL,
+                            COPYFILE_ACL|COPYFILE_STAT|COPYFILE_XATTR|COPYFILE_DATA);
+     if (result == -1) {
+@@ -566,7 +604,13 @@ ImageWriteCacheTmpFileItem::renameFile(const std::string &dstName, std::string &
+     MNRY_ASSERT(!dstName.empty() && errMsg.empty());
+ 
+     std::string srcName = genCopyDestName(dstName);
+-    if (rename(srcName.c_str(), dstName.c_str()) == -1) {
++#ifdef _WIN32
++    const bool renameFailed = !MoveFileExW(std::filesystem::u8path(srcName).c_str(),
++        std::filesystem::u8path(dstName).c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
++#else
++    const bool renameFailed = rename(srcName.c_str(), dstName.c_str()) == -1;
++#endif
++    if (renameFailed) {
+         errMsg = scene_rdl2::util::buildString("Failed to rename from '", srcName.c_str(), "' to '",
+                                    dstName.c_str(), "' ", strerror(errno));
+         return false;
+@@ -687,7 +731,7 @@ ImageWriteCache::freeInternalData()
+ 
+     mImageWriteCacheSpecs.clear();
+     mImageWriteCacheSpecs.shrink_to_fit();
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+     malloc_trim(0); // Return unused memory from malloc() arena to OS
+ #endif
+ }
+diff --git a/lib/rendering/rndr/ImageWriteDriver.cc b/lib/rendering/rndr/ImageWriteDriver.cc
+index 187eeeb..ffa140f 100644
+--- a/lib/rendering/rndr/ImageWriteDriver.cc
++++ b/lib/rendering/rndr/ImageWriteDriver.cc
+@@ -1,3 +1,18 @@
++#include <moonray/common/mcrt_util/ProcessStats.h>
++#ifdef _WIN32
++#include <windows.h>
++#ifndef HOST_NAME_MAX
++#define HOST_NAME_MAX 255
++#endif
++namespace {
++int desktopHostname(char* buffer, size_t length) {
++    DWORD capacity = static_cast<DWORD>(length);
++    return GetComputerNameA(buffer, &capacity) ? 0 : -1;
++}
++}
++#else
++#define desktopHostname gethostname
++#endif
+ // Copyright 2023-2025 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ #include "ImageWriteDriver.h"
+@@ -16,7 +31,7 @@
+ 
+ #include <cstdlib>              // getenv, EXIT_SUCCESS
+ #include <iomanip>              // std::put_time
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+ #include <malloc.h>             // malloc_trim
+ #include <sys/sysinfo.h>        // sysinfo
+ #endif
+@@ -42,7 +57,7 @@ namespace rndr {
+ 
+ ImageWriteDriver::ImageWriteDriver()
+ {
+-    memset(&mSigInfo, 0x0, sizeof(siginfo_t));
++    memset(&mSigInfo, 0x0, sizeof(CheckpointSignalInfo));
+ 
+     // We have to build thread after finish mMutex and mCvBoot initialization completed
+     mThread = std::move(std::thread(threadMain, this));
+@@ -63,7 +78,7 @@ ImageWriteDriver::~ImageWriteDriver()
+ }
+ 
+ void
+-ImageWriteDriver::interruptBySignal(const siginfo_t& sigInfo)
++ImageWriteDriver::interruptBySignal(const CheckpointSignalInfo& sigInfo)
+ //
+ // This function is called from a signal handler
+ // So we should only use the async-signal-safe operation inside this function
+@@ -120,7 +135,7 @@ ImageWriteDriver::updateSnapshotData(ImageWriteCacheUqPtr& imageWriteCachePtr)
+         mSnapshotData = std::move(imageWriteCachePtr);
+         mSnapshotDataFreshness.start();
+     }
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+     malloc_trim(0); // Return unused memory from malloc() arena to OS
+ #endif
+ }
+@@ -132,7 +147,7 @@ ImageWriteDriver::resetSnapshotData()
+         std::lock_guard<std::mutex> lock(mSnapshotDataMutex);
+         mSnapshotData.reset();
+     }
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+     malloc_trim(0); // Return unused memory from malloc() arena to OS
+ #endif
+ }
+@@ -154,7 +169,7 @@ ImageWriteDriver::enqImageWriteCache(ImageWriteCacheUqPtr& imageWriteCachePtr) /
+ 
+     mImageWriteCacheList.push_back(std::move(imageWriteCachePtr));
+ 
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+     malloc_trim(0); // Return unused memory from malloc() arena to OS
+ #endif
+ #   ifdef DEBUG_MSG_MEMUSAGE
+@@ -286,26 +301,7 @@ size_t
+ ImageWriteDriver::getProcMemUsage()
+ // Return current process memory size (rss size and not include vsize) for debug
+ {
+-    std::ifstream stat_stream("/proc/self/stat", std::ios_base::in);
+-
+-    std::string pid, comm, state, ppid, pgrp, session, tty_nr;
+-    std::string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+-    std::string utime, stime, cutime, cstime, priority, niceval;
+-    std::string O, itrealvalue, starttime;
+-
+-    unsigned long vsize;
+-    long rss;
+-
+-    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr
+-                >> tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt
+-                >> utime >> stime >> cutime >> cstime >> priority >> niceval
+-                >> O >> itrealvalue >> starttime >> vsize >> rss; // don't care about the rest
+-    stat_stream.close();
+-
+-    size_t rssByteSize = rss * sysconf(_SC_PAGE_SIZE); // byte
+-
+-    // return vsize + rssByteSize;
+-    return rssByteSize;         // Only return rss size
++    return static_cast<size_t>(moonray::util::ProcessStats().getProcessMemory());
+ }
+ 
+ std::string
+@@ -454,7 +450,7 @@ ImageWriteDriver::getTmpFilePrefix()
+ {
+     if (mTmpFilePrefix.empty()) {
+         char buff[HOST_NAME_MAX];
+-        if (gethostname(buff, HOST_NAME_MAX) == -1) std::strcpy(buff, "unknown");
++        if (desktopHostname(buff, HOST_NAME_MAX) == -1) std::strcpy(buff, "unknown");
+         std::string hostname(buff);
+         size_t pos = hostname.find(".");
+         if (pos != std::string::npos) hostname.erase(pos);
+@@ -527,7 +523,7 @@ ImageWriteDriver::signalAction()
+ // This function never return.
+ //
+ {
+-    auto showSigInfo = [](const siginfo_t& info) -> std::string {
++    auto showSigInfo = [](const CheckpointSignalInfo& info) -> std::string {
+         std::ostringstream ostr;
+         ostr
+         << "siginfo {\n"
+@@ -622,6 +618,11 @@ ImageWriteDriver::init()
+     MOONRAY_THREADSAFE_STATIC_WRITE(gImageWriteDriver.reset(new ImageWriteDriver));
+ }
+ 
++void ImageWriteDriver::shutdown()
++{
++    MOONRAY_THREADSAFE_STATIC_WRITE(gImageWriteDriver.reset());
++}
++
+ // static
+ ImageWriteDriver::ImageWriteDriverShPtr
+ ImageWriteDriver::get()
+diff --git a/lib/rendering/rndr/ImageWriteDriver.h b/lib/rendering/rndr/ImageWriteDriver.h
+index 23e2ae2..94b1be9 100644
+--- a/lib/rendering/rndr/ImageWriteDriver.h
++++ b/lib/rendering/rndr/ImageWriteDriver.h
+@@ -17,6 +17,13 @@
+ namespace moonray {
+ namespace rndr {
+ 
++#ifdef _WIN32
++// Windows console events have no POSIX sender PID or UID.
++struct CheckpointSignalInfo { int si_signo, si_code, si_pid, si_uid; };
++#else
++using CheckpointSignalInfo = siginfo_t;
++#endif
++
+ class RenderContext;
+ class RenderOutputDriver;
+ 
+@@ -30,6 +37,7 @@ public:
+     enum class ThreadState : int { INIT, IDLE, BUSY };
+ 
+     static void init();
++    static void shutdown();
+     static ImageWriteDriverShPtr get();
+ 
+     // Non-copyable
+@@ -51,7 +59,7 @@ public:
+     void setRenderContext(RenderContext* renderContext) { mRenderContext = renderContext; }
+ 
+     // Called from signal handler. This function should consists of async-signal-safe operations.
+-    void interruptBySignal(const siginfo_t& sigInfo);
++    void interruptBySignal(const CheckpointSignalInfo& sigInfo);
+ 
+     //------------------------------
+ 
+@@ -124,7 +132,7 @@ public:
+     // signal interruption related parameters
+     //
+     std::atomic<bool> mSigReceived {false};
+-    siginfo_t mSigInfo; // received signal information
++    CheckpointSignalInfo mSigInfo; // received signal information
+     time_t mSigTime {0}; // signal received time
+ 
+     RenderContext* mRenderContext {nullptr}; // signalAction() uses this pointer
+diff --git a/lib/rendering/rndr/ProcKeeper.cc b/lib/rendering/rndr/ProcKeeper.cc
+index cb6d5b9..b31b919 100644
+--- a/lib/rendering/rndr/ProcKeeper.cc
++++ b/lib/rendering/rndr/ProcKeeper.cc
+@@ -1,3 +1,7 @@
++#ifdef _WIN32
++#include <filesystem>
++#include <io.h>
++#endif
+ // Copyright 2023-2025 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ #include "ImageWriteCache.h"
+@@ -95,7 +99,12 @@ ProcKeeper::closeWriteProgressFile(std::string& msg)
+     if (::close(mImageWriteProgressFd) == -1) return false;
+     mImageWriteProgressFd = -1;
+ 
+-    if (::unlink(mImageWriteProgressFilename.c_str()) == -1) {
++#ifdef _WIN32
++    const bool unlinkFailed = ::_wunlink(std::filesystem::u8path(mImageWriteProgressFilename).c_str()) == -1;
++#else
++    const bool unlinkFailed = ::unlink(mImageWriteProgressFilename.c_str()) == -1;
++#endif
++    if (unlinkFailed) {
+         return false;
+     }
+ 
+@@ -275,7 +284,12 @@ void
+ ProcKeeper::setupImageWriteProgressFilename()
+ {
+     std::ostringstream ostr;
++#ifdef _WIN32
++    ostr << (std::filesystem::temp_directory_path() / "moonray_write.").u8string()
++         << static_cast<unsigned>(getpid()) << ".log";
++#else
+     ostr << WRITE_PROGRESS_UPDATE_FILE_NAME << static_cast<unsigned>(getpid()) << ".log";
++#endif
+ 
+     mImageWriteProgressFilename = ostr.str();
+ 
+@@ -293,7 +307,12 @@ ProcKeeper::openWriteProgressFileMain()
+         scene_rdl2::logging::Logger::info(ostr.str());
+     };
+ 
++#ifdef _WIN32
++    mImageWriteProgressFd = ::_wopen(std::filesystem::u8path(mImageWriteProgressFilename).c_str(),
++                                   _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
++#else
+     mImageWriteProgressFd = ::open(mImageWriteProgressFilename.c_str(), O_WRONLY | O_CREAT, S_IREAD);
++#endif
+     if (mImageWriteProgressFd == -1) {
+         return false;
+     }
+@@ -314,7 +333,11 @@ ProcKeeper::updateWriteProgressFile(const std::string &str) const
+     if (::write(mImageWriteProgressFd, static_cast<const void *>(str.c_str()), str.size()) == -1) {
+         return false;
+     }
++#ifdef _WIN32
++    if (::_commit(mImageWriteProgressFd) == -1) return false;
++#else
+     if (::fsync(mImageWriteProgressFd) == -1) return false;
++#endif
+     return true;
+ }
+ 
+@@ -375,6 +398,11 @@ ProcKeeper::init()
+     MOONRAY_THREADSAFE_STATIC_WRITE(gProcKeeper.reset(new ProcKeeper));
+ }
+ 
++void ProcKeeper::shutdown()
++{
++    MOONRAY_THREADSAFE_STATIC_WRITE(gProcKeeper.reset());
++}
++
+ // static function
+ ProcKeeper::ProcKeeperShPtr
+ ProcKeeper::get()
+diff --git a/lib/rendering/rndr/ProcKeeper.h b/lib/rendering/rndr/ProcKeeper.h
+index f88d871..6d33635 100644
+--- a/lib/rendering/rndr/ProcKeeper.h
++++ b/lib/rendering/rndr/ProcKeeper.h
+@@ -34,6 +34,7 @@ public:
+     enum class RunState : int { WAIT, START };
+ 
+     static void init();
++    static void shutdown();
+     static ProcKeeperShPtr get();
+ 
+     // Non-copyable
+diff --git a/lib/rendering/rndr/RenderContext.cc b/lib/rendering/rndr/RenderContext.cc
+index 0a864ad..57b1f4d 100644
+--- a/lib/rendering/rndr/RenderContext.cc
++++ b/lib/rendering/rndr/RenderContext.cc
+@@ -13,7 +13,9 @@
+ #include "PathVisualizerManager.h"
+ #include "PixelBufferUtils.h"
+ #include "ProcKeeper.h"
++#ifndef MOONRAY_WINDOWS_DESKTOP
+ #include "RenderContextConsoleDriver.h"
++#endif
+ #include "RenderDriver.h"
+ #include "RenderOptions.h"
+ #include "RenderOutputDriver.h"
+@@ -66,7 +68,7 @@
+ #include <algorithm>
+ #include <cstddef>
+ #include <cstdint>
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+ #include <malloc.h>
+ #endif
+ #include <memory>
+@@ -204,6 +206,12 @@ cleanUpGlobalDriver()
+ {
+     // just a pass through to keep API clean
+     cleanUpRenderDriver();
++#ifdef _WIN32
++    // DLL detach holds the Windows loader lock. Join these background workers
++    // explicitly while their code and thread-local destructors can still run.
++    ImageWriteDriver::shutdown();
++    ProcKeeper::shutdown();
++#endif
+ }
+ 
+ //////////////////////// RenderContext //////////////////////////
+@@ -515,10 +523,12 @@ RenderContext::initActiveCamera(const scene_rdl2::rdl2::Camera *camera)
+ 
+ RenderContext::~RenderContext()
+ {
++#ifndef MOONRAY_WINDOWS_DESKTOP
+     if (RenderContextConsoleDriver::get()) {
+         // We have to reset RenderContext pointer inside renderContextConsoleDriver
+         RenderContextConsoleDriver::get()->setRenderContext(nullptr); // MTsafe
+     }
++#endif
+ 
+     if (mRendering) {
+         stopFrame();
+@@ -815,6 +825,10 @@ RenderContext::startFrame(const bool simulationMode)
+     const scene_rdl2::rdl2::SceneVariables &vars = mSceneContext->getSceneVariables();
+ 
+ 
++#ifdef MOONRAY_WINDOWS_DESKTOP
++    if (vars.get(scene_rdl2::rdl2::SceneVariables::sDebugConsole) >= 0)
++        throw std::runtime_error("Telnet debugging is unavailable in the Windows desktop renderer.");
++#else
+     { // renderContext console setup for debug purpose
+         int debugConsolePort = vars.get(scene_rdl2::rdl2::SceneVariables::sDebugConsole);
+         if (debugConsolePort >= 0) {
+@@ -828,6 +842,8 @@ RenderContext::startFrame(const bool simulationMode)
+         }
+     }
+ 
++#endif
++
+     // Determine if to render this frame in scalar, vectorized, or xpu mode.
+     mExecutionMode = ExecutionMode::XPU;
+     ExecutionMode desiredExecutionMode = mOptions.getDesiredExecutionMode();
+@@ -2534,7 +2550,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
+ 
+     timer.stop();
+ 
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+     // return unused memory from malloc() arena to OS so process memory usage
+     // stats are accurate
+     malloc_trim(0);
+diff --git a/lib/rendering/rndr/RenderDriver.h b/lib/rendering/rndr/RenderDriver.h
+index 2b6886d..39a6ca1 100644
+--- a/lib/rendering/rndr/RenderDriver.h
++++ b/lib/rendering/rndr/RenderDriver.h
+@@ -676,7 +676,7 @@ private:
+     float                      mCachedDeepCurvatureTolerance;
+     float                      mCachedDeepZTolerance;
+     float                      mCachedTargetAdaptiveError;
+-    uint                       mCachedDeepVolCompressionRes;
++    unsigned int               mCachedDeepVolCompressionRes;
+     std::vector<std::string>   mCachedDeepIDChannelNames;
+     scene_rdl2::math::Viewport mCachedViewport;
+     SamplingMode               mCachedSamplingMode;
+diff --git a/lib/rendering/rndr/RenderFramePasses.cc b/lib/rendering/rndr/RenderFramePasses.cc
+index 6f7b815..ca0c43b 100644
+--- a/lib/rendering/rndr/RenderFramePasses.cc
++++ b/lib/rendering/rndr/RenderFramePasses.cc
+@@ -188,7 +188,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+     size_t parallelInitFrameUpdateMinTileTotal = 0;
+     if (driver->mParallelInitFrameUpdate) {
+         parallelInitFrameUpdateMinTileTotal =
+-            std::max(1UL,
++            std::max(size_t{1},
+                      static_cast<size_t>(workQueue->getNumTiles()) / driver->mParallelInitFrameUpdateMcrtCount);
+         /* useful debug message
+         std::cerr << ">> RenderFramePasses.cc init minTileTotal:" << parallelInitFrameUpdateMinTileTotal
+diff --git a/lib/rendering/rndr/RenderOutputDriver.cc b/lib/rendering/rndr/RenderOutputDriver.cc
+index 4db394f..c657a9e 100644
+--- a/lib/rendering/rndr/RenderOutputDriver.cc
++++ b/lib/rendering/rndr/RenderOutputDriver.cc
+@@ -28,6 +28,7 @@
+ #include <tbb/parallel_for.h>
+ 
+ #include <exception>
++#include <filesystem>
+ #include <stdlib.h>
+ #include <unordered_map>
+ #include <vector>
+@@ -54,6 +55,11 @@ auto freeChar = [](char *c) { free(c); };
+ std::string
+ realfile(const std::string &filename)
+ {
++#ifdef _WIN32
++    std::error_code error;
++    auto path = std::filesystem::canonical(std::filesystem::u8path(filename), error);
++    return error ? filename : path.u8string();
++#else
+     std::unique_ptr<char, decltype(freeChar)>
+         rp(realpath(filename.c_str(), nullptr), freeChar);
+ 
+@@ -62,6 +68,7 @@ realfile(const std::string &filename)
+     }
+ 
+     return filename;
++#endif
+ }
+ 
+ } // namespace
+diff --git a/lib/rendering/rndr/RenderStatistics.cc b/lib/rendering/rndr/RenderStatistics.cc
+index 706473e..d3597e9 100644
+--- a/lib/rendering/rndr/RenderStatistics.cc
++++ b/lib/rendering/rndr/RenderStatistics.cc
+@@ -1,3 +1,17 @@
++#ifdef _WIN32
++#include <windows.h>
++#ifndef HOST_NAME_MAX
++#define HOST_NAME_MAX 255
++#endif
++namespace {
++int desktopHostname(char* buffer, size_t length) {
++    DWORD capacity = static_cast<DWORD>(length);
++    return GetComputerNameA(buffer, &capacity) ? 0 : -1;
++}
++}
++#else
++#define desktopHostname gethostname
++#endif
+ // Copyright 2023-2025 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ 
+@@ -31,7 +45,15 @@
+ #include <ctime>
+ #include <iomanip>
+ #include <fstream>
++#ifdef _WIN32
++#include <windows.h>
++#include <filesystem>
++#ifndef MAXPATHLEN
++#define MAXPATHLEN 32768
++#endif
++#else
+ #include <sys/param.h>
++#endif
+ #include <unistd.h>
+ 
+ #ifndef HOST_NAME_MAX
+@@ -121,12 +143,20 @@ addLaneUtilization(moonray_stats::StatsTable<2> &table, const pbr::Statistics &p
+ std::string
+ getExecutablePath()
+ {
++#ifdef _WIN32
++    std::wstring path(32768, L'\0');
++    DWORD count = GetModuleFileNameW(nullptr, &path[0], static_cast<DWORD>(path.size()));
++    if (!count || count >= path.size()) throw std::runtime_error("Cannot query executable path");
++    path.resize(count);
++    return std::filesystem::path(path).u8string();
++#else
+     // readlink does not append '\0'
+     char dest[PATH_MAX] = {0};
+     if (readlink("/proc/self/exe", dest, PATH_MAX - 1) < 0) {
+         throw std::runtime_error(std::string("Unable to get self path: ") + getErrorDescription());
+     }
+     return dest;
++#endif
+ }
+ 
+ }
+@@ -155,7 +185,7 @@ RenderStats::RenderStats():
+     mFrameStartUtilization = mProcessStats.getProcessUtilization();
+ 
+     char hostName[HOST_NAME_MAX];
+-    if (gethostname(hostName, HOST_NAME_MAX) == 0) {
++    if (desktopHostname(hostName, HOST_NAME_MAX) == 0) {
+         mHostName = hostName;
+     } else {
+         mHostName = "N/A";
+@@ -326,6 +356,10 @@ RenderStats::getPrependString() const
+ std::string
+ RenderStats::getFullPath(const std::string& filename) const
+ {
++#ifdef _WIN32
++    if (filename.empty()) return filename;
++    return std::filesystem::absolute(std::filesystem::u8path(filename)).lexically_normal().u8string();
++#else
+     std::ostringstream out;
+ 
+     if (!filename.empty() && filename[0] != '/') {
+@@ -333,6 +367,7 @@ RenderStats::getFullPath(const std::string& filename) const
+     }
+     out << filename;
+     return out.str();
++#endif
+ }
+ 
+ 
+diff --git a/lib/rendering/rndr/RenderStatistics.h b/lib/rendering/rndr/RenderStatistics.h
+index 8e500b3..7eb6838 100644
+--- a/lib/rendering/rndr/RenderStatistics.h
++++ b/lib/rendering/rndr/RenderStatistics.h
+@@ -4,7 +4,10 @@
+ 
+ #include "RenderOptions.h"
+ #include <moonray/rendering/rndr/statistics/ArrasLogStream.h>
++#ifndef MOONRAY_WINDOWS_DESKTOP
+ #include <moonray/rendering/rndr/statistics/AthenaCSVStream.h>
++#endif
++#include <fstream>
+ #include <moonray/common/mcrt_util/Average.h>
+ #include <moonray/common/mcrt_util/ProcessStats.h>
+ #include <moonray/statistics/StatsTable.h>
+@@ -236,6 +239,9 @@ public:
+ 
+     // Open the stream to the Athena server.
+     void openAthenaStream(const scene_rdl2::util::GUID& guid, bool debug) {
++#ifdef MOONRAY_WINDOWS_DESKTOP
++        scene_rdl2::Logger::warn("Windows desktop renderer does not use Athena studio telemetry.");
++#else
+         if (guid != scene_rdl2::util::GUID::nil()) {
+             mAthenaStream.open(guid, debug);
+         } else {
+@@ -245,6 +251,7 @@ public:
+         if (!mAthenaStream) {
+             scene_rdl2::Logger::warn("Unable to open connection to Athena server.");
+         }
++#endif
+     }
+ 
+     // reset all values to zero
+@@ -420,7 +427,11 @@ private:
+ 
+     std::ofstream mCSVStream;
+ 
++#ifdef MOONRAY_WINDOWS_DESKTOP
++    std::ofstream mAthenaStream;
++#else
+     moonray::stats::AthenaCSVStream mAthenaStream;
++#endif
+ 
+     moonray::stats::ArrasLogStream mInfoStream;
+ };
+diff --git a/lib/rendering/rndr/ResumeHistoryMetaData.cc b/lib/rendering/rndr/ResumeHistoryMetaData.cc
+index e94728d..d1b448f 100644
+--- a/lib/rendering/rndr/ResumeHistoryMetaData.cc
++++ b/lib/rendering/rndr/ResumeHistoryMetaData.cc
+@@ -1,3 +1,17 @@
++#ifdef _WIN32
++#include <windows.h>
++#ifndef HOST_NAME_MAX
++#define HOST_NAME_MAX 255
++#endif
++namespace {
++int desktopHostname(char* buffer, size_t length) {
++    DWORD capacity = static_cast<DWORD>(length);
++    return GetComputerNameA(buffer, &capacity) ? 0 : -1;
++}
++}
++#else
++#define desktopHostname gethostname
++#endif
+ // Copyright 2023-2025 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ 
+@@ -15,7 +29,7 @@
+ #include <string>
+ 
+ #include <stdarg.h>             // va_arg
+-#include <unistd.h>             // gethostname()
++#include <unistd.h>             // desktopHostname()
+ 
+ namespace {
+     
+@@ -24,7 +38,7 @@ std::string
+ getHostname()
+ {
+     char buff[4096];
+-    if (gethostname(buff, 4096) == -1) {
++    if (desktopHostname(buff, 4096) == -1) {
+         return std::string("");
+     }
+     return std::string(buff);
+diff --git a/lib/rendering/rt/CMakeLists.txt b/lib/rendering/rt/CMakeLists.txt
+index da45928..fc8646e 100644
+--- a/lib/rendering/rt/CMakeLists.txt
++++ b/lib/rendering/rt/CMakeLists.txt
+@@ -2,11 +2,16 @@
+ # SPDX-License-Identifier: Apache-2.0
+ 
+ set(component rendering_rt)
++set(rt_library_type SHARED)
++if(MOONRAY_WINDOWS_DESKTOP)
++    set(component rendering_rt_objects)
++    set(rt_library_type OBJECT)
++endif()
+ 
+ set(installIncludeDir ${PACKAGE_NAME}/rendering/rt)
+ set(exportGroup ${PROJECT_NAME}Targets)
+ 
+-add_library(${component} SHARED "")
++add_library(${component} ${rt_library_type} "")
+ add_library(${PROJECT_NAME}::${component} ALIAS ${component})
+ 
+ if(MOONRAY_USE_OPTIX)
+@@ -229,3 +234,10 @@ install(TARGETS ${component}
+ #     NAMESPACE ${PROJECT_NAME}::
+ #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
+ # )
++
++if(MOONRAY_WINDOWS_DESKTOP)
++    add_library(rendering_rt INTERFACE)
++    add_library(${PROJECT_NAME}::rendering_rt ALIAS rendering_rt)
++    target_link_libraries(rendering_rt INTERFACE rendering_pbr)
++    install(TARGETS rendering_rt EXPORT ${exportGroup})
++endif()
+diff --git a/lib/rendering/rt/GeometryManager.cc b/lib/rendering/rt/GeometryManager.cc
+index d45bb68..8740ee0 100644
+--- a/lib/rendering/rt/GeometryManager.cc
++++ b/lib/rendering/rt/GeometryManager.cc
+@@ -41,7 +41,7 @@
+ #include <tbb/parallel_for.h>
+ #include <tbb/parallel_for_each.h>
+ 
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+ #include <malloc.h>    // malloc_trim
+ #endif
+ 
+@@ -1520,7 +1520,7 @@ GeometryManager::tessellate(scene_rdl2::rdl2::Layer* layer,
+     tessellationTimer.stop();
+     mOptions.stats.mTessellationTime += previousTessellationTime;
+ 
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+     // return unused memory from malloc() arena to OS so process memory usage
+     // stats are accurate
+     malloc_trim(0);
+@@ -1563,7 +1563,7 @@ void GeometryManager::updateAccelerator(const scene_rdl2::rdl2::Layer* layer,
+             geometrySets, &g2s);
+     }
+ 
+-#ifndef __APPLE__
++#if !defined(__APPLE__) && !defined(_WIN32)
+     // return unused memory from malloc() arena to OS so process memory usage
+     // stats are accurate
+     malloc_trim(0);
+diff --git a/lib/rendering/shading/CMakeLists.txt b/lib/rendering/shading/CMakeLists.txt
+index fb5d5cb..ccc9a25 100644
+--- a/lib/rendering/shading/CMakeLists.txt
++++ b/lib/rendering/shading/CMakeLists.txt
+@@ -113,8 +113,6 @@ target_link_libraries(${component}
+     PUBLIC
+         ${PROJECT_NAME}::common_file_resource
+         ${PROJECT_NAME}::common_mcrt_util
+-        ${PROJECT_NAME}::shading_eval_ispc
+-        ${PROJECT_NAME}::shading_ispc
+         ${PROJECT_NAME}::texturing_sampler
+         SceneRdl2::scene_rdl2
+ )
+@@ -154,3 +152,9 @@ install(TARGETS ${component}
+ #     NAMESPACE ${PROJECT_NAME}::
+ #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
+ # )
++
++if(MOONRAY_WINDOWS_DESKTOP)
++    target_link_libraries(rendering_shading PRIVATE shading_eval_objects shading_bsdf_objects)
++else()
++    target_link_libraries(rendering_shading PUBLIC ${PROJECT_NAME}::shading_eval_ispc ${PROJECT_NAME}::shading_ispc)
++endif()
+diff --git a/lib/rendering/shading/ThreadLocalObjectState.h b/lib/rendering/shading/ThreadLocalObjectState.h
+index 26d6e7b..2be3ae0 100644
+--- a/lib/rendering/shading/ThreadLocalObjectState.h
++++ b/lib/rendering/shading/ThreadLocalObjectState.h
+@@ -28,8 +28,8 @@ class CACHE_ALIGN ThreadLocalObjectState
+  public:
+     static ThreadLocalObjectState *alignedAlloc(int num)
+     {
+-        void *memptr;
+-        if (auto err = posix_memalign(&memptr, 64, sizeof(ThreadLocalObjectState)*num)) {
++        void *memptr = scene_rdl2::util::alignedMalloc(sizeof(ThreadLocalObjectState)*num, 64);
++        if (!memptr) {
+             throw std::bad_alloc();
+         }
+         ThreadLocalObjectState *result = static_cast<ThreadLocalObjectState *>(memptr);
+@@ -47,7 +47,7 @@ class CACHE_ALIGN ThreadLocalObjectState
+         for (int i = 0; i < num; i++) {
+             tlos[i].~ThreadLocalObjectState();
+         }
+-        free(tlos);
++        scene_rdl2::util::alignedFree(tlos);
+     }
+ 
+     moonray::util::InclusiveExclusiveAverage<int64> mShaderCallStat;
+diff --git a/lib/rendering/shading/UdimTexture.cc b/lib/rendering/shading/UdimTexture.cc
+index 9af3ab0..396db2f 100644
+--- a/lib/rendering/shading/UdimTexture.cc
++++ b/lib/rendering/shading/UdimTexture.cc
+@@ -28,7 +28,12 @@
+ 
+ #include <algorithm>
+ #include <dirent.h>
++#ifdef _WIN32
++#include <windows.h>
++#include <filesystem>
++#else
+ #include <glob.h>
++#endif
+ #include <memory>
+ #include <vector>
+ 
+@@ -97,6 +102,20 @@ getUdimFilenames(const std::string& filename,
+     size_t udimPos = filename.find("<UDIM>");
+     const std::string pattern = filename.substr(0, udimPos) + "*";
+ 
++#ifdef _WIN32
++    std::filesystem::path search = std::filesystem::u8path(pattern);
++    WIN32_FIND_DATAW entry{};
++    HANDLE handle = FindFirstFileW(search.c_str(), &entry);
++    if (handle == INVALID_HANDLE_VALUE) return false;
++    try {
++        do {
++            if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
++                filenames.push_back((search.parent_path() / entry.cFileName).u8string());
++        } while (FindNextFileW(handle, &entry));
++    } catch (...) { FindClose(handle); throw; }
++    FindClose(handle);
++    std::sort(filenames.begin(), filenames.end());
++#else
+     glob_t glob_result;
+     memset(&glob_result, 0, sizeof(glob_result));
+ 
+@@ -111,6 +130,7 @@ getUdimFilenames(const std::string& filename,
+     }
+ 
+     globfree(&glob_result);
++#endif
+ 
+     return true;
+ }
+diff --git a/lib/rendering/shading/ispc/CMakeLists.txt b/lib/rendering/shading/ispc/CMakeLists.txt
+index 3ce34f9..648d791 100644
+--- a/lib/rendering/shading/ispc/CMakeLists.txt
++++ b/lib/rendering/shading/ispc/CMakeLists.txt
+@@ -1,3 +1,12 @@
++# Windows DLLs must resolve the mutual C++/ISPC callbacks at link time.
++set(eval_component shading_eval_ispc)
++set(bsdf_component shading_ispc)
++set(shading_library_type SHARED)
++if(MOONRAY_WINDOWS_DESKTOP)
++    set(eval_component shading_eval_objects)
++    set(bsdf_component shading_bsdf_objects)
++    set(shading_library_type OBJECT)
++endif()
+ # Copyright 2023-2024 DreamWorks Animation LLC
+ # SPDX-License-Identifier: Apache-2.0
+ 
+@@ -7,26 +16,28 @@ set(installIncludeDir ${PACKAGE_NAME}/rendering/shading/ispc)
+ set(exportGroup ${PROJECT_NAME}Targets)
+ 
+ # =====================================================================================
+-# shading_eval_ispc: component that lib/rendering/pbr depends on to initiate shading
++# ${eval_component}: component that lib/rendering/pbr depends on to initiate shading
+ # =====================================================================================
+ 
+ # -------------------------------------------------------------------
+-# TODO: In our SCons build, Shadingv.cc is included in shading_eval_ispc, but it
++# TODO: In our SCons build, Shadingv.cc is included in ${eval_component}, but it
+ # actually pulls headers from lib/rendering/shading and lib/rendering/shading/ispc.
+ #   ... so it really should be build *after* those are built and included
+ # as part of rendering_shading lib, ( I guess )
+ # -------------------------------------------------------------------
+ 
+-add_library(shading_eval_ispc SHARED "")
+-add_library(${PROJECT_NAME}::shading_eval_ispc ALIAS shading_eval_ispc)
++add_library(${eval_component} ${shading_library_type} "")
++if(NOT MOONRAY_WINDOWS_DESKTOP)
++add_library(${PROJECT_NAME}::shading_eval_ispc ALIAS ${eval_component})
++endif()
+ 
+ # If we don't request the C++ linker, cmake-3.21 will complain about
+ # a missing variable CMAKE_ISPC_CREATE_SHARED_LIBRARY
+-set_target_properties(shading_eval_ispc
++set_target_properties(${eval_component}
+         PROPERTIES
+             LINKER_LANGUAGE CXX)
+ 
+-target_sources(shading_eval_ispc
++target_sources(${eval_component}
+     PRIVATE
+         AttributeTable.ispc
+         BasicTexture.ispc
+@@ -40,7 +51,7 @@ target_sources(shading_eval_ispc
+         Xform.ispc
+ )
+ 
+-set_property(TARGET shading_eval_ispc
++set_property(TARGET ${eval_component}
+     PROPERTY PUBLIC_HEADER
+         BasicTexture.isph
+         EvalAttribute.isph
+@@ -66,9 +77,9 @@ set_property(TARGET shading_eval_ispc
+ )
+ 
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+-set_target_properties(shading_eval_ispc PROPERTIES
++set_target_properties(${eval_component} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     # If we don't request the C++ linker, cmake will complain about
+     # a missing variable CMAKE_ISPC_CREATE_SHARED_LIBRARY. This seems
+@@ -76,7 +87,7 @@ set_target_properties(shading_eval_ispc PROPERTIES
+     LINKER_LANGUAGE CXX
+ )
+ 
+-target_include_directories(shading_eval_ispc
++target_include_directories(${eval_component}
+     PUBLIC
+         # find the generated ispc headers during build stage
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+@@ -85,7 +96,7 @@ target_include_directories(shading_eval_ispc
+         $<INSTALL_INTERFACE:include>
+ )
+ 
+-target_link_libraries(shading_eval_ispc
++target_link_libraries(${eval_component}
+     PUBLIC
+         ${PROJECT_NAME}::texturing_sampler
+         SceneRdl2::common_platform
+@@ -93,17 +104,17 @@ target_link_libraries(shading_eval_ispc
+ )
+ 
+ if(IsDarwinPlatform)
+-    set_target_properties(shading_eval_ispc PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
++    set_target_properties(${eval_component} PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
+ endif()
+ 
+ # If at Dreamworks add a SConscript stub file so others can use this library.
+-SConscript_Stub(shading_eval_ispc)
++SConscript_Stub(${eval_component})
+ 
+ # Set standard compile/link options
+-Moonray_ispc_compile_options(shading_eval_ispc)
+-Moonray_link_options(shading_eval_ispc)
++Moonray_ispc_compile_options(${eval_component})
++Moonray_link_options(${eval_component})
+ 
+-get_target_property(objLibDeps shading_eval_ispc ISPC_DEP_TARGET)
++get_target_property(objLibDeps ${eval_component} ISPC_DEP_TARGET)
+ if(objLibDeps)
+     add_dependencies(${objLibDeps}
+         ${PROJECT_NAME}::texturing_sampler
+@@ -115,8 +126,8 @@ endif()
+ # -------------------------------------------------------------------
+ 
+ # install the target
+-install(TARGETS shading_eval_ispc
+-    COMPONENT shading_eval_ispc
++install(TARGETS ${eval_component}
++    COMPONENT ${eval_component}
+     EXPORT ${exportGroup}
+     LIBRARY
+         DESTINATION ${CMAKE_INSTALL_LIBDIR}
+@@ -133,10 +144,12 @@ install(TARGETS shading_eval_ispc
+ 
+ 
+ # =====================================================================================
+-# shading_ispc: component that shaders depend on to define shaders
++# ${bsdf_component}: component that shaders depend on to define shaders
+ # =====================================================================================
+-add_library(shading_ispc SHARED "")
+-add_library(${PROJECT_NAME}::shading_ispc ALIAS shading_ispc)
++add_library(${bsdf_component} ${shading_library_type} "")
++if(NOT MOONRAY_WINDOWS_DESKTOP)
++add_library(${PROJECT_NAME}::shading_ispc ALIAS ${bsdf_component})
++endif()
+ 
+ # ----------------------------------------
+ # We'd like the *_ispc_stubs.h files to be placed into the build
+@@ -219,7 +232,7 @@ function(make_ispc_target target sources stubsDestination)
+ 
+     set_target_properties(${target} PROPERTIES
+         ISPC_HEADER_SUFFIX _ispc_stubs.h
+-        ISPC_HEADER_DIRECTORY /${relBinDir}/${stubsDestination}
++        ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${stubsDestination}
+         ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     )
+ 
+@@ -303,7 +316,7 @@ target_sources(eval_attribute_debug_hack_ispc PRIVATE EvalAttributeDebugHack.isp
+ 
+ set_target_properties(eval_attribute_debug_hack_ispc PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+ )
+ 
+@@ -371,7 +384,7 @@ set(ISPC_TARGET_OBJECTS
+         ${shading_ispc_10_target_objects}
+         ${eval_attribute_debug_hack_ispc_target_objects})
+ 
+-target_sources(shading_ispc
++target_sources(${bsdf_component}
+     PRIVATE
+         BsdfLabels.cc
+         bsdf/BsdfUtil.cc
+@@ -380,7 +393,7 @@ target_sources(shading_ispc
+         ${ISPC_TARGET_OBJECTS}
+ )
+ 
+-set_property(TARGET shading_ispc
++set_property(TARGET ${bsdf_component}
+     PROPERTY PUBLIC_HEADER
+         AovLabels.isph
+         BasicTexture.isph
+@@ -400,7 +413,7 @@ set_property(TARGET shading_ispc
+         Util.isph
+ )
+ 
+-target_include_directories(shading_ispc
++target_include_directories(${bsdf_component}
+     PRIVATE
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+     PUBLIC
+@@ -410,9 +423,9 @@ target_include_directories(shading_ispc
+         $<INSTALL_INTERFACE:include>
+ )
+ 
+-target_link_libraries(shading_ispc
++target_link_libraries(${bsdf_component}
+     PRIVATE
+-        shading_eval_ispc
++        ${eval_component}
+         ${PROJECT_NAME}::texturing_sampler
+     PUBLIC
+         OpenImageIO::OpenImageIO
+@@ -421,7 +434,7 @@ target_link_libraries(shading_ispc
+ )
+ 
+ if(IsDarwinPlatform)
+-    set_target_properties(shading_ispc PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
++    set_target_properties(${bsdf_component} PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
+ endif()
+ 
+ get_target_property(objLibDeps_00 shading_ispc_00 ISPC_DEP_TARGET)
+@@ -474,16 +487,16 @@ set(shading_ispc_deps
+ if(eval_attribute_debug_hack_ispc_deps)
+     list(APPEND shading_ispc_deps ${eval_attribute_debug_hack_ispc_deps})
+ endif()
+-add_dependencies(shading_ispc ${shading_ispc_deps})
++add_dependencies(${bsdf_component} ${shading_ispc_deps})
+ 
+ # If at Dreamworks add a SConscript stub file so others can use this library.
+-SConscript_Stub(shading_ispc)
++SConscript_Stub(${bsdf_component})
+ 
+ # Set standard compile/link options
+-Moonray_cxx_compile_definitions(shading_ispc)
+-Moonray_cxx_compile_features(shading_ispc)
+-Moonray_cxx_compile_options(shading_ispc)
+-Moonray_link_options(shading_ispc)
++Moonray_cxx_compile_definitions(${bsdf_component})
++Moonray_cxx_compile_features(${bsdf_component})
++Moonray_cxx_compile_options(${bsdf_component})
++Moonray_link_options(${bsdf_component})
+ 
+ # Install some public headers that really should not be public
+ # at all.  Fixing this will require reworking/completing the vector
+@@ -519,8 +532,8 @@ install(
+ # -------------------------------------
+ 
+ # install the target
+-install(TARGETS shading_ispc
+-    COMPONENT shading_ispc
++install(TARGETS ${bsdf_component}
++    COMPONENT ${bsdf_component}
+     EXPORT ${exportGroup}
+     LIBRARY
+         DESTINATION ${CMAKE_INSTALL_LIBDIR}
+@@ -539,3 +552,16 @@ install(TARGETS shading_ispc
+ #     NAMESPACE ${PROJECT_NAME}::
+ #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
+ # )
++
++if(MOONRAY_WINDOWS_DESKTOP)
++    # Existing public dependency names all refer to the single owning DLL.
++    add_library(shading_eval_ispc INTERFACE)
++    add_library(${PROJECT_NAME}::shading_eval_ispc ALIAS shading_eval_ispc)
++    target_link_libraries(shading_eval_ispc INTERFACE rendering_shading)
++    target_include_directories(shading_eval_ispc INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
++    add_library(shading_ispc INTERFACE)
++    add_library(${PROJECT_NAME}::shading_ispc ALIAS shading_ispc)
++    target_link_libraries(shading_ispc INTERFACE rendering_shading)
++    target_include_directories(shading_ispc INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
++    install(TARGETS shading_eval_ispc shading_ispc EXPORT ${exportGroup})
++endif()
+diff --git a/lib/rendering/texturing/sampler/CMakeLists.txt b/lib/rendering/texturing/sampler/CMakeLists.txt
+index 31f5d3c..2ba07cd 100644
+--- a/lib/rendering/texturing/sampler/CMakeLists.txt
++++ b/lib/rendering/texturing/sampler/CMakeLists.txt
+@@ -23,7 +23,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     LINKER_LANGUAGE CXX
+ )
+diff --git a/lib/statistics/Util.cc b/lib/statistics/Util.cc
+index 0a1f794..0c3d4d4 100644
+--- a/lib/statistics/Util.cc
++++ b/lib/statistics/Util.cc
+@@ -6,7 +6,11 @@
+ 
+ #include "Util.h"
+ 
++#ifdef _WIN32
++#include <windows.h>
++#else
+ #include <sys/ioctl.h>
++#endif
+ #include <unistd.h>
+ 
+ namespace moonray_stats {
+@@ -39,6 +43,12 @@ std::pair<std::string, std::string> splitMiddle(const std::string& s)
+ 
+ int computeWindowWidth()
+ {
++#ifdef _WIN32
++    CONSOLE_SCREEN_BUFFER_INFO info{};
++    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info))
++        return info.srWindow.Right - info.srWindow.Left + 1;
++    return 72;
++#else
+     // If attached to a terminal...
+     if (isatty(STDOUT_FILENO)) {
+         // Get the terminal width.
+@@ -48,6 +58,7 @@ int computeWindowWidth()
+     } else {
+         return 72;
+     }
++#endif
+ }
+ 
+ std::string createDashTitle(std::string s)
+diff --git a/tests/lib/rendering/pbr/CMakeLists.txt b/tests/lib/rendering/pbr/CMakeLists.txt
+index d9263cd..b20da4b 100644
+--- a/tests/lib/rendering/pbr/CMakeLists.txt
++++ b/tests/lib/rendering/pbr/CMakeLists.txt
+@@ -25,7 +25,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     LINKER_LANGUAGE CXX
+ )
+diff --git a/tests/lib/rendering/shading/CMakeLists.txt b/tests/lib/rendering/shading/CMakeLists.txt
+index ebb3c92..fb81767 100644
+--- a/tests/lib/rendering/shading/CMakeLists.txt
++++ b/tests/lib/rendering/shading/CMakeLists.txt
+@@ -16,7 +16,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     LINKER_LANGUAGE CXX
+ )
+diff --git a/tests/lib/rendering/shading/ispc/CMakeLists.txt b/tests/lib/rendering/shading/ispc/CMakeLists.txt
+index dd96b9d..9c854ef 100644
+--- a/tests/lib/rendering/shading/ispc/CMakeLists.txt
++++ b/tests/lib/rendering/shading/ispc/CMakeLists.txt
+@@ -19,7 +19,7 @@ target_sources(${objLib}
+ file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(${objLib} PROPERTIES
+     ISPC_HEADER_SUFFIX _ispc_stubs.h
+-    ISPC_HEADER_DIRECTORY /${relBinDir}
++    ISPC_HEADER_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+     ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+     LINKER_LANGUAGE CXX
+ )
+diff --git a/lib/rendering/pbr/cmake/ConcatenateBinaryFiles.py b/lib/rendering/pbr/cmake/ConcatenateBinaryFiles.py
+new file mode 100644
+--- /dev/null
++++ b/lib/rendering/pbr/cmake/ConcatenateBinaryFiles.py
+@@ -0,0 +1,12 @@
++# Copyright 2026 MoonRayForModo contributors
++# SPDX-License-Identifier: Apache-2.0
++"""Stream binary chunks, including files whose paths contain spaces."""
++import shutil
++import sys
++from pathlib import Path
++
++output = Path(sys.argv[1])
++with output.open('wb') as destination:
++    for name in sys.argv[2:]:
++        with Path(name).open('rb') as source:
++            shutil.copyfileobj(source, destination, 1024 * 1024)

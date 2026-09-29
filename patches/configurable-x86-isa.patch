@@ -1,0 +1,102 @@
+--- a/cmake_modules/cmake/OMR_Platform.cmake
++++ b/cmake_modules/cmake/OMR_Platform.cmake
+@@ -72,7 +72,9 @@
+     set(GLOBAL_CPP_FLAGS __AVX__)
+     set(GLOBAL_LINK_FLAGS "-Wl,--enable-new-dtags")
+     set(GLOBAL_INSTALL_RPATH "$ORIGIN" "$ORIGIN/../lib64" "${COMPILER_LIBRARY_DIR}")
+-    set(GLOBAL_ISPC_INSTRUCTION_SETS avx2-i32x8)
++    set(OMR_X86_ARCH "core-avx2" CACHE STRING "C/C++ x86 target architecture")
++    set(OMR_ISPC_TARGET "avx2-i32x8" CACHE STRING "ISPC target; retain eight-wide lanes")
++    set(GLOBAL_ISPC_INSTRUCTION_SETS ${OMR_ISPC_TARGET})
+ endif()
+ 
+ # ================================================
+--- a/cmake_modules/cmake/MoonrayDso.cmake
++++ b/cmake_modules/cmake/MoonrayDso.cmake
+@@ -15,7 +15,7 @@
+                 -fno-strict-aliasing            # TODO: add a note
+                 -fno-var-tracking-assignments   # Turn off variable tracking
+                 -fpermissive                    # Downgrade some diagnostics about nonconformant code from errors to warnings.
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+                 -pipe                           # Use pipes rather than intermediate files.
+                 -pthread                        # Define additional macros required for using the POSIX threads library.
+@@ -40,7 +40,7 @@
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+                 -fdelayed-template-parsing      # Shader.h has a template method that uses a moonray class which is no available to scene_rdl2 and is only used in moonray+
+                 -Wno-deprecated-declarations    # disable auto_ptr deprecated warnings from log4cplus-1.
+@@ -50,7 +50,7 @@
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+         )
+     endif()
+--- a/moonray/moonray/cmake/MoonrayCompileOptions.cmake
++++ b/moonray/moonray/cmake/MoonrayCompileOptions.cmake
+@@ -13,7 +13,7 @@
+                 -fno-strict-aliasing            # TODO: add a note
+                 -fno-var-tracking-assignments   # Turn off variable tracking
+                 -fpermissive                    # Downgrade some diagnostics about nonconformant code from errors to warnings.
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+                 -pipe                           # Use pipes rather than intermediate files.
+                 -pthread                        # Define additional macros required for using the POSIX threads library.
+@@ -38,7 +38,7 @@
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -fdelayed-template-parsing      # Shader.h has a template method that uses a moonray class which is no available to scene_rdl2 and is only used in moonray+
+                 -Wno-deprecated-declarations    # disable auto_ptr deprecated warnings from log4cplus-1.
+                 -Wno-unused-value               # caused by opt-debug build and MNRY_VERIFY.
+@@ -55,7 +55,7 @@
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx
+                 -Qoption,cpp,--print_include_stack
+                 -fmerge-debug-strings
+--- a/moonray/scene_rdl2/cmake/SceneRdl2CompileOptions.cmake
++++ b/moonray/scene_rdl2/cmake/SceneRdl2CompileOptions.cmake
+@@ -16,9 +16,8 @@
+                 -fno-omit-frame-pointer         # TODO: add a note
+                 -fno-strict-aliasing            # TODO: add a note
+                 -fno-var-tracking-assignments   # Turn off variable tracking
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+-                -mfma                           # x86 options
+                 -msse                           # x86 options
+                 -pipe                           # Use pipes rather than intermediate files.
+                 -pthread                        # Define additional macros required for using the POSIX threads library.
+@@ -49,7 +48,7 @@
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -fdelayed-template-parsing      # Shader.h has a template method that uses a moonray class which is no available to scene_rdl2 and is only used in moonray+
+                 -Wno-deprecated-declarations    # disable auto_ptr deprecated warnings from log4cplus-1.
+                 -Wno-unused-value               # caused by opt-debug build and MNRY_VERIFY.
+@@ -63,7 +62,7 @@
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+         )
+     endif()
+ endfunction()

@@ -1,0 +1,16 @@
+upstream/
+downloads/
+runtime/
+dist/
+__pycache__/
+*.pyc
+tools/probe_config.cfg
+tools/probe_result.json
+tools/probe_console.log
+test-results/
+toolchain/
+build/
+native-port/include/
+backups/
+tools/probe_config.cfg.bak
+*.log

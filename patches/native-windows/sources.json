@@ -1,0 +1,63 @@
+{
+  "repositories": {
+    "cmake_modules": {
+      "path": "upstream/openmoonray/cmake_modules",
+      "commit": "1b1b7af8111b0a8ceaff45f3c47a778b0ca07ec4",
+      "origin": "https://github.com/OpenMoonRay/cmake_modules",
+      "patch": "patches/native-windows/cmake_modules.patch",
+      "patch_sha256": "3a6af0e14c6f86a50d826043591a4f031c3b5b595bf60540c2e6fc5e72256f34"
+    },
+    "scene_rdl2": {
+      "path": "upstream/openmoonray/moonray/scene_rdl2",
+      "commit": "1229d3eaa1ee41dc1ddefbe781c623edceafbac8",
+      "origin": "https://github.com/OpenMoonRay/scene_rdl2",
+      "patch": "patches/native-windows/scene_rdl2.patch",
+      "patch_sha256": "8d7f019bec50ff6d94b536bd67f93cb4a51ac1b7c6bfce2f555f1137b16433b4"
+    },
+    "moonray": {
+      "path": "upstream/openmoonray/moonray/moonray",
+      "commit": "eef67ae992b5037943a7716cca96ed443c36dcec",
+      "origin": "https://github.com/OpenMoonRay/moonray",
+      "patch": "patches/native-windows/moonray.patch",
+      "patch_sha256": "b47c1d28e02deb25251b2c5eda198e6e69545c47dee41fdcaadefa72a1bf71aa"
+    },
+    "mcrt_denoise": {
+      "path": "upstream/openmoonray/moonray/mcrt_denoise",
+      "commit": "0050e726309a533e7964bd05380430e6b06cce7a",
+      "origin": "https://github.com/OpenMoonRay/mcrt_denoise",
+      "patch": "patches/native-windows/mcrt_denoise.patch",
+      "patch_sha256": "dc5b76d7010cbe44c714338809f0cd19797dc484fac0485f0e9e395f94d1b862"
+    },
+    "moonshine": {
+      "path": "upstream/openmoonray/moonray/moonshine",
+      "commit": "a3c8667298a23df7d6efed128cb475484de66c8e",
+      "origin": "https://github.com/OpenMoonRay/moonshine"
+    },
+    "log4cplus": {
+      "path": "upstream/log4cplus",
+      "commit": "b11c9480ebb060866d2e25ce7179574b3d93385e",
+      "origin": "https://github.com/log4cplus/log4cplus.git"
+    },
+    "random123": {
+      "path": "upstream/random123",
+      "commit": "726a093cd9a73f3ec3c8d7a70ff10ed8efec8d13",
+      "origin": "https://github.com/DEShawResearch/random123.git"
+    }
+  },
+  "ispc_runtime": {
+    "tag": "v1.31.0",
+    "files": {
+      "array.hpp": "ae14266ab11f8ebb42d52270c1d634bbec653740671efa8575c21f671ab95804",
+      "builtins-c-cpu.cpp": "f4456b2e593a25ec0f1f0821997d1be623b591d05c52fca88e1fb8280da3b3c6",
+      "LICENSE.txt": "617beba3c8821b13db6c0038c3188b4001bba560e94b003751deb0bb16465385",
+      "builtins/builtins-c-common.hpp": "10fc7de592d009c92d258ef11318926256c4b20acf1d166e5968885f737acc99",
+      "src/builtins-info.h": "da518522c4e34f3d76150aae4f87c497a7c277688c23550833ca43e80d43ab6f"
+    }
+  },
+  "openmoonray_commit": "b9b0ac29135b26e20a51edf9028558bb64df6700",
+  "toolchain_archive": {
+    "url": "https://github.com/msys2/msys2-installer/releases/download/nightly-x86_64/msys2-base-x86_64-latest.sfx.exe",
+    "sha256": "44ea79102ad2312289aff39fd04d3174afc1ed843e912eaee18a14961c8b62d4",
+    "note": "Nightly URL is mutable; this checksum identifies the local downloaded archive."
+  }
+}

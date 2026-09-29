@@ -1,0 +1,33 @@
+"""Package the Modo kit, optionally with the validated native AVX renderer."""
+import hashlib
+import json
+import pathlib
+import sys
+import zipfile
+
+root = pathlib.Path(__file__).resolve().parents[1]
+with_runtime = '--with-runtime' in sys.argv
+runtime = root / 'runtime/native-avx'
+if with_runtime:
+    validation = json.loads((runtime / 'validated-render.json').read_text(encoding='utf-8'))
+    if validation['executable_sha256'] != hashlib.sha256((runtime / 'moonray.exe').read_bytes()).hexdigest():
+        raise SystemExit('Validate the current renderer before packaging it.')
+destination = root / 'dist' / ('MoonRayForModo-0.1.0-native-avx.zip' if with_runtime
+                               else 'MoonRayForModo-0.1.0-prototype.zip')
+destination.parent.mkdir(exist_ok=True)
+with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:
+    for path in sorted((root / 'kit/MoonRayForModo').rglob('*')):
+        if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc':
+            archive.write(path, str(path.relative_to(root / 'kit')))
+    for name in ('README.md', 'LICENSE', 'THIRD_PARTY.md'):
+        archive.write(root / name, 'MoonRayForModo/' + name)
+    archive.write(root / 'docs/AVX_BUILD.md', 'MoonRayForModo/docs/AVX_BUILD.md')
+    archive.write(root / 'patches/configurable-x86-isa.patch', 'MoonRayForModo/patches/configurable-x86-isa.patch')
+    if with_runtime:
+        for path in sorted(runtime.iterdir()):
+            if path.is_file():
+                archive.write(path, 'MoonRayForModo/runtime/native-avx/' + path.name)
+        for path in sorted((root / 'patches/native-windows').iterdir()):
+            if path.is_file():
+                archive.write(path, 'MoonRayForModo/patches/native-windows/' + path.name)
+print(destination)

@@ -1,0 +1,37 @@
+"""Install the development kit into Modo's verified user:Kits startup path."""
+from datetime import datetime
+from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+
+root = Path(__file__).resolve().parents[1]
+source = root / 'kit/MoonRayForModo'
+destination = Path(os.environ['APPDATA']) / 'Luxology/Kits/MoonRayForModo'
+runtime = root / 'runtime/native-avx'
+if not (runtime / 'moonray.exe').is_file():
+    raise SystemExit('A validated native runtime must be staged before installing this kit.')
+if not (runtime / 'validated-render.json').is_file():
+    raise SystemExit('The native renderer has not yet passed a real render test.')
+validation = json.loads((runtime / 'validated-render.json').read_text(encoding='utf-8'))
+if validation.get('executable_sha256') != hashlib.sha256((runtime / 'moonray.exe').read_bytes()).hexdigest():
+    raise SystemExit('The renderer has changed since its last successful render test.')
+
+backup = None
+if destination.exists():
+    backup = root / 'backups' / ('installed-kit-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
+    shutil.copytree(destination, backup)
+manifest = {'modo_executable': r'C:\Program Files\Modo16.1v9\modo\modo.exe',
+            'runtime': str(runtime), 'backup': str(backup) if backup else None, 'files': {}}
+for path in source.rglob('*'):
+    if not path.is_file() or '__pycache__' in path.parts or path.suffix == '.pyc':
+        continue
+    relative = path.relative_to(source)
+    installed = destination / relative
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, installed)
+    manifest['files'][relative.as_posix()] = hashlib.sha256(installed.read_bytes()).hexdigest()
+(destination / 'runtime.json').write_text(json.dumps({'directory': str(runtime)}, indent=2), encoding='utf-8')
+(root / 'test-results/kit-install.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+print('Installed:', destination)

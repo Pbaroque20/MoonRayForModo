@@ -1,0 +1,7 @@
+SceneVariables {
+    ["image_width"] = 64,
+    ["image_height"] = 64,
+}
+RenderOutput("/windows_avx_test") {
+    ["file_name"] = "native_probe.exr",
+}

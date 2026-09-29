@@ -1,0 +1,173 @@
+diff --git a/cmake/FindLibatomic.cmake b/cmake/FindLibatomic.cmake
+index 6664618..0409a19 100644
+--- a/cmake/FindLibatomic.cmake
++++ b/cmake/FindLibatomic.cmake
+@@ -2,7 +2,7 @@
+ # SPDX-License-Identifier: Apache-2.0
+ 
+ find_library(Libatomic_LIBRARY
+-  NAMES libatomic.so.1
++  NAMES atomic libatomic.so.1
+   HINTS $ENV{LIBATOMIC_ROOT}/lib /lib64)
+ 
+ mark_as_advanced(Libatomic_LIBRARY)
+diff --git a/cmake/MoonrayDso.cmake b/cmake/MoonrayDso.cmake
+index 101f9d3..21de253 100644
+--- a/cmake/MoonrayDso.cmake
++++ b/cmake/MoonrayDso.cmake
+@@ -1,3 +1,7 @@
++set(MOONRAY_DSO_STAGE_COMMAND create_symlink)
++if(WIN32)
++    set(MOONRAY_DSO_STAGE_COMMAND copy_if_different)
++endif()
+ # Copyright 2023-2024 DreamWorks Animation LLC
+ # SPDX-License-Identifier: Apache-2.0
+ 
+@@ -15,7 +19,7 @@ function(Moonray_dso_cxx_compile_options target)
+                 -fno-strict-aliasing            # TODO: add a note
+                 -fno-var-tracking-assignments   # Turn off variable tracking
+                 -fpermissive                    # Downgrade some diagnostics about nonconformant code from errors to warnings.
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+                 -pipe                           # Use pipes rather than intermediate files.
+                 -pthread                        # Define additional macros required for using the POSIX threads library.
+@@ -40,7 +44,7 @@ function(Moonray_dso_cxx_compile_options target)
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+                 -fdelayed-template-parsing      # Shader.h has a template method that uses a moonray class which is no available to scene_rdl2 and is only used in moonray+
+                 -Wno-deprecated-declarations    # disable auto_ptr deprecated warnings from log4cplus-1.
+@@ -50,7 +54,7 @@ function(Moonray_dso_cxx_compile_options target)
+         target_compile_options(${target}
+             # TODO: Some if not all of these should probably be PUBLIC
+             PRIVATE
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -mavx                           # x86 options
+         )
+     endif()
+@@ -216,7 +220,9 @@ function(Moonray_dso_cxx_compile_features target)
+ endfunction()
+ 
+ function(Moonray_dso_link_options target)
+-    if(NOT IsDarwinPlatform)
++    if(WIN32)
++        return()
++    elseif(NOT IsDarwinPlatform)
+         target_link_options(${target}
+             PRIVATE
+                 -Wl,--enable-new-dtags              # Use RUNPATH instead of RPATH
+@@ -285,7 +291,7 @@ function(moonray_dso_simple targetName)
+ 
+     # proxy dso
+     set_target_properties(${targetName}_proxy PROPERTIES
+-        PREFIX "" OUTPUT_NAME ${dsoName} SUFFIX ".so.proxy")
++        PREFIX "" OUTPUT_NAME ${dsoName} ARCHIVE_OUTPUT_NAME ${dsoName}_proxy SUFFIX ".so.proxy")
+     target_sources(${targetName}_proxy PRIVATE ${attrs})
+     target_include_directories(${targetName}_proxy PRIVATE ${includeDir})
+     target_link_libraries(${targetName}_proxy PUBLIC SceneRdl2::scene_rdl2)
+@@ -302,12 +308,10 @@ function(moonray_dso_simple targetName)
+        # Defines a custom command that when run generates the json files
+        # needed for third party apps
+        add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${dsoName}.json
+-           POST_BUILD
+-           COMMAND rdl2_json_exporter --dso_path ${CMAKE_CURRENT_BINARY_DIR}/${configDir}
++           COMMAND rdl2_json_exporter --dso_path $<TARGET_FILE_DIR:${targetName}_proxy>
+            --in $<TARGET_FILE:${targetName}_proxy>
+            --out ${CMAKE_CURRENT_BINARY_DIR}/${dsoName}.json
+            DEPENDS ${targetName}_proxy
+-           BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/${dsoName}.json
+            VERBATIM
+            )
+        add_custom_target(coredata_${targetName} ALL DEPENDS
+@@ -316,8 +320,8 @@ function(moonray_dso_simple targetName)
+        # copy resulting DSOs to <build>/rdl2dso dir to be found by tests
+        add_custom_command(TARGET ${targetName} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/rdl2dso
+-           COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${targetName}> ${CMAKE_BINARY_DIR}/rdl2dso/$<TARGET_FILE_NAME:${targetName}>
+-           COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${targetName}_proxy> ${CMAKE_BINARY_DIR}/rdl2dso/$<TARGET_FILE_NAME:${targetName}_proxy>
++           COMMAND ${CMAKE_COMMAND} -E ${MOONRAY_DSO_STAGE_COMMAND} $<TARGET_FILE:${targetName}> ${CMAKE_BINARY_DIR}/rdl2dso/$<TARGET_FILE_NAME:${targetName}>
++           COMMAND ${CMAKE_COMMAND} -E ${MOONRAY_DSO_STAGE_COMMAND} $<TARGET_FILE:${targetName}_proxy> ${CMAKE_BINARY_DIR}/rdl2dso/$<TARGET_FILE_NAME:${targetName}_proxy>
+        )
+    endif()
+ 
+@@ -406,7 +410,7 @@ function(moonray_ispc_dso name)
+         COMMAND
+             ${CMAKE_COMMAND} -E make_directory ${genDir}
+         COMMAND
+-            ${ISPC_DSO_GEN_SCRIPT} ${jsonSrc}
++            "${PYTHON_EXECUTABLE}" "${ISPC_DSO_GEN_SCRIPT}" "${jsonSrc}"
+             -o ${genDir} -i ${jsonIncludeDir}
+         DEPENDS
+             ${jsonSrc}
+@@ -414,6 +418,7 @@ function(moonray_ispc_dso name)
+             ${CMAKE_CURRENT_LIST_DIR}
+         COMMENT
+             "Generating DSO files from ${jsonSrc}"
++        VERBATIM
+     )
+ 
+     # Mark files as generated so CMake doesn't expect them to exist at configure time
+@@ -439,7 +444,7 @@ function(moonray_ispc_dso name)
+     file(RELATIVE_PATH relBinDir ${CMAKE_BINARY_DIR} ${genDir})
+     set_target_properties(${objLib} PROPERTIES
+         ISPC_HEADER_SUFFIX _ispc_stubs.h
+-        ISPC_HEADER_DIRECTORY /${relBinDir}
++        ISPC_HEADER_DIRECTORY ${genDir}
+         ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
+         LINKER_LANGUAGE CXX
+     )
+@@ -487,7 +492,7 @@ function(moonray_ispc_dso name)
+     # proxy dso
+     add_library(${name}_proxy SHARED "")
+     set_target_properties(${name}_proxy PROPERTIES
+-        PREFIX "" OUTPUT_NAME ${name} SUFFIX ".so.proxy")
++        PREFIX "" OUTPUT_NAME ${name} ARCHIVE_OUTPUT_NAME ${name}_proxy SUFFIX ".so.proxy")
+     target_compile_features(${name}_proxy
+         PRIVATE cxx_std_17)
+     target_sources(${name}_proxy PRIVATE ${genDir}/attributes.cc)
+@@ -508,12 +513,12 @@ function(moonray_ispc_dso name)
+        else()
+            set(configDir "")
+        endif()
+-       set(proxyDsoPath "${CMAKE_CURRENT_BINARY_DIR}/${configDir}/${name}.so.proxy")
++       set(proxyDsoPath "$<TARGET_FILE:${name}_proxy>")
+        add_custom_command(TARGET ${name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/rdl2dso
+-           COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${name}> ${CMAKE_BINARY_DIR}/rdl2dso/$<TARGET_FILE_NAME:${name}>
+-           COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${name}_proxy> ${CMAKE_BINARY_DIR}/rdl2dso/$<TARGET_FILE_NAME:${name}_proxy>
+-           COMMAND rdl2_json_exporter --dso_path ${CMAKE_CURRENT_BINARY_DIR}/${configDir}
++           COMMAND ${CMAKE_COMMAND} -E ${MOONRAY_DSO_STAGE_COMMAND} $<TARGET_FILE:${name}> ${CMAKE_BINARY_DIR}/rdl2dso/$<TARGET_FILE_NAME:${name}>
++           COMMAND ${CMAKE_COMMAND} -E ${MOONRAY_DSO_STAGE_COMMAND} $<TARGET_FILE:${name}_proxy> ${CMAKE_BINARY_DIR}/rdl2dso/$<TARGET_FILE_NAME:${name}_proxy>
++           COMMAND rdl2_json_exporter --dso_path $<TARGET_FILE_DIR:${name}_proxy>
+                --in ${proxyDsoPath}
+                --out ${CMAKE_CURRENT_BINARY_DIR}/${name}.json
+            COMMENT "Creating symlinks and generating JSON metadata for ${name}"
+diff --git a/cmake/OMR_Platform.cmake b/cmake/OMR_Platform.cmake
+index 6a38c8f..1321ae0 100644
+--- a/cmake/OMR_Platform.cmake
++++ b/cmake/OMR_Platform.cmake
+@@ -70,9 +70,16 @@ if(IsDarwinPlatform)
+     set(CMAKE_OSX_ARCHITECTURES arm64)
+ else() # Linux/Windows
+     set(GLOBAL_CPP_FLAGS __AVX__)
+-    set(GLOBAL_LINK_FLAGS "-Wl,--enable-new-dtags")
+-    set(GLOBAL_INSTALL_RPATH "$ORIGIN" "$ORIGIN/../lib64" "${COMPILER_LIBRARY_DIR}")
+-    set(GLOBAL_ISPC_INSTRUCTION_SETS avx2-i32x8)
++    if(IsWindowsPlatform)
++        set(GLOBAL_LINK_FLAGS "")
++        set(GLOBAL_INSTALL_RPATH "")
++    else()
++        set(GLOBAL_LINK_FLAGS "-Wl,--enable-new-dtags")
++        set(GLOBAL_INSTALL_RPATH "$ORIGIN" "$ORIGIN/../lib64" "${COMPILER_LIBRARY_DIR}")
++    endif()
++    set(OMR_X86_ARCH "core-avx2" CACHE STRING "C/C++ x86 target architecture")
++    set(OMR_ISPC_TARGET "avx2-i32x8" CACHE STRING "ISPC target; retain eight-wide lanes")
++    set(GLOBAL_ISPC_INSTRUCTION_SETS ${OMR_ISPC_TARGET})
+ endif()
+ 
+ # ================================================

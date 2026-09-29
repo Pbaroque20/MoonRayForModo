@@ -1,0 +1,28 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ebfd9ea..34be238 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -59,7 +59,9 @@ endif()
+ 
+ # Create include/${PACKAGE_NAME} link in the build directory for generated headers.
+ file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/include)
+-file(CREATE_LINK ../lib ${PROJECT_BINARY_DIR}/include/${PACKAGE_NAME} SYMBOLIC)
++if(NOT IS_DIRECTORY ${PROJECT_BINARY_DIR}/include/${PACKAGE_NAME})
++    file(CREATE_LINK ../lib ${PROJECT_BINARY_DIR}/include/${PACKAGE_NAME} SYMBOLIC)
++endif()
+ 
+ include(${PROJECT_NAME}CompileDefinitions)
+ include(${PROJECT_NAME}CompileFeatures)
+diff --git a/cmake/McrtDenoiseCompileOptions.cmake b/cmake/McrtDenoiseCompileOptions.cmake
+index a48bb07..ae48df7 100644
+--- a/cmake/McrtDenoiseCompileOptions.cmake
++++ b/cmake/McrtDenoiseCompileOptions.cmake
+@@ -11,7 +11,7 @@ function(McrtDenoise_cxx_compile_options target)
+                 -fexceptions                    # Enable exception handling.
+                 -fno-omit-frame-pointer         # TODO: add a note
+                 -fno-strict-aliasing            # TODO: add a note
+-                -march=core-avx2                # Specify the name of the target architecture
++                -march=${OMR_X86_ARCH}                # Specify the name of the target architecture
+                 -pipe                           # Use pipes rather than intermediate files.
+                 -pthread                        # Define additional macros required for using the POSIX threads library.
+                 -w                              # Inhibit all warning messages.
