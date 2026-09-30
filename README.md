@@ -76,7 +76,24 @@ Appearance and light intensity are
 approximate across the two renderers.
 
 The panel does not register as Modo's F9 renderer or implement `ILxExternalRender`.
-It does not yet translate image/procedural textures, layered shader graphs,
+UV image layers support diffuse/specular/emission color, roughness, metalness,
+clearcoat amount and clearcoat roughness. Put an image layer directly in a
+material-tag mask containing its material, select **UV projection** and a named
+UV map, and use **Normal blending, 100% opacity**. One image per effect and one
+UV set per material are supported. Set data maps to a linear/no-conversion color
+space. Color maps in default sRGB are converted to linear before rendering.
+Unusual color spaces, UV transforms, layer corrections and blending are reported
+as unsupported. Missing UV values stop export rather than use arbitrary coordinates.
+
+Textures are converted into tiled, mipmapped `.tx` files under
+`%LOCALAPPDATA%\MoonRayForModo\Textures`. First conversion can pause the UI;
+later renders reuse the cache. Source timestamp/size changes invalidate it and
+trigger live updates. RDLA exports reference this local cache; copy referenced
+textures when moving exports to another computer. Different UV sets can split
+mesh topology and affect subdivision seams.
+
+It does not yet translate procedural textures, UDIM image folders, normal/bump
+image effects, image alpha compositing, layered shader graphs,
 refractive transparency, subsurface scattering, anisotropy,
 instances/replicators, hair, volumes, motion blur, render regions,
 orthographic cameras, lens effects or animation output. Mesh sampling is not

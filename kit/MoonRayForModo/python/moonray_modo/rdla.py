@@ -1,6 +1,6 @@
 """Pure Python scene serializer. Does not import or change the Modo scene."""
 import math
-from . import options
+from . import options, textures
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -88,6 +88,19 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     materials = dict(scene.get('materials', {}))
     materials.setdefault('', {'color': [0.5, 0.5, 0.5], 'roughness': 0.4, 'metallic': 0})
     for index, (tag, material) in enumerate(sorted(materials.items())):
+        bindings = {}
+        for effect, texture in material.get('textures', {}).items():
+            if effect not in textures.EFFECTS:
+                raise ValueError('Unsupported image effect: ' + effect)
+            name = '/modo/texture/%d/%s' % (index, effect)
+            prepared = textures.prepare(texture['path'], texture.get('srgb', False))
+            lines += ['ImageMap(%s) {' % string(name),
+                      '  ["texture"] = %s,' % string(prepared),
+                      '  ["gamma"] = 0,',
+                      '  ["wrap_around"] = %s,' % ('true' if texture.get('repeat', True) else 'false'),
+                      '  ["gain_offset_enabled"] = true,',
+                      '  ["gain"] = %s,' % vector([texture.get('gain', 1)] * 3, 'Rgb'), '}']
+            bindings[textures.EFFECTS[effect]] = 'bind(ImageMap(%s))' % string(name)
         lines += ['materials[%s] = UsdPreviewSurface("/modo/material/%s") {' % (string(tag), index),
                   '  ["diffuseColor"] = %s,' % vector(material['color'], 'Rgb'),
                   '  ["roughness"] = %s,' % number(material.get('roughness', 0.4)),
@@ -100,6 +113,8 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         if 'specular' in material and not material.get('metallic', 0):
             lines += ['  ["useSpecularWorkflow"] = 1,',
                       '  ["specularColor"] = %s,' % vector(material['specular'], 'Rgb')]
+        for attribute, binding in bindings.items():
+            lines.append('  [%s] = %s,' % (string(attribute), binding))
         lines.append('}')
     for index, mesh in enumerate(scene.get('meshes', [])):
         vertices = mesh['vertices']

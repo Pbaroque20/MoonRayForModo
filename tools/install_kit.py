@@ -10,6 +10,9 @@ root = Path(__file__).resolve().parents[1]
 source = root / 'kit/MoonRayForModo'
 destination = Path(os.environ['APPDATA']) / 'Luxology/Kits/MoonRayForModo'
 runtime = root / 'runtime/native-avx'
+converter = root / 'toolchain/msys64/ucrt64/bin/maketx.exe'
+if converter.is_file():
+    shutil.copy2(converter, runtime / 'maketx.exe')
 if not (runtime / 'moonray.exe').is_file():
     raise SystemExit('A validated native runtime must be staged before installing this kit.')
 if not (runtime / 'validated-render.json').is_file():

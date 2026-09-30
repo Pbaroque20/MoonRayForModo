@@ -2,6 +2,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -16,6 +17,24 @@ def scene():
 
 
 class CoreTests(unittest.TestCase):
+    def test_image_bindings_and_safe_texture_paths(self):
+        data = scene()
+        data['materials'] = {'': {'color': [1,1,1], 'textures': {
+            'diffCol': {'path': 'source.png', 'srgb': True},
+            'rough': {'path': 'roughness.png', 'srgb': False}}}}
+        with patch('moonray_modo.textures.prepare', return_value='C:/cache/a"b.tx') as prepare:
+            text = rdla.scene_text(data)
+        self.assertEqual(prepare.call_count, 2)
+        self.assertIn('["diffuseColor"] = bind(ImageMap(', text)
+        self.assertIn('["roughness"] = bind(ImageMap(', text)
+        self.assertIn('a\\"b.tx', text)
+
+    def test_unknown_image_effect_rejected(self):
+        data = scene()
+        data['materials'] = {'': {'color': [1,1,1], 'textures': {'unknown': {'path': 'bad.png'}}}}
+        with self.assertRaisesRegex(ValueError, 'Unsupported image effect'):
+            rdla.scene_text(data)
+
     def test_aovs_are_explicit_and_only_emitted_for_exr(self):
         data = scene()
         data['aovs'] = ['depth', 'normal', 'diffuse_direct']

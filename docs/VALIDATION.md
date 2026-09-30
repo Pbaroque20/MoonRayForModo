@@ -17,13 +17,18 @@ Test machine: Windows, Intel Core i7-4930K (AVX1, no AVX2), Modo 16.1v9.
   Catmull-Clark subdivision at resolution 8 removes the large polygon-shaped steps.
 - Updated exporter: both Modo SUBD and Pixar PSUB faces are recognized inside
   Modo 16.1v9. Preview subdivision controls capture the expected mesh settings.
-- All 21 plugin tests pass inside an isolated Modo 16.1v9 process, which exits 0.
+- All 23 plugin tests pass inside an isolated Modo 16.1v9 process, which exits 0.
 - Authored UV and vertex-normal maps export with the expected face-corner values.
 - Native object commands execute, query and undo. Scene and object settings
   survive saving and reopening an LXO in the isolated profile.
 - A real native spotlight render writes 26 float EXR channels: beauty plus all
   ten exposed AOV choices, with finite pixel values. Shared mesh material parts
   render with separate colors. `tools/validate_aovs.py` reproduces this check.
+- Image-texture fixture: a Modo image layer exports its selected named UV set,
+  converts sRGB into a tiled linear texture, and produces the expected red/green
+  regions in an actual MoonRay render. Editing the source invalidates the cache
+  and swaps those rendered regions. Missing UVs and unsupported opacity blending
+  are checked explicitly. Scripts: `probe_image_textures.py`, `validate_textures.py`.
 
 Detailed machine-local reports and rendered comparisons are under `test-results/`
 and build logs under `build/`; both are excluded from Git. These checks do not

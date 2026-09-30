@@ -1,10 +1,11 @@
 """Modo 16.1 scene sampling. Call only from Modo's main/UI thread."""
 import math
+from pathlib import Path
 import lx
 import lxu.utils
 import lxifc
 import modo
-from . import properties, options
+from . import properties, options, textures
 
 
 def channel(item, name, default=None):
@@ -21,14 +22,14 @@ def world_matrix(item):
     return [float(value) for row in rows for value in row]
 
 
-def first_map(mesh, map_type):
+def first_map(mesh, map_type, name=None):
     accessor = lx.object.MeshMap(mesh.MeshMapAccessor())
     if not accessor.test():
         return None
     found = []
     class Maps(lxifc.Visitor):
         def vis_Evaluate(self):
-            if accessor.Type() == map_type:
+            if accessor.Type() == map_type and (not name or accessor.Name() == name):
                 found.append((accessor.Name(), int(accessor.ID())))
     visitor = Maps()
     accessor.Enumerate(lx.symbol.iMARK_ANY, visitor, 0)
@@ -60,6 +61,75 @@ def render_visible(item):
             return True
         item = item.parent
     return True
+
+
+def image_layers(scene, materials, warnings):
+    """Translate unblended UV image layers; reject unsupported setups explicitly."""
+    for layer in scene.items('imageMap', superType=False):
+        ancestor = layer
+        enabled = True
+        while ancestor:
+            enabled = enabled and bool(channel(ancestor, 'enable', 1))
+            ancestor = ancestor.parent
+        if not enabled or not channel(layer, 'render', 1):
+            continue
+        try:
+            parent = layer.parent
+            if not parent or parent.type != 'mask' or channel(parent, 'ptyp', '') not in ('Material', 'material', 'MATR'):
+                raise ValueError('requires a direct material-tag mask')
+            tag = channel(parent, 'ptag', '')
+            if tag not in materials:
+                raise ValueError('material mask has no translated material')
+            if parent.parent and parent.parent.type != 'polyRender':
+                raise ValueError('nested shader masks are unsupported')
+            effect = channel(layer, 'effect', '')
+            if effect not in textures.EFFECTS:
+                raise ValueError('unsupported effect ' + effect)
+            checks = {'blend': 'normal', 'opacity': 1, 'invert': 0, 'gamma': 1,
+                      'brightness': 1, 'contrast': 1, 'redInv': 0, 'greenInv': 0,
+                      'blueInv': 0, 'swizzling': 0}
+            if any(channel(layer, key, default) != default for key, default in checks.items()):
+                raise ValueError('layer blending or color corrections are unsupported')
+            connected = layer.itemGraph('shadeLoc').forward()
+            clip = next((i for i in connected if i.type == 'videoStill'), None)
+            locator = next((i for i in connected if i.type == 'txtrLocator'), None)
+            if not clip or not locator or channel(locator, 'projType', '') != 'uv':
+                raise ValueError('requires a still image and UV projection')
+            uv = channel(locator, 'uvMap', '')
+            if not uv:
+                raise ValueError('choose a named UV map')
+            if any(channel(locator, key, default) != default for key, default in
+                   {'wrapU': 1, 'wrapV': 1, 'uvRotation': 0, 'm00': 1, 'm01': 0,
+                    'm02': 0, 'm10': 0, 'm11': 1, 'm12': 0, 'randOffset': 'none'}.items()):
+                raise ValueError('UV transforms are unsupported')
+            tile = channel(locator, 'tileU', 'repeat')
+            if tile not in ('repeat', 'edge') or channel(locator, 'tileV', 'repeat') != tile:
+                raise ValueError('requires matching repeat or edge modes on U and V')
+            path = Path(channel(clip, 'filename', ''))
+            if not path.is_absolute():
+                scene_path = getattr(scene, 'filename', None)
+                if scene_path:
+                    path = Path(scene_path).parent / path
+            if not path.is_file():
+                raise ValueError('image file is missing: ' + str(path))
+            space = channel(clip, 'colorspace', '(default)')
+            if space not in ('(default)', '(none)', 'sRGB', 'Linear', 'linear'):
+                raise ValueError('unsupported image color space ' + space)
+            material = materials[tag]
+            existing = material.setdefault('textures', {})
+            if effect in existing:
+                raise ValueError('multiple layers for the same effect; only one is translated')
+            if any(t['uv_map'] != uv for t in existing.values()):
+                raise ValueError('multiple UV maps within one material are unsupported')
+            stat = path.stat()
+            existing[effect] = {'path': str(path.resolve()), 'uv_map': uv,
+                'srgb': space == 'sRGB' or (space == '(default)' and effect in textures.COLOR_EFFECTS
+                    and path.suffix.lower() not in ('.exr', '.hdr', '.tx')),
+                'repeat': tile == 'repeat', 'mtime': stat.st_mtime_ns, 'size': stat.st_size,
+                'gain': material.get({'diffCol': 'diffuse_amount', 'specCol': 'specular_amount',
+                                     'lumiCol': 'emission_amount'}.get(effect, ''), 1)}
+        except (ValueError, LookupError, OSError) as exc:
+            warnings.append('Image %s: %s.' % (layer.name, exc))
 
 
 def snapshot():
@@ -106,6 +176,9 @@ def snapshot():
         diffuse = color(material, 'diffCol', (.5, .5, .5))
         diffuse_amount = float(channel(material, 'diffAmt', 1))
         result['materials'][tag] = {'color': [c * diffuse_amount for c in diffuse],
+                                    'diffuse_amount': diffuse_amount,
+                                    'specular_amount': float(channel(material, 'specAmt', .04)),
+                                    'emission_amount': float(channel(material, 'radiance', 0)),
                                     'roughness': float(channel(material, 'rough', .4)),
                                     'metallic': float(channel(material, 'metallic', 0)),
                                     'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
@@ -116,6 +189,7 @@ def snapshot():
                                     'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
         if channel(material, 'subsAmt', 0) or channel(material, 'tranAmt', 0) or channel(material, 'aniso', 0):
             warnings.append('Subsurface, refractive transparency and anisotropy are not translated: ' + material.name)
+    image_layers(scene, result['materials'], warnings)
     # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
     for item in scene.items('mesh', superType=False):
         if not render_visible(item):
@@ -131,7 +205,7 @@ def snapshot():
             point_indices[int(points.ID())] = index
             vertices.append(list(points.Pos()))
         groups = {}
-        uv_map = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV)
+        uv_maps = {}
         normal_map = first_map(mesh, lx.symbol.i_VMAP_NORMAL)
         tags = lx.object.StringTag(polygons)
         for index in range(mesh.PolygonCount()):
@@ -146,11 +220,18 @@ def snapshot():
                 tag = ''
             face = [point_indices[int(polygons.VertexByIndex(v))] for v in range(count)]
             subdivision = lxu.utils.decodeID4(polygons.Type()) in ('SUBD', 'PSUB')
-            groups.setdefault(subdivision, []).append((face, tag,
-                corner_values(polygons, uv_map, count, 2), corner_values(polygons, normal_map, count, 3)))
+            maps = result['materials'].get(tag, {}).get('textures', {})
+            uv_name = next(iter(maps.values()))['uv_map'] if maps else ''
+            if uv_name not in uv_maps:
+                uv_maps[uv_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, uv_name)
+            face_uv = corner_values(polygons, uv_maps[uv_name], count, 2)
+            if maps and not face_uv:
+                raise ValueError('Mesh %s is missing UV values in map %s.' % (item.name, uv_name))
+            groups.setdefault((subdivision, uv_name), []).append((face, tag,
+                face_uv, corner_values(polygons, normal_map, count, 3)))
         transform = world_matrix(item)
         object_settings = options.object_values(properties.read(item))
-        for subdivision, tagged_faces in sorted(groups.items()):
+        for (subdivision, uv_name), tagged_faces in sorted(groups.items()):
             faces, face_materials, face_uvs, face_normals = zip(*tagged_faces)
             result['meshes'].append({'name': item.name, 'vertices': vertices,
                                      'faces': list(faces), 'matrix': transform, 'material': '',
@@ -182,7 +263,7 @@ def snapshot():
             # Precompose a local X half-turn, keeping the world position intact.
             light['matrix'][4:12] = [-v for v in light['matrix'][4:12]]
         result['lights'].append(light)
-    for kind in ('meshInst', 'replicator', 'imageMap', 'textureLayer', 'volume'):
+    for kind in ('meshInst', 'replicator', 'textureLayer', 'volume'):
         if scene.items(kind, superType=False):
             warnings.append('%s items are not translated in this version.' % kind)
     result['warnings'] = sorted(set(warnings))

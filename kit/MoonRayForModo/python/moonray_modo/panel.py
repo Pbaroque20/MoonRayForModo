@@ -136,7 +136,7 @@ class Panel(QtWidgets.QWidget):
             checkbox.setChecked(key == 'alpha')
             self.aov_controls[key] = checkbox
             self.pages['aovs'].addRow(checkbox)
-        lighting_note = QtWidgets.QLabel('Uses Modo material colors, diffuse/specular amounts, roughness, metalness, emission, clearcoat, IOR and dissolve opacity. Lighting intensity is approximate. Refractive transparency, layered shaders and textures are not translated; warnings appear below.')
+        lighting_note = QtWidgets.QLabel('Uses Modo material colors, diffuse/specular amounts, roughness, metalness, emission, clearcoat and IOR. UV image maps support color, roughness, metalness and clearcoat effects in material-tag masks. First use prepares cached textures. Layer blending, procedural textures and refractive transparency remain unsupported; warnings appear below.')
         lighting_note.setWordWrap(True)
         self.pages['lighting'].addRow(lighting_note)
         save_settings = QtWidgets.QPushButton('Store render settings in scene')
