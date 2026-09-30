@@ -19,12 +19,20 @@ The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
 to `C:\Users\Raphael Tobar\MoonRayForModo\runtime\native-avx`.
 Start **`C:\Program Files\Modo16.1v9\modo\modo.exe`**.
 
-Open **MoonRay > MoonRay Preview**, or run `moonray.open` in Modo's command entry.
+Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.
+The menu also opens Live Preview, Object Properties, Shading and Lighting,
+Render Passes (AOVs), and Runtime and CPU directly. The panel groups controls in
+Render, Lighting, Objects, AOVs and System tabs beside the preview.
 Click **Preview** to render the scene's perspective camera. Enable **Live updates**
 to refresh after scene edits. **Environment** adds uniform lighting when the scene
 has no lights; zero uses only translated scene lighting. **Stop** stops rendering
 and live updates. **Save preview** saves PNG; **Render EXR** renders at the scene's
 resolution. **Export scene** writes RDLA.
+
+Render settings include sample grids, total/diffuse/glossy/mirror bounce limits
+and shadow-boundary correction. Lighting includes an additional environment
+and a multiplier for translated Modo lights. Use **Store render settings in scene**
+on the Render tab, then save the LXO, to keep these settings and selected AOVs.
 
 The preview refines through separate 1, 4 and target sample-grid renders.
 Live updates check supported scene data every 1.2 seconds and replace obsolete
@@ -36,24 +44,41 @@ The default execution mode is AVX vectorized CPU rendering.
 Coarse polygons can cast stepped shadows even when their shading looks smooth.
 **Surface > Smooth subdivision** rounds the exported mesh and gives MoonRay a
 denser surface. Level 3 removed the stepped boundary in the reported sphere.
-This preview/export option does not edit the Modo model, but it affects every
-exported mesh and can round sharp edges. For mixed scenes, keep **As modeled**
-and mark only the intended objects as subdivision surfaces in Modo.
+This preview/export option does not edit the Modo model and can round sharp edges.
+For mixed scenes, select a mesh and use **Properties > MoonRay**: enable
+**Use object overrides**, then choose subdivision, level and smooth shading.
+The Objects tab offers the same controls with **Apply to selected meshes**.
+Object overrides take priority over the scene default, support Undo, and persist
+in the saved LXO. Without overrides, **As modeled** respects Modo polygon types.
 Modo SUBD and Pixar subdivision polygons are now recognized. Their default
 MoonRay subdivision level is 3; the panel can adjust it. Creases and matching
-Modo's exact subdivision rules are unfinished, and material boundaries can form
-seams because material groups are exported separately.
+Modo's exact subdivision rules are unfinished. Material groups now share one
+mesh topology, avoiding the previous subdivision seams at material boundaries.
+
+### Explicit render passes
+
+Choose passes on **MoonRay > Render Passes (AOVs)**, then **Render EXR**.
+Beauty RGB is always included. Optional named channels are alpha, camera depth,
+shading normal, geometric normal, world position, UV coordinates, wireframe,
+direct diffuse, direct glossy and emission. All are stored in one 32-bit linear
+multichannel EXR. The preview displays beauty only. Exported RDLA includes the
+same pass definitions with an EXR filename beside the exported scene.
 
 ## Supported scene data and limits
 
 Translation covers evaluated polygon meshes, world transforms, perspective
-cameras, material polygon tags, constant diffuse color/roughness/metalness, and
-directional, point and rectangular lights. Appearance and light intensity are
+cameras, material polygon tags, constant diffuse/specular amounts and colors,
+roughness, metalness, emission, clearcoat, IOR and dissolve opacity, plus
+directional, point, rectangular and spot lights. Spot cone and soft edge are
+translated. The first alphabetically named UV and explicit vertex-normal maps
+are exported per face corner; explicit normals apply to smooth polygon surfaces.
+Appearance and light intensity are
 approximate across the two renderers.
 
 The panel does not register as Modo's F9 renderer or implement `ILxExternalRender`.
-It does not yet translate textures/UV shading, layered shader graphs,
-instances/replicators, hair, volumes, motion blur, AOVs, render regions,
+It does not yet translate image/procedural textures, layered shader graphs,
+refractive transparency, subsurface scattering, anisotropy,
+instances/replicators, hair, volumes, motion blur, render regions,
 orthographic cameras, lens effects or animation output. Mesh sampling is not
 Modo's Render Cache tessellation; subdivision creases, procedurals and displacement
 do not have final-render parity. Full scene sampling can pause the UI on large scenes.

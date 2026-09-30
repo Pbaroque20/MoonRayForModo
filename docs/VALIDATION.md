@@ -9,12 +9,21 @@ Test machine: Windows, Intel Core i7-4930K (AVX1, no AVX2), Modo 16.1v9.
 - Qt renderer: real cancellation, replacement image delivery and cleanup pass.
 - Installed graphical Modo: a visible preview renders; moving a test mesh triggers
   live polling and a changed image without manually pressing Preview.
+  The updated installed kit also passes all five menu-to-tab dispatch checks.
+  UI accessibility confirms the MoonRay menu and object controls. Screenshot
+  capture timed out, so pixel-level layout inspection remains unverified.
 - Shadow investigation: the reported coarse sphere reproduces the stepped
   light/shadow boundary. Shadow-terminator compensation alone does not remove it.
   Catmull-Clark subdivision at resolution 8 removes the large polygon-shaped steps.
 - Updated exporter: both Modo SUBD and Pixar PSUB faces are recognized inside
   Modo 16.1v9. Preview subdivision controls capture the expected mesh settings.
-- All 17 plugin tests pass inside an isolated Modo 16.1v9 process, which exits 0.
+- All 21 plugin tests pass inside an isolated Modo 16.1v9 process, which exits 0.
+- Authored UV and vertex-normal maps export with the expected face-corner values.
+- Native object commands execute, query and undo. Scene and object settings
+  survive saving and reopening an LXO in the isolated profile.
+- A real native spotlight render writes 26 float EXR channels: beauty plus all
+  ten exposed AOV choices, with finite pixel values. Shared mesh material parts
+  render with separate colors. `tools/validate_aovs.py` reproduces this check.
 
 Detailed machine-local reports and rendered comparisons are under `test-results/`
 and build logs under `build/`; both are excluded from Git. These checks do not

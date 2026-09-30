@@ -16,6 +16,41 @@ def scene():
 
 
 class CoreTests(unittest.TestCase):
+    def test_aovs_are_explicit_and_only_emitted_for_exr(self):
+        data = scene()
+        data['aovs'] = ['depth', 'normal', 'diffuse_direct']
+        self.assertNotIn('RenderOutput(', rdla.scene_text(data))
+        text = rdla.scene_text(data, output_file='passes.exr')
+        self.assertEqual(text.count('RenderOutput('), 4)
+        self.assertIn('["state_variable"] = 2', text)
+        self.assertIn('["lpe"] = "diffuse"', text)
+        data['aovs'] = ['not-supported']
+        with self.assertRaises(ValueError):
+            rdla.scene_text(data, output_file='passes.exr')
+
+    def test_material_parts_preserve_one_mesh(self):
+        data = scene()
+        data['materials'] = {'red': {'color': [1, 0, 0]}}
+        data['meshes'][0]['faces'] = [[0, 1, 2], [2, 1, 0]]
+        data['meshes'][0]['face_materials'] = ['red', '']
+        text = rdla.scene_text(data)
+        self.assertEqual(text.count('RdlMeshGeometry('), 1)
+        self.assertIn('["part_face_indices"] = {0, 1}', text)
+        self.assertIn('{geometry, "part0", materials["red"]', text)
+
+    def test_uv_and_normal_corner_counts_are_checked(self):
+        data = scene()
+        data['meshes'][0]['uvs'] = [[0, 0]]
+        with self.assertRaises(ValueError):
+            rdla.scene_text(data)
+
+    def test_render_bounces_reach_scene_variables(self):
+        data = scene()
+        data['render_settings'] = {'max_depth': 9, 'max_diffuse_depth': 4}
+        text = rdla.scene_text(data)
+        self.assertIn('["max_depth"] = 9', text)
+        self.assertIn('["max_diffuse_depth"] = 4', text)
+
     def test_subdivision_is_opt_in_for_polygon_meshes(self):
         data = scene()
         self.assertIn('["is_subd"] = false', rdla.scene_text(data))

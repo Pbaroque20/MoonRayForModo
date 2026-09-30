@@ -1,5 +1,6 @@
 """Pure Python scene serializer. Does not import or change the Modo scene."""
 import math
+from . import options
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -43,7 +44,7 @@ def array(values):
     return '{' + ', '.join(values) + '}'
 
 
-def scene_text(scene, width=640, height=360, samples=2, environment=0.15):
+def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     """Serialize a snapshot to an RDLA scene. samples is MoonRay's grid side."""
     if not 16 <= int(width) <= 16384 or not 16 <= int(height) <= 16384:
         raise ValueError("Image dimensions must be between 16 and 16384")
@@ -62,7 +63,7 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15):
                   '  ["intensity"] = %s,' % number(environment), '})']
     for index, light in enumerate(scene.get('lights', [])):
         kind = light['kind']
-        if kind not in ('DistantLight', 'SphereLight', 'RectLight'):
+        if kind not in ('DistantLight', 'SphereLight', 'RectLight', 'SpotLight'):
             raise ValueError('Unsupported light: ' + kind)
         lines += ['table.insert(lights, %s("/modo/light/%s") {' % (kind, index),
                   '  ["node_xform"] = %s,' % matrix(light['matrix']),
@@ -75,6 +76,11 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15):
         elif kind == 'RectLight':
             lines += ['  ["width"] = %s,' % number(light['width']),
                       '  ["height"] = %s,' % number(light['height'])]
+        elif kind == 'SpotLight':
+            cone = light.get('cone', 45)
+            lines += ['  ["outer_cone_angle"] = %s,' % number(cone),
+                      '  ["inner_cone_angle"] = %s,' % number(max(0, cone - 2 * light.get('soft_edge', 0))),
+                      '  ["lens_radius"] = %s,' % number(light.get('radius', .001))]
         lines.append('})')
     lines.append('local lightSet = LightSet("/modo/lightSet")(lights)')
     # Keep material handles in a table to avoid Lua's local variable limit.
@@ -85,7 +91,16 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15):
         lines += ['materials[%s] = UsdPreviewSurface("/modo/material/%s") {' % (string(tag), index),
                   '  ["diffuseColor"] = %s,' % vector(material['color'], 'Rgb'),
                   '  ["roughness"] = %s,' % number(material.get('roughness', 0.4)),
-                  '  ["metallic"] = %s,' % number(material.get('metallic', 0)), ' }']
+                  '  ["metallic"] = %s,' % number(material.get('metallic', 0)),
+                  '  ["emissiveColor"] = %s,' % vector(material.get('emission', [0, 0, 0]), 'Rgb'),
+                  '  ["ior"] = %s,' % number(material.get('ior', 1.5)),
+                  '  ["opacity"] = %s,' % number(material.get('opacity', 1)),
+                  '  ["clearcoat"] = %s,' % number(material.get('clearcoat', 0)),
+                  '  ["clearcoatRoughness"] = %s,' % number(material.get('clearcoat_roughness', .01))]
+        if 'specular' in material and not material.get('metallic', 0):
+            lines += ['  ["useSpecularWorkflow"] = 1,',
+                      '  ["specularColor"] = %s,' % vector(material['specular'], 'Rgb')]
+        lines.append('}')
     for index, mesh in enumerate(scene.get('meshes', [])):
         vertices = mesh['vertices']
         faces = mesh['faces']
@@ -97,6 +112,14 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15):
         tag = mesh.get('material', '')
         if tag not in materials:
             tag = ''
+        face_materials = mesh.get('face_materials')
+        parts = {}
+        if face_materials is not None:
+            if len(face_materials) != len(faces):
+                raise ValueError('Face materials must match the face count')
+            for face_index, face_tag in enumerate(face_materials):
+                face_tag = face_tag if face_tag in materials else ''
+                parts.setdefault(face_tag, []).append(face_index)
         subdivision = bool(mesh.get('subdivision', False))
         level = mesh.get('subdivision_level', 3)
         if type(level) is not int or not 1 <= level <= 5:
@@ -108,14 +131,51 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15):
                   '    ["face_vertex_count"] = %s,' % array(str(len(f)) for f in faces),
                   '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
                   *(['    ["mesh_resolution"] = %d,' % (2 ** level)] if subdivision else []),
-                  '    ["smooth_normal"] = true,', '  }',
-                  '  table.insert(geometries, geometry)',
-                  '  table.insert(assignments, {geometry, "", materials[%s], lightSet})' % string(tag), 'end']
+                  '    ["smooth_normal"] = %s,' % ('true' if mesh.get('smooth', True) else 'false')]
+        for source, attribute, kind in [('uvs', 'uv_list', 'Vec2'), ('normals', 'normal_list', 'Vec3')]:
+            values = mesh.get(source, [])
+            if source == 'normals' and (subdivision or not mesh.get('smooth', True)):
+                continue
+            if values:
+                if len(values) != sum(map(len, faces)):
+                    raise ValueError('Face-varying %s must match the corner count' % source)
+                lines.append('    [%s] = %s,' % (string(attribute), array(vector(v, kind) for v in values)))
+        if parts:
+            lines += ['    ["part_list"] = %s,' % array(string('part%d' % i) for i in range(len(parts))),
+                      '    ["part_face_count_list"] = %s,' % array(str(len(v)) for v in parts.values()),
+                      '    ["part_face_indices"] = %s,' % array(str(f) for v in parts.values() for f in v)]
+        lines += ['  }', '  table.insert(geometries, geometry)']
+        if parts:
+            for part_index, face_tag in enumerate(parts):
+                lines.append('  table.insert(assignments, {geometry, %s, materials[%s], lightSet})' %
+                             (string('part%d' % part_index), string(face_tag)))
+        else:
+            lines.append('  table.insert(assignments, {geometry, "", materials[%s], lightSet})' % string(tag))
+        lines.append('end')
     lines += ['GeometrySet("/modo/geometrySet")(geometries)',
               'local layer = Layer("/modo/layer")(assignments)', 'SceneVariables {',
               '  ["camera"] = camera,', '  ["layer"] = layer,',
               '  ["image_width"] = %d,' % int(width), '  ["image_height"] = %d,' % int(height),
               '  ["pixel_samples"] = %d,' % int(samples),
-              '  ["shadow_terminator_fix"] = 1,',
-              '  ["sampling_mode"] = 0,', '  ["enable_motion_blur"] = false,', '}']
+              '  ["sampling_mode"] = 0,', '  ["enable_motion_blur"] = false,',
+              # Renderer already writes into its private temp folder and atomically
+              # publishes the finished EXR; avoid a second OS-specific staging layer.
+              '  ["two_stage_output"] = false,']
+    for key, value in options.render_values(scene.get('render_settings', {})).items():
+        lines.append('  [%s] = %d,' % (string(key), value))
+    lines.append('}')
+    if output_file:
+        selected = scene.get('aovs', ['alpha'])
+        if any(key not in options.AOVS for key in selected):
+            raise ValueError('Unknown AOV')
+        outputs = [('beauty', {'result': 0}, '')]
+        outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
+        for key, attributes, channel in outputs:
+            lines += ['RenderOutput(%s) {' % string('/modo/aov/' + key),
+                      '  ["file_name"] = %s,' % string(str(output_file)),
+                      '  ["channel_name"] = %s,' % string(channel),
+                      '  ["channel_format"] = 0,', '  ["compression"] = 1,']
+            lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value, str) else number(value))
+                      for attr, value in attributes.items()]
+            lines.append('}')
     return '\n'.join(lines) + '\n'

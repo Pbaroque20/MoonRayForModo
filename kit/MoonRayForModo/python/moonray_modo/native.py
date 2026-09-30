@@ -1,6 +1,7 @@
 """Native Windows renderer discovery and subprocess configuration."""
 import os
 import json
+import tempfile
 from pathlib import Path
 
 
@@ -18,6 +19,8 @@ def find_runtime(root):
 def environment(directory):
     directory = Path(directory)
     env = dict(os.environ)
+    # MoonRay's two-stage EXR writer consults TMPDIR (not Windows TEMP).
+    env['TMPDIR'] = tempfile.gettempdir()
     env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
     dsos = [directory / 'rdl2dso', directory.parent / 'rdl2dso', directory.parent / 'lib' / 'rdl2dso', directory]
     env['RDL2_DSO_PATH'] = os.pathsep.join(str(p) for p in dsos if p.is_dir())

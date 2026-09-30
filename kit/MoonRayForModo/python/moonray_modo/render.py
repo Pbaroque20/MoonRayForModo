@@ -71,7 +71,8 @@ class Renderer(QtCore.QObject):
         self.image_path = self.current_base.with_suffix('.exr' if request['output'] else '.png')
         try:
             text = rdla.scene_text(request['snapshot'], request['width'], request['height'],
-                                   self.sample_grid, request['environment'])
+                                   self.sample_grid, request['environment'],
+                                   str(self.image_path) if request['output'] else None)
             scene.write_text(text, encoding='utf-8')
             env = QtCore.QProcessEnvironment()
             for key, value in native.environment(request['runtime']).items():

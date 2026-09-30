@@ -18,7 +18,8 @@ ET.ElementTree(imports).write(str(config / 'Imports.cfg'), encoding='utf-8', xml
 result = root / 'probe_result.json'
 if result.exists():
     result.unlink()
-commands = '@{%s}\n!app.quit\n' % (root / 'probe_modo.py')
+commands = ('@{%s}\nmoonray.object.level 4\napp.undo\n@{%s}\n!app.quit\n' %
+            (root / 'probe_modo.py', root / 'probe_undo.py'))
 proc = subprocess.Popen(
     [r'C:\Program Files\Modo16.1v9\modo\modo_cl.exe', '-path:user=' + str(profile), '-config:' + str(config)],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

@@ -87,6 +87,13 @@ def start():
         if not panels:
             raise RuntimeError('The installed MoonRay preview did not open.')
         panel = state['panel'] = panels[0]
+        report['menu_pages'] = []
+        for index, page in enumerate(panel.pages):
+            lx.eval('moonray.page ' + page)
+            if panel.tabs.currentIndex() != index:
+                raise RuntimeError('Menu did not select page: ' + page)
+            report['menu_pages'].append(page)
+        lx.eval('moonray.page render')
         panel.runtime.setText(str(ROOT / 'runtime/native-avx'))
         panel.size.setCurrentIndex(3)
         panel.samples.setValue(1)
