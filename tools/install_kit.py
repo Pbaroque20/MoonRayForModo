@@ -20,6 +20,15 @@ if not (runtime / 'validated-render.json').is_file():
 validation = json.loads((runtime / 'validated-render.json').read_text(encoding='utf-8'))
 if validation.get('executable_sha256') != hashlib.sha256((runtime / 'moonray.exe').read_bytes()).hexdigest():
     raise SystemExit('The renderer has changed since its last successful render test.')
+glass_report = root / 'test-results/glass/report.json'
+if not glass_report.is_file():
+    raise SystemExit('Run tools/validate_glass.py before installing the glass-capable kit.')
+glass_validation = json.loads(glass_report.read_text(encoding='utf-8'))
+for name in ('ModoGlassMaterial.so', 'ModoGlassMaterial.so.proxy'):
+    if not (runtime / name).is_file() or glass_validation.get('binaries', {}).get(name) != hashlib.sha256((runtime/name).read_bytes()).hexdigest():
+        raise SystemExit('The glass module has not passed validation: ' + name)
+if not glass_validation.get('passed'):
+    raise SystemExit('Glass render validation failed.')
 
 backup = None
 if destination.exists():

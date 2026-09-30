@@ -184,12 +184,26 @@ def snapshot():
                                     'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
                                     'emission': [c * float(channel(material, 'radiance', 0)) for c in color(material, 'lumiCol')],
                                     'ior': max(1.0, float(channel(material, 'refIndex', 1.5))),
+                                    'transmission': min(1.0, max(0.0, float(channel(material, 'tranAmt', 0)))),
+                                    'transmission_color': color(material, 'tranCol'),
+                                    'refraction_roughness': min(1.0, max(0.0, float(channel(material, 'tranRough', 0)))),
+                                    'presence': 1.0 - min(1.0, max(0.0, float(channel(material, 'dissAmt', 0)))),
                                     'opacity': 1.0 - float(channel(material, 'dissAmt', 0)),
                                     'clearcoat': float(channel(material, 'coatAmt', 0)),
                                     'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
-        if channel(material, 'subsAmt', 0) or channel(material, 'tranAmt', 0) or channel(material, 'aniso', 0):
-            warnings.append('Subsurface, refractive transparency and anisotropy are not translated: ' + material.name)
+        if channel(material, 'subsAmt', 0) or channel(material, 'aniso', 0):
+            warnings.append('Subsurface and anisotropy are not translated: ' + material.name)
+        if channel(material, 'tranAmt', 0):
+            if channel(material, 'tranDist', 0) or channel(material, 'disperse', 0):
+                warnings.append('Glass uses surface tint; absorption distance and dispersion are not translated: ' + material.name)
+            if channel(material, 'metallic', 0) or channel(material, 'coatAmt', 0):
+                warnings.append('Glass uses dielectric Fresnel reflection; metalness and clearcoat are not translated: ' + material.name)
     image_layers(scene, result['materials'], warnings)
+    for tag, material in result['materials'].items():
+        maps = material.get('textures', {})
+        if material['transmission'] > 0 or material['presence'] < 1 or any(k.startswith('tran') for k in maps):
+            if any(k in maps for k in ('specCol', 'coatAmt', 'coatRough', 'metallic')):
+                warnings.append('Glass ignores specular-color, clearcoat and metalness maps: ' + (tag or 'base material'))
     # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
     for item in scene.items('mesh', superType=False):
         if not render_visible(item):

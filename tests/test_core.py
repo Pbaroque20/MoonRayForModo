@@ -17,6 +17,29 @@ def scene():
 
 
 class CoreTests(unittest.TestCase):
+    def test_glass_separates_transmission_and_presence(self):
+        data = scene()
+        data['materials'] = {'': {'color':[.5,.5,.5], 'transmission':.8, 'presence':.7,
+                                  'ior':1.45, 'roughness':.1, 'refraction_roughness':.25,
+                                  'transmission_color':[.2,.9,.3]}}
+        text = rdla.scene_text(data)
+        self.assertIn('ModoGlassMaterial(', text)
+        self.assertIn('["transmission"] = 0.8', text)
+        self.assertIn('["presence"] = 0.7', text)
+        self.assertIn('["refractionRoughness"] = 0.25', text)
+        self.assertNotIn('useSpecularWorkflow', text)
+        data['materials']['']['transmission'] = 0
+        data['materials']['']['presence'] = 1
+        self.assertNotIn('ModoGlassMaterial(', rdla.scene_text(data))
+
+    def test_transmission_texture_selects_glass_even_at_zero_base_amount(self):
+        data = scene()
+        data['materials'] = {'': {'color':[1,1,1], 'textures': {'tranAmt': {'path':'amount.png'}}}}
+        with patch('moonray_modo.textures.prepare', return_value='amount.tx'):
+            text = rdla.scene_text(data)
+        self.assertIn('ModoGlassMaterial(', text)
+        self.assertIn('["transmission"] = bind(ImageMap(', text)
+
     def test_image_bindings_and_safe_texture_paths(self):
         data = scene()
         data['materials'] = {'': {'color': [1,1,1], 'textures': {

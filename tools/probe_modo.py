@@ -79,6 +79,23 @@ try:
     assert len(exported_mesh['uvs']) == 4 and exported_mesh['uvs'][2] == [1, 1]
     assert exported_mesh['normals'] == [[0, 0, 1]] * 4
     result['uv_and_normal_export'] = True
+    glass_material = scene.items('advancedMaterial')[0]
+    glass_channels = {'tranAmt': .8, 'refIndex': 1.45, 'tranRough': .25, 'rough': .1,
+                      'tranCol.R': .2, 'tranCol.G': .9, 'tranCol.B': .3, 'dissAmt': .2}
+    saved_channels = {key: glass_material.channel(key).get() for key in glass_channels}
+    try:
+        for key, value in glass_channels.items():
+            glass_material.channel(key).set(value)
+        glass_snapshot = host.snapshot()
+        glass = glass_snapshot['materials']['']
+        assert abs(glass['transmission']-.8) < 1e-5 and abs(glass['ior']-1.45) < 1e-5
+        assert abs(glass['refraction_roughness']-.25) < 1e-5 and abs(glass['presence']-.8) < 1e-5
+        assert abs(glass['transmission_color'][1]-.9) < 1e-5
+        assert 'ModoGlassMaterial(' in rdla.scene_text(glass_snapshot)
+        result['glass_channel_translation'] = True
+    finally:
+        for key, value in saved_channels.items():
+            glass_material.channel(key).set(value)
     with open(r'C:\Users\Raphael Tobar\MoonRayForModo\test-results\modo-export.rdla', 'w') as out:
         out.write(rdla.scene_text(result['snapshot'], 128, 128))
     lx.eval('select.item {%s} set' % mesh.id)

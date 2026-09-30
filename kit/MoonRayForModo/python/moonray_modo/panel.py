@@ -136,7 +136,7 @@ class Panel(QtWidgets.QWidget):
             checkbox.setChecked(key == 'alpha')
             self.aov_controls[key] = checkbox
             self.pages['aovs'].addRow(checkbox)
-        lighting_note = QtWidgets.QLabel('Uses Modo material colors, diffuse/specular amounts, roughness, metalness, emission, clearcoat and IOR. UV image maps support color, roughness, metalness and clearcoat effects in material-tag masks. First use prepares cached textures. Layer blending, procedural textures and refractive transparency remain unsupported; warnings appear below.')
+        lighting_note = QtWidgets.QLabel('Glass uses Modo Transparency Amount/Color, Refraction Index, Roughness and Transparency Roughness. Use closed meshes for solid glass. Start with IOR 1.5 and Transparency 100%; increase Glossy and Mirror/refraction bounces for multiple glass surfaces. UV images can drive transmission amount, color and roughness. Absorption distance, dispersion and thin-sheet glass are not translated; warnings appear below.')
         lighting_note.setWordWrap(True)
         self.pages['lighting'].addRow(lighting_note)
         save_settings = QtWidgets.QPushButton('Store render settings in scene')

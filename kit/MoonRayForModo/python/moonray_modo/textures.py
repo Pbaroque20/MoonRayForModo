@@ -9,8 +9,9 @@ from . import native
 
 EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
            'rough': 'roughness', 'metallic': 'metallic', 'lumiCol': 'emissiveColor',
-           'coatAmt': 'clearcoat', 'coatRough': 'clearcoatRoughness'}
-COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol'}
+           'coatAmt': 'clearcoat', 'coatRough': 'clearcoatRoughness',
+           'tranAmt': 'transmission', 'tranCol': 'transmissionColor', 'tranRough': 'refractionRoughness'}
+COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol'}
 
 
 def prepare(source, srgb=False):

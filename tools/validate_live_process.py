@@ -15,7 +15,8 @@ sys.path.insert(0, str(root / 'kit/MoonRayForModo/python'))
 from moonray_modo import rdla
 from moonray_modo.render import Renderer
 
-results = root / 'test-results/live-process'
+glass_test = '--glass' in sys.argv
+results = root / ('test-results/glass-live-process' if glass_test else 'test-results/live-process')
 results.mkdir(parents=True, exist_ok=True)
 app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
 renderer = Renderer()
@@ -25,6 +26,8 @@ snapshot = {'camera': {'matrix': rdla.IDENTITY, 'focal_mm': 35, 'film_mm': 36},
                         'vertices': [[-1, -1, -3], [1, -1, -3], [0, 1, -3]], 'faces': [[0, 1, 2]]}],
             'lights': []}
 report = {'passed': False, 'starts': 0, 'images': [], 'errors': []}
+if glass_test:
+    snapshot = json.loads((root/'test-results/glass/scene.json').read_text())
 
 
 def end(error=None):

@@ -89,9 +89,13 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     materials.setdefault('', {'color': [0.5, 0.5, 0.5], 'roughness': 0.4, 'metallic': 0})
     for index, (tag, material) in enumerate(sorted(materials.items())):
         bindings = {}
+        glass = (material.get('transmission', 0) > 0 or material.get('presence', 1) < 1 or
+                 any(k.startswith('tran') for k in material.get('textures', {})))
         for effect, texture in material.get('textures', {}).items():
             if effect not in textures.EFFECTS:
                 raise ValueError('Unsupported image effect: ' + effect)
+            if glass and effect in ('specCol', 'metallic', 'coatAmt', 'coatRough'):
+                continue
             name = '/modo/texture/%d/%s' % (index, effect)
             prepared = textures.prepare(texture['path'], texture.get('srgb', False))
             lines += ['ImageMap(%s) {' % string(name),
@@ -101,6 +105,20 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
                       '  ["gain_offset_enabled"] = true,',
                       '  ["gain"] = %s,' % vector([texture.get('gain', 1)] * 3, 'Rgb'), '}']
             bindings[textures.EFFECTS[effect]] = 'bind(ImageMap(%s))' % string(name)
+        if glass:
+            lines += ['materials[%s] = ModoGlassMaterial("/modo/material/%s") {' % (string(tag), index),
+                      '  ["transmission"] = %s,' % number(material.get('transmission', 0)),
+                      '  ["transmissionColor"] = %s,' % vector(material.get('transmission_color', [1, 1, 1]), 'Rgb'),
+                      '  ["ior"] = %s,' % number(material.get('ior', 1.5)),
+                      '  ["roughness"] = %s,' % number(material.get('roughness', 0)),
+                      '  ["refractionRoughness"] = %s,' % number(material.get('refraction_roughness', 0)),
+                      '  ["presence"] = %s,' % number(material.get('presence', 1)),
+                      '  ["diffuseColor"] = %s,' % vector(material['color'], 'Rgb'),
+                      '  ["emissiveColor"] = %s,' % vector(material.get('emission', [0, 0, 0]), 'Rgb')]
+            for attribute, binding in bindings.items():
+                lines.append('  [%s] = %s,' % (string(attribute), binding))
+            lines.append('}')
+            continue
         lines += ['materials[%s] = UsdPreviewSurface("/modo/material/%s") {' % (string(tag), index),
                   '  ["diffuseColor"] = %s,' % vector(material['color'], 'Rgb'),
                   '  ["roughness"] = %s,' % number(material.get('roughness', 0.4)),

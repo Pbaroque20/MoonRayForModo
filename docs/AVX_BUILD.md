@@ -100,8 +100,14 @@ revision. Do not also apply `configurable-x86-isa.patch`, which overlaps them.
 
 The local package cache retains dependency downloads. Rolling package repositories
 may not supply identical versions later. A fresh-machine bootstrap and
-cross-machine deployment remain unverified. Local staging records 302 native
+cross-machine deployment remain unverified. Local staging records 304 native
 binaries; its manifest is in `runtime/native-avx/build-manifest.json`.
+
+The glass adapter is maintained in `native-port/materials/ModoGlass`, with C++
+and AVX ISPC implementations using MoonRay's coupled dielectric BSDFs. The
+`moonray_desktop_renderer` target builds it and its proxy; `stage_runtime.py`
+includes both. Run `validate_glass.py` after staging and before installing the
+kit. Installation checks the validated glass module hashes as well as the renderer.
 
 ## Earlier community runtime
 

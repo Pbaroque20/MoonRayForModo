@@ -1,0 +1,15 @@
+{
+  "name": "ModoGlassMaterial",
+  "type": "Material",
+  "attributes": {
+    "attrTransmission": {"name":"transmission", "type":"Float", "default":"1.0f", "flags":"FLAGS_BINDABLE"},
+    "attrTransmissionColor": {"name":"transmissionColor", "type":"Rgb", "default":"Rgb(1.0f, 1.0f, 1.0f)", "flags":"FLAGS_BINDABLE"},
+    "attrIor": {"name":"ior", "type":"Float", "default":"1.5f", "flags":"FLAGS_BINDABLE"},
+    "attrRoughness": {"name":"roughness", "type":"Float", "default":"0.0f", "flags":"FLAGS_BINDABLE"},
+    "attrRefractionRoughness": {"name":"refractionRoughness", "type":"Float", "default":"0.0f", "flags":"FLAGS_BINDABLE"},
+    "attrPresence": {"name":"presence", "type":"Float", "default":"1.0f", "flags":"FLAGS_BINDABLE"},
+    "attrDiffuseColor": {"name":"diffuseColor", "type":"Rgb", "default":"Rgb(0.0f, 0.0f, 0.0f)", "flags":"FLAGS_BINDABLE"},
+    "attrEmissiveColor": {"name":"emissiveColor", "type":"Rgb", "default":"Rgb(0.0f, 0.0f, 0.0f)", "flags":"FLAGS_BINDABLE"}
+  },
+  "labels": {"aovReflection":"specular", "aovTransmission":"transmission", "aovDiffuse":"diffuse"}
+}

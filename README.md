@@ -60,11 +60,37 @@ mesh topology, avoiding the previous subdivision seams at material boundaries.
 Choose passes on **MoonRay > Render Passes (AOVs)**, then **Render EXR**.
 Beauty RGB is always included. Optional named channels are alpha, camera depth,
 shading normal, geometric normal, world position, UV coordinates, wireframe,
-direct diffuse, direct glossy and emission. All are stored in one 32-bit linear
+direct diffuse, direct glossy, emission and refraction/transmission. All are stored in one 32-bit linear
 multichannel EXR. The preview displays beauty only. Exported RDLA includes the
 same pass definitions with an EXR filename beside the exported scene.
 
 ## Supported scene data and limits
+
+### Glass and refraction
+
+Use Modo's standard material **Transparency Amount**, **Transparency Color**,
+**Refraction Index**, **Roughness**, and **Transparency Roughness**. For clear
+glass, start with transparency 100%, white transparency color, IOR 1.5, and both
+roughness values at zero. Raise Transparency Roughness for frosted glass.
+Use closed meshes with outward-facing normals; give window glass actual thickness.
+The exporter automatically selects the native AVX `ModoGlassMaterial` shader.
+Reflection uses dielectric Fresnel from IOR, independently of Modo's specular color.
+Dissolve controls geometric presence separately from refractive transmission.
+
+Total and mirror/refraction bounce defaults are now 8. Older scene-stored settings
+are preserved: increase those limits, and Glossy bounces for rough glass, when
+rendering through several surfaces. Select **Refraction / transmission** in the
+AOV tab to export light paths whose first surface interaction is transmission.
+UV maps can drive transmission amount, color and transparency roughness using the
+same image-layer restrictions described below.
+
+Tint is applied at surfaces, not as distance-based volumetric absorption.
+Absorption distance, dispersion, thin-sheet mode, nested dielectric priorities,
+glass clearcoat/metalness, and exact Modo reflection-strength parity remain
+unsupported. Focused caustics are not validated. Opaque materials retain the
+previous shader path; its upstream specular-color workflow is incomplete.
+
+### Other scene translation
 
 Translation covers evaluated polygon meshes, world transforms, perspective
 cameras, material polygon tags, constant diffuse/specular amounts and colors,
@@ -77,7 +103,7 @@ approximate across the two renderers.
 
 The panel does not register as Modo's F9 renderer or implement `ILxExternalRender`.
 UV image layers support diffuse/specular/emission color, roughness, metalness,
-clearcoat amount and clearcoat roughness. Put an image layer directly in a
+clearcoat amount/roughness and glass transmission amount/color/roughness. Put an image layer directly in a
 material-tag mask containing its material, select **UV projection** and a named
 UV map, and use **Normal blending, 100% opacity**. One image per effect and one
 UV set per material are supported. Set data maps to a linear/no-conversion color
@@ -94,7 +120,7 @@ mesh topology and affect subdivision seams.
 
 It does not yet translate procedural textures, UDIM image folders, normal/bump
 image effects, image alpha compositing, layered shader graphs,
-refractive transparency, subsurface scattering, anisotropy,
+subsurface scattering, anisotropy,
 instances/replicators, hair, volumes, motion blur, render regions,
 orthographic cameras, lens effects or animation output. Mesh sampling is not
 Modo's Render Cache tessellation; subdivision creases, procedurals and displacement
@@ -116,6 +142,9 @@ GPU rendering is disabled. The native port supports one Windows processor group
 - `build/native-renderer-avx/test.log`: seven passing native component tests,
   including AVX arithmetic, the Windows ISPC mask ABI, codecs, platform services
   and Embree.
+- `test-results/glass/report.json`: actual clear, tinted, frosted, partial and
+  dissolved glass renders; scalar/AVX parity, IOR-dependent ray bending and a
+  non-black transmission EXR pass. Shader checksums gate installation.
 
 These are focused checks, not the complete upstream regression suite or a claim
 of scene parity. The older downloaded community Windows runtime crashed at an
