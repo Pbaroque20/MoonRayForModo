@@ -1719,6 +1719,20 @@ index d45bb68..8740ee0 100644
      // return unused memory from malloc() arena to OS so process memory usage
      // stats are accurate
      malloc_trim(0);
+diff --git a/lib/rendering/shading/BasicTexture.cc b/lib/rendering/shading/BasicTexture.cc
+index 31c070c..ace62fc 100644
+--- a/lib/rendering/shading/BasicTexture.cc
++++ b/lib/rendering/shading/BasicTexture.cc
+@@ -185,6 +185,9 @@ public:
+             mTextureOpt[i].swrap = getOIIOWrap(wrapS);
+             mTextureOpt[i].twrap = getOIIOWrap(wrapT);
+             mTextureOpt[i].subimagename.clear();
++            // TextureSampler expands grayscale to RGB; a missing fourth channel
++            // must be opaque, matching ImageMap's documented alpha-only behavior.
++            mTextureOpt[i].fill = 1.0f;
+         }
+ 
+         MNRY_ASSERT(mTextureHandles[0]);
 diff --git a/lib/rendering/shading/CMakeLists.txt b/lib/rendering/shading/CMakeLists.txt
 index fb5d5cb..ccc9a25 100644
 --- a/lib/rendering/shading/CMakeLists.txt

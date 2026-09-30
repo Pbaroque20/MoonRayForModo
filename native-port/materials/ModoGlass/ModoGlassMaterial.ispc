@@ -7,7 +7,11 @@ ISPC_UTIL_EXPORT_UNIFORM_STRUCT_TO_HEADER(ModoGlassMaterial);
 
 static void shade(const uniform Material * uniform me, uniform ShadingTLState * uniform tls,
                   const varying State& state, varying BsdfBuilder& builder) {
-    const Vec3f N = getN(state);
+    Vec3f N = getN(state);
+    if (!isZero(length(state.mdPds))) {
+        const ReferenceFrame frame = ReferenceFrame_ctor(N, normalize(state.mdPds));
+        N = normalize(localToGlobal(frame, evalAttrNormal(me, tls, state)));
+    }
     const float ior = max(1.0f, evalAttrIor(me, tls, state));
     const float transmission = saturate(evalAttrTransmission(me, tls, state));
     const float roughness = saturate(evalAttrRoughness(me, tls, state));

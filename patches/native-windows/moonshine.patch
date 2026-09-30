@@ -1,0 +1,28 @@
+diff --git a/lib/material/dwabase/DwaBaseLayerable.cc b/lib/material/dwabase/DwaBaseLayerable.cc
+index 9787e02..c0181d7 100644
+--- a/lib/material/dwabase/DwaBaseLayerable.cc
++++ b/lib/material/dwabase/DwaBaseLayerable.cc
+@@ -449,7 +449,8 @@ DwaBaseLayerable::createLobes(const DwaBaseLayerable * const dwaBaseLayerable,
+             transmissionRoughnessClamped = scene_rdl2::math::max(transmissionRoughness, minRoughness);
+         }
+ 
+-        if (roughnessClamped < scene_rdl2::math::sEpsilon) {
++        if (roughnessClamped < scene_rdl2::math::sEpsilon &&
++            (scene_rdl2::math::isZero(transmissionWeight) || transmissionRoughnessClamped < scene_rdl2::math::sEpsilon)) {
+             const moonray::shading::MirrorBSDF dielectricBSDF(
+                     N,
+                     reflIor,
+diff --git a/lib/material/dwabase/ispc/DwaBaseLayerable.ispc b/lib/material/dwabase/ispc/DwaBaseLayerable.ispc
+index 253aaf4..76cd001 100644
+--- a/lib/material/dwabase/ispc/DwaBaseLayerable.ispc
++++ b/lib/material/dwabase/ispc/DwaBaseLayerable.ispc
+@@ -1007,7 +1007,8 @@ DWABASE_createLobes(const uniform Material * uniform me,
+         }
+ 
+         
+-        if (roughnessClamped < sEpsilon) {
++        if (roughnessClamped < sEpsilon &&
++            (isZero(transmissionWeight) || transmissionRoughnessClamped < sEpsilon)) {
+             MirrorBSDF dielectricBSDF;
+             MirrorBSDF_init(dielectricBSDF,
+                             N,

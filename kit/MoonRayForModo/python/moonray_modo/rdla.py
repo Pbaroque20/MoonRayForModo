@@ -91,20 +91,13 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         bindings = {}
         glass = (material.get('transmission', 0) > 0 or material.get('presence', 1) < 1 or
                  any(k.startswith('tran') for k in material.get('textures', {})))
-        for effect, texture in material.get('textures', {}).items():
-            if effect not in textures.EFFECTS:
-                raise ValueError('Unsupported image effect: ' + effect)
-            if glass and effect in ('specCol', 'metallic', 'coatAmt', 'coatRough'):
-                continue
-            name = '/modo/texture/%d/%s' % (index, effect)
-            prepared = textures.prepare(texture['path'], texture.get('srgb', False))
-            lines += ['ImageMap(%s) {' % string(name),
-                      '  ["texture"] = %s,' % string(prepared),
-                      '  ["gamma"] = 0,',
-                      '  ["wrap_around"] = %s,' % ('true' if texture.get('repeat', True) else 'false'),
-                      '  ["gain_offset_enabled"] = true,',
-                      '  ["gain"] = %s,' % vector([texture.get('gain', 1)] * 3, 'Rgb'), '}']
-            bindings[textures.EFFECTS[effect]] = 'bind(ImageMap(%s))' % string(name)
+        from .graph import bindings as graph_bindings
+        moonshine = material.get('shader') == 'DwaBaseMaterial'
+        bindings = graph_bindings(material, index, lines, glass and not moonshine)
+        if moonshine:
+            from .moonshine import emit
+            emit(material, tag, index, bindings, lines)
+            continue
         if glass:
             lines += ['materials[%s] = ModoGlassMaterial("/modo/material/%s") {' % (string(tag), index),
                       '  ["transmission"] = %s,' % number(material.get('transmission', 0)),
@@ -177,13 +170,25 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
             lines += ['    ["part_list"] = %s,' % array(string('part%d' % i) for i in range(len(parts))),
                       '    ["part_face_count_list"] = %s,' % array(str(len(v)) for v in parts.values()),
                       '    ["part_face_indices"] = %s,' % array(str(f) for v in parts.values() for f in v)]
-        lines += ['  }', '  table.insert(geometries, geometry)']
+        lines += ['  }']
         if parts:
             for part_index, face_tag in enumerate(parts):
                 lines.append('  table.insert(assignments, {geometry, %s, materials[%s], lightSet})' %
                              (string('part%d' % part_index), string(face_tag)))
         else:
             lines.append('  table.insert(assignments, {geometry, "", materials[%s], lightSet})' % string(tag))
+        if 'instances' in mesh:
+            if mesh['instances']:
+                lines += ['  local instances = RdlInstancerGeometry("/modo/instances/%s") {' % index,
+                          '    ["method"] = 2,',
+                          '    ["references"] = {geometry},',
+                          '    ["use_reference_xforms"] = false,',
+                          '    ["use_reference_attributes"] = true,',
+                          '    ["xform_list"] = %s,' % array(matrix(m) for m in mesh['instances']),
+                          '  }', '  table.insert(geometries, instances)',
+                          '  table.insert(assignments, {instances, "", materials[%s], lightSet})' % string(tag)]
+        else:
+            lines.append('  table.insert(geometries, geometry)')
         lines.append('end')
     lines += ['GeometrySet("/modo/geometrySet")(geometries)',
               'local layer = Layer("/modo/layer")(assignments)', 'SceneVariables {',

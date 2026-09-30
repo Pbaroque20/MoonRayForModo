@@ -38,7 +38,7 @@ class CoreTests(unittest.TestCase):
         with patch('moonray_modo.textures.prepare', return_value='amount.tx'):
             text = rdla.scene_text(data)
         self.assertIn('ModoGlassMaterial(', text)
-        self.assertIn('["transmission"] = bind(ImageMap(', text)
+        self.assertIn('["transmission"] = bind(ModoTextureMap(', text)
 
     def test_image_bindings_and_safe_texture_paths(self):
         data = scene()
@@ -48,8 +48,8 @@ class CoreTests(unittest.TestCase):
         with patch('moonray_modo.textures.prepare', return_value='C:/cache/a"b.tx') as prepare:
             text = rdla.scene_text(data)
         self.assertEqual(prepare.call_count, 2)
-        self.assertIn('["diffuseColor"] = bind(ImageMap(', text)
-        self.assertIn('["roughness"] = bind(ImageMap(', text)
+        self.assertIn('["diffuseColor"] = bind(ModoTextureMap(', text)
+        self.assertIn('["roughness"] = bind(ModoTextureMap(', text)
         self.assertIn('a\\"b.tx', text)
 
     def test_unknown_image_effect_rejected(self):

@@ -28,7 +28,11 @@ float ModoGlassMaterial::presence(const scene_rdl2::rdl2::Material* self, TLStat
 void ModoGlassMaterial::shade(const scene_rdl2::rdl2::Material* self, TLState* tls,
                               const State& state, BsdfBuilder& builder) {
     const auto* me = static_cast<const ModoGlassMaterial*>(self);
-    const Vec3f N = state.getN();
+    Vec3f N = state.getN();
+    if (!isZero(length(state.getdPds()))) {
+        const ReferenceFrame frame(N, normalize(state.getdPds()));
+        N = normalize(frame.localToGlobal(evalVec3f(me, attrNormal, tls, state)));
+    }
     const float ior = max(1.0f, evalFloat(me, attrIor, tls, state));
     const float transmission = saturate(evalFloat(me, attrTransmission, tls, state));
     const float roughness = saturate(evalFloat(me, attrRoughness, tls, state));

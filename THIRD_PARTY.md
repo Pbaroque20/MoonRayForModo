@@ -1,6 +1,6 @@
 # Third-party components
 
-The plugin's source is original project code licensed under Apache-2.0. It uses
+The plugin's original project code is licensed under MIT (see `LICENSE`). It uses
 Modo's installed `lx`, `lxifc`, `lxu`, `modo`, and PySide2 APIs. No Modo SDK or
 Foundry binaries are included in the plugin ZIP.
 

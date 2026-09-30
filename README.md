@@ -2,7 +2,7 @@
 
 Target: **Modo 16.1v9, Windows x64, Python 3.9**.
 
-The public MoonRay CPU renderer and its upstream shader modules now build as
+The public MoonRay CPU renderer, its core shader modules and Moonshine DwaBaseMaterial build as
 native Windows executables and DLLs. Both scalar and vectorized rendering pass tested 
 on an Intel Core i7-4930K (AVX1, without AVX2). The installed kit has
 rendered a real Modo scene in a visible preview panel. Automatic scene-edit
@@ -36,6 +36,34 @@ The preview refines through separate 1, 4 and target sample-grid renders.
 Live updates check supported scene data every 1.2 seconds and replace obsolete
 render requests. This is image-pass refinement, not persistent bucket streaming.
 The default execution mode is AVX vectorized CPU rendering.
+
+### Docking the preview
+
+Select the pane you want to use in Modo's Render layout, then choose
+**MoonRay > Use MoonRay in Current Viewport** (`moonray.dock`). This replaces that
+pane with a native Modo Custom View, using Modo's own viewport borders and layout
+persistence. The viewport menu can switch it back. **Settings** hides the controls
+to give the image more space. This is a MoonRay viewport within the layout;
+it does not feed Modo's built-in F9 Render View or its render slots.
+
+### MoonShine Material
+
+Select one or more mesh items and choose **MoonRay > Assign MoonShine Material to
+Mesh**. This assigns all their polygons to a new material-tag group in the Shader
+Tree and selects **MoonShine Material**. The assignment supports Undo. Its
+**MoonShine Material** property sheet exposes base color, diffuse amount, metalness,
+reflection/refraction roughness, IOR, transmission color/amount, clearcoat, emission,
+bump distance, dissolve and thin geometry. Values and the shader choice save in
+the LXO. **Use MoonShine (DwaBaseMaterial)** can also switch an existing selected
+Modo material to this backend without replacing its polygon assignments.
+
+Moonshine is the upstream shader collection. This entry renders with the real
+`DwaBaseMaterial`, compiled for native Windows AVX1; it is not just a renamed Modo
+material. Modo's standard material channels store the exposed values, so supported
+image layers above it work too. Dielectric reflection uses IOR; specular-color
+maps are not translated for this shader. The full Moonshine shader catalog and
+every DwaBase attribute are not exposed. Other Modo materials retain their existing
+translation until explicitly switched.
 
 ### Jagged shadows on smooth polygon objects
 
@@ -94,20 +122,36 @@ Translation covers evaluated polygon meshes, world transforms, perspective
 cameras, material polygon tags, constant diffuse/specular amounts and colors,
 roughness, metalness, emission, clearcoat, IOR and dissolve opacity, plus
 directional, point, rectangular and spot lights. Spot cone and soft edge are
-translated. The first alphabetically named UV and explicit vertex-normal maps
-are exported per face corner; explicit normals apply to smooth polygon surfaces.
+translated. A material's selected UV map and the first alphabetically named explicit
+vertex-normal map are exported per face corner; explicit normals apply to smooth
+polygon surfaces.
 Appearance and light intensity are
 approximate across the two renderers.
 
 The panel does not register as Modo's F9 renderer or implement `ILxExternalRender`.
 UV image layers support diffuse/specular/emission color, roughness, metalness,
-clearcoat amount/roughness and glass transmission amount/color/roughness. Put an image layer directly in a
-material-tag mask containing its material, select **UV projection** and a named
-UV map, and use **Normal blending, 100% opacity**. One image per effect and one
-UV set per material are supported. Set data maps to a linear/no-conversion color
-space. Color maps in default sRGB are converted to linear before rendering.
-Unusual color spaces, UV transforms, layer corrections and blending are reported
-as unsupported. Missing UV values stop export rather than use arbitrary coordinates.
+clearcoat amount/roughness, glass transmission amount/color/roughness, tangent-space
+normal maps (`normal`) and bump maps (`bump`). Put layers above the material in its
+material-tag mask and choose **UV projection** and a named UV map. One UV set per
+material is supported. Normal/bump images are sampled as raw data; color maps in
+default sRGB are converted to linear. Bump uses the material's **Bump Distance** in
+scene units. Normal-map red/green inversion and layer opacity are supported.
+
+Multiple texture layers for an effect evaluate bottom to top. Normal, Multiply,
+Add, Subtract and Screen blending, opacity, inversion and color-image alpha are
+translated. Constant layers, square UV checkers and static UV fractal noise are
+supported; procedural filtering and noise patterns are approximations, not exact
+Modo matches. Organizational groups work inside a material-tag mask. Group opacity,
+selection masks and compositing multiple material BSDFs are not supported; an upper
+material replaces lower material layers and produces a warning. Unsupported modes
+are reported. UV repeat counts work; arbitrary UV rotations/transforms and image
+color corrections remain unsupported. Missing named UV values stop export.
+
+Visible mesh instances share a MoonRay geometry prototype, including its materials,
+UVs, normals and subdivision settings. Instance world transforms and render
+visibility are sampled live. A hidden source can supply a visible instance with an
+explicit render-visibility override. Instances inherit source materials and MoonRay
+object settings; per-instance material overrides and replicators are not translated.
 
 Textures are converted into tiled, mipmapped `.tx` files under
 `%LOCALAPPDATA%\MoonRayForModo\Textures`. First conversion can pause the UI;
@@ -116,10 +160,9 @@ trigger live updates. RDLA exports reference this local cache; copy referenced
 textures when moving exports to another computer. Different UV sets can split
 mesh topology and affect subdivision seams.
 
-It does not yet translate procedural textures, UDIM image folders, normal/bump
-image effects, image alpha compositing, layered shader graphs,
-subsurface scattering, anisotropy,
-instances/replicators, hair, volumes, motion blur, render regions,
+It does not yet translate other procedural textures/projections, UDIM image folders,
+object-space/engine-specific normal-map effects, arbitrary layered BSDF graphs,
+subsurface scattering, anisotropy, replicators, hair, volumes, motion blur, render regions,
 orthographic cameras, lens effects or animation output. Mesh sampling is not
 Modo's Render Cache tessellation; subdivision creases, procedurals and displacement
 do not have final-render parity. Full scene sampling can pause the UI on large scenes.
@@ -143,6 +186,11 @@ GPU rendering is disabled. The native port supports one Windows processor group
 - `test-results/glass/report.json`: actual clear, tinted, frosted, partial and
   dissolved glass renders; scalar/AVX parity, IOR-dependent ray bending and a
   non-black transmission EXR pass. Shader checksums gate installation.
+- `test-results/surface-updates/report.json`, `test-results/moonshine/report.json`:
+  normal/bump maps, layer math, procedural patterns, shared-instance parity and
+  the real DwaBase material. Validated shader hashes also gate installation.
+- `test-results/material-host.json`, `test-results/dock.json`: material assignment,
+  properties, Undo, LXO persistence and native viewport embedding in Modo 16.1v9.
 
 These are focused checks, not the complete upstream regression suite or a claim
 of scene parity. The older downloaded community Windows runtime crashed at an

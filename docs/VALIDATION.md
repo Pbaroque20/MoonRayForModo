@@ -27,8 +27,8 @@ Test machine: Windows, Intel Core i7-4930K (AVX1, no AVX2), Modo 16.1v9.
 - Image-texture fixture: a Modo image layer exports its selected named UV set,
   converts sRGB into a tiled linear texture, and produces the expected red/green
   regions in an actual MoonRay render. Editing the source invalidates the cache
-  and swaps those rendered regions. Missing UVs and unsupported opacity blending
-  are checked explicitly. Scripts: `probe_image_textures.py`, `validate_textures.py`.
+  and swaps those rendered regions. Missing UVs and layer opacity are checked
+  explicitly. Scripts: `probe_image_textures.py`, `validate_textures.py`.
 - Glass: standard Modo transparency amount/color, IOR, reflection/transparency
   roughness and dissolve channels reach the exported material. Native renders
   verify clear, tinted, frosted, partially transmitting and dissolved spheres.
@@ -48,3 +48,32 @@ establish full production scene compatibility or upstream regression coverage.
 The source repository excludes compiled runtimes, downloaded dependencies,
 upstream checkouts, toolchains, user scenes and Modo profiles. The native port's
 patches, pinned source revisions, build configuration and scripts are included.
+
+## Surface, material and docking update
+
+- `validate_surface_updates.py`: real scalar/AVX renders compare neutral and tilted
+  tangent normals, flat/ramp bump maps, image alpha, ordered texture layers,
+  checker and approximate fractal noise. Moonshine normals are also exercised.
+  Shared instances match explicit transformed copies, including material parts.
+- `probe_surface_updates.py`: inside Modo 16.1v9, checks named UVs, raw normal-map
+  color, bump distance, Shader Tree layer order, disabled layers, shared instances
+  and an explicitly visible instance with a hidden source.
+- `validate_glass.py --moonshine`: the actual DwaBaseMaterial passes clear/frosted
+  scalar/AVX comparisons, IOR changes, tint, transmission/presence separation and
+  finite nonzero transmission AOV output. A small upstream patch corrects the
+  mirror branch ignoring independent transmission roughness at zero reflection
+  roughness. Shader and supporting library checksums are recorded.
+- `probe_material.py`: mesh material assignment, shader/property queries, RDLA
+  output and LXO save/reopen are verified inside Modo. Running it with
+  `run_script_probe.py probe_material.py --material-undo` also confirms Undo
+  removes the new shader and restores the previous polygon material tags.
+- `probe_dock.py`: a graphical Modo 16.1v9 test confirms the current viewport
+  changes to `customview` and contains the embedded preview. A Qt image capture
+  confirms Modo's native viewport border. This is not the F9 render buffer API.
+- `validate_live_process.py --surface`: a textured, instanced Moonshine scene
+  passes real Qt render cancellation, replacement, image delivery and cleanup.
+- The texture sampler fills a missing alpha channel with one, so RGB-only images
+  remain opaque when composited. The named-UV/color-cache regression covers this.
+
+Remaining limits include general BSDF layering, exact Modo procedural parity,
+instance material overrides and the full Moonshine shader/attribute catalog.

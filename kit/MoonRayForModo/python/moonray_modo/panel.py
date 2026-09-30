@@ -45,7 +45,7 @@ class Panel(QtWidgets.QWidget):
         self.timer.setInterval(1200)
         self.timer.timeout.connect(self._live_tick)
         layout = QtWidgets.QVBoxLayout(self)
-        title = QtWidgets.QLabel('MoonRay for Modo · Native Windows · Prototype 0.1')
+        title = QtWidgets.QLabel('MoonRay Preview')
         layout.addWidget(title)
         self.tabs = QtWidgets.QTabWidget()
         self.pages = {}
@@ -153,7 +153,11 @@ class Panel(QtWidgets.QWidget):
         self.final.clicked.connect(self.render_final)
         export = QtWidgets.QPushButton('Export scene…')
         export.clicked.connect(self.export)
-        for widget in (self.start, stop, self.live, self.final, export):
+        self.settings_toggle = QtWidgets.QPushButton('Settings')
+        self.settings_toggle.setCheckable(True)
+        self.settings_toggle.setChecked(True)
+        self.settings_toggle.toggled.connect(self.tabs.setVisible)
+        for widget in (self.start, stop, self.live, self.settings_toggle, self.final, export):
             actions.addWidget(widget)
         layout.addLayout(actions)
         self.preview = Preview()
@@ -163,10 +167,10 @@ class Panel(QtWidgets.QWidget):
         split.setStretchFactor(1, 1)
         split.setSizes([420, 580])
         layout.addWidget(split, 1)
-        self.status = QtWidgets.QLabel('Ready. Requires a native MoonRay runtime compatible with your CPU.')
+        self.status = QtWidgets.QLabel('Ready. Press Preview to render.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.warnings = QtWidgets.QLabel('Basic polygon meshes, perspective camera and constant materials. See README for limits.')
+        self.warnings = QtWidgets.QLabel('Scene compatibility notices appear here after export.')
         self.warnings.setWordWrap(True)
         layout.addWidget(self.warnings)
         footer = QtWidgets.QHBoxLayout()
@@ -193,6 +197,7 @@ class Panel(QtWidgets.QWidget):
 
     def show_page(self, page):
         if page in self.pages:
+            self.settings_toggle.setChecked(True)
             self.tabs.setCurrentIndex(list(self.pages).index(page))
 
     def _load_settings(self):

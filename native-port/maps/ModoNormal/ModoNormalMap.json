@@ -1,0 +1,3 @@
+{"name":"ModoNormalMap","type":"NormalMap","attributes":{
+ "attrInput":{"name":"input","type":"Vec3f","default":"Vec3f(0,0,1)","flags":"FLAGS_BINDABLE"}
+}}

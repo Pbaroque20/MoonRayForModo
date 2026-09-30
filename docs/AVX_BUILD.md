@@ -12,6 +12,17 @@ image pixels and successful process exits. An invalid output path fails promptly
 Seven native component tests pass. Real Qt process cancellation, replacement
 rendering, image delivery and temporary-file cleanup pass.
 
+`native-port/moonshine/CMakeLists.txt` builds the real Moonshine DwaBaseMaterial
+and its interpolation, projection, glitter and material libraries with the same
+AVX1 flags. Generated ISPC headers are staged explicitly for Windows. The small
+`patches/native-windows/moonshine.patch` fixes independent refraction roughness
+being ignored by the mirror branch when reflection roughness is zero.
+
+Original adapter DSOs add ordered texture blending, tangent normal/bump evaluation
+and the NormalMap interface needed by Moonshine. Before installing a new build,
+run `validate_surface_updates.py` and `validate_glass.py --moonshine` in addition
+to the existing renderer/glass checks. The installer checks these shader hashes.
+
 The kit is installed under `%APPDATA%/Luxology/Kits/MoonRayForModo`.
 The exact `C:/Program Files/Modo16.1v9/modo/modo.exe` opened its visible preview.
 A real mesh move automatically produced a different rendered image. The test
@@ -100,7 +111,7 @@ revision. Do not also apply `configurable-x86-isa.patch`, which overlaps them.
 
 The local package cache retains dependency downloads. Rolling package repositories
 may not supply identical versions later. A fresh-machine bootstrap and
-cross-machine deployment remain unverified. Local staging records 304 native
+cross-machine deployment remain unverified. Local staging records 315 native
 binaries; its manifest is in `runtime/native-avx/build-manifest.json`.
 
 The glass adapter is maintained in `native-port/materials/ModoGlass`, with C++

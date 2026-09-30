@@ -154,3 +154,66 @@ lx.bless(SaveSceneSettings, 'moonray.sceneSettings')
 lx.bless(SaveObjectSettings, 'moonray.objectSettings')
 for _key in ('override', 'subdivision', 'level', 'smooth'):
     lx.bless(object_command(_key), 'moonray.object.' + _key)
+
+
+class AssignMaterial(lxu.command.BasicCommand):
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+    def basic_Enable(self, msg):
+        from moonray_modo import properties
+        return bool(properties.selected_meshes())
+
+    def basic_Execute(self, msg, flags):
+        from moonray_modo.materials import assign
+        assign()
+
+
+def material_option(key):
+    class MaterialOption(lxu.command.BasicCommand):
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('value',lx.symbol.sTYPE_BOOLEAN)
+            self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+
+        def cmd_Flags(self):
+            return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+        def basic_Enable(self,msg):
+            from moonray_modo.materials import selected
+            return bool(selected())
+
+        def basic_Execute(self,msg,flags):
+            from moonray_modo import properties
+            from moonray_modo.materials import selected
+            for item in selected():
+                values=properties.read(item)
+                values[key]=('DwaBaseMaterial' if self.dyna_Int(0) else '') if key=='shader' else bool(self.dyna_Int(0))
+                properties.write(item,values)
+
+        def cmd_Query(self,index,query):
+            from moonray_modo import properties
+            from moonray_modo.materials import selected
+            values=lx.object.ValueArray(query)
+            for item in selected():
+                value=properties.read(item).get(key)
+                values.AddInt(int(value=='DwaBaseMaterial' if key=='shader' else bool(value)))
+
+        def basic_Notifier(self,index):
+            if index==0: return ('select.event','item +v')
+            if index==1: return ('scene.edit','')
+    return MaterialOption
+
+lx.bless(AssignMaterial,'moonray.material.assign')
+lx.bless(material_option('shader'),'moonray.material.enable')
+lx.bless(material_option('thin_geometry'),'moonray.material.thin')
+
+
+class DockPreview(lxu.command.BasicCommand):
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_UI
+
+    def basic_Execute(self,msg,flags):
+        lx.eval('viewport.restore base.MoonRayForModoViewport false customview')
+
+lx.bless(DockPreview,'moonray.dock')

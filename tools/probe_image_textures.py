@@ -64,9 +64,8 @@ try:
     assert snapshot['materials']['texture_test']['textures']['diffCol']['uv_map'] == 'PaintUV'
     assert snapshot['meshes'][0]['uvs'][2] == [1, 1]
     layer.channel('opacity').set(.5)
-    rejected = host.snapshot()
-    assert 'textures' not in rejected['materials']['texture_test']
-    assert any('blending' in warning for warning in rejected['warnings'])
+    blended = host.snapshot()
+    assert blended['materials']['texture_test']['layers'][0]['opacity'] == .5
     layer.channel('opacity').set(1)
     locator.channel('uvMap').set('MissingMap')
     try:

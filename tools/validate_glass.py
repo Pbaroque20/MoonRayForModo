@@ -16,7 +16,8 @@ dll_paths = [os.add_dll_directory(str(p)) for p in (modo, extra)]
 from PySide2 import QtGui
 sys.path.insert(0, str(root/'kit/MoonRayForModo/python'))
 from moonray_modo import rdla, native
-folder = root/'test-results/glass'
+moonshine = '--moonshine' in sys.argv
+folder = root/('test-results/moonshine' if moonshine else 'test-results/glass')
 folder.mkdir(parents=True, exist_ok=True)
 runtime = root/'runtime/native-avx'
 vertices, normals, faces = [], [], []
@@ -59,6 +60,8 @@ for i in range(20):
     scene['meshes'].append({'name':tag,'material':tag,'vertices':[[x,-4,-5],[x+.4,-4,-5],[x+.4,4,-5],[x,4,-5]],
                             'faces':[[0,1,2,3]]})
 report = {'passed':False,'renders':{}}
+if moonshine:
+    scene['materials']['glass']['shader']='DwaBaseMaterial'
 (folder/'scene.json').write_text(json.dumps(scene))
 images = {}
 cases = [('clear',{}),('no_bending',{'ior':1}),('green',{'transmission_color':[.12,.95,.12]}),
@@ -120,8 +123,9 @@ maximum = re.search(r'Stats Max: (.*?) \(float\)',info).group(1).split()
 assert all(float(v)>0 for v in maximum[-3:]), 'Transmission AOV is black'
 for kind in ('NanCount','InfCount'):
     assert not any(int(v) for v in re.search(r'Stats '+kind+r': ([0-9 ]+)',info).group(1).split())
-report['binaries'] = {name:hashlib.sha256((runtime/name).read_bytes()).hexdigest()
-                      for name in ('ModoGlassMaterial.so','ModoGlassMaterial.so.proxy')}
+binary_names = ('DwaBaseMaterial.so','DwaBaseMaterial.so.proxy','libmaterial_dwabase.dll',
+    'libmaterial_glitter.dll','libcommon_interpolation.dll','libmap_projection.dll') if moonshine else ('ModoGlassMaterial.so','ModoGlassMaterial.so.proxy')
+report['binaries'] = {name:hashlib.sha256((runtime/name).read_bytes()).hexdigest() for name in binary_names}
 report.update(passed=True, transmission_aov=True, frosted_scalar_avx_block_error=frost_error,
               scalar_avx_mean_error=difference('clear-scalar','clear-vectorized'),
               ior_pixel_difference=difference('clear-vectorized','no_bending-vectorized'))

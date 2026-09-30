@@ -16,7 +16,8 @@ from moonray_modo import rdla
 from moonray_modo.render import Renderer
 
 glass_test = '--glass' in sys.argv
-results = root / ('test-results/glass-live-process' if glass_test else 'test-results/live-process')
+surface_test = '--surface' in sys.argv
+results = root / ('test-results/surface-live-process' if surface_test else 'test-results/glass-live-process' if glass_test else 'test-results/live-process')
 results.mkdir(parents=True, exist_ok=True)
 app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
 renderer = Renderer()
@@ -28,6 +29,9 @@ snapshot = {'camera': {'matrix': rdla.IDENTITY, 'focal_mm': 35, 'film_mm': 36},
 report = {'passed': False, 'starts': 0, 'images': [], 'errors': []}
 if glass_test:
     snapshot = json.loads((root/'test-results/glass/scene.json').read_text())
+if surface_test:
+    snapshot = json.loads((root/'test-results/surface-updates/host-snapshot.json').read_text())
+    snapshot['materials']['texture_test']['shader']='DwaBaseMaterial'
 
 
 def end(error=None):

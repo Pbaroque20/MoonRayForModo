@@ -2,6 +2,7 @@
   "name": "ModoGlassMaterial",
   "type": "Material",
   "attributes": {
+    "attrNormal": {"name":"normal", "type":"Vec3f", "default":"Vec3f(0.0f, 0.0f, 1.0f)", "flags":"FLAGS_BINDABLE"},
     "attrTransmission": {"name":"transmission", "type":"Float", "default":"1.0f", "flags":"FLAGS_BINDABLE"},
     "attrTransmissionColor": {"name":"transmissionColor", "type":"Rgb", "default":"Rgb(1.0f, 1.0f, 1.0f)", "flags":"FLAGS_BINDABLE"},
     "attrIor": {"name":"ior", "type":"Float", "default":"1.5f", "flags":"FLAGS_BINDABLE"},
