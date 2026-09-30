@@ -1,11 +1,10 @@
 # MoonRayForModo — native Windows AVX preview
 
 Target: **Modo 16.1v9, Windows x64, Python 3.9**.
-Project: `C:\Users\Raphael Tobar\MoonRayForModo`.
 
 The public MoonRay CPU renderer and its upstream shader modules now build as
-native Windows executables and DLLs. Both scalar and vectorized rendering pass
-on this computer's Intel Core i7-4930K (AVX1, without AVX2). The installed kit has
+native Windows executables and DLLs. Both scalar and vectorized rendering pass tested 
+on an Intel Core i7-4930K (AVX1, without AVX2). The installed kit has
 rendered a real Modo scene in a visible preview panel. Automatic scene-edit
 refresh passed: a mesh move produced a different image without pressing Preview.
 
@@ -16,8 +15,7 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to `C:\Users\Raphael Tobar\MoonRayForModo\runtime\native-avx`.
-Start **`C:\Program Files\Modo16.1v9\modo\modo.exe`**.
+to `\MoonRayForModo\runtime\native-avx`.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.
 The menu also opens Live Preview, Object Properties, Shading and Lighting,
