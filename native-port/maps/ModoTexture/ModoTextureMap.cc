@@ -5,6 +5,15 @@
 #include <moonray/rendering/shading/Intersection.h>
 using namespace scene_rdl2::math;
 using namespace moonray::shading;
+// Repeat=0, Edge=1, Mirror=2, Reset=3. Apply after interpolation.
+static float tileCoordinate(float value,int mode) {
+    if(mode==0) return value-floor(value);
+    if(mode==2) {
+        float period=value-2*floor(value/2);
+        return period<=1?period:2-period;
+    }
+    return clamp(value,0.0f,1.0f);
+}
 static float hash2(int x,int y) {
     uint32_t h=uint32_t(x)*73856093u ^ uint32_t(y)*19349663u;
     h^=h>>16; h*=0x7feb352du; h^=h>>15; h*=0x846ca68bu; h^=h>>16;
@@ -46,7 +55,21 @@ public:
             }
             n=normalize(Vec3f(sx,sy,1)); *out=Color(n.x,n.y,n.z); return;
         }
+        if(mode==5 || mode==6) {
+            const Color st=evalColor(me,attrCoordinates,tls,state);
+            Vec2f uv=(me->get(attrUseCoordinates)?Vec2f(st.r,st.g):state.getSt())*me->get(attrScale);
+            int u=me->get(attrTileU),v=me->get(attrTileV);
+            if(mode==6) {
+                float covered=((u!=3 || (uv.x>=0 && uv.x<=1)) && (v!=3 || (uv.y>=0 && uv.y<=1)))?1.0f:0.0f;
+                *out=Color(covered);return;
+            }
+            *out=Color(tileCoordinate(uv.x,u),tileCoordinate(uv.y,v),0);return;
+        }
         Color a=evalColor(me,attrBackground,tls,state),b=evalColor(me,attrForeground,tls,state);
+        if(mode==7) {
+            int component=me->get(attrComponent);
+            *out=Color(component==0?b.r:(component==1?b.g:b.b));return;
+        }
         if(mode==4) {
             const float distance=max(1.e-9f,me->get(attrDistance));
             *out=Color(-log(clamp(b.r,1.e-6f,1.0f)),-log(clamp(b.g,1.e-6f,1.0f)),-log(clamp(b.b,1.e-6f,1.0f)))/distance;

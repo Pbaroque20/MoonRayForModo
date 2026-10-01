@@ -30,6 +30,33 @@ rendering models. Pixel-for-pixel matching of Modo's renderer is not required.
 
 ## Source implemented in this checkpoint
 
+### Texture and evaluated-geometry follow-up (also unverified)
+
+- UV rotation now uses the origin, following Foundry's
+  [Texture Locator reference](https://learn.foundry.com/modo/content/help/pages/shading_lighting/shader_items/texture_locator.html).
+  Existing candidate exports with nonzero UV rotation will change accordingly.
+- Independent horizontal and vertical Repeat, Edge, Mirror and Reset image
+  modes are evaluated after coordinate interpolation. Reset contributes a
+  coverage mask; it preserves the underlying layer outside the image domain.
+  Repeat retains integer UDIM tile addressing. Non-Repeat modes on UDIM patterns
+  remain explicitly unsupported. Filtering at wrap/reset seams is unverified.
+- Image-channel selection translates Modo's `swizzling`/`rgba` controls and
+  Use/Ignore/Alpha Only modes, including packed red/green/blue maps and channel
+  inversions. Channel identifiers come from the installed 16.1v9 item definitions;
+  behavior follows Foundry's
+  [channel-swizzling reference](https://learn.foundry.com/modo/content/help/pages/shading_lighting/shader_items/channel_swizzling.html).
+  Brightness, contrast and gamma adjustments remain unsupported.
+- Evaluated meshes and replicas can now bake the existing planar, spherical and
+  cylindrical locator projections per instance. Spherical/cylindrical seam
+  correction operates per polygon. UV-only instances retain shared geometry;
+  projected instances increase export memory/output size. Locator world/local
+  flags, advanced projections, and exact host orientation still need completion.
+- The texture and geometry numerical/export groups include new deferred cases.
+  `tools/validate_cpu_feature_renders.py textures` now also writes asymmetric
+  RGBA fixtures and compares tiling/channel responses. No tests or renders ran.
+- Rebuild ModoTextureMap before using this checkpoint: new modes 5/6/7 and
+  tile/component attributes are required by the Python exporter.
+
 - Ordered DwaLayer material stacks, per-layer opacity and group-mask map input.
 - MoonShine subsurface radius/color/amount; partial amounts blend surface diffuse
   and SSS. Standard anisotropic/subsurface materials use MoonShine automatically.

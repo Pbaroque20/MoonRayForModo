@@ -12,6 +12,8 @@ root = Path(r'C:\Users\Raphael Tobar\MoonRayForModo')
 output = root / 'test-results/textures'
 output.mkdir(parents=True, exist_ok=True)
 try:
+    assert lx.service.Platform().IsHeadless(), 'Run in an isolated command-line Modo profile'
+    assert lx.eval('query platformservice appversion ?') == 1619
     sys.path.insert(0, str(root / 'kit/MoonRayForModo/python'))
     from moonray_modo import host, rdla
     image = QtGui.QImage(64, 64, QtGui.QImage.Format_RGB32)
@@ -67,6 +69,25 @@ try:
     blended = host.snapshot()
     assert blended['materials']['texture_test']['layers'][0]['opacity'] == .5
     layer.channel('opacity').set(1)
+    for tile_u,tile_v in [('mirror','edge'),('repeat','reset'),('reset','mirror')]:
+        locator.channel('tileU').set(tile_u)
+        locator.channel('tileV').set(tile_v)
+        translated=host.snapshot()['materials']['texture_test']['layers'][0]
+        assert (translated['tile_u'],translated['tile_v']) == (tile_u,tile_v)
+    locator.channel('tileU').set('repeat')
+    locator.channel('tileV').set('repeat')
+    layer.channel('swizzling').set(True)
+    for selection in ('red','green','blue','only','use','ignore'):
+        layer.channel('rgba').set(selection)
+        translated=host.snapshot()['materials']['texture_test']['layers'][0]
+        assert translated['image_channel'] == selection
+        assert translated['use_alpha'] == (selection=='use')
+    layer.channel('swizzling').set(False)
+    for selection in ('use','ignore','only'):
+        layer.channel('alpha').set(selection)
+        translated=host.snapshot()['materials']['texture_test']['layers'][0]
+        assert translated['image_channel'] == selection
+    layer.channel('alpha').set('use')
     locator.channel('uvMap').set('MissingMap')
     try:
         host.snapshot()

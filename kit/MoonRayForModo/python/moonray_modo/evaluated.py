@@ -25,7 +25,7 @@ def assign_materials(data, scene, warnings):
         def matches(item):
             parent=item if item.type=='mask' else item.parent
             while parent and parent.type!='polyRender':
-                if not channel(parent,'enable',1): return False
+                if not channel(parent,'enable',1) or not channel(parent,'render',1): return False
                 if parent.type=='mask':
                     kind,value=channel(parent,'ptyp',''),channel(parent,'ptag','')
                     if kind in ('Material','material','MATR') and value and value!=surface['material']:
@@ -40,7 +40,7 @@ def assign_materials(data, scene, warnings):
                     def contains(target):
                         return target.id in source_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
                     if targets and not any(contains(i) for i in targets): return False
-                    if channel(parent,'opacity',1)!=1 or channel(parent,'blend','normal')!='normal':
+                    if (item.type=='advancedMaterial' and channel(parent,'opacity',1)!=1) or channel(parent,'blend','normal')!='normal':
                         warnings.append('Group opacity and blending are not translated: '+parent.name)
                         return False
                 parent=parent.parent
@@ -134,21 +134,33 @@ def meshes(data, materials, warnings):
                         subdivision=False, subdivision_level=1, smooth=True,
                         object_override=True, evaluated_geometry=True, visibility=list(visibility))
             from . import coordinates
-            mesh['uv_sets'] = {}
-            for key, descriptor in coordinates.descriptors({tag:material}).items():
+            descriptors = coordinates.descriptors({tag:material})
+            projected = any(d.get('projection','uv')!='uv' for d in descriptors.values())
+            named_values = {}
+            for key, descriptor in descriptors.items():
                 if descriptor.get('projection','uv') != 'uv':
-                    raise ValueError('Evaluated locator projections need per-instance baking; use UV projection')
+                    continue
                 source_name = descriptor.get('uv_map','')
                 if source_name not in uv_names:
                     raise ValueError('Evaluated mesh is missing UV map '+source_name)
                 source_index = uv_names.index(source_name)
                 if source_index >= len(uv_sets):
                     raise ValueError('Missing evaluated UV values: '+source_name)
-                values = [uv_sets[source_index][i] for i in attribute_indices]
-                mesh['uv_sets'][key] = coordinates.face(descriptor,
-                    [vertices[i] for i in indices], values, mesh['matrix'])
-            if len(surfaces) > 1:
-                mesh['instances'] = [s['matrix'] for s in surfaces]
-                mesh['instance_ids'] = [s['source_item']+'|'+str(s.get('instance_index',0)) for s in surfaces]
-            result.append(mesh)
+                named_values[key] = coordinates.mesh_corners(descriptor,vertices,segment['faces'],
+                    [uv_sets[source_index][i] for i in attribute_indices],mesh['matrix'])
+            # World/locator projections differ for every transformed replica.
+            # Share vertex arrays in the snapshot, but emit separate assignments.
+            for surface in (surfaces if projected else surfaces[:1]):
+                value = dict(mesh,uv_sets=dict(named_values),matrix=surface['matrix'])
+                if projected:
+                    value['name'] = surface['source_item']
+                    value['identity'] = surface['source_item']+'|'+str(surface.get('instance_index',0))+'|'+tag+'|'+str(segment_index)
+                    for key,descriptor in descriptors.items():
+                        if descriptor.get('projection','uv') != 'uv':
+                            value['uv_sets'][key] = coordinates.mesh_corners(descriptor,
+                                vertices,segment['faces'],[],value['matrix'])
+                elif len(surfaces) > 1:
+                    value['instances'] = [s['matrix'] for s in surfaces]
+                    value['instance_ids'] = [s['source_item']+'|'+str(s.get('instance_index',0)) for s in surfaces]
+                result.append(value)
     return result

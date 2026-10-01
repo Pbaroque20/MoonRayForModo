@@ -137,20 +137,26 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     clip = next((i for i in connected if i.type=='videoStill'),None)
                     if not clip:
                         raise ValueError('requires a still image or a <UDIM> filename')
-                    checks = {'gamma':1,'brightness':1,'contrast':1,'swizzling':0,'blueInv':0}
-                    if effect != 'normal':
-                        checks.update(redInv=0,greenInv=0)
+                    checks = {'gamma':1,'brightness':1,'contrast':1}
                     if any(channel(layer,key,value) != value for key,value in checks.items()):
                         raise ValueError('image color corrections are unsupported')
+                    source_channel = channel(layer,'rgba','use') if channel(layer,'swizzling',0) else channel(layer,'alpha','use')
+                    if source_channel not in ('use','ignore','only','red','green','blue'):
+                        raise ValueError('unsupported image channel '+str(source_channel))
+                    node['image_channel'] = source_channel
+                    node['flip_blue'] = bool(channel(layer,'blueInv',0))
                     node['flip_red'] = bool(channel(layer,'redInv',0))
                     node['flip_green'] = bool(channel(layer,'greenInv',0))
                     tile = channel(locator,'tileU','repeat')
-                    if tile not in ('repeat','edge') or channel(locator,'tileV','repeat') != tile:
-                        raise ValueError('requires matching Repeat or Edge modes')
-                    node['repeat'] = tile=='repeat'
+                    tile_v = channel(locator,'tileV','repeat')
+                    if tile not in ('repeat','edge','mirror','reset') or tile_v not in ('repeat','edge','mirror','reset'):
+                        raise ValueError('unsupported image repeat mode')
+                    node.update(tile_u=tile,tile_v=tile_v,repeat=tile==tile_v=='repeat')
                     path = Path(channel(clip,'filename',''))
                     if not path.is_absolute() and getattr(scene,'filename',None):
                         path = Path(scene.filename).parent/path
+                    if '<UDIM>' in path.name and (tile!='repeat' or tile_v!='repeat'):
+                        raise ValueError('UDIM tile addressing requires Repeat on both axes')
                     sources = textures.source_tiles(path)
                     if not sources:
                         raise ValueError('missing image '+str(path))
@@ -161,7 +167,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         tile_signature=[(n,p.stat().st_size,p.stat().st_mtime_ns) for n,p in sorted(sources.items())],
                         srgb=effect not in ('normal','bump') and (space=='sRGB' or
                             (space=='(default)' and effect in textures.COLOR_EFFECTS and path.suffix.lower() not in ('.exr','.hdr','.tx'))),
-                        use_alpha=effect in textures.COLOR_EFFECTS and channel(layer,'alpha','use')=='use')
+                        use_alpha=source_channel=='use')
                 else:
                     node.update(color1=color(layer,'color1',(0,0,0)) if is_color else [float(channel(layer,'value1',0))]*3,
                                 color2=color(layer,'color2') if is_color else [float(channel(layer,'value2',1))]*3)

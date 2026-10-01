@@ -21,6 +21,32 @@ def scene():
 
 
 class Textures(unittest.TestCase):
+    def test_image_channel_selection_and_alpha_only_are_explicit(self):
+        from moonray_modo.graph import bindings
+        for channel,component in [('red',0),('green',1),('blue',2),('only',None)]:
+            material={'color':[1]*3,'layers':[{'kind':'imageMap','effect':'rough',
+                'path':'packed.png','image_channel':channel}]}
+            lines=[]
+            with patch('moonray_modo.textures.prepare',return_value='packed.tx'):
+                result=bindings(material,0,lines)
+            self.assertIn('roughness',result)
+            text='\n'.join(lines)
+            self.assertIn('["alpha_only"] = true',text)
+            if component is not None:
+                self.assertIn('["component"] = '+str(component),text)
+            else:
+                self.assertNotIn('["mode"] = 7',text)
+                self.assertNotIn('["blend"] = 5',text)
+
+    def test_projection_seams_are_corrected_per_face(self):
+        descriptor={'projection':'spherical','locator_matrix':rdla.IDENTITY}
+        vertices=[[.1,0,-1],[.2,1,-1],[.3,0,-1],[-.1,0,-1],[-.2,1,-1],[-.3,0,-1]]
+        faces=[[0,1,2],[3,4,5]]
+        values=coordinates.mesh_corners(descriptor,vertices,faces,[],rdla.IDENTITY)
+        expected=sum([coordinates.face(descriptor,[vertices[i] for i in face],[],rdla.IDENTITY) for face in faces],[])
+        self.assertEqual(values,expected)
+        self.assertTrue(all(u<.5 for u,v in values[3:]))
+
     def test_nested_group_opacity_is_applied_once_at_each_boundary(self):
         from moonray_modo.compositing import Groups
         def mix(a,b,opacity,mask):
@@ -79,8 +105,36 @@ class Textures(unittest.TestCase):
         restored = coordinates.transform(coordinates.transform(p,transform),coordinates.inverse(transform))
         for a,b in zip(p,restored): self.assertAlmostEqual(a,b)
         result = coordinates.face({'rotation':math.pi/2},[[0,0,0]],[[1,.5]],rdla.IDENTITY)
-        self.assertAlmostEqual(result[0][0],.5)
+        self.assertAlmostEqual(result[0][0],-.5)
         self.assertAlmostEqual(result[0][1],1)
+
+    def test_mixed_repeat_modes_are_sampled_after_uv_interpolation(self):
+        from moonray_modo.graph import bindings
+        material={'color':[.1]*3,'layers':[{'kind':'imageMap','effect':'diffCol',
+            'path':'fixture.png','tile_u':'mirror','tile_v':'reset','use_alpha':True,
+            'coordinate_key':'unwrapped_uv'}]}
+        lines=[]
+        with patch('moonray_modo.textures.prepare',return_value='fixture.tx'):
+            bindings(material,0,lines)
+        text='\n'.join(lines)
+        self.assertIn('["mode"] = 5',text)
+        self.assertIn('["mode"] = 6',text)
+        self.assertIn('["tile_u"] = 2',text)
+        self.assertIn('["tile_v"] = 3',text)
+        self.assertIn('["wrap_around"] = false',text)
+        self.assertIn('["mask"] = bind(',text)
+
+    def test_udim_repeat_keeps_integer_tile_address(self):
+        from moonray_modo.graph import bindings
+        layer={'kind':'imageMap','effect':'diffCol','path':'tile.<UDIM>.png',
+               'tile_u':'repeat','tile_v':'repeat','coordinate_key':'udim_uv'}
+        material={'color':[1]*3,'layers':[layer]}
+        lines=[]
+        with patch('moonray_modo.textures.prepare',return_value='tile.<UDIM>.tx'):
+            bindings(material,0,lines)
+            self.assertNotIn('["mode"] = 5','\n'.join(lines))
+            layer['tile_u']='mirror'
+            with self.assertRaises(ValueError): bindings(material,0,[])
 
     def test_named_uv_sets_keep_distinct_corner_values(self):
         value = scene()
@@ -121,6 +175,26 @@ class Materials(unittest.TestCase):
 
 
 class Geometry(unittest.TestCase):
+    def test_evaluated_projections_expand_instances_but_uvs_share(self):
+        from moonray_modo import evaluated
+        shifted=list(rdla.IDENTITY);shifted[12]=2
+        segment={'vertices':[[0,0,0],[1,0,0],[0,1,0]],'faces':[[0,1,2]],
+                 'normals':[],'uv_sets':[[[0,0],[1,0],[0,1]]]}
+        data={'prototypes':{'1':{'features':[{'type':0x54585556,'name':'Texture'}],'segments':[segment]}},
+              'surfaces':[{'source_id':1,'source_item':'mesh','material':'m','layers':[],
+                           'visibility':[True]*6,'matrix':matrix,'instance_index':i}
+                          for i,matrix in enumerate((rdla.IDENTITY,shifted))]}
+        descriptor={'projection':'planar','locator_matrix':rdla.IDENTITY,'coordinate_key':'projected'}
+        materials={'m':{'layers':[descriptor]}}
+        values=evaluated.meshes(data,materials,[])
+        self.assertEqual(len(values),2)
+        self.assertNotEqual(values[0]['identity'],values[1]['identity'])
+        self.assertAlmostEqual(values[1]['uv_sets']['projected'][0][0]-values[0]['uv_sets']['projected'][0][0],2)
+        materials['m']['layers']=[{'projection':'uv','uv_map':'Texture','coordinate_key':'uv'}]
+        values=evaluated.meshes(data,materials,[])
+        self.assertEqual(len(values),1)
+        self.assertEqual(len(values[0]['instances']),2)
+
     def test_invalid_crease_rejected(self):
         value=scene(); value['meshes'][0].update(subdivision=True,creases=[[0,8,2]])
         with self.assertRaises(ValueError): rdla.scene_text(value)

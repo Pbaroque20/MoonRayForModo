@@ -1,5 +1,14 @@
 #include "attributes.isph"
 #include <moonray/rendering/shading/ispc/MapApi.isph>
+// Repeat=0, Edge=1, Mirror=2, Reset=3. Apply after interpolation.
+static float tileCoordinate(float value,int mode) {
+    if(mode==0) return value-floor(value);
+    if(mode==2) {
+        float period=value-2*floor(value/2);
+        return period<=1?period:2-period;
+    }
+    return clamp(value,0.0f,1.0f);
+}
 static float hash2(int x,int y) {
     unsigned int h=(unsigned int)x*73856093u ^ (unsigned int)y*19349663u;
     h^=h>>16;h*=0x7feb352du;h^=h>>15;h*=0x846ca68bu;h^=h>>16;
@@ -31,7 +40,24 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         }
         n=normalize(Vec3f_ctor(sx,sy,1));return Color_ctor(n.x,n.y,n.z);
     }
+    if(mode==5 || mode==6) {
+        Color st=evalAttrCoordinates(me,tls,state);
+        Vec2f scale=getAttrScale(me);
+        float x=(getAttrUseCoordinates(me)?st.r:state.mSt.x)*scale.x;
+        float y=(getAttrUseCoordinates(me)?st.g:state.mSt.y)*scale.y;
+        uniform int u=getAttrTileU(me),v=getAttrTileV(me);
+        if(mode==6) {
+            float covered=((u!=3 || (x>=0 && x<=1)) && (v!=3 || (y>=0 && y<=1)))?1.0f:0.0f;
+            return Color_ctor(covered,covered,covered);
+        }
+        return Color_ctor(tileCoordinate(x,u),tileCoordinate(y,v),0);
+    }
     Color a=evalAttrBackground(me,tls,state),b=evalAttrForeground(me,tls,state);
+    if(mode==7) {
+        uniform int component=getAttrComponent(me);
+        float value=component==0?b.r:(component==1?b.g:b.b);
+        return Color_ctor(value,value,value);
+    }
     if(mode==4) {
         float distance=max(1.e-9f,getAttrDistance(me));
         return Color_ctor(-log(clamp(b.r,1.e-6f,1.0f)),-log(clamp(b.g,1.e-6f,1.0f)),-log(clamp(b.b,1.e-6f,1.0f)))/distance;

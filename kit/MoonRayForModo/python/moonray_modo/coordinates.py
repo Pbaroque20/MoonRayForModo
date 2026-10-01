@@ -72,6 +72,22 @@ def face(layer, positions, uv, world_matrix):
     sx,sy = layer.get('scale', [1,1])
     result = []
     for u,v in values:
-        x,y = a*u+b*v+c-.5, d*u+e*v+f-.5
-        result.append([(x*cosine-y*sine+.5)*sx, (x*sine+y*cosine+.5)*sy])
+        x,y = a*u+b*v+c, d*u+e*v+f
+        result.append([(x*cosine-y*sine)*sx, (x*sine+y*cosine)*sy])
+    return result
+
+
+def mesh_corners(layer, vertices, faces, uv, world_matrix):
+    """Bake independently per polygon, keeping seam correction local to a face."""
+    count = sum(len(polygon) for polygon in faces)
+    if layer.get('projection','uv') == 'uv' and len(uv) != count:
+        raise ValueError('Named UV count does not match mesh corners')
+    result = []
+    offset = 0
+    for polygon in faces:
+        if not polygon:
+            continue
+        size = len(polygon)
+        result.extend(face(layer,[vertices[i] for i in polygon],uv[offset:offset+size],world_matrix))
+        offset += size
     return result

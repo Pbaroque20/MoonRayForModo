@@ -98,6 +98,21 @@
       "name": "distance",
       "type": "Float",
       "default": "1.0f"
+    },
+    "attrTileU": {
+      "name": "tile_u",
+      "type": "Int",
+      "default": "0"
+    },
+    "attrTileV": {
+      "name": "tile_v",
+      "type": "Int",
+      "default": "0"
+    },
+    "attrComponent": {
+      "name": "component",
+      "type": "Int",
+      "default": "0"
     }
   }
 }

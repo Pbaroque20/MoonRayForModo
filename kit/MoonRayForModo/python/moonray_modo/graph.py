@@ -67,21 +67,52 @@ def bindings(material, index, lines, glass=False):
                 'persistence':number(layer.get('persistence',.5))})
         else:
             prepared = textures.prepare(layer['path'],layer.get('srgb',False))
+            tile_modes = {'repeat':0, 'edge':1, 'mirror':2, 'reset':3}
+            tile_u = layer.get('tile_u', 'repeat' if layer.get('repeat',True) else 'edge')
+            tile_v = layer.get('tile_v', tile_u)
+            if tile_u not in tile_modes or tile_v not in tile_modes:
+                raise ValueError('Unsupported texture repeat mode')
+            coverage = None
+            wrapped = tile_u != 'repeat' or tile_v != 'repeat'
+            if wrapped:
+                if '<UDIM>' in layer['path']:
+                    raise ValueError('UDIM tile addressing requires Repeat on both axes')
+                wrapping = {'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2'),
+                            'tile_u':str(tile_modes[tile_u]), 'tile_v':str(tile_modes[tile_v])}
+                if coordinates:
+                    wrapping.update(coordinates=coordinates,use_coordinates='true')
+                if 'reset' in (tile_u,tile_v):
+                    coverage = node('ModoTextureMap',dict(wrapping,mode='6'))
+                coordinates = node('ModoTextureMap',dict(wrapping,mode='5'))
             attributes = {'texture':string(prepared),'gamma':'0',
-                'wrap_around':'true' if layer.get('repeat',True) else 'false',
+                'wrap_around':'false' if wrapped else 'true',
                 'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2')}
             if coordinates:
                 attributes.update(texture_coordinates='2', input_texture_coordinates=coordinates)
-            alpha = node('ImageMap',dict(attributes,alpha_only='true')) if effect in textures.COLOR_EFFECTS else None
-            if layer.get('use_alpha'):
+            alpha = node('ImageMap',dict(attributes,alpha_only='true'))
+            source_channel = layer.get('image_channel','use' if layer.get('use_alpha') else 'ignore')
+            if source_channel not in ('use','ignore','only','red','green','blue'):
+                raise ValueError('Unsupported image channel: '+str(source_channel))
+            if source_channel == 'use':
                 mask = alpha
-            gain = [-1 if layer.get('flip_red') else 1,-1 if layer.get('flip_green') else 1,1]
-            attributes.update(gain_offset_enabled='true',gain=rgb(gain),
-                              offset_adjust=rgb([1 if v<0 else 0 for v in gain]))
-            foreground = node('ImageMap',attributes)
-            if alpha:
-                # OIIO loads associated RGB; the layer blend applies alpha once.
+            if coverage:
+                mask = node('ModoTextureMap',{'background':mask,'foreground':coverage,'blend':'1'}) if mask else coverage
+            if source_channel == 'only':
+                foreground = alpha
+            else:
+                foreground = node('ImageMap',attributes)
+                # The sampled RGB is associated. Recover RGB before channel
+                # extraction/inversion, then apply alpha once in layer blending.
                 foreground = node('ModoTextureMap',{'background':foreground,'foreground':alpha,'blend':'5'})
+                flips = [bool(layer.get('flip_'+c)) for c in ('red','green','blue')]
+                if any(flips):
+                    foreground = node('ModoTextureMap',{'background':foreground,
+                        'foreground':rgb([-1 if flip else 1 for flip in flips]),'blend':'1'})
+                    foreground = node('ModoTextureMap',{'background':foreground,
+                        'foreground':rgb([1 if flip else 0 for flip in flips]),'blend':'2'})
+                if source_channel in ('red','green','blue'):
+                    foreground = node('ModoTextureMap',{'mode':'7','foreground':foreground,
+                        'component':str(('red','green','blue').index(source_channel))})
         if layer.get('invert'):
             foreground = node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
         blend = layer.get('blend','normal')

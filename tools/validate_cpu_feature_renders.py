@@ -53,6 +53,20 @@ elif args.feature=='textures':
         value['materials']['']['layers']=[{'kind':'imageMap','effect':'diffCol','path':str(folder/'tile.<UDIM>.ppm'),
                                          'srgb':True,'coordinate_key':'named','scale':[1,1]}]
         value['meshes'][0]['uv_sets']={'named':[[u+.1,.1],[u+.9,.1],[u+.9,.9],[u+.1,.9]]*6}
+    # Asymmetric RGBA fixture exposes mirroring, clipping, and channel routing.
+    header=bytearray(18);header[2]=2;header[12]=16;header[14]=16;header[16]=32;header[17]=0x28
+    rgba=bytes(component for y in range(16) for x in range(16)
+               for component in (192,48,16+x*15,32+y*14))
+    packed=folder/'packed.tga';packed.write_bytes(bytes(header)+rgba)
+    for mode in ('repeat','mirror','edge','reset'):
+        value=case('wrap_'+mode)
+        value['materials']['']['layers']=[{'kind':'imageMap','effect':'diffCol','path':str(packed),
+            'coordinate_key':'named','tile_u':mode,'tile_v':'edge','image_channel':'ignore'}]
+        value['meshes'][0]['uv_sets']={'named':[[-.4,.1],[1.8,.1],[1.8,.9],[-.4,.9]]*6}
+    for channel in ('red','green','only','use','ignore'):
+        value=case('channel_'+channel)
+        value['materials']['']['layers']=[{'kind':'imageMap','effect':'diffCol',
+            'path':str(packed),'image_channel':channel}]
 elif args.feature=='geometry':
     case('smooth')['meshes'][0].update(subdivision=True,smooth=True)
     value=case('creased'); value['meshes'][0].update(subdivision=True,smooth=True,creases=[[4,5,8],[5,6,8],[6,7,8],[7,4,8]])
@@ -86,7 +100,10 @@ try:
         pixels[name]=[decoded.pixelColor(x,y).getRgb()[:3] for y in range(24,104) for x in range(24,104)]
         report['cases'][name]={'image_sha256':hashlib.sha256(image.read_bytes()).hexdigest()}
     pairs={'materials':[('reference','subsurface'),('reference','layers'),('clear','absorption')],
-           'textures':[('tile_one','tile_two')],'geometry':[('smooth','creased')],
+           'textures':[('tile_one','tile_two'),('wrap_repeat','wrap_mirror'),
+                       ('wrap_edge','wrap_reset'),('channel_red','channel_green'),
+                       ('channel_only','channel_ignore'),('channel_use','channel_ignore')],
+           'geometry':[('smooth','creased')],
            'environments':[('layered','opaque')],'rendering':[('reference','orthographic'),('reference','motion')]}
     report['mean_absolute_changes']={}
     for a,b in pairs[args.feature]:
