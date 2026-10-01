@@ -249,5 +249,7 @@ def snapshot():
     for kind in ('replicator', 'textureLayer', 'volume'):
         if scene.items(kind, superType=False):
             warnings.append('%s items are not translated in this version.' % kind)
+    from .environments import collect as collect_environments
+    result['environments'] = collect_environments(scene, warnings)
     result['warnings'] = sorted(set(warnings))
     return result

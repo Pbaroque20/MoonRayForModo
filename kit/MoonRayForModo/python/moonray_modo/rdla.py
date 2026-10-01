@@ -82,6 +82,8 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
                       '  ["inner_cone_angle"] = %s,' % number(max(0, cone - 2 * light.get('soft_edge', 0))),
                       '  ["lens_radius"] = %s,' % number(light.get('radius', .001))]
         lines.append('})')
+    from .environments import emit as emit_environments
+    emit_environments(scene.get('environments', []), lines)
     lines.append('local lightSet = LightSet("/modo/lightSet")(lights)')
     # Keep material handles in a table to avoid Lua's local variable limit.
     lines.append('local materials = {}')

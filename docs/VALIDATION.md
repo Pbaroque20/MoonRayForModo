@@ -93,3 +93,17 @@ instance material overrides and the full Moonshine shader/attribute catalog.
   texture issue locally; correcting the binding produced a textured sphere.
   The user also confirmed the repair in the running Modo preview. Private scene
   snapshots and rendered packaging images remain excluded from Git.
+
+## CPU environment translation
+
+- `probe_environments.py` verifies native Modo environment types, color/intensity,
+  visibility channels, image connections, locator rotation, unsupported modes,
+  radiance zero and scene-stored enable/multiplier settings in Modo 16.1v9.
+- `validate_environments.py` renders color and doubled intensity, camera-hidden
+  illumination, disabled diffuse/reflection/refraction visibility, three gradient
+  types, HDR values above one, locator rotation and scalar/AVX agreement.
+- `probe_environment_panel.py` passes inside a separate graphical Modo 16.1v9:
+  the native docked panel can disable scene environments, multiply their intensity
+  and store/reload both controls through scene settings.
+- Gradient shape and absolute Modo-to-MoonRay HDRI azimuth have not been calibrated
+  against Modo reference renders. No claim of exact environment parity is made.

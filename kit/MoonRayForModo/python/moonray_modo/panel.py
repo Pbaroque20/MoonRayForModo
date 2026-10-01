@@ -84,6 +84,13 @@ class Panel(QtWidgets.QWidget):
         controls.addRow('Pixel sample grid', self.samples)
         self.pages['system'].addRow('CPU threads', self.threads)
         self.pages['lighting'].addRow('Uniform environment', self.environment)
+        self.modo_environment = QtWidgets.QCheckBox('Use Modo environments')
+        self.modo_environment.setChecked(True)
+        self.pages['lighting'].addRow(self.modo_environment)
+        self.environment_multiplier = QtWidgets.QDoubleSpinBox()
+        self.environment_multiplier.setRange(0,10000)
+        self.environment_multiplier.setValue(1)
+        self.pages['lighting'].addRow('Modo environment multiplier',self.environment_multiplier)
         self.light_multiplier = QtWidgets.QDoubleSpinBox()
         self.light_multiplier.setRange(0, 10000)
         self.light_multiplier.setValue(1)
@@ -214,6 +221,8 @@ class Panel(QtWidgets.QWidget):
                              ('light_multiplier', self.light_multiplier, 1)]:
             control.setValue(values.get(key, default))
         self.surface.setCurrentIndex(int(values.get('surface', 0)))
+        self.modo_environment.setChecked(values.get('modo_environment',True))
+        self.environment_multiplier.setValue(values.get('environment_multiplier',1))
 
     def _settings_values(self):
         return {'render': {key: control.currentIndex() if isinstance(control, QtWidgets.QComboBox) else control.value()
@@ -221,7 +230,9 @@ class Panel(QtWidgets.QWidget):
                 'aovs': [key for key, control in self.aov_controls.items() if control.isChecked()],
                 'samples': self.samples.value(), 'environment': self.environment.value(),
                 'threads': self.threads.value(), 'surface': self.surface.currentIndex(),
-                'subdivision_level': self.subdivision_level.value(), 'light_multiplier': self.light_multiplier.value()}
+                'subdivision_level': self.subdivision_level.value(), 'light_multiplier': self.light_multiplier.value(),
+                'modo_environment':self.modo_environment.isChecked(),
+                'environment_multiplier':self.environment_multiplier.value()}
 
     def _save_settings(self):
         try:
@@ -275,6 +286,10 @@ class Panel(QtWidgets.QWidget):
         values = self._settings_values()
         scene['render_settings'] = values['render']
         scene['aovs'] = values['aovs']
+        if not self.modo_environment.isChecked():
+            scene['environments']=[]
+        for environment in scene.get('environments',[]):
+            environment['intensity'] *= self.environment_multiplier.value()
         for light in scene['lights']:
             light['intensity'] *= self.light_multiplier.value()
         for mesh in scene['meshes']:

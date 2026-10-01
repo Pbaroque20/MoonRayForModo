@@ -97,6 +97,35 @@ same pass definitions with an EXR filename beside the exported scene.
 
 ## Supported scene data and limits
 
+### Modo environments
+
+The Lighting tab now enables **Use Modo environments** by default and offers a
+separate **Modo environment multiplier**. Modo's Environment **Intensity**,
+**Visible to Camera**, **Visible to Indirect Rays**, **Visible to Reflection Rays**,
+and **Visible to Refraction Rays** drive native MoonRay EnvLights. The existing
+Uniform environment value remains an additional fill light; leave it at zero to
+use only the scene's environments. Store the panel settings in the scene to keep
+the enable switch and multiplier with the LXO.
+
+Supported Environment Material types are Constant, 2 Color Gradient, 4 Color
+Gradient and CIE Overcast Sky. Zenith, Sky, Ground, Nadir and exponent changes
+update the preview. Gradient interpolation is a Y-up approximation, not measured
+pixel parity with Modo. For HDR lighting, put a still **Environment Color** image
+above the environment material and choose **Spherical** projection on its Texture
+Locator. Latitude/longitude EXR/HDR images retain linear high-dynamic-range values;
+the locator's rotation controls orientation. Absolute azimuth alignment with Modo
+has not been calibrated. Environment images use full-resolution tiled float
+textures and bilinear filtering, avoiding the native importance sampler's
+unsupported 1x1 mip level.
+
+The uppermost supported opaque layer supplies each environment. A lone layer's
+opacity scales its contribution; multi-layer blending, masked groups, image alpha,
+light-probe projection, image corrections, UV transforms, physical daylight and
+fog are not translated. Unsupported layer/projection settings produce warnings.
+Indirect-ray visibility maps to MoonRay's diffuse visibility; exact Modo ray-depth
+semantics and overall brightness parity are unverified. See Foundry's
+[environment material controls](https://learn.foundry.com/modo/14.2/content/help/pages/shading_lighting/environment_material.html).
+
 ### Glass and refraction
 
 Use Modo's standard material **Transparency Amount**, **Transparency Color**,

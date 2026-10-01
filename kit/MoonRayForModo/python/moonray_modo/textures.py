@@ -23,11 +23,13 @@ EFFECT_ALIASES = {'diffColor': 'diffCol', 'specColor': 'specCol',
                   'diffAmount': 'diffAmt', 'specAmount': 'specAmt', 'lumiAmount': 'lumiAmt'}
 
 
-def prepare(source, srgb=False):
+def prepare(source, srgb=False, mipmaps=True):
     source = Path(source).resolve()
     stat = source.stat()
-    key = hashlib.sha256(('%s|%d|%d|%s|v3-alpha-color-conversion' %
-        (source, stat.st_size, stat.st_mtime_ns, srgb)).encode('utf-8')).hexdigest()
+    key_data = '%s|%d|%d|%s|v3-alpha-color-conversion' % (source, stat.st_size, stat.st_mtime_ns, srgb)
+    if not mipmaps:
+        key_data += '|no-mips'
+    key = hashlib.sha256(key_data.encode('utf-8')).hexdigest()
     cache = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/Textures'
     cache.mkdir(parents=True, exist_ok=True)
     target = cache / (key + '.tx')
@@ -39,6 +41,8 @@ def prepare(source, srgb=False):
         raise ValueError('Texture conversion needs maketx.exe in the MoonRay runtime. Reinstall the kit.')
     staged = cache / (key + '-' + uuid.uuid4().hex + '.tx')
     args = [str(converter), '--oiio', '--threads', '2', '-d', 'float', '--unpremult']
+    if not mipmaps:
+        args += ['--nomipmap']
     if srgb:
         args += ['--colorconvert', 'sRGB', 'linear']
     args += ['-o', str(staged), str(source)]
