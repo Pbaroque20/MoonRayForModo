@@ -71,14 +71,18 @@ def image_layers(scene, materials, warnings, baked_effects=()):
 
 
 def material_values(material):
+    from .material_settings import values as material_settings
+    settings = properties.read(material)
+    controls = material_settings(settings)
     diffuse = color(material, 'diffCol', (.5, .5, .5))
     diffuse_amount = float(channel(material, 'diffAmt', 1))
     return {'color': [c * diffuse_amount for c in diffuse],
-                                'shader': properties.read(material).get('shader',''),
-                                'standard_material': properties.read(material).get('shader','')!='DwaBaseMaterial',
+                                **controls,
+                                'shader': settings.get('shader',''),
+                                'standard_material': settings.get('shader','')!='DwaBaseMaterial',
                                 'specular_fresnel':float(channel(material,'specFres',1)),
                                 'reflection_fresnel':float(channel(material,'reflFres',1)),
-                                'thin_geometry': properties.read(material).get('thin_geometry',False),
+                                'thin_geometry': settings.get('thin_geometry',False),
                                 'diffuse_amount': diffuse_amount,
                                 'raw_color': diffuse,
                                 'raw_specular': color(material, 'specCol'),
@@ -92,7 +96,6 @@ def material_values(material):
                                 'subsurface_distance': max(0,float(channel(material,'subsDist',0))),
                                 'subsurface_color': color(material,'subsCol'),
                                 'absorption_distance': max(0,float(channel(material,'tranDist',0))),
-                                'anisotropy_angle': float(properties.read(material).get('anisotropy_angle',0)),
                                 'layer_opacity': float(channel(material,'opacity',1)),
                                 'anisotropy': float(channel(material, 'aniso', 0)),
                                 'metallic': float(channel(material, 'metallic', 0)),

@@ -154,6 +154,58 @@ class Textures(unittest.TestCase):
 
 
 class Materials(unittest.TestCase):
+    def test_subsurface_maps_route_to_moonshine_and_mask_surface_mix(self):
+        value=scene()
+        value['materials'][''].update(shader='',subsurface_amount=0,subsurface_distance=.02,
+            layers=[{'kind':'constant','effect':'subsAmount','value':[.35]*3},
+                    {'kind':'constant','effect':'subsColor','value':[1,.2,.1]}])
+        text=rdla.scene_text(value)
+        self.assertIn('DwaBaseMaterial',text)
+        self.assertIn('/sss_mix',text)
+        self.assertIn('["scattering_color"] = bind(',text)
+        self.assertIn('["mask"] = bind(',text)
+        self.assertNotIn('["subsurfaceAmount"]',text)
+
+    def test_moonshine_model_and_direction_controls(self):
+        value=scene()
+        value['materials'][''].update(subsurface_amount=1,subsurface_distance=.02,
+            subsurface_model=2,anisotropy_angle=math.pi/2,sss_input_normal=True,
+            sss_resolve_self_intersections=False)
+        text=rdla.scene_text(value)
+        self.assertIn('["bssrdf"] = 2',text)
+        self.assertIn('["enable_sss_input_normal"] = true',text)
+        self.assertIn('["resolve_self_intersections"] = false',text)
+        from moonray_modo.material_settings import validate
+        for key,bad in [('subsurface_model',1.5),('subsurface_model',3),('anisotropy_angle',float('nan'))]:
+            with self.assertRaises(ValueError): validate(key,bad)
+
+    def test_layered_common_absorption_is_only_applied_in_volume(self):
+        value=scene()
+        glass={'color':[1]*3,'transmission':1,'absorption_distance':2,
+               'transmission_color':[math.exp(-1)]*3}
+        value['materials']['']['material_stack']=[glass,dict(glass,roughness=.4,layer_opacity=.5)]
+        text=rdla.scene_text(value)
+        self.assertIn('["attenuation_color"] = Rgb(0.5, 0.5, 0.5)',text)
+        self.assertEqual(text.count('["transmission_color"] = Rgb(1, 1, 1)'),2)
+
+    def test_incompatible_active_interiors_rejected_but_hidden_layer_ignored(self):
+        from moonray_modo.absorption import medium
+        a={'transmission':1,'absorption_distance':1}
+        b={'transmission':1,'absorption_distance':2,'layer_opacity':.5}
+        with self.assertRaises(ValueError): medium({'material_stack':[a,b]})
+        b['layer_opacity']=1
+        self.assertIs(medium({'material_stack':[a,b]}),b)
+        b['layer_opacity']=0
+        self.assertIs(medium({'material_stack':[a,b]}),a)
+
+    def test_transmission_group_mask_is_retained_for_volume_mapping(self):
+        from moonray_modo.absorption import color_layers,surface
+        material={'transmission':1,'absorption_distance':1,'layers':[
+            {'effect':'tranColor','groups':[{'id':'g'}]},
+            {'effect':'groupMask','groups':[{'id':'g'}]}, {'effect':'rough'}]}
+        self.assertEqual([entry['effect'] for entry in color_layers(material)],['tranColor','groupMask'])
+        self.assertEqual([entry['effect'] for entry in surface(material)['layers']],['groupMask','rough'])
+
     def test_partial_subsurface_preserves_surface_component(self):
         value=scene(); value['materials'][''].update(subsurface_amount=.4,subsurface_distance=.02)
         text=rdla.scene_text(value)

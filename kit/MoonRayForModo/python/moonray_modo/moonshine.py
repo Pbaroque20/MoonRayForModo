@@ -2,6 +2,9 @@
 import math
 def emit(material, tag, index, bindings, lines):
     from .rdla import string, number, vector
+    from .material_settings import values
+    controls = values(material)
+    sss_weight = bindings.get('subsurfaceAmount')
     reflection_ior = material.get('ior',1.5)
     if material.get('standard_material') and not material.get('metallic',0):
         f0 = max(0,min(.99,sum(material.get('specular',[.04]*3))/3))
@@ -11,11 +14,13 @@ def emit(material, tag, index, bindings, lines):
         'metallic':number(material.get('metallic',0)),
         'metallic_color':vector(material['color'],'Rgb'),
         'roughness':number(material.get('roughness',.4)),
-        'scattering_radius':number(max(0,material.get('subsurface_distance',0)) if material.get('subsurface_amount',0)>0 else 0),
+        'scattering_radius':number(max(0,material.get('subsurface_distance',0)) if material.get('subsurface_amount',0)>0 or sss_weight else 0),
         'scattering_color':vector(material.get('subsurface_color',[1,1,1]),'Rgb'),
-        'bssrdf':str(int(material.get('subsurface_model',0))),
+        'bssrdf':str(controls['subsurface_model']),
+        'enable_sss_input_normal':'true' if controls['sss_input_normal'] else 'false',
+        'resolve_self_intersections':'true' if controls['sss_resolve_self_intersections'] else 'false',
         'specular_model':'0' if material.get('anisotropy',0) else '1',
-        'shading_tangent':vector([math.cos(material.get('anisotropy_angle',0)), math.sin(material.get('anisotropy_angle',0))],'Vec2'),
+        'shading_tangent':vector([math.cos(controls['anisotropy_angle']), math.sin(controls['anisotropy_angle'])],'Vec2'),
         'anisotropy':number(max(-1,min(1,material.get('anisotropy',0)))),
         'refractive_index':number(reflection_ior),
         'use_independent_transmission_refractive_index':'true',
@@ -35,9 +40,9 @@ def emit(material, tag, index, bindings, lines):
     }
     names={'diffuseColor':'albedo','emissiveColor':'emission','ior':'refractive_index',
         'transmissionColor':'transmission_color','refractionRoughness':'independent_transmission_roughness',
-        'clearcoatRoughness':'clearcoat_roughness','specularAmount':'specular'}
+        'clearcoatRoughness':'clearcoat_roughness','specularAmount':'specular', 'subsurfaceColor':'scattering_color'}
     for key,value in bindings.items():
-        if key=='layerMask':
+        if key in ('layerMask','subsurfaceAmount'):
             continue
         if key=='anisotropy':
             attributes['specular_model']='0'
@@ -56,14 +61,14 @@ def emit(material, tag, index, bindings, lines):
     lines.append('}')
 
     amount = max(0,min(1,material.get('subsurface_amount',0)))
-    if 0 < amount < 1 and material.get('subsurface_distance',0)>0:
+    if (sss_weight or 0 < amount < 1) and material.get('subsurface_distance',0)>0:
         surface_name = '/modo/material/%s/surface' % index
         surface = dict(attributes, scattering_radius='0')
         lines.append('DwaBaseMaterial(%s) {' % string(surface_name))
         lines.extend('  [%s] = %s,' % (string(k),v) for k,v in surface.items())
         lines.append('}')
         lines.append('materials[%s] = DwaLayerMaterial(%s) { ["material_A"] = materials[%s], ["material_B"] = DwaBaseMaterial(%s), ["mask"] = %s }' %
-                     (string(tag),string('/modo/material/%s/sss_mix'%index),string(tag),string(surface_name),number(amount)))
+                     (string(tag),string('/modo/material/%s/sss_mix'%index),string(tag),string(surface_name),sss_weight or number(amount)))
 
 
 def emit_stack(stack, tag, index, lines):

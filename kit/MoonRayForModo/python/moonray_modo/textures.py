@@ -14,15 +14,17 @@ EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
            'coatAmt': 'clearcoat', 'coatRough': 'clearcoatRoughness',
            'tranAmt': 'transmission', 'tranCol': 'transmissionColor', 'tranRough': 'refractionRoughness',
            'normal':'normal', 'bump':'bump', 'diffAmt':'diffuseAmount',
-           'specAmt':'specularAmount', 'groupMask':'layerMask', 'aniso':'anisotropy', 'lumiAmt':'emissiveAmount', 'dissolve':'presence'}
-COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol'}
+           'specAmt':'specularAmount', 'groupMask':'layerMask', 'aniso':'anisotropy', 'lumiAmt':'emissiveAmount', 'dissolve':'presence',
+           'subsCol':'subsurfaceColor', 'subsAmt':'subsurfaceAmount'}
+COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol', 'subsCol'}
 
 # Shader Tree effect identifiers differ from advancedMaterial channel names.
 # Retain the short names in the snapshot format for existing exported scenes.
 EFFECT_ALIASES = {'diffColor': 'diffCol', 'specColor': 'specCol',
                   'lumiColor': 'lumiCol', 'tranColor': 'tranCol',
                   'tranAmount': 'tranAmt', 'coatAmount': 'coatAmt',
-                  'diffAmount': 'diffAmt', 'specAmount': 'specAmt', 'lumiAmount': 'lumiAmt'}
+                  'diffAmount': 'diffAmt', 'specAmount': 'specAmt', 'lumiAmount': 'lumiAmt',
+                  'subsColor':'subsCol', 'subsAmount':'subsAmt'}
 
 
 def source_tiles(source):

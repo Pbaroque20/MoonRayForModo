@@ -30,6 +30,25 @@ rendering models. Pixel-for-pixel matching of Modo's renderer is not required.
 
 ## Source implemented in this checkpoint
 
+### Subsurface controls and shared interiors (also unverified)
+
+- Modo `subsColor` and `subsAmount` texture effects now route to MoonShine.
+  Subsurface amount textures blend the scattering material against a surface-only
+  copy; a zero base amount no longer disables a nonzero texture. Scattering
+  distance still comes from the material's constant distance control.
+- MoonShine material properties expose Normalized Diffusion, Dipole and Random
+  Walk, subsurface normal-map evaluation, random-walk self-intersection handling,
+  and anisotropy direction. These are scene-owned undoable commands, validated
+  before writing. Host units, UI queries and persistence require deferred checks.
+- Layered glass with a common active interior uses one absorption volume, with
+  tint removed from each absorbing surface layer to avoid double attenuation.
+  Scoped transmission-color group masks are retained for volume-map export.
+  Fully overridden layers do not select the interior; conflicting active
+  interiors produce an explicit export error. Mixed/overlapping interior volumes
+  are still unsupported, and mapped volume coordinates remain unverified.
+- Deferred material numerical/export cases, host-control checks and render
+  fixtures were extended. No tests, renders, builds or installation were run.
+
 ### Texture and evaluated-geometry follow-up (also unverified)
 
 - UV rotation now uses the origin, following Foundry's

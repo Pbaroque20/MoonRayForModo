@@ -209,6 +209,56 @@ lx.bless(material_option('shader'),'moonray.material.enable')
 lx.bless(material_option('thin_geometry'),'moonray.material.thin')
 
 
+def material_control(key):
+    from moonray_modo.material_settings import DEFAULTS, validate
+    default = DEFAULTS[key]
+    class MaterialControl(lxu.command.BasicCommand):
+        def __init__(self):
+            super().__init__()
+            kind = lx.symbol.sTYPE_BOOLEAN if type(default) is bool else (
+                lx.symbol.sTYPE_INTEGER if type(default) is int else lx.symbol.sTYPE_ANGLE)
+            self.dyna_Add('value',kind)
+            self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+            if key=='subsurface_model':
+                self.dyna_SetHint(0,((0,'normalized'),(1,'dipole'),(2,'randomWalk')))
+
+        def cmd_Flags(self):
+            return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+        def basic_Enable(self,msg):
+            from moonray_modo.materials import selected
+            return bool(selected())
+
+        def basic_Execute(self,msg,flags):
+            from moonray_modo import properties
+            from moonray_modo.materials import selected
+            value=validate(key,self.dyna_Float(0) if type(default) is float else self.dyna_Int(0))
+            for item in selected():
+                settings=properties.read(item)
+                settings[key]=value
+                properties.write(item,settings)
+
+        def cmd_Query(self,index,query):
+            from moonray_modo import properties
+            from moonray_modo.materials import selected
+            output=lx.object.ValueArray(query)
+            for item in selected():
+                value=validate(key,properties.read(item).get(key,default))
+                if type(default) is float:
+                    output.AddFloat(value)
+                else:
+                    output.AddInt(int(value))
+
+        def basic_Notifier(self,index):
+            if index==0: return ('select.event','item +v')
+            if index==1: return ('scene.edit','')
+    return MaterialControl
+
+
+for _key in ('subsurface_model','anisotropy_angle','sss_input_normal','sss_resolve_self_intersections'):
+    lx.bless(material_control(_key),'moonray.material.'+_key)
+
+
 class DockPreview(lxu.command.BasicCommand):
     def cmd_Flags(self):
         return lx.symbol.fCMD_UI

@@ -41,6 +41,13 @@ def case(name):
 case('reference')
 if args.feature=='materials':
     case('subsurface')['materials'][''].update(subsurface_amount=1,subsurface_distance=.5,subsurface_color=[1,.1,.05])
+    for name,amount in [('mapped_surface',0),('mapped_subsurface',1)]:
+        case(name)['materials'][''].update(subsurface_amount=0,subsurface_distance=.5,
+            layers=[{'kind':'constant','effect':'subsAmount','value':[amount]*3},
+                    {'kind':'constant','effect':'subsColor','value':[1,.05,.02]}])
+    glass={'color':[1,1,1],'transmission':1,'ior':1.5,'absorption_distance':.2,
+           'transmission_color':[.1,.8,.2]}
+    case('layered_absorption')['materials']['']['material_stack']=[glass,dict(glass,roughness=.3,layer_opacity=.5)]
     case('layers')['materials']['']['material_stack']=[{'color':[1,0,0]},{'color':[0,0,1],'layer_opacity':.8}]
     for name,distance in [('clear',0),('absorption',.1)]:
         case(name)['materials'][''].update(transmission=1,ior=1.5,transmission_color=[.1,.8,.2],absorption_distance=distance)
@@ -99,7 +106,8 @@ try:
         if decoded.isNull(): raise RuntimeError(name+' image cannot be decoded')
         pixels[name]=[decoded.pixelColor(x,y).getRgb()[:3] for y in range(24,104) for x in range(24,104)]
         report['cases'][name]={'image_sha256':hashlib.sha256(image.read_bytes()).hexdigest()}
-    pairs={'materials':[('reference','subsurface'),('reference','layers'),('clear','absorption')],
+    pairs={'materials':[('reference','subsurface'),('reference','layers'),('clear','absorption'),
+                        ('mapped_surface','mapped_subsurface')],
            'textures':[('tile_one','tile_two'),('wrap_repeat','wrap_mirror'),
                        ('wrap_edge','wrap_reset'),('channel_red','channel_green'),
                        ('channel_only','channel_ignore'),('channel_use','channel_ignore')],

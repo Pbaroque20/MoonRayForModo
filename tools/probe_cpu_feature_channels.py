@@ -22,6 +22,32 @@ try:
     assert abs(data['subsurface_amount']-.4)<1e-6
     assert abs(data['subsurface_distance']-.015)<1e-6
     assert abs(data['absorption_distance']-.2)<1e-6
+    scene.select(material)
+    lx.eval('moonray.material.subsurface_model 2')
+    lx.eval('moonray.material.sss_input_normal true')
+    lx.eval('moonray.material.sss_resolve_self_intersections false')
+    lx.eval('moonray.material.anisotropy_angle 45.0')
+    data=host.material_values(material)
+    assert data['subsurface_model']==2 and data['sss_input_normal']
+    assert not data['sss_resolve_self_intersections']
+    import math
+    assert abs(data['anisotropy_angle']-math.pi/4)<1e-6
+    assert lx.eval('moonray.material.subsurface_model ?')==2
+    for effect,value in [('subsColor',(1,.1,.05)),('subsAmount',.3)]:
+        layer=scene.addItem('constant')
+        layer.setParent(material.parent,0)
+        layer.channel('effect').set(effect)
+        if effect=='subsColor':
+            for axis,component in zip('RGB',value): layer.channel('color.'+axis).set(component)
+        else:
+            layer.channel('value').set(value)
+    translated={}
+    from moonray_modo import layers
+    tag=layers.material_tag(material)
+    translated[tag]=host.material_values(material)
+    warnings=[]
+    layers.collect(scene,translated,warnings)
+    assert {'subsCol','subsAmt'} <= {entry['effect'] for entry in translated[tag]['layers']}, warnings
     scene.renderCamera.channel('projType').set('ortho')
     scene.renderItem.channel('region').set(True)
     for name,value in [('regX0',.1),('regY0',.2),('regX1',.7),('regY1',.8)]:

@@ -108,23 +108,24 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     lines.append('local materials = {}')
     materials = dict(scene.get('materials', {}))
     materials.setdefault('', {'color': [0.5, 0.5, 0.5], 'roughness': 0.4, 'metallic': 0})
+    from . import absorption
+    media = {tag:absorption.medium(material) for tag,material in materials.items()}
     for index, (tag, material) in enumerate(sorted(materials.items())):
         if material.get('material_stack'):
             from .moonshine import emit_stack
-            emit_stack(material['material_stack'],tag,index,lines)
+            emit_stack([absorption.surface(child) for child in material['material_stack']],tag,index,lines)
             continue
-        if material.get('absorption_distance',0)>0 and material.get('transmission',0)>0 and not material.get('thin_geometry',False):
-            material = dict(material,transmission_color=[1,1,1],
-                textures={k:v for k,v in material.get('textures',{}).items() if textures.EFFECT_ALIASES.get(k,k)!='tranCol'},
-                layers=[v for v in material.get('layers',[]) if textures.EFFECT_ALIASES.get(v['effect'],v['effect'])!='tranCol'] if 'layers' in material else None)
+        material = absorption.surface(material)
         bindings = {}
         from .textures import EFFECT_ALIASES
-        effects = set(material.get('textures', {})) | {
+        effects = {EFFECT_ALIASES.get(key,key) for key in material.get('textures', {})} | {
             EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in (material.get('layers') or [])}
         glass = (material.get('transmission', 0) > 0 or material.get('presence', 1) < 1 or
                  'dissolve' in effects or any(k.startswith('tran') for k in effects))
         from .graph import bindings as graph_bindings
-        moonshine = material.get('shader') == 'DwaBaseMaterial' or 'aniso' in effects
+        moonshine = material.get('shader') == 'DwaBaseMaterial' or bool({'aniso','subsCol','subsAmt'} & effects) or material.get('subsurface_amount',0)>0
+        if moonshine:
+            material = dict(material,shader='DwaBaseMaterial')
         bindings = graph_bindings(material, index, lines, glass and not moonshine)
         if moonshine:
             from .moonshine import emit
@@ -161,14 +162,14 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
             lines.append('  [%s] = %s,' % (string(attribute), binding))
         lines.append('}')
     lines.append('local volumes = {}')
-    for index,(tag,material) in enumerate(sorted(materials.items())):
-        distance = material.get('absorption_distance',0)
-        if distance > 0 and material.get('transmission',0)>0 and not material.get('thin_geometry',False):
+    for index,(tag,material) in enumerate(sorted(media.items())):
+        if material is not None:
+            distance = material['absorption_distance']
             sigma = [-math.log(max(1e-6,min(1,float(c))))/distance for c in material.get('transmission_color',[1,1,1])]
             attenuation = vector(sigma,'Rgb')
-            color_layers = [v for v in material.get('layers',[]) if textures.EFFECT_ALIASES.get(v['effect'],v['effect'])=='tranCol']
+            color_layers = absorption.color_layers(material)
             color_maps = {k:v for k,v in material.get('textures',{}).items() if textures.EFFECT_ALIASES.get(k,k)=='tranCol'}
-            if color_layers or color_maps:
+            if any(absorption.effect(v)=='tranCol' for v in color_layers) or color_maps:
                 from .graph import bindings as volume_bindings
                 mapped = volume_bindings(dict(material,layers=color_layers if 'layers' in material else None,textures=color_maps),900000000+index,lines)
                 name = '/modo/absorption/map/%d'%index

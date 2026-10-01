@@ -23,6 +23,7 @@ def bindings(material, index, lines, glass=False):
         'coatRough':material.get('clearcoat_roughness',.01),'tranAmt':material.get('transmission',0),
         'tranCol':material.get('transmission_color',[1]*3),'tranRough':material.get('refraction_roughness',0),
         'normal':[.5,.5,1], 'bump':0, 'groupMask':1, 'aniso':material.get('anisotropy',0),
+        'subsCol':material.get('subsurface_color',[1,1,1]), 'subsAmt':material.get('subsurface_amount',0),
         'diffAmt':material.get('diffuse_amount',1), 'specAmt':material.get('specular_amount',1),
         'lumiAmt':material.get('emission_amount',1), 'dissolve':1-material.get('presence',1)}
     for effect, raw, amount in [('diffCol','raw_color','diffuse_amount'),
