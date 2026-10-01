@@ -49,17 +49,32 @@ Unchecked items remain required by the requested CPU work.
     progressive images into PView. Geometry/color display, docking and shutdown
     validation remain; PView is distinct from the legacy final Render View.
   - Kit candidate includes startup/menu wiring and early shutdown handling.
-    Automated PView tests still expose activation/buffer failures and a shutdown
-    access violation. A transferred-frame counter alone is not a passing test:
+    Automated PView tests still expose activation/buffer failures. A
+    transferred-frame counter alone is not a passing test:
     installation now also requires nonblack saved pixels and clean process exit
     for the exact adapter binary. The normal installed kit has not been replaced.
   - The user confirmed the isolated white-triangle fixture stays blank. Its
     source EXR contains the triangle, but PView rejects `WriteBegin` with
-    `0x80000000`; frame transfer remains unverified. Zero-initialized buffer
-    arguments, staged viewport activation, and a synchronous worker-thread
-    experiment did not resolve it. The worker experiment was reverted.
+    `0x80000000` during automatic startup. Manual-start testing accepted seven
+    frames, but the saved PView PNG remained entirely black. Decoding that same
+    source EXR through Modo's ImageService yields valid nonzero RGBA pixels.
     Pending transfers now expose the diagnostic after ten seconds, and cannot
     report completion before the host accepts the image.
+  - The current source candidate schedules host calls with Platform idle
+    visitors, retains the shutdown listener's COM identity, and initializes
+    the SDK on its asynchronous transfer thread. Shutdown was clean in the
+    initialized-worker and latest clean-profile tests. This is not a verified
+    display fix, and this native binary has not been installed in the normal kit.
+  - Fixed missing mesh-map values: Python MapEvaluate returns false without
+    raising and leaves its storage untouched. Exporting that storage inserted
+    random UV values and repeatedly restarted an unchanged scene. Eight
+    consecutive exports now match; valid zero-valued UVs are preserved.
+  - Compared the user-supplied 17.1v1.251515 SDK (October 1, 2026) with build
+    661446. The declarations in lxexternalrender.h, lximage.h, and lxrender.h
+    match after removing comments, whitespace and include-directory prefixes.
+    The C++ wrappers differ; this comparison does not establish general SDK
+    compatibility. No 17.1 SDK headers were substituted, and all tests still
+    target the installed Modo 16.1v9 executable.
 
 ## Production validation
 - [ ] Large-scene memory and performance tests

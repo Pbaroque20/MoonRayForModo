@@ -7,10 +7,11 @@ import lx
 import lxifc
 from pathlib import Path
 from PySide2 import QtCore
-from . import host,native,properties
+from . import host,native,properties,idle
 from .render import Renderer
 
 _controller=None
+_startup_idle=None
 
 class ShutdownListener(lxifc.SessionListener):
     def sesl_QuittingUI(self):
@@ -36,24 +37,42 @@ class Controller(QtCore.QObject):
         self.sessions={}
         self.errors={}
         self.closed=False
+        self.idle=idle.Dispatcher()
         self.shutdown_listener=ShutdownListener()
-        lx.service.Listener().AddListener(self.shutdown_listener)
-        self.timer=QtCore.QTimer(self)
-        self.timer.setInterval(1200)
-        self.timer.timeout.connect(self.tick)
+        self.shutdown_listener_com=lx.object.Unknown(self.shutdown_listener)
+        lx.service.Listener().AddListener(self.shutdown_listener_com)
+        self.timer=idle.Timer(self.tick)
         self.timer.start()
         QtCore.QCoreApplication.instance().aboutToQuit.connect(self.close)
 
     def status(self,identity,message):
         if self.closed: return
-        self.bridge.MR_preview_status(identity,message.encode('utf-8'))
+        self.idle.submit(('status',identity),lambda:self.bridge.MR_preview_status(identity,message.encode('utf-8')))
+
+    def queue_frame(self,identity,path):
+        session=self.sessions.get(identity)
+        if self.closed or session is None: return
+        generation=session['renderer'].generation
+        session['awaiting_frame']=generation
+        def transfer():
+            current=self.sessions.get(identity)
+            if not current or current['renderer'].generation!=generation: return
+            current.pop('awaiting_frame',None)
+            self.publish(identity,path)
+        self.idle.submit(('frame',identity),transfer)
 
     def publish(self,identity,path):
         if self.closed: return
         session=self.sessions.get(identity)
         completed=int(bool(session) and not session['renderer'].passes)
         result=self.bridge.MR_preview_publish(identity,str(path).encode('utf-8'),completed)
-        if result==-2 and session is not None:
+        if result==0:
+            # A queued frame can arrive after the user pauses/closes PView.
+            if session:
+                session.pop('pending_frame',None)
+                session.pop('pending_since',None)
+            return
+        if result in (-2,2) and session is not None:
             # PView can withhold its buffer while opening, paused or resizing.
             # Retain the latest frame instead of losing the finished render.
             session['pending_frame']=path
@@ -116,7 +135,7 @@ class Controller(QtCore.QObject):
                 renderer=Renderer(self)
                 renderer.status.connect(lambda text,i=identity:self.status(i,text))
                 renderer.failed.connect(lambda text,i=identity:self.failure(i,text))
-                renderer.image_ready.connect(lambda path,i=identity:self.publish(i,path))
+                renderer.image_ready.connect(lambda path,i=identity:self.queue_frame(i,path))
                 renderer.finished.connect(lambda path,i=identity:self.completed(i))
                 session={'renderer':renderer,'digest':None,'running':False}
                 self.sessions[identity]=session
@@ -129,6 +148,7 @@ class Controller(QtCore.QObject):
                 if digest!=session['digest'] or not session['running']:
                     session.pop('pending_frame',None)
                     session.pop('pending_since',None)
+                    session.pop('awaiting_frame',None)
                     self.errors.pop(identity,None)
                     width=min(640,scene['width']); height=max(16,round(width*scene['height']/scene['width']))
                     session['renderer'].submit(scene,runtime,width,height,values.get('samples',4),
@@ -141,13 +161,16 @@ class Controller(QtCore.QObject):
         self.status(identity,text)
 
     def completed(self,identity):
-        if identity not in self.errors and not self.sessions.get(identity,{}).get('pending_frame'):
+        session=self.sessions.get(identity,{})
+        if identity not in self.errors and not session.get('pending_frame') and 'awaiting_frame' not in session:
             self.status(identity,'Preview complete')
 
     def close(self):
         if self.closed: return
         self.closed=True
         self.timer.stop()
+        self.idle.close()
+        lx.service.Listener().RemoveListener(self.shutdown_listener_com)
         for session in self.sessions.values(): session['renderer'].close()
         self.sessions.clear()
         shutdown=getattr(self.bridge,'MR_preview_shutdown',None)
@@ -166,3 +189,8 @@ def start(path=None):
     # The session listener stops polling before those interfaces disappear.
     _controller=Controller(path)
     return _controller
+
+def start_when_idle():
+    global _startup_idle
+    if _startup_idle is None: _startup_idle=idle.Dispatcher()
+    _startup_idle.submit('start',start)

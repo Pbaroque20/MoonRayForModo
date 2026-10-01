@@ -228,8 +228,7 @@ class NativePreviewStartup(lxu.command.BasicCommand):
             return
         from moonray_modo import native_preview
         # StartupCommands run before the application's UI is fully initialized.
-        from PySide2 import QtCore
-        QtCore.QTimer.singleShot(0, native_preview.start)
+        native_preview.start_when_idle()
 
 
 class NativePreviewOpen(NativePreviewStartup):

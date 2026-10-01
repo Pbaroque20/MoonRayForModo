@@ -44,7 +44,10 @@ def corner_values(polygons, map_id, count, dimension):
     values = []
     for corner in range(count):
         try:
-            polygons.MapEvaluate(map_id, polygons.VertexByIndex(corner), storage)
+            # Missing per-corner data returns false without raising. The storage
+            # buffer is then untouched and must never be exported or hashed.
+            if not polygons.MapEvaluate(map_id, polygons.VertexByIndex(corner), storage):
+                return []
             values.append(list(storage.get()))
         except LookupError:
             return []

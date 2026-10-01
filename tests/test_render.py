@@ -16,7 +16,52 @@ except ImportError:
 
 
 @unittest.skipIf(QtCore is None, 'Run inside Modo for the Qt lifecycle tests')
+class HostMapTests(unittest.TestCase):
+    def test_missing_corner_does_not_export_unwritten_storage(self):
+        from moonray_modo import host
+        class Polygon:
+            def VertexByIndex(self, index): return index
+            def MapEvaluate(self, map_id, point, storage):
+                if point==0:
+                    storage.set((.25,.75))
+                    return True
+                return False
+        self.assertEqual(host.corner_values(Polygon(),123,3,2),[])
+
+    def test_valid_zero_uv_is_preserved(self):
+        from moonray_modo import host
+        class Polygon:
+            def VertexByIndex(self, index): return index
+            def MapEvaluate(self, map_id, point, storage):
+                storage.set((0.0,0.0))
+                return True
+        self.assertEqual(host.corner_values(Polygon(),123,3,2),[[0.0,0.0]]*3)
+
+
+@unittest.skipIf(QtCore is None, 'Run inside Modo for the Qt lifecycle tests')
 class NativePreviewStatusTests(unittest.TestCase):
+    def test_frame_queued_before_pause_is_discarded_without_error(self):
+        from moonray_modo.native_preview import Controller
+        session={'renderer':SimpleNamespace(passes=[]),'pending_frame':'old.exr','pending_since':1}
+        controller=SimpleNamespace(closed=False,bridge=SimpleNamespace(MR_preview_publish=lambda *args:0),
+                                   sessions={1:session},errors={})
+        Controller.publish(controller,1,'old.exr')
+        self.assertFalse(controller.errors)
+        self.assertNotIn('pending_frame',session)
+        self.assertNotIn('pending_since',session)
+
+    def test_queued_image_from_old_generation_is_not_published(self):
+        from moonray_modo.native_preview import Controller
+        pending={}; published=[]
+        renderer=SimpleNamespace(generation=1)
+        controller=SimpleNamespace(closed=False,sessions={1:{'renderer':renderer}},
+            idle=SimpleNamespace(submit=lambda key,callback:pending.update({key:callback})),
+            publish=lambda *args:published.append(args))
+        Controller.queue_frame(controller,1,'old.exr')
+        renderer.generation=2
+        pending[('frame',1)]()
+        self.assertFalse(published)
+
     def test_pending_buffer_reports_failure_and_recovers_only_after_transfer(self):
         from moonray_modo.native_preview import Controller
         statuses=[]
@@ -39,6 +84,37 @@ class NativePreviewStatusTests(unittest.TestCase):
         self.assertNotIn('pending_frame',session)
         self.assertNotIn('pending_since',session)
         self.assertEqual(statuses[-1],'Preview complete')
+
+
+@unittest.skipIf(QtCore is None, 'Run inside Modo for the Qt lifecycle tests')
+class IdleLifecycleTests(unittest.TestCase):
+    def test_latest_frame_wins_and_close_cancels_exact_visitor(self):
+        from moonray_modo import idle
+        from unittest.mock import Mock
+        platform=Mock(); visitor=object(); received=[]
+        with patch.object(idle.lx.service,'Platform',return_value=platform), patch.object(idle.lx.object,'Visitor',return_value=visitor):
+            dispatcher=idle.Dispatcher()
+        dispatcher.submit('frame',lambda:received.append('old'))
+        dispatcher.submit('frame',lambda:received.append('new'))
+        platform.DoWhenUserIsIdle.assert_called_once_with(visitor,idle.FLAGS)
+        dispatcher.vis_Evaluate()
+        self.assertEqual(received,['new'])
+        dispatcher.submit('frame',lambda:received.append('closed'))
+        dispatcher.close()
+        platform.CancelDoWhenUserIsIdle.assert_called_once_with(visitor,idle.FLAGS)
+        dispatcher.vis_Evaluate()
+        self.assertEqual(received,['new'])
+
+    def test_timer_stopped_inside_callback_is_not_rearmed(self):
+        from moonray_modo import idle
+        from unittest.mock import Mock
+        platform=Mock(); visitor=object()
+        with patch.object(idle.lx.service,'Platform',return_value=platform), patch.object(idle.lx.object,'Visitor',return_value=visitor):
+            timer=idle.Timer(lambda:timer.stop(),20)
+        timer.start()
+        timer.vis_Evaluate()
+        self.assertFalse(timer.active)
+        platform.TimerStart.assert_called_once_with(visitor,20,idle.FLAGS)
 
 
 @unittest.skipIf(QtCore is None, 'Run inside Modo for the Qt lifecycle tests')
