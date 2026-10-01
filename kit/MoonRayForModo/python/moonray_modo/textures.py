@@ -14,6 +14,12 @@ EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
            'normal':'normal', 'bump':'bump'}
 COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol'}
 
+# Shader Tree effect identifiers differ from advancedMaterial channel names.
+# Retain the short names in the snapshot format for existing exported scenes.
+EFFECT_ALIASES = {'diffColor': 'diffCol', 'specColor': 'specCol',
+                  'lumiColor': 'lumiCol', 'tranColor': 'tranCol',
+                  'tranAmount': 'tranAmt', 'coatAmount': 'coatAmt'}
+
 
 def prepare(source, srgb=False):
     source = Path(source).resolve()

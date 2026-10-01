@@ -48,8 +48,10 @@ def collect(scene, materials, warnings):
             base = materials[tag].get('base_layer_id')
             if base in positions and positions[layer.id] > positions[base]:
                 # An upper material replaces this layer's channels.
+                warnings.append('Layer %s is below its material and is overridden. Move it above the material in the same Shader Tree group.' % layer.name)
                 continue
             effect = channel(layer,'effect','')
+            effect = textures.EFFECT_ALIASES.get(effect, effect)
             if effect not in textures.EFFECTS:
                 raise ValueError('unsupported effect '+effect)
             blend = channel(layer,'blend','normal')

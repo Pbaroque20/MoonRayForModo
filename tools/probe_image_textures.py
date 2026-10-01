@@ -51,7 +51,7 @@ try:
     lx.eval('item.create imageMap')
     layer = scene.selected[0]
     layer.setParent(mask, 0)
-    layer.channel('effect').set('diffCol')
+    layer.channel('effect').set('diffColor')
     locator = next(i for i in layer.itemGraph('shadeLoc').forward() if i.type == 'txtrLocator')
     locator.channel('projType').set('uv')
     locator.channel('uvMap').set('PaintUV')

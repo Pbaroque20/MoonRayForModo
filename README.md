@@ -65,6 +65,11 @@ maps are not translated for this shader. The full Moonshine shader catalog and
 every DwaBase attribute are not exposed. Other Modo materials retain their existing
 translation until explicitly switched.
 
+Place an image **above** its material inside the same Shader Tree group and use
+the mesh's named UV map. Layers below their material now produce a placement
+warning. Modo's native effect names (`diffColor`, `specColor`, `lumiColor`,
+`tranColor`, `tranAmount`, `coatAmount`) are translated to the renderer bindings.
+
 ### Jagged shadows on smooth polygon objects
 
 Coarse polygons can cast stepped shadows even when their shading looks smooth.

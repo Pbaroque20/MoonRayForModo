@@ -18,10 +18,10 @@ layer.channel('effect').set('bump')
 material.channel('bumpAmp').set(.03)
 bump_snapshot=host.snapshot()
 assert abs(bump_snapshot['materials']['texture_test']['bump_strength']-.03)<1e-6
-layer.channel('effect').set('diffCol')
+layer.channel('effect').set('diffColor')
 lx.eval('item.create constant')
 top=scene.selected[0]; top.setParent(mask,0)
-top.channel('effect').set('diffCol'); top.channel('opacity').set(.25)
+top.channel('effect').set('diffColor'); top.channel('opacity').set(.25)
 top.channel('color.R').set(0); top.channel('color.G').set(0); top.channel('color.B').set(1)
 stack=host.snapshot()['materials']['texture_test']['layers']
 assert [n['kind'] for n in stack]==['imageMap','constant'], stack
