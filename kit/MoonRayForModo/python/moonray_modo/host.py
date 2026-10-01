@@ -184,8 +184,13 @@ def snapshot(evaluated_geometry=False):
             continue
         material_candidates.setdefault(tag,[]).append(material)
         result['materials'][tag] = material_values(material)
-        if channel(material,'specFres',1)!=1 or channel(material,'reflFres',1)!=1:
-            warnings.append('Independent Modo Fresnel edge multipliers are not translated: '+material.name)
+        from .channel_values import fresnel_controls
+        unmatched = fresnel_controls(properties.read(material),
+            float(channel(material,'specAmt',0)),float(channel(material,'reflAmt',0)),
+            float(channel(material,'specFres',1)),float(channel(material,'reflFres',1)))
+        if unmatched:
+            warnings.append("%s: %s differs from MoonRay's IOR-based Fresnel response." %
+                            (material.name,', '.join(unmatched)))
         if channel(material,'subsAmt',0) or channel(material,'aniso',0):
             result['materials'][tag]['shader'] = 'DwaBaseMaterial'
         if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':

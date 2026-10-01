@@ -8,6 +8,7 @@ import struct
 import tempfile
 import uuid
 from . import textures
+from .channel_values import rgb
 
 
 def collect(scene, warnings):
@@ -55,7 +56,7 @@ def collect(scene, warnings):
                         transform = world_matrix(sun)
                         entry.update(sun_direction=[-v for v in transform[8:11]],
                                      haze=float(channel(sun,'haze',1)),
-                                     ground_albedo=[float(channel(layer,'albedo',.2))]*3)
+                                     ground_albedo=rgb(channel(layer,'albedo',.2),'Physical sky ground albedo'))
                         warnings.append('Physical daylight uses a single-scattering approximation; Modo sky brightness, ozone and solar-disc parity remain unverified: '+layer.name)
                     if channel(layer,'fogType','none') != 'none':
                         warnings.append('Environment fog is not translated: '+layer.name)
