@@ -28,11 +28,12 @@ class Renderer(QtCore.QObject):
         self.log = ''
         self.generation = 0
 
-    def submit(self, snapshot, runtime, width, height, samples, environment, threads, output=None):
+    def submit(self, snapshot, runtime, width, height, samples, environment, threads, output=None, linear_preview=False):
         runtime = native.find_runtime(runtime)
         self.generation += 1
         request = dict(snapshot=snapshot, runtime=runtime, width=width, height=height, generation=self.generation,
-                       samples=samples, environment=environment, threads=threads, output=output)
+                       samples=samples, environment=environment, threads=threads, output=output,
+                       linear_preview=linear_preview)
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         if self.process.state() != QtCore.QProcess.NotRunning:
@@ -68,7 +69,7 @@ class Renderer(QtCore.QObject):
         self.sample_grid = self.passes.pop(0)
         self.current_base = Path(self.directory.name) / uuid.uuid4().hex
         scene = self.current_base.with_suffix('.rdla')
-        self.image_path = self.current_base.with_suffix('.exr' if request['output'] else '.png')
+        self.image_path = self.current_base.with_suffix('.exr' if request['output'] or request.get('linear_preview') else '.png')
         try:
             text = rdla.scene_text(request['snapshot'], request['width'], request['height'],
                                    self.sample_grid, request['environment'],

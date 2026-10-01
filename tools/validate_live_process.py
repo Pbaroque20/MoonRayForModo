@@ -17,7 +17,10 @@ from moonray_modo.render import Renderer
 
 glass_test = '--glass' in sys.argv
 surface_test = '--surface' in sys.argv
+linear_preview = '--linear-preview' in sys.argv
 results = root / ('test-results/surface-live-process' if surface_test else 'test-results/glass-live-process' if glass_test else 'test-results/live-process')
+if linear_preview:
+    results = root / 'test-results/linear-preview-process'
 results.mkdir(parents=True, exist_ok=True)
 app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
 renderer = Renderer()
@@ -59,12 +62,14 @@ def replace():
         end('Initial renderer stopped before the cancellation test.')
         return
     snapshot['meshes'][0]['vertices'][2][0] = .5
-    renderer.submit(snapshot, root / 'runtime/native-avx', 96, 96, 1, 1, 2)
+    renderer.submit(snapshot, root / 'runtime/native-avx', 96, 96, 1, 1, 2, linear_preview=linear_preview)
 
 
 def image_ready(path):
     report['images'].append(renderer.generation)
-    shutil.copy2(path, results / 'replacement.png')
+    shutil.copy2(path, results / ('replacement.exr' if linear_preview else 'replacement.png'))
+    if linear_preview and Path(path).read_bytes()[:4] != b'\x76\x2f\x31\x01':
+        report['errors'].append('Linear preview did not produce an OpenEXR image.')
 
 
 renderer.process.started.connect(started)
@@ -72,7 +77,7 @@ renderer.image_ready.connect(image_ready)
 renderer.failed.connect(end)
 renderer.finished.connect(lambda _: QtCore.QTimer.singleShot(0, end))
 QtCore.QTimer.singleShot(60000, lambda: end('Native Qt lifecycle test timed out.'))
-renderer.submit(snapshot, root / 'runtime/native-avx', 512, 512, 8, 1, 2)
+renderer.submit(snapshot, root / 'runtime/native-avx', 512, 512, 8, 1, 2, linear_preview=linear_preview)
 code = app.exec_()
 print(json.dumps(report, indent=2))
 raise SystemExit(code)

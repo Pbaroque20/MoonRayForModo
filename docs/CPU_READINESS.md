@@ -39,6 +39,9 @@ Unchecked items remain required by the requested CPU work.
 - [x] Perspective depth of field: focus distance, f-stop, blade count/rotation
 - [ ] Modo bokeh/iris-bias reference parity
 - [ ] Native Render View integration
+  - Experimental C++ external-render adapter loads in Modo 16.1v9 and transfers
+    progressive images into PView. Geometry/color display, docking and shutdown
+    validation remain; PView is distinct from the legacy final Render View.
 
 ## Production validation
 - [ ] Large-scene memory and performance tests
