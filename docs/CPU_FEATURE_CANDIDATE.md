@@ -30,6 +30,39 @@ rendering models. Pixel-for-pixel matching of Modo's renderer is not required.
 
 ## Source implemented in this checkpoint
 
+### Camera, motion, projections and release integrity (also unverified)
+
+- Film Offset X/Y and render/camera pixel aspect now participate in film-gate
+  conversion. Film-fit calculations use the physical output aspect. Native
+  perspective/orthographic equations determine offset units and pixel-aspect
+  compensation; Modo reference framing still needs validation. See Foundry's
+  [camera controls](https://learn.foundry.com/modo/14.0/content/help/pages/rendering/camera_item.html)
+  and [16.1 frame settings](https://learn.foundry.com/modo/16.1v8/content/help/pages/rendering/frame.html).
+- Shutter samples match mesh/light/instance identities rather than array order.
+  Duplicates, changed topology/assignments and missing instance transforms fail
+  before modifying the snapshot. Animated perspective focal length uses the
+  native blurrable focal attribute. Unsupported shutter-varying controls produce
+  warnings and retain the frame-time value. Geometry arrays stay shared during
+  motion assembly instead of being deep-copied.
+- Cubic projection bakes a dominant-axis mapping per polygon, including locator
+  transforms and axis selection, in both ordinary and evaluated exports.
+  Degenerate faces fail explicitly. This is not smooth triplanar mapping; face
+  orientation and seams require Modo scene comparisons.
+- Spherical environment images accept the existing UV affine transform, origin
+  rotation and repeat scaling through the layered bake. Disabled environments
+  are skipped. The bake cache now includes output dimensions and a format version.
+  Environment alpha, arbitrary tiling modes and nested groups remain incomplete.
+- Deferred render reports fingerprint kit/native sources and runtime executables,
+  libraries and shader modules before/after each run. Runtime packaging and
+  installation require all five current feature reports; prior results cannot
+  authorize changed binaries or sources. Packaging writes an atomic temporary
+  archive and preserves an existing release on failure. This is a consistency
+  gate, not evidence of complete compatibility or production readiness.
+- Deferred numerical cases cover identity reordering, atomic failures, camera
+  conversion, cubic faces and environment UV transforms. Render fixtures add
+  film shift, non-square pixels and lens motion. `tests/test_validation_inputs.py`
+  checks stale source/shader detection. None of these checks were executed.
+
 ### Subsurface controls and shared interiors (also unverified)
 
 - Modo `subsColor` and `subsAmount` texture effects now route to MoonShine.
@@ -142,20 +175,22 @@ Use the Modo 16.1v9 bundled Python environment for Qt-dependent scripts.
 
 - Arbitrarily nested Shader Tree groups, group blend semantics, layer masks,
   non-material selection masks, broader procedural/node shaders and all effect
-  channels are not reproduced. Current group masks cover only the material-stack
-  path; they are not a general Shader Tree evaluator.
+  channels are not reproduced. Current group masks cover material stacks and
+  nested Normal texture groups; they are not a general Shader Tree evaluator.
 - Colored dielectric F0, independent Modo Fresnel edge multipliers, SSS phase/
   depth behavior, dispersion, and layered or overlapping absorption volumes
   need further implementation. Different BSDFs are not appearance parity.
-- Cubic/triplanar/camera projection, random UV transforms, native UDIM clip
+- Triplanar/camera projection, random UV transforms, native UDIM clip
   folders, transformed normal/bump tangent spaces and exact Modo procedural
   patterns remain incomplete.
 - Replicator/material/crease fidelity is untested. Render Cache sampling still
   runs synchronously on the main thread; its full large-scene behavior is not
-  established. Named evaluated projections other than UV are rejected.
+  established. Evaluated projections now expand affected replicas and need
+  reference validation, including cubic orientation.
 - Motion expands stable-identity instances to separately transformed meshes. It
   requires stable identities/topology. UVs, normals, shading parameters,
   lights other than transforms and environments are not motion sampled.
+  Camera motion includes transforms and perspective focal length only.
 - Orthographic scale uses target-distance/film/focal conversion and remains
   uncalibrated against Modo; a camera MRAY `ortho_width` value overrides it.
 - Sky model, solar disc, ozone, multiple scattering, HDR orientation/exposure,

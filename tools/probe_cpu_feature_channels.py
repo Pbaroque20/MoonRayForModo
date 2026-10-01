@@ -49,11 +49,15 @@ try:
     layers.collect(scene,translated,warnings)
     assert {'subsCol','subsAmt'} <= {entry['effect'] for entry in translated[tag]['layers']}, warnings
     scene.renderCamera.channel('projType').set('ortho')
+    scene.renderCamera.channel('offsetX').set(.001)
+    scene.renderItem.channel('pAspect').set(2)
     scene.renderItem.channel('region').set(True)
     for name,value in [('regX0',.1),('regY0',.2),('regX1',.7),('regY1',.8)]:
         scene.renderItem.channel(name).set(value)
     data=host.snapshot()
     assert data['camera']['projection']=='ortho'
+    assert data['camera']['pixel_aspect']==2
+    assert data['camera']['film_offset'][0]>0
     assert all(abs(a-b)<1e-6 for a,b in zip(data['region'],[.1,.2,.7,.8]))
     assert 'OrthographicCamera' in rdla.scene_text(data)
     before=lx.service.Selection().GetTime()

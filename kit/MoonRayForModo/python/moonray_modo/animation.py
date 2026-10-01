@@ -31,35 +31,7 @@ def capture_frame(time, evaluated=False, motion=False, fps=24):
         selection.SetTime(original)
 
 
-def apply_motion(scene, start, end, endpoints):
-    scene['camera']['matrix'] = start['camera']['matrix']
-    scene['camera']['matrix_close'] = end['camera']['matrix']
-    scene['motion_steps'] = endpoints
-    # Matching by export identity must be exact; topology changes cannot be
-    # represented by a two-sample RdlMesh and must not blur unrelated points.
-    for endpoint in (start,end):
-        if len(endpoint['meshes']) != len(scene['meshes']):
-            raise ValueError('Motion blur cannot export changing mesh counts')
-    expanded=[]
-    for mesh,a,b in zip(scene['meshes'], start['meshes'], end['meshes']):
-        if any(m.get('identity',m['name']) != mesh.get('identity',mesh['name']) or m['faces'] != mesh['faces'] or
-               len(m['vertices']) != len(mesh['vertices']) for m in (a,b)):
-            raise ValueError('Motion blur requires stable geometry topology: '+mesh['name'])
-        if 'instances' in mesh:
-            if not mesh.get('instance_ids') or a.get('instance_ids')!=mesh['instance_ids'] or b.get('instance_ids')!=mesh['instance_ids']:
-                raise ValueError('Motion blur requires stable instance identities')
-            for identity,ma,mb in zip(mesh['instance_ids'],a['instances'],b['instances']):
-                value=dict(mesh,name=mesh['name']+' / '+identity,matrix=ma,matrix_close=mb,vertices=a['vertices'],vertices_close=b['vertices'])
-                value.pop('instances');value.pop('instance_ids',None)
-                expanded.append(value)
-        else:
-            mesh.update(matrix=a['matrix'], matrix_close=b['matrix'],vertices=a['vertices'],vertices_close=b['vertices'])
-            expanded.append(mesh)
-    scene['meshes']=expanded
-    if len(start['lights']) != len(end['lights']):
-        raise ValueError('Motion blur cannot export changing light counts')
-    for light,a,b in zip(scene['lights'],start['lights'],end['lights']):
-        light.update(matrix=a['matrix'],matrix_close=b['matrix'])
+from .motion import apply_motion
 
 
 class Sequence(QtCore.QObject):

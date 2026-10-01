@@ -18,6 +18,8 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('feature',choices=['materials','textures','geometry','environments','rendering'])
 parser.add_argument('--runtime',type=Path,default=root/'runtime/native-avx')
 args=parser.parse_args()
+from validation_inputs import fingerprint
+validation_inputs=fingerprint(root,args.runtime)
 modo=Path(r'C:\Program Files\Modo16.1v9\modo')
 extra=modo/'resrc/python3kit/extra64'
 sys.path[:0]=[str(extra/'Python/Scripts'),str(root/'kit/MoonRayForModo/python')]
@@ -87,11 +89,15 @@ elif args.feature=='environments':
     case('opaque')['environments']=[other]
 elif args.feature=='rendering':
     case('orthographic')['camera'].update(projection='ortho',ortho_width=4)
+    case('film_shift')['camera'].update(film_offset=[6,0])
+    case('non_square')['camera'].update(pixel_aspect=.5)
+    lens=case('lens_motion');lens['motion_steps']=[-.25,.25]
+    lens['camera'].update(focal_mm=25,focal_mm_close=65)
     case('region')['region']=[.25,.25,.75,.75]
     moving=case('motion');moving['motion_steps']=[-.25,.25]
     moving['meshes'][0]['vertices_close']=[[x+1,y,z] for x,y,z in vertices]
 
-report={'passed':False,'level':'real renderer response; Modo parity not established','cases':{}}
+report={'passed':False,'level':'real renderer response; Modo parity not established','cases':{},'inputs':validation_inputs}
 pixels={}
 try:
     for name,value in cases.items():
@@ -112,12 +118,15 @@ try:
                        ('wrap_edge','wrap_reset'),('channel_red','channel_green'),
                        ('channel_only','channel_ignore'),('channel_use','channel_ignore')],
            'geometry':[('smooth','creased')],
-           'environments':[('layered','opaque')],'rendering':[('reference','orthographic'),('reference','motion')]}
+           'environments':[('layered','opaque')],'rendering':[('reference','orthographic'),('reference','motion'),
+                           ('reference','film_shift'),('reference','non_square'),('reference','lens_motion')]}
     report['mean_absolute_changes']={}
     for a,b in pairs[args.feature]:
         difference=sum(abs(x-y) for p,q in zip(pixels[a],pixels[b]) for x,y in zip(p,q))/(len(pixels[a])*3)
         report['mean_absolute_changes'][a+' / '+b]=difference
         if difference<.5: raise AssertionError('No meaningful image response: '+a+' / '+b)
+    if fingerprint(root,args.runtime)!=validation_inputs:
+        raise RuntimeError('Source or runtime changed while validation was running; rerun this group')
     report['passed']=True
 except Exception:
     report['error']=traceback.format_exc()

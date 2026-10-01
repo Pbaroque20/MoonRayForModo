@@ -60,12 +60,25 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     if dof and (camera.get('f_stop', 4) <= 0 or camera.get('focus_distance', 4) <= 0):
         raise ValueError('Depth of field requires positive f-stop and focus distance')
     orthographic = camera.get('projection','persp') == 'ortho'
+    if not orthographic and (camera['focal_mm']<=0 or camera.get('focal_mm_close',camera['focal_mm'])<=0):
+        raise ValueError('Camera focal length must be positive at both shutter endpoints')
     if orthographic and camera.get('ortho_width',1)<=0:
         raise ValueError('Orthographic width must be positive')
+    if camera.get('pixel_aspect',1)<=0:
+        raise ValueError('Camera pixel aspect must be positive')
+    film_offset=camera.get('film_offset',[0,0])
+    if len(film_offset)!=2:
+        raise ValueError('Camera film offset must have two components')
+    focal = number(camera['focal_mm']) if not orthographic else None
+    if not orthographic and 'focal_mm_close' in camera:
+        focal='blur(%s, %s)' % (focal,number(camera['focal_mm_close']))
     lines = ['-- MoonRayForModo 0.1.0; scene units are meters',
              'local camera = %s("/modo/camera") {' % ('OrthographicCamera' if orthographic else 'PerspectiveCamera'),
              '  ["node_xform"] = %s,' % node_matrix(camera),
-             *([] if orthographic else ['  ["focal"] = %s,' % number(camera['focal_mm'])]),
+             *([] if orthographic else ['  ["focal"] = %s,' % focal]),
+             '  ["horizontal_film_offset"] = %s,' % number(film_offset[0]),
+             '  ["vertical_film_offset"] = %s,' % number(film_offset[1]),
+             '  ["pixel_aspect_ratio"] = %s,' % number(camera.get('pixel_aspect',1)),
              '  ["film_width_aperture"] = %s,' % number(camera.get('ortho_width',1) if orthographic else camera['film_mm']),
              '  ["dof"] = %s,' % ('true' if dof else 'false'),
              '  ["dof_aperture"] = %s,' % number(camera.get('f_stop', 4)),

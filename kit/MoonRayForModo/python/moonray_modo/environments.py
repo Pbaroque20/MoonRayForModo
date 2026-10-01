@@ -11,9 +11,11 @@ from . import textures
 
 
 def collect(scene, warnings):
-    from .host import channel, color, world_matrix
+    from .host import channel, color, world_matrix, render_visible
     result = []
     for environment in scene.items('environment', superType=False):
+        if not render_visible(environment):
+            continue
         intensity = float(channel(environment, 'radiance', 1))
         if intensity <= 0:
             continue
@@ -68,9 +70,13 @@ def collect(scene, warnings):
                     if any(channel(layer,k,v)!=v for k,v in {'gamma':1,'brightness':1,'contrast':1,
                             'swizzling':0,'redInv':0,'greenInv':0,'blueInv':0}.items()):
                         raise ValueError('environment image color corrections are unsupported')
-                    if any(channel(locator,k,v)!=v for k,v in {'wrapU':1,'wrapV':1,'uvRotation':0,
-                            'm00':1,'m01':0,'m02':0,'m10':0,'m11':1,'m12':0,'randOffset':'none'}.items()):
-                        raise ValueError('environment image UV transforms/repeats are unsupported; rotate the Texture Locator')
+                    if channel(locator,'randOffset','none')!='none':
+                        raise ValueError('environment random offsets are unsupported')
+                    entry.update(uv_matrix=[float(channel(locator,k,v)) for k,v in zip(
+                        ('m00','m01','m02','m10','m11','m12'),(1,0,0,0,1,0))],
+                        rotation=float(channel(locator,'uvRotation',0)),
+                        scale=[float(channel(locator,'wrapU',1)),float(channel(locator,'wrapV',1))])
+                    entry['transformed']=entry['uv_matrix']!=[1,0,0,0,1,0] or entry['rotation']!=0 or entry['scale']!=[1,1]
                     path = Path(channel(clip,'filename',''))
                     if not path.is_absolute() and getattr(scene,'filename',None):
                         path = Path(scene.filename).parent/path
@@ -90,7 +96,7 @@ def collect(scene, warnings):
             except (ValueError, LookupError, OSError) as exc:
                 warnings.append('Environment %s: %s.' % (layer.name,exc))
         if stack:
-            if len(stack)==1 and stack[0]['kind']!='physical' and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert']:
+            if len(stack)==1 and stack[0]['kind']!='physical' and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed'):
                 result.append(stack[0])
             else:
                 result.append(dict(item,kind='stack',layers=stack))

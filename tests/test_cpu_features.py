@@ -21,6 +21,18 @@ def scene():
 
 
 class Textures(unittest.TestCase):
+    def test_cubic_faces_keep_two_dimensional_coordinates(self):
+        descriptor={'projection':'cubic','locator_matrix':rdla.IDENTITY}
+        faces=[[[0,0,0],[1,0,0],[1,1,0],[0,1,0]],
+               [[0,0,0],[0,1,0],[0,1,1],[0,0,1]],
+               [[0,0,0],[0,0,1],[1,0,1],[1,0,0]]]
+        for face in faces:
+            values=coordinates.face(descriptor,face,[],rdla.IDENTITY)
+            self.assertEqual(len(set(u for u,v in values)),2)
+            self.assertEqual(len(set(v for u,v in values)),2)
+        with self.assertRaises(ValueError):
+            coordinates.face(descriptor,[[0,0,0]]*3,[],rdla.IDENTITY)
+
     def test_image_channel_selection_and_alpha_only_are_explicit(self):
         from moonray_modo.graph import bindings
         for channel,component in [('red',0),('green',1),('blue',2),('only',None)]:
@@ -259,6 +271,12 @@ class Geometry(unittest.TestCase):
 
 
 class Environments(unittest.TestCase):
+    def test_environment_uv_transform_uses_shared_origin_rotation(self):
+        values=coordinates.transform_uv({'rotation':math.pi/2,'scale':[2,3],
+            'uv_matrix':[1,0,.25,0,1,0]},[[.25,.5]])
+        self.assertAlmostEqual(values[0][0],-1)
+        self.assertAlmostEqual(values[0][1],1.5)
+
     def test_linear_blend_is_not_gamma_encoded(self):
         self.assertEqual(blend([0]*3,[1]*3,'normal',.5),[.5]*3)
         self.assertEqual(blend([.25]*3,[.8]*3,'multiply',1),[.2]*3)
@@ -272,6 +290,55 @@ class Environments(unittest.TestCase):
 
 
 class Rendering(unittest.TestCase):
+    def test_camera_framing_and_non_square_pixels(self):
+        from moonray_modo.camera import framing,offsets
+        aperture,ratio=framing(100,100,.036,.024,2,'vertical')
+        self.assertAlmostEqual(aperture,.048)
+        self.assertEqual(ratio,2)
+        self.assertEqual(offsets(.001,-.002,'persp',.036,4),[1,-2])
+        self.assertEqual(offsets(.001,-.002,'persp',.036,4,2),[1,-4])
+        self.assertEqual(offsets(.001,-.002,'ortho',.04,4),[.1,-.2])
+        value=scene();value['camera'].update(film_offset=[1,-2],pixel_aspect=.5,focal_mm_close=70)
+        text=rdla.scene_text(value)
+        self.assertIn('["horizontal_film_offset"] = 1',text)
+        self.assertIn('["pixel_aspect_ratio"] = 0.5',text)
+        self.assertIn('["focal"] = blur(35, 70)',text)
+        with self.assertRaises(ValueError): framing(100,100,.036,.024,0)
+
+    def test_motion_matches_reordered_meshes_and_samples_focal_length(self):
+        from moonray_modo.motion import apply_motion
+        value=scene()
+        value['meshes'][0]['identity']='a'
+        value['meshes'].append(dict(value['meshes'][0],identity='b',name='second'))
+        start,end=copy.deepcopy(value),copy.deepcopy(value)
+        end['meshes'].reverse()
+        shifted=list(rdla.IDENTITY);shifted[12]=2
+        end['meshes'][0]['matrix']=shifted
+        end['camera']['focal_mm']=70
+        apply_motion(value,start,end,[-.25,.25])
+        self.assertEqual(value['meshes'][0]['matrix_close'],rdla.IDENTITY)
+        self.assertEqual(value['meshes'][1]['matrix_close'],shifted)
+        self.assertEqual(value['camera']['focal_mm_close'],70)
+
+    def test_motion_failure_is_atomic_and_rejects_duplicate_identities(self):
+        from moonray_modo.motion import apply_motion
+        value=scene();start,end=copy.deepcopy(value),copy.deepcopy(value)
+        end['meshes'].append(copy.deepcopy(end['meshes'][0]))
+        before=copy.deepcopy(value)
+        with self.assertRaises(ValueError): apply_motion(value,start,end,[-.25,.25])
+        self.assertEqual(value,before)
+
+    def test_motion_matches_reordered_instances_without_truncation(self):
+        from moonray_modo.motion import apply_motion
+        value=scene();shifted=list(rdla.IDENTITY);shifted[12]=2
+        value['meshes'][0].update(instances=[rdla.IDENTITY,shifted],instance_ids=['a','b'])
+        start,end=copy.deepcopy(value),copy.deepcopy(value)
+        end['meshes'][0].update(instances=[shifted,rdla.IDENTITY],instance_ids=['b','a'])
+        apply_motion(value,start,end,[-.25,.25])
+        self.assertEqual(len(value['meshes']),2)
+        self.assertEqual(value['meshes'][0]['matrix_close'],rdla.IDENTITY)
+        self.assertEqual(value['meshes'][1]['matrix_close'],shifted)
+
     def test_orthographic_and_region(self):
         value=scene(); value['camera'].update(projection='ortho',ortho_width=4)
         value['region']=[.25,.125,.75,.5]

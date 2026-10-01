@@ -62,7 +62,7 @@ def texture(environment, width=512, height=256):
     from .daylight import color as daylight_color
     if any(layer['kind']=='physical' for layer in environment['layers']):
         width,height = 256,128
-    digest = hashlib.sha256(('stack-v1|'+json.dumps(environment,sort_keys=True)).encode()).hexdigest()
+    digest = hashlib.sha256(('stack-v2|%dx%d|'%(width,height)+json.dumps(environment,sort_keys=True)).encode()).hexdigest()
     folder = Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')
@@ -88,8 +88,10 @@ def texture(environment, width=512, height=256):
                             else:
                                 d = direction if inv is None else [sum(direction[j]*inv[j*4+i] for j in range(3)) for i in range(3)]
                                 length = max(1e-12, math.sqrt(sum(v*v for v in d)))
-                                u = (.5+math.atan2(d[0],d[2])/(2*math.pi))*width-.5
-                                v = (.5+math.asin(max(-1,min(1,d[1]/length)))/math.pi)*height-.5
+                                uv=(.5+math.atan2(d[0],d[2])/(2*math.pi),
+                                    .5+math.asin(max(-1,min(1,d[1]/length)))/math.pi)
+                                u,v=coordinates.transform_uv(layer,[uv])[0]
+                                u,v=u*width-.5,v*height-.5
                                 ix,iy = math.floor(u),math.floor(v)
                                 tx,ty = u-ix,v-iy
                                 foreground = [0,0,0]

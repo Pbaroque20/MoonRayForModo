@@ -133,17 +133,23 @@ def snapshot(evaluated_geometry=False):
         width, height = int(channel(camera, 'resX', width)), int(channel(camera, 'resY', height))
     aperture_x = float(channel(camera, 'apertureX', .036))
     aperture_y = float(channel(camera, 'apertureY', .024))
-    aspect = width / max(height, 1)
+    pixel_aspect = float(channel(render,'pAspect',1))
+    if channel(camera,'resOverride',0):
+        pixel_aspect = float(channel(camera,'pAspect',pixel_aspect))
     fit = channel(camera, 'filmFit', 'fill')
-    # Match fill/overscan and horizontal/vertical fit with a horizontal frustum.
-    if fit in ('vertical', 'vert') or (fit == 'fill' and aspect < aperture_x / aperture_y) or (fit == 'overscan' and aspect > aperture_x / aperture_y):
-        aperture_x = aperture_y * aspect
-    for name, default in [('offsetX', 0), ('offsetY', 0), ('filmRoll', 0), ('distort', 0), ('squeeze', 1)]:
+    from .camera import framing, offsets
+    aperture_x, moonray_pixel_aspect = framing(width,height,aperture_x,aperture_y,pixel_aspect,fit)
+    ortho_width=float(properties.read(camera).get('ortho_width',aperture_x*float(channel(camera,'target',1))/max(1e-9,float(channel(camera,'focalLen',.05)))))
+    film_offset=offsets(float(channel(camera,'offsetX',0)),float(channel(camera,'offsetY',0)),projection,aperture_x,ortho_width,pixel_aspect)
+    for name, default in [('filmRoll', 0), ('distort', 0), ('squeeze', 1)]:
         if channel(camera, name, default) != default:
             warnings.append('Camera %s is not translated.' % name)
     result = {'camera': {'matrix': world_matrix(camera),
+                         'identity':camera.id,
+                         'film_offset':film_offset,
+                         'pixel_aspect':moonray_pixel_aspect,
                          'projection':projection,
-                         'ortho_width':float(properties.read(camera).get('ortho_width', aperture_x*float(channel(camera,'target',1))/max(1e-9,float(channel(camera,'focalLen',.05))))),
+                         'ortho_width':ortho_width,
                          'shutter_length':float(channel(camera,'blurLen',.5)),
                          'shutter_offset':float(channel(camera,'blurOff',0)),
                          'focal_mm': float(channel(camera, 'focalLen', .05)) * 1000,
@@ -308,8 +314,10 @@ def snapshot(evaluated_geometry=False):
             expanded.append(mesh)
             continue
         for index, transform in enumerate(mesh['instances']):
-            instance = dict(mesh,name=mesh['name']+' / instance %d'%index,matrix=transform,uv_sets=dict(mesh['uv_sets']))
+            instance = dict(mesh,name=mesh['name']+' / instance %d'%index,
+                            identity=mesh['identity']+'|'+mesh['instance_ids'][index],matrix=transform,uv_sets=dict(mesh['uv_sets']))
             instance.pop('instances')
+            instance.pop('instance_ids',None)
             for key,descriptor in projected.items():
                 instance['uv_sets'][key] = [uv for face in mesh['faces'] for uv in coordinates.face(
                     descriptor,[mesh['vertices'][v] for v in face],[],transform)]
@@ -323,7 +331,7 @@ def snapshot(evaluated_geometry=False):
             warnings.append('Skipped unsupported light: ' + item.name)
             continue
         material = item.material
-        light = {'kind': types[item.type], 'matrix': world_matrix(item),
+        light = {'kind': types[item.type], 'identity':item.id, 'matrix': world_matrix(item),
                  'color': color(material, 'lightCol') if material else [1, 1, 1],
                  'intensity': float(channel(item, 'radiance', 1)),
                  'angle': max(.01, math.degrees(float(channel(item, 'spread', 0)))),

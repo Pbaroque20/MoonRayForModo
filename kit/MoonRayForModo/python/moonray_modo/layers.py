@@ -111,7 +111,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 if not locator:
                     raise ValueError('missing Texture Locator')
                 projection = channel(locator,'projType','uv')
-                if projection not in ('uv','planar','spherical','cylindrical'):
+                if projection not in ('uv','planar','spherical','cylindrical','cubic'):
                     raise ValueError('unsupported projection '+projection)
                 node['projection'] = projection
                 node['uv_map'] = channel(locator,'uvMap','') if projection=='uv' else ''

@@ -52,10 +52,27 @@ def face(layer, positions, uv, world_matrix):
         axis = layer.get('axis', 'z')
         points = [(p[1],p[2],p[0]) if axis in ('x',0) else
                   (p[0],p[2],p[1]) if axis in ('y',1) else p for p in points]
+        dominant = None
+        if projection == 'cubic':
+            if len(points)<3:
+                raise ValueError('Cubic projection requires a polygon')
+            normal=[0.,0.,0.]
+            for p,q in zip(points,points[1:]+points[:1]):
+                normal[0]+=(p[1]-q[1])*(p[2]+q[2])
+                normal[1]+=(p[2]-q[2])*(p[0]+q[0])
+                normal[2]+=(p[0]-q[0])*(p[1]+q[1])
+            dominant=max(range(3),key=lambda i:abs(normal[i]))
+            if abs(normal[dominant])<1e-12:
+                raise ValueError('Cubic projection cannot map a degenerate polygon')
+            sign=1 if normal[dominant]>=0 else -1
         values = []
         for x,y,z in points:
             if projection == 'planar':
                 value = (x+.5, y+.5)
+            elif projection == 'cubic':
+                if dominant==0: value=(-sign*z+.5,y+.5)
+                elif dominant==1: value=(x+.5,-sign*z+.5)
+                else: value=(sign*x+.5,y+.5)
             elif projection == 'cylindrical':
                 value = (.5+math.atan2(x,z)/(2*math.pi), y+.5)
             elif projection == 'spherical':
@@ -66,6 +83,10 @@ def face(layer, positions, uv, world_matrix):
             values.append(value)
         if projection in ('spherical','cylindrical') and max(v[0] for v in values)-min(v[0] for v in values) > .5:
             values = [(u+1 if u < .5 else u,v) for u,v in values]
+    return transform_uv(layer,values)
+
+
+def transform_uv(layer, values):
     a,b,c,d,e,f = layer.get('uv_matrix', [1,0,0,0,1,0])
     rotation = layer.get('rotation', 0)
     cosine, sine = math.cos(rotation), math.sin(rotation)
