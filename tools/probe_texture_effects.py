@@ -4,12 +4,19 @@ from pathlib import Path
 root = Path(r'C:\Users\Raphael Tobar\MoonRayForModo')
 exec(compile((root/'tools/probe_image_textures.py').read_text(), 'probe_image_textures.py', 'exec'))
 from moonray_modo import textures
-for external, internal in textures.EFFECT_ALIASES.items():
+from moonray_modo import properties
+properties.write(material, {'shader':'DwaBaseMaterial'})
+for external, internal in dict(textures.EFFECT_ALIASES, dissolve='dissolve').items():
     layer.channel('effect').set(external)
     data = host.snapshot()
     node = data['materials']['texture_test']['layers'][0]
     assert node['effect'] == internal, (external, node)
     assert node['srgb'] == (internal in textures.COLOR_EFFECTS), external
+properties.write(material, {'shader':''})
+layer.channel('effect').set('specAmount')
+unsupported = host.snapshot()
+assert any('Specular Amount textures require MoonShine' in w for w in unsupported['warnings'])
+properties.write(material, {'shader':'DwaBaseMaterial'})
 layer.channel('effect').set('diffColor')
 layer.setParent(mask, len(mask.children()))
 below = host.snapshot()

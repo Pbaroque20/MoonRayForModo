@@ -54,6 +54,8 @@ def collect(scene, materials, warnings):
             effect = textures.EFFECT_ALIASES.get(effect, effect)
             if effect not in textures.EFFECTS:
                 raise ValueError('unsupported effect '+effect)
+            if effect == 'specAmt' and materials[tag].get('shader') != 'DwaBaseMaterial':
+                raise ValueError('Specular Amount textures require MoonShine Material')
             blend = channel(layer,'blend','normal')
             if blend not in BLENDS:
                 raise ValueError('unsupported blend '+blend)

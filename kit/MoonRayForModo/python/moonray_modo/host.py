@@ -145,9 +145,9 @@ def snapshot():
             if 'specCol' in maps:
                 warnings.append('MoonShine uses dielectric IOR or metallic base color; specular-color maps are not translated: ' + (tag or 'base material'))
             continue
-        if material['transmission'] > 0 or material['presence'] < 1 or any(k.startswith('tran') for k in maps):
-            if any(k in maps for k in ('specCol', 'coatAmt', 'coatRough', 'metallic')):
-                warnings.append('Glass ignores specular-color, clearcoat and metalness maps: ' + (tag or 'base material'))
+        if material['transmission'] > 0 or material['presence'] < 1 or 'dissolve' in maps or any(k.startswith('tran') for k in maps):
+            if any(k in maps for k in ('specCol', 'specAmt', 'coatAmt', 'coatRough', 'metallic')):
+                warnings.append('The standard glass/dissolve material ignores specular-color, clearcoat and metalness maps. MoonShine supports mapped clearcoat and metalness: ' + (tag or 'base material'))
     # Resolve each visible instance to one mesh prototype, including hidden sources.
     instances = {}
     for instance in scene.items('meshInst', superType=False):

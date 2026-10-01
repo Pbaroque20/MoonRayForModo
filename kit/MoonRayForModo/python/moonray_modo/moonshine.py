@@ -22,7 +22,7 @@ def emit(material, tag, index, bindings, lines):
     }
     names={'diffuseColor':'albedo','emissiveColor':'emission','ior':'refractive_index',
         'transmissionColor':'transmission_color','refractionRoughness':'independent_transmission_roughness',
-        'clearcoatRoughness':'clearcoat_roughness'}
+        'clearcoatRoughness':'clearcoat_roughness','specularAmount':'specular'}
     for key,value in bindings.items():
         if key=='normal':
             name='/modo/normal/%s' % index
@@ -32,6 +32,8 @@ def emit(material, tag, index, bindings, lines):
             attributes[names.get(key,key)]=value
             if key=='diffuseColor':
                 attributes['metallic_color']=value
+            if key=='specularAmount':
+                attributes['show_specular']='true'
     lines.append('materials[%s] = DwaBaseMaterial("/modo/material/%s") {' % (string(tag),index))
     lines.extend('  [%s] = %s,' % (string(k),v) for k,v in attributes.items())
     lines.append('}')

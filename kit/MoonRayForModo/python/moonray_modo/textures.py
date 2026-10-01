@@ -11,14 +11,16 @@ EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
            'rough': 'roughness', 'metallic': 'metallic', 'lumiCol': 'emissiveColor',
            'coatAmt': 'clearcoat', 'coatRough': 'clearcoatRoughness',
            'tranAmt': 'transmission', 'tranCol': 'transmissionColor', 'tranRough': 'refractionRoughness',
-           'normal':'normal', 'bump':'bump'}
+           'normal':'normal', 'bump':'bump', 'diffAmt':'diffuseAmount',
+           'specAmt':'specularAmount', 'lumiAmt':'emissiveAmount', 'dissolve':'presence'}
 COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol'}
 
 # Shader Tree effect identifiers differ from advancedMaterial channel names.
 # Retain the short names in the snapshot format for existing exported scenes.
 EFFECT_ALIASES = {'diffColor': 'diffCol', 'specColor': 'specCol',
                   'lumiColor': 'lumiCol', 'tranColor': 'tranCol',
-                  'tranAmount': 'tranAmt', 'coatAmount': 'coatAmt'}
+                  'tranAmount': 'tranAmt', 'coatAmount': 'coatAmt',
+                  'diffAmount': 'diffAmt', 'specAmount': 'specAmt', 'lumiAmount': 'lumiAmt'}
 
 
 def prepare(source, srgb=False):

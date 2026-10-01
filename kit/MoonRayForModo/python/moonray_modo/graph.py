@@ -22,7 +22,9 @@ def bindings(material, index, lines, glass=False):
         'lumiCol':material.get('emission',[0]*3),'coatAmt':material.get('clearcoat',0),
         'coatRough':material.get('clearcoat_roughness',.01),'tranAmt':material.get('transmission',0),
         'tranCol':material.get('transmission_color',[1]*3),'tranRough':material.get('refraction_roughness',0),
-        'normal':[.5,.5,1], 'bump':0}
+        'normal':[.5,.5,1], 'bump':0,
+        'diffAmt':material.get('diffuse_amount',1), 'specAmt':material.get('specular_amount',1),
+        'lumiAmt':material.get('emission_amount',1), 'dissolve':1-material.get('presence',1)}
     for effect, raw, amount in [('diffCol','raw_color','diffuse_amount'),
                                 ('specCol','raw_specular','specular_amount'),
                                 ('lumiCol','raw_emission','emission_amount')]:
@@ -34,10 +36,12 @@ def bindings(material, index, lines, glass=False):
     if layers is None:
         layers = [dict(value,effect=key,kind=value.get('kind','imageMap')) for key,value in material.get('textures',{}).items()]
     for layer in layers:
-        effect = layer['effect']
+        effect = textures.EFFECT_ALIASES.get(layer['effect'], layer['effect'])
         if effect not in textures.EFFECTS:
             raise ValueError('Unsupported image effect: '+effect)
-        if glass and effect in ('specCol','coatAmt','coatRough','metallic'):
+        if effect == 'specAmt' and material.get('shader') != 'DwaBaseMaterial':
+            raise ValueError('Specular Amount textures require MoonShine Material')
+        if glass and effect in ('specCol','specAmt','coatAmt','coatRough','metallic'):
             continue
         kind = layer.get('kind','imageMap')
         mask = None
@@ -76,13 +80,23 @@ def bindings(material, index, lines, glass=False):
         current[effect] = node('ModoTextureMap',attributes)
         used.add(effect)
     result = {}
-    for effect in sorted(used-{'normal','bump'}):
+    amounts = {'diffCol':'diffAmt', 'specCol':'specAmt', 'lumiCol':'lumiAmt'}
+    for color_effect, amount_effect in amounts.items():
+        if amount_effect in used:
+            used.add(color_effect)
+    for effect in sorted(used-{'normal','bump','diffAmt','specAmt','lumiAmt','dissolve'}):
         value = current[effect]
-        amount = material.get({'diffCol':'diffuse_amount','specCol':'specular_amount','lumiCol':'emission_amount'}.get(effect,''),1)
-        if amount!=1:
-            value = node('ModoTextureMap',{'background':value,'foreground':rgb(amount),'blend':'1'})
+        if effect in amounts:
+            amount_effect = amounts[effect]
+            if amount_effect in used or defaults[amount_effect] != 1:
+                value = node('ModoTextureMap',{'background':value,'foreground':current[amount_effect],'blend':'1'})
         unit = 'Rgb(1, 1, 1)' if effect in textures.COLOR_EFFECTS else '1'
         result[textures.EFFECTS[effect]] = value[:-1] + ', ' + unit + ')'
+    if 'specAmt' in used and material.get('shader') == 'DwaBaseMaterial':
+        result['specularAmount'] = current['specAmt'][:-1] + ', 1)'
+    if 'dissolve' in used:
+        value = node('ModoTextureMap',{'background':rgb(1),'foreground':current['dissolve'],'blend':'3'})
+        result['presence'] = value[:-1] + ', 1)'
     if used & {'normal','bump'}:
         result['normal'] = node('ModoTextureMap',{'mode':'1','normal':current['normal'],
             'height':current['bump'] if 'bump' in used else '0',

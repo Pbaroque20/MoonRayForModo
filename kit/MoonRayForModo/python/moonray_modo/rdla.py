@@ -89,8 +89,11 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     materials.setdefault('', {'color': [0.5, 0.5, 0.5], 'roughness': 0.4, 'metallic': 0})
     for index, (tag, material) in enumerate(sorted(materials.items())):
         bindings = {}
+        from .textures import EFFECT_ALIASES
+        effects = set(material.get('textures', {})) | {
+            EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in material.get('layers', [])}
         glass = (material.get('transmission', 0) > 0 or material.get('presence', 1) < 1 or
-                 any(k.startswith('tran') for k in material.get('textures', {})))
+                 'dissolve' in effects or any(k.startswith('tran') for k in effects))
         from .graph import bindings as graph_bindings
         moonshine = material.get('shader') == 'DwaBaseMaterial'
         bindings = graph_bindings(material, index, lines, glass and not moonshine)

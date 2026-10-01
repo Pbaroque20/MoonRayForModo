@@ -121,6 +121,21 @@ glass clearcoat/metalness, and exact Modo reflection-strength parity remain
 unsupported. Focused caustics are not validated. Opaque materials retain the
 previous shader path; its upstream specular-color workflow is incomplete.
 
+### CPU amount and dissolve maps
+
+Image, constant and supported procedural layers can drive **Diffuse Amount**,
+**Luminous Amount**, and **Dissolve**. Amount layers replace the corresponding
+constant amount and combine with the color stack once; layer opacity and blending
+still apply. Dissolve uses black for solid and white for absent geometry, including
+alpha output. Use linear grayscale images for these scalar controls.
+
+**Specular Amount** maps require **MoonShine Material** and control its reflection
+weight; IOR still determines dielectric Fresnel. They do not reproduce Modo's
+specular-color workflow. The standard backend reports this unsupported combination
+instead of accepting an ineffective amount map. Standard materials with dissolve
+maps use the existing glass/presence backend; use MoonShine when also mapping
+clearcoat or metalness.
+
 ### Other scene translation
 
 Translation covers evaluated polygon meshes, world transforms, perspective

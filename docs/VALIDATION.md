@@ -77,3 +77,19 @@ patches, pinned source revisions, build configuration and scripts are included.
 
 Remaining limits include general BSDF layering, exact Modo procedural parity,
 instance material overrides and the full Moonshine shader/attribute catalog.
+
+## Native effect names and CPU scalar maps
+
+- `probe_texture_effects.py` uses Modo's actual Shader Tree identifiers, including
+  `diffColor`, rather than material-channel names. It checks supported aliases,
+  raw scalar map conversion, below-material warnings and the standard-backend
+  Specular Amount rejection. `probe_texture_repair.py` tests the no-restart repair.
+- `validate_amount_maps.py` renders Diffuse Amount, Luminous Amount and Dissolve
+  on both material paths, plus MoonShine Specular Amount. Black/white image regions
+  must alter light, emission or alpha as appropriate. Each case compares scalar
+  and AVX output. A separate constant-reference render verifies that color and
+  amount stacks, including layer opacity, multiply once even with base amount zero.
+- The user's captured geometry and original packaging image reproduced the
+  texture issue locally; correcting the binding produced a textured sphere.
+  The user also confirmed the repair in the running Modo preview. Private scene
+  snapshots and rendered packaging images remain excluded from Git.
