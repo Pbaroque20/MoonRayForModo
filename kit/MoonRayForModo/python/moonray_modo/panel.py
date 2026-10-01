@@ -82,6 +82,17 @@ class Panel(QtWidgets.QWidget):
         self.threads.setValue(4)
         controls.addRow('Preview size', self.size)
         controls.addRow('Pixel sample grid', self.samples)
+        self.region_enabled = QtWidgets.QCheckBox('Render region')
+        controls.addRow(self.region_enabled)
+        self.region_controls = []
+        for label, value in [('Left (%)',0),('Top (%)',0),('Right (%)',100),('Bottom (%)',100)]:
+            spin = QtWidgets.QDoubleSpinBox()
+            spin.setRange(0,100)
+            spin.setValue(value)
+            spin.setEnabled(False)
+            self.region_enabled.toggled.connect(spin.setEnabled)
+            self.region_controls.append(spin)
+            controls.addRow(label,spin)
         self.pages['system'].addRow('CPU threads', self.threads)
         self.pages['lighting'].addRow('Uniform environment', self.environment)
         self.modo_environment = QtWidgets.QCheckBox('Use Modo environments')
@@ -223,6 +234,9 @@ class Panel(QtWidgets.QWidget):
         self.surface.setCurrentIndex(int(values.get('surface', 0)))
         self.modo_environment.setChecked(values.get('modo_environment',True))
         self.environment_multiplier.setValue(values.get('environment_multiplier',1))
+        self.region_enabled.setChecked(values.get('region_enabled',False))
+        for control,value in zip(self.region_controls,values.get('region',[0,0,1,1])):
+            control.setValue(value*100)
 
     def _settings_values(self):
         return {'render': {key: control.currentIndex() if isinstance(control, QtWidgets.QComboBox) else control.value()
@@ -232,7 +246,9 @@ class Panel(QtWidgets.QWidget):
                 'threads': self.threads.value(), 'surface': self.surface.currentIndex(),
                 'subdivision_level': self.subdivision_level.value(), 'light_multiplier': self.light_multiplier.value(),
                 'modo_environment':self.modo_environment.isChecked(),
-                'environment_multiplier':self.environment_multiplier.value()}
+                'environment_multiplier':self.environment_multiplier.value(),
+                'region_enabled':self.region_enabled.isChecked(),
+                'region':[control.value()/100 for control in self.region_controls]}
 
     def _save_settings(self):
         try:
@@ -286,6 +302,8 @@ class Panel(QtWidgets.QWidget):
         values = self._settings_values()
         scene['render_settings'] = values['render']
         scene['aovs'] = values['aovs']
+        if values['region_enabled']:
+            scene['region'] = values['region']
         if not self.modo_environment.isChecked():
             scene['environments']=[]
         for environment in scene.get('environments',[]):

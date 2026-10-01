@@ -20,7 +20,7 @@ for y in range(64):
     for x in range(64):
         image.setPixelColor(x,y,QtGui.QColor(0,0,0) if x<32 else QtGui.QColor(255,255,255))
 assert image.save(str(source))
-runtime = root/'runtime/native-avx'
+runtime = Path(os.environ.get('MOONRAY_MODO_RUNTIME', str(root/'runtime/native-avx')))
 scene = {'camera':{'matrix':rdla.IDENTITY,'focal_mm':35,'film_mm':36},
          'materials':{}, 'lights':[],
          'meshes':[{'name':'mapped plane','vertices':[[-1,-1,-3],[1,-1,-3],[1,1,-3],[-1,1,-3]],
@@ -40,8 +40,6 @@ def render(name,mode='vectorized',environment=1):
 
 for shader in ('','DwaBaseMaterial'):
     for effect in ('diffAmount','lumiAmount','specAmount','dissolve'):
-        if effect=='specAmount' and not shader:
-            continue # The upstream USD shader has no specular-workflow implementation.
         material = {'shader':shader,'color':[0,0,0],'raw_color':[0,0,0],
             'diffuse_amount':0, 'specular':[0,0,0], 'raw_specular':[1,1,1],
             'specular_amount':0, 'emission':[0,0,0], 'raw_emission':[0,0,0],

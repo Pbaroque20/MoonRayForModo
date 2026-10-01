@@ -30,7 +30,8 @@ for name in ('ModoGlassMaterial.so', 'ModoGlassMaterial.so.proxy'):
 if not glass_validation.get('passed'):
     raise SystemExit('Glass render validation failed.')
 
-for relative,key in [('surface-updates/report.json','shader_sha256'),('moonshine/report.json','binaries')]:
+for relative,key in [('surface-updates/report.json','shader_sha256'),('moonshine/report.json','binaries'),
+                     ('specular/report.json','binaries')]:
     report=json.loads((root/'test-results'/relative).read_text(encoding='utf-8'))
     if not report.get('passed'):
         raise SystemExit('Shader render validation failed: '+relative)

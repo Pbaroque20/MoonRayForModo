@@ -51,11 +51,20 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     if not 1 <= int(samples) <= 64:
         raise ValueError("Pixel sample grid must be between 1 and 64")
     camera = scene['camera']
+    dof = bool(camera.get('dof', False))
+    if dof and (camera.get('f_stop', 4) <= 0 or camera.get('focus_distance', 4) <= 0):
+        raise ValueError('Depth of field requires positive f-stop and focus distance')
     lines = ['-- MoonRayForModo 0.1.0; scene units are meters',
              'local camera = PerspectiveCamera("/modo/camera") {',
              '  ["node_xform"] = %s,' % matrix(camera['matrix']),
              '  ["focal"] = %s,' % number(camera['focal_mm']),
              '  ["film_width_aperture"] = %s,' % number(camera['film_mm']),
+             '  ["dof"] = %s,' % ('true' if dof else 'false'),
+             '  ["dof_aperture"] = %s,' % number(camera.get('f_stop', 4)),
+             '  ["dof_focus_distance"] = %s,' % number(camera.get('focus_distance', 4)),
+             '  ["bokeh"] = %s,' % ('true' if camera.get('iris_blades', 0) >= 3 else 'false'),
+             '  ["bokeh_sides"] = %d,' % max(0, int(camera.get('iris_blades', 0))),
+             '  ["bokeh_angle"] = %s,' % number(math.degrees(camera.get('iris_rotation', 0))),
              '  ["near"] = 0.001,', '}',
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
     if float(environment) > 0:
@@ -198,14 +207,27 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     lines += ['GeometrySet("/modo/geometrySet")(geometries)',
               'local layer = Layer("/modo/layer")(assignments)', 'SceneVariables {',
               '  ["camera"] = camera,', '  ["layer"] = layer,',
+              '  ["scene_scale"] = 1,',
               '  ["image_width"] = %d,' % int(width), '  ["image_height"] = %d,' % int(height),
               '  ["pixel_samples"] = %d,' % int(samples),
               '  ["sampling_mode"] = 0,', '  ["enable_motion_blur"] = false,',
+              '  ["enable_dof"] = %s,' % ('true' if dof else 'false'),
               # Renderer already writes into its private temp folder and atomically
               # publishes the finished EXR; avoid a second OS-specific staging layer.
               '  ["two_stage_output"] = false,']
     for key, value in options.render_values(scene.get('render_settings', {})).items():
         lines.append('  [%s] = %d,' % (string(key), value))
+    region = scene.get('region')
+    if region is not None:
+        if len(region) != 4 or any(not math.isfinite(float(v)) for v in region):
+            raise ValueError('Render region requires four finite bounds')
+        left, top, right, bottom = map(float, region)
+        if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
+            raise ValueError('Render region must have positive width/height within the image')
+        # UI bounds use top-left coordinates, native sub_viewport uses bottom-left.
+        bounds = [math.floor(left*width), math.floor((1-bottom)*height),
+                  math.ceil(right*width), math.ceil((1-top)*height)]
+        lines.append('  ["sub_viewport"] = %s,' % array(str(v) for v in bounds))
     lines.append('}')
     if output_file:
         selected = scene.get('aovs', ['alpha'])

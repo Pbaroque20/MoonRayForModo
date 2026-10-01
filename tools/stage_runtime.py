@@ -6,11 +6,14 @@ import os
 import re
 import shutil
 import subprocess
+import argparse
 
 root = Path(__file__).resolve().parents[1]
 build = root / 'build/native-renderer-avx'
 tools = root / 'toolchain/msys64/ucrt64/bin'
-destination = root / 'runtime/native-avx'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--destination', type=Path, default=root / 'runtime/native-avx')
+destination = parser.parse_args().destination.resolve()
 if not (build / 'bin/moonray.exe').is_file():
     raise SystemExit('The native renderer has not been built yet.')
 search = [build / 'bin', build / 'log4cplus/bin', tools]
@@ -24,6 +27,7 @@ validation = destination / 'validated-render.json'
 if validation.exists():
     validation.unlink()
 pending = [build / 'bin/moonray.exe']
+pending.append(tools / 'maketx.exe')
 pending += [path for path in (build / 'bin').iterdir()
             if path.suffix.lower() in ('.dll', '.so', '.proxy')]
 pending += list(tools.glob('*OpenImageDenoise*cpu*.dll'))

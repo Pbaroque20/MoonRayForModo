@@ -86,12 +86,17 @@ def snapshot():
     # Match fill/overscan and horizontal/vertical fit with a horizontal frustum.
     if fit in ('vertical', 'vert') or (fit == 'fill' and aspect < aperture_x / aperture_y) or (fit == 'overscan' and aspect > aperture_x / aperture_y):
         aperture_x = aperture_y * aspect
-    for name, default in [('offsetX', 0), ('offsetY', 0), ('filmRoll', 0), ('dof', 0), ('distort', 0), ('squeeze', 1)]:
+    for name, default in [('offsetX', 0), ('offsetY', 0), ('filmRoll', 0), ('distort', 0), ('squeeze', 1)]:
         if channel(camera, name, default) != default:
             warnings.append('Camera %s is not translated.' % name)
     result = {'camera': {'matrix': world_matrix(camera),
                          'focal_mm': float(channel(camera, 'focalLen', .05)) * 1000,
-                         'film_mm': aperture_x * 1000},
+                         'film_mm': aperture_x * 1000,
+                         'dof': bool(channel(camera, 'dof', 0)),
+                         'f_stop': float(channel(camera, 'fStop', 4)),
+                         'focus_distance': float(channel(camera, 'focusDist', 4)),
+                         'iris_blades': int(channel(camera, 'irisBlades', 0)),
+                         'iris_rotation': float(channel(camera, 'irisRot', 0))},
               'width': width, 'height': height, 'materials': {}, 'meshes': [], 'lights': []}
     from .layers import ordered_items, material_tag
     for material in reversed(list(ordered_items(scene.renderItem))):
@@ -120,6 +125,7 @@ def snapshot():
                                     'specular_amount': float(channel(material, 'specAmt', .04)),
                                     'emission_amount': float(channel(material, 'radiance', 0)),
                                     'roughness': float(channel(material, 'rough', .4)),
+                                    'anisotropy': float(channel(material, 'aniso', 0)),
                                     'metallic': float(channel(material, 'metallic', 0)),
                                     'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
                                     'emission': [c * float(channel(material, 'radiance', 0)) for c in color(material, 'lumiCol')],
@@ -131,8 +137,10 @@ def snapshot():
                                     'opacity': 1.0 - float(channel(material, 'dissAmt', 0)),
                                     'clearcoat': float(channel(material, 'coatAmt', 0)),
                                     'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
-        if channel(material, 'subsAmt', 0) or channel(material, 'aniso', 0):
-            warnings.append('Subsurface and anisotropy are not translated: ' + material.name)
+        if channel(material, 'subsAmt', 0):
+            warnings.append('Subsurface is not translated: ' + material.name)
+        if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
+            warnings.append('Anisotropy requires MoonShine Material: ' + material.name)
         if channel(material, 'tranAmt', 0):
             if channel(material, 'tranDist', 0) or channel(material, 'disperse', 0):
                 warnings.append('Glass uses surface tint; absorption distance and dispersion are not translated: ' + material.name)

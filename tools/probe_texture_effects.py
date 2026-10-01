@@ -14,8 +14,9 @@ for external, internal in dict(textures.EFFECT_ALIASES, dissolve='dissolve').ite
     assert node['srgb'] == (internal in textures.COLOR_EFFECTS), external
 properties.write(material, {'shader':''})
 layer.channel('effect').set('specAmount')
-unsupported = host.snapshot()
-assert any('Specular Amount textures require MoonShine' in w for w in unsupported['warnings'])
+standard = host.snapshot()
+assert standard['materials']['texture_test']['layers'][0]['effect'] == 'specAmt'
+assert not standard['warnings'], standard['warnings']
 properties.write(material, {'shader':'DwaBaseMaterial'})
 layer.channel('effect').set('diffColor')
 layer.setParent(mask, len(mask.children()))

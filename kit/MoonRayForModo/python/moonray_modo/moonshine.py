@@ -6,6 +6,7 @@ def emit(material, tag, index, bindings, lines):
         'metallic':number(material.get('metallic',0)),
         'metallic_color':vector(material['color'],'Rgb'),
         'roughness':number(material.get('roughness',.4)),
+        'anisotropy':number(max(-1,min(1,material.get('anisotropy',0)))),
         'refractive_index':number(material.get('ior',1.5)),
         'transmission':number(material.get('transmission',0)),
         'transmission_color':vector(material.get('transmission_color',[1,1,1]),'Rgb'),

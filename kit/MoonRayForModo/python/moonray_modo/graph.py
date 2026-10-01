@@ -39,8 +39,6 @@ def bindings(material, index, lines, glass=False):
         effect = textures.EFFECT_ALIASES.get(layer['effect'], layer['effect'])
         if effect not in textures.EFFECTS:
             raise ValueError('Unsupported image effect: '+effect)
-        if effect == 'specAmt' and material.get('shader') != 'DwaBaseMaterial':
-            raise ValueError('Specular Amount textures require MoonShine Material')
         if glass and effect in ('specCol','specAmt','coatAmt','coatRough','metallic'):
             continue
         kind = layer.get('kind','imageMap')

@@ -68,6 +68,49 @@ index 2e73a05..ed37f89 100644
  }
  
  } // namespace
+diff --git a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc b/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
+index 598a705..224e4ab 100644
+--- a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
++++ b/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
+@@ -208,8 +208,14 @@ UsdPreviewSurface::shade(const scene_rdl2::rdl2::Material* self,
+     const ispc::SpecularWorkflow specularWorkflow =
+         static_cast<ispc::SpecularWorkflow>(me->get(attrUseSpecularWorkflow));
+     if (specularWorkflow == ispc::SPECULAR_WORKFLOW_SPECULAR) {
+-        // We can't support this until we implement Schlick fresnel so do nothing for now.
+-        // Phase 2: implement Schlick which takes specular color directly
++        const auto value = evalColor(me, attrSpecularColor, tls, state);
++        const scene_rdl2::math::Color specular(
++                scene_rdl2::math::saturate(value.r), scene_rdl2::math::saturate(value.g),
++                scene_rdl2::math::saturate(value.b));
++        if (!scene_rdl2::math::isBlack(specular)) {
++            bsdfBuilder.addSchlickReflection(N, specular, roughness,
++                                            scene_rdl2::math::isZero(roughness), aovSpecular);
++        }
+     } else { // SPECULAR_WORKFLOW_METALNESS
+         const float metallic = evalFloat(me, attrMetallic, tls, state);
+         if (scene_rdl2::math::isZero(metallic)) {
+diff --git a/dso/material/UsdPreviewSurface/UsdPreviewSurface.ispc b/dso/material/UsdPreviewSurface/UsdPreviewSurface.ispc
+index dc8c4c1..2b079bd 100644
+--- a/dso/material/UsdPreviewSurface/UsdPreviewSurface.ispc
++++ b/dso/material/UsdPreviewSurface/UsdPreviewSurface.ispc
+@@ -182,8 +182,15 @@ shade(const uniform Material * uniform  me,
+     // Specular
+     const uniform SpecularWorkflow specularWorkflow = (SpecularWorkflow)getAttrUseSpecularWorkflow(me);
+     if (specularWorkflow == SPECULAR_WORKFLOW_SPECULAR) {
+-        // We can't support this until we implement Schlick fresnel so do nothing for now.
+-        // Phase 2: implement Schlick which takes specular color directly
++        const Color value = evalAttrSpecularColor(me, tls, state);
++        const Color specular = Color_ctor(saturate(value.r), saturate(value.g), saturate(value.b));
++        if (!isBlack(specular)) {
++            if (isZero(roughness)) {
++                BsdfBuilder_addSchlickReflection(bsdfBuilder, N, specular, roughness, true, aovSpecular);
++            } else {
++                BsdfBuilder_addSchlickReflection(bsdfBuilder, N, specular, roughness, false, aovSpecular);
++            }
++        }
+     } else { // SPECULAR_WORKFLOW_METALNESS
+         const float metallic = evalAttrMetallic(me, tls, state);
+         if (isZero(metallic)) {
 diff --git a/lib/application/RaasApplication.cc b/lib/application/RaasApplication.cc
 index f57738c..781848a 100644
 --- a/lib/application/RaasApplication.cc
@@ -1733,6 +1776,74 @@ index 31c070c..ace62fc 100644
          }
  
          MNRY_ASSERT(mTextureHandles[0]);
+diff --git a/lib/rendering/shading/BsdfBuilder.cc b/lib/rendering/shading/BsdfBuilder.cc
+index 0cfbd60..389b0ea 100644
+--- a/lib/rendering/shading/BsdfBuilder.cc
++++ b/lib/rendering/shading/BsdfBuilder.cc
+@@ -1099,6 +1099,29 @@ public:
+         }
+     }
+ 
++    finline void
++    addSchlickReflection(const scene_rdl2::math::Vec3f& normal,
++                         const scene_rdl2::math::Color& reflectance,
++                         float roughness, bool mirror, int label)
++    {
++        const auto N = mState.adaptNormal(normal);
++        BsdfLobe* lobe;
++        if (mirror) {
++            lobe = mTls->mArena->allocWithArgs<MirrorReflectionBsdfLobe>(N);
++        } else {
++            lobe = mTls->mArena->allocWithArgs<GGXCookTorranceBsdfLobe>(N, roughness);
++        }
++        Fresnel* fresnel = mTls->mArena->allocWithArgs<SchlickFresnel>(reflectance, 1.0f);
++        lobe->setFresnel(fresnel);
++        lobe->setScale(scene_rdl2::math::sWhite * mCurrentTransmittance);
++        lobe = placeUnderPreviousLobes(lobe);
++        auto* atten = mTls->mArena->allocWithArgs<SimpleAttenuator>(
++                mTls->mArena, N, roughness, fresnel);
++        stageAttenuator(atten);
++        lobe->setLabel(label);
++        mBsdf.addLobe(lobe);
++    }
++
+     finline void
+     addComponent(const MicrofacetIsotropicBRDF& component,
+                  float weight,
+@@ -2273,6 +2296,17 @@ BsdfBuilder::BsdfBuilder(Bsdf& bsdf,
+     mImpl(tls->mArena->allocWithArgs<Impl>(bsdf, tls, state, objPtr))
+ {}
+ 
++void
++BsdfBuilder::addSchlickReflection(const scene_rdl2::math::Vec3f& normal,
++                                 const scene_rdl2::math::Color& reflectance,
++                                 float roughness, bool mirror, int label)
++{
++    if (!mImpl->testForVisibility(1.0f, ispc::BSDFBUILDER_PHYSICAL)) { return; }
++    if (mImpl->testLobeLimitExceeded()) { return; }
++    mImpl->addSchlickReflection(normal, reflectance, roughness, mirror, label);
++    if (!mImpl->getInAdjacentBlock()) { mImpl->accumulateAttenuation(); }
++}
++
+ BsdfBuilder::~BsdfBuilder()
+ {
+     // unfortunately nothing to do, cannot free mImpl from the Arena
+diff --git a/lib/rendering/shading/BsdfBuilder.h b/lib/rendering/shading/BsdfBuilder.h
+index aefa791..12b9a3c 100644
+--- a/lib/rendering/shading/BsdfBuilder.h
++++ b/lib/rendering/shading/BsdfBuilder.h
+@@ -63,6 +63,11 @@ public:
+ 
+     ~BsdfBuilder();
+ 
++    // GGX/mirror reflection with RGB normal-incidence reflectance and Schlick Fresnel.
++    void addSchlickReflection(const scene_rdl2::math::Vec3f& normal,
++                              const scene_rdl2::math::Color& reflectance,
++                              float roughness, bool mirror, int label);
++
+     void addMicrofacetAnisotropicClearcoat(
+             const MicrofacetAnisotropicClearcoat& clearcoat,
+             float weight,
 diff --git a/lib/rendering/shading/CMakeLists.txt b/lib/rendering/shading/CMakeLists.txt
 index fb5d5cb..ccc9a25 100644
 --- a/lib/rendering/shading/CMakeLists.txt
@@ -1826,6 +1937,81 @@ index 9af3ab0..396db2f 100644
  
      return true;
  }
+diff --git a/lib/rendering/shading/ispc/BsdfBuilder.ispc b/lib/rendering/shading/ispc/BsdfBuilder.ispc
+index e35ced8..1995f76 100644
+--- a/lib/rendering/shading/ispc/BsdfBuilder.ispc
++++ b/lib/rendering/shading/ispc/BsdfBuilder.ispc
+@@ -845,6 +845,43 @@ BsdfBuilder_addMicrofacetAnisotropicBRDF(
+     accumulateAttenuation(me);
+ }
+ 
++void
++BsdfBuilder_addSchlickReflection(
++        varying BsdfBuilder& builder,
++        const varying Vec3f& normal,
++        const varying Color& reflectance,
++        const varying float roughness,
++        const uniform bool mirror,
++        const uniform int label)
++{
++    varying BsdfBuilderImpl& me = *builder.mImpl;
++    cif (!testForVisibility(me, 1.0f, BSDFBUILDER_PHYSICAL)) { return; }
++    cif (testLobeLimitExceeded(me)) { return; }
++    const varying Vec3f N = Intersection_adaptNormal(asAnIntersection(*(me.mState)), normal);
++    varying BsdfLobe * uniform lobe;
++    if (mirror) {
++        lobe = (varying BsdfLobe * uniform) Arena_alloc(me.mTls->mArena, sizeof(varying MirrorReflectionBsdfLobe));
++        MirrorReflectionBsdfLobe_init((varying MirrorReflectionBsdfLobe * uniform) lobe, N);
++    } else {
++        lobe = (varying BsdfLobe * uniform) Arena_alloc(me.mTls->mArena, sizeof(varying GGXCookTorranceBsdfLobe));
++        GGXCookTorranceBsdfLobe_init((varying GGXCookTorranceBsdfLobe * uniform) lobe, N, roughness);
++    }
++    varying SchlickFresnel * uniform schlick = (varying SchlickFresnel * uniform)
++        Arena_alloc(me.mTls->mArena, sizeof(varying SchlickFresnel));
++    SchlickFresnel_init(schlick, reflectance, 1.0f);
++    varying Fresnel * uniform fresnel = (varying Fresnel * uniform) schlick;
++    BsdfLobe_setFresnel(lobe, fresnel);
++    BsdfLobe_setScale(lobe, sWhite * me.mCurrentTransmittance);
++    lobe = placeUnderPreviousLobes(me, lobe);
++    varying SimpleAttenuator * uniform atten = (varying SimpleAttenuator * uniform)
++        Arena_alloc(me.mTls->mArena, sizeof(varying SimpleAttenuator));
++    SimpleAttenuator_init(atten, me.mTls->mArena, N, roughness, fresnel);
++    stageAttenuator(me, (varying LobeAttenuator * uniform) atten);
++    BsdfLobe_setLabel(lobe, label);
++    Bsdf_addLobe(me.mBsdf, lobe);
++    accumulateAttenuation(me);
++}
++
+ void
+ BsdfBuilder_addMicrofacetIsotropicBRDF(
+         varying BsdfBuilder& builder,
+diff --git a/lib/rendering/shading/ispc/BsdfBuilder.isph b/lib/rendering/shading/ispc/BsdfBuilder.isph
+index 21abba9..11e1df3 100644
+--- a/lib/rendering/shading/ispc/BsdfBuilder.isph
++++ b/lib/rendering/shading/ispc/BsdfBuilder.isph
+@@ -7,6 +7,7 @@
+ #define BSDFBUILDER_ISPH
+ 
+ #include <scene_rdl2/common/math/ispc/Color.isph>
++#include <scene_rdl2/common/math/ispc/Vec3.isph>
+ 
+ // These flags are used to specify the desired effect on energy
+ // distribution as BsdfComponents are sequentially added to the
+@@ -155,6 +156,14 @@ void BsdfBuilder_addMicrofacetAnisotropicBRDF(
+         const uniform int label,
+         const uniform LightSet * uniform lightSet = NULL);
+ 
++void BsdfBuilder_addSchlickReflection(
++        varying BsdfBuilder& builder,
++        const varying Vec3f& normal,
++        const varying Color& reflectance,
++        const varying float roughness,
++        const uniform bool mirror,
++        const uniform int label);
++
+ void BsdfBuilder_addMicrofacetIsotropicBRDF(
+         varying BsdfBuilder& builder,
+         const varying MicrofacetIsotropicBRDF& brdf,
 diff --git a/lib/rendering/shading/ispc/CMakeLists.txt b/lib/rendering/shading/ispc/CMakeLists.txt
 index 3ce34f9..648d791 100644
 --- a/lib/rendering/shading/ispc/CMakeLists.txt

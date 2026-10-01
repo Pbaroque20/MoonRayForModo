@@ -147,8 +147,10 @@ same image-layer restrictions described below.
 Tint is applied at surfaces, not as distance-based volumetric absorption.
 Absorption distance, dispersion, thin-sheet mode, nested dielectric priorities,
 glass clearcoat/metalness, and exact Modo reflection-strength parity remain
-unsupported. Focused caustics are not validated. Opaque materials retain the
-previous shader path; its upstream specular-color workflow is incomplete.
+unsupported. Focused caustics are not validated. Opaque standard materials use
+the native USD shader with an implemented Schlick reflection lobe: specular color
+sets normal-incidence reflectance, roughness spreads reflections, and reflection
+attenuates the underlying diffuse lobe. This is not full Modo Fresnel parity.
 
 ### CPU amount and dissolve maps
 
@@ -158,14 +160,29 @@ constant amount and combine with the color stack once; layer opacity and blendin
 still apply. Dissolve uses black for solid and white for absent geometry, including
 alpha output. Use linear grayscale images for these scalar controls.
 
-**Specular Amount** maps require **MoonShine Material** and control its reflection
-weight; IOR still determines dielectric Fresnel. They do not reproduce Modo's
-specular-color workflow. The standard backend reports this unsupported combination
-instead of accepting an ineffective amount map. Standard materials with dissolve
+**Specular Amount** maps work with standard and **MoonShine Material** shaders.
+Standard materials multiply specular color by the mapped amount. MoonShine maps
+control reflection weight; IOR still determines its dielectric Fresnel.
+Standard materials with dissolve
 maps use the existing glass/presence backend; use MoonShine when also mapping
 clearcoat or metalness.
 
 ### Other scene translation
+
+Perspective cameras translate Modo's depth-of-field switch, focus distance,
+f-stop, iris blade count and iris rotation. Scene units are explicitly meters.
+Focus-plane preservation, defocus, aperture changes and scalar/AVX agreement are
+render-tested; matching Modo's iris bias and exact bokeh appearance remains open.
+
+MoonShine's **Anisotropy** property stretches the reflection highlight along the
+surface tangent; changing its sign exchanges the stretch axes. Standard materials
+still report an explicit warning for this setting. Exact Modo tangent parity and
+anisotropy texture controls remain unverified.
+
+The Render tab provides **Render region** and Left/Top/Right/Bottom percentage
+bounds. Regions apply to preview and final EXR output, preserving full-frame
+dimensions with black pixels outside the region. Store render settings in the
+scene to retain the bounds. Modo's own region selection is not yet imported.
 
 Translation covers evaluated polygon meshes, world transforms, perspective
 cameras, material polygon tags, constant diffuse/specular amounts and colors,
