@@ -27,8 +27,25 @@ class Renderer(QtCore.QObject):
         self.closed = False
         self.log = ''
         self.generation = 0
+        self.timeout_seconds = 0
+        self.watchdog = QtCore.QTimer(self)
+        self.watchdog.setSingleShot(True)
+        self.watchdog.timeout.connect(self._timed_out)
+        self.process.started.connect(self._started)
+
+    def _started(self):
+        if self.timeout_seconds>0:
+            self.watchdog.start(min(2147483647,int(self.timeout_seconds*1000)))
+
+    def _timed_out(self):
+        if self.closed or self.canceled:
+            return
+        self.stop()
+        self.failed.emit('Render exceeded the configured time limit; it was stopped. Completed outputs were preserved.')
 
     def submit(self, snapshot, runtime, width, height, samples, environment, threads, output=None, linear_preview=False):
+        if self.closed:
+            raise ValueError('Renderer is closed')
         runtime = native.find_runtime(runtime)
         self.generation += 1
         request = dict(snapshot=snapshot, runtime=runtime, width=width, height=height, generation=self.generation,
@@ -43,6 +60,7 @@ class Renderer(QtCore.QObject):
             self._begin_pending()
 
     def stop(self):
+        self.watchdog.stop()
         self.pending = None
         self.canceled = True
         if self.process.state() != QtCore.QProcess.NotRunning:
@@ -98,6 +116,7 @@ class Renderer(QtCore.QObject):
             self.failed.emit('Cannot start MoonRay: ' + self.process.errorString())
 
     def _exited(self, code, exit_status):
+        self.watchdog.stop()
         self._read()
         if self.closed:
             return

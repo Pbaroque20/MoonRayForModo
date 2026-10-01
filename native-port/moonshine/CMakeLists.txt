@@ -47,3 +47,7 @@ endforeach()
 add_subdirectory("${PROJECT_SOURCE_DIR}/dso/material/DwaBase" DwaBase)
 target_link_libraries(DwaBaseMaterial PRIVATE ispc_runtime)
 target_link_libraries(DwaBaseMaterial_proxy PRIVATE ispc_runtime)
+
+add_subdirectory("${PROJECT_SOURCE_DIR}/dso/material/DwaLayer" DwaLayer)
+target_link_libraries(DwaLayerMaterial PRIVATE ispc_runtime)
+target_link_libraries(DwaLayerMaterial_proxy PRIVATE ispc_runtime)

@@ -28,6 +28,7 @@ if validation.exists():
     validation.unlink()
 pending = [build / 'bin/moonray.exe']
 pending.append(tools / 'maketx.exe')
+pending.append(tools / 'oiiotool.exe')
 pending += [path for path in (build / 'bin').iterdir()
             if path.suffix.lower() in ('.dll', '.so', '.proxy')]
 pending += list(tools.glob('*OpenImageDenoise*cpu*.dll'))

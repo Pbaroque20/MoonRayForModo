@@ -32,9 +32,15 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         n=normalize(Vec3f_ctor(sx,sy,1));return Color_ctor(n.x,n.y,n.z);
     }
     Color a=evalAttrBackground(me,tls,state),b=evalAttrForeground(me,tls,state);
+    if(mode==4) {
+        float distance=max(1.e-9f,getAttrDistance(me));
+        return Color_ctor(-log(clamp(b.r,1.e-6f,1.0f)),-log(clamp(b.g,1.e-6f,1.0f)),-log(clamp(b.b,1.e-6f,1.0f)))/distance;
+    }
     if(mode>=2) {
         Vec2f scale=getAttrScale(me);
-        float x=state.mSt.x*scale.x,y=state.mSt.y*scale.y,value=0;
+        Color st=evalAttrCoordinates(me,tls,state);
+        float x=(getAttrUseCoordinates(me)?st.r:state.mSt.x)*scale.x;
+        float y=(getAttrUseCoordinates(me)?st.g:state.mSt.y)*scale.y,value=0;
         if(mode==2) value=(float)(((int)floor(x*2)+(int)floor(y*2))&1);
         else {
             float amplitude=1,total=0;
@@ -54,6 +60,12 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         case 3:mixed=a-b;break;
         case 4:mixed=sWhite-(sWhite-a)*(sWhite-b);break;
         case 5:mixed=Color_ctor(a.r/max(1.e-6f,b.r),a.g/max(1.e-6f,b.g),a.b/max(1.e-6f,b.b));break;
+        case 6:mixed=Color_ctor(abs(a.r-b.r),abs(a.g-b.g),abs(a.b-b.b));break;
+        case 7:mixed=Color_ctor(min(a.r,b.r),min(a.g,b.g),min(a.b,b.b));break;
+        case 8:mixed=Color_ctor(max(a.r,b.r),max(a.g,b.g),max(a.b,b.b));break;
+        case 9:mixed=Color_ctor((a.r<.5f?2*a.r*b.r:1-2*(1-a.r)*(1-b.r)),(a.g<.5f?2*a.g*b.g:1-2*(1-a.g)*(1-b.g)),(a.b<.5f?2*a.b*b.b:1-2*(1-a.b)*(1-b.b)));break;
+        case 10:mixed=Color_ctor((b.r<.5f?2*a.r*b.r:1-2*(1-a.r)*(1-b.r)),(b.g<.5f?2*a.g*b.g:1-2*(1-a.g)*(1-b.g)),(b.b<.5f?2*a.b*b.b:1-2*(1-a.b)*(1-b.b)));break;
+        case 11:mixed=Color_ctor(a.r+b.r-2*a.r*b.r,a.g+b.g-2*a.g*b.g,a.b+b.b-2*a.b*b.b);break;
     }
     float alpha=saturate(evalAttrOpacity(me,tls,state)*evalAttrMask(me,tls,state));
     return a*(1-alpha)+mixed*alpha;

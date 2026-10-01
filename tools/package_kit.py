@@ -15,19 +15,33 @@ if with_runtime:
 destination = root / 'dist' / ('MoonRayForModo-0.1.0-native-avx.zip' if with_runtime
                                else 'MoonRayForModo-0.1.0-prototype.zip')
 destination.parent.mkdir(exist_ok=True)
+manifest = {}
 with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED) as archive:
+    def add(path, name):
+        name = str(name).replace('\\','/')
+        data = pathlib.Path(path).read_bytes()
+        info = zipfile.ZipInfo(name, (2020,1,1,0,0,0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = 0o100644 << 16
+        archive.writestr(info,data)
+        manifest[name] = {'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
+
     for path in sorted((root / 'kit/MoonRayForModo').rglob('*')):
-        if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc':
-            archive.write(path, str(path.relative_to(root / 'kit')))
+        if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc' and path.name!='MoonRayPreview.lx':
+            add(path, str(path.relative_to(root / 'kit')))
     for name in ('README.md', 'LICENSE', 'THIRD_PARTY.md'):
-        archive.write(root / name, 'MoonRayForModo/' + name)
-    archive.write(root / 'docs/AVX_BUILD.md', 'MoonRayForModo/docs/AVX_BUILD.md')
-    archive.write(root / 'patches/configurable-x86-isa.patch', 'MoonRayForModo/patches/configurable-x86-isa.patch')
+        add(root / name, 'MoonRayForModo/' + name)
+    add(root / 'docs/AVX_BUILD.md', 'MoonRayForModo/docs/AVX_BUILD.md')
+    add(root / 'patches/configurable-x86-isa.patch', 'MoonRayForModo/patches/configurable-x86-isa.patch')
     if with_runtime:
         for path in sorted(runtime.iterdir()):
             if path.is_file():
-                archive.write(path, 'MoonRayForModo/runtime/native-avx/' + path.name)
+                add(path, 'MoonRayForModo/runtime/native-avx/' + path.name)
         for path in sorted((root / 'patches/native-windows').iterdir()):
             if path.is_file():
-                archive.write(path, 'MoonRayForModo/patches/native-windows/' + path.name)
+                add(path, 'MoonRayForModo/patches/native-windows/' + path.name)
+    info = zipfile.ZipInfo('MoonRayForModo/package-manifest.json',(2020,1,1,0,0,0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info,json.dumps({'files':manifest,'new_features':'unverified'},sort_keys=True,indent=2).encode())
 print(destination)

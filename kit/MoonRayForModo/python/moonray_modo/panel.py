@@ -18,6 +18,7 @@ class Panel(QtWidgets.QWidget):
         self.renderer = Renderer(self)
         self.last_digest = None
         self.disposed = False
+        self.sequence = None
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(1200)
         self.timer.timeout.connect(self._live_tick)
@@ -71,6 +72,11 @@ class Panel(QtWidgets.QWidget):
             self.region_controls.append(spin)
             controls.addRow(label,spin)
         self.pages['system'].addRow('CPU threads', self.threads)
+        self.timeout = QtWidgets.QSpinBox()
+        self.timeout.setRange(0,10080)
+        self.timeout.setSpecialValueText('No limit')
+        self.timeout.setSuffix(' min')
+        self.pages['system'].addRow('Render time limit',self.timeout)
         self.pages['lighting'].addRow('Uniform environment', self.environment)
         self.modo_environment = QtWidgets.QCheckBox('Use Modo environments')
         self.modo_environment.setChecked(True)
@@ -131,12 +137,15 @@ class Panel(QtWidgets.QWidget):
             checkbox.setChecked(key == 'alpha')
             self.aov_controls[key] = checkbox
             self.pages['aovs'].addRow(checkbox)
-        lighting_note = QtWidgets.QLabel('Glass uses Modo Transparency Amount/Color, Refraction Index, Roughness and Transparency Roughness. Use closed meshes for solid glass. Start with IOR 1.5 and Transparency 100%; increase Glossy and Mirror/refraction bounces for multiple glass surfaces. UV images can drive transmission amount, color and roughness. Absorption distance, dispersion and thin-sheet glass are not translated; warnings appear below.')
+        lighting_note = QtWidgets.QLabel('Glass uses Modo Transparency Amount/Color, Refraction Index, Roughness and Transparency Roughness. Use closed meshes for solid glass. Start with IOR 1.5 and Transparency 100%; increase Glossy and Mirror/refraction bounces for multiple glass surfaces. UV images can drive transmission amount, color and roughness. Absorption distance uses a closed-volume model. Dispersion is not translated. New material features are unverified; see compatibility notices below.')
         lighting_note.setWordWrap(True)
         self.pages['lighting'].addRow(lighting_note)
         save_settings = QtWidgets.QPushButton('Store render settings in scene')
         save_settings.clicked.connect(self._save_settings)
         controls.addRow(save_settings)
+        animation = QtWidgets.QPushButton('Render animation…')
+        animation.clicked.connect(self.render_animation)
+        controls.addRow(animation)
         actions = QtWidgets.QHBoxLayout()
         self.start = QtWidgets.QPushButton('Preview')
         self.start.clicked.connect(self.render_once)
@@ -279,6 +288,9 @@ class Panel(QtWidgets.QWidget):
         if modo.Scene().renderItem.id != self._scene_id:
             self._load_settings()
         scene = host.snapshot(evaluated_geometry=self.surface.currentIndex() == 2)
+        return self._configure_snapshot(scene)
+
+    def _configure_snapshot(self, scene):
         values = self._settings_values()
         scene['render_settings'] = values['render']
         scene['aovs'] = values['aovs']
@@ -303,6 +315,7 @@ class Panel(QtWidgets.QWidget):
 
     def _submit(self, scene, output=None):
         width, height = self._dimensions(scene, bool(output))
+        self.renderer.timeout_seconds = self.timeout.value()*60
         self.renderer.submit(scene, self.runtime.text(), width, height, self.samples.value(),
                              self.environment.value(), self.threads.value(), output)
         self.settings.setValue('runtime', self.runtime.text())
@@ -310,9 +323,14 @@ class Panel(QtWidgets.QWidget):
 
     def _digest(self, scene):
         values = [scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value()]
-        return hashlib.sha256(json.dumps(values, sort_keys=True).encode('utf-8')).hexdigest()
+        digest = hashlib.sha256()
+        for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':')).iterencode(values):
+            digest.update(chunk.encode('utf-8'))
+        return digest.hexdigest()
 
     def render_once(self):
+        if self.sequence is not None and self.sequence.running:
+            self.sequence.stop()
         try:
             self._submit(self._capture())
         except Exception as exc:
@@ -335,6 +353,8 @@ class Panel(QtWidgets.QWidget):
             self._failed(str(exc))
 
     def stop(self):
+        if self.sequence is not None:
+            self.sequence.stop()
         self.live.setChecked(False)
         self.renderer.stop()
 
@@ -401,8 +421,26 @@ class Panel(QtWidgets.QWidget):
             self.disposed = True
             self.timer.stop()
             self.selection_timer.stop()
+            if self.sequence is not None:
+                self.sequence.stop()
             self.renderer.close()
 
     def closeEvent(self, event):
         self.dispose()
         super().closeEvent(event)
+
+    def render_animation(self):
+        directory = QtWidgets.QFileDialog.getExistingDirectory(self,'Animation output folder')
+        if not directory: return
+        first,ok = QtWidgets.QInputDialog.getInt(self,'Animation','First frame',1,-100000,100000)
+        if not ok: return
+        last,ok = QtWidgets.QInputDialog.getInt(self,'Animation','Last frame',first,first,100000)
+        if not ok: return
+        fps,ok = QtWidgets.QInputDialog.getDouble(self,'Animation','Frames per second',24,.001,1000,3)
+        if not ok: return
+        motion = QtWidgets.QMessageBox.question(self,'Animation','Include motion blur?',
+                    QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.No)==QtWidgets.QMessageBox.Yes
+        from .animation import Sequence
+        self.stop()
+        self.sequence = Sequence(self,directory,first,last,fps,motion)
+        self.sequence.start()

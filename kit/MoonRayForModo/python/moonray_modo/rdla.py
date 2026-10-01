@@ -40,6 +40,11 @@ def matrix(values):
     return 'Mat4(%s)' % ', '.join(number(v) for v in values)
 
 
+def node_matrix(node):
+    first = matrix(node.get('matrix',IDENTITY))
+    return 'blur(%s, %s)' % (first,matrix(node['matrix_close'])) if 'matrix_close' in node else first
+
+
 def array(values):
     return '{' + ', '.join(values) + '}'
 
@@ -54,17 +59,22 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     dof = bool(camera.get('dof', False))
     if dof and (camera.get('f_stop', 4) <= 0 or camera.get('focus_distance', 4) <= 0):
         raise ValueError('Depth of field requires positive f-stop and focus distance')
+    orthographic = camera.get('projection','persp') == 'ortho'
+    if orthographic and camera.get('ortho_width',1)<=0:
+        raise ValueError('Orthographic width must be positive')
     lines = ['-- MoonRayForModo 0.1.0; scene units are meters',
-             'local camera = PerspectiveCamera("/modo/camera") {',
-             '  ["node_xform"] = %s,' % matrix(camera['matrix']),
-             '  ["focal"] = %s,' % number(camera['focal_mm']),
-             '  ["film_width_aperture"] = %s,' % number(camera['film_mm']),
+             'local camera = %s("/modo/camera") {' % ('OrthographicCamera' if orthographic else 'PerspectiveCamera'),
+             '  ["node_xform"] = %s,' % node_matrix(camera),
+             *([] if orthographic else ['  ["focal"] = %s,' % number(camera['focal_mm'])]),
+             '  ["film_width_aperture"] = %s,' % number(camera.get('ortho_width',1) if orthographic else camera['film_mm']),
              '  ["dof"] = %s,' % ('true' if dof else 'false'),
              '  ["dof_aperture"] = %s,' % number(camera.get('f_stop', 4)),
              '  ["dof_focus_distance"] = %s,' % number(camera.get('focus_distance', 4)),
              '  ["bokeh"] = %s,' % ('true' if camera.get('iris_blades', 0) >= 3 else 'false'),
              '  ["bokeh_sides"] = %d,' % max(0, int(camera.get('iris_blades', 0))),
              '  ["bokeh_angle"] = %s,' % number(math.degrees(camera.get('iris_rotation', 0))),
+             '  ["mb_shutter_open"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[0]),
+             '  ["mb_shutter_close"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[-1]),
              '  ["near"] = 0.001,', '}',
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
     if float(environment) > 0:
@@ -75,7 +85,7 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         if kind not in ('DistantLight', 'SphereLight', 'RectLight', 'SpotLight'):
             raise ValueError('Unsupported light: ' + kind)
         lines += ['table.insert(lights, %s("/modo/light/%s") {' % (kind, index),
-                  '  ["node_xform"] = %s,' % matrix(light['matrix']),
+                  '  ["node_xform"] = %s,' % node_matrix(light),
                   '  ["color"] = %s,' % vector(light['color'], 'Rgb'),
                   '  ["intensity"] = %s,' % number(light['intensity'])]
         if kind == 'DistantLight':
@@ -99,19 +109,28 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     materials = dict(scene.get('materials', {}))
     materials.setdefault('', {'color': [0.5, 0.5, 0.5], 'roughness': 0.4, 'metallic': 0})
     for index, (tag, material) in enumerate(sorted(materials.items())):
+        if material.get('material_stack'):
+            from .moonshine import emit_stack
+            emit_stack(material['material_stack'],tag,index,lines)
+            continue
+        if material.get('absorption_distance',0)>0 and material.get('transmission',0)>0 and not material.get('thin_geometry',False):
+            material = dict(material,transmission_color=[1,1,1],
+                textures={k:v for k,v in material.get('textures',{}).items() if textures.EFFECT_ALIASES.get(k,k)!='tranCol'},
+                layers=[v for v in material.get('layers',[]) if textures.EFFECT_ALIASES.get(v['effect'],v['effect'])!='tranCol'] if 'layers' in material else None)
         bindings = {}
         from .textures import EFFECT_ALIASES
         effects = set(material.get('textures', {})) | {
-            EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in material.get('layers', [])}
+            EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in (material.get('layers') or [])}
         glass = (material.get('transmission', 0) > 0 or material.get('presence', 1) < 1 or
                  'dissolve' in effects or any(k.startswith('tran') for k in effects))
         from .graph import bindings as graph_bindings
-        moonshine = material.get('shader') == 'DwaBaseMaterial'
+        moonshine = material.get('shader') == 'DwaBaseMaterial' or 'aniso' in effects
         bindings = graph_bindings(material, index, lines, glass and not moonshine)
         if moonshine:
             from .moonshine import emit
             emit(material, tag, index, bindings, lines)
             continue
+        bindings.pop('layerMask',None)
         if glass:
             lines += ['materials[%s] = ModoGlassMaterial("/modo/material/%s") {' % (string(tag), index),
                       '  ["transmission"] = %s,' % number(material.get('transmission', 0)),
@@ -141,6 +160,30 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         for attribute, binding in bindings.items():
             lines.append('  [%s] = %s,' % (string(attribute), binding))
         lines.append('}')
+    lines.append('local volumes = {}')
+    for index,(tag,material) in enumerate(sorted(materials.items())):
+        distance = material.get('absorption_distance',0)
+        if distance > 0 and material.get('transmission',0)>0 and not material.get('thin_geometry',False):
+            sigma = [-math.log(max(1e-6,min(1,float(c))))/distance for c in material.get('transmission_color',[1,1,1])]
+            attenuation = vector(sigma,'Rgb')
+            color_layers = [v for v in material.get('layers',[]) if textures.EFFECT_ALIASES.get(v['effect'],v['effect'])=='tranCol']
+            color_maps = {k:v for k,v in material.get('textures',{}).items() if textures.EFFECT_ALIASES.get(k,k)=='tranCol'}
+            if color_layers or color_maps:
+                from .graph import bindings as volume_bindings
+                mapped = volume_bindings(dict(material,layers=color_layers if 'layers' in material else None,textures=color_maps),900000000+index,lines)
+                name = '/modo/absorption/map/%d'%index
+                lines += ['ModoTextureMap(%s) { ["mode"] = 4, ["foreground"] = %s, ["distance"] = %s }' %
+                          (string(name),mapped['transmissionColor'],number(distance))]
+                attenuation = 'bind(ModoTextureMap(%s), Rgb(1,1,1))'%string(name)
+            lines += ['volumes[%s] = BaseVolume(%s) {' % (string(tag),string('/modo/absorption/%d'%index)),
+                      '  ["diffuse_color"] = Rgb(0,0,0),',
+                      '  ["attenuation_color"] = %s,' % attenuation,
+                      '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
+                      '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
+    lines += ['local function assign(g, part, tag)',
+              '  local a = {g, part, materials[tag], lightSet}',
+              '  if volumes[tag] then table.insert(a, volumes[tag]) end',
+              '  table.insert(assignments, a)', 'end']
     for index, mesh in enumerate(scene.get('meshes', [])):
         vertices = mesh['vertices']
         faces = mesh['faces']
@@ -164,14 +207,39 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         level = mesh.get('subdivision_level', 3)
         if type(level) is not int or not 1 <= level <= 5:
             raise ValueError('Subdivision level must be an integer between 1 and 5')
+        user_data = []
+        for uv_index, (uv_name, values) in enumerate(sorted(mesh.get('uv_sets', {}).items())):
+            if len(values) != sum(map(len, faces)):
+                raise ValueError('Named UV set must match polygon corners: '+uv_name)
+            name = '/modo/mesh/%d/uv/%d' % (index,uv_index)
+            lines += ['UserData(%s) {' % string(name),
+                      '  ["vec2f_key"] = %s,' % string(uv_name),
+                      '  ["rate"] = 6,',
+                      '  ["vec2f_values_0"] = %s,' % array(vector(v,'Vec2') for v in values), '}']
+            user_data.append('UserData(%s)' % string(name))
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,
-                  '    ["node_xform"] = %s,' % matrix(mesh.get('matrix', IDENTITY)),
+                  '    ["node_xform"] = %s,' % node_matrix(mesh),
                   '    ["vertex_list_0"] = %s,' % array(vector(v) for v in vertices),
                   '    ["vertices_by_index"] = %s,' % array(str(v) for f in faces for v in f),
                   '    ["face_vertex_count"] = %s,' % array(str(len(f)) for f in faces),
                   '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
                   *(['    ["mesh_resolution"] = %d,' % (2 ** level)] if subdivision else []),
                   '    ["smooth_normal"] = %s,' % ('true' if mesh.get('smooth', True) else 'false')]
+        if 'vertices_close' in mesh:
+            if len(mesh['vertices_close']) != len(vertices):
+                raise ValueError('Motion samples must have equal vertex counts')
+            lines.append('    ["vertex_list_1"] = %s,' % array(vector(v) for v in mesh['vertices_close']))
+        if user_data:
+            lines.append('    ["primitive_attributes"] = %s,' % array(user_data))
+        creases = mesh.get('creases', [])
+        if creases:
+            if not subdivision:
+                raise ValueError('Creases require subdivision geometry')
+            for a,b,sharpness in creases:
+                if type(a) is not int or type(b) is not int or a == b or min(a,b)<0 or max(a,b)>=len(vertices) or sharpness<0:
+                    raise ValueError('Invalid subdivision crease')
+            lines += ['    ["subd_crease_indices"] = %s,' % array(str(v) for edge in creases for v in edge[:2]),
+                      '    ["subd_crease_sharpnesses"] = %s,' % array(number(edge[2]) for edge in creases)]
         if 'visibility' in mesh:
             camera_v, indirect, reflection, refraction, subscatter, shadow = mesh['visibility']
             for attribute, value in [('visible_in_camera', camera_v), ('visible_shadow', shadow),
@@ -194,10 +262,10 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         lines += ['  }']
         if parts:
             for part_index, face_tag in enumerate(parts):
-                lines.append('  table.insert(assignments, {geometry, %s, materials[%s], lightSet})' %
+                lines.append('  assign(geometry, %s, %s)' %
                              (string('part%d' % part_index), string(face_tag)))
         else:
-            lines.append('  table.insert(assignments, {geometry, "", materials[%s], lightSet})' % string(tag))
+            lines.append('  assign(geometry, "", %s)' % string(tag))
         if 'instances' in mesh:
             if mesh['instances']:
                 lines += ['  local instances = RdlInstancerGeometry("/modo/instances/%s") {' % index,
@@ -207,7 +275,7 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
                           '    ["use_reference_attributes"] = true,',
                           '    ["xform_list"] = %s,' % array(matrix(m) for m in mesh['instances']),
                           '  }', '  table.insert(geometries, instances)',
-                          '  table.insert(assignments, {instances, "", materials[%s], lightSet})' % string(tag)]
+                          '  assign(instances, "", %s)' % string(tag)]
         else:
             lines.append('  table.insert(geometries, geometry)')
         lines.append('end')
@@ -217,7 +285,8 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
               '  ["scene_scale"] = 1,',
               '  ["image_width"] = %d,' % int(width), '  ["image_height"] = %d,' % int(height),
               '  ["pixel_samples"] = %d,' % int(samples),
-              '  ["sampling_mode"] = 0,', '  ["enable_motion_blur"] = false,',
+              '  ["sampling_mode"] = 0,', '  ["enable_motion_blur"] = %s,' % ('true' if scene.get('motion_steps') else 'false'),
+              '  ["motion_steps"] = %s,' % array(number(v) for v in scene.get('motion_steps',[-.25,.25])),
               '  ["enable_dof"] = %s,' % ('true' if dof else 'false'),
               # Renderer already writes into its private temp folder and atomically
               # publishes the finished EXR; avoid a second OS-specific staging layer.

@@ -232,3 +232,15 @@ class NativePreviewStartup(lxu.command.BasicCommand):
 lx.bless(NativePreviewStartup, 'moonray.native.startup')
 lx.bless(OpenPreview, 'moonray.native.open')
 lx.bless(DockPreview, 'moonray.native.dock')
+
+
+class AnimationFrame(lxu.command.BasicCommand):
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_UI
+
+    def basic_Execute(self,msg,flags):
+        from moonray_modo.animation import active
+        if active is not None and active.running:
+            active.capture()
+
+lx.bless(AnimationFrame,'moonray.animationFrame')

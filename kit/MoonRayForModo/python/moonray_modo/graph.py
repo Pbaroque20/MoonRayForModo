@@ -10,7 +10,7 @@ def bindings(material, index, lines, glass=False):
         lines.append('%s(%s) {' % (kind,string(name)))
         for key, value in attributes.items():
             if value.startswith('bind('):
-                unit = '1' if key in ('height','opacity','mask') else 'Rgb(1, 1, 1)'
+                unit = '1' if key in ('height','opacity','mask') else ('Vec3(1, 1, 1)' if key=='input_texture_coordinates' else 'Rgb(1, 1, 1)')
                 value = value[:-1] + ', ' + unit + ')'
             lines.append('  [%s] = %s,' % (string(key),value))
         lines.append('}')
@@ -22,7 +22,7 @@ def bindings(material, index, lines, glass=False):
         'lumiCol':material.get('emission',[0]*3),'coatAmt':material.get('clearcoat',0),
         'coatRough':material.get('clearcoat_roughness',.01),'tranAmt':material.get('transmission',0),
         'tranCol':material.get('transmission_color',[1]*3),'tranRough':material.get('refraction_roughness',0),
-        'normal':[.5,.5,1], 'bump':0,
+        'normal':[.5,.5,1], 'bump':0, 'groupMask':1, 'aniso':material.get('anisotropy',0),
         'diffAmt':material.get('diffuse_amount',1), 'specAmt':material.get('specular_amount',1),
         'lumiAmt':material.get('emission_amount',1), 'dissolve':1-material.get('presence',1)}
     for effect, raw, amount in [('diffCol','raw_color','diffuse_amount'),
@@ -43,19 +43,26 @@ def bindings(material, index, lines, glass=False):
             continue
         kind = layer.get('kind','imageMap')
         mask = None
+        coordinates = None
+        if layer.get('coordinate_key'):
+            coordinates = node('AttributeMap', {'primitive_attribute_name':string(layer['coordinate_key']),
+                'primitive_attribute_type':'1', 'warn_when_unavailable':'true', 'default_value':'Rgb(0,0,0)'})
         if kind=='constant':
             foreground = rgb(layer['value'])
         elif kind in ('checker','noise'):
             foreground = node('ModoTextureMap', {'mode':str(2 if kind=='checker' else 3),
                 'background':rgb(layer['color1']), 'foreground':rgb(layer['color2']),
-                'scale':vector(layer.get('scale',[1,1]),'Vec2'),
+                'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2'),
+                **({'coordinates':coordinates,'use_coordinates':'true'} if coordinates else {}),
                 'octaves':str(layer.get('octaves',4)),'lacunarity':number(layer.get('lacunarity',2)),
                 'persistence':number(layer.get('persistence',.5))})
         else:
             prepared = textures.prepare(layer['path'],layer.get('srgb',False))
             attributes = {'texture':string(prepared),'gamma':'0',
                 'wrap_around':'true' if layer.get('repeat',True) else 'false',
-                'scale':vector(layer.get('scale',[1,1]),'Vec2')}
+                'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2')}
+            if coordinates:
+                attributes.update(texture_coordinates='2', input_texture_coordinates=coordinates)
             alpha = node('ImageMap',dict(attributes,alpha_only='true')) if effect in textures.COLOR_EFFECTS else None
             if layer.get('use_alpha'):
                 mask = alpha

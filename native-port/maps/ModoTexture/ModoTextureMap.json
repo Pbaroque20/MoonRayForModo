@@ -1,20 +1,103 @@
 {
- "name":"ModoTextureMap", "type":"Map",
- "attributes": {
-  "attrMode":{"name":"mode","type":"Int","default":"0"},
-  "attrBlend":{"name":"blend","type":"Int","default":"0"},
-  "attrBackground":{"name":"background","type":"Rgb","default":"Rgb(0.0f,0.0f,0.0f)","flags":"FLAGS_BINDABLE"},
-  "attrForeground":{"name":"foreground","type":"Rgb","default":"Rgb(1.0f,1.0f,1.0f)","flags":"FLAGS_BINDABLE"},
-  "attrOpacity":{"name":"opacity","type":"Float","default":"1.0f","flags":"FLAGS_BINDABLE"},
-  "attrMask":{"name":"mask","type":"Float","default":"1.0f","flags":"FLAGS_BINDABLE"},
-  "attrNormal":{"name":"normal","type":"Rgb","default":"Rgb(0.5f,0.5f,1.0f)","flags":"FLAGS_BINDABLE"},
-  "attrNormalStrength":{"name":"normal_strength","type":"Float","default":"1.0f"},
-  "attrHeight":{"name":"height","type":"Float","default":"0.0f","flags":"FLAGS_BINDABLE"},
-  "attrBumpStrength":{"name":"bump_strength","type":"Float","default":"0.0f"},
-  "attrFlipGreen":{"name":"flip_green","type":"Bool","default":"false"},
-  "attrScale":{"name":"scale","type":"Vec2f","default":"Vec2f(1.0f,1.0f)"},
-  "attrOctaves":{"name":"octaves","type":"Int","default":"4"},
-  "attrLacunarity":{"name":"lacunarity","type":"Float","default":"2.0f"},
-  "attrPersistence":{"name":"persistence","type":"Float","default":"0.5f"}
- }
+  "name": "ModoTextureMap",
+  "type": "Map",
+  "attributes": {
+    "attrMode": {
+      "name": "mode",
+      "type": "Int",
+      "default": "0"
+    },
+    "attrBlend": {
+      "name": "blend",
+      "type": "Int",
+      "default": "0"
+    },
+    "attrBackground": {
+      "name": "background",
+      "type": "Rgb",
+      "default": "Rgb(0.0f,0.0f,0.0f)",
+      "flags": "FLAGS_BINDABLE"
+    },
+    "attrForeground": {
+      "name": "foreground",
+      "type": "Rgb",
+      "default": "Rgb(1.0f,1.0f,1.0f)",
+      "flags": "FLAGS_BINDABLE"
+    },
+    "attrOpacity": {
+      "name": "opacity",
+      "type": "Float",
+      "default": "1.0f",
+      "flags": "FLAGS_BINDABLE"
+    },
+    "attrMask": {
+      "name": "mask",
+      "type": "Float",
+      "default": "1.0f",
+      "flags": "FLAGS_BINDABLE"
+    },
+    "attrNormal": {
+      "name": "normal",
+      "type": "Rgb",
+      "default": "Rgb(0.5f,0.5f,1.0f)",
+      "flags": "FLAGS_BINDABLE"
+    },
+    "attrNormalStrength": {
+      "name": "normal_strength",
+      "type": "Float",
+      "default": "1.0f"
+    },
+    "attrHeight": {
+      "name": "height",
+      "type": "Float",
+      "default": "0.0f",
+      "flags": "FLAGS_BINDABLE"
+    },
+    "attrBumpStrength": {
+      "name": "bump_strength",
+      "type": "Float",
+      "default": "0.0f"
+    },
+    "attrFlipGreen": {
+      "name": "flip_green",
+      "type": "Bool",
+      "default": "false"
+    },
+    "attrScale": {
+      "name": "scale",
+      "type": "Vec2f",
+      "default": "Vec2f(1.0f,1.0f)"
+    },
+    "attrOctaves": {
+      "name": "octaves",
+      "type": "Int",
+      "default": "4"
+    },
+    "attrLacunarity": {
+      "name": "lacunarity",
+      "type": "Float",
+      "default": "2.0f"
+    },
+    "attrPersistence": {
+      "name": "persistence",
+      "type": "Float",
+      "default": "0.5f"
+    },
+    "attrUseCoordinates": {
+      "name": "use_coordinates",
+      "type": "Bool",
+      "default": "false"
+    },
+    "attrCoordinates": {
+      "name": "coordinates",
+      "type": "Rgb",
+      "default": "Rgb(0.0f,0.0f,0.0f)",
+      "flags": "FLAGS_BINDABLE"
+    },
+    "attrDistance": {
+      "name": "distance",
+      "type": "Float",
+      "default": "1.0f"
+    }
+  }
 }

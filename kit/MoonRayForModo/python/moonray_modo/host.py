@@ -4,7 +4,7 @@ import lx
 import lxu.utils
 import lxifc
 import modo
-from . import properties, options
+from . import properties, options, coordinates
 
 
 def channel(item, name, default=None):
@@ -75,6 +75,9 @@ def material_values(material):
     diffuse_amount = float(channel(material, 'diffAmt', 1))
     return {'color': [c * diffuse_amount for c in diffuse],
                                 'shader': properties.read(material).get('shader',''),
+                                'standard_material': properties.read(material).get('shader','')!='DwaBaseMaterial',
+                                'specular_fresnel':float(channel(material,'specFres',1)),
+                                'reflection_fresnel':float(channel(material,'reflFres',1)),
                                 'thin_geometry': properties.read(material).get('thin_geometry',False),
                                 'diffuse_amount': diffuse_amount,
                                 'raw_color': diffuse,
@@ -85,6 +88,12 @@ def material_values(material):
                                 'specular_amount': float(channel(material, 'specAmt', .04)),
                                 'emission_amount': float(channel(material, 'radiance', 0)),
                                 'roughness': float(channel(material, 'rough', .4)),
+                                'subsurface_amount': min(1,max(0,float(channel(material,'subsAmt',0)))),
+                                'subsurface_distance': max(0,float(channel(material,'subsDist',0))),
+                                'subsurface_color': color(material,'subsCol'),
+                                'absorption_distance': max(0,float(channel(material,'tranDist',0))),
+                                'anisotropy_angle': float(properties.read(material).get('anisotropy_angle',0)),
+                                'layer_opacity': float(channel(material,'opacity',1)),
                                 'anisotropy': float(channel(material, 'aniso', 0)),
                                 'metallic': float(channel(material, 'metallic', 0)),
                                 'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
@@ -101,11 +110,19 @@ def material_values(material):
 
 def snapshot(evaluated_geometry=False):
     scene = modo.Scene()
+    if scene.items('replicator',superType=False):
+        # Render Cache resolves generated replica transforms and source meshes.
+        evaluated_geometry = True
+    for mask in scene.items('mask',superType=False):
+        targets = mask.itemGraph('shadeLoc').forward()
+        if any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets) or channel(mask,'ptyp','') in ('Part','part','PART'):
+            evaluated_geometry = True
     camera = scene.renderCamera
     if camera is None:
         raise ValueError('The scene needs a render camera.')
-    if channel(camera, 'projType', 'persp') != 'persp':
-        raise ValueError('This version supports perspective cameras only.')
+    projection = channel(camera,'projType','persp')
+    if projection not in ('persp','ortho'):
+        raise ValueError('Unsupported camera projection: '+projection)
     warnings = []
     render = scene.renderItem
     width, height = int(channel(render, 'resX', 1280)), int(channel(render, 'resY', 720))
@@ -122,6 +139,10 @@ def snapshot(evaluated_geometry=False):
         if channel(camera, name, default) != default:
             warnings.append('Camera %s is not translated.' % name)
     result = {'camera': {'matrix': world_matrix(camera),
+                         'projection':projection,
+                         'ortho_width':float(properties.read(camera).get('ortho_width', aperture_x*float(channel(camera,'target',1))/max(1e-9,float(channel(camera,'focalLen',.05))))),
+                         'shutter_length':float(channel(camera,'blurLen',.5)),
+                         'shutter_offset':float(channel(camera,'blurOff',0)),
                          'focal_mm': float(channel(camera, 'focalLen', .05)) * 1000,
                          'film_mm': aperture_x * 1000,
                          'dof': bool(channel(camera, 'dof', 0)),
@@ -130,7 +151,15 @@ def snapshot(evaluated_geometry=False):
                          'iris_blades': int(channel(camera, 'irisBlades', 0)),
                          'iris_rotation': float(channel(camera, 'irisRot', 0))},
               'width': width, 'height': height, 'materials': {}, 'meshes': [], 'lights': []}
+    if channel(render,'region',False):
+        bounds = [float(channel(render,k,v)) for k,v in [('regX0',0),('regY0',0),('regX1',1),('regY1',1)]]
+        if not (0<=bounds[0]<bounds[2]<=1 and 0<=bounds[1]<bounds[3]<=1):
+            raise ValueError('Modo render region is not a valid normalized rectangle')
+        result['region'] = bounds
+    if projection=='ortho':
+        warnings.append('Orthographic width uses target distance and film/focal ratio; reference parity is unverified.')
     from .layers import ordered_items, material_tag
+    material_candidates = {}
     for material in reversed(list(ordered_items(scene.renderItem))):
         if material.type != 'advancedMaterial' or not channel(material, 'enable', 1):
             continue
@@ -142,20 +171,25 @@ def snapshot(evaluated_geometry=False):
             continue
         if tag is None:
             continue
-        if tag in result['materials'] and not evaluated_geometry:
-            warnings.append('Multiple material layers for %s: using the uppermost; BSDF layering is unsupported.' % (tag or 'base material'))
+        material_candidates.setdefault(tag,[]).append(material)
         result['materials'][tag] = material_values(material)
-        if channel(material, 'subsAmt', 0):
-            warnings.append('Subsurface is not translated: ' + material.name)
+        if channel(material,'specFres',1)!=1 or channel(material,'reflFres',1)!=1:
+            warnings.append('Independent Modo Fresnel edge multipliers are not translated: '+material.name)
+        if channel(material,'subsAmt',0) or channel(material,'aniso',0):
+            result['materials'][tag]['shader'] = 'DwaBaseMaterial'
         if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
             warnings.append('Anisotropy requires MoonShine Material: ' + material.name)
         if channel(material, 'tranAmt', 0):
-            if channel(material, 'tranDist', 0) or channel(material, 'disperse', 0):
-                warnings.append('Glass uses surface tint; absorption distance and dispersion are not translated: ' + material.name)
+            if channel(material, 'disperse', 0):
+                warnings.append('Dispersion is not translated: ' + material.name)
             if channel(material, 'metallic', 0) or channel(material, 'coatAmt', 0):
                 warnings.append('Glass uses dielectric Fresnel reflection; metalness and clearcoat are not translated: ' + material.name)
     if not evaluated_geometry:
         image_layers(scene, result['materials'], warnings)
+        from .layers import material_stack
+        for tag,candidates in material_candidates.items():
+            if len(candidates)>1:
+                result['materials'][tag]['material_stack'] = material_stack(scene,candidates,warnings,tag)
     for tag, material in result['materials'].items():
         maps = material.get('textures', {})
         if material.get('shader') == 'DwaBaseMaterial':
@@ -187,7 +221,7 @@ def snapshot(evaluated_geometry=False):
                 source = links[0]
             if source.type != 'mesh':
                 raise ValueError('source is not a mesh')
-            instances.setdefault(source.id, []).append(world_matrix(instance))
+            instances.setdefault(source.id, []).append((instance.id,world_matrix(instance)))
         except (ValueError, LookupError) as exc:
             warnings.append('Instance %s: %s.' % (instance.name, exc))
     # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
@@ -208,6 +242,7 @@ def snapshot(evaluated_geometry=False):
         uv_maps = {}
         normal_map = first_map(mesh, lx.symbol.i_VMAP_NORMAL)
         tags = lx.object.StringTag(polygons)
+        transform = world_matrix(item)
         for index in range(mesh.PolygonCount()):
             polygons.SelectByIndex(index)
             count = polygons.VertexCount()
@@ -227,16 +262,28 @@ def snapshot(evaluated_geometry=False):
             face_uv = corner_values(polygons, uv_maps[uv_name], count, 2)
             if uv_name and not face_uv:
                 raise ValueError('Mesh %s is missing UV values in map %s.' % (item.name, uv_name))
+            extra_uvs = {}
+            for key, descriptor in coordinates.descriptors({tag:result['materials'].get(tag,{})}).items():
+                source_name = descriptor.get('uv_map','')
+                source_uv = []
+                if descriptor.get('projection','uv') == 'uv':
+                    if source_name not in uv_maps:
+                        uv_maps[source_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, source_name)
+                    source_uv = corner_values(polygons, uv_maps[source_name], count, 2)
+                extra_uvs[key] = coordinates.face(descriptor, [vertices[v] for v in face], source_uv, transform)
             groups.setdefault((subdivision, uv_name), []).append((face, tag,
-                face_uv, corner_values(polygons, normal_map, count, 3)))
+                face_uv, corner_values(polygons, normal_map, count, 3), extra_uvs))
         transform = world_matrix(item)
         object_settings = options.object_values(properties.read(item))
-        transforms = instances.get(item.id, [])
+        instance_records = sorted(instances.get(item.id, []),key=lambda pair:pair[0])
         if item.id in instances and render_visible(item):
-            transforms = [transform] + transforms
+            instance_records = [(item.id,transform)] + instance_records
+        transforms = [value for identity,value in instance_records]
         for (subdivision, uv_name), tagged_faces in sorted(groups.items()):
-            faces, face_materials, face_uvs, face_normals = zip(*tagged_faces)
-            result['meshes'].append({'name': item.name, 'vertices': vertices,
+            faces, face_materials, face_uvs, face_normals, extras = zip(*tagged_faces)
+            result['meshes'].append({'name': item.name, 'identity':item.id+'|'+str(subdivision)+'|'+uv_name, 'vertices': vertices,
+                                     'uv_sets': {key:[uv for face,values in zip(faces,extras) for uv in values.get(key,[[0,0]]*len(face))]
+                                                 for key in sorted({k for values in extras for k in values})},
                                      'faces': list(faces), 'matrix': transform, 'material': '',
                                      'face_materials': list(face_materials),
                                      'uvs': [uv for values in face_uvs for uv in values] if all(face_uvs) else [],
@@ -247,6 +294,24 @@ def snapshot(evaluated_geometry=False):
                                      'subdivision': object_settings['subdivision'] if object_settings['override'] else subdivision})
             if item.id in instances:
                 result['meshes'][-1]['instances'] = transforms
+                result['meshes'][-1]['instance_ids'] = [identity for identity,value in instance_records]
+    # World/locator projections cannot share baked UVs across transforms.
+    # Keep ordinary UV instances shared; expand only affected prototypes.
+    expanded = []
+    descriptors = coordinates.descriptors(result['materials'])
+    for mesh in result['meshes']:
+        projected = {k:d for k,d in descriptors.items() if d.get('projection','uv')!='uv' and k in mesh.get('uv_sets',{})}
+        if not projected or 'instances' not in mesh:
+            expanded.append(mesh)
+            continue
+        for index, transform in enumerate(mesh['instances']):
+            instance = dict(mesh,name=mesh['name']+' / instance %d'%index,matrix=transform,uv_sets=dict(mesh['uv_sets']))
+            instance.pop('instances')
+            for key,descriptor in projected.items():
+                instance['uv_sets'][key] = [uv for face in mesh['faces'] for uv in coordinates.face(
+                    descriptor,[mesh['vertices'][v] for v in face],[],transform)]
+            expanded.append(instance)
+    result['meshes'] = expanded
     for item in scene.items('light'):
         if not render_visible(item):
             continue

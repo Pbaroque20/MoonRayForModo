@@ -1,5 +1,7 @@
 """Cached, tiled/mipmapped texture preparation for MoonRay's ImageMap."""
 import hashlib
+import re
+import shutil
 import os
 from pathlib import Path
 import subprocess
@@ -12,7 +14,7 @@ EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
            'coatAmt': 'clearcoat', 'coatRough': 'clearcoatRoughness',
            'tranAmt': 'transmission', 'tranCol': 'transmissionColor', 'tranRough': 'refractionRoughness',
            'normal':'normal', 'bump':'bump', 'diffAmt':'diffuseAmount',
-           'specAmt':'specularAmount', 'lumiAmt':'emissiveAmount', 'dissolve':'presence'}
+           'specAmt':'specularAmount', 'groupMask':'layerMask', 'aniso':'anisotropy', 'lumiAmt':'emissiveAmount', 'dissolve':'presence'}
 COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol'}
 
 # Shader Tree effect identifiers differ from advancedMaterial channel names.
@@ -23,7 +25,36 @@ EFFECT_ALIASES = {'diffColor': 'diffCol', 'specColor': 'specCol',
                   'diffAmount': 'diffAmt', 'specAmount': 'specAmt', 'lumiAmount': 'lumiAmt'}
 
 
+def source_tiles(source):
+    source = Path(source).resolve()
+    if '<UDIM>' not in source.name:
+        return {0: source} if source.is_file() else {}
+    pattern = re.compile('^' + re.escape(source.name).replace(re.escape('<UDIM>'), r'(1[0-9]{3})') + '$')
+    return {int(match.group(1)): path for path in sorted(source.parent.iterdir())
+            if path.is_file() for match in [pattern.match(path.name)] if match}
+
+
 def prepare(source, srgb=False, mipmaps=True):
+    if '<UDIM>' in str(source):
+        tiles = source_tiles(source)
+        if not tiles:
+            raise ValueError('No UDIM tiles found: ' + str(source))
+        signature = [(n, str(p), p.stat().st_size, p.stat().st_mtime_ns) for n,p in sorted(tiles.items())]
+        digest = hashlib.sha256(repr((signature,srgb,mipmaps)).encode()).hexdigest()
+        cache = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/Textures' / digest
+        cache.mkdir(parents=True, exist_ok=True)
+        for tile,path in tiles.items():
+            target = cache / ('tile.%d.tx' % tile)
+            if not target.is_file():
+                prepared = prepare(path, srgb, mipmaps)
+                staged = target.with_name(target.name+'.'+uuid.uuid4().hex+'.tmp')
+                try:
+                    shutil.copyfile(prepared, staged)
+                    staged.replace(target)
+                finally:
+                    if staged.exists(): staged.unlink()
+        return str(cache/'tile.<UDIM>.tx')
+
     source = Path(source).resolve()
     stat = source.stat()
     key_data = '%s|%d|%d|%s|v3-alpha-color-conversion' % (source, stat.st_size, stat.st_mtime_ns, srgb)

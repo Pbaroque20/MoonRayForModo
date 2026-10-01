@@ -47,8 +47,14 @@ public:
             n=normalize(Vec3f(sx,sy,1)); *out=Color(n.x,n.y,n.z); return;
         }
         Color a=evalColor(me,attrBackground,tls,state),b=evalColor(me,attrForeground,tls,state);
+        if(mode==4) {
+            const float distance=max(1.e-9f,me->get(attrDistance));
+            *out=Color(-log(clamp(b.r,1.e-6f,1.0f)),-log(clamp(b.g,1.e-6f,1.0f)),-log(clamp(b.b,1.e-6f,1.0f)))/distance;
+            return;
+        }
         if(mode>=2) {
-            Vec2f uv=state.getSt()*me->get(attrScale);
+            const Color st=evalColor(me,attrCoordinates,tls,state);
+            Vec2f uv=(me->get(attrUseCoordinates)?Vec2f(st.r,st.g):state.getSt())*me->get(attrScale);
             float value=0;
             if(mode==2) value=float((int(floor(uv.x*2))+int(floor(uv.y*2)))&1);
             else {
@@ -68,6 +74,12 @@ public:
             case 3:mixed=a-b;break;
             case 4:mixed=Color(1)-(Color(1)-a)*(Color(1)-b);break;
             case 5:mixed=Color(a.r/max(1.e-6f,b.r),a.g/max(1.e-6f,b.g),a.b/max(1.e-6f,b.b));break;
+            case 6:mixed=Color(abs(a.r-b.r),abs(a.g-b.g),abs(a.b-b.b));break;
+            case 7:mixed=Color(min(a.r,b.r),min(a.g,b.g),min(a.b,b.b));break;
+            case 8:mixed=Color(max(a.r,b.r),max(a.g,b.g),max(a.b,b.b));break;
+            case 9:mixed=Color((a.r<.5f?2*a.r*b.r:1-2*(1-a.r)*(1-b.r)),(a.g<.5f?2*a.g*b.g:1-2*(1-a.g)*(1-b.g)),(a.b<.5f?2*a.b*b.b:1-2*(1-a.b)*(1-b.b)));break;
+            case 10:mixed=Color((b.r<.5f?2*a.r*b.r:1-2*(1-a.r)*(1-b.r)),(b.g<.5f?2*a.g*b.g:1-2*(1-a.g)*(1-b.g)),(b.b<.5f?2*a.b*b.b:1-2*(1-a.b)*(1-b.b)));break;
+            case 11:mixed=Color(a.r+b.r-2*a.r*b.r,a.g+b.g-2*a.g*b.g,a.b+b.b-2*a.b*b.b);break;
         }
         float alpha=saturate(evalFloat(me,attrOpacity,tls,state)*evalFloat(me,attrMask,tls,state));
         *out=a*(1-alpha)+mixed*alpha;

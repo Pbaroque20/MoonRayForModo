@@ -1,6 +1,7 @@
 """Translate Modo Render Cache surfaces without modifying the current scene."""
 import ctypes
 import json
+import tempfile
 from pathlib import Path
 
 _bridge = None
@@ -29,12 +30,16 @@ def assign_materials(data, scene, warnings):
                     kind,value=channel(parent,'ptyp',''),channel(parent,'ptag','')
                     if kind in ('Material','material','MATR') and value and value!=surface['material']:
                         return False
-                    if kind not in ('','Material','material','MATR'):
+                    if kind in ('Part','part','PART') and value and value != surface.get('part',''):
+                        return False
+                    if kind not in ('','Material','material','MATR','Part','part','PART'):
                         warnings.append('Evaluated material mask type is not translated: '+str(kind))
                         return False
                     targets=parent.itemGraph('shadeLoc').forward()
-                    targets=[i for i in targets if i.type in ('mesh','meshInst')]
-                    if targets and not any(i.id in source_ids for i in targets): return False
+                    targets=[i for i in targets if i.type in ('mesh','meshInst','replicator','groupLocator')]
+                    def contains(target):
+                        return target.id in source_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
+                    if targets and not any(contains(i) for i in targets): return False
                     if channel(parent,'opacity',1)!=1 or channel(parent,'blend','normal')!='normal':
                         warnings.append('Group opacity and blending are not translated: '+parent.name)
                         return False
@@ -55,27 +60,33 @@ def assign_materials(data, scene, warnings):
             tag='evaluated_material_%d' % len(tags)
             tags[stack]=tag
             materials[tag]=material_values(base)
-            if channel(base,'subsAmt',0): warnings.append('Subsurface is not translated: '+base.name)
-            if channel(base,'aniso',0) and materials[tag]['shader']!='DwaBaseMaterial':
-                warnings.append('Anisotropy requires MoonShine Material: '+base.name)
-            if channel(base,'tranAmt',0) and (channel(base,'tranDist',0) or channel(base,'disperse',0)):
-                warnings.append('Absorption distance and dispersion are not translated: '+base.name)
+            if channel(base,'subsAmt',0) or channel(base,'aniso',0):
+                materials[tag]['shader']='DwaBaseMaterial'
             collect(scene,{tag:materials[tag]},warnings,baked_effects=('displace',),
                     layer_filter=set(stack),material_key=tag)
+            if len(candidates)>1:
+                from .layers import material_stack
+                materials[tag]['material_stack']=material_stack(scene,candidates,warnings,tag,set(stack))
         surface['material']=tags[stack]
     return materials
 
 def capture(time, path=None, displaced=True):
     global _bridge
     if _bridge is None:
-        path = Path(path) if path else Path(__file__).resolve().parents[2] / 'bin/MoonRayPreview.lx'
+        path = Path(path) if path else Path(__file__).resolve().parents[2] / 'bin/MoonRayGeometry.lx'
         if not path.is_file():
-            raise ValueError('Modo evaluated geometry requires the native adapter. Install the kit and restart Modo.')
+            raise ValueError('Modo evaluated geometry requires MoonRayGeometry.lx. Build/install the geometry adapter and restart Modo.')
         bridge = ctypes.CDLL(str(path))
-        bridge.MR_geometry_snapshot.argtypes = [ctypes.c_double, ctypes.c_int]
-        bridge.MR_geometry_snapshot.restype = ctypes.c_char_p
+        bridge.MR_geometry_snapshot_file.argtypes = [ctypes.c_double,ctypes.c_int,ctypes.c_char_p]
+        bridge.MR_geometry_snapshot_file.restype = ctypes.c_char_p
         _bridge = bridge
-    data = json.loads(_bridge.MR_geometry_snapshot(float(time), int(displaced)).decode('utf-8'))
+    with tempfile.TemporaryDirectory(prefix='MoonRay-geometry-') as folder:
+        output=Path(folder)/'geometry.json'
+        error=_bridge.MR_geometry_snapshot_file(float(time),int(displaced),str(output).encode('utf-8'))
+        if error:
+            raise ValueError('Modo evaluated geometry: '+error.decode('utf-8',errors='replace'))
+        with output.open(encoding='utf-8') as stream:
+            data=json.load(stream)
     if 'error' in data:
         raise ValueError('Modo evaluated geometry: ' + data['error'])
     return data
@@ -105,7 +116,8 @@ def meshes(data, materials, warnings):
         if uv_name and uv_name not in uv_names:
             raise ValueError('Evaluated mesh is missing UV map ' + uv_name)
         uv_index = uv_names.index(uv_name) if uv_name else 0
-        for segment in prototype['segments']:
+        surfaces.sort(key=lambda s:(s['source_item'],s.get('instance_index',0)))
+        for segment_index,segment in enumerate(prototype['segments']):
             if not segment['faces']: continue
             indices = [i for face in segment['faces'] for i in face]
             uv_sets = segment['uv_sets']
@@ -115,13 +127,28 @@ def meshes(data, materials, warnings):
             if any(i < 0 or i >= len(vertices) for i in indices):
                 raise ValueError('Invalid evaluated geometry index')
             attribute_indices = range(len(indices)) if segment.get('face_varying') else indices
-            mesh = dict(name=surfaces[0]['source_item'], vertices=vertices,
+            mesh = dict(name=surfaces[0]['source_item'], identity=surfaces[0]['source_item']+'|'+tag+'|'+str(segment_index), vertices=vertices,
                         faces=segment['faces'], matrix=surfaces[0]['matrix'], material=tag,
                         normals=[segment['normals'][i] for i in attribute_indices] if segment['normals'] else [],
                         uvs=[uv_sets[uv_index][i] for i in attribute_indices] if uv_index < len(uv_sets) else [],
                         subdivision=False, subdivision_level=1, smooth=True,
                         object_override=True, evaluated_geometry=True, visibility=list(visibility))
+            from . import coordinates
+            mesh['uv_sets'] = {}
+            for key, descriptor in coordinates.descriptors({tag:material}).items():
+                if descriptor.get('projection','uv') != 'uv':
+                    raise ValueError('Evaluated locator projections need per-instance baking; use UV projection')
+                source_name = descriptor.get('uv_map','')
+                if source_name not in uv_names:
+                    raise ValueError('Evaluated mesh is missing UV map '+source_name)
+                source_index = uv_names.index(source_name)
+                if source_index >= len(uv_sets):
+                    raise ValueError('Missing evaluated UV values: '+source_name)
+                values = [uv_sets[source_index][i] for i in attribute_indices]
+                mesh['uv_sets'][key] = coordinates.face(descriptor,
+                    [vertices[i] for i in indices], values, mesh['matrix'])
             if len(surfaces) > 1:
                 mesh['instances'] = [s['matrix'] for s in surfaces]
+                mesh['instance_ids'] = [s['source_item']+'|'+str(s.get('instance_index',0)) for s in surfaces]
             result.append(mesh)
     return result

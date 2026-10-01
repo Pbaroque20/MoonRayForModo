@@ -3,6 +3,11 @@
 This is an implementation and verification checklist, not a compatibility claim.
 Unchecked items remain required by the requested CPU work.
 
+An unbuilt, untested source candidate adds partial implementations across these
+areas. See [CPU_FEATURE_CANDIDATE.md](CPU_FEATURE_CANDIDATE.md) for the exact scope,
+deferred scripts and remaining parity gaps. The checklist below is not promoted
+to complete by source-only changes.
+
 ## Materials
 - [x] Standard reflection lobe, strength/color/roughness and texture controls
 - [ ] Full Modo specular/reflection Fresnel parity

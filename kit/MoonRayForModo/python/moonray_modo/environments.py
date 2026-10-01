@@ -24,24 +24,37 @@ def collect(scene, warnings):
                 'refraction':bool(channel(environment,'visRefr',1))}
         children = [i for i in environment.children()
                     if channel(i,'enable',1) and channel(i,'render',1) and channel(i,'opacity',1)>0]
+        stack = []
         for index, layer in enumerate(children):
             try:
                 if channel(layer,'effect','envColor') != 'envColor':
                     raise ValueError('only Environment Color layers are supported')
-                if channel(layer,'blend','normal') != 'normal' or channel(layer,'invert',0):
-                    raise ValueError('environment blend modes and inversion are unsupported')
+                from .layers import BLENDS
+                mode = channel(layer,'blend','normal')
+                if mode not in BLENDS:
+                    raise ValueError('unsupported environment blend '+mode)
                 opacity = float(channel(layer,'opacity',1))
-                if opacity != 1 and index < len(children)-1:
-                    raise ValueError('blending multiple environment layers is unsupported')
-                entry = dict(item, intensity=intensity*opacity)
+                entry = dict(item, opacity=opacity, blend=mode, invert=bool(channel(layer,'invert',0)))
                 if layer.type == 'envMaterial':
                     kind = channel(layer,'type','grad4')
-                    if kind not in ('constant','grad2','grad4','overcast'):
+                    if kind not in ('constant','grad2','grad4','overcast','physical'):
                         raise ValueError('physical daylight is not yet translated')
                     entry.update(kind=kind,zenith=color(layer,'zenColor'),sky=color(layer,'skyColor'),
                         ground=color(layer,'gndColor'),nadir=color(layer,'nadColor'),
                         sky_exponent=float(channel(layer,'skyExp',4)),
                         ground_exponent=float(channel(layer,'gndExp',4)))
+                    if kind=='physical':
+                        from . import properties
+                        sun_id = properties.read(environment).get('sun_item')
+                        suns = [scene.item(sun_id)] if sun_id else list(scene.items('sunLight',superType=False))
+                        if len(suns)!=1:
+                            raise ValueError('physical sky requires one Sun Light or an explicit MoonRay sun_item setting')
+                        sun = suns[0]
+                        transform = world_matrix(sun)
+                        entry.update(sun_direction=[-v for v in transform[8:11]],
+                                     haze=float(channel(sun,'haze',1)),
+                                     ground_albedo=[float(channel(layer,'albedo',.2))]*3)
+                        warnings.append('Physical daylight uses a single-scattering approximation; Modo sky brightness, ozone and solar-disc parity remain unverified: '+layer.name)
                     if channel(layer,'fogType','none') != 'none':
                         warnings.append('Environment fog is not translated: '+layer.name)
                 elif layer.type == 'imageMap':
@@ -71,10 +84,16 @@ def collect(scene, warnings):
                         srgb=space=='sRGB' or (space=='(default)' and path.suffix.lower() not in ('.exr','.hdr','.tx')))
                 else:
                     raise ValueError('unsupported environment layer type '+layer.type)
-                result.append(entry)
-                break # First opaque supported layer replaces lower rows.
+                stack.append(entry)
+                if opacity==1 and mode=='normal':
+                    break
             except (ValueError, LookupError, OSError) as exc:
                 warnings.append('Environment %s: %s.' % (layer.name,exc))
+        if stack:
+            if len(stack)==1 and stack[0]['kind']!='physical' and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert']:
+                result.append(stack[0])
+            else:
+                result.append(dict(item,kind='stack',layers=stack))
     return result
 
 
@@ -124,7 +143,11 @@ def emit(environments, lines):
                              ('glossy_reflection','reflection'),('mirror_reflection','reflection'),
                              ('glossy_transmission','refraction'),('mirror_transmission','refraction')]:
             attributes['visible_'+lobe]='true' if environment.get(visible,True) else 'false'
-        if environment['kind']=='constant':
+        if environment['kind']=='stack':
+            from .environment_layers import texture
+            attributes['texture'] = string(texture(environment))
+            attributes['texture_filter'] = '1'
+        elif environment['kind']=='constant':
             attributes['color']=vector(environment['zenith'],'Rgb')
         else:
             path=(textures.prepare(environment['path'],environment.get('srgb',False),mipmaps=False)

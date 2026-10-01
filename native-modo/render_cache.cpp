@@ -5,6 +5,8 @@
 #include <array>
 #include <cmath>
 #include <iomanip>
+#include <fstream>
+#include <filesystem>
 #include <locale>
 #include <map>
 #include <sstream>
@@ -104,13 +106,12 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
         out<<"]}";
     }
     out<<"]}";
+    surface.UnloadSegments();
 }
 }
 
-extern "C" __declspec(dllexport) const char* MR_geometry_snapshot(double time,int displaced) {
-    static thread_local std::string result;
-    std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(9);
-    try {
+static void write_snapshot(std::ostream& out,double time,int displaced) {
+
         CLxLoc_RenderCacheService service;
         void* object=nullptr;
         unsigned flags=LXfRENDERCACHE_TRACK_CURRENT_SCENE|LXfRENDERCACHE_TURN_OFF_AUTO_UPDATES|
@@ -141,8 +142,10 @@ extern "C" __declspec(dllexport) const char* MR_geometry_snapshot(double time,in
             LXtGeoCacheSrfVisibility visibility{};check(surface.VisibilityFlags(&visibility),"Surface visibility");
             if(i)out<<',';
             out<<"{\"id\":"<<surface.ID()<<",\"source_id\":"<<source.ID()<<",\"source_item\":";text(out,name);
+            out<<",\"instance_index\":"<<surface.InstanceIndex();
             out<<",\"instanced\":"<<surface.IsInstanced()<<",\"source_instanced\":"<<source.IsInstanced();
             out<<",\"material\":";text(out,surface.MaterialPTag());
+            out<<",\"part\":";text(out,surface.PartPTag());
             out<<",\"matrix\":";transform(out,surface,0);
             out<<",\"matrix_close\":";transform(out,surface,1);
             out<<",\"visibility\":["<<visibility.camera<<','<<visibility.indirect<<','<<visibility.reflection<<','
@@ -160,9 +163,35 @@ extern "C" __declspec(dllexport) const char* MR_geometry_snapshot(double time,in
         for(auto& entry:sources) {
             if(!first)out<<',';first=false;text(out,std::to_string(entry.first).c_str());out<<':';prototype(out,entry.second);
         }
-        out<<"}}";result=out.str();
+
+        out<<"}}";
+}
+
+extern "C" __declspec(dllexport) const char* MR_geometry_snapshot(double time,int displaced) {
+    static thread_local std::string result;
+    std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(9);
+    try {
+        write_snapshot(out,time,displaced);
+        result=out.str();
     } catch(const std::exception& error) {
         std::ostringstream failure;failure<<"{\"error\":";text(failure,error.what());failure<<'}';result=failure.str();
     } catch(...) {result="{\"error\":\"Unknown render cache error\"}";}
     return result.c_str();
+}
+
+// File export avoids retaining a second complete JSON string in the adapter.
+// Python owns the temporary path and removes partial output on error.
+extern "C" __declspec(dllexport) const char* MR_geometry_snapshot_file(double time,int displaced,const char* path) {
+    static thread_local std::string error;
+    try {
+        if(!path || !*path) throw std::runtime_error("Missing geometry output path");
+        std::ofstream out(std::filesystem::u8path(path),std::ios::binary|std::ios::trunc);
+        out.exceptions(std::ios::badbit|std::ios::failbit);
+        out.imbue(std::locale::classic());out<<std::setprecision(9);
+        write_snapshot(out,time,displaced);
+        out.close();
+        return nullptr;
+    } catch(const std::exception& failure) { error=failure.what(); }
+      catch(...) { error="Unknown render cache file error"; }
+    return error.c_str();
 }
