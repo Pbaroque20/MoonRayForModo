@@ -120,8 +120,8 @@ class Panel(QtWidgets.QWidget):
             controls.addRow(label, control)
         surface = self.pages['object']
         self.surface = QtWidgets.QComboBox()
-        self.surface.addItems(['As modeled', 'Smooth subdivision'])
-        self.surface.setToolTip('As modeled respects Modo subdivision polygons. Smooth subdivision rounds all exported meshes; use it for curved surfaces, not sharp-edged objects.')
+        self.surface.addItems(['As modeled', 'Smooth subdivision', 'Modo evaluated geometry (experimental)'])
+        self.surface.setToolTip('Modo evaluated geometry uses Modo render tessellation and displacement. MoonRay subdivision overrides are bypassed in this mode.')
         self.subdivision_level = QtWidgets.QSpinBox()
         self.subdivision_level.setRange(1, 5)
         self.subdivision_level.setValue(3)
@@ -298,7 +298,7 @@ class Panel(QtWidgets.QWidget):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
             self._load_settings()
-        scene = host.snapshot()
+        scene = host.snapshot(evaluated_geometry=self.surface.currentIndex() == 2)
         values = self._settings_values()
         scene['render_settings'] = values['render']
         scene['aovs'] = values['aovs']

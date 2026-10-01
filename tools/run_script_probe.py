@@ -14,6 +14,10 @@ process = subprocess.Popen([r'C:\Program Files\Modo16.1v9\modo\modo_cl.exe',
     creationflags=subprocess.CREATE_NO_WINDOW)
 try:
     commands='@{%s}\n' % script
+    if '--followup' in sys.argv:
+        followup=(root/'tools'/sys.argv[sys.argv.index('--followup')+1]).resolve()
+        assert followup.parent==root/'tools' and followup.is_file()
+        commands+='@{%s}\n' % followup
     if '--material-undo' in sys.argv:
         commands+='select.item {MoonShine assignment test} set\nmoonray.material.assign\napp.undo\n@{%s}\n' % (root/'tools/probe_material_undo.py')
     output,_ = process.communicate(commands+'!app.quit\n',timeout=120)

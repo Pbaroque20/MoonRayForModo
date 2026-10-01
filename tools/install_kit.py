@@ -11,6 +11,13 @@ source = root / 'kit/MoonRayForModo'
 destination = Path(os.environ['APPDATA']) / 'Luxology/Kits/MoonRayForModo'
 runtime = root / 'runtime/native-avx'
 converter = root / 'toolchain/msys64/ucrt64/bin/maketx.exe'
+adapter=source/'bin/MoonRayPreview.lx'
+if adapter.is_file():
+    preview_report=root/'test-results/pview-kit/report.json'
+    preview=json.loads(preview_report.read_text()) if preview_report.is_file() else {}
+    if not (preview.get('passed') and preview.get('clean_shutdown') and
+            preview.get('nonblack_pixels',0)>100 and preview.get('plugin_sha256')==hashlib.sha256(adapter.read_bytes()).hexdigest()):
+        raise SystemExit('Native adapter installation requires a nonblack PView render and clean shutdown with this exact binary. The installed kit was not changed.')
 if converter.is_file():
     shutil.copy2(converter, runtime / 'maketx.exe')
 if not (runtime / 'moonray.exe').is_file():

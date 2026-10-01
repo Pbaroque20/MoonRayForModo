@@ -3,6 +3,8 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'kit/MoonRayForModo/python'))
@@ -11,6 +13,32 @@ try:
     from moonray_modo.render import Renderer
 except ImportError:
     QtCore = None
+
+
+@unittest.skipIf(QtCore is None, 'Run inside Modo for the Qt lifecycle tests')
+class NativePreviewStatusTests(unittest.TestCase):
+    def test_pending_buffer_reports_failure_and_recovers_only_after_transfer(self):
+        from moonray_modo.native_preview import Controller
+        statuses=[]
+        bridge=SimpleNamespace(MR_preview_publish=lambda *args:-2,
+                               MR_preview_diagnostic=lambda *args:b'WriteBegin=0x80000000')
+        session={'renderer':SimpleNamespace(passes=[])}
+        controller=SimpleNamespace(closed=False,bridge=bridge,sessions={1:session},errors={},
+                                   status=lambda identity,text:statuses.append(text))
+        with patch('moonray_modo.native_preview.time.monotonic',return_value=100):
+            Controller.publish(controller,1,'frame.exr')
+        self.assertNotIn(1,controller.errors)
+        self.assertEqual(session['pending_frame'],'frame.exr')
+        with patch('moonray_modo.native_preview.time.monotonic',return_value=111):
+            Controller.publish(controller,1,'frame.exr')
+        self.assertIn('WriteBegin=0x80000000',controller.errors[1])
+        self.assertNotIn('Preview complete',statuses)
+        bridge.MR_preview_publish=lambda *args:1
+        Controller.publish(controller,1,'frame.exr')
+        self.assertFalse(controller.errors)
+        self.assertNotIn('pending_frame',session)
+        self.assertNotIn('pending_since',session)
+        self.assertEqual(statuses[-1],'Preview complete')
 
 
 @unittest.skipIf(QtCore is None, 'Run inside Modo for the Qt lifecycle tests')

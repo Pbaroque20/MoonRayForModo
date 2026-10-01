@@ -2,12 +2,22 @@
 import ctypes
 import hashlib
 import json
+import time
+import lx
+import lxifc
 from pathlib import Path
 from PySide2 import QtCore
 from . import host,native,properties
 from .render import Renderer
 
 _controller=None
+
+class ShutdownListener(lxifc.SessionListener):
+    def sesl_QuittingUI(self):
+        if _controller is not None: _controller.close()
+
+    def sesl_ShuttingDown(self):
+        if _controller is not None: _controller.close()
 
 class Controller(QtCore.QObject):
     def __init__(self,path,parent=None):
@@ -25,6 +35,9 @@ class Controller(QtCore.QObject):
         self.bridge.MR_preview_diagnostic.restype=ctypes.c_char_p
         self.sessions={}
         self.errors={}
+        self.closed=False
+        self.shutdown_listener=ShutdownListener()
+        lx.service.Listener().AddListener(self.shutdown_listener)
         self.timer=QtCore.QTimer(self)
         self.timer.setInterval(1200)
         self.timer.timeout.connect(self.tick)
@@ -32,12 +45,26 @@ class Controller(QtCore.QObject):
         QtCore.QCoreApplication.instance().aboutToQuit.connect(self.close)
 
     def status(self,identity,message):
+        if self.closed: return
         self.bridge.MR_preview_status(identity,message.encode('utf-8'))
 
     def publish(self,identity,path):
+        if self.closed: return
         session=self.sessions.get(identity)
         completed=int(bool(session) and not session['renderer'].passes)
         result=self.bridge.MR_preview_publish(identity,str(path).encode('utf-8'),completed)
+        if result==-2 and session is not None:
+            # PView can withhold its buffer while opening, paused or resizing.
+            # Retain the latest frame instead of losing the finished render.
+            session['pending_frame']=path
+            since=session.setdefault('pending_since',time.monotonic())
+            if time.monotonic()-since >= 10:
+                detail=(self.bridge.MR_preview_diagnostic(identity) or b'').decode('utf-8',errors='replace')
+                self.errors[identity]='PView has not accepted the rendered image: '+detail
+                self.status(identity,self.errors[identity])
+            else:
+                self.status(identity,'Waiting for PView image buffer')
+            return
         if result!=1:
             self.errors[identity]='Native preview image transfer failed (%d)' % result
             detail=self.bridge.MR_preview_diagnostic(identity)
@@ -46,10 +73,14 @@ class Controller(QtCore.QObject):
             self.status(identity,self.errors[identity])
         else:
             self.errors.pop(identity,None)
+            if session:
+                session.pop('pending_frame',None)
+                session.pop('pending_since',None)
+                if completed: self.status(identity,'Preview complete')
 
     def capture(self):
-        scene=host.snapshot()
         values=properties.scene_settings()
+        scene=host.snapshot(evaluated_geometry=values.get('surface',0)==2)
         scene['render_settings']=values.get('render',{})
         if values.get('region_enabled'): scene['region']=values.get('region',[0,0,1,1])
         if not values.get('modo_environment',True): scene['environments']=[]
@@ -64,6 +95,7 @@ class Controller(QtCore.QObject):
         return scene,values,runtime
 
     def tick(self):
+        if self.closed: return
         count=self.bridge.MR_preview_ids(None,0)
         ids=(ctypes.c_uint*max(1,count))()
         found=self.bridge.MR_preview_ids(ids,count)
@@ -89,10 +121,14 @@ class Controller(QtCore.QObject):
                 session={'renderer':renderer,'digest':None,'running':False}
                 self.sessions[identity]=session
             try:
+                if session.get('pending_frame'):
+                    self.publish(identity,session['pending_frame'])
                 if captured is None: captured=self.capture()
                 scene,values,runtime=captured
                 digest=hashlib.sha256(json.dumps([scene,values,runtime,revision.value],sort_keys=True).encode()).hexdigest()
                 if digest!=session['digest'] or not session['running']:
+                    session.pop('pending_frame',None)
+                    session.pop('pending_since',None)
                     self.errors.pop(identity,None)
                     width=min(640,scene['width']); height=max(16,round(width*scene['height']/scene['width']))
                     session['renderer'].submit(scene,runtime,width,height,values.get('samples',4),
@@ -105,13 +141,20 @@ class Controller(QtCore.QObject):
         self.status(identity,text)
 
     def completed(self,identity):
-        if identity not in self.errors:
+        if identity not in self.errors and not self.sessions.get(identity,{}).get('pending_frame'):
             self.status(identity,'Preview complete')
 
     def close(self):
+        if self.closed: return
+        self.closed=True
         self.timer.stop()
         for session in self.sessions.values(): session['renderer'].close()
         self.sessions.clear()
+        shutdown=getattr(self.bridge,'MR_preview_shutdown',None)
+        if shutdown is not None:
+            shutdown.argtypes=[]
+            shutdown.restype=None
+            shutdown()
 
 def start(path=None):
     global _controller
@@ -119,5 +162,7 @@ def start(path=None):
     if QtCore.QCoreApplication.instance() is None: return None
     path=Path(path) if path else Path(__file__).resolve().parents[2]/'bin/MoonRayPreview.lx'
     if not path.is_file(): return None
-    _controller=Controller(path,QtCore.QCoreApplication.instance())
+    # Modo tears down SDK services before Qt's final application destruction.
+    # The session listener stops polling before those interfaces disappear.
+    _controller=Controller(path)
     return _controller

@@ -1,5 +1,12 @@
 # MoonRayForModo — native Windows AVX preview
 
+Development status: CPU compatibility work is ongoing. The current source adds an
+experimental Modo Render Cache path for evaluated subdivision/displacement,
+named UVs, shared instances and item-scoped material overrides. Native PView
+startup, image-buffer handling and shutdown are still under validation; the
+installer blocks unvalidated native adapters. See [the CPU checklist](docs/CPU_READINESS.md)
+for verified features and remaining work. This is not yet production-ready.
+
 Target: **Modo 16.1v9, Windows x64, Python 3.9**.
 
 The public MoonRay CPU renderer, its core shader modules and Moonshine DwaBaseMaterial build as

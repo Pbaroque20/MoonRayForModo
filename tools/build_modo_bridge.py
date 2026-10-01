@@ -18,7 +18,8 @@ subprocess.run(test_command,env=env,check=True,creationflags=subprocess.CREATE_N
 subprocess.run([str(folder/'test_image_resample.exe')],env=env,check=True,creationflags=subprocess.CREATE_NO_WINDOW)
 command=[str(compiler),'-std=c++17','-shared','-O2','-D_WIN32','-D_WIN64','-DWIN32',
     '-static','-static-libgcc','-static-libstdc++','-I'+str(sdk/'include'),
-    str(root/'native-modo/preview_bridge.cpp'),str(sdk/'common/cwrap.cpp'),str(sdk/'common/util.cpp'),
+    str(root/'native-modo/preview_bridge.cpp'),str(root/'native-modo/render_cache.cpp'),
+    str(sdk/'common/cwrap.cpp'),str(sdk/'common/util.cpp'),
     '-o',str(folder/'MoonRayPreview.lx')]
 with (folder/'build.log').open('w') as log:
     result=subprocess.run(command,env=env,stdout=log,stderr=subprocess.STDOUT,creationflags=subprocess.CREATE_NO_WINDOW)

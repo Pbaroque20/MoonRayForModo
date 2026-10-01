@@ -217,3 +217,57 @@ class DockPreview(lxu.command.BasicCommand):
         lx.eval('viewport.restore base.MoonRayForModoViewport false customview')
 
 lx.bless(DockPreview,'moonray.dock')
+
+
+class NativePreviewStartup(lxu.command.BasicCommand):
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_UI
+
+    def basic_Execute(self,msg,flags):
+        if lx.service.Platform().IsHeadless():
+            return
+        from moonray_modo import native_preview
+        # StartupCommands run before the application's UI is fully initialized.
+        from PySide2 import QtCore
+        QtCore.QTimer.singleShot(0, native_preview.start)
+
+
+class NativePreviewOpen(NativePreviewStartup):
+    def basic_Enable(self,msg):
+        if lx.service.Platform().IsHeadless():
+            return False
+        return os.path.isfile(os.path.join(os.path.dirname(package_root),'bin','MoonRayPreview.lx'))
+
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import native_preview
+        if native_preview.start() is None:
+            raise RuntimeError('Native preview adapter is missing. Reinstall the MoonRay kit and restart Modo.')
+        lx.eval('layout.Window PViewWindow open:true')
+        lx.eval('select.viewportInWindow PViewWindow')
+        # PViewWindow already owns its PView. Rebuilding it here can leave the
+        # command context referring to the viewport that was just destroyed.
+        _select_native_renderer()
+
+
+def _select_native_renderer():
+    service=lx.service.Host()
+    names=[lx.object.Factory(service.ServerByIndex('externalrender',i)).Name()
+           for i in range(service.NumServers('externalrender'))]
+    if 'moonray.cpu' not in names:
+        raise RuntimeError('MoonRay CPU was not found at startup. Restart Modo after installing the kit.')
+    lx.eval('pview.renderer %d' % names.index('moonray.cpu'))
+    lx.eval('pview.resume')
+
+
+class NativePreviewDock(NativePreviewOpen):
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import native_preview
+        if native_preview.start() is None:
+            raise RuntimeError('Native preview adapter is missing. Reinstall the kit and restart Modo.')
+        lx.eval('viewport.restore {} false pview')
+        _select_native_renderer()
+
+
+lx.bless(NativePreviewStartup,'moonray.native.startup')
+lx.bless(NativePreviewOpen,'moonray.native.open')
+lx.bless(NativePreviewDock,'moonray.native.dock')

@@ -45,7 +45,13 @@ public:
         previews.erase(state->id);
     }
     LxResult rend_Start() override {state->running=1; ++state->revision; return LXe_OK;}
-    LxResult rend_Stop() override {state->running=0; return LXe_OK;}
+    LxResult rend_Stop() override {
+        state->running=0;
+        // A stopped viewport can be destroyed before module cleanup. Drop its
+        // UI interfaces while the host is still processing Stop.
+        state->queue.clear(); state->notifier.clear(); state->processing.clear();
+        return LXe_OK;
+    }
     LxResult rend_Pause() override {state->running=0; return LXe_OK;}
     LxResult rend_Reset() override {++state->revision; return LXe_OK;}
     LxResult rend_SetNotifier(ILxUnknownID value) override {
@@ -93,7 +99,12 @@ extern "C" __declspec(dllexport) int MR_preview_publish(unsigned id,const char* 
         }
         LXtExternalRenderBuffer buffer{};
         buffer.w=image.Width(); buffer.h=image.Height(); buffer.fmt=LXiIMP_RGBAFP;
-        if(LXx_FAIL(state->queue.WriteBegin(&buffer))) return -2;
+        const auto begin=state->queue.WriteBegin(&buffer);
+        if(LXx_FAIL(begin)) {
+            std::snprintf(state->diagnostic,sizeof(state->diagnostic),"WriteBegin=0x%08x (%ux%u fmt=%u)",
+                unsigned(begin),buffer.w,buffer.h,buffer.fmt);
+            return -2;
+        }
         if(!buffer.ptr || !buffer.w || !buffer.h || buffer.fmt!=LXiIMP_RGBAFP) {
             std::snprintf(state->diagnostic,sizeof(state->diagnostic),
                 "Invalid queue buffer: %ux%u fmt=%u ptr=%s",buffer.w,buffer.h,buffer.fmt,buffer.ptr?"present":"null");
@@ -139,7 +150,7 @@ void initialize() {
     server->AddInterface(new CLxIfc_StaticDesc<PreviewServer>);
     lx::AddServer("moonray.cpu",server);
 }
-void cleanup() {
+extern "C" __declspec(dllexport) void MR_preview_shutdown() {
     // Release host-owned interfaces while Modo's services are still alive.
     std::map<unsigned,std::shared_ptr<PreviewState>> remaining;
     {
@@ -153,3 +164,4 @@ void cleanup() {
         entry.second->processing.clear();
     }
 }
+void cleanup() { MR_preview_shutdown(); }

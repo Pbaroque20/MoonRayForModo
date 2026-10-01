@@ -62,12 +62,41 @@ def render_visible(item):
     return True
 
 
-def image_layers(scene, materials, warnings):
+def image_layers(scene, materials, warnings, baked_effects=()):
     from .layers import collect
-    collect(scene, materials, warnings)
+    collect(scene, materials, warnings, baked_effects=baked_effects)
 
 
-def snapshot():
+def material_values(material):
+    diffuse = color(material, 'diffCol', (.5, .5, .5))
+    diffuse_amount = float(channel(material, 'diffAmt', 1))
+    return {'color': [c * diffuse_amount for c in diffuse],
+                                'shader': properties.read(material).get('shader',''),
+                                'thin_geometry': properties.read(material).get('thin_geometry',False),
+                                'diffuse_amount': diffuse_amount,
+                                'raw_color': diffuse,
+                                'raw_specular': color(material, 'specCol'),
+                                'raw_emission': color(material, 'lumiCol'),
+                                'bump_strength': float(channel(material, 'bumpAmp', .005)),
+                                'base_layer_id': material.id,
+                                'specular_amount': float(channel(material, 'specAmt', .04)),
+                                'emission_amount': float(channel(material, 'radiance', 0)),
+                                'roughness': float(channel(material, 'rough', .4)),
+                                'anisotropy': float(channel(material, 'aniso', 0)),
+                                'metallic': float(channel(material, 'metallic', 0)),
+                                'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
+                                'emission': [c * float(channel(material, 'radiance', 0)) for c in color(material, 'lumiCol')],
+                                'ior': max(1.0, float(channel(material, 'refIndex', 1.5))),
+                                'transmission': min(1.0, max(0.0, float(channel(material, 'tranAmt', 0)))),
+                                'transmission_color': color(material, 'tranCol'),
+                                'refraction_roughness': min(1.0, max(0.0, float(channel(material, 'tranRough', 0)))),
+                                'presence': 1.0 - min(1.0, max(0.0, float(channel(material, 'dissAmt', 0)))),
+                                'opacity': 1.0 - float(channel(material, 'dissAmt', 0)),
+                                'clearcoat': float(channel(material, 'coatAmt', 0)),
+                                'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
+
+
+def snapshot(evaluated_geometry=False):
     scene = modo.Scene()
     camera = scene.renderCamera
     if camera is None:
@@ -105,38 +134,14 @@ def snapshot():
         try:
             tag = material_tag(material)
         except ValueError as exc:
-            warnings.append('Material %s: %s' % (material.name, exc))
+            if not evaluated_geometry:
+                warnings.append('Material %s: %s' % (material.name, exc))
             continue
         if tag is None:
             continue
-        if tag in result['materials']:
+        if tag in result['materials'] and not evaluated_geometry:
             warnings.append('Multiple material layers for %s: using the uppermost; BSDF layering is unsupported.' % (tag or 'base material'))
-        diffuse = color(material, 'diffCol', (.5, .5, .5))
-        diffuse_amount = float(channel(material, 'diffAmt', 1))
-        result['materials'][tag] = {'color': [c * diffuse_amount for c in diffuse],
-                                    'shader': properties.read(material).get('shader',''),
-                                    'thin_geometry': properties.read(material).get('thin_geometry',False),
-                                    'diffuse_amount': diffuse_amount,
-                                    'raw_color': diffuse,
-                                    'raw_specular': color(material, 'specCol'),
-                                    'raw_emission': color(material, 'lumiCol'),
-                                    'bump_strength': float(channel(material, 'bumpAmp', .005)),
-                                    'base_layer_id': material.id,
-                                    'specular_amount': float(channel(material, 'specAmt', .04)),
-                                    'emission_amount': float(channel(material, 'radiance', 0)),
-                                    'roughness': float(channel(material, 'rough', .4)),
-                                    'anisotropy': float(channel(material, 'aniso', 0)),
-                                    'metallic': float(channel(material, 'metallic', 0)),
-                                    'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
-                                    'emission': [c * float(channel(material, 'radiance', 0)) for c in color(material, 'lumiCol')],
-                                    'ior': max(1.0, float(channel(material, 'refIndex', 1.5))),
-                                    'transmission': min(1.0, max(0.0, float(channel(material, 'tranAmt', 0)))),
-                                    'transmission_color': color(material, 'tranCol'),
-                                    'refraction_roughness': min(1.0, max(0.0, float(channel(material, 'tranRough', 0)))),
-                                    'presence': 1.0 - min(1.0, max(0.0, float(channel(material, 'dissAmt', 0)))),
-                                    'opacity': 1.0 - float(channel(material, 'dissAmt', 0)),
-                                    'clearcoat': float(channel(material, 'coatAmt', 0)),
-                                    'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
+        result['materials'][tag] = material_values(material)
         if channel(material, 'subsAmt', 0):
             warnings.append('Subsurface is not translated: ' + material.name)
         if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
@@ -146,7 +151,8 @@ def snapshot():
                 warnings.append('Glass uses surface tint; absorption distance and dispersion are not translated: ' + material.name)
             if channel(material, 'metallic', 0) or channel(material, 'coatAmt', 0):
                 warnings.append('Glass uses dielectric Fresnel reflection; metalness and clearcoat are not translated: ' + material.name)
-    image_layers(scene, result['materials'], warnings)
+    if not evaluated_geometry:
+        image_layers(scene, result['materials'], warnings)
     for tag, material in result['materials'].items():
         maps = material.get('textures', {})
         if material.get('shader') == 'DwaBaseMaterial':
@@ -156,9 +162,14 @@ def snapshot():
         if material['transmission'] > 0 or material['presence'] < 1 or 'dissolve' in maps or any(k.startswith('tran') for k in maps):
             if any(k in maps for k in ('specCol', 'specAmt', 'coatAmt', 'coatRough', 'metallic')):
                 warnings.append('The standard glass/dissolve material ignores specular-color, clearcoat and metalness maps. MoonShine supports mapped clearcoat and metalness: ' + (tag or 'base material'))
+    if evaluated_geometry:
+        from . import evaluated
+        data = evaluated.capture(lx.service.Selection().GetTime())
+        result['materials'] = evaluated.assign_materials(data, scene, warnings)
+        result['meshes'] = evaluated.meshes(data, result['materials'], warnings)
     # Resolve each visible instance to one mesh prototype, including hidden sources.
     instances = {}
-    for instance in scene.items('meshInst', superType=False):
+    for instance in ([] if evaluated_geometry else scene.items('meshInst', superType=False)):
         if not render_visible(instance):
             continue
         source, visited = instance, set()
@@ -177,7 +188,7 @@ def snapshot():
         except (ValueError, LookupError) as exc:
             warnings.append('Instance %s: %s.' % (instance.name, exc))
     # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
-    for item in scene.items('mesh', superType=False):
+    for item in ([] if evaluated_geometry else scene.items('mesh', superType=False)):
         if not render_visible(item) and item.id not in instances:
             continue
         mesh = modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item, 'deformed')
@@ -254,7 +265,7 @@ def snapshot():
             # Precompose a local X half-turn, keeping the world position intact.
             light['matrix'][4:12] = [-v for v in light['matrix'][4:12]]
         result['lights'].append(light)
-    for kind in ('replicator', 'textureLayer', 'volume'):
+    for kind in (('textureLayer', 'volume') if evaluated_geometry else ('replicator', 'textureLayer', 'volume')):
         if scene.items(kind, superType=False):
             warnings.append('%s items are not translated in this version.' % kind)
     from .environments import collect as collect_environments

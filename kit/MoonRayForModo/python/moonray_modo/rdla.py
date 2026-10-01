@@ -172,6 +172,13 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
                   '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
                   *(['    ["mesh_resolution"] = %d,' % (2 ** level)] if subdivision else []),
                   '    ["smooth_normal"] = %s,' % ('true' if mesh.get('smooth', True) else 'false')]
+        if 'visibility' in mesh:
+            camera_v, indirect, reflection, refraction, subscatter, shadow = mesh['visibility']
+            for attribute, value in [('visible_in_camera', camera_v), ('visible_shadow', shadow),
+                    ('visible_diffuse_reflection', indirect), ('visible_diffuse_transmission', indirect),
+                    ('visible_glossy_reflection', reflection), ('visible_mirror_reflection', reflection),
+                    ('visible_glossy_transmission', refraction), ('visible_mirror_transmission', refraction)]:
+                lines.append('    [%s] = %s,' % (string(attribute), 'true' if value else 'false'))
         for source, attribute, kind in [('uvs', 'uv_list', 'Vec2'), ('normals', 'normal_list', 'Vec3')]:
             values = mesh.get(source, [])
             if source == 'normals' and (subdivision or not mesh.get('smooth', True)):

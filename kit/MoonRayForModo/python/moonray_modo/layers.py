@@ -30,17 +30,31 @@ def material_tag(item):
         parent = parent.parent
     return tag if tag is not None else ''
 
-def collect(scene, materials, warnings):
+def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, material_key=None):
     from .host import channel, color
     items = list(ordered_items(scene.renderItem))
     positions = {item.id:i for i,item in enumerate(items)}
     for layer in reversed(items): # Modo's upper rows are applied last.
         if layer.type not in ('imageMap','constant','checker','noise'):
             continue
+        if layer_filter is not None and layer.id not in layer_filter:
+            continue
         if not channel(layer,'enable',1) or not channel(layer,'render',1):
             continue
+        if channel(layer,'effect','') in baked_effects:
+            continue
         try:
-            tag = material_tag(layer)
+            if layer_filter is None:
+                tag = material_tag(layer)
+            else:
+                # Render Cache already resolved item, part and instance masks.
+                # Their compositing still needs explicit support before use.
+                parent=layer.parent
+                while parent and parent.type != 'polyRender':
+                    if channel(parent,'opacity',1)!=1 or channel(parent,'blend','normal')!='normal':
+                        raise ValueError('group opacity and group blending are unsupported')
+                    parent=parent.parent
+                tag = material_key
             if tag is None:
                 continue
             if tag not in materials:
