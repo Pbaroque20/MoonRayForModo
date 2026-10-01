@@ -21,6 +21,58 @@ def scene():
 
 
 class Textures(unittest.TestCase):
+    def test_nested_group_opacity_is_applied_once_at_each_boundary(self):
+        from moonray_modo.compositing import Groups
+        def mix(a,b,opacity,mask):
+            weight=opacity*(1 if mask is None else mask)
+            return a+(b-a)*weight
+        groups=Groups({'diffCol':0.,'rough':.2,'groupMask':1.},mix)
+        outer={'id':'outer','opacity':.5}
+        inner={'id':'inner','opacity':.25}
+        groups.select([outer])
+        groups.current['diffCol']=.4; groups.used.add('diffCol')
+        groups.select([outer,inner])
+        groups.current['diffCol']=1.; groups.used.add('diffCol')
+        current,used=groups.finish()
+        self.assertAlmostEqual(current['diffCol'],.275)
+        self.assertEqual(current['rough'],.2)
+        self.assertEqual(used,{'diffCol'})
+
+    def test_group_mask_does_not_leak_into_sibling_or_material_scope(self):
+        from moonray_modo.compositing import Groups
+        groups=Groups({'diffCol':0.,'rough':0.,'groupMask':.8},
+                      lambda a,b,o,m:a+(b-a)*o*(1 if m is None else m))
+        groups.select([{'id':'masked'}])
+        groups.current.update(diffCol=1.,groupMask=.25)
+        groups.used.update(('diffCol','groupMask'))
+        groups.select([{'id':'sibling'}])
+        groups.current['rough']=1.;groups.used.add('rough')
+        current,used=groups.finish()
+        self.assertEqual(current['diffCol'],.25)
+        self.assertEqual(current['rough'],1.)
+        self.assertEqual(current['groupMask'],.8)
+        self.assertNotIn('groupMask',used)
+
+    def test_group_rejects_invalid_opacity_and_non_normal_blend(self):
+        from moonray_modo.compositing import Groups
+        for group in ({'id':'x','opacity':float('nan')},
+                      {'id':'x','opacity':-1},{'id':'x','blend':'multiply'}):
+            with self.assertRaises(ValueError):
+                Groups({'groupMask':1},None).select([group])
+
+    def test_group_mask_is_consumed_by_exported_texture_scope(self):
+        from moonray_modo.graph import bindings
+        group={'id':'texture folder','opacity':.5}
+        material={'color':[.1]*3,'layers':[
+            {'kind':'constant','effect':'diffCol','value':[1,0,0],'groups':[group]},
+            {'kind':'constant','effect':'groupMask','value':[.25]*3,'groups':[group]}]}
+        lines=[]
+        maps=bindings(material,0,lines)
+        self.assertIn('diffuseColor',maps)
+        self.assertNotIn('layerMask',maps)
+        self.assertIn('["mask"] = bind(', '\n'.join(lines))
+        self.assertIn('["opacity"] = 0.5', '\n'.join(lines))
+
     def test_affine_locator_inverse_and_rotation(self):
         transform = list(rdla.IDENTITY); transform[0]=2; transform[5]=3; transform[12]=7
         p = [2,-1,4]

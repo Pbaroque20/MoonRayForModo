@@ -345,6 +345,8 @@ class Panel(QtWidgets.QWidget):
             self.timer.stop()
 
     def _live_tick(self):
+        if self.disposed or (self.sequence is not None and self.sequence.running):
+            return
         try:
             scene = self._capture()
             if self._digest(scene) != self.last_digest:
@@ -378,7 +380,7 @@ class Panel(QtWidgets.QWidget):
             return
         if not path.lower().endswith('.exr'):
             path += '.exr'
-        self.live.setChecked(False)
+        self.stop()
         try:
             self._submit(self._capture(), path)
         except Exception as exc:
@@ -442,5 +444,8 @@ class Panel(QtWidgets.QWidget):
                     QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.No)==QtWidgets.QMessageBox.Yes
         from .animation import Sequence
         self.stop()
-        self.sequence = Sequence(self,directory,first,last,fps,motion)
-        self.sequence.start()
+        try:
+            self.sequence = Sequence(self,directory,first,last,fps,motion)
+            self.sequence.start()
+        except Exception as exc:
+            self._failed(str(exc))

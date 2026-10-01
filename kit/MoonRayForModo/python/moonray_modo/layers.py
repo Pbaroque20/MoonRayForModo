@@ -9,7 +9,7 @@ def ordered_items(parent):
         yield item
         yield from ordered_items(item)
 
-def material_tag(item):
+def material_tag(item, texture=False):
     from .host import channel
     tag = None
     parent = item.parent
@@ -18,7 +18,7 @@ def material_tag(item):
             return None
         if parent.type != 'mask':
             raise ValueError('unsupported shader parent ' + parent.type)
-        if channel(parent, 'opacity', 1) != 1 or channel(parent, 'blend', 'normal') != 'normal':
+        if (not texture and channel(parent, 'opacity', 1) != 1) or channel(parent, 'blend', 'normal') != 'normal':
             raise ValueError('group opacity and group blending are unsupported')
         kind, value = channel(parent, 'ptyp', ''), channel(parent, 'ptag', '')
         if kind in ('Material', 'material', 'MATR') and value:
@@ -30,10 +30,28 @@ def material_tag(item):
         parent = parent.parent
     return tag if tag is not None else ''
 
+def texture_groups(layer, channel):
+    """Capture outer-to-inner scopes without flattening group masks or opacity."""
+    result = []
+    parent = layer.parent
+    while parent and parent.type != 'polyRender':
+        if not channel(parent, 'enable', 1) or not channel(parent, 'render', 1):
+            return None
+        if parent.type != 'mask':
+            raise ValueError('unsupported shader parent ' + parent.type)
+        blend = channel(parent, 'blend', 'normal')
+        if blend != 'normal':
+            raise ValueError('non-normal group blending is unsupported')
+        result.append({'id':parent.id, 'opacity':float(channel(parent,'opacity',1)), 'blend':blend})
+        parent = parent.parent
+    return list(reversed(result))
+
+
 def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, material_key=None):
     from .host import channel, color
     items = list(ordered_items(scene.renderItem))
     positions = {item.id:i for i,item in enumerate(items)}
+    by_id = {item.id:item for item in items}
     for layer in reversed(items): # Modo's upper rows are applied last.
         if layer.type not in ('imageMap','constant','checker','noise'):
             continue
@@ -45,21 +63,30 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             continue
         try:
             if layer_filter is None:
-                tag = material_tag(layer)
+                tag = material_tag(layer, texture=True)
             else:
-                # Render Cache already resolved item, part and instance masks.
-                # Their compositing still needs explicit support before use.
-                parent=layer.parent
-                while parent and parent.type != 'polyRender':
-                    if channel(parent,'opacity',1)!=1 or channel(parent,'blend','normal')!='normal':
-                        raise ValueError('group opacity and group blending are unsupported')
-                    parent=parent.parent
+                # Render Cache has already resolved selection membership.
                 tag = material_key
             if tag is None:
                 continue
             if tag not in materials:
                 raise ValueError('mask has no translated base material')
+            groups = texture_groups(layer, channel)
+            if groups is None:
+                continue
             base = materials[tag].get('base_layer_id')
+            if base in by_id:
+                base_groups = texture_groups(by_id[base], channel)
+                if base_groups is None:
+                    continue
+                if any(g['opacity'] != 1 for g in base_groups):
+                    raise ValueError('opacity on a group containing the base material is not translated')
+                # The common material scope owns its mask; nested texture-only
+                # scopes consume theirs locally when composited into that scope.
+                common = 0
+                while common < min(len(groups), len(base_groups)) and groups[common]['id'] == base_groups[common]['id']:
+                    common += 1
+                groups = groups[common:]
             if base in positions and positions[layer.id] > positions[base]:
                 # An upper material replaces this layer's channels.
                 warnings.append('Layer %s is below its material and is overridden. Move it above the material in the same Shader Tree group.' % layer.name)
@@ -72,7 +99,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             if blend not in BLENDS:
                 raise ValueError('unsupported blend '+blend)
             node = {'kind':layer.type, 'effect':effect, 'opacity':float(channel(layer,'opacity',1)),
-                    'blend':blend, 'uv_map':'', 'invert':bool(channel(layer,'invert',0))}
+                    'blend':blend, 'uv_map':'', 'invert':bool(channel(layer,'invert',0)), 'groups':groups}
             if effect == 'normal' and (blend != 'normal' or layer.type != 'imageMap'):
                 raise ValueError('normal maps require an image and Normal blending')
             is_color = effect in textures.COLOR_EFFECTS or effect == 'normal'
@@ -175,7 +202,7 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
             if membership is not None and layer.id not in membership:
                 continue
             try:
-                if membership is not None or material_tag(layer) == tag:
+                if membership is not None or material_tag(layer, texture=True) == tag:
                     allowed.add(layer.id)
             except ValueError:
                 continue

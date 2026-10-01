@@ -31,11 +31,20 @@ def bindings(material, index, lines, glass=False):
         gain = material.get(amount, 1)
         defaults[effect] = material.get(raw, [v/gain if gain else 0 for v in defaults[effect]])
     current = {key:rgb(value) for key,value in defaults.items()}
-    used = set()
+    from .compositing import Groups
+    def group_blend(background, foreground, opacity, mask):
+        attributes = {'background':background, 'foreground':foreground,
+                      'blend':'0', 'opacity':number(opacity)}
+        if mask is not None:
+            attributes['mask'] = mask
+        return node('ModoTextureMap', attributes)
+    groups = Groups(current, group_blend)
     layers = material.get('layers')
     if layers is None:
         layers = [dict(value,effect=key,kind=value.get('kind','imageMap')) for key,value in material.get('textures',{}).items()]
     for layer in layers:
+        groups.select(layer.get('groups', []))
+        current, used = groups.current, groups.used
         effect = textures.EFFECT_ALIASES.get(layer['effect'], layer['effect'])
         if effect not in textures.EFFECTS:
             raise ValueError('Unsupported image effect: '+effect)
@@ -84,6 +93,7 @@ def bindings(material, index, lines, glass=False):
             attributes['mask'] = mask
         current[effect] = node('ModoTextureMap',attributes)
         used.add(effect)
+    current, used = groups.finish()
     result = {}
     amounts = {'diffCol':'diffAmt', 'specCol':'specAmt', 'lumiCol':'lumiAmt'}
     for color_effect, amount_effect in amounts.items():

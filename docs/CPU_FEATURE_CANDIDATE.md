@@ -5,6 +5,29 @@ at the user's request without running tests, building binaries, or installing
 the changed kit. Python/XML/JSON syntax parsing is the only validation performed.
 The installed CustomView kit remains the previously tested version.
 
+The compatibility target is Modo scene features and controls with MoonRay's
+rendering models. Pixel-for-pixel matching of Modo's renderer is not required.
+
+## Follow-up source changes: texture groups and sequence recovery
+
+- Nested texture-only groups with Normal group blending preserve their channel
+  backdrop and composite at each group boundary with the group's opacity.
+- Group-mask texture effects are consumed within that texture group. They do not
+  mask sibling groups or replace a material stack's own mask. Common base-material
+  ancestors stay in the material scope. Disabled ancestor groups are skipped in
+  both direct and evaluated exports.
+- Non-Normal group blends, opacity on whole-material groups, arbitrary layer
+  masks, and groups spanning multiple base-material boundaries remain unsupported.
+  This is partial Shader Tree translation, not complete layered-shader parity.
+- Animation completion checks the expected output path before advancing a frame.
+  Manifest write failures release the active sequence and preserve completed
+  images. Starting a final still stops an active sequence; queued live updates do
+  not replace animation work.
+- Deferred tests were added to `tests/test_cpu_features.py` (textures group) and
+  `tests/test_animation.py` (requires Modo Python/Qt). None were executed. The
+  numerical group tests validate the chosen compositing rules; a Modo scene
+  comparison is still needed to verify host semantics.
+
 ## Source implemented in this checkpoint
 
 - Ordered DwaLayer material stacks, per-layer opacity and group-mask map input.

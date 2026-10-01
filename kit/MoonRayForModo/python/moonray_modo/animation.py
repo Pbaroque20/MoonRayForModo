@@ -74,6 +74,7 @@ class Sequence(QtCore.QObject):
         self.frame, self.last, self.fps, self.motion = first,last,fps,motion
         self.running = False
         self.completed = []
+        self.expected_output = None
 
     def start(self):
         global active
@@ -83,6 +84,11 @@ class Sequence(QtCore.QObject):
         self.running = True
         self.panel.renderer.finished.connect(self.finished)
         self.panel.renderer.failed.connect(self.failed)
+        try:
+            self.write_manifest('rendering')
+        except OSError as exc:
+            self.failed('Cannot create sequence manifest: '+str(exc))
+            return
         self.next_frame()
 
     def next_frame(self):
@@ -101,16 +107,25 @@ class Sequence(QtCore.QObject):
         snapshot = capture_frame(self.frame/self.fps, self.panel.surface.currentIndex()==2,
                                  self.motion, self.fps)
         snapshot = self.panel._configure_snapshot(snapshot)
+        self.expected_output = destination.resolve()
         self.panel._submit(snapshot,str(destination))
 
     def finished(self, output):
         if not self.running or not output:
             return
+        if self.expected_output is None or Path(output).resolve() != self.expected_output:
+            self.failed('Received output from a different render; sequence stopped to protect frame numbering')
+            return
+        self.expected_output = None
         self.completed.append({'frame':self.frame,'file':output})
-        self.write_manifest('rendering')
+        try:
+            self.write_manifest('rendering')
+        except OSError as exc:
+            self.failed('Frame saved, but sequence manifest could not be updated: '+str(exc))
+            return
         if self.frame >= self.last:
-            self.stop('complete')
-            self.panel.status.setText('Animation complete: %d frames'%len(self.completed))
+            if not self.stop('complete'):
+                self.panel.status.setText('Animation complete: %d frames'%len(self.completed))
         else:
             self.frame += 1
             QtCore.QTimer.singleShot(0,self.next_frame)
@@ -118,21 +133,27 @@ class Sequence(QtCore.QObject):
     def write_manifest(self, status):
         path = self.directory/'moonray-sequence.json'
         staged = path.with_suffix('.json.tmp')
-        staged.write_text(json.dumps({'status':status,'fps':self.fps,'frames':self.completed},indent=2))
+        staged.write_text(json.dumps({'status':status,'fps':self.fps,'frames':self.completed},indent=2),encoding='utf-8')
         staged.replace(path)
 
     def failed(self, message):
-        self.stop('failed')
-        self.panel.status.setText('Animation stopped: '+message)
+        manifest_error = self.stop('failed')
+        self.panel.status.setText('Animation stopped: '+message + ('; '+manifest_error if manifest_error else ''))
 
     def stop(self, status='canceled'):
         global active
         if not self.running:
             return
         self.running = False
+        self.expected_output = None
+        if active is self:
+            active = None
         self.panel.renderer.finished.disconnect(self.finished)
         self.panel.renderer.failed.disconnect(self.failed)
         self.panel.renderer.stop()
-        self.write_manifest(status)
-        if active is self:
-            active = None
+        try:
+            self.write_manifest(status)
+        except OSError as exc:
+            message = 'Could not save animation manifest: '+str(exc)
+            self.panel.status.setText(message)
+            return message
