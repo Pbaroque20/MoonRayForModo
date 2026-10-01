@@ -48,6 +48,9 @@ is `C:/Program Files/Modo16.1v9/modo/resrc/python3kit/extra64/modopython.bat`.
 2. `tools/build_native.py --renderer --dsos` configures, builds and tests.
    Use `--build-only` for incremental builds; Ninja regenerates when needed.
    `MOONRAY_BUILD_JOBS` overrides the default eight jobs.
+   `--skip-tests` explicitly builds without running tests; this does not validate
+   a release. See `CPU_FEATURE_CANDIDATE.md` for the separate development-install
+   route used when the user requests installation while keeping tests deferred.
 3. `tools/stage_runtime.py` stages native binaries and recursively resolved DLL
    imports under `runtime/native-avx`, with source paths and SHA-256 checksums.
 4. `tools/validate_renderer.py` checks scalar and vectorized images and failure

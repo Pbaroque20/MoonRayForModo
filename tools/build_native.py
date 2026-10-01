@@ -42,4 +42,7 @@ if renderer:
     targets.extend(['moonray_desktop_renderer' if '--dsos' in sys.argv else 'moonray', 'moonray_desktop_probe', 'moonray_embree_probe'])
 jobs = os.environ.get('MOONRAY_BUILD_JOBS', '8')
 run([BIN / 'cmake.exe', '--build', BUILD, '--parallel', jobs, '--target'] + targets + ['--', '-k', '20'], 'compile')
-run([BIN / 'ctest.exe', '--test-dir', BUILD, '--output-on-failure'], 'test')
+if '--skip-tests' not in sys.argv:
+    run([BIN / 'ctest.exe', '--test-dir', BUILD, '--output-on-failure'], 'test')
+else:
+    print('Build completed; tests explicitly deferred.', flush=True)

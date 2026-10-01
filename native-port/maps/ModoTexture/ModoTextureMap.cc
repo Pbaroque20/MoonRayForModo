@@ -3,6 +3,7 @@
 #include "ModoTextureMap_ispc_stubs.h"
 #include <moonray/rendering/shading/MapApi.h>
 #include <moonray/rendering/shading/Intersection.h>
+#include <cmath>
 using namespace scene_rdl2::math;
 using namespace moonray::shading;
 // Repeat=0, Edge=1, Mirror=2, Reset=3. Apply after interpolation.
@@ -72,7 +73,7 @@ public:
         }
         if(mode==4) {
             const float distance=max(1.e-9f,me->get(attrDistance));
-            *out=Color(-log(clamp(b.r,1.e-6f,1.0f)),-log(clamp(b.g,1.e-6f,1.0f)),-log(clamp(b.b,1.e-6f,1.0f)))/distance;
+            *out=Color(-std::log(clamp(b.r,1.e-6f,1.0f)),-std::log(clamp(b.g,1.e-6f,1.0f)),-std::log(clamp(b.b,1.e-6f,1.0f)))/distance;
             return;
         }
         if(mode>=2) {
@@ -97,7 +98,7 @@ public:
             case 3:mixed=a-b;break;
             case 4:mixed=Color(1)-(Color(1)-a)*(Color(1)-b);break;
             case 5:mixed=Color(a.r/max(1.e-6f,b.r),a.g/max(1.e-6f,b.g),a.b/max(1.e-6f,b.b));break;
-            case 6:mixed=Color(abs(a.r-b.r),abs(a.g-b.g),abs(a.b-b.b));break;
+            case 6:mixed=Color(std::abs(a.r-b.r),std::abs(a.g-b.g),std::abs(a.b-b.b));break;
             case 7:mixed=Color(min(a.r,b.r),min(a.g,b.g),min(a.b,b.b));break;
             case 8:mixed=Color(max(a.r,b.r),max(a.g,b.g),max(a.b,b.b));break;
             case 9:mixed=Color((a.r<.5f?2*a.r*b.r:1-2*(1-a.r)*(1-b.r)),(a.g<.5f?2*a.g*b.g:1-2*(1-a.g)*(1-b.g)),(a.b<.5f?2*a.b*b.b:1-2*(1-a.b)*(1-b.b)));break;

@@ -15,6 +15,11 @@ class Panel(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings = QtCore.QSettings('MoonRayForModo', 'NativePreview')
+        installation_id=native.installation_id()
+        if installation_id and self.settings.value('runtime_installation')!=installation_id:
+            self.settings.setValue('previous_runtime',self.settings.value('runtime',''))
+            self.settings.setValue('runtime',native.default_runtime())
+            self.settings.setValue('runtime_installation',installation_id)
         self.renderer = Renderer(self)
         self.last_digest = None
         self.disposed = False

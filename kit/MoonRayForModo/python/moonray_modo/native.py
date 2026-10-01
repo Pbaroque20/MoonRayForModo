@@ -59,3 +59,11 @@ def default_runtime():
             except ValueError:
                 pass
     return ''
+
+
+def installation_id():
+    path=Path(__file__).resolve().parents[2]/'runtime.json'
+    try:
+        return json.loads(path.read_text(encoding='utf-8')).get('installation_id','')
+    except (OSError,ValueError,TypeError,AttributeError):
+        return ''

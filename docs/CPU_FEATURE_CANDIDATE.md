@@ -1,9 +1,27 @@
 # CPU compatibility candidate — unverified
 
-Full Modo parity has **not** been achieved. This source checkpoint was written
-at the user's request without running tests, building binaries, or installing
-the changed kit. Python/XML/JSON syntax parsing is the only validation performed.
-The installed CustomView kit remains the previously tested version.
+Full Modo parity has **not** been achieved. The implementation checkpoints below
+were written without running tests. Following the user's request to update the
+plugin, the Windows AVX1 runtime and standalone MoonRayGeometry adapter were
+compiled successfully on 2026-10-01. Two scalar C++ math-name conflicts found by
+the compiler were corrected. No component tests or render tests were run.
+
+`tools/install_development.py --unverified-development --runtime PATH --geometry PATH`
+is an explicit development-install route. It verifies staged file/build hashes,
+requires Modo to be closed, preserves the validated runtime, backs up the previous
+kit, and records `tests_run: false` in its installation receipt. It does not
+produce a validated-release marker. The normal installer/package gates still
+require current render reports. Successful compilation alone does not establish
+that the new features work in Modo.
+
+The development update was installed on 2026-10-01 using the separately staged
+`runtime/cpu-candidate-20261001` (352 native files). The receipt is
+`test-results/development-install.json`; each installed file has a checksum.
+The original pre-update kit is retained in
+`backups/before-development-20261001-193114-383318`, and the old
+`runtime/native-avx` remains intact. Modo 16.1v9 was reopened normally, without
+a test scene or render. New development installations select their associated
+runtime on the next panel opening and retain the previous runtime preference.
 
 The compatibility target is Modo scene features and controls with MoonRay's
 rendering models. Pixel-for-pixel matching of Modo's renderer is not required.
