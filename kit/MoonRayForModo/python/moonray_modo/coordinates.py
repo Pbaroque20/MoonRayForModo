@@ -14,9 +14,10 @@ def descriptors(materials):
     result = {}
     for material in materials.values():
         for child in material.get('material_stack', [material]):
-            for layer in child.get('layers', []):
-                if layer.get('coordinate_key'):
-                    result[layer['coordinate_key']] = layer
+            for source in [child] + child.get('native_dependencies', []):
+                for layer in source.get('layers', []):
+                    if layer.get('coordinate_key'):
+                        result[layer['coordinate_key']] = layer
     return result
 
 

@@ -78,6 +78,8 @@ def material_values(material):
     diffuse_amount = float(channel(material, 'diffAmt', 1))
     return {'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
+                                'native_shader': settings.get('native_shader',''),
+                                'native_parameters': settings.get('native_parameters',{}),
                                 'shader': settings.get('shader',''),
                                 'standard_material': settings.get('shader','')!='DwaBaseMaterial',
                                 'specular_fresnel':float(channel(material,'specFres',1)),
@@ -208,10 +210,23 @@ def snapshot(evaluated_geometry=False):
         if material['transmission'] > 0 or material['presence'] < 1 or 'dissolve' in maps or any(k.startswith('tran') for k in maps):
             if any(k in maps for k in ('specCol', 'specAmt', 'coatAmt', 'coatRough', 'metallic')):
                 warnings.append('The standard glass/dissolve material ignores specular-color, clearcoat and metalness maps. MoonShine supports mapped clearcoat and metalness: ' + (tag or 'base material'))
+    from . import shader_library
+    from .layers import material_stack
+    library = {}
+    for item in scene.items('advancedMaterial', superType=False):
+        if properties.read(item).get('native_shader'):
+            try:
+                tag = material_tag(item)
+            except ValueError:
+                tag = None
+            library[item.id] = material_stack(scene,[item],warnings,tag)[0]
+    result['native_materials'] = library
+    shader_library.attach_dependencies(result['materials'],library)
     if evaluated_geometry:
         from . import evaluated
         data = evaluated.capture(lx.service.Selection().GetTime())
         result['materials'] = evaluated.assign_materials(data, scene, warnings)
+        shader_library.attach_dependencies(result['materials'],library)
         result['meshes'] = evaluated.meshes(data, result['materials'], warnings)
     # Resolve each visible instance to one mesh prototype, including hidden sources.
     instances = {}

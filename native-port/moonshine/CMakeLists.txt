@@ -44,10 +44,17 @@ foreach(target common_interpolation map_projection material_glitter material_dwa
   add_custom_target(${target}_headers DEPENDS ${headers})
   add_dependencies(${target} ${target}_headers)
 endforeach()
-add_subdirectory("${PROJECT_SOURCE_DIR}/dso/material/DwaBase" DwaBase)
-target_link_libraries(DwaBaseMaterial PRIVATE ispc_runtime)
-target_link_libraries(DwaBaseMaterial_proxy PRIVATE ispc_runtime)
-
-add_subdirectory("${PROJECT_SOURCE_DIR}/dso/material/DwaLayer" DwaLayer)
-target_link_libraries(DwaLayerMaterial PRIVATE ispc_runtime)
-target_link_libraries(DwaLayerMaterial_proxy PRIVATE ispc_runtime)
+# Compile every upstream MoonShine material, including compound and hair shaders.
+add_subdirectory("${PROJECT_SOURCE_DIR}/dso/material" materials)
+set(material_targets DwaAdjustMaterial DwaBaseMaterial DwaColorCorrectMaterial
+  DwaEmissiveMaterial DwaFabricMaterial DwaLayerMaterial DwaMetalMaterial
+  DwaMixMaterial DwaRefractiveMaterial DwaSkinMaterial DwaSolidDielectricMaterial
+  DwaSwitchMaterial DwaTwoSidedMaterial DwaVelvetMaterial_v2 HairMaterial_v3
+  HairColorCorrectMaterial HairDiffuseMaterial HairLayerMaterial DwaToonMaterial HairToonMaterial)
+set(all_material_targets)
+foreach(target IN LISTS material_targets)
+  target_link_libraries(${target} PRIVATE ispc_runtime)
+  target_link_libraries(${target}_proxy PRIVATE ispc_runtime)
+  list(APPEND all_material_targets ${target} ${target}_proxy)
+endforeach()
+add_custom_target(moonshine_material_library DEPENDS ${all_material_targets})

@@ -71,7 +71,7 @@ def emit(material, tag, index, bindings, lines):
                      (string(tag),string('/modo/material/%s/sss_mix'%index),string(tag),string(surface_name),sss_weight or number(amount)))
 
 
-def emit_stack(stack, tag, index, lines):
+def emit_stack(stack, tag, index, lines, library=None, native_index=None):
     from .rdla import string, number
     from .graph import bindings
     for i, material in enumerate(stack):
@@ -81,7 +81,14 @@ def emit_stack(stack, tag, index, lines):
             raise ValueError('Material stack exceeds 1000 layers')
         maps = bindings(dict(material,shader='DwaBaseMaterial'),identity,lines)
         mask = maps.pop('layerMask',None)
-        emit(material, key, identity, maps, lines)
+        if material.get('native_shader'):
+            from .shader_library import emit as native_emit, compatible
+            if not compatible(material['native_shader'],'INTERFACE_DWABASELAYERABLE'):
+                raise ValueError(material['native_shader']+' cannot be used in a Dwa Shader Tree stack; assign it separately')
+            ref = native_emit(material,'/modo/native/stack/%s'%identity,native_index or [1000000000+identity],lines,library or {})
+            lines.append('materials[%s] = %s'%(string(key),ref))
+        else:
+            emit(material, key, identity, maps, lines)
         if i == 0:
             lines.append('materials[%s] = materials[%s]' % (string(tag),string(key)))
         else:

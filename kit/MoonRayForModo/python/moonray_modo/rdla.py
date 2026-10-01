@@ -123,10 +123,16 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     materials.setdefault('', {'color': [0.5, 0.5, 0.5], 'roughness': 0.4, 'metallic': 0})
     from . import absorption
     media = {tag:absorption.medium(material) for tag,material in materials.items()}
+    native_index = [1000000000]
     for index, (tag, material) in enumerate(sorted(materials.items())):
         if material.get('material_stack'):
             from .moonshine import emit_stack
-            emit_stack([absorption.surface(child) for child in material['material_stack']],tag,index,lines)
+            emit_stack([absorption.surface(child) for child in material['material_stack']],tag,index,lines,scene.get('native_materials',{}),native_index)
+            continue
+        if material.get('native_shader'):
+            from .shader_library import emit as emit_native
+            ref = emit_native(material,'/modo/native/%s'%index,native_index,lines,scene.get('native_materials',{}))
+            lines.append('materials[%s] = %s'%(string(tag),ref))
             continue
         material = absorption.surface(material)
         bindings = {}

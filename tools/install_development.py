@@ -30,6 +30,9 @@ def main():
         raise ValueError('Use a separate candidate runtime; preserve the validated runtime')
     for name in ('moonray.exe','maketx.exe','oiiotool.exe','ModoTextureMap.so','DwaBaseMaterial.so','DwaLayerMaterial.so'):
         if not (runtime/name).is_file(): raise ValueError('Missing candidate runtime component: '+name)
+    catalog=json.loads((root/'kit/MoonRayForModo/python/moonray_modo/material_catalog.json').read_text(encoding='utf-8'))
+    for shader in catalog:
+        if not (runtime/(shader+'.so')).is_file(): raise ValueError('Missing material shader: '+shader)
     build=json.loads(geometry.with_name('build.json').read_text(encoding='utf-8'))
     if not build.get('geometry_only') or digest(geometry)!=build.get('plugin_sha256'):
         raise ValueError('Geometry adapter does not match its build manifest')

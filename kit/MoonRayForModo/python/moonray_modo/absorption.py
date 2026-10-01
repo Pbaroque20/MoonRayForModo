@@ -13,6 +13,7 @@ def color_layers(material):
 
 
 def enabled(material):
+    if material.get('native_shader'): return False
     mapped = any(effect(layer)=='tranAmt' for layer in (material.get('layers') or [])) or any(
         EFFECT_ALIASES.get(key,key)=='tranAmt' for key in material.get('textures',{}))
     return material.get('absorption_distance',0)>0 and (material.get('transmission',0)>0 or mapped) and not material.get('thin_geometry',False)

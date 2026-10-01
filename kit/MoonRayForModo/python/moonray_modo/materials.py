@@ -6,7 +6,7 @@ from . import properties
 def selected():
     return [i for i in modo.Scene().selected if i.type=='advancedMaterial']
 
-def assign():
+def assign(shader=None):
     scene=modo.Scene()
     meshes=properties.selected_meshes()
     if not meshes:
@@ -28,5 +28,8 @@ def assign():
         with mesh.geometry as geometry:
             for polygon in geometry.polygons:
                 polygon.materialTag=tag
+    if shader:
+        properties.write(material,{'shader':'DwaBaseMaterial','native_shader':shader,'native_parameters':{}})
+        material.name='MoonShine '+shader
     scene.select(material)
     return material

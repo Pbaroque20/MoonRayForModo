@@ -166,7 +166,9 @@ class AssignMaterial(lxu.command.BasicCommand):
 
     def basic_Execute(self, msg, flags):
         from moonray_modo.materials import assign
-        assign()
+        from moonray_modo.material_editor import choose
+        shader=choose()
+        if shader is not False: assign(shader)
 
 
 def material_option(key):
@@ -188,6 +190,9 @@ def material_option(key):
             from moonray_modo.materials import selected
             for item in selected():
                 values=properties.read(item)
+                if key=='shader':
+                    values.pop('native_shader',None)
+                    values.pop('native_parameters',None)
                 values[key]=('DwaBaseMaterial' if self.dyna_Int(0) else '') if key=='shader' else bool(self.dyna_Int(0))
                 properties.write(item,values)
 
@@ -294,3 +299,19 @@ class AnimationFrame(lxu.command.BasicCommand):
             active.capture()
 
 lx.bless(AnimationFrame,'moonray.animationFrame')
+
+
+class EditNativeMaterial(lxu.command.BasicCommand):
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+    def basic_Enable(self,msg):
+        from moonray_modo.materials import selected
+        return len(selected())==1
+    def basic_Execute(self,msg,flags):
+        from moonray_modo.materials import selected
+        from moonray_modo.material_editor import edit
+        items=selected()
+        if len(items)!=1: raise ValueError('Select one Shader Tree material')
+        edit(items[0],modo.Scene())
+
+lx.bless(EditNativeMaterial,'moonray.material.editNative')

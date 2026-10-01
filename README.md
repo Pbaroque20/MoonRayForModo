@@ -281,3 +281,7 @@ Run plugin unit tests with:
 
 Sources: [MoonRay](https://github.com/OpenMoonRay/openmoonray),
 [Modo SDK](https://learn.foundry.com/modo/developers/latest/sdk/index.html).
+
+## Expanded native material library (development update)
+
+The current AVX build includes all 20 vendored MoonShine materials and four core MoonRay material types, with Shader Tree assignment and a searchable native parameter editor. See [material library usage and limitations](docs/MATERIAL_LIBRARY.md). The installed development runtime is `runtime/material-library-20261001`; its build succeeded, but rendering and Modo interaction tests are deferred. This does not extend the older validated-render claims to the newly added shaders.
