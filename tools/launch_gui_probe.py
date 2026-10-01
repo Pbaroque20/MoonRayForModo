@@ -14,6 +14,7 @@ parser.add_argument('--profile',default='gui-profile')
 parser.add_argument('--wait',action='store_true')
 parser.add_argument('--without-native',action='store_true')
 parser.add_argument('--without-controller',action='store_true')
+parser.add_argument('--native-binary',type=pathlib.Path)
 args=parser.parse_args()
 if not args.profile.replace('-','').replace('_','').isalnum():
     raise SystemExit('Profile must be a simple directory name.')
@@ -38,7 +39,27 @@ if saved_frame.is_file():
         tree.write(str(saved_frame),encoding='utf-8',xml_declaration=True)
 shutil.copytree(root / 'kit/MoonRayForModo', profile / 'Configs/MoonRayForModo', dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns('bin') if args.without_native else None)
-(profile/'Configs/probe-startup.cfg').write_text('<configuration><atom type="Preferences"><atom type="application.modoIntroShowStartup">false</atom></atom></configuration>')
+if args.native_binary:
+    binary=args.native_binary.resolve()
+    if args.without_native or not binary.is_file() or binary.suffix.lower()!='.lx':
+        raise SystemExit('Supply an existing .lx candidate without --without-native.')
+    destination=profile/'Configs/MoonRayForModo/bin/MoonRayPreview.lx'
+    destination.parent.mkdir(exist_ok=True)
+    shutil.copy2(binary,destination)
+startup_config=ET.Element('configuration')
+startup_preferences=ET.SubElement(startup_config,'atom',{'type':'Preferences'})
+ET.SubElement(startup_preferences,'atom',{'type':'application.modoIntroShowStartup'}).text='false'
+# Preserve the user's existing 16.1 choices in the isolated profile. Leaving
+# these unset opens the first-run modal on top of PView and invalidates tests.
+preferences=pathlib.Path.home()/'AppData/Roaming/Luxology/MODO16.1.CFG/Preferences.cfg'
+if preferences.is_file():
+    existing=ET.parse(str(preferences))
+    for key in ('application.autoCheckForUpdates','application.autoPostUsageStats'):
+        value=existing.getroot().find(".//atom[@type='%s']"%key)
+        if value is not None:
+            ET.SubElement(startup_preferences,'atom',{'type':key}).text=value.text
+ET.ElementTree(startup_config).write(str(profile/'Configs/probe-startup.cfg'),
+    encoding='utf-8',xml_declaration=True)
 if args.without_controller:
     kit_index=profile/'Configs/MoonRayForModo/index.cfg'
     tree=ET.parse(str(kit_index))

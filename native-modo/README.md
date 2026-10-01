@@ -9,11 +9,11 @@ The user supplied `lxsdk_661446.zip` (SHA-256
 Its version header identifies build 661446, dated 2022-04-25. It does not
 establish an exact Modo 16.1v9 release match. Its external renderer, notifier,
 and image queue interface IDs match the installed 16.1v9 Python SDK.
-Registration and start/reset/pause/stop tests passed in that host. The isolated
-PView test delivered all three progressive frames without transfer errors.
-After repairing the stale viewport, the actual PView window delivered three
-more frames, and the user confirmed that it works. Visual parity and color
-calibration are not established by this test.
+Registration and lifecycle checks passed, but later isolated tests consistently
+showed a black PView despite valid rendered pixels reaching the display texture.
+The earlier apparent success did not establish reliable PView display.
+This route is suspended. The supported development direction is the Qt OpenGL
+CustomView described in [CUSTOM_VIEW.md](../docs/CUSTOM_VIEW.md).
 
 ## Build
 

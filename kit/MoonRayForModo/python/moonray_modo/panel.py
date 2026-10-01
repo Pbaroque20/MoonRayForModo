@@ -8,30 +8,7 @@ import lx
 from .render import Renderer
 
 
-class Preview(QtWidgets.QLabel):
-    def __init__(self, parent=None):
-        super().__init__('Choose a MoonRay runtime, then start Preview.', parent)
-        self.image = QtGui.QImage()
-        self.setAlignment(QtCore.Qt.AlignCenter)
-        self.setMinimumSize(256, 192)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        self.setStyleSheet('background:#191b20; color:#b9bec9; border:1px solid #363b44;')
-
-    def load(self, path):
-        image = QtGui.QImage(path)
-        if image.isNull():
-            raise ValueError('MoonRay output could not be decoded as an image.')
-        self.image = image
-        self.refresh()
-
-    def refresh(self):
-        if not self.image.isNull():
-            self.setPixmap(QtGui.QPixmap.fromImage(self.image).scaled(
-                self.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.refresh()
+from .viewer import Preview
 
 
 class Panel(QtWidgets.QWidget):
@@ -196,6 +173,9 @@ class Panel(QtWidgets.QWidget):
         save.clicked.connect(self.save_preview)
         log = QtWidgets.QPushButton('Render log…')
         log.clicked.connect(self.show_log)
+        fit = QtWidgets.QPushButton('Fit image')
+        fit.clicked.connect(self.preview.fit)
+        footer.addWidget(fit)
         footer.addWidget(save)
         footer.addWidget(log)
         footer.addStretch()

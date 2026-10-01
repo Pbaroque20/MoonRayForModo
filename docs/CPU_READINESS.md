@@ -37,6 +37,7 @@ Unchecked items remain required by the requested CPU work.
   - [ ] Group/part masks, layered BSDF compositing and broader instance cases
 
 ## Render workflow
+- [x] Qt OpenGL CustomView: two progressive CPU frames displayed in the framebuffer on Modo 16.1v9, with clean shutdown. See CUSTOM_VIEW.md for limitations.
 - [x] Render regions with full-frame output and scene-owned panel controls
 - [ ] Translate Modo's own render-region selection
 - [ ] Animation output
