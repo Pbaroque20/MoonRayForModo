@@ -300,3 +300,52 @@ These additions have deferred UI/render validation.
 Native NVIDIA XPU builds are now available through the Windows port. Choose XPU,
 CPU AVX or CPU scalar in Runtime and CPU. XPU uses GPU ray intersections alongside
 CPU shading. See [build instructions and limitations](docs/XPU_WINDOWS.md).
+
+
+### Sampling, denoising and geometry controls (0.2.2 development)
+
+Render Setup now exposes **Uniform / Adaptive**, minimum and maximum linear
+samples per pixel, and MoonRay's native **Target adaptive error**. New scenes
+start at 16–256 SPP and error 1.5; this is a starting point, not a production
+quality guarantee. Existing saved uniform settings stay uniform when loaded in
+Render Setup. Pixel sample grid is ignored in adaptive mode. Adaptive lighting
+has its own mode and quality; light, BSDF and BSSRDF grid settings are separate.
+MoonRay's error scale is not a normalized variance threshold: do not copy 0.005
+from another renderer without measuring convergence. Select **Sample count** in
+the preview buffer menu or EXR AOVs to inspect where samples were spent.
+
+**Denoising** offers Off (default), OptiX GPU, and OIDN CPU, independently for
+beauty preview and final output. It operates on linear HDR beauty with albedo
+and normal guides before display transforms. Data AOVs are never denoised.
+Final rendering preserves the original EXR/AOVs and writes a separate
+`name.denoised.exr` RGB beauty; original alpha remains in the raw EXR. Existing
+denoised sidecars are refused rather than silently overwritten. Animation uses
+per-frame denoising with no temporal stabilization; inspect for flicker. The
+legacy experimental native PView adapter does not use this denoising path.
+
+Object Properties > MoonRay and Render Setup > geometry now offer:
+- **Override normals by smoothing angle**, in degrees, for polygon and evaluated
+  meshes. Enable object overrides and smooth shading. It creates area-weighted
+  corner normals across connected manifold edges inside the chosen angle;
+  boundaries remain separate. Off preserves exported Modo normals. Material/UV
+  export partitions may remain separate. Subdivision sharpness still uses creases.
+- **Estimate subdivision density from angle**, with the subdivision level as a
+  maximum. This estimates segments from control-cage face bending divided by
+  the desired angle. It is not a guaranteed limit-surface angular tolerance.
+- **Subdivision screen error**, MoonRay's camera-space tessellation edge-size
+  control in pixels, capped by mesh resolution. Zero uses uniform tessellation;
+  nonzero adaptive tessellation is unsupported by MoonRay for instances.
+
+Evaluated geometry keeps Modo's tessellation/displacement and warns when these
+MoonRay density controls are bypassed. Angle-driven retessellation of evaluated
+surfaces and guaranteed angular convergence remain unimplemented.
+
+The small standalone check is `tools/check_adaptive_denoise.py <runtime>`.
+It verifies actual XPU setup without CPU fallback, adaptive completion, both
+denoisers, finite nonconstant RGB output and an unchanged original EXR.
+`tools/check_geometry_controls.py` is a deferred pure-data regression script;
+Modo visual/large-scene geometry checks have not been run for this update.
+
+References: [MoonRay adaptive sampling](https://docs.openmoonray.org/user-reference/how-to-guides/adaptive-sampling/),
+[SceneVariables](https://docs.openmoonray.org/user-reference/scene-objects/scene-variables/SceneVariables/),
+[denoise](https://docs.openmoonray.org/user-reference/tools/denoise/).

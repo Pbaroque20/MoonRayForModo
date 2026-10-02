@@ -116,16 +116,28 @@ class Panel(QtWidgets.QWidget):
         self.pages['lighting'].addRow('Modo light multiplier', self.light_multiplier)
         self.render_controls = {}
         for key, (default, minimum, maximum, label) in options.RENDER.items():
-            if key == 'shadow_terminator_fix':
+            if key in options.ENUMS:
                 control = QtWidgets.QComboBox()
-                control.addItems(['Off', 'Targeted', 'Sine', 'GGX', 'Cosine'])
-                control.setCurrentIndex(default)
+                for title,value in options.ENUMS[key]: control.addItem(title,value)
+                control.setCurrentIndex(control.findData(default))
+            elif isinstance(default,float):
+                control=QtWidgets.QDoubleSpinBox();control.setDecimals(6);control.setRange(minimum,maximum);control.setValue(default);control.setSingleStep(.1)
             else:
                 control = QtWidgets.QSpinBox()
                 control.setRange(minimum, maximum)
                 control.setValue(default)
             self.render_controls[key] = control
             controls.addRow(label, control)
+        self.denoiser=QtWidgets.QComboBox()
+        for title,value in [('Off','off'),('NVIDIA OptiX (GPU)','optix'),('Intel Open Image Denoise (CPU)','oidn_cpu')]: self.denoiser.addItem(title,value)
+        controls.addRow('Beauty denoiser',self.denoiser)
+        self.denoise_preview=QtWidgets.QCheckBox('Denoise beauty preview');self.denoise_preview.setChecked(True)
+        self.denoise_final=QtWidgets.QCheckBox('Save separate denoised beauty EXR');self.denoise_final.setChecked(True)
+        controls.addRow(self.denoise_preview);controls.addRow(self.denoise_final)
+        note=QtWidgets.QLabel('Adaptive limits are samples per pixel, not grid sizes. Lower target error means cleaner, slower renders. Denoising preserves the original linear EXR and AOVs.');note.setWordWrap(True);controls.addRow(note)
+        self.render_controls['sampling_mode'].currentIndexChanged.connect(self._sampling_controls)
+        self.render_controls['light_sampling_mode'].currentIndexChanged.connect(self._sampling_controls)
+        self._sampling_controls()
         surface = self.pages['object']
         self.surface = QtWidgets.QComboBox()
         self.surface.addItems(['As modeled', 'Smooth subdivision', 'Modo evaluated geometry (experimental)'])
@@ -144,12 +156,20 @@ class Panel(QtWidgets.QWidget):
             if type(default) is bool:
                 widget = QtWidgets.QCheckBox()
                 widget.setChecked(default)
+            elif type(default) is float:
+                widget = QtWidgets.QDoubleSpinBox()
+                widget.setDecimals(2)
+                widget.setRange(0.1 if key=='tessellation_angle' else 0,64 if key=='adaptive_error' else 180)
+                widget.setValue(default)
             else:
                 widget = QtWidgets.QSpinBox()
                 widget.setRange(1, 5)
                 widget.setValue(default)
             self.object_controls[key] = widget
             surface.addRow(label, widget)
+        geometry_note=QtWidgets.QLabel('Angle-based density estimates use the subdivision level as a cap. Evaluated geometry keeps Modo tessellation; normals can be overridden. Smoothing angles do not replace subdivision creases.')
+        geometry_note.setWordWrap(True)
+        surface.addRow(geometry_note)
         self.object_apply = QtWidgets.QPushButton('Apply to selected meshes')
         self.object_apply.clicked.connect(self._save_object)
         surface.addRow(self.object_apply)
@@ -298,9 +318,14 @@ class Panel(QtWidgets.QWidget):
             elif isinstance(control,QtWidgets.QDoubleSpinBox): control.setValue(value)
             else: control.setText(value)
             control.blockSignals(False)
-        for key, value in options.render_values(values.get('render', {})).items():
+        denoise=values.get('denoising',{})
+        self.denoiser.setCurrentIndex(max(0,self.denoiser.findData(denoise.get('engine','off'))))
+        self.denoise_preview.setChecked(denoise.get('preview',True));self.denoise_final.setChecked(denoise.get('final',True))
+        stored=dict(values.get('render',{}))
+        if stored and 'sampling_mode' not in stored: stored['sampling_mode']=0
+        for key, value in options.render_values(stored).items():
             control = self.render_controls[key]
-            control.setCurrentIndex(value) if isinstance(control, QtWidgets.QComboBox) else control.setValue(value)
+            control.setCurrentIndex(control.findData(value)) if isinstance(control, QtWidgets.QComboBox) else control.setValue(value)
         for key, control in self.aov_controls.items():
             control.setChecked(key in values.get('aovs', ['alpha']))
         for key, control, default in [('samples', self.samples, 4), ('environment', self.environment, 0),
@@ -315,12 +340,13 @@ class Panel(QtWidgets.QWidget):
             control.setValue(value*100)
 
     def _settings_values(self):
-        return {'render': {key: control.currentIndex() if isinstance(control, QtWidgets.QComboBox) else control.value()
+        return {'render': {key: control.currentData() if isinstance(control, QtWidgets.QComboBox) else control.value()
                            for key, control in self.render_controls.items()},
                 'background': {key:control.currentData() if isinstance(control,QtWidgets.QComboBox) else control.value() if isinstance(control,QtWidgets.QDoubleSpinBox) else control.text().strip() for key,control in self.background_controls.items()},
                 'display': {key:control.currentData() if isinstance(control,QtWidgets.QComboBox) else control.value() if isinstance(control,QtWidgets.QDoubleSpinBox) else control.text().strip() for key,control in self.display_controls.items()},
                 'preview_buffer': self.buffer.currentData(),
                 'execution_mode': self.execution_mode.currentData(),
+                'denoising': {'engine':self.denoiser.currentData(),'preview':self.denoise_preview.isChecked(),'final':self.denoise_final.isChecked()},
                 'aovs': [key for key, control in self.aov_controls.items() if control.isChecked()],
                 'samples': self.samples.value(), 'environment': self.environment.value(),
                 'threads': self.threads.value(), 'surface': self.surface.currentIndex(),
@@ -329,6 +355,12 @@ class Panel(QtWidgets.QWidget):
                 'environment_multiplier':self.environment_multiplier.value(),
                 'region_enabled':self.region_enabled.isChecked(),
                 'region':[control.value()/100 for control in self.region_controls]}
+
+    def _sampling_controls(self,*args):
+        adaptive=self.render_controls['sampling_mode'].currentData()==2
+        self.samples.setEnabled(not adaptive)
+        for key in ('min_adaptive_samples','max_adaptive_samples','target_adaptive_error'): self.render_controls[key].setEnabled(adaptive)
+        self.render_controls['light_sampling_quality'].setEnabled(self.render_controls['light_sampling_mode'].currentData()==1)
 
     def _save_settings(self):
         try:
@@ -401,6 +433,7 @@ class Panel(QtWidgets.QWidget):
         scene['aovs'] = values['aovs']
         scene['preview_buffer'] = values['preview_buffer']
         scene['execution_mode'] = values['execution_mode']
+        scene['denoising'] = values['denoising']
         from .display import values as display_values
         scene['display'] = display_values(values['display'])
         if values['region_enabled']:

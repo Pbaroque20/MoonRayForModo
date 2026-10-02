@@ -22,7 +22,7 @@ preview can be slower because GPU setup has a fixed cost. No speedup is promised
 1. Run `python tools/setup_xpu.py` to fetch pinned official NVIDIA components into
    the project. Archive SHA-256 checksums and the OptiX revision are recorded in
    `patches/native-windows/xpu-sources.json`. No system driver is installed.
-2. Run `python tools/port_xpu.py` after the existing Windows source-port steps.
+2. Run `python tools/port_xpu.py` and `python tools/port_denoise.py` after the existing Windows source-port steps. The latter validates denoiser input and applies the MinGW OptiX header correction.
 3. Run `python tools/build_native.py --renderer --dsos --xpu --skip-tests`.
 4. Run `python tools/stage_runtime.py --xpu --destination runtime/xpu-avx-20261001`.
 5. Run `python tools/check_xpu_render.py runtime/xpu-avx-20261001` for the small

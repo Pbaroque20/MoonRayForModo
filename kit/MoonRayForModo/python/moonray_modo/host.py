@@ -241,7 +241,7 @@ def snapshot(evaluated_geometry=False):
         data = evaluated.capture(lx.service.Selection().GetTime())
         result['materials'] = evaluated.assign_materials(data, scene, warnings)
         shader_library.attach_dependencies(result['materials'],library)
-        result['meshes'] = evaluated.meshes(data, result['materials'], warnings)
+        result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)
     # Resolve each visible instance to one mesh prototype, including hidden sources.
     instances = {}
     for instance in ([] if evaluated_geometry else scene.items('meshInst', superType=False)):
@@ -326,7 +326,7 @@ def snapshot(evaluated_geometry=False):
                                      'face_materials': list(face_materials),
                                      'uvs': [uv for values in face_uvs for uv in values] if all(face_uvs) else [],
                                      'normals': [n for values in face_normals for n in values] if all(face_normals) else [],
-                                     'object_override': object_settings['override'],
+                                     'geometry_settings': object_settings, 'object_override': object_settings['override'],
                                      'smooth': object_settings['smooth'] if object_settings['override'] else True,
                                      'subdivision_level': object_settings['level'],
                                      'subdivision': object_settings['subdivision'] if object_settings['override'] else subdivision})

@@ -34,6 +34,7 @@ validation = destination / 'validated-render.json'
 if validation.exists():
     validation.unlink()
 pending = [build / 'bin/moonray.exe']
+if (build/'bin/denoise.exe').is_file(): pending.append(build/'bin/denoise.exe')
 pending.append(tools / 'maketx.exe')
 pending.append(tools / 'oiiotool.exe')
 pending += [path for path in (build / 'bin').iterdir()
@@ -68,6 +69,13 @@ while pending:
             continue
         else:
             raise RuntimeError('Missing native DLL dependency: ' + name + ' required by ' + source.name)
+# OIDN's Windows module loader requests this unprefixed basename even in
+# MinGW builds; keep the imported lib-prefixed binary and a loader alias.
+oidn_cpu = tools/'libOpenImageDenoise_device_cpu.dll'
+if oidn_cpu.is_file():
+    alias='OpenImageDenoise_device_cpu.dll'
+    shutil.copy2(oidn_cpu,destination/alias)
+    manifest[alias.lower()]={'source':str(oidn_cpu),'sha256':hashlib.sha256(oidn_cpu.read_bytes()).hexdigest()}
 if args.xpu:
     assets={'shaders/OptixGPUPrograms.ptx':build/'shaders/OptixGPUPrograms.ptx',
         'licenses/CUDA.txt':root/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/LICENSE',

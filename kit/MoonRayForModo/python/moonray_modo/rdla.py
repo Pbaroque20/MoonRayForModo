@@ -209,7 +209,9 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
               '  local a = {g, part, materials[tag], lightSet}',
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
               '  table.insert(assignments, a)', 'end']
+    from . import geometry
     for index, mesh in enumerate(scene.get('meshes', [])):
+        mesh=geometry.prepare(mesh)
         vertices = mesh['vertices']
         faces = mesh['faces']
         if not faces:
@@ -248,7 +250,8 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
                   '    ["vertices_by_index"] = %s,' % array(str(v) for f in faces for v in f),
                   '    ["face_vertex_count"] = %s,' % array(str(len(f)) for f in faces),
                   '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
-                  *(['    ["mesh_resolution"] = %d,' % (2 ** level)] if subdivision else []),
+                  *(['    ["mesh_resolution"] = %d,' % mesh.get('mesh_resolution',2 ** level)] if subdivision else []),
+                  *(['    ["adaptive_error"] = %s,' % number(mesh['adaptive_error'])] if subdivision and 'adaptive_error' in mesh else []),
                   '    ["smooth_normal"] = %s,' % ('true' if mesh.get('smooth', True) else 'false')]
         if 'vertices_close' in mesh:
             if len(mesh['vertices_close']) != len(vertices):
@@ -310,14 +313,14 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
               '  ["scene_scale"] = 1,',
               '  ["image_width"] = %d,' % int(width), '  ["image_height"] = %d,' % int(height),
               '  ["pixel_samples"] = %d,' % int(samples),
-              '  ["sampling_mode"] = 0,', '  ["enable_motion_blur"] = %s,' % ('true' if scene.get('motion_steps') else 'false'),
+              '  ["enable_motion_blur"] = %s,' % ('true' if scene.get('motion_steps') else 'false'),
               '  ["motion_steps"] = %s,' % array(number(v) for v in scene.get('motion_steps',[-.25,.25])),
               '  ["enable_dof"] = %s,' % ('true' if dof else 'false'),
               # Renderer already writes into its private temp folder and atomically
               # publishes the finished EXR; avoid a second OS-specific staging layer.
               '  ["two_stage_output"] = false,']
     for key, value in options.render_values(scene.get('render_settings', {})).items():
-        lines.append('  [%s] = %d,' % (string(key), value))
+        lines.append('  [%s] = %s,' % (string(key), number(value)))
     region = scene.get('region')
     if region is not None:
         if len(region) != 4 or any(not math.isfinite(float(v)) for v in region):
@@ -355,5 +358,11 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         attributes = {'result':0} if preview_key=='beauty' else options.AOVS[preview_key][1]
         for attr,value in attributes.items():
             lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else number(value)))
+        lines.append('}')
+    for key,path in scene.get('_denoise_guides',{}).items():
+        attributes={'result':7,'material_aov':'albedo'} if key=='albedo' else {'result':3,'state_variable':2}
+        lines += ['RenderOutput(%s) {' % string('/modo/denoise/'+key),
+                  '  ["file_name"] = %s,' % string(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
+        for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else number(value)))
         lines.append('}')
     return '\n'.join(lines) + '\n'

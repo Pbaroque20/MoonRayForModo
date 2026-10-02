@@ -7,7 +7,7 @@ def conversion(key, source, destination, display=None):
     # Drop coverage alpha before any transform or PNG encoding. Never divide
     # RGB (which already includes the environment) by silhouette coverage.
     args=['--no-autopremult',str(source),'--fixnan','black']
-    if key in ('alpha','depth','wireframe'):
+    if key in ('alpha','depth','wireframe','sample_count'):
         args += ['--ch','0,0,0']
     elif key=='uv':
         args += ['--ch','0,1,B=0']
@@ -15,7 +15,7 @@ def conversion(key, source, destination, display=None):
         args += ['--ch','0,1,2']
     if key in ('normal','geometric_normal'):
         args += ['--mulc','0.5','--addc','0.5']
-    elif key=='depth':
+    elif key in ('depth','sample_count'):
         args += ['--rangecompress']
     elif key=='position':
         args += ['--rangecompress','--mulc','0.5','--addc','0.5']

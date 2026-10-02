@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import uuid
 from PySide2 import QtCore
-from . import native, rdla
+from . import native, rdla, options, denoising
 
 
 class Renderer(QtCore.QObject):
@@ -79,7 +79,8 @@ class Renderer(QtCore.QObject):
                 path.unlink()
         self.canceled = False
         target = int(self.active['samples'])
-        self.passes = [target] if self.active['output'] else sorted(set([1, min(2, target), target]))
+        adaptive=options.render_values(self.active['snapshot'].get('render_settings',{}))['sampling_mode']==2
+        self.passes = [target] if self.active['output'] or adaptive else sorted(set([1, min(2, target), target]))
         self.log = ''
         self._begin_pass(self.active['generation'])
 
@@ -92,6 +93,9 @@ class Renderer(QtCore.QObject):
         scene = self.current_base.with_suffix('.rdla')
         self.image_path = self.current_base.with_suffix('.exr')
         self.phase = 'render'
+        self.original_published=False
+        self.post_jobs=[]
+        self.denoise_result=None
         self.backend_log = ''
         self.gpu_error = False
         mode=request['snapshot'].get('execution_mode','vectorized')
@@ -104,6 +108,12 @@ class Renderer(QtCore.QObject):
         else:
             snapshot.pop('preview_buffer_file',None)
         try:
+            use_denoise=denoising.enabled(snapshot,bool(request['output']),request.get('linear_preview',False))
+            if use_denoise:
+                if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))
+                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.'+key+'.exr')) for key in ('albedo','normal')}
+                self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'])
+                self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
                 raise ValueError('The selected runtime has no XPU GPU program/CUDA runtime. Choose the XPU runtime or CPU mode.')
             text = rdla.scene_text(snapshot, request['width'], request['height'],
@@ -116,8 +126,12 @@ class Renderer(QtCore.QObject):
             self.process.setProcessEnvironment(env)
             self.process.setWorkingDirectory(self.directory.name)
             self.process.setProgram(str(request['runtime'] / 'moonray.exe'))
-            self.process.setArguments(native.arguments(scene, self.image_path, request['threads'],mode))
-            self.status.emit('Rendering %d samples/pixel · %s…' % (self.sample_grid ** 2,self.backend_status))
+            args=native.arguments(scene, self.image_path, request['threads'],mode)
+            sampling=options.render_values(snapshot.get('render_settings',{}))
+            if sampling['sampling_mode']==2 and '-info' not in args: args.append('-info')
+            self.process.setArguments(args)
+            label=('Adaptive rendering, %d–%d SPP, error %g' % (sampling['min_adaptive_samples'],sampling['max_adaptive_samples'],sampling['target_adaptive_error'])) if sampling['sampling_mode']==2 else ('Rendering %d samples/pixel' % (self.sample_grid**2))
+            self.status.emit(label+' · '+self.backend_status)
             self.process.start()
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -140,7 +154,7 @@ class Renderer(QtCore.QObject):
         if self.closed or self.canceled:
             return
         if error == QtCore.QProcess.FailedToStart:
-            self.failed.emit('Cannot start MoonRay: ' + self.process.errorString())
+            self.failed.emit('Cannot start '+('denoising tool' if self.phase=='denoise' else 'render tool')+': '+self.process.errorString()+(' Original EXR was preserved.' if getattr(self,'original_published',False) else ''))
 
     def _exited(self, code, exit_status):
         self.watchdog.stop()
@@ -152,16 +166,31 @@ class Renderer(QtCore.QObject):
             return
         if code != 0 or exit_status != QtCore.QProcess.NormalExit:
             status = code & 0xffffffff
-            message = ('Buffer conversion' if self.phase=='convert' else 'MoonRay') + ' failed (0x%08X). Open Render Log for details.' % status
+            message = ('Denoising' if self.phase=='denoise' else 'Buffer conversion' if self.phase=='convert' else 'MoonRay') + ' failed (0x%08X). Open Render Log for details.' % status
             if status == 0xC000001D:
                 message = ('MoonRay used an unsupported CPU instruction. This Windows runtime needs '
                            'a CPU-compatible rebuild. No render was produced.')
+            if self.original_published: message+=' Original EXR preserved at '+str(self.active['output'])
             self.failed.emit(message)
             return
+        if self.phase=='denoise':
+            if not self.post_expected.is_file() or self.post_expected.stat().st_size<16:
+                self.failed.emit('Denoising did not produce an output; original render preserved.');return
+            if self.post_jobs: self._next_post();return
+            self.phase='postdone'
+            if self.active['output']:
+                try: self._publish(self.denoise_result,denoising.sidecar(self.active['output']))
+                except OSError as exc: self.failed.emit('Cannot save denoised beauty; original EXR preserved: '+str(exc));return
+            else: self.buffer_path=self.denoise_result
         if self.phase=='render' and self.gpu_error:
             self.failed.emit('GPU execution failed. Open Render Log for details or select CPU (AVX).')
             return
-        if self.phase=='render' and not self.active['output'] and not self.active.get('linear_preview'):
+        if self.phase=='render' and self.post_jobs:
+            if self.active['output']:
+                try: self._publish(self.image_path,Path(self.active['output']));self.original_published=True
+                except OSError as exc: self.failed.emit('Cannot save original EXR: '+str(exc));return
+            self._next_post();return
+        if self.phase in ('render','postdone') and not self.active['output'] and not self.active.get('linear_preview'):
             if not self.buffer_path.is_file() or self.buffer_path.stat().st_size<16:
                 self.failed.emit('MoonRay did not produce the selected render buffer.')
                 return
@@ -187,16 +216,10 @@ class Renderer(QtCore.QObject):
             return
         if self.active['output']:
             destination = Path(self.active['output'])
-            # Never truncate an existing user render if the renderer crashes.
-            staged = destination.with_name(destination.name + '.' + uuid.uuid4().hex + '.tmp')
             try:
-                shutil.copyfile(str(self.image_path), str(staged))
-                staged.replace(destination)
+                if not self.original_published: self._publish(self.image_path,destination)
             except OSError as exc:
-                if staged.exists():
-                    staged.unlink()
-                self.failed.emit('Cannot save render: ' + str(exc))
-                return
+                self.failed.emit('Cannot save render: '+str(exc));return
             self.finished.emit(str(destination))
             return
         self.image_ready.emit(str(self.image_path))
@@ -205,6 +228,20 @@ class Renderer(QtCore.QObject):
             QtCore.QTimer.singleShot(0, lambda: self._begin_pass(generation))
         else:
             self.finished.emit('')
+
+    @staticmethod
+    def _publish(source,destination):
+        destination=Path(destination)
+        staged=destination.with_name(destination.name+'.'+uuid.uuid4().hex+'.tmp')
+        try:
+            shutil.copyfile(str(source),str(staged));staged.replace(destination)
+        finally:
+            if staged.exists(): staged.unlink()
+
+    def _next_post(self):
+        program,args,self.post_expected=self.post_jobs.pop(0)
+        self.phase='denoise';self.process.setProgram(str(program));self.process.setArguments(args)
+        self.status.emit('Denoising linear beauty...');self.process.start()
 
     def close(self):
         if self.closed:

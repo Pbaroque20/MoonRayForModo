@@ -92,7 +92,7 @@ def capture(time, path=None, displaced=True):
         raise ValueError('Modo evaluated geometry: ' + data['error'])
     return data
 
-def meshes(data, materials, warnings):
+def meshes(data, materials, warnings, scene=None):
     """Group identical evaluated prototypes while retaining per-surface transforms."""
     groups = {}
     for surface in data['surfaces']:
@@ -104,10 +104,15 @@ def meshes(data, materials, warnings):
         base = material.get('base_layer_id')
         if base and base not in surface['layers']:
             warnings.append('Evaluated surface %s has a Shader Tree override that is not yet translated.' % surface['source_item'])
-        key = (surface['source_id'], tag, visibility, tuple(surface['layers']))
+        from . import options,properties
+        settings=options.object_values(properties.read(scene.item(surface['source_item']))) if scene else options.object_values({})
+        if settings['override'] and (settings['angular_tessellation'] or settings['adaptive_error']):
+            warning='Evaluated geometry keeps Modo tessellation; MoonRay angular/screen tolerances are bypassed: '+surface['source_item']
+            if warning not in warnings: warnings.append(warning)
+        key = (surface['source_id'], tag, visibility, tuple(surface['layers']), tuple(sorted(settings.items())))
         groups.setdefault(key, []).append(surface)
     result = []
-    for (source, tag, visibility, layers), surfaces in groups.items():
+    for (source, tag, visibility, layers, settings), surfaces in groups.items():
         prototype = data['prototypes'][str(source)]
         if not prototype['segments']:
             warnings.append('Modo returned no mesh segments for evaluated surface ' + surfaces[0]['source_item'])
@@ -133,7 +138,7 @@ def meshes(data, materials, warnings):
                         normals=[segment['normals'][i] for i in attribute_indices] if segment['normals'] else [],
                         uvs=[uv_sets[uv_index][i] for i in attribute_indices] if uv_index < len(uv_sets) else [],
                         subdivision=False, subdivision_level=1, smooth=True,
-                        object_override=True, evaluated_geometry=True, visibility=list(visibility))
+                        object_override=True, evaluated_geometry=True, geometry_settings=dict(settings), visibility=list(visibility))
             from . import coordinates
             descriptors = coordinates.descriptors({tag:material})
             projected = any(d.get('projection','uv')!='uv' for d in descriptors.values())

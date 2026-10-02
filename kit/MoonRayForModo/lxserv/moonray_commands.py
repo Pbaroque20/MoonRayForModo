@@ -117,7 +117,7 @@ def object_command(key):
     class ObjectSetting(lxu.command.BasicCommand):
         def __init__(self):
             super().__init__()
-            self.dyna_Add('value', lx.symbol.sTYPE_BOOLEAN if type(default) is bool else lx.symbol.sTYPE_INTEGER)
+            self.dyna_Add('value', lx.symbol.sTYPE_BOOLEAN if type(default) is bool else (lx.symbol.sTYPE_FLOAT if type(default) is float else lx.symbol.sTYPE_INTEGER))
             self.basic_SetFlags(0, lx.symbol.fCMDARG_QUERY)
 
         def cmd_Flags(self):
@@ -129,7 +129,7 @@ def object_command(key):
 
         def basic_Execute(self, msg, flags):
             from moonray_modo import properties
-            value = bool(self.dyna_Int(0)) if type(default) is bool else self.dyna_Int(0)
+            value = bool(self.dyna_Int(0)) if type(default) is bool else (self.dyna_Float(0) if type(default) is float else self.dyna_Int(0))
             for item in properties.selected_meshes():
                 values = options.object_values(properties.read(item))
                 values[key] = value
@@ -139,7 +139,9 @@ def object_command(key):
             from moonray_modo import properties
             values = lx.object.ValueArray(query)
             for item in properties.selected_meshes():
-                values.AddInt(int(options.object_values(properties.read(item))[key]))
+                value=options.object_values(properties.read(item))[key]
+                if type(default) is float: values.AddFloat(float(value))
+                else: values.AddInt(int(value))
 
         def basic_Notifier(self, index):
             if index == 0:
@@ -152,7 +154,7 @@ def object_command(key):
 lx.bless(PreviewPage, 'moonray.page')
 lx.bless(SaveSceneSettings, 'moonray.sceneSettings')
 lx.bless(SaveObjectSettings, 'moonray.objectSettings')
-for _key in ('override', 'subdivision', 'level', 'smooth'):
+for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error'):
     lx.bless(object_command(_key), 'moonray.object.' + _key)
 
 
