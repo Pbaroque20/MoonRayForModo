@@ -11,6 +11,7 @@ def assign_materials(data, scene, warnings):
     from .host import material_values, channel
     from .materials import active as material_active
     from .layers import ordered_items, collect
+    from .mask_types import tag_kind
     items=list(ordered_items(scene.renderItem))
     order={item.id:index for index,item in enumerate(items)}
     by_id={item.id:item for item in items}
@@ -28,14 +29,14 @@ def assign_materials(data, scene, warnings):
             while parent and parent.type!='polyRender':
                 if not channel(parent,'enable',1) or not channel(parent,'render',1): return False
                 if parent.type=='mask':
-                    kind,value=channel(parent,'ptyp',''),channel(parent,'ptag','')
-                    if kind in ('Material','material','MATR') and value and value!=surface['material']:
+                    kind,value=tag_kind(channel(parent,'ptyp','')),channel(parent,'ptag','')
+                    if kind=='material' and value and value!=surface['material']:
                         return False
-                    if kind in ('Part','part','PART') and value and value != surface.get('part',''):
+                    if kind=='part' and value and value != surface.get('part',''):
                         return False
-                    if kind not in ('','Material','material','MATR','Part','part','PART'):
-                        warnings.append('Evaluated material mask type is not translated: '+str(kind))
-                        return False
+                    # Other tag/selection mask types are resolved by the native
+                    # Render Cache. Only candidates in this surface's host stack
+                    # reach this function; never widen membership to all layers.
                     targets=parent.itemGraph('shadeLoc').forward()
                     targets=[i for i in targets if i.type in ('mesh','meshInst','replicator','groupLocator')]
                     def contains(target):

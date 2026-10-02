@@ -128,9 +128,10 @@ def snapshot(evaluated_geometry=False):
         evaluated_geometry = True
     if any(properties.read(item).get('override') for item in scene.items('meshInst',superType=False)):
         evaluated_geometry = True
+    from .mask_types import needs_cache
     for mask in scene.items('mask',superType=False):
         targets = mask.itemGraph('shadeLoc').forward()
-        if any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets) or channel(mask,'ptyp','') in ('Part','part','PART'):
+        if needs_cache(channel(mask,'ptyp',''),channel(mask,'ptag',''),any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets)):
             evaluated_geometry = True
     camera = scene.renderCamera
     if camera is None:

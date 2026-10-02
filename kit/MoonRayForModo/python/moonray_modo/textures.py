@@ -31,6 +31,7 @@ def source_tiles(source):
     source = Path(source).resolve()
     if '<UDIM>' not in source.name:
         return {0: source} if source.is_file() else {}
+    if not source.parent.is_dir(): return {}
     pattern = re.compile('^' + re.escape(source.name).replace(re.escape('<UDIM>'), r'(1[0-9]{3})') + '$')
     return {int(match.group(1)): path for path in sorted(source.parent.iterdir())
             if path.is_file() for match in [pattern.match(path.name)] if match}
@@ -90,3 +91,23 @@ def prepare(source, srgb=False, mipmaps=True):
         if staged.exists():
             staged.unlink()
     return str(target)
+
+
+def resolve_scene_source(filename,scene_filename=None):
+    """Recover relocated directory suffixes only when exactly one match exists."""
+    text=str(filename).replace('\\','/')
+    path=Path(text)
+    folder=Path(scene_filename).parent if scene_filename else None
+    direct=(folder/path) if folder and not path.is_absolute() else path
+    if source_tiles(direct): return direct,False
+    if folder is None: return direct,False
+    parts=[p for p in text.split('/') if p and p not in ('.','..') and ':' not in p]
+    candidates={}
+    # Preserve at least the immediate parent directory, e.g. textures/body.png.
+    # Do not recursively search drives or guess from a basename alone.
+    for count in range(2,len(parts)+1):
+        candidate=folder.joinpath(*parts[-count:])
+        if source_tiles(candidate): candidates[str(candidate.resolve()).casefold()]=candidate
+    if len(candidates)>1:
+        raise ValueError('Ambiguous relocated texture; relink the image in Modo: '+str(filename))
+    return (next(iter(candidates.values())),True) if candidates else (direct,False)

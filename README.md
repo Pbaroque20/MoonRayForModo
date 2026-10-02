@@ -405,3 +405,24 @@ requested as deferred scripts: `tools/check_execution_modes.py <runtime>` render
 small Auto, Vector and Scalar cases; `tools/check_render_progress.py` covers log
 chunking, utilization rejection, timing estimates and logged fallback ordering.
 These checks and Modo UI checks have not been run for this update.
+
+
+### Shader mask routing correction (0.2.5 development)
+
+Empty material-tag masks now behave as unfiltered groups instead of rejecting
+all child materials/images. Material/Part tag types are normalized across case,
+byte strings and four-character integer codes. Item masks and other tag/selection
+mask types automatically request Modo Render Cache evaluation. For the latter,
+material/image membership comes only from the host-provided per-surface Shader
+Tree stack; they are not widened into global assignments. Additional Material,
+Part and item restrictions remain checked per surface. Group opacity/blending
+restrictions are unchanged. `tools/check_mask_routing.py` is a deferred regression
+script; the affected user scene has not been rendered to verify appearance.
+
+
+Missing image paths can now recover a unique matching directory suffix beside a
+saved scene, e.g. an old Linux `/project/textures/body.png` resolves to
+`textures/body.png` beside the relocated FBX/LXO. Valid paths are preserved and
+recovery is reported. Multiple matches require explicit relinking in Modo;
+unsaved scenes without a source filename still require valid image paths. The
+plugin does not edit the original scene/image references or search entire drives.

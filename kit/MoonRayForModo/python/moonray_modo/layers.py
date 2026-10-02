@@ -1,6 +1,7 @@
 """Ordered Modo texture-layer sampling; no changes to the scene."""
 from pathlib import Path
 from . import textures
+from .mask_types import tag_kind
 
 BLENDS = {'normal':0, 'multiply':1, 'add':2, 'subtract':3, 'screen':4, 'divide':5, 'difference':6, 'darken':7, 'lighten':8, 'overlay':9, 'hardlight':10, 'exclusion':11}
 
@@ -20,13 +21,13 @@ def material_tag(item, texture=False):
             raise ValueError('unsupported shader parent ' + parent.type)
         if (not texture and channel(parent, 'opacity', 1) != 1) or channel(parent, 'blend', 'normal') != 'normal':
             raise ValueError('group opacity and group blending are unsupported')
-        kind, value = channel(parent, 'ptyp', ''), channel(parent, 'ptag', '')
-        if kind in ('Material', 'material', 'MATR') and value:
+        kind, value = tag_kind(channel(parent, 'ptyp', '')), channel(parent, 'ptag', '')
+        if kind == 'material' and value:
             if tag is not None and tag != value:
                 raise ValueError('nested material selections are unsupported')
             tag = value
-        elif kind or value:
-            raise ValueError('only material-tag masks and unfiltered groups are supported')
+        elif kind not in ('','material') or value:
+            raise ValueError('mask requires Modo evaluated membership (type=%r, tag=%r)' % (kind,value))
         parent = parent.parent
     return tag if tag is not None else ''
 
@@ -152,9 +153,9 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     if tile not in ('repeat','edge','mirror','reset') or tile_v not in ('repeat','edge','mirror','reset'):
                         raise ValueError('unsupported image repeat mode')
                     node.update(tile_u=tile,tile_v=tile_v,repeat=tile==tile_v=='repeat')
-                    path = Path(channel(clip,'filename',''))
-                    if not path.is_absolute() and getattr(scene,'filename',None):
-                        path = Path(scene.filename).parent/path
+                    path,recovered = textures.resolve_scene_source(channel(clip,'filename',''),getattr(scene,'filename',None))
+                    if recovered:
+                        warnings.append('Relocated texture resolved for '+layer.name+': '+str(path))
                     if '<UDIM>' in path.name and (tile!='repeat' or tile_v!='repeat'):
                         raise ValueError('UDIM tile addressing requires Repeat on both axes')
                     sources = textures.source_tiles(path)
