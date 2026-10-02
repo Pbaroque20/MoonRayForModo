@@ -23,6 +23,10 @@ def selected_meshes():
     return [item for item in modo.Scene().selected if item.type == 'mesh']
 
 
+def selected_geometry():
+    return [item for item in modo.Scene().selected if item.type in ('mesh','meshInst','replicator')]
+
+
 def scene_settings():
     return read(modo.Scene().renderItem)
 

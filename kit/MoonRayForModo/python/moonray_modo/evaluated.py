@@ -95,6 +95,10 @@ def capture(time, path=None, displaced=True):
 def meshes(data, materials, warnings, scene=None):
     """Group identical evaluated prototypes while retaining per-surface transforms."""
     groups = {}
+    settings_cache = {}
+    from . import options
+    if scene is not None:
+        from . import properties
     for surface in data['surfaces']:
         visibility = tuple(bool(v) for v in surface['visibility'])
         if not any(visibility):
@@ -104,9 +108,12 @@ def meshes(data, materials, warnings, scene=None):
         base = material.get('base_layer_id')
         if base and base not in surface['layers']:
             warnings.append('Evaluated surface %s has a Shader Tree override that is not yet translated.' % surface['source_item'])
-        from . import options,properties
-        settings=options.object_values(properties.read(scene.item(surface['source_item']))) if scene else options.object_values({})
-        if settings['override'] and (settings['angular_tessellation'] or settings['adaptive_error']):
+        identity=surface['source_item']
+        if identity not in settings_cache:
+            settings=options.object_values(properties.read(scene.item(identity))) if scene else options.object_values({})
+            settings_cache[identity]=settings if settings['override'] else options.object_values({})
+        settings=settings_cache[identity]
+        if settings['override'] and (settings['angular_tessellation'] or settings['adaptive_error'] or settings['dynamic_tessellation']):
             warning='Evaluated geometry keeps Modo tessellation; MoonRay angular/screen tolerances are bypassed: '+surface['source_item']
             if warning not in warnings: warnings.append(warning)
         key = (surface['source_id'], tag, visibility, tuple(surface['layers']), tuple(sorted(settings.items())))
@@ -156,16 +163,17 @@ def meshes(data, materials, warnings, scene=None):
                     [uv_sets[source_index][i] for i in attribute_indices],mesh['matrix'])
             # World/locator projections differ for every transformed replica.
             # Share vertex arrays in the snapshot, but emit separate assignments.
-            for surface in (surfaces if projected else surfaces[:1]):
+            separate=projected or not dict(settings)['share_instances']
+            for surface in (surfaces if separate else surfaces[:1]):
                 value = dict(mesh,uv_sets=dict(named_values),matrix=surface['matrix'])
-                if projected:
+                if separate:
                     value['name'] = surface['source_item']
                     value['identity'] = surface['source_item']+'|'+str(surface.get('instance_index',0))+'|'+tag+'|'+str(segment_index)
                     for key,descriptor in descriptors.items():
                         if descriptor.get('projection','uv') != 'uv':
                             value['uv_sets'][key] = coordinates.mesh_corners(descriptor,
                                 vertices,segment['faces'],[],value['matrix'])
-                elif len(surfaces) > 1:
+                elif len(surfaces) > 1 or any(s.get('instanced') for s in surfaces):
                     value['instances'] = [s['matrix'] for s in surfaces]
                     value['instance_ids'] = [s['source_item']+'|'+str(s.get('instance_index',0)) for s in surfaces]
                 result.append(value)

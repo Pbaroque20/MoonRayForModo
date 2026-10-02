@@ -349,3 +349,34 @@ Modo visual/large-scene geometry checks have not been run for this update.
 References: [MoonRay adaptive sampling](https://docs.openmoonray.org/user-reference/how-to-guides/adaptive-sampling/),
 [SceneVariables](https://docs.openmoonray.org/user-reference/scene-objects/scene-variables/SceneVariables/),
 [denoise](https://docs.openmoonray.org/user-reference/tools/denoise/).
+
+
+### Replica sharing and camera-adaptive subdivision (0.2.3 development)
+
+Modo replicators automatically select the evaluated-geometry path. Compatible
+surfaces share one MoonRay prototype and a list of replica transforms, including
+single-replica groups. Material, visibility, Shader Tree and active object-setting
+differences partition groups. Inactive object settings no longer split otherwise
+identical prototypes. World/locator-projected textures still require separate
+geometry to preserve their mapping.
+
+Object controls now accept meshes, mesh instances and replicators. Enable object
+overrides to use **Share replica / instance geometry** (default on). These
+settings apply to the source item reported by Modo's render cache; for caches
+reporting the prototype mesh, set controls on that mesh. Mesh-instance overrides
+request evaluated export to retain per-instance material and visibility behavior.
+
+**Camera-adaptive subdivision (expands instances)** enables MoonRay screen-space
+tessellation for exported subdivision cages. It uses the configured pixel error,
+or 2 pixels when that value is zero, with the existing resolution cap. Subdivision
+instances are expanded into separate geometry because MoonRay cannot adapt a
+shared prototype to each instance camera distance. This costs memory; leave this
+option off to retain shared instances. Camera changes and animation frames are
+retessellated when a new render starts; this is not in-place tessellation during
+a running render.
+
+Evaluated replicators contain already-tessellated polygons, so their subdivision
+and displacement continue to come from Modo. This update does not reconstruct
+subdivision cages from evaluated surfaces or implement dynamic replica LOD.
+`tools/check_instances_tessellation.py` provides deferred regression checks.
+No Modo or render tests were run for this update.

@@ -126,6 +126,8 @@ def snapshot(evaluated_geometry=False):
     if scene.items('replicator',superType=False):
         # Render Cache resolves generated replica transforms and source meshes.
         evaluated_geometry = True
+    if any(properties.read(item).get('override') for item in scene.items('meshInst',superType=False)):
+        evaluated_geometry = True
     for mask in scene.items('mask',superType=False):
         targets = mask.itemGraph('shadeLoc').forward()
         if any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets) or channel(mask,'ptyp','') in ('Part','part','PART'):

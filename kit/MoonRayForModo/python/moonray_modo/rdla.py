@@ -210,8 +210,7 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
               '  table.insert(assignments, a)', 'end']
     from . import geometry
-    for index, mesh in enumerate(scene.get('meshes', [])):
-        mesh=geometry.prepare(mesh)
+    for index, mesh in enumerate(geometry.render_meshes(scene.get('meshes', []))):
         vertices = mesh['vertices']
         faces = mesh['faces']
         if not faces:

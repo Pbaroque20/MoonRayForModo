@@ -101,13 +101,26 @@ class SaveSceneSettings(lxu.command.BasicCommand):
 class SaveObjectSettings(SaveSceneSettings):
     def basic_Enable(self, msg):
         from moonray_modo import properties
-        return bool(properties.selected_meshes())
+        return bool(properties.selected_geometry())
 
     def basic_Execute(self, msg, flags):
         from moonray_modo import properties, options
         values = options.object_values(properties.decode(self.dyna_String(0)))
-        for item in properties.selected_meshes():
+        for item in properties.selected_geometry():
             properties.write(item, values)
+
+
+class ObjectFilter(lxu.command.BasicCommand):
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Enable(self,msg):
+        from moonray_modo import properties
+        return bool(properties.selected_geometry())
+    def basic_Execute(self,msg,flags): pass
+    def basic_Notifier(self,index):
+        if index==0: return ('select.event','item +v')
+        if index==1: return ('scene.edit','')
+
+lx.bless(ObjectFilter,'moonray.object.filter')
 
 
 def object_command(key):
@@ -125,12 +138,12 @@ def object_command(key):
 
         def basic_Enable(self, msg):
             from moonray_modo import properties
-            return bool(properties.selected_meshes())
+            return bool(properties.selected_geometry())
 
         def basic_Execute(self, msg, flags):
             from moonray_modo import properties
             value = bool(self.dyna_Int(0)) if type(default) is bool else (self.dyna_Float(0) if type(default) is float else self.dyna_Int(0))
-            for item in properties.selected_meshes():
+            for item in properties.selected_geometry():
                 values = options.object_values(properties.read(item))
                 values[key] = value
                 properties.write(item, options.object_values(values))
@@ -138,7 +151,7 @@ def object_command(key):
         def cmd_Query(self, index, query):
             from moonray_modo import properties
             values = lx.object.ValueArray(query)
-            for item in properties.selected_meshes():
+            for item in properties.selected_geometry():
                 value=options.object_values(properties.read(item))[key]
                 if type(default) is float: values.AddFloat(float(value))
                 else: values.AddInt(int(value))
@@ -154,7 +167,7 @@ def object_command(key):
 lx.bless(PreviewPage, 'moonray.page')
 lx.bless(SaveSceneSettings, 'moonray.sceneSettings')
 lx.bless(SaveObjectSettings, 'moonray.objectSettings')
-for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error'):
+for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error', 'share_instances', 'dynamic_tessellation'):
     lx.bless(object_command(_key), 'moonray.object.' + _key)
 
 

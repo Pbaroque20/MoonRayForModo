@@ -148,7 +148,7 @@ class Panel(QtWidgets.QWidget):
         self.subdivision_level.setToolTip('Detail for subdivision surfaces. Higher levels use more memory and take longer to render.')
         surface.addRow('Scene default surface', self.surface)
         surface.addRow('Default subdivision level', self.subdivision_level)
-        self.selected_object = QtWidgets.QLabel('Select a mesh in Modo')
+        self.selected_object = QtWidgets.QLabel('Select a mesh, instance or replicator in Modo')
         self.selected_object.setWordWrap(True)
         surface.addRow(self.selected_object)
         self.object_controls = {}
@@ -167,10 +167,10 @@ class Panel(QtWidgets.QWidget):
                 widget.setValue(default)
             self.object_controls[key] = widget
             surface.addRow(label, widget)
-        geometry_note=QtWidgets.QLabel('Angle-based density estimates use the subdivision level as a cap. Evaluated geometry keeps Modo tessellation; normals can be overridden. Smoothing angles do not replace subdivision creases.')
+        geometry_note=QtWidgets.QLabel('Angle-based density estimates use the subdivision level as a cap. Evaluated geometry keeps Modo tessellation; normals can be overridden. Smoothing angles do not replace subdivision creases. Camera-adaptive subdivision expands instances and uses 2 pixels when screen error is zero.')
         geometry_note.setWordWrap(True)
         surface.addRow(geometry_note)
-        self.object_apply = QtWidgets.QPushButton('Apply to selected meshes')
+        self.object_apply = QtWidgets.QPushButton('Apply to selected geometry')
         self.object_apply.clicked.connect(self._save_object)
         surface.addRow(self.object_apply)
         self.aov_controls = {}
@@ -371,13 +371,13 @@ class Panel(QtWidgets.QWidget):
 
     def _refresh_object(self):
         try:
-            selected = properties.selected_meshes()
+            selected = properties.selected_geometry()
             signature = [(item.id, properties.read(item)) for item in selected]
             if signature == self._object_signature:
                 return
             self._object_signature = signature
             self.object_apply.setEnabled(bool(selected))
-            self.selected_object.setText(', '.join(item.name for item in selected) or 'Select a mesh in Modo')
+            self.selected_object.setText(', '.join(item.name for item in selected) or 'Select a mesh, instance or replicator in Modo')
             values = options.object_values(properties.read(selected[0])) if selected else options.object_values({})
             for key, widget in self.object_controls.items():
                 widget.setEnabled(bool(selected))

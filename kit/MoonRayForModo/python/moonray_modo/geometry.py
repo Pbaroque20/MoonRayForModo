@@ -26,7 +26,8 @@ def prepare(mesh):
     smooth=settings['normal_override'] and settings['smooth'] and not mesh.get('subdivision')
     angular=settings['angular_tessellation'] and mesh.get('subdivision') and not mesh.get('evaluated_geometry')
     if mesh.get('subdivision') and not mesh.get('evaluated_geometry'):
-        result['adaptive_error']=settings['adaptive_error']
+        result['adaptive_error']=(settings['adaptive_error'] or 2.0) if settings['dynamic_tessellation'] else settings['adaptive_error']
+        if 'instances' in mesh: result['adaptive_error']=0.0
     if not (smooth or angular): return result
     faces=[list(f) for f in mesh['faces']]
     weighted,normals,edges=topology(mesh['vertices'],faces)
@@ -60,3 +61,20 @@ def prepare(mesh):
                 corners.append(cache[key])
         result['normals']=corners
     return result
+
+
+def render_meshes(meshes):
+    """Expand only explicit opt-outs and camera-adaptive subdivision instances."""
+    for mesh in meshes:
+        settings=options.object_values(mesh.get('geometry_settings',{}))
+        dynamic=settings['override'] and settings['dynamic_tessellation'] and mesh.get('subdivision') and not mesh.get('evaluated_geometry')
+        split=settings['override'] and (not settings['share_instances'] or dynamic)
+        if split and 'instances' in mesh:
+            transforms=mesh['instances'];ids=mesh.get('instance_ids',list(range(len(transforms))))
+            if len(ids)!=len(transforms): raise ValueError('Instance IDs must match transform count')
+            for identity,transform in zip(ids,transforms):
+                value=dict(mesh,matrix=transform,name=mesh['name']+' / '+str(identity),identity=str(mesh.get('identity',mesh['name']))+'|'+str(identity))
+                value.pop('instances');value.pop('instance_ids',None)
+                yield prepare(value)
+        else:
+            yield prepare(mesh)

@@ -24,6 +24,8 @@ OBJECT = {
     'subdivision': (True, 'Subdivide in MoonRay'),
     'level': (3, 'Subdivision level'),
     'smooth': (True, 'Smooth shading'),
+    'share_instances': (True, 'Share replica / instance geometry'),
+    'dynamic_tessellation': (False, 'Camera-adaptive subdivision (expands instances)'),
     'normal_override': (False, 'Override normals by smoothing angle'),
     'smoothing_angle': (60.0, 'Smoothing angle (degrees)'),
     'angular_tessellation': (False, 'Estimate subdivision density from angle'),
@@ -62,7 +64,7 @@ def render_values(values):
 
 def object_values(values):
     result = {key: values.get(key, default) for key, (default, _) in OBJECT.items()}
-    for key in ('override', 'subdivision', 'smooth', 'normal_override', 'angular_tessellation'):
+    for key in ('override', 'subdivision', 'smooth', 'normal_override', 'angular_tessellation', 'share_instances', 'dynamic_tessellation'):
         if type(result[key]) is not bool:
             raise ValueError('Invalid object setting: ' + key)
     if type(result['level']) is not int or not 1 <= result['level'] <= 5:
