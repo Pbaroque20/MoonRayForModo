@@ -332,7 +332,7 @@ class Panel(QtWidgets.QWidget):
         self.notice_toggle.setToolTip('Expand to read or copy scene translation notices')
 
     def _output_busy(self):
-        return (self.sequence is not None and self.sequence.running) or bool(self.renderer.active and self.renderer.active.get('output') and self.renderer.process.state()!=QtCore.QProcess.NotRunning)
+        return (self.sequence is not None and self.sequence.running) or bool(self.renderer.pending and self.renderer.pending.get('output')) or bool(self.renderer.active and self.renderer.active.get('output') and self.renderer.process.state()!=QtCore.QProcess.NotRunning)
 
     def _lock_changed(self,locked):
         if locked:
@@ -594,6 +594,8 @@ class Panel(QtWidgets.QWidget):
             self._failed(str(exc))
 
     def _render_progress(self,value,label):
+        if self.sequence is not None and self.sequence.running:
+            label='Frame %d (%d/%d) · %s'%(self.sequence.frame,len(self.sequence.completed)+1,self.sequence.total,label)
         self.render_progress.setRange(0,0 if value<0 else 100)
         if value>=0: self.render_progress.setValue(value)
         self.render_timing.setText(label)
@@ -602,13 +604,20 @@ class Panel(QtWidgets.QWidget):
         message=('Saved ' + output) if output else ('Preview complete' + (' · Watching scene changes' if self.live.isChecked() else ''))
         self.status.setText(message+' · '+self.renderer.backend_status)
 
+    def _save_path(self,title,key,suffix,name_filter):
+        dialog=QtWidgets.QFileDialog(self,title,str(self.settings.value('output/'+key,'')))
+        dialog.setAcceptMode(QtWidgets.QFileDialog.AcceptSave)
+        dialog.setNameFilter(name_filter);dialog.setDefaultSuffix(suffix)
+        if not dialog.exec_():return ''
+        path=dialog.selectedFiles()[0]
+        self.settings.setValue('output/'+key,str(Path(path).parent))
+        return path
+
     def render_final(self):
         if self._output_busy():self.status.setText('An output render is running. Press Stop before starting another.');return
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Render OpenEXR', '', 'OpenEXR (*.exr)')
+        path=self._save_path('Render OpenEXR','exr','exr','OpenEXR (*.exr)')
         if not path:
             return
-        if not path.lower().endswith('.exr'):
-            path += '.exr'
         self.stop()
         try:
             self._submit(self._capture(), path)
@@ -616,7 +625,7 @@ class Panel(QtWidgets.QWidget):
             self._failed(str(exc))
 
     def export(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Export MoonRay scene', '', 'MoonRay scene (*.rdla)')
+        path=self._save_path('Export MoonRay scene','rdla','rdla','MoonRay scene (*.rdla)')
         if not path:
             return
         try:
@@ -633,12 +642,8 @@ class Panel(QtWidgets.QWidget):
         if self.preview.image.isNull():
             self.status.setText('Render a preview first.')
             return
-        dialog=QtWidgets.QFileDialog(self,'Save preview')
-        dialog.setAcceptMode(QtWidgets.QFileDialog.AcceptSave)
-        dialog.setNameFilter('PNG image (*.png)')
-        dialog.setDefaultSuffix('png')
-        if dialog.exec_():
-            path=dialog.selectedFiles()[0]
+        path=self._save_path('Save preview','png','png','PNG image (*.png)')
+        if path:
             self.status.setText('Saved '+path if self.preview.image.save(path,'PNG') else 'Could not save the preview image.')
 
     def show_log(self):
@@ -657,7 +662,7 @@ class Panel(QtWidgets.QWidget):
         copy=QtWidgets.QPushButton('Copy log');copy.clicked.connect(lambda:QtWidgets.QApplication.clipboard().setText(text.toPlainText()));footer.addWidget(copy)
         save=QtWidgets.QPushButton('Save log…');footer.addWidget(save)
         def save_log():
-            path,_=QtWidgets.QFileDialog.getSaveFileName(dialog,'Save render log','','Text (*.txt)')
+            path=self._save_path('Save render log','log','txt','Text (*.txt)')
             if path:
                 try:Path(path).write_text(text.toPlainText(),encoding='utf-8')
                 except OSError as exc:QtWidgets.QMessageBox.warning(dialog,'Cannot save log',str(exc))
@@ -687,20 +692,18 @@ class Panel(QtWidgets.QWidget):
 
     def render_animation(self):
         if self._output_busy():self.status.setText('An output render is running. Press Stop before starting an animation.');return
-        directory = QtWidgets.QFileDialog.getExistingDirectory(self,'Animation output folder')
-        if not directory: return
-        first,ok = QtWidgets.QInputDialog.getInt(self,'Animation','First frame',1,-100000,100000)
-        if not ok: return
-        last,ok = QtWidgets.QInputDialog.getInt(self,'Animation','Last frame',first,first,100000)
-        if not ok: return
-        fps,ok = QtWidgets.QInputDialog.getDouble(self,'Animation','Frames per second',24,.001,1000,3)
-        if not ok: return
-        motion = QtWidgets.QMessageBox.question(self,'Animation','Include motion blur?',
-                    QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No,QtWidgets.QMessageBox.No)==QtWidgets.QMessageBox.Yes
+        from .output_dialog import AnimationDialog
         from .animation import Sequence
-        self.stop()
+        dialog=AnimationDialog(self.settings,self)
+        if not dialog.exec_():return
+        directory=dialog.folder.text().strip()
         try:
-            self.sequence = Sequence(self,directory,first,last,fps,motion)
+            candidate=Sequence(self,directory,dialog.first.value(),dialog.last.value(),
+                               dialog.fps.value(),dialog.motion.isChecked(),
+                               step=dialog.step.value(),prefix=dialog.prefix.text())
+            self.settings.setValue('output/animation',directory)
+            self.stop()
+            self.sequence=candidate
             self.sequence.start()
         except Exception as exc:
             self._failed(str(exc))

@@ -495,3 +495,19 @@ session-only.
 
 No automated or interactive tests were run for this update, at user request.
 These are workflow improvements, not additional scene translation coverage.
+
+
+### Animation and output workflow (0.2.9 development)
+
+Animation uses one setup window with output folder, filename prefix, first/last
+frame, frame step, FPS and motion blur controls. Its summary shows the requested
+frame count and first filename. The exporter checks every requested frame for
+existing beauty or denoised outputs before starting, and rejects an existing
+sequence manifest. Frame stepping samples the original timeline at frame/FPS;
+it does not retime the animation. Sequence manifests record the full requested
+range, step, prefix, motion-blur choice and completed frames.
+
+PNG, EXR, RDLA and log save dialogs remember separate output folders and supply
+default extensions before the dialog's overwrite confirmation. Pending output
+requests are also protected from competing preview requests. The renderer retains
+its existing no-overwrite restrictions. No tests were run for this update.

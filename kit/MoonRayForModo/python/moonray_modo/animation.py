@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import math
+import re
 from PySide2 import QtCore
 import lx
 from . import host
@@ -35,13 +36,25 @@ from .motion import apply_motion
 
 
 class Sequence(QtCore.QObject):
-    def __init__(self, panel, directory, first, last, fps, motion=False):
+    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame"):
         super().__init__(panel)
         if last < first or last-first > 100000 or not math.isfinite(fps) or fps<=0:
             raise ValueError('Invalid animation frame range or frame rate')
+        if not isinstance(step,int) or step<1:
+            raise ValueError('Frame step must be a positive integer')
+        if not re.fullmatch(r'[A-Za-z0-9_-]+',prefix):
+            raise ValueError('Output prefix must use letters, digits, underscores or hyphens')
+        self.first,self.step,self.prefix=first,step,prefix
+        self.total=len(range(first,last+1,step))
         self.panel, self.directory = panel, Path(directory)
         if (self.directory/'moonray-sequence.json').exists():
             raise ValueError('Choose a new animation folder; a sequence manifest already exists')
+        existing={path.name.casefold() for path in self.directory.iterdir()} if self.directory.exists() else set()
+        for frame in range(first,last+1,step):
+            destination=self.directory/('%s.%06d.exr'%(prefix,frame))
+            sidecar=destination.with_name(destination.stem+'.denoised.exr')
+            if destination.name.casefold() in existing or sidecar.name.casefold() in existing:
+                raise ValueError('Animation output already exists for frame %d. Choose another folder or prefix.'%frame)
         self.directory.mkdir(parents=True,exist_ok=True)
         self.frame, self.last, self.fps, self.motion = first,last,fps,motion
         self.running = False
@@ -73,7 +86,7 @@ class Sequence(QtCore.QObject):
     def capture(self):
         if not self.running:
             return
-        destination = self.directory/('frame.%06d.exr'%self.frame)
+        destination = self.directory/('%s.%06d.exr'%(self.prefix,self.frame))
         if destination.exists():
             raise ValueError('Animation output already exists: '+str(destination))
         snapshot = capture_frame(self.frame/self.fps, self.panel.surface.currentIndex()==2,
@@ -95,17 +108,17 @@ class Sequence(QtCore.QObject):
         except OSError as exc:
             self.failed('Frame saved, but sequence manifest could not be updated: '+str(exc))
             return
-        if self.frame >= self.last:
+        if self.frame+self.step > self.last:
             if not self.stop('complete'):
                 self.panel.status.setText('Animation complete: %d frames'%len(self.completed))
         else:
-            self.frame += 1
+            self.frame += self.step
             QtCore.QTimer.singleShot(0,self.next_frame)
 
     def write_manifest(self, status):
         path = self.directory/'moonray-sequence.json'
         staged = path.with_suffix('.json.tmp')
-        staged.write_text(json.dumps({'status':status,'fps':self.fps,'frames':self.completed},indent=2),encoding='utf-8')
+        staged.write_text(json.dumps({'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'motion_blur':self.motion,'total_frames':self.total,'frames':self.completed},indent=2),encoding='utf-8')
         staged.replace(path)
 
     def failed(self, message):
