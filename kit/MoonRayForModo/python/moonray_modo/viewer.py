@@ -19,7 +19,10 @@ class Preview(QtWidgets.QOpenGLWidget):
             raise ValueError('MoonRay output could not be decoded as an image.')
         if image.size() != self.image.size():
             self.fit()
-        self.image = image
+        # Beauty includes camera-visible environment RGB even where coverage
+        # alpha is zero. Display RGB without compositing over the widget; keep
+        # the renderer output and its alpha channel untouched on disk.
+        self.image = image.convertToFormat(QtGui.QImage.Format_RGB32)
         self.update()
 
     def fit(self):
