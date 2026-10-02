@@ -6,7 +6,11 @@ from .mask_types import tag_kind
 BLENDS = {'normal':0, 'multiply':1, 'add':2, 'subtract':3, 'screen':4, 'divide':5, 'difference':6, 'darken':7, 'lighten':8, 'overlay':9, 'hardlight':10, 'exclusion':11}
 
 def ordered_items(parent):
-    for item in parent.children():
+    """Yield visible Shader Tree order (top to bottom), preserving group scopes."""
+    # Child enumeration follows the shading stack in the opposite direction
+    # from the displayed rows. Normalize siblings here, not the flattened tree:
+    # collect, material_stack and evaluated assignment all expect top-first.
+    for item in reversed(list(parent.children())):
         yield item
         yield from ordered_items(item)
 

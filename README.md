@@ -426,3 +426,15 @@ saved scene, e.g. an old Linux `/project/textures/body.png` resolves to
 recovery is reported. Multiple matches require explicit relinking in Modo;
 unsaved scenes without a source filename still require valid image paths. The
 plugin does not edit the original scene/image references or search entire drives.
+
+
+### Shader Tree order correction (0.2.6 development)
+
+Shader child enumeration is normalized to visible top-to-bottom order at each
+parent before material assignment and texture compositing. This corrects the
+reported inversion where images below a material rendered while those above it
+were discarded. Put image layers **above** the material in the Shader Tree;
+upper textures composite last. Material boundaries, nested groups and evaluated
+material assignment use the same traversal. The deferred regression script is
+`tools/check_shader_order.py`; confirmation against Modo's displayed tree and a
+render of the affected scene remains pending.
