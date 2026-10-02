@@ -41,6 +41,7 @@ class MaterialType(Observed):
             if old==shader: continue
             presets=settings.setdefault('native_type_presets',{})
             if old: presets[old]=settings.get('native_parameters',{})
+            settings.pop('node_graph',None)
             settings['native_shader']=shader
             settings['native_parameters']=shader_library.validate(shader,presets.get(shader,{})) if shader else {}
             if shader: settings['shader']='DwaBaseMaterial'
@@ -92,6 +93,12 @@ def parameter_command(shader,key,spec):
                 settings=properties.read(item);params=settings.setdefault('native_parameters',{})
                 if value is None: params.pop(key,None)
                 else: params[key]=value
+                graph=settings.get('node_graph')
+                if graph:
+                    root=graph['nodes'][graph['root']]
+                    if value is None: root.setdefault('parameters',{}).pop(key,None)
+                    else: root.setdefault('parameters',{})[key]=value
+                    root.setdefault('inputs',{}).pop(key,None)
                 updates.append((item,settings))
             for item,settings in updates: properties.write(item,settings)
     return Parameter
@@ -104,3 +111,70 @@ for i,shader in enumerate(TYPES):
         # Material connections retain the named-input editor instead of raw IDs.
         if spec['type']=='SceneObject*': continue
         lx.bless(parameter_command(shader,key,spec),'moonray.material.param%d_%d'%(i,j))
+
+
+class OpenNodes(Observed):
+    def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+    def basic_Enable(self,msg): return len(selected())==1
+    def basic_Execute(self,msg,flags):
+        from moonray_modo.node_editor import Editor
+        items=selected()
+        if len(items)!=1: raise ValueError('Select one Shader Tree material')
+        Editor(items[0]).exec_()
+
+
+class NodeOverride(OpenNodes):
+    def basic_Enable(self,msg): return True
+    def basic_Execute(self,msg,flags):
+        import modo
+        lx.eval('shader.create material.moonrayMaterialX')
+        items=[item for item in modo.Scene().selected if item.type=='material.moonrayMaterialX']
+        if len(items)!=1: raise ValueError('Could not identify the new MaterialX Override layer')
+        properties.write(items[0],{'materialx_override':False})
+        items[0].name='MaterialX Override'
+
+lx.bless(OpenNodes,'moonray.material.nodes')
+lx.bless(NodeOverride,'moonray.material.nodeOverride')
+
+
+class MaterialXOverride(Observed):
+    def __init__(self):
+        super().__init__()
+        self.dyna_Add('enabled',lx.symbol.sTYPE_BOOLEAN)
+        self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+    def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+    def basic_Enable(self,msg): return len(selected())==1 and selected()[0].type=='material.moonrayMaterialX'
+    def cmd_Query(self,index,query):
+        values=lx.object.ValueArray(query)
+        for item in selected(): values.AddInt(int(bool(properties.read(item).get('materialx_override',False))))
+    def basic_Execute(self,msg,flags):
+        items=selected()
+        if len(items)!=1 or items[0].type!='material.moonrayMaterialX': raise ValueError('Select one MaterialX Override layer')
+        item=items[0]
+        if self.dyna_Int(0):
+            from moonray_modo.node_editor import Editor
+            Editor(item,materialx_override=True).exec_()
+        else:
+            settings=properties.read(item);settings['materialx_override']=False;properties.write(item,settings)
+
+
+class EditMaterialX(OpenNodes):
+    def basic_Enable(self,msg): return len(selected())==1 and selected()[0].type=='material.moonrayMaterialX'
+    def basic_Execute(self,msg,flags):
+        from moonray_modo.node_editor import Editor
+        items=selected()
+        if len(items)!=1 or items[0].type!='material.moonrayMaterialX': raise ValueError('Select one MaterialX Override layer')
+        Editor(items[0],materialx_override=True).exec_()
+
+lx.bless(MaterialXOverride,'moonray.material.materialxOverride')
+lx.bless(EditMaterialX,'moonray.material.editMaterialX')
+
+
+class RegularMaterialFilter(Observed):
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Enable(self,msg):
+        items=selected()
+        return bool(items) and all(item.type=='advancedMaterial' for item in items)
+    def basic_Execute(self,msg,flags): pass
+
+lx.bless(RegularMaterialFilter,'moonray.material.regularFilter')

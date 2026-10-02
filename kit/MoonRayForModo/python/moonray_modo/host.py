@@ -73,11 +73,19 @@ def image_layers(scene, materials, warnings, baked_effects=()):
 def material_values(material):
     from .material_settings import values as material_settings
     settings = properties.read(material)
+    settings=dict(settings)
+    if settings.get('materialx_override'):
+        from .nodes import validate as validate_graph
+        graph=settings.get('materialx_graph')
+        resolved=validate_graph(graph);root=resolved['nodes'][resolved['root']]
+        settings.update(node_graph=graph,native_shader=root['type'],native_parameters=root.get('parameters',{}))
     controls = material_settings(settings)
     diffuse = color(material, 'diffCol', (.5, .5, .5))
     diffuse_amount = float(channel(material, 'diffAmt', 1))
     return {'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
+                                'node_graph': settings.get('node_graph'),
+                                'node_override': settings.get('node_override',False) or material.type=='material.moonrayMaterialX',
                                 'native_shader': settings.get('native_shader',''),
                                 'native_parameters': settings.get('native_parameters',{}),
                                 'shader': settings.get('shader',''),
@@ -172,7 +180,8 @@ def snapshot(evaluated_geometry=False):
     from .layers import ordered_items, material_tag
     material_candidates = {}
     for material in reversed(list(ordered_items(scene.renderItem))):
-        if material.type != 'advancedMaterial' or not channel(material, 'enable', 1):
+        from .materials import active as material_active
+        if material.type not in ('advancedMaterial','material.moonrayMaterialX') or not material_active(material) or not channel(material, 'enable', 1):
             continue
         try:
             tag = material_tag(material)
@@ -218,8 +227,8 @@ def snapshot(evaluated_geometry=False):
     from . import shader_library
     from .layers import material_stack
     library = {}
-    for item in scene.items('advancedMaterial', superType=False):
-        if properties.read(item).get('native_shader'):
+    for item in scene.items('advancedMaterial', superType=True):
+        if properties.read(item).get('native_shader') or properties.read(item).get('materialx_override'):
             try:
                 tag = material_tag(item)
             except ValueError:

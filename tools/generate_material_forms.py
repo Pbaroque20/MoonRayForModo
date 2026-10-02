@@ -16,7 +16,6 @@ for i,shader in enumerate(['']+sorted(catalog)):
     sheet=ET.SubElement(attributes,'hash',type='Sheet',key='MoonRayNative%d:sheet'%i)
     atom(sheet,'Label',shader);atom(sheet,'Layout','properties')
     atom(sheet,'FilterCommand','moonray.material.filter'+str(i))
-    category=ET.SubElement(sheet,'hash',type='InCategory',key='itemprops:general#head');atom(category,'Ordinal',130)
     control(sheet,'moonray.material.editNative','Material inputs / searchable editor...')
     groups={}
     for j,(key,spec) in enumerate(sorted(catalog[shader]['attributes'].items())):

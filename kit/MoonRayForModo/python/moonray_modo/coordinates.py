@@ -15,7 +15,11 @@ def descriptors(materials):
     for material in materials.values():
         for child in material.get('material_stack', [material]):
             for source in [child] + child.get('native_dependencies', []):
-                for layer in source.get('layers', []):
+                graph_layers=[]
+                if source.get('node_graph'):
+                    from .nodes import descriptors as graph_descriptors
+                    graph_layers=graph_descriptors(source['node_graph'])
+                for layer in source.get('layers', [])+graph_layers:
                     if layer.get('coordinate_key'):
                         result[layer['coordinate_key']] = layer
     return result

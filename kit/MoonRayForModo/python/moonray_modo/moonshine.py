@@ -83,8 +83,10 @@ def emit_stack(stack, tag, index, lines, library=None, native_index=None):
         mask = maps.pop('layerMask',None)
         if material.get('native_shader'):
             from .shader_library import emit as native_emit, compatible
-            if not compatible(material['native_shader'],'INTERFACE_DWABASELAYERABLE'):
+            if len(stack)>1 and not compatible(material['native_shader'],'INTERFACE_DWABASELAYERABLE'):
                 raise ValueError(material['native_shader']+' cannot be used in a Dwa Shader Tree stack; assign it separately')
+            if material.get('node_graph'):
+                from .nodes import emit as native_emit
             ref = native_emit(material,'/modo/native/stack/%s'%identity,native_index or [1000000000+identity],lines,library or {})
             lines.append('materials[%s] = %s'%(string(key),ref))
         else:

@@ -4,7 +4,7 @@ import modo
 from . import properties
 
 def selected():
-    return [i for i in modo.Scene().selected if i.type=='advancedMaterial']
+    return [i for i in modo.Scene().selected if i.type in ('advancedMaterial','material.moonrayMaterialX')]
 
 def assign(shader=None):
     scene=modo.Scene()
@@ -33,3 +33,7 @@ def assign(shader=None):
         material.name='MoonShine '+shader
     scene.select(material)
     return material
+
+
+def active(item):
+    return item.type!='material.moonrayMaterialX' or bool(properties.read(item).get('materialx_override'))

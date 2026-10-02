@@ -1,6 +1,6 @@
 """Pure Python scene serializer. Does not import or change the Modo scene."""
 import math
-from . import options, textures
+from . import options, textures, __version__
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -72,7 +72,7 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     focal = number(camera['focal_mm']) if not orthographic else None
     if not orthographic and 'focal_mm_close' in camera:
         focal='blur(%s, %s)' % (focal,number(camera['focal_mm_close']))
-    lines = ['-- MoonRayForModo 0.1.0; scene units are meters',
+    lines = ['-- MoonRayForModo %s; scene units are meters' % __version__,
              'local camera = %s("/modo/camera") {' % ('OrthographicCamera' if orthographic else 'PerspectiveCamera'),
              '  ["node_xform"] = %s,' % node_matrix(camera),
              *([] if orthographic else ['  ["focal"] = %s,' % focal]),
@@ -128,6 +128,11 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         if material.get('material_stack'):
             from .moonshine import emit_stack
             emit_stack([absorption.surface(child) for child in material['material_stack']],tag,index,lines,scene.get('native_materials',{}),native_index)
+            continue
+        if material.get('node_graph'):
+            from .nodes import emit as emit_graph
+            ref=emit_graph(material,'/modo/nodes/%s'%index,native_index,lines,scene.get('native_materials',{}))
+            lines.append('materials[%s] = %s'%(string(tag),ref))
             continue
         if material.get('native_shader'):
             from .shader_library import emit as emit_native

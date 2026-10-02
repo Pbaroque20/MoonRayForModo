@@ -20,7 +20,7 @@ def edit(item, scene):
     types.addItems(sorted(shader_library.catalog()))
     types.setCurrentText(settings.get('native_shader') or 'DwaBaseMaterial')
     layout.addWidget(types)
-    info=QtWidgets.QLabel('Native parameters use MoonRay defaults unless overridden. Modo image layers bind compatible channels.\nHair materials require strand geometry; non-material object inputs require a future node editor.')
+    info=QtWidgets.QLabel('Native parameters use MoonRay defaults unless overridden. Modo image layers bind compatible channels.\nHair materials require strand geometry; use Open Node Editor for connected inputs.')
     info.setWordWrap(True);layout.addWidget(info)
     search=QtWidgets.QLineEdit();search.setPlaceholderText('Filter parameters');layout.addWidget(search)
     scroll=QtWidgets.QScrollArea();scroll.setWidgetResizable(True);layout.addWidget(scroll)
@@ -92,6 +92,16 @@ def edit(item, scene):
             params=values()
             library={candidate.id:properties.read(candidate) for candidate in scene.items('advancedMaterial',superType=False)}
             native=dict(settings,native_shader=current[0],native_parameters=params,shader='DwaBaseMaterial')
+            graph=native.get('node_graph')
+            if graph:
+                if graph['nodes'][graph['root']]['type']!=current[0]: native.pop('node_graph',None)
+                else:
+                    import copy
+                    graph=copy.deepcopy(graph);root=graph['nodes'][graph['root']]
+                    old=root.get('parameters',{})
+                    for key in set(old)|set(params):
+                        if old.get(key)!=params.get(key): root.setdefault('inputs',{}).pop(key,None)
+                    root['parameters']=params;native['node_graph']=graph
             library[item.id]=native
             shader_library.attach_dependencies({'selected':dict(native)},library)
             properties.write(item,native)

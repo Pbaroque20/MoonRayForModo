@@ -9,6 +9,7 @@ _bridge = None
 def assign_materials(data, scene, warnings):
     """Use host-resolved Shader Tree membership for each evaluated surface."""
     from .host import material_values, channel
+    from .materials import active as material_active
     from .layers import ordered_items, collect
     items=list(ordered_items(scene.renderItem))
     order={item.id:index for index,item in enumerate(items)}
@@ -40,7 +41,7 @@ def assign_materials(data, scene, warnings):
                     def contains(target):
                         return target.id in source_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
                     if targets and not any(contains(i) for i in targets): return False
-                    if (item.type=='advancedMaterial' and channel(parent,'opacity',1)!=1) or channel(parent,'blend','normal')!='normal':
+                    if (item.type in ('advancedMaterial','material.moonrayMaterialX') and channel(parent,'opacity',1)!=1) or channel(parent,'blend','normal')!='normal':
                         warnings.append('Group opacity and blending are not translated: '+parent.name)
                         return False
                 parent=parent.parent
@@ -51,7 +52,7 @@ def assign_materials(data, scene, warnings):
         surface['layers']=list(stack)
         if stack not in tags:
             candidates=[by_id[identity] for identity in stack if identity in by_id
-                        and by_id[identity].type=='advancedMaterial' and channel(by_id[identity],'enable',1)]
+                        and by_id[identity].type in ('advancedMaterial','material.moonrayMaterialX') and material_active(by_id[identity]) and channel(by_id[identity],'enable',1)]
             if not candidates:
                 tags[stack]=''
                 warnings.append('Evaluated surface has no supported material: '+surface['source_item'])

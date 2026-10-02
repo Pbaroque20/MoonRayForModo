@@ -59,7 +59,12 @@ def validate(shader, parameters):
 
 
 def references(material):
-    for value in material.get('native_parameters',{}).values():
+    values=list(material.get('native_parameters',{}).values())
+    if material.get('node_graph'):
+        from .nodes import validate
+        for node in validate(material['node_graph'])['nodes'].values():
+            values.extend(node.get('parameters',{}).values())
+    for value in values:
         if isinstance(value,dict) and 'material' in value: yield value['material']
 
 
@@ -80,7 +85,7 @@ def attach_dependencies(materials, library):
                 child['uv_map']=next((d['uv_map'] for d in child['native_dependencies'] if d.get('uv_map')),'')
 
 
-def emit(material, name, index, lines, library, trail=()):
+def emit(material, name, index, lines, library, trail=(), authored_bindings=None):
     from .rdla import string,number
     from .graph import bindings
     shader=material['native_shader']
@@ -125,6 +130,7 @@ def emit(material, name, index, lines, library, trail=()):
         if target not in attributes:
             raise ValueError(shader+' cannot accept the mapped '+key+' effect; put this texture on a compatible input material')
         authored[target]=value
+    authored.update(authored_bindings or {})
     lines.append('%s(%s) {'%(shader,string(name)))
     lines.extend('  [%s] = %s,'%(string(key),value) for key,value in authored.items())
     lines.append('}')

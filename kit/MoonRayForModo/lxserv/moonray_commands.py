@@ -315,3 +315,12 @@ class EditNativeMaterial(lxu.command.BasicCommand):
         edit(items[0],modo.Scene())
 
 lx.bless(EditNativeMaterial,'moonray.material.editNative')
+
+
+class AboutMoonRay(lxu.command.BasicCommand):
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Execute(self,msg,flags):
+        from moonray_modo.about import show
+        show()
+
+lx.bless(AboutMoonRay,'moonray.about')

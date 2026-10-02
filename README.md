@@ -285,3 +285,12 @@ Sources: [MoonRay](https://github.com/OpenMoonRay/openmoonray),
 ## Expanded native material library (development update)
 
 The current AVX build includes all 20 vendored MoonShine materials and four core MoonRay material types, with Shader Tree assignment and a searchable native parameter editor. See [material library usage and limitations](docs/MATERIAL_LIBRARY.md). The installed development runtime is `runtime/material-library-20261001`; its build succeeded, but rendering and Modo interaction tests are deferred. This does not extend the older validated-render claims to the newly added shaders.
+
+### Material nodes and About (0.2.0 development)
+
+The material selector now sits above its properties. A separate MaterialX Override
+Shader Tree layer and visual node editor provide a supported MaterialX subset
+and native material graphs. See [workflow and limitations](docs/MATERIAL_NODES.md).
+MoonRay > About includes the supplied artwork, Raphael Tobar credit, plugin
+version, MIT plugin license and separate Apache 2.0 MoonRay attribution.
+These additions have deferred UI/render validation.
