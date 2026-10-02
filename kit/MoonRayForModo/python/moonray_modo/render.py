@@ -5,6 +5,7 @@ import tempfile
 import uuid
 from PySide2 import QtCore
 from . import native, rdla, options, denoising
+from .progress import Progress, duration
 
 
 class Renderer(QtCore.QObject):
@@ -12,6 +13,7 @@ class Renderer(QtCore.QObject):
     status = QtCore.Signal(str)
     failed = QtCore.Signal(str)
     finished = QtCore.Signal(str)
+    progress = QtCore.Signal(int,str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +37,23 @@ class Renderer(QtCore.QObject):
         self.watchdog.setSingleShot(True)
         self.watchdog.timeout.connect(self._timed_out)
         self.process.started.connect(self._started)
+        self.progress_state=None
+        self.progress_timer=QtCore.QTimer(self)
+        self.progress_timer.setInterval(500)
+        self.progress_timer.timeout.connect(self._progress_tick)
+        self.finished.connect(lambda output:self._progress_end(True))
+        self.failed.connect(lambda message:self._progress_end(False))
+
+    def _progress_tick(self):
+        if self.progress_state:
+            value,label=self.progress_state.display(self.phase)
+            self.progress.emit(value,label)
+
+    def _progress_end(self,success):
+        self.progress_timer.stop()
+        if self.progress_state:
+            elapsed=self.progress_state.clock()-self.progress_state.started
+            self.progress.emit(100 if success else 0,('Complete' if success else 'Stopped')+' · Elapsed '+duration(elapsed))
 
     def _started(self):
         if self.timeout_seconds>0:
@@ -63,6 +82,7 @@ class Renderer(QtCore.QObject):
             self._begin_pending()
 
     def stop(self):
+        self._progress_end(False)
         self.watchdog.stop()
         self.pending = None
         self.canceled = True
@@ -78,6 +98,8 @@ class Renderer(QtCore.QObject):
             if path.is_file():
                 path.unlink()
         self.canceled = False
+        self.progress_state=Progress()
+        self.progress_timer.start()
         target = int(self.active['samples'])
         adaptive=options.render_values(self.active['snapshot'].get('render_settings',{}))['sampling_mode']==2
         self.passes = [target] if self.active['output'] or adaptive else sorted(set([1, min(2, target), target]))
@@ -93,13 +115,15 @@ class Renderer(QtCore.QObject):
         scene = self.current_base.with_suffix('.rdla')
         self.image_path = self.current_base.with_suffix('.exr')
         self.phase = 'render'
+        self.progress_state.reset_pass()
+        self._progress_tick()
         self.original_published=False
         self.post_jobs=[]
         self.denoise_result=None
         self.backend_log = ''
         self.gpu_error = False
-        mode=request['snapshot'].get('execution_mode','vectorized')
-        self.backend_status='XPU requested' if mode=='xpu' else 'CPU '+mode
+        mode=request['snapshot'].get('execution_mode','auto')
+        self.backend_status={'auto':'Auto requested (XPU → Vector → Scalar)','xpu':'XPU requested','vectorized':'Vector requested','vector':'Vector requested','scalar':'Scalar requested'}[mode]
         self.buffer_key = request['snapshot'].get('preview_buffer','beauty') if not request['output'] and not request.get('linear_preview') else 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
@@ -140,15 +164,14 @@ class Renderer(QtCore.QObject):
         text = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
         self.log = (self.log + text)[-65536:]
         if self.phase=='render':
+            if self.progress_state: self.progress_state.feed(text)
             self.backend_log=(self.backend_log+text)[-16384:]
             if any(term in self.backend_log for term in ('optixLaunch() failure','cudaStreamSynchronize() error')):
                 self.gpu_error=True
-            if 'falling back to CPU' in self.backend_log:
-                self.backend_status='CPU fallback — see Render Log'
-            elif 'GPU: Setup complete' in self.backend_log:
-                self.backend_status='XPU active (NVIDIA GPU + CPU)'
-            if any(word in text for word in ('GPU:', 'falling back')):
-                self.status.emit('Rendering · '+self.backend_status)
+            selected=native.execution_status(self.backend_log)
+            if selected and selected!=self.backend_status:
+                self.backend_status=selected
+                self.status.emit('Rendering · '+selected)
 
     def _error(self, error):
         if self.closed or self.canceled:

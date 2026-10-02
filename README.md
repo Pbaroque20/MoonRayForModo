@@ -380,3 +380,28 @@ and displacement continue to come from Modo. This update does not reconstruct
 subdivision cages from evaluated surfaces or implement dynamic replica LOD.
 `tools/check_instances_tessellation.py` provides deferred regression checks.
 No Modo or render tests were run for this update.
+
+
+### Auto execution and render meter (0.2.4 development)
+
+Rendering mode now offers **Auto (XPU → Vector → Scalar)** followed by the three
+manual modes in that order. Auto is the default for new settings; saved choices
+are preserved. The Windows runtime enables upstream's XPU-first Auto branch:
+vector-incompatible features select Scalar; otherwise XPU is attempted with
+unsupported GPU features disallowed, falling back to Vector when necessary.
+GPU initialization/memory fallback remains inside MoonRay. Explicit modes retain
+upstream behavior and may warn about unsupported features. The status reflects
+logged mode selection and distinguishes GPU initialization from confirmed setup.
+
+The render panel includes a progress meter, elapsed time and estimated time
+remaining for the current pass. It parses only MoonRay's `Rendering [N%]` records,
+not utilization statistics. Preparation, denoising and display conversion use an
+indeterminate meter. Adaptive progress estimates can change or finish early;
+remaining time excludes later passes, denoising and output work. Animation timing
+is per frame, not a whole-sequence prediction. Completion freezes the elapsed time.
+
+Build preparation now also runs `tools/port_execution_mode.py`. Tests were
+requested as deferred scripts: `tools/check_execution_modes.py <runtime>` renders
+small Auto, Vector and Scalar cases; `tools/check_render_progress.py` covers log
+chunking, utilization rejection, timing estimates and logged fallback ordering.
+These checks and Modo UI checks have not been run for this update.

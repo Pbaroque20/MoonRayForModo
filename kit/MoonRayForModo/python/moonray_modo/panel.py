@@ -77,9 +77,10 @@ class Panel(QtWidgets.QWidget):
             self.region_controls.append(spin)
             controls.addRow(label,spin)
         self.execution_mode=QtWidgets.QComboBox()
+        self.execution_mode.addItem('Auto (XPU → Vector → Scalar)', 'auto')
         self.execution_mode.addItem('XPU (NVIDIA GPU + CPU)', 'xpu')
-        self.execution_mode.addItem('CPU (AVX)', 'vectorized')
-        self.execution_mode.addItem('CPU (scalar)', 'scalar')
+        self.execution_mode.addItem('Vector (CPU / AVX)', 'vectorized')
+        self.execution_mode.addItem('Scalar (CPU)', 'scalar')
         self.pages['system'].addRow('Rendering mode', self.execution_mode)
         self.pages['system'].addRow('CPU threads', self.threads)
         self.timeout = QtWidgets.QSpinBox()
@@ -247,6 +248,12 @@ class Panel(QtWidgets.QWidget):
         split.setStretchFactor(1, 1)
         split.setSizes([420, 580])
         layout.addWidget(split, 1)
+        self.render_progress=QtWidgets.QProgressBar()
+        self.render_progress.setRange(0,100);self.render_progress.setValue(0)
+        self.render_progress.setToolTip('MoonRay progress for the current pass. Adaptive sampling estimates can change; preparation and denoising have no reliable percentage.')
+        self.render_timing=QtWidgets.QLabel('Elapsed 0m 00s · Remaining: —')
+        layout.addWidget(self.render_progress);layout.addWidget(self.render_timing)
+        self.renderer.progress.connect(self._render_progress)
         self.status = QtWidgets.QLabel('Ready. Press Preview to render.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -526,6 +533,11 @@ class Panel(QtWidgets.QWidget):
             self.preview.load(path)
         except ValueError as exc:
             self._failed(str(exc))
+
+    def _render_progress(self,value,label):
+        self.render_progress.setRange(0,0 if value<0 else 100)
+        if value>=0: self.render_progress.setValue(value)
+        self.render_timing.setText(label)
 
     def _finished(self, output):
         message=('Saved ' + output) if output else ('Preview complete' + (' · Watching scene changes' if self.live.isChecked() else ''))

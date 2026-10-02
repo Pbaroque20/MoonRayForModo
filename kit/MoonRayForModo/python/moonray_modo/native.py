@@ -32,11 +32,11 @@ def environment(directory):
 
 
 def arguments(scene, output, threads=0, mode='vectorized'):
-    if mode not in ('scalar', 'vectorized', 'xpu'):
+    if mode not in ('scalar', 'vector', 'vectorized', 'xpu', 'auto'):
         raise ValueError('Unsupported execution mode')
     args = ['-in', str(Path(scene).resolve()), '-out', str(Path(output).resolve()),
             '-exec_mode', mode]
-    if mode=='xpu': args.append('-info')
+    args.append('-info')
     if int(threads) > 0:
         args += ['-threads', str(int(threads))]
     return args
@@ -77,4 +77,17 @@ def supports_xpu(directory):
 
 
 def default_execution_mode(directory):
-    return 'xpu' if supports_xpu(directory) else 'vectorized'
+    return 'auto'
+
+
+def execution_status(log):
+    """Read selection and fallback in log order; preparation is not GPU confirmation."""
+    result=None
+    for line in log.splitlines():
+        line=line.lower()
+        if 'executing a scalar render' in line: result='Scalar active (CPU)'
+        elif 'executing a vectorized render' in line: result='Vector active (CPU / AVX)'
+        elif 'executing an xpu render' in line: result='XPU initializing'
+        if 'gpu: setup complete' in line: result='XPU active (NVIDIA GPU + CPU)'
+        if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
+    return result
