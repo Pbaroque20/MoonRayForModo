@@ -26,6 +26,8 @@ class Renderer(QtCore.QObject):
         self.canceled = False
         self.closed = False
         self.log = ''
+        self.backend_status = 'CPU'
+        self.backend_log = ''
         self.phase = 'render'
         self.generation = 0
         self.timeout_seconds = 0
@@ -90,6 +92,10 @@ class Renderer(QtCore.QObject):
         scene = self.current_base.with_suffix('.rdla')
         self.image_path = self.current_base.with_suffix('.exr')
         self.phase = 'render'
+        self.backend_log = ''
+        self.gpu_error = False
+        mode=request['snapshot'].get('execution_mode','vectorized')
+        self.backend_status='XPU requested' if mode=='xpu' else 'CPU '+mode
         self.buffer_key = request['snapshot'].get('preview_buffer','beauty') if not request['output'] and not request.get('linear_preview') else 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
@@ -98,6 +104,8 @@ class Renderer(QtCore.QObject):
         else:
             snapshot.pop('preview_buffer_file',None)
         try:
+            if mode=='xpu' and not native.supports_xpu(request['runtime']):
+                raise ValueError('The selected runtime has no XPU GPU program/CUDA runtime. Choose the XPU runtime or CPU mode.')
             text = rdla.scene_text(snapshot, request['width'], request['height'],
                                    self.sample_grid, request['environment'],
                                    str(self.image_path) if request['output'] else None)
@@ -108,8 +116,8 @@ class Renderer(QtCore.QObject):
             self.process.setProcessEnvironment(env)
             self.process.setWorkingDirectory(self.directory.name)
             self.process.setProgram(str(request['runtime'] / 'moonray.exe'))
-            self.process.setArguments(native.arguments(scene, self.image_path, request['threads']))
-            self.status.emit('Rendering %d samples/pixel…' % (self.sample_grid ** 2))
+            self.process.setArguments(native.arguments(scene, self.image_path, request['threads'],mode))
+            self.status.emit('Rendering %d samples/pixel · %s…' % (self.sample_grid ** 2,self.backend_status))
             self.process.start()
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -117,6 +125,16 @@ class Renderer(QtCore.QObject):
     def _read(self):
         text = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
         self.log = (self.log + text)[-65536:]
+        if self.phase=='render':
+            self.backend_log=(self.backend_log+text)[-16384:]
+            if any(term in self.backend_log for term in ('optixLaunch() failure','cudaStreamSynchronize() error')):
+                self.gpu_error=True
+            if 'falling back to CPU' in self.backend_log:
+                self.backend_status='CPU fallback — see Render Log'
+            elif 'GPU: Setup complete' in self.backend_log:
+                self.backend_status='XPU active (NVIDIA GPU + CPU)'
+            if any(word in text for word in ('GPU:', 'falling back')):
+                self.status.emit('Rendering · '+self.backend_status)
 
     def _error(self, error):
         if self.closed or self.canceled:
@@ -139,6 +157,9 @@ class Renderer(QtCore.QObject):
                 message = ('MoonRay used an unsupported CPU instruction. This Windows runtime needs '
                            'a CPU-compatible rebuild. No render was produced.')
             self.failed.emit(message)
+            return
+        if self.phase=='render' and self.gpu_error:
+            self.failed.emit('GPU execution failed. Open Render Log for details or select CPU (AVX).')
             return
         if self.phase=='render' and not self.active['output'] and not self.active.get('linear_preview'):
             if not self.buffer_path.is_file() or self.buffer_path.stat().st_size<16:

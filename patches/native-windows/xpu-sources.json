@@ -1,0 +1,28 @@
+{
+  "manifest": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.1.json",
+  "components": {
+    "cuda_cudart": {
+      "relative_path": "cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-12.8.90-archive.zip",
+      "sha256": "4a39058fd8519444a81cfc7ae055d136f48d1a31ffa41ae255b35b2edd61e13b",
+      "md5": "3c6b722964b7ace39231d86c40eb3255",
+      "size": "3037735"
+    },
+    "cuda_nvrtc": {
+      "relative_path": "cuda_nvrtc/windows-x86_64/cuda_nvrtc-windows-x86_64-12.8.93-archive.zip",
+      "sha256": "a63302a077f0248a743a1a7caa7dbd80d0fac56c6cfa9c41fa05fac9b7e5eda5",
+      "md5": "fd35d3ea8bd150c1ed2582efc4f96418",
+      "size": "305588898"
+    },
+    "cuda_nvcc": {
+      "relative_path": "cuda_nvcc/windows-x86_64/cuda_nvcc-windows-x86_64-12.8.93-archive.zip",
+      "sha256": "9fdc70b4271ed9aad4d64cd7076a7d96ec36512d074b9995fe638de669197391",
+      "md5": "3b7e862d522f71027907cfe5ebdefbea",
+      "size": "120912792"
+    }
+  },
+  "optix": {
+    "url": "https://github.com/NVIDIA/optix-dev.git",
+    "tag": "v7.6.0",
+    "commit": "56ec8542c8c828ebc3c6b64edfc9fd232943870a"
+  }
+}

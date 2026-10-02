@@ -34,8 +34,11 @@ configure_args = [BIN / 'cmake.exe', '-S', ROOT / 'native-port', '-B', BUILD, '-
      '-DCMAKE_RC_FLAGS=--preprocessor=gcc --preprocessor-arg=-E --preprocessor-arg=-xc --preprocessor-arg=-DRC_INVOKED',
      '-DBUILD_SCENE_RDL2=' + ('ON' if scene else 'OFF'),
      '-DBUILD_MOONRAY=' + ('ON' if renderer else 'OFF'),
+     '-DMOONRAY_WINDOWS_XPU=' + ('ON' if '--xpu' in sys.argv else 'OFF'),
      '-DCMAKE_POLICY_VERSION_MINIMUM=3.5']
-if '--build-only' not in sys.argv or not (BUILD / 'build.ninja').exists():
+cache=(BUILD/'CMakeCache.txt').read_text(encoding='utf-8') if (BUILD/'CMakeCache.txt').is_file() else ''
+xpu_matches=('MOONRAY_WINDOWS_XPU:BOOL=ON' in cache)==('--xpu' in sys.argv)
+if '--build-only' not in sys.argv or not (BUILD / 'build.ninja').exists() or not xpu_matches:
     run(configure_args, 'configure')
 targets = ['moonray_avx_probe', 'moonray_ispc_mask_probe'] + (['rdl2_print', 'moonray_codec_probe', 'moonray_platform_probe'] if scene else [])
 if renderer:

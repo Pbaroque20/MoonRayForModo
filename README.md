@@ -294,3 +294,9 @@ and native material graphs. See [workflow and limitations](docs/MATERIAL_NODES.m
 MoonRay > About includes the supplied artwork, Raphael Tobar credit, plugin
 version, MIT plugin license and separate Apache 2.0 MoonRay attribution.
 These additions have deferred UI/render validation.
+
+### XPU (0.2.1 development)
+
+Native NVIDIA XPU builds are now available through the Windows port. Choose XPU,
+CPU AVX or CPU scalar in Runtime and CPU. XPU uses GPU ray intersections alongside
+CPU shading. See [build instructions and limitations](docs/XPU_WINDOWS.md).

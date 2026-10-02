@@ -21,6 +21,7 @@ def environment(directory):
     env = dict(os.environ)
     # MoonRay's two-stage EXR writer consults TMPDIR (not Windows TEMP).
     env['TMPDIR'] = tempfile.gettempdir()
+    env['REZ_MOONRAY_ROOT'] = str(directory.resolve())
     env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
     dsos = [directory / 'rdl2dso', directory.parent / 'rdl2dso', directory.parent / 'lib' / 'rdl2dso', directory]
     env['RDL2_DSO_PATH'] = os.pathsep.join(str(p) for p in dsos if p.is_dir())
@@ -35,6 +36,7 @@ def arguments(scene, output, threads=0, mode='vectorized'):
         raise ValueError('Unsupported execution mode')
     args = ['-in', str(Path(scene).resolve()), '-out', str(Path(output).resolve()),
             '-exec_mode', mode]
+    if mode=='xpu': args.append('-info')
     if int(threads) > 0:
         args += ['-threads', str(int(threads))]
     return args
@@ -67,3 +69,12 @@ def installation_id():
         return json.loads(path.read_text(encoding='utf-8')).get('installation_id','')
     except (OSError,ValueError,TypeError,AttributeError):
         return ''
+
+
+def supports_xpu(directory):
+    directory=Path(directory)
+    return (directory/'shaders/OptixGPUPrograms.ptx').is_file() and any(directory.glob('cudart64_*.dll'))
+
+
+def default_execution_mode(directory):
+    return 'xpu' if supports_xpu(directory) else 'vectorized'

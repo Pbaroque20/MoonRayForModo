@@ -76,6 +76,11 @@ class Panel(QtWidgets.QWidget):
             self.region_enabled.toggled.connect(spin.setEnabled)
             self.region_controls.append(spin)
             controls.addRow(label,spin)
+        self.execution_mode=QtWidgets.QComboBox()
+        self.execution_mode.addItem('XPU (NVIDIA GPU + CPU)', 'xpu')
+        self.execution_mode.addItem('CPU (AVX)', 'vectorized')
+        self.execution_mode.addItem('CPU (scalar)', 'scalar')
+        self.pages['system'].addRow('Rendering mode', self.execution_mode)
         self.pages['system'].addRow('CPU threads', self.threads)
         self.timeout = QtWidgets.QSpinBox()
         self.timeout.setRange(0,10080)
@@ -248,6 +253,7 @@ class Panel(QtWidgets.QWidget):
         self._object_signature = None
         self._load_settings()
         self.buffer.currentIndexChanged.connect(self._buffer_changed)
+        self.execution_mode.currentIndexChanged.connect(self._buffer_changed)
         self.display_timer=QtCore.QTimer(self)
         self.display_timer.setSingleShot(True)
         self.display_timer.setInterval(400)
@@ -270,6 +276,10 @@ class Panel(QtWidgets.QWidget):
         import modo
         self._scene_id = modo.Scene().renderItem.id
         values = properties.scene_settings()
+        mode=values.get('execution_mode',native.default_execution_mode(self.runtime.text()))
+        self.execution_mode.blockSignals(True)
+        self.execution_mode.setCurrentIndex(max(0,self.execution_mode.findData(mode)))
+        self.execution_mode.blockSignals(False)
         self.buffer.blockSignals(True)
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(values.get('preview_buffer','beauty'))))
         self.buffer.blockSignals(False)
@@ -310,6 +320,7 @@ class Panel(QtWidgets.QWidget):
                 'background': {key:control.currentData() if isinstance(control,QtWidgets.QComboBox) else control.value() if isinstance(control,QtWidgets.QDoubleSpinBox) else control.text().strip() for key,control in self.background_controls.items()},
                 'display': {key:control.currentData() if isinstance(control,QtWidgets.QComboBox) else control.value() if isinstance(control,QtWidgets.QDoubleSpinBox) else control.text().strip() for key,control in self.display_controls.items()},
                 'preview_buffer': self.buffer.currentData(),
+                'execution_mode': self.execution_mode.currentData(),
                 'aovs': [key for key, control in self.aov_controls.items() if control.isChecked()],
                 'samples': self.samples.value(), 'environment': self.environment.value(),
                 'threads': self.threads.value(), 'surface': self.surface.currentIndex(),
@@ -389,6 +400,7 @@ class Panel(QtWidgets.QWidget):
         scene['render_settings'] = values['render']
         scene['aovs'] = values['aovs']
         scene['preview_buffer'] = values['preview_buffer']
+        scene['execution_mode'] = values['execution_mode']
         from .display import values as display_values
         scene['display'] = display_values(values['display'])
         if values['region_enabled']:
@@ -483,7 +495,8 @@ class Panel(QtWidgets.QWidget):
             self._failed(str(exc))
 
     def _finished(self, output):
-        self.status.setText('Saved ' + output if output else 'Preview complete' + (' · Watching scene changes' if self.live.isChecked() else ''))
+        message=('Saved ' + output) if output else ('Preview complete' + (' · Watching scene changes' if self.live.isChecked() else ''))
+        self.status.setText(message+' · '+self.renderer.backend_status)
 
     def render_final(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Render OpenEXR', '', 'OpenEXR (*.exr)')

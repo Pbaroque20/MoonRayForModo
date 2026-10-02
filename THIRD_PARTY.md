@@ -33,3 +33,9 @@ MSYS2/UCRT64 compiler and library packages remain in `toolchain/msys64`, togethe
 with their installed license files under the relevant `share/licenses` directories.
 They are local development dependencies and are not included in the kit ZIP.
 The native source-port outputs are not a redistributable runtime bundle.
+
+XPU development uses official NVIDIA CUDA 12.8 components and OptiX 7.6 headers.
+Pinned archive checksums and the OptiX Git commit are in
+`patches/native-windows/xpu-sources.json`. NVIDIA licenses remain in their local
+component directories and staged XPU runtime `licenses` folder. They are not
+relicensed under MIT or Apache 2.0. No NVIDIA binaries are committed to this repo.
