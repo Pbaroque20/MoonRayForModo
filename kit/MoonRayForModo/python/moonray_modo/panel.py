@@ -33,7 +33,7 @@ class Panel(QtWidgets.QWidget):
         self.tabs = QtWidgets.QTabWidget()
         self.pages = {}
         for key, label in [('render', 'Render'), ('lighting', 'Lighting'), ('object', 'Objects'),
-                           ('aovs', 'AOVs'), ('system', 'System')]:
+                           ('aovs', 'AOVs'), ('display', 'Color / LUT'), ('system', 'System')]:
             page = QtWidgets.QWidget()
             form = QtWidgets.QFormLayout(page)
             self.pages[key] = form
@@ -90,6 +90,21 @@ class Panel(QtWidgets.QWidget):
         self.environment_multiplier.setRange(0,10000)
         self.environment_multiplier.setValue(1)
         self.pages['lighting'].addRow('Modo environment multiplier',self.environment_multiplier)
+        self.background_controls={}
+        self.background_controls['mode']=QtWidgets.QComboBox()
+        for title,key in [('Scene environment (lighting and background)','environment'),('Black background','black'),('Solid color','color'),('Environment image','image')]:
+            self.background_controls['mode'].addItem(title,key)
+        self.background_controls['color']=QtWidgets.QLineEdit('#000000')
+        self.background_controls['image']=QtWidgets.QLineEdit()
+        self.background_controls['intensity']=QtWidgets.QDoubleSpinBox()
+        self.background_controls['intensity'].setRange(0,10000);self.background_controls['intensity'].setValue(1)
+        self.background_controls['rotation']=QtWidgets.QDoubleSpinBox()
+        self.background_controls['rotation'].setRange(-360,360)
+        for key,label in [('mode','Camera background'),('color','Background color (#RRGGBB)'),('image','Background image (lat-long)'),('intensity','Background brightness'),('rotation','Background rotation (degrees)')]:
+            self.pages['lighting'].addRow(label,self.background_controls[key])
+        choose_background=QtWidgets.QPushButton('Choose background image...')
+        choose_background.clicked.connect(self._browse_background)
+        self.pages['lighting'].addRow(choose_background)
         self.light_multiplier = QtWidgets.QDoubleSpinBox()
         self.light_multiplier.setRange(0, 10000)
         self.light_multiplier.setValue(1)
@@ -134,7 +149,7 @@ class Panel(QtWidgets.QWidget):
         self.object_apply.clicked.connect(self._save_object)
         surface.addRow(self.object_apply)
         self.aov_controls = {}
-        aov_text = QtWidgets.QLabel('Beauty RGB is always written. Checked AOVs are additional channels in the same 32-bit linear EXR. Preview displays beauty.')
+        aov_text = QtWidgets.QLabel('Beauty RGB is always written. Checked AOVs are additional channels in the same 32-bit linear EXR. Choose the displayed buffer above the preview. EXR selections below control saved output.')
         aov_text.setWordWrap(True)
         self.pages['aovs'].addRow(aov_text)
         for key, (label, attributes, channel) in options.AOVS.items():
@@ -142,6 +157,28 @@ class Panel(QtWidgets.QWidget):
             checkbox.setChecked(key == 'alpha')
             self.aov_controls[key] = checkbox
             self.pages['aovs'].addRow(checkbox)
+        from .display import DEFAULTS
+        self.display_controls = {}
+        for key,label in [('view','Display transform'),('exposure','Exposure (stops)'),('lut','LUT file'),
+                          ('lut_space','LUT input'),('config','OCIO config (optional)'),
+                          ('source','OCIO linear source'),('display','OCIO display'),('ocio_view','OCIO view')]:
+            if key in ('view','lut_space'):
+                widget=QtWidgets.QComboBox()
+                choices=[('Highlight compression + sRGB','reinhard'),('sRGB','srgb'),('Raw linear','raw'),('OCIO display / view','ocio')] if key=='view' else [('After display transform','display'),('Scene-linear, before view','linear')]
+                for title,value in choices: widget.addItem(title,value)
+            elif key=='exposure':
+                widget=QtWidgets.QDoubleSpinBox();widget.setRange(-20,20);widget.setSingleStep(.25)
+            else:
+                widget=QtWidgets.QLineEdit(DEFAULTS[key])
+            self.display_controls[key]=widget
+            if key in ('lut','config'):
+                row=QtWidgets.QHBoxLayout();row.addWidget(widget)
+                button=QtWidgets.QPushButton('Browse...')
+                button.clicked.connect(lambda checked=False,k=key:self._browse_display(k))
+                row.addWidget(button);self.pages['display'].addRow(label,row)
+            else: self.pages['display'].addRow(label,widget)
+        note=QtWidgets.QLabel('Display controls affect Beauty and lighting buffers only. EXRs remain linear. Select a LUT matching its chosen input space. Depth, normals and other data buffers bypass the view transform.')
+        note.setWordWrap(True);self.pages['display'].addRow(note)
         lighting_note = QtWidgets.QLabel('Glass uses Modo Transparency Amount/Color, Refraction Index, Roughness and Transparency Roughness. Use closed meshes for solid glass. Start with IOR 1.5 and Transparency 100%; increase Glossy and Mirror/refraction bounces for multiple glass surfaces. UV images can drive transmission amount, color and roughness. Absorption distance uses a closed-volume model. Dispersion is not translated. New material features are unverified; see compatibility notices below.')
         lighting_note.setWordWrap(True)
         self.pages['lighting'].addRow(lighting_note)
@@ -169,6 +206,15 @@ class Panel(QtWidgets.QWidget):
         for widget in (self.start, stop, self.live, self.settings_toggle, self.final, export):
             actions.addWidget(widget)
         layout.addLayout(actions)
+        buffer_row = QtWidgets.QHBoxLayout()
+        buffer_row.addWidget(QtWidgets.QLabel('Render buffer'))
+        self.buffer = QtWidgets.QComboBox()
+        self.buffer.addItem('Beauty','beauty')
+        for key,(label,attributes,channel) in options.AOVS.items():
+            self.buffer.addItem(label,key)
+        self.buffer.setToolTip('Selecting a buffer starts a new preview. Normals map -1..1 to RGB; depth and position use logarithmic display compression. Saved EXR values are unchanged.')
+        buffer_row.addWidget(self.buffer,1)
+        layout.addLayout(buffer_row)
         self.preview = Preview()
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         split.addWidget(self.tabs)
@@ -201,6 +247,14 @@ class Panel(QtWidgets.QWidget):
         self._scene_id = None
         self._object_signature = None
         self._load_settings()
+        self.buffer.currentIndexChanged.connect(self._buffer_changed)
+        self.display_timer=QtCore.QTimer(self)
+        self.display_timer.setSingleShot(True)
+        self.display_timer.setInterval(400)
+        self.display_timer.timeout.connect(lambda:self._buffer_changed(0))
+        for control in list(self.display_controls.values())+list(self.background_controls.values()):
+            signal=control.currentIndexChanged if isinstance(control,QtWidgets.QComboBox) else control.valueChanged if isinstance(control,QtWidgets.QDoubleSpinBox) else control.editingFinished
+            signal.connect(lambda *args:self.display_timer.start())
         self.selection_timer = QtCore.QTimer(self)
         self.selection_timer.setInterval(750)
         self.selection_timer.timeout.connect(self._refresh_object)
@@ -216,6 +270,24 @@ class Panel(QtWidgets.QWidget):
         import modo
         self._scene_id = modo.Scene().renderItem.id
         values = properties.scene_settings()
+        self.buffer.blockSignals(True)
+        self.buffer.setCurrentIndex(max(0,self.buffer.findData(values.get('preview_buffer','beauty'))))
+        self.buffer.blockSignals(False)
+        from .display import values as display_values
+        for key,value in display_values(values.get('display',{})).items():
+            control=self.display_controls[key];control.blockSignals(True)
+            if isinstance(control,QtWidgets.QComboBox): control.setCurrentIndex(max(0,control.findData(value)))
+            elif isinstance(control,QtWidgets.QDoubleSpinBox): control.setValue(value)
+            else: control.setText(value)
+            control.blockSignals(False)
+        from .background import DEFAULTS as background_defaults
+        for key,value in dict(background_defaults,**values.get('background',{})).items():
+            if key not in self.background_controls: continue
+            control=self.background_controls[key];control.blockSignals(True)
+            if isinstance(control,QtWidgets.QComboBox): control.setCurrentIndex(max(0,control.findData(value)))
+            elif isinstance(control,QtWidgets.QDoubleSpinBox): control.setValue(value)
+            else: control.setText(value)
+            control.blockSignals(False)
         for key, value in options.render_values(values.get('render', {})).items():
             control = self.render_controls[key]
             control.setCurrentIndex(value) if isinstance(control, QtWidgets.QComboBox) else control.setValue(value)
@@ -235,6 +307,9 @@ class Panel(QtWidgets.QWidget):
     def _settings_values(self):
         return {'render': {key: control.currentIndex() if isinstance(control, QtWidgets.QComboBox) else control.value()
                            for key, control in self.render_controls.items()},
+                'background': {key:control.currentData() if isinstance(control,QtWidgets.QComboBox) else control.value() if isinstance(control,QtWidgets.QDoubleSpinBox) else control.text().strip() for key,control in self.background_controls.items()},
+                'display': {key:control.currentData() if isinstance(control,QtWidgets.QComboBox) else control.value() if isinstance(control,QtWidgets.QDoubleSpinBox) else control.text().strip() for key,control in self.display_controls.items()},
+                'preview_buffer': self.buffer.currentData(),
                 'aovs': [key for key, control in self.aov_controls.items() if control.isChecked()],
                 'samples': self.samples.value(), 'environment': self.environment.value(),
                 'threads': self.threads.value(), 'surface': self.surface.currentIndex(),
@@ -278,6 +353,20 @@ class Panel(QtWidgets.QWidget):
         except Exception as exc:
             self.status.setText('Cannot update object properties: ' + str(exc))
 
+    def _browse_background(self):
+        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Background environment image','','Images (*.exr *.hdr *.tx *.png *.jpg *.jpeg *.tif *.tiff);;All files (*)')
+        if path:
+            self.background_controls['image'].setText(path)
+            self.background_controls['mode'].setCurrentIndex(self.background_controls['mode'].findData('image'))
+            self.display_timer.start()
+
+    def _browse_display(self, key):
+        filters='LUT files (*.cube *.spi1d *.spi3d *.3dl *.clf *.ctf);;All files (*)' if key=='lut' else 'OCIO config (*.ocio);;All files (*)'
+        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Select '+key,'',filters)
+        if path:
+            self.display_controls[key].setText(path)
+            self.display_timer.start()
+
     def _browse(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Choose native Windows MoonRay runtime', self.runtime.text())
         if path:
@@ -299,12 +388,17 @@ class Panel(QtWidgets.QWidget):
         values = self._settings_values()
         scene['render_settings'] = values['render']
         scene['aovs'] = values['aovs']
+        scene['preview_buffer'] = values['preview_buffer']
+        from .display import values as display_values
+        scene['display'] = display_values(values['display'])
         if values['region_enabled']:
             scene['region'] = values['region']
         if not self.modo_environment.isChecked():
             scene['environments']=[]
         for environment in scene.get('environments',[]):
             environment['intensity'] *= self.environment_multiplier.value()
+        from .background import apply as apply_background
+        apply_background(scene,values['background'])
         for light in scene['lights']:
             light['intensity'] *= self.light_multiplier.value()
         for mesh in scene['meshes']:
@@ -333,6 +427,17 @@ class Panel(QtWidgets.QWidget):
             digest.update(chunk.encode('utf-8'))
         return digest.hexdigest()
 
+    def _buffer_changed(self, index):
+        if self.disposed: return
+        if (self.sequence is not None and self.sequence.running) or (
+                self.renderer.active and self.renderer.active.get('output') and
+                self.renderer.process.state()!=QtCore.QProcess.NotRunning):
+            self.status.setText('Buffer selected. It will display on the next preview after the output render finishes.')
+            return
+        self.preview.image = QtGui.QImage()
+        self.preview.update()
+        self.render_once()
+
     def render_once(self):
         if self.sequence is not None and self.sequence.running:
             self.sequence.stop()
@@ -360,6 +465,7 @@ class Panel(QtWidgets.QWidget):
             self._failed(str(exc))
 
     def stop(self):
+        self.display_timer.stop()
         if self.sequence is not None:
             self.sequence.stop()
         self.live.setChecked(False)
@@ -426,6 +532,7 @@ class Panel(QtWidgets.QWidget):
     def dispose(self):
         if not self.disposed:
             self.disposed = True
+            self.display_timer.stop()
             self.timer.stop()
             self.selection_timer.stop()
             if self.sequence is not None:

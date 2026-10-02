@@ -359,6 +359,9 @@ def snapshot(evaluated_geometry=False):
                  'cone': min(179.0, max(.01, math.degrees(float(channel(item, 'cone', math.pi / 4))))),
                  'soft_edge': max(0.0, math.degrees(float(channel(item, 'edge', 0)))),
                  'width': float(channel(item, 'width', 1)), 'height': float(channel(item, 'height', 1))}
+        if item.type == 'sunLight' and channel(item,'sunPos',False):
+            from .sun import matrix as sun_matrix
+            light['matrix']=sun_matrix(item)
         if item.type == 'spotLight':
             # Modo emits along local +Z; MoonRay's authored spot emits along -Z.
             # Precompose a local X half-turn, keeping the world position intact.

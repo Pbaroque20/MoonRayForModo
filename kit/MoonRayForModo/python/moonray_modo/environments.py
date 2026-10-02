@@ -49,15 +49,18 @@ def collect(scene, warnings):
                     if kind=='physical':
                         from . import properties
                         sun_id = properties.read(environment).get('sun_item')
-                        suns = [scene.item(sun_id)] if sun_id else list(scene.items('sunLight',superType=False))
+                        linked=[item for item in layer.itemGraph('shadeLoc').forward() if item.type=='sunLight']
+                        suns = [scene.item(sun_id)] if sun_id else linked or list(scene.items('sunLight',superType=False))
                         if len(suns)!=1:
                             raise ValueError('physical sky requires one Sun Light or an explicit MoonRay sun_item setting')
                         sun = suns[0]
-                        transform = world_matrix(sun)
-                        entry.update(sun_direction=[-v for v in transform[8:11]],
+                        from .sun import direction as sun_direction
+                        entry.update(sun_direction=sun_direction(sun),
+                                     normalize=bool(channel(layer,'normalize',False)),
+                                     sky_gamma=max(.01,float(channel(layer,'clampedGamma',1))),
                                      haze=float(channel(sun,'haze',1)),
                                      ground_albedo=rgb(channel(layer,'albedo',.2),'Physical sky ground albedo'))
-                        warnings.append('Physical daylight uses a single-scattering approximation; Modo sky brightness, ozone and solar-disc parity remain unverified: '+layer.name)
+                        warnings.append('Physical daylight uses a single-scattering approximation; sun angles, linked Sun Light, haze, ground albedo and sky clamp/gamma are translated; ozone and solar-disc parity remain unverified: '+layer.name)
                     if channel(layer,'fogType','none') != 'none':
                         warnings.append('Environment fog is not translated: '+layer.name)
                 elif layer.type == 'imageMap':

@@ -26,6 +26,7 @@ class Renderer(QtCore.QObject):
         self.canceled = False
         self.closed = False
         self.log = ''
+        self.phase = 'render'
         self.generation = 0
         self.timeout_seconds = 0
         self.watchdog = QtCore.QTimer(self)
@@ -87,9 +88,17 @@ class Renderer(QtCore.QObject):
         self.sample_grid = self.passes.pop(0)
         self.current_base = Path(self.directory.name) / uuid.uuid4().hex
         scene = self.current_base.with_suffix('.rdla')
-        self.image_path = self.current_base.with_suffix('.exr' if request['output'] or request.get('linear_preview') else '.png')
+        self.image_path = self.current_base.with_suffix('.exr')
+        self.phase = 'render'
+        self.buffer_key = request['snapshot'].get('preview_buffer','beauty') if not request['output'] and not request.get('linear_preview') else 'beauty'
+        self.buffer_path = self.current_base.with_suffix('.buffer.exr')
+        snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
+        if not request['output'] and not request.get('linear_preview'):
+            snapshot['preview_buffer_file']=str(self.buffer_path)
+        else:
+            snapshot.pop('preview_buffer_file',None)
         try:
-            text = rdla.scene_text(request['snapshot'], request['width'], request['height'],
+            text = rdla.scene_text(snapshot, request['width'], request['height'],
                                    self.sample_grid, request['environment'],
                                    str(self.image_path) if request['output'] else None)
             scene.write_text(text, encoding='utf-8')
@@ -125,11 +134,32 @@ class Renderer(QtCore.QObject):
             return
         if code != 0 or exit_status != QtCore.QProcess.NormalExit:
             status = code & 0xffffffff
-            message = 'MoonRay failed (0x%08X). Open Render Log for details.' % status
+            message = ('Buffer conversion' if self.phase=='convert' else 'MoonRay') + ' failed (0x%08X). Open Render Log for details.' % status
             if status == 0xC000001D:
                 message = ('MoonRay used an unsupported CPU instruction. This Windows runtime needs '
                            'a CPU-compatible rebuild. No render was produced.')
             self.failed.emit(message)
+            return
+        if self.phase=='render' and not self.active['output'] and not self.active.get('linear_preview'):
+            if not self.buffer_path.is_file() or self.buffer_path.stat().st_size<16:
+                self.failed.emit('MoonRay did not produce the selected render buffer.')
+                return
+            from .buffers import conversion
+            converter=self.active['runtime']/'oiiotool.exe'
+            if not converter.is_file():
+                self.failed.emit('Render-buffer preview requires oiiotool.exe in the selected runtime.')
+                return
+            self.phase='convert'
+            self.image_path=self.current_base.with_suffix('.buffer.png')
+            self.process.setProgram(str(converter))
+            try:
+                arguments=conversion(self.buffer_key,self.buffer_path,self.image_path,self.active['snapshot'].get('display',{}))
+            except ValueError as exc:
+                self.failed.emit(str(exc))
+                return
+            self.process.setArguments(arguments)
+            self.status.emit('Updating render-buffer preview...')
+            self.process.start()
             return
         if not self.image_path.is_file() or self.image_path.stat().st_size < 16:
             self.failed.emit('MoonRay exited without a valid output image. Open Render Log for details.')

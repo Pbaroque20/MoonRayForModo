@@ -62,7 +62,7 @@ def texture(environment, width=512, height=256):
     from .daylight import color as daylight_color
     if any(layer['kind']=='physical' for layer in environment['layers']):
         width,height = 256,128
-    digest = hashlib.sha256(('stack-v2|%dx%d|'%(width,height)+json.dumps(environment,sort_keys=True)).encode()).hexdigest()
+    digest = hashlib.sha256(('stack-v3|%dx%d|'%(width,height)+json.dumps(environment,sort_keys=True)).encode()).hexdigest()
     folder = Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')
@@ -98,6 +98,8 @@ def texture(environment, width=512, height=256):
                                 for dx,dy,weight in ((0,0,(1-tx)*(1-ty)),(1,0,tx*(1-ty)),(0,1,(1-tx)*ty),(1,1,tx*ty)):
                                     index = (max(0,min(height-1,iy+dy))*width+(ix+dx)%width)*3
                                     foreground = [c+pixels[index+k]*weight for k,c in enumerate(foreground)]
+                            if layer['kind']=='physical' and layer.get('normalize'):
+                                foreground=[min(1,max(0,c))**(1/layer.get('sky_gamma',1)) for c in foreground]
                             if layer.get('invert'): foreground = [1-c for c in foreground]
                             color = blend(color,foreground,layer.get('blend','normal'),layer.get('opacity',1))
                         out.write(struct.pack('<3f',*color))
