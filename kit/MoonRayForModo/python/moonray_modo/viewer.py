@@ -3,6 +3,7 @@ from PySide2 import QtCore, QtGui, QtWidgets
 
 
 class Preview(QtWidgets.QOpenGLWidget):
+    start_requested=QtCore.Signal()
     def __init__(self, parent=None):
         super().__init__(parent)
         self.image = QtGui.QImage()
@@ -11,7 +12,7 @@ class Preview(QtWidgets.QOpenGLWidget):
         self._drag = None
         self.setMinimumSize(256, 192)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        self.setToolTip('Wheel: zoom. Drag: pan. Double-click: fit image.')
+        self.setToolTip('Click empty preview to render. Wheel: zoom. Middle drag: pan. Double-click: fit image.')
 
     def load(self, path):
         image = QtGui.QImage(str(path))
@@ -30,6 +31,11 @@ class Preview(QtWidgets.QOpenGLWidget):
         self.pan = QtCore.QPointF()
         self.update()
 
+    def actual_size(self):
+        if not self.image.isNull():
+            scale=min(self.width()/self.image.width(),self.height()/self.image.height())
+            if scale>0:self.zoom=1./scale;self.pan=QtCore.QPointF();self.update()
+
     def image_rect(self):
         if self.image.isNull():
             return QtCore.QRectF()
@@ -46,7 +52,7 @@ class Preview(QtWidgets.QOpenGLWidget):
             painter.fillRect(self.rect(), QtGui.QColor('#191b20'))
             if self.image.isNull():
                 painter.setPen(QtGui.QColor('#b9bec9'))
-                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, 'Start Preview to render the scene.')
+                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, 'Click here to render the scene.')
             else:
                 painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
                 painter.drawImage(self.image_rect(), self.image)
@@ -64,6 +70,8 @@ class Preview(QtWidgets.QOpenGLWidget):
         event.accept()
 
     def mousePressEvent(self, event):
+        if self.image.isNull() and event.button()==QtCore.Qt.LeftButton:
+            self.start_requested.emit();event.accept();return
         if event.button() in (QtCore.Qt.LeftButton, QtCore.Qt.MiddleButton):
             self._drag = event.pos()
             self.setCursor(QtCore.Qt.ClosedHandCursor)

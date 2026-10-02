@@ -438,3 +438,38 @@ upper textures composite last. Material boundaries, nested groups and evaluated
 material assignment use the same traversal. The deferred regression script is
 `tools/check_shader_order.py`; confirmation against Modo's displayed tree and a
 render of the affected scene remains pending.
+
+
+### Material editor usability (0.2.7 development)
+
+Reviewed the supplied Octane for Modo manual's setup/viewport controls (pp. 25–37),
+node creation/properties (pp. 33–34), NodeGraph workflow (pp. 62–63), material
+workflow and image controls. The design lessons applied here are adjacent graph
+and property editing, compatible connection feedback, auto-connect, and consistent
+viewport navigation. This does not import Octane implementation code or expand
+MoonRay's supported shader/MaterialX definition set.
+
+MoonShine and MaterialX Override editors now support drag-and-drop wires in either
+direction, green/red compatibility feedback, cancellation without removing the
+old connection, right-click disconnection, wheel zoom, middle-button pan, Frame
+All (F), and dialog-local undo/redo. Search node types from the editable creation
+menu. Select an input socket and enable Auto-connect to connect a newly created
+node; incompatible additions are rejected without modifying the graph. Connected
+ports stay visible; Show all inputs exposes the remaining sockets. Node positions
+remain part of the saved graph. Save commits the draft; Cancel leaves it unchanged.
+
+Properties use numeric controls, boolean/enum menus, vector/color editors and
+plain string editing on double-click. Browse Image sets an image node's file.
+Reset Input restores a base default or removes the selected layer's override.
+The property filter and connected-value highlighting make large shader schemas
+more navigable. Complex unsupported value types retain the existing text editor.
+
+Render settings tabs now scroll at smaller window sizes. Clicking an empty
+preview starts a render; Fit and 100% give explicit image scale controls.
+
+Deferred check: run `tools/check_node_editor_interaction.py` within Modo 16.1v9.
+It creates a temporary graph dialog, exercises dragging/undo/disconnect, and
+closes without saving an item. Syntax was checked, but Qt interaction and visual
+checks were not run for this update. Full Modo schematic integration, editable
+shared node groups, previews inside each node and incremental material updates
+remain future work; this is still the plugin's Qt graph editor.
