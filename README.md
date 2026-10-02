@@ -473,3 +473,25 @@ closes without saving an item. Syntax was checked, but Qt interaction and visual
 checks were not run for this update. Full Modo schematic integration, editable
 shared node groups, previews inside each node and incremental material updates
 remain future work; this is still the plugin's Qt graph editor.
+
+
+### Render workflow polish (0.2.8 development)
+
+Refresh preview keeps the last image visible until the replacement arrives.
+Lock preview holds automatic scene, AOV and display updates while allowing the
+current render to finish. Manual Refresh remains available; unlock with Live
+updates enabled to apply held changes automatically. Final EXR and animation
+renders reject preview restarts or competing output requests until stopped.
+
+The displayed image has an AOV, dimensions and execution-mode caption. Scene
+translation notices are de-duplicated in a collapsible, selectable text panel.
+Copy Image copies the displayed image (including its display transform); use
+Render EXR for linear output. Saving PNG uses an explicit default extension.
+
+The render log supports search, copy, save and following live output. Searching
+pauses following so new output does not reset the selection. Panel tab, splitter
+position and settings visibility persist between sessions. Preview lock is
+session-only.
+
+No automated or interactive tests were run for this update, at user request.
+These are workflow improvements, not additional scene translation coverage.

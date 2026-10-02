@@ -216,12 +216,16 @@ class Panel(QtWidgets.QWidget):
         animation.clicked.connect(self.render_animation)
         controls.addRow(animation)
         actions = QtWidgets.QHBoxLayout()
-        self.start = QtWidgets.QPushButton('Preview')
+        self.start = QtWidgets.QPushButton('Refresh preview')
+        self.start.setToolTip('Capture the current scene and start a fresh preview. The previous image stays visible until its replacement is ready.')
         self.start.clicked.connect(self.render_once)
         stop = QtWidgets.QPushButton('Stop')
         stop.clicked.connect(self.stop)
         self.live = QtWidgets.QCheckBox('Live updates')
         self.live.toggled.connect(self._toggle_live)
+        self.preview_lock=QtWidgets.QCheckBox('Lock preview')
+        self.preview_lock.setToolTip('Keep the current render running. Hold automatic scene, buffer and display changes until unlocked. Refresh preview still starts a new preview explicitly.')
+        self.preview_lock.toggled.connect(self._lock_changed)
         self.final = QtWidgets.QPushButton('Render EXR…')
         self.final.clicked.connect(self.render_final)
         export = QtWidgets.QPushButton('Export scene…')
@@ -230,7 +234,7 @@ class Panel(QtWidgets.QWidget):
         self.settings_toggle.setCheckable(True)
         self.settings_toggle.setChecked(True)
         self.settings_toggle.toggled.connect(self.tabs.setVisible)
-        for widget in (self.start, stop, self.live, self.settings_toggle, self.final, export):
+        for widget in (self.start, stop, self.live, self.preview_lock, self.settings_toggle, self.final, export):
             actions.addWidget(widget)
         layout.addLayout(actions)
         buffer_row = QtWidgets.QHBoxLayout()
@@ -245,6 +249,7 @@ class Panel(QtWidgets.QWidget):
         self.preview = Preview()
         self.preview.start_requested.connect(self.render_once)
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter=split
         split.addWidget(self.tabs)
         split.addWidget(self.preview)
         split.setStretchFactor(1, 1)
@@ -256,12 +261,16 @@ class Panel(QtWidgets.QWidget):
         self.render_timing=QtWidgets.QLabel('Elapsed 0m 00s · Remaining: —')
         layout.addWidget(self.render_progress);layout.addWidget(self.render_timing)
         self.renderer.progress.connect(self._render_progress)
-        self.status = QtWidgets.QLabel('Ready. Press Preview to render.')
+        self.status = QtWidgets.QLabel('Ready. Click the preview or choose Refresh preview.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.warnings = QtWidgets.QLabel('Scene compatibility notices appear here after export.')
-        self.warnings.setWordWrap(True)
-        layout.addWidget(self.warnings)
+        self.image_info=QtWidgets.QLabel('No rendered image yet')
+        layout.addWidget(self.image_info)
+        self.notice_toggle=QtWidgets.QToolButton();self.notice_toggle.setText('Scene notices (0)');self.notice_toggle.setCheckable(True);self.notice_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon);self.notice_toggle.setArrowType(QtCore.Qt.RightArrow)
+        layout.addWidget(self.notice_toggle)
+        self.warnings=QtWidgets.QPlainTextEdit();self.warnings.setReadOnly(True);self.warnings.setMaximumHeight(150);self.warnings.hide()
+        self.warnings.setPlaceholderText('Scene compatibility notices appear after capture. No notices does not guarantee full scene parity.')
+        self.notice_toggle.toggled.connect(self._toggle_notices);layout.addWidget(self.warnings)
         footer = QtWidgets.QHBoxLayout()
         save = QtWidgets.QPushButton('Save preview…')
         save.clicked.connect(self.save_preview)
@@ -272,6 +281,7 @@ class Panel(QtWidgets.QWidget):
         footer.addWidget(fit)
         actual=QtWidgets.QPushButton('100%');actual.setToolTip('Show one rendered pixel per screen pixel');actual.clicked.connect(self.preview.actual_size);footer.addWidget(actual)
         footer.addWidget(save)
+        copy_image=QtWidgets.QPushButton('Copy image');copy_image.clicked.connect(self.copy_image);footer.addWidget(copy_image)
         footer.addWidget(log)
         footer.addStretch()
         layout.addLayout(footer)
@@ -296,6 +306,47 @@ class Panel(QtWidgets.QWidget):
         self.selection_timer.timeout.connect(self._refresh_object)
         self.selection_timer.start()
         self._refresh_object()
+        stored_split=self.settings.value('workspace/splitter')
+        if isinstance(stored_split,QtCore.QByteArray):self.splitter.restoreState(stored_split)
+        try:self.tabs.setCurrentIndex(max(0,min(self.tabs.count()-1,int(self.settings.value('workspace/tab',0)))))
+        except (ValueError,TypeError):pass
+        self.settings_toggle.setChecked(str(self.settings.value('workspace/settings_visible','true')).lower()!='false')
+        self.splitter.splitterMoved.connect(self._store_workspace)
+        self.tabs.currentChanged.connect(self._store_workspace)
+        self.settings_toggle.toggled.connect(self._store_workspace)
+
+    def _store_workspace(self,*args):
+        self.settings.setValue('workspace/splitter',self.splitter.saveState())
+        self.settings.setValue('workspace/tab',self.tabs.currentIndex())
+        self.settings.setValue('workspace/settings_visible',self.settings_toggle.isChecked())
+
+    def _toggle_notices(self,visible):
+        self.warnings.setVisible(visible)
+        self.notice_toggle.setArrowType(QtCore.Qt.DownArrow if visible else QtCore.Qt.RightArrow)
+
+    def _set_notices(self,messages):
+        unique=list(dict.fromkeys(str(message) for message in messages if message))
+        text='\n\n'.join(unique)
+        if text!=self.warnings.toPlainText():self.warnings.setPlainText(text)
+        self.notice_toggle.setText('Scene notices (%d)'%len(unique))
+        self.notice_toggle.setToolTip('Expand to read or copy scene translation notices')
+
+    def _output_busy(self):
+        return (self.sequence is not None and self.sequence.running) or bool(self.renderer.active and self.renderer.active.get('output') and self.renderer.process.state()!=QtCore.QProcess.NotRunning)
+
+    def _lock_changed(self,locked):
+        if locked:
+            self.timer.stop()
+            if hasattr(self,'display_timer'):self.display_timer.stop()
+            self.status.setText('Preview locked. Automatic updates are held; the current render continues.')
+        else:
+            self.status.setText('Preview unlocked. Refresh to apply changes, or enable Live updates.')
+            if self.live.isChecked():self.timer.start();self._live_tick()
+
+    def copy_image(self):
+        if self.preview.image.isNull():self.status.setText('Render a preview first.');return
+        QtWidgets.QApplication.clipboard().setImage(self.preview.image)
+        self.status.setText('Displayed image copied. Use Render EXR for linear output.')
 
     def show_page(self, page):
         if page in self.pages:
@@ -464,7 +515,7 @@ class Panel(QtWidgets.QWidget):
             mesh['subdivision_level'] = self.subdivision_level.value()
         if self.surface.currentIndex() == 1:
             scene['warnings'].append('Smooth subdivision rounds all exported meshes, including sharp edges.')
-        self.warnings.setText('\n'.join(scene['warnings']) or 'Scene captured. Basic material translation is approximate.')
+        self._set_notices(scene['warnings'])
         return scene
 
     def _submit(self, scene, output=None):
@@ -484,24 +535,26 @@ class Panel(QtWidgets.QWidget):
 
     def _buffer_changed(self, index):
         if self.disposed: return
+        if self.preview_lock.isChecked():
+            self.status.setText('Preview locked. Selection saved for the next refresh.');return
         if (self.sequence is not None and self.sequence.running) or (
                 self.renderer.active and self.renderer.active.get('output') and
                 self.renderer.process.state()!=QtCore.QProcess.NotRunning):
             self.status.setText('Buffer selected. It will display on the next preview after the output render finishes.')
             return
-        self.preview.image = QtGui.QImage()
-        self.preview.update()
         self.render_once()
 
     def render_once(self):
-        if self.sequence is not None and self.sequence.running:
-            self.sequence.stop()
+        if self._output_busy():
+            self.status.setText('Output render is running. Press Stop before starting a preview.');return
         try:
             self._submit(self._capture())
         except Exception as exc:
             self._failed(str(exc))
 
     def _toggle_live(self, on):
+        if on and self.preview_lock.isChecked():
+            self.status.setText('Live updates will resume when the preview is unlocked.');return
         if on:
             self.render_once()
             if self.live.isChecked():
@@ -510,7 +563,7 @@ class Panel(QtWidgets.QWidget):
             self.timer.stop()
 
     def _live_tick(self):
-        if self.disposed or (self.sequence is not None and self.sequence.running):
+        if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         try:
             scene = self._capture()
@@ -534,6 +587,9 @@ class Panel(QtWidgets.QWidget):
     def _image(self, path):
         try:
             self.preview.load(path)
+            active=self.renderer.active or {};snapshot=active.get('snapshot',{})
+            key=snapshot.get('preview_buffer','beauty');label='Beauty' if key=='beauty' else options.AOVS.get(key,(key,))[0]
+            self.image_info.setText('Showing %s · %d × %d · %s'%(label,self.preview.image.width(),self.preview.image.height(),self.renderer.backend_status))
         except ValueError as exc:
             self._failed(str(exc))
 
@@ -547,6 +603,7 @@ class Panel(QtWidgets.QWidget):
         self.status.setText(message+' · '+self.renderer.backend_status)
 
     def render_final(self):
+        if self._output_busy():self.status.setText('An output render is running. Press Stop before starting another.');return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Render OpenEXR', '', 'OpenEXR (*.exr)')
         if not path:
             return
@@ -576,22 +633,46 @@ class Panel(QtWidgets.QWidget):
         if self.preview.image.isNull():
             self.status.setText('Render a preview first.')
             return
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save preview', '', 'PNG image (*.png)')
-        if path and not self.preview.image.save(path, 'PNG'):
-            self.status.setText('Could not save the preview image.')
+        dialog=QtWidgets.QFileDialog(self,'Save preview')
+        dialog.setAcceptMode(QtWidgets.QFileDialog.AcceptSave)
+        dialog.setNameFilter('PNG image (*.png)')
+        dialog.setDefaultSuffix('png')
+        if dialog.exec_():
+            path=dialog.selectedFiles()[0]
+            self.status.setText('Saved '+path if self.preview.image.save(path,'PNG') else 'Could not save the preview image.')
 
     def show_log(self):
-        dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle('MoonRay render log')
-        dialog.resize(760, 460)
-        layout = QtWidgets.QVBoxLayout(dialog)
-        text = QtWidgets.QPlainTextEdit(self.renderer.log or 'No renderer output yet.')
-        text.setReadOnly(True)
-        layout.addWidget(text)
-        dialog.exec_()
+        dialog = QtWidgets.QDialog(self);dialog.setWindowTitle('MoonRay render log');dialog.resize(820,500)
+        layout=QtWidgets.QVBoxLayout(dialog);row=QtWidgets.QHBoxLayout();layout.addLayout(row)
+        search=QtWidgets.QLineEdit();search.setPlaceholderText('Find in render log…');row.addWidget(search,1)
+        find=QtWidgets.QPushButton('Find next');row.addWidget(find)
+        text=QtWidgets.QPlainTextEdit(self.renderer.log or 'No renderer output yet.');text.setReadOnly(True);layout.addWidget(text)
+        def find_next():
+            if not search.text():return
+            follow.setChecked(False)
+            if not text.find(search.text()):
+                cursor=text.textCursor();cursor.movePosition(QtGui.QTextCursor.Start);text.setTextCursor(cursor);text.find(search.text())
+        find.clicked.connect(find_next);search.returnPressed.connect(find_next)
+        footer=QtWidgets.QHBoxLayout();layout.addLayout(footer)
+        copy=QtWidgets.QPushButton('Copy log');copy.clicked.connect(lambda:QtWidgets.QApplication.clipboard().setText(text.toPlainText()));footer.addWidget(copy)
+        save=QtWidgets.QPushButton('Save log…');footer.addWidget(save)
+        def save_log():
+            path,_=QtWidgets.QFileDialog.getSaveFileName(dialog,'Save render log','','Text (*.txt)')
+            if path:
+                try:Path(path).write_text(text.toPlainText(),encoding='utf-8')
+                except OSError as exc:QtWidgets.QMessageBox.warning(dialog,'Cannot save log',str(exc))
+        save.clicked.connect(save_log)
+        follow=QtWidgets.QCheckBox('Follow live output');follow.setChecked(True);footer.addWidget(follow)
+        timer=QtCore.QTimer(dialog);timer.setInterval(750)
+        def refresh():
+            current=self.renderer.log or 'No renderer output yet.'
+            if follow.isChecked() and current!=text.toPlainText():
+                text.setPlainText(current);bar=text.verticalScrollBar();bar.setValue(bar.maximum())
+        timer.timeout.connect(refresh);timer.start();dialog.exec_();timer.stop()
 
     def dispose(self):
         if not self.disposed:
+            self._store_workspace()
             self.disposed = True
             self.display_timer.stop()
             self.timer.stop()
@@ -605,6 +686,7 @@ class Panel(QtWidgets.QWidget):
         super().closeEvent(event)
 
     def render_animation(self):
+        if self._output_busy():self.status.setText('An output render is running. Press Stop before starting an animation.');return
         directory = QtWidgets.QFileDialog.getExistingDirectory(self,'Animation output folder')
         if not directory: return
         first,ok = QtWidgets.QInputDialog.getInt(self,'Animation','First frame',1,-100000,100000)
