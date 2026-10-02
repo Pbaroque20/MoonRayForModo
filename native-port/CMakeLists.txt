@@ -121,6 +121,7 @@ if(BUILD_SCENE_RDL2)
     if(MOONRAY_WINDOWS_XPU)
       target_sources(denoiser PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/denoise_optix_table.cpp")
     endif()
+    target_include_directories(moonray PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(rendering_shading PRIVATE ispc_runtime)
     target_link_libraries(rendering_rndr PRIVATE ispc_runtime)
     # OBJECT libraries do not forward object files nested in their SOURCES.

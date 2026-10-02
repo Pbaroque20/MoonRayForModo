@@ -83,5 +83,12 @@ if args.xpu:
     for name,source in assets.items():
         target=destination/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
         manifest[name]={'source':str(source),'sha256':hashlib.sha256(source.read_bytes()).hexdigest()}
+# Capability is tied to the staged executable, so a mismatched runtime cannot hang
+# waiting for a protocol it does not implement. This is packaging, not a render test.
+executable=destination/'moonray.exe'
+if b'MOONRAY_MODO_SESSION' in executable.read_bytes():
+    capability=destination/'modo-session.json'
+    capability.write_text(json.dumps({'protocol':1,'executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest()},indent=2),encoding='utf-8')
+    manifest['modo-session.json']={'source':str(capability),'sha256':hashlib.sha256(capability.read_bytes()).hexdigest()}
 (destination / 'build-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
 print('Staged', len(manifest), 'native binaries in', destination)

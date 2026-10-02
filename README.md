@@ -511,3 +511,38 @@ PNG, EXR, RDLA and log save dialogs remember separate output folders and supply
 default extensions before the dialog's overwrite confirmation. Pending output
 requests are also protected from competing preview requests. The renderer retains
 its existing no-overwrite restrictions. No tests were run for this update.
+
+
+### Persistent preview sessions (0.3.0 development)
+
+The bundled `runtime/xpu-persistent-20261001` adds a persistent native preview
+protocol. Enable **System > Keep MoonRay loaded between preview updates**
+(enabled by default), then enable **Live updates**. MoonRay remains running
+after a preview completes. Compatible transform, camera, light, material-value
+and sampling edits are sent as changed RDLA attributes to the loaded scene.
+Native acceleration/geometry updates still run when those attributes require it.
+
+Structural changes (including object additions/removals, shader connections or
+types, changed attribute layouts, topology and resolution) load a fresh scene
+context within the same process. Execution-mode, runtime or thread-count changes
+restart the process. Stop releases it; a subsequent preview starts a new session.
+Older runtimes without the executable-matched protocol marker retain the previous
+separate-process behavior. Final EXR/animation output remains on the batch path.
+
+Commands are atomically published in a private temporary folder. Each applied
+update is acknowledged before constructing the next delta, so rapid edits can
+coalesce without losing intermediate state. Stale completions are discarded.
+Denoising, AOV conversion and color transforms still run after a completed pass.
+Interrupted render preparation reloads the full snapshot before continuing.
+
+This preserves the native process and compatible loaded scene data; it does not
+reuse old pixel samples or restrict lighting updates to the moved object's pixels.
+Modo still captures a complete scene snapshot and serializes it locally to detect
+changes. Eliminating that capture/serialization cost is future work.
+
+Native compilation succeeded; no renderer or Modo interaction tests were run at
+the user's request. `tools/check_persistent_preview.py <runtime-folder>` is an
+optional standalone check for same-process rendering, a transform delta, changed
+image pixels, a structural reload and orderly shutdown. It has not been run.
+The normal native build applies `tools/port_persistent.py`; the implementation
+is tracked in `native-port/persistent_session.inc`.

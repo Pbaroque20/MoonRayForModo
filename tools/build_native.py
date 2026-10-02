@@ -27,6 +27,9 @@ def run(args, name):
     if completed.returncode:
         raise SystemExit(completed.returncode)
 
+if renderer:
+    run([sys.executable, ROOT / 'tools/port_persistent.py'], 'port-persistent')
+
 configure_args = [BIN / 'cmake.exe', '-S', ROOT / 'native-port', '-B', BUILD, '-G', 'Ninja',
      '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_COMPILER=' + str(BIN / 'gcc.exe'),
      '-DCMAKE_CXX_COMPILER=' + str(BIN / 'g++.exe'), '-DCMAKE_ISPC_COMPILER=' + str(BIN / 'ispc.exe'),

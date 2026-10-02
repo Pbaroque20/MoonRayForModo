@@ -6,6 +6,7 @@ import uuid
 from PySide2 import QtCore
 from . import native, rdla, options, denoising
 from .progress import Progress, duration
+from .persistent import Session, supported as persistent_supported
 
 
 class Renderer(QtCore.QObject):
@@ -17,6 +18,15 @@ class Renderer(QtCore.QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.session=Session(self)
+        self.session.output.connect(self._consume_log)
+        self.session.ready.connect(self._persistent_ready)
+        self.session.acknowledged.connect(self._persistent_applied)
+        self.session_files={}
+        self.session.failed.connect(self.failed.emit)
+        self.session.status.connect(self.status.emit)
+        self.session_serial=0
+        self.using_session=False
         self.process = QtCore.QProcess(self)
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
@@ -56,6 +66,7 @@ class Renderer(QtCore.QObject):
             self.progress.emit(100 if success else 0,('Complete' if success else 'Stopped')+' · Elapsed '+duration(elapsed))
 
     def _started(self):
+        self.watchdog.stop()
         if self.timeout_seconds>0:
             self.watchdog.start(min(2147483647,int(self.timeout_seconds*1000)))
 
@@ -65,16 +76,18 @@ class Renderer(QtCore.QObject):
         self.stop()
         self.failed.emit('Render exceeded the configured time limit; it was stopped. Completed outputs were preserved.')
 
-    def submit(self, snapshot, runtime, width, height, samples, environment, threads, output=None, linear_preview=False):
+    def submit(self, snapshot, runtime, width, height, samples, environment, threads, output=None, linear_preview=False, persistent_preview=True):
         if self.closed:
             raise ValueError('Renderer is closed')
         runtime = native.find_runtime(runtime)
         self.generation += 1
         request = dict(snapshot=snapshot, runtime=runtime, width=width, height=height, generation=self.generation,
                        samples=samples, environment=environment, threads=threads, output=output,
-                       linear_preview=linear_preview)
+                       linear_preview=linear_preview,
+                       persistent=bool(persistent_preview and not output and not linear_preview and persistent_supported(runtime)))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
+        if not request['persistent']:self.session.stop()
         if self.process.state() != QtCore.QProcess.NotRunning:
             self.canceled = True
             self.process.kill()
@@ -85,6 +98,7 @@ class Renderer(QtCore.QObject):
         self._progress_end(False)
         self.watchdog.stop()
         self.pending = None
+        self.session.stop()
         self.canceled = True
         if self.process.state() != QtCore.QProcess.NotRunning:
             self.process.kill()
@@ -94,9 +108,9 @@ class Renderer(QtCore.QObject):
         if self.closed or not self.pending:
             return
         self.active, self.pending = self.pending, None
-        for path in Path(self.directory.name).iterdir():
-            if path.is_file():
-                path.unlink()
+        if not self.session.running():
+            for path in Path(self.directory.name).iterdir():
+                if path.is_file():path.unlink()
         self.canceled = False
         self.progress_state=Progress()
         self.progress_timer.start()
@@ -115,6 +129,7 @@ class Renderer(QtCore.QObject):
         scene = self.current_base.with_suffix('.rdla')
         self.image_path = self.current_base.with_suffix('.exr')
         self.phase = 'render'
+        self.using_session=request['persistent']
         self.progress_state.reset_pass()
         self._progress_tick()
         self.original_published=False
@@ -156,12 +171,21 @@ class Renderer(QtCore.QObject):
             self.process.setArguments(args)
             label=('Adaptive rendering, %d–%d SPP, error %g' % (sampling['min_adaptive_samples'],sampling['max_adaptive_samples'],sampling['target_adaptive_error'])) if sampling['sampling_mode']==2 else ('Rendering %d samples/pixel' % (self.sample_grid**2))
             self.status.emit(label+' · '+self.backend_status)
-            self.process.start()
+            if self.using_session:
+                self.session_serial+=1
+                self.session_files[self.session_serial]=self.current_base
+                self._started()
+                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial)
+            else:
+                self.process.start()
         except Exception as exc:
             self.failed.emit(str(exc))
 
     def _read(self):
         text = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
+        self._consume_log(text)
+
+    def _consume_log(self,text):
         self.log = (self.log + text)[-65536:]
         if self.phase=='render':
             if self.progress_state: self.progress_state.feed(text)
@@ -172,6 +196,19 @@ class Renderer(QtCore.QObject):
             if selected and selected!=self.backend_status:
                 self.backend_status=selected
                 self.status.emit('Rendering · '+selected)
+
+    def _persistent_applied(self,serial):
+        # Acknowledgement means older native output files are no longer in use.
+        for old in list(self.session_files):
+            if old>=serial:continue
+            base=self.session_files.pop(old)
+            for path in base.parent.glob(base.name+'*'):
+                try:path.unlink()
+                except OSError:pass
+
+    def _persistent_ready(self,serial):
+        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
+        self._exited(0,QtCore.QProcess.NormalExit)
 
     def _error(self, error):
         if self.closed or self.canceled:
@@ -245,6 +282,13 @@ class Renderer(QtCore.QObject):
                 self.failed.emit('Cannot save render: '+str(exc));return
             self.finished.emit(str(destination))
             return
+        if self.using_session:
+            # DONE guarantees native output handles are closed; conversion is also complete.
+            # The session owns its RDLA files separately, so obsolete frame files can go.
+            for path in Path(self.directory.name).iterdir():
+                if path.is_file() and not path.name.startswith(self.current_base.name):
+                    try:path.unlink()
+                    except OSError:pass
         self.image_ready.emit(str(self.image_path))
         if self.passes:
             generation = self.active['generation']
@@ -271,6 +315,7 @@ class Renderer(QtCore.QObject):
             return
         self.closed = True
         self.stop()
+        self.session.close()
         if self.process.state() != QtCore.QProcess.NotRunning:
             self.process.waitForFinished(2000)
         if self.process.state() == QtCore.QProcess.NotRunning:

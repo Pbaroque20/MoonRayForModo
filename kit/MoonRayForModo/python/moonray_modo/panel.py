@@ -48,6 +48,11 @@ class Panel(QtWidgets.QWidget):
         row.addWidget(self.runtime, 1)
         row.addWidget(browse)
         self.pages['system'].addRow(row)
+        self.persistent_preview=QtWidgets.QCheckBox('Keep MoonRay loaded between preview updates')
+        self.persistent_preview.setChecked(str(self.settings.value('persistent_preview','true')).lower()!='false')
+        self.persistent_preview.setToolTip('Update compatible scene attributes in a persistent renderer. Structural edits reload the scene. Requires the bundled session-capable runtime; older runtimes use separate renders.')
+        self.persistent_preview.toggled.connect(lambda value:self.settings.setValue('persistent_preview',value))
+        self.pages['system'].addRow(self.persistent_preview)
         controls = self.pages['render']
         self.size = QtWidgets.QComboBox()
         self.size.addItems(['320 px wide', '640 px wide', '960 px wide', 'Scene resolution'])
@@ -522,12 +527,12 @@ class Panel(QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         self.renderer.timeout_seconds = self.timeout.value()*60
         self.renderer.submit(scene, self.runtime.text(), width, height, self.samples.value(),
-                             self.environment.value(), self.threads.value(), output)
+                             self.environment.value(), self.threads.value(), output, persistent_preview=self.persistent_preview.isChecked())
         self.settings.setValue('runtime', self.runtime.text())
         self.last_digest = self._digest(scene)
 
     def _digest(self, scene):
-        values = [scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value()]
+        values = [scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked()]
         digest = hashlib.sha256()
         for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':')).iterencode(values):
             digest.update(chunk.encode('utf-8'))
@@ -602,6 +607,7 @@ class Panel(QtWidgets.QWidget):
 
     def _finished(self, output):
         message=('Saved ' + output) if output else ('Preview complete' + (' · Watching scene changes' if self.live.isChecked() else ''))
+        if not output and self.renderer.session.running():message+=' · MoonRay session retained'
         self.status.setText(message+' · '+self.renderer.backend_status)
 
     def _save_path(self,title,key,suffix,name_filter):
