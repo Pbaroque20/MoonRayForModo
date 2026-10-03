@@ -41,9 +41,10 @@ def signature(scene):
     from .textures import source_tiles
     return [(name,[(tile,p.stat().st_size,p.stat().st_mtime_ns) for tile,p in source_tiles(name).items()]) for name in paths(scene)]
 
-def package(scene,destination,width,height,samples,environment):
+def package(scene,destination,width,height,samples,environment,asset_store=None):
     from . import rdla,textures
     from .working_space import label as working_label
+    from .package_store import copy as collect_asset
     destination=Path(destination).expanduser().resolve()
     if destination.exists():raise ValueError('Choose a new package folder; existing folders are preserved')
     missing=[entry['path'] for entry in inventory(scene) if entry['missing']]
@@ -63,13 +64,13 @@ def package(scene,destination,width,height,samples,environment):
             digest=hashlib.sha256(str(original).encode()).hexdigest()[:16]
             subfolder=staging/'assets'/digest;subfolder.mkdir()
             for tile,path in tiles.items():
-                target=subfolder/path.name;shutil.copy2(str(path),str(target))
+                target=subfolder/path.name;collect_asset(path,target,asset_store)
                 manifest.append({'source':str(path),'file':target.relative_to(staging).as_posix(),'bytes':target.stat().st_size,'sha256':file_hash(target)})
             replacements[rdla.string(original)]=rdla.string('assets/'+digest+'/'+Path(original).name)
         # Geometry filenames do not pass through texture preparation.
         for geometry in scene.get('extra_geometry',[]):
             if geometry.get('kind')!='vdb':continue
-            original=geometry['file'];digest=hashlib.sha256(original.encode()).hexdigest()[:16];subfolder=staging/'assets'/digest;subfolder.mkdir(exist_ok=True);target=subfolder/Path(original).name;shutil.copy2(original,str(target))
+            original=geometry['file'];digest=hashlib.sha256(original.encode()).hexdigest()[:16];subfolder=staging/'assets'/digest;subfolder.mkdir(exist_ok=True);target=subfolder/Path(original).name;collect_asset(original,target,asset_store)
             replacements[rdla.string(original)]=rdla.string(target.relative_to(staging).as_posix());manifest.append({'source':original,'file':target.relative_to(staging).as_posix(),'bytes':target.stat().st_size,'sha256':file_hash(target)})
         for old,new in replacements.items():text=text.replace(old,new)
         (staging/'scene.rdla').write_text(text,encoding='utf-8')

@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Frosted glass",
+  "shader": "DwaRefractiveMaterial",
+  "parameters": {
+    "roughness": 0.35,
+    "transmission_color": [
+      1,
+      1,
+      1
+    ]
+  }
+}

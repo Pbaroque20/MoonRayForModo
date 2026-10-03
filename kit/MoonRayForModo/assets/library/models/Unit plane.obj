@@ -1,0 +1,10 @@
+# MoonRayForModo test plane: 2 meters wide, UV 0..1
+v -1 0 -1
+v -1 0 1
+v 1 0 1
+v 1 0 -1
+vt 0 0
+vt 0 1
+vt 1 1
+vt 1 0
+f 1/1 2/2 3/3 4/4

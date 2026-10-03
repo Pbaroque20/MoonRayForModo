@@ -1,13 +1,11 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.5** expands nested material-channel groups, texture
-corrections, local MaterialX libraries, native light filters, Cryptomatte categories,
-progressive AOV selection, incremental capture, motion policies, ACEScg working
-primaries and animation asset packaging. The native renderer builds, but this
-release has **not run automated, rendering or Modo UI tests**, as requested.
-It is not a claim of full Modo parity or production readiness. See
-[the release scope and remaining gaps](docs/COMPATIBILITY_035.md) and
-[the CPU readiness checklist](docs/CPU_READINESS.md).
+Development version **0.3.6** adds native tile-order controls and active tile outlines,
+an organized asset library, shared translation-blurred instances, additional
+MaterialX math nodes, experimental native group light links, and deduplicated
+portable animation packages. This release has **not run automated, rendering or
+Modo UI tests**, as requested. It is not a claim of full Modo parity or production
+readiness. See [scope and limitations](docs/COMPATIBILITY_036.md).
 
 Target: **Modo 16.1v9, Windows x64, Python 3.9**.
 
@@ -24,8 +22,8 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.5 uses a separate
-`runtime/xpu-compatibility-20261003` build; previous runtimes are preserved.
+to the runtime recorded in its `runtime.json`. Version 0.3.6 uses a separate
+`runtime/xpu-buckets-20261003` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.
 The menu also opens Live Preview, Object Properties, Shading and Lighting,

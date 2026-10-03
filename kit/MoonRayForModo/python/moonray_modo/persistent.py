@@ -68,6 +68,7 @@ class Session(QtCore.QObject):
         scene=self._write_scene(request,'full',request['text'])
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(request['runtime']).items():env.insert(key,value)
+        env.insert('MOONRAY_MODO_BUCKETS','1')
         env.insert('MOONRAY_MODO_SESSION',str(self.root))
         env.insert('MOONRAY_MODO_GENERATION',str(request['id']))
         self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.root))

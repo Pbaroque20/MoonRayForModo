@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "White ceramic",
+  "shader": "DwaBaseMaterial",
+  "parameters": {
+    "roughness": 0.12,
+    "albedo": [
+      0.8,
+      0.8,
+      0.8
+    ]
+  }
+}

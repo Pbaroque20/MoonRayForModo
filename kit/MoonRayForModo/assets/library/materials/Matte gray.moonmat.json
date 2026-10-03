@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Matte gray",
+  "shader": "DwaBaseMaterial",
+  "parameters": {
+    "roughness": 0.8,
+    "albedo": [
+      0.18,
+      0.18,
+      0.18
+    ]
+  }
+}

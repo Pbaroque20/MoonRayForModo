@@ -60,6 +60,7 @@ class Panel(QtWidgets.QWidget):
         package=QtWidgets.QPushButton('Package portable render scene…');package.clicked.connect(self._package_assets);self.pages['system'].addRow(package)
         sequence=QtWidgets.QPushButton('Package animation and assets…');sequence.clicked.connect(self._package_sequence);self.pages['system'].addRow(sequence)
         relink=QtWidgets.QPushButton('Relink missing image clips…');relink.clicked.connect(lambda:lx.eval('moonray.assets.relink'));self.pages['system'].addRow(relink)
+        library_button=QtWidgets.QPushButton('Asset library…');library_button.clicked.connect(lambda:lx.eval('moonray.library'));self.pages['system'].addRow(library_button)
         controls = self.pages['render']
         self.size = QtWidgets.QComboBox()
         self.size.addItems(['320 px wide', '640 px wide', '960 px wide', 'Scene resolution'])
@@ -285,6 +286,14 @@ class Panel(QtWidgets.QWidget):
         buffer_row.addWidget(self.buffer,1)
         layout.addLayout(buffer_row)
         self.preview = Preview()
+        self.renderer.buckets.connect(self.preview.set_buckets)
+        self.show_buckets=QtWidgets.QCheckBox('Active tiles')
+        self.show_buckets.setChecked(str(self.settings.value('show_buckets','true')).lower()!='false')
+        self.preview.set_show_buckets(self.show_buckets.isChecked())
+        self.show_buckets.setToolTip('Outline sampled active CPU tile workers. Native tiles are 8 pixels wide. XPU rays may continue on the GPU after CPU dispatch ends. This display does not change rendering.')
+        self.show_buckets.toggled.connect(self.preview.set_show_buckets)
+        self.show_buckets.toggled.connect(lambda value:self.settings.setValue('show_buckets',value))
+        buffer_row.addWidget(self.show_buckets)
         self.preview.start_requested.connect(self.render_once)
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.splitter=split

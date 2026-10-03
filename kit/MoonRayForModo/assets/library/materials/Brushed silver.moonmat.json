@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Brushed silver",
+  "shader": "DwaMetalMaterial",
+  "parameters": {
+    "roughness": 0.32,
+    "metallic_color": [
+      0.85,
+      0.85,
+      0.85
+    ]
+  }
+}

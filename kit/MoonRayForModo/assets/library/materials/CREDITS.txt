@@ -1,0 +1,1 @@
+MoonRayForModo starter presets by the plugin project. Plugin MIT license applies. These are illustrative starting values, not measured optical datasets or DreamWorks-authored looks. Colors are linear. Visual validation pending.

@@ -356,3 +356,22 @@ class RelinkAssets(lxu.command.BasicCommand):
         from moonray_modo.asset_relink import show
         show()
 lx.bless(RelinkAssets,'moonray.assets.relink')
+
+
+class AssetLibrary(lxu.command.BasicCommand):
+    def basic_Execute(self,msg,flags):
+        from moonray_modo.asset_browser import show
+        show()
+
+class AssignLibraryMaterial(lxu.command.BasicCommand):
+    def __init__(self):
+        super().__init__();self.dyna_Add('settings',lx.symbol.sTYPE_STRING)
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import properties,materials,shader_library
+        values=properties.decode(self.dyna_String(0));shader=values['shader'];parameters=shader_library.validate(shader,values.get('parameters',{}))
+        material=materials.assign(shader)
+        settings=properties.read(material);settings['native_parameters']=parameters;properties.write(material,settings)
+
+lx.bless(AssetLibrary,'moonray.library')
+lx.bless(AssignLibraryMaterial,'moonray.library.assign')

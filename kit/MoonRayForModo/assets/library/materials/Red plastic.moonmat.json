@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Red plastic",
+  "shader": "DwaBaseMaterial",
+  "parameters": {
+    "roughness": 0.25,
+    "albedo": [
+      0.65,
+      0.015,
+      0.015
+    ]
+  }
+}

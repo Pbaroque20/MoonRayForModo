@@ -1,0 +1,1 @@
+Procedural test meshes authored for MoonRayForModo. Plugin MIT license applies. Units: meters. No external dependencies.

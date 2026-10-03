@@ -7,6 +7,11 @@ class Preview(QtWidgets.QOpenGLWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.image = QtGui.QImage()
+        self.buckets=None
+        self.show_buckets=True
+        self.bucket_timeout=QtCore.QTimer(self)
+        self.bucket_timeout.setSingleShot(True)
+        self.bucket_timeout.timeout.connect(lambda:self.set_buckets(None))
         self.zoom = 1.0
         self.pan = QtCore.QPointF()
         self._drag = None
@@ -36,6 +41,16 @@ class Preview(QtWidgets.QOpenGLWidget):
             scale=min(self.width()/self.image.width(),self.height()/self.image.height())
             if scale>0:self.zoom=1./scale;self.pan=QtCore.QPointF();self.update()
 
+    def set_buckets(self,packet):
+        self.buckets=packet
+        if packet:self.bucket_timeout.start(1500)
+        else:self.bucket_timeout.stop()
+        self.update()
+
+    def set_show_buckets(self,enabled):
+        self.show_buckets=enabled
+        self.update()
+
     def image_rect(self):
         if self.image.isNull():
             return QtCore.QRectF()
@@ -52,10 +67,19 @@ class Preview(QtWidgets.QOpenGLWidget):
             painter.fillRect(self.rect(), QtGui.QColor('#191b20'))
             if self.image.isNull():
                 painter.setPen(QtGui.QColor('#b9bec9'))
-                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, 'Click here to render the scene.')
+                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, 'Rendering…' if self.buckets else 'Click here to render the scene.')
             else:
                 painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
                 painter.drawImage(self.image_rect(), self.image)
+            if self.show_buckets and self.buckets:
+                _,width,height,rectangles=self.buckets
+                scale=min(self.width()/width,self.height()/height)*self.zoom
+                left=(self.width()-width*scale)/2+self.pan.x()
+                top=(self.height()-height*scale)/2+self.pan.y()
+                pen=QtGui.QPen(QtGui.QColor('#ffd166'));pen.setWidthF(1.0)
+                painter.setPen(pen);painter.setBrush(QtCore.Qt.NoBrush)
+                for x0,y0,x1,y1 in rectangles:
+                    painter.drawRect(QtCore.QRectF(left+x0*scale,top+(height-y1)*scale,(x1-x0)*scale,(y1-y0)*scale))
         finally:
             painter.end()
 
@@ -70,7 +94,7 @@ class Preview(QtWidgets.QOpenGLWidget):
         event.accept()
 
     def mousePressEvent(self, event):
-        if self.image.isNull() and event.button()==QtCore.Qt.LeftButton:
+        if self.image.isNull() and not self.buckets and event.button()==QtCore.Qt.LeftButton:
             self.start_requested.emit();event.accept();return
         if event.button() in (QtCore.Qt.LeftButton, QtCore.Qt.MiddleButton):
             self._drag = event.pos()

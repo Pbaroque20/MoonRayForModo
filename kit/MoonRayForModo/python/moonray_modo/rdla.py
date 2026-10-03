@@ -108,7 +108,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool(output_file and cryptomatte.enabled(scene))
-    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances={identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('mesh_light')}))
+    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('mesh_light')}))
     if output_file:cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,crypto,scene)
     lighting.emit(scene,render_meshes,float(environment),lines)
     # Keep material handles in a table to avoid Lua's local variable limit.
@@ -222,7 +222,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
                       '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
     lines += ['local function assign(g, part, tag, owner)',
-              '  local a = {g, part, materials[tag], objectLightSets[owner] or lightSet}',
+              '  local a = {g, part, materials[tag], objectLightSets[owner] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
               '  if objectShadowSets[owner] then table.insert(a, objectShadowSets[owner]) end',
               '  if displacements[tag] then table.insert(a, displacements[tag]) end',
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
@@ -325,6 +325,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                           '    ["use_reference_xforms"] = false,',
                           '    ["use_reference_attributes"] = true,',
                           '    ["xform_list"] = %s,' % array(matrix(m) for m in mesh['instances']),
+                          *(['    ["velocities"] = %s,'%array(vector(v) for v in mesh['instance_velocities']),
+                             '    ["evaluation_frame"] = %s,'%number(mesh['instance_evaluation_frame'])] if 'instance_velocities' in mesh else []),
                           '  }', '  table.insert(geometries, instances)',
                           '  assign(instances, "", %s, %s)' % (string(tag),string(lighting.owner(mesh)))]
         else:
@@ -349,6 +351,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     if crypto:lines.append('  ["deep_id_attribute_names"] = {"modo_object_id"},')
     for key, value in options.render_values(scene.get('render_settings', {})).items():
         lines.append('  [%s] = %s,' % (string(key), number(value)))
+        if key=='batch_tile_order':
+            lines.extend('  [%s] = %s,'%(string(name),number(value)) for name in ('progressive_tile_order','checkpoint_tile_order'))
     recovery=scene.get('_recovery') if output_file else None
     if recovery:
         lines += ['  ["checkpoint_active"] = true,','  ["resumable_output"] = true,','  ["checkpoint_bg_write"] = false,',

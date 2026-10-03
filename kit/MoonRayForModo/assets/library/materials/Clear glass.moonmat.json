@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Clear glass",
+  "shader": "DwaRefractiveMaterial",
+  "parameters": {
+    "roughness": 0.02,
+    "transmission_color": [
+      1,
+      1,
+      1
+    ]
+  }
+}

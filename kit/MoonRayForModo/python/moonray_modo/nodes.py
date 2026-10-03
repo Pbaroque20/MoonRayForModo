@@ -19,13 +19,15 @@ MAPS={
  'normalmap':{'in':('Rgb',[.5,.5,1]),'scale':('Float',1)},
 }
 
+from .math_nodes import SCHEMAS as MATH_SCHEMAS
+MAPS.update(MATH_SCHEMAS)
 
 def specs(kind):
     if kind in shader_library.catalog(): return shader_library.catalog()[kind]['attributes']
     if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
     return {key:{'name':key,'type':value[0],'default_value':value[1],
-                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index') else ''} for key,value in MAPS[kind].items()}
+                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp') else ''} for key,value in MAPS[kind].items()}
 
 
 def category(kind):
@@ -148,7 +150,10 @@ def emit(material,name,index,lines,library,output="root"):
             ref=map_library.emit(kind,path,params,refs,definition)
         else:
             values={key:binding(refs[key],spec['type']) if key in refs else literal(params.get(key,spec['default_value']),spec['type']) for key,spec in schema.items()}
-            if kind=='image':
+            if kind in MATH_SCHEMAS:
+                from .math_nodes import emit as emit_math
+                ref=emit_math(kind,path,params,refs,definition)
+            elif kind=='image':
                 descriptor=image_descriptor(item)
                 uv=refs.get('texcoord')
                 if uv is None and 'texcoord' in params:uv=definition('ConstantColorMap',path+'/authored_uv',{'color_value':vector(params['texcoord'],'Rgb')})

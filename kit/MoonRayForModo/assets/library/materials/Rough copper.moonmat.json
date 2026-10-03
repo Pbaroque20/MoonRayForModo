@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Rough copper",
+  "shader": "DwaMetalMaterial",
+  "parameters": {
+    "roughness": 0.42,
+    "metallic_color": [
+      0.95,
+      0.64,
+      0.54
+    ]
+  }
+}

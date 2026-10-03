@@ -78,8 +78,18 @@ def apply_motion(scene, start, end, endpoints):
                 cm,am,bm=instances(original),instances(a),instances(b)
                 if set(cm)!=set(am) or set(cm)!=set(bm):
                     raise ValueError('Motion blur cannot change instance identities')
+                # MoonRay supports per-instance linear velocity. Keep the shared
+                # prototype when scale/rotation/shear are constant over the shutter.
+                stable=all(all(math.isclose(am[key][i],bm[key][i],rel_tol=1e-8,abs_tol=1e-10) for i in range(16) if i not in (12,13,14)) for key in cm)
+                if stable:
+                    fps=float(scene.get('fps',24));span=endpoints[1]-endpoints[0]
+                    if not math.isfinite(fps) or fps<=0:raise ValueError('Motion requires positive finite FPS')
+                    node.update(instances=[am[key] for key in cm],instances_close=[bm[key] for key in cm],
+                        instance_ids=list(cm),instance_velocities=[[(bm[key][i]-am[key][i])*fps/span for i in (12,13,14)] for key in cm],
+                        instance_evaluation_frame=endpoints[0],matrix=list(IDENTITY))
+                    node.pop('matrix_close',None);outputs.append(node);continue
                 for key in cm:
-                    value=dict(node,identity=str(identity)+'|'+str(key),name=node['name']+' / '+str(key),matrix=am[key],matrix_close=bm[key])
+                    value=dict(node,source_item=str(key).split('|')[0],identity=str(identity)+'|'+str(key),name=node['name']+' / '+str(key),matrix=am[key],matrix_close=bm[key])
                     value.pop('instances');value.pop('instance_ids',None)
                     outputs.append(value)
             else:

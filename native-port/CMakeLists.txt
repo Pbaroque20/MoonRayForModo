@@ -124,6 +124,8 @@ if(BUILD_SCENE_RDL2)
     target_include_directories(moonray PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(rendering_shading PRIVATE ispc_runtime)
     target_link_libraries(rendering_rndr PRIVATE ispc_runtime)
+    target_sources(rendering_rndr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/modo_bucket_tracker.cpp")
+    target_include_directories(rendering_rndr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     # OBJECT libraries do not forward object files nested in their SOURCES.
     # Add each ISPC compilation unit exactly once to the owning shading DLL.
     foreach(part 00 01 02 03 04 05 06 07 08 09 10)

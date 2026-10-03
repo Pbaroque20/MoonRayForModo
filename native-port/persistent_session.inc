@@ -82,6 +82,7 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                 while (!context->isFrameComplete() && !waiting()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
                     printStatusLine(*context, driver->getLastFrameMcrtStartTime(), false);
+                    modoBucketOutput(id,driver->getWidth(),driver->getHeight());
                     if (std::chrono::steady_clock::now()-lastSnapshot >= std::chrono::seconds(1)) {
                         try { snapshot(); } catch (const std::exception& e) {
                             std::cerr << "Modo progressive snapshot: " << e.what() << std::endl;

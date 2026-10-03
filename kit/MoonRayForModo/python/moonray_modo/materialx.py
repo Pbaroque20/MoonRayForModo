@@ -100,12 +100,13 @@ def read(path, material_name=None):
         definition=definitions.get(element.get('nodedef'))
         if definition is not None: category=definition.get('node',category)
         extra={}
-        operations={'power':6,'min':5,'max':4,'absval':15,'ceil':16,'floor':17,'modulo':18,'fract':19,'magnitude':20,'sin':21,'cos':22,'normalize':10,'dotproduct':8,'crossproduct':7}
+        operations={'power':6,'min':5,'max':4,'absval':15,'ceil':16,'floor':17,'modulo':18,'fract':19,'magnitude':20,'sin':21,'cos':22,'round':23,'acos':24,'normalize':10,'dotproduct':8,'crossproduct':7}
         if category in operations:
             kind='OpMap';mapping={'in':'op1','in1':'op1','in2':'op2'};extra={'operation':operations[category]}
         elif category=='invert':kind='OpMap';mapping={'in':'op2','amount':'op1'};extra={'operation':1,'op1':[1,1,1]}
         elif category=='remap':
             kind='RemapMap';mapping={'in':'input','inlow':'input_min_RGB','inhigh':'input_max_RGB','outlow':'output_min_RGB','outhigh':'output_max_RGB'};extra={'remap_method':1,'clamp_RGB':False}
+        elif category=='mix':kind='lerp';mapping={'bg':'bg','fg':'fg','mix':'mix'}
         elif category=='standard_surface': kind='DwaBaseMaterial';mapping=STANDARD
         elif category.startswith('moonray_') and category[8:] in set(nodes.kinds()): kind=category[8:];mapping={k:k for k in nodes.specs(kind)}
         elif category=='texcoord':
@@ -135,6 +136,7 @@ def read(path, material_name=None):
                 item['inputs'][target]=resolve(port,scope)
             elif 'value' in port.attrib:
                 value=parse_value(port)
+                if isinstance(value,bool) and nodes.specs(kind)[target]['type']=='Float':value=float(value)
                 if port.get('channels'):
                     original=value if isinstance(value,list) else [value]*3
                     value=[float(c) if c in '01' else original['rgbxyz'.index(c)%3] for c in port.get('channels')]
@@ -145,7 +147,7 @@ def read(path, material_name=None):
                     prefix=element.get('fileprefix',document.get('fileprefix',''))
                     value=str((path.parent/prefix/value).resolve())
                 if nodes.specs(kind)[target]['type'] in ('Rgb','Vec3f') and isinstance(value,(int,float)): value=[value]*3
-                if target=='texcoord' and isinstance(value,list) and len(value)==2:value=value+[0]
+                if nodes.specs(kind)[target]['type'] in ('Rgb','Vec3f') and isinstance(value,list) and len(value)==2:value=value+[0]
                 item['parameters'][target]=value
         if category=='extract':
             component=int(item['parameters'].pop('index',0))

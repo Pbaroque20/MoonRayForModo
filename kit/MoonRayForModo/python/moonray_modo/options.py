@@ -3,7 +3,9 @@ import math
 ENUMS = {'sampling_mode': [('Uniform',0),('Adaptive',2)],
          'light_sampling_mode': [('Uniform lights',0),('Adaptive lights',1)],
          'shadow_terminator_fix': [('Off',0),('Targeted',1),('Sine',2),('GGX',3),('Cosine',4)]}
+ENUMS['batch_tile_order'] = [('Morton (default)',4),('Top to bottom',0),('Bottom to top',1),('Left to right',2),('Right to left',3),('Random',5),('Spiral square',6),('Spiral rectangle',7),('Morton shift / flip',8)]
 RENDER = {
+    'batch_tile_order': (4, 0, 8, 'Tile order (preview and final)'),
     'sampling_mode': (2, 0, 2, 'Sampling mode'),
     'min_adaptive_samples': (16, 1, 1048576, 'Minimum samples / pixel'),
     'max_adaptive_samples': (256, 1, 1048576, 'Maximum samples / pixel'),

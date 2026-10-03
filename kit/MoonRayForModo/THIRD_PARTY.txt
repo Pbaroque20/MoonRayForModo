@@ -39,3 +39,5 @@ Pinned archive checksums and the OptiX Git commit are in
 `patches/native-windows/xpu-sources.json`. NVIDIA licenses remain in their local
 component directories and staged XPU runtime `licenses` folder. They are not
 relicensed under MIT or Apache 2.0. No NVIDIA binaries are committed to this repo.
+
+Bundled library examples: unmodified OpenMoonRay/openmoonray testdata, Apache-2.0. See assets/library/examples/LICENSE.txt and SOURCE.txt. Official downloadable scene collections retain their own licenses and are not included in the kit.

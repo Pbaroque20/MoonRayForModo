@@ -106,6 +106,6 @@ def emit(scene,materials,lines,crypto=False):
             attrs['primitive_attributes']=array([userdata(entry,lines,category(scene),scene)])
         lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':
-            lines += ['  local a = {g, "", %s, objectLightSets[%s] or lightSet}'%(shader,string(owner(entry))),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']
+            lines += ['  local a = {g, "", %s, objectLightSets[%s] or (nativeLightSets[%s] and nativeLightSets[%s][%s]) or lightSet}'%(shader,string(owner(entry)),string(owner(entry)),string(owner(entry)),string(tag)),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']
         else:lines.append('  assign(g, "", %s, %s)'%(string(tag),string(owner(entry))))
         lines.append('end')

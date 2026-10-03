@@ -1,0 +1,3 @@
+Source: https://github.com/OpenMoonRay/openmoonray/tree/main/testdata
+Copyright DreamWorks Animation LLC and MoonRay contributors. Apache-2.0; see LICENSE.txt.
+Unmodified upstream examples. These are MoonRay/USD scenes, not Modo scenes. They may require geometry DSOs not included in the Windows runtime.

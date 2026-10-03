@@ -68,14 +68,16 @@ def render_meshes(meshes, expand_instances=False):
     for mesh in meshes:
         settings=options.object_values(mesh.get('geometry_settings',{}))
         dynamic=settings['override'] and settings['dynamic_tessellation'] and mesh.get('subdivision') and not mesh.get('evaluated_geometry')
-        affected=bool(set(map(str,mesh.get('instance_ids',[]))) & expand_instances) if isinstance(expand_instances,set) else expand_instances
+        affected=bool({str(v).split('|')[0] for v in mesh.get('instance_ids',[])} & expand_instances) if isinstance(expand_instances,set) else expand_instances
         split=affected or (settings['override'] and (not settings['share_instances'] or dynamic))
         if split and 'instances' in mesh:
             transforms=mesh['instances'];ids=mesh.get('instance_ids',list(range(len(transforms))))
             if len(ids)!=len(transforms): raise ValueError('Instance IDs must match transform count')
-            for identity,transform in zip(ids,transforms):
-                value=dict(mesh,source_item=str(identity),matrix=transform,name=mesh['name']+' / '+str(identity),identity=str(mesh.get('identity',mesh['name']))+'|'+str(identity))
-                value.pop('instances');value.pop('instance_ids',None)
+            if 'instances_close' in mesh and len(mesh['instances_close'])!=len(transforms):raise ValueError('Instance shutter transforms must match')
+            for index,(identity,transform) in enumerate(zip(ids,transforms)):
+                value=dict(mesh,source_item=str(identity).split('|')[0],matrix=transform,name=mesh['name']+' / '+str(identity),identity=str(mesh.get('identity',mesh['name']))+'|'+str(identity))
+                if 'instances_close' in mesh:value['matrix_close']=mesh['instances_close'][index]
+                for key in ('instances','instance_ids','instances_close','instance_velocities','instance_evaluation_frame'):value.pop(key,None)
                 yield prepare(value)
         else:
             yield prepare(mesh)

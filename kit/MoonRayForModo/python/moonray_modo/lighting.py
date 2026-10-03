@@ -71,3 +71,6 @@ def emit(scene,meshes,environment,lines):
             lines.append('objectLightSets[%s] = LightSet(%s)(%s)'%(string(identity),string('/modo/links/'+identity),array(selected('lights'))))
         if settings.get('shadow_exclude'):
             lines.append('objectShadowSets[%s] = ShadowSet(%s)(%s)'%(string(identity),string('/modo/shadows/'+identity),array(selected('shadow_exclude'))))
+
+    from .native_light_links import emit as emit_native_links
+    emit_native_links(scene,meshes,refs,environment_refs,lines)

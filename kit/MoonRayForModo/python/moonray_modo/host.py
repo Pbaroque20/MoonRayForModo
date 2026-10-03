@@ -189,6 +189,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     if reuse_geometry is not None and not refresh_materials:
         result['materials']=reuse_geometry['materials'];result['native_materials']=reuse_geometry.get('native_materials',{})
         result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes']]
+        if reuse_geometry.get('_evaluated_data') is not None:result['_evaluated_data']=reuse_geometry['_evaluated_data']
         warnings.extend(reuse_geometry.get('warnings',[]))
     else:
         material_candidates = {}
@@ -393,7 +394,6 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             # Modo emits along local +Z; MoonRay's authored spot emits along -Z.
             # Precompose a local X half-turn, keeping the world position intact.
             light['matrix'][4:12] = [-v for v in light['matrix'][4:12]]
-        if channel(item,'linkEnable',False):warnings.append('Native Modo light-item linking needs explicit MoonRay Object light links: '+item.name)
         result['lights'].append(light)
     for kind in (('textureLayer',) if evaluated_geometry else ('replicator', 'textureLayer')):
         if scene.items(kind, superType=False):
@@ -424,7 +424,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 warnings.append(str(exc));path=filename
             from pathlib import Path
             result['source_assets'].append(str(Path(path).resolve()))
-    for shader in scene.items('defaultShader',superType=False):
-        if channel(shader,'lgtEnable',False):warnings.append('Native Shader light linking needs explicit MoonRay Object light links: '+shader.name)
+    from .native_light_links import capture as capture_light_links
+    result['native_light_links']=capture_light_links(scene,result,warnings)
     result['warnings'] = sorted(set(warnings))
     return result

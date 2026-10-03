@@ -29,6 +29,7 @@ def run(args, name):
 
 if renderer:
     run([sys.executable, ROOT / 'tools/port_persistent.py'], 'port-persistent')
+    run([sys.executable, ROOT / 'tools/port_buckets.py'], 'port-buckets')
 
 configure_args = [BIN / 'cmake.exe', '-S', ROOT / 'native-port', '-B', BUILD, '-G', 'Ninja',
      '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_COMPILER=' + str(BIN / 'gcc.exe'),

@@ -11,6 +11,7 @@ from .persistent import Session, supported as persistent_supported
 
 
 class Renderer(QtCore.QObject):
+    buckets = QtCore.Signal(object)
     image_ready = QtCore.Signal(str)
     status = QtCore.Signal(str)
     failed = QtCore.Signal(str)
@@ -44,6 +45,7 @@ class Renderer(QtCore.QObject):
         self.canceled = False
         self.closed = False
         self.log = ''
+        self.bucket_partial = ''
         self.backend_status = 'CPU'
         self.backend_log = ''
         self.phase = 'render'
@@ -66,6 +68,7 @@ class Renderer(QtCore.QObject):
             self.progress.emit(value,label)
 
     def _progress_end(self,success):
+        self.buckets.emit(None)
         self.progress_timer.stop()
         if self.progress_state:
             elapsed=self.progress_state.clock()-self.progress_state.started
@@ -88,6 +91,8 @@ class Renderer(QtCore.QObject):
         runtime = native.find_runtime(runtime)
         if not output and not linear_preview:
             self.buffers.select(snapshot.get('preview_buffer','beauty'),snapshot.get('display',{}))
+        self.buckets.emit(None)
+        self.bucket_partial = ''
         self.generation += 1
         request = dict(snapshot=snapshot, runtime=runtime, width=width, height=height, generation=self.generation,
                        samples=samples, environment=environment, threads=threads, output=output,
@@ -138,6 +143,7 @@ class Renderer(QtCore.QObject):
         adaptive=options.render_values(self.active['snapshot'].get('render_settings',{}))['sampling_mode']==2
         self.passes = [target] if self.active['output'] or adaptive else sorted(set([1, min(2, target), target]))
         self.log = ''
+        self.bucket_partial = ''
         self._begin_pass(self.active['generation'])
 
     def _begin_pass(self, generation):
@@ -190,6 +196,7 @@ class Renderer(QtCore.QObject):
             env = QtCore.QProcessEnvironment()
             for key, value in native.environment(request['runtime']).items():
                 env.insert(key, value)
+            env.insert('MOONRAY_MODO_BUCKETS','1')
             self.process.setProcessEnvironment(env)
             self.process.setWorkingDirectory(self.directory.name)
             self.process.setProgram(str(request['runtime'] / 'moonray.exe'))
@@ -215,6 +222,16 @@ class Renderer(QtCore.QObject):
         self._consume_log(text)
 
     def _consume_log(self,text):
+        from .buckets import parse
+        self.bucket_partial += text
+        while '\n' in self.bucket_partial:
+            line,self.bucket_partial=self.bucket_partial.split('\n',1)
+            packet=parse(line)
+            if packet and not self.closed and not self.canceled and self.phase=='render':
+                expected=self.session_serial if self.using_session else 0
+                if packet[0]==expected:self.buckets.emit(packet)
+        self.bucket_partial=self.bucket_partial[-65536:]
+
         self.log = (self.log + text)[-65536:]
         if self.phase=='render':
             if self.progress_state: self.progress_state.feed(text)
@@ -253,6 +270,7 @@ class Renderer(QtCore.QObject):
     def _exited(self, code, exit_status):
         self.watchdog.stop()
         self._read()
+        self.buckets.emit(None)
         if self.closed:
             return
         if self.canceled:

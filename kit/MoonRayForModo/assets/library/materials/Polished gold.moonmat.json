@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Polished gold",
+  "shader": "DwaMetalMaterial",
+  "parameters": {
+    "roughness": 0.12,
+    "metallic_color": [
+      1,
+      0.71,
+      0.29
+    ]
+  }
+}
