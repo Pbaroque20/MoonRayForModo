@@ -571,3 +571,26 @@ This reduces rendering work; it still displays completed passes, not streaming
 buckets, and still captures the scene for live updates. Instant feedback is not
 guaranteed. No tests were run for this update. Deferred checks are in
 `tests/test_ipr.py`.
+
+
+### Buffer switching without rerendering (0.3.2 development)
+
+Each preview pass writes beauty and all built-in dropdown AOVs together. The last
+completed pass is retained in a separate temporary cache. Switching the Render
+buffer dropdown converts that cached buffer without restarting MoonRay, changing
+its generation, or canceling denoising. Cached views are also available during
+the next render, while locked, after Stop, and during final-output rendering.
+Before the first pass finishes, selection is remembered until buffers arrive.
+
+Exposure, LUT and other Color / LUT controls now also convert the cached linear
+image. Background, execution and IPR changes still request a render. Display and
+buffer selection are excluded from live-update scene comparisons. Image captions
+identify the actual cached buffer and completed preview, rather than the currently
+requested render. Beauty denoising follows the preview preference regardless of
+the selected buffer; other AOVs retain their original linear values.
+
+All preview AOVs add rendering, file-writing and cache-copy costs; final EXR AOV
+selection is unchanged. Only completed passes are viewable, not unfinished native
+framebuffers. The cache retains the latest linear pass and up to 24 converted views
+(with an in-flight conversion temporarily retained) and is removed when the panel
+closes. No tests were run; deferred coverage is in `tests/test_preview_buffers.py`.

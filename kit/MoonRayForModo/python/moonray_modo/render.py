@@ -6,6 +6,7 @@ import uuid
 from PySide2 import QtCore
 from . import native, rdla, options, denoising
 from .progress import Progress, duration
+from .buffer_cache import BufferCache
 from .persistent import Session, supported as persistent_supported
 
 
@@ -18,6 +19,9 @@ class Renderer(QtCore.QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.buffers=BufferCache(self)
+        self.buffers.image_ready.connect(self.image_ready.emit)
+        self.buffers.notice.connect(self.status.emit)
         self.session=Session(self)
         self.session.output.connect(self._consume_log)
         self.session.ready.connect(self._persistent_ready)
@@ -80,6 +84,8 @@ class Renderer(QtCore.QObject):
         if self.closed:
             raise ValueError('Renderer is closed')
         runtime = native.find_runtime(runtime)
+        if not output and not linear_preview:
+            self.buffers.select(snapshot.get('preview_buffer','beauty'),snapshot.get('display',{}))
         self.generation += 1
         request = dict(snapshot=snapshot, runtime=runtime, width=width, height=height, generation=self.generation,
                        samples=samples, environment=environment, threads=threads, output=output,
@@ -139,18 +145,22 @@ class Renderer(QtCore.QObject):
         self.gpu_error = False
         mode=request['snapshot'].get('execution_mode','auto')
         self.backend_status={'auto':'Auto requested (XPU → Vector → Scalar)','xpu':'XPU requested','vectorized':'Vector requested','vector':'Vector requested','scalar':'Scalar requested'}[mode]
-        self.buffer_key = request['snapshot'].get('preview_buffer','beauty') if not request['output'] and not request.get('linear_preview') else 'beauty'
+        self.buffer_key = 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
         if not request['output'] and not request.get('linear_preview'):
-            snapshot['preview_buffer_file']=str(self.buffer_path)
+            self.preview_files={key:self.current_base.with_suffix('.'+key+'.exr') for key in ('beauty',*options.AOVS)}
+            self.buffer_path=self.preview_files['beauty']
+            snapshot['preview_buffer_files']={key:str(path) for key,path in self.preview_files.items()}
+            snapshot.pop('preview_buffer_file',None)
         else:
             snapshot.pop('preview_buffer_file',None)
+            snapshot.pop('preview_buffer_files',None)
         try:
             use_denoise=denoising.enabled(snapshot,bool(request['output']),request.get('linear_preview',False))
             if use_denoise:
                 if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))
-                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.'+key+'.exr')) for key in ('albedo','normal')}
+                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')}
                 self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'])
                 self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
@@ -252,25 +262,12 @@ class Renderer(QtCore.QObject):
                 except OSError as exc: self.failed.emit('Cannot save original EXR: '+str(exc));return
             self._next_post();return
         if self.phase in ('render','postdone') and not self.active['output'] and not self.active.get('linear_preview'):
-            if not self.buffer_path.is_file() or self.buffer_path.stat().st_size<16:
-                self.failed.emit('MoonRay did not produce the selected render buffer.')
-                return
-            from .buffers import conversion
-            converter=self.active['runtime']/'oiiotool.exe'
-            if not converter.is_file():
-                self.failed.emit('Render-buffer preview requires oiiotool.exe in the selected runtime.')
-                return
-            self.phase='convert'
-            self.image_path=self.current_base.with_suffix('.buffer.png')
-            self.process.setProgram(str(converter))
             try:
-                arguments=conversion(self.buffer_key,self.buffer_path,self.image_path,self.active['snapshot'].get('display',{}))
-            except ValueError as exc:
-                self.failed.emit(str(exc))
-                return
-            self.process.setArguments(arguments)
-            self.status.emit('Updating render-buffer preview...')
-            self.process.start()
+                files=dict(self.preview_files,beauty=self.buffer_path)
+                self.buffers.publish(files,self.active['runtime'],self.active['snapshot'],self.backend_status)
+            except Exception as exc:
+                self.failed.emit('Cannot retain preview buffers: '+str(exc));return
+            self._preview_pass_finished()
             return
         if not self.image_path.is_file() or self.image_path.stat().st_size < 16:
             self.failed.emit('MoonRay exited without a valid output image. Open Render Log for details.')
@@ -283,19 +280,20 @@ class Renderer(QtCore.QObject):
                 self.failed.emit('Cannot save render: '+str(exc));return
             self.finished.emit(str(destination))
             return
+        self.image_ready.emit(str(self.image_path))
+        self._preview_pass_finished()
+
+    def _preview_pass_finished(self):
         if self.using_session:
-            # DONE guarantees native output handles are closed; conversion is also complete.
-            # The session owns its RDLA files separately, so obsolete frame files can go.
+            # BufferCache owns copies, independent of native/frame file lifetime.
             for path in Path(self.directory.name).iterdir():
                 if path.is_file() and not path.name.startswith(self.current_base.name):
                     try:path.unlink()
                     except OSError:pass
-        self.image_ready.emit(str(self.image_path))
         if self.passes:
-            generation = self.active['generation']
-            QtCore.QTimer.singleShot(0, lambda: self._begin_pass(generation))
-        else:
-            self.finished.emit('')
+            generation=self.active['generation']
+            QtCore.QTimer.singleShot(0,lambda:self._begin_pass(generation))
+        else:self.finished.emit('')
 
     @staticmethod
     def _publish(source,destination):
@@ -317,6 +315,7 @@ class Renderer(QtCore.QObject):
         self.closed = True
         self.stop()
         self.session.close()
+        self.buffers.close()
         if self.process.state() != QtCore.QProcess.NotRunning:
             self.process.waitForFinished(2000)
         if self.process.state() == QtCore.QProcess.NotRunning:

@@ -243,7 +243,7 @@ class Panel(QtWidgets.QWidget):
         self.live = QtWidgets.QCheckBox('Live updates')
         self.live.toggled.connect(self._toggle_live)
         self.preview_lock=QtWidgets.QCheckBox('Lock preview')
-        self.preview_lock.setToolTip('Keep the current render running. Hold automatic scene, buffer and display changes until unlocked. Refresh preview still starts a new preview explicitly.')
+        self.preview_lock.setToolTip('Keep the current render running. Hold automatic scene changes until unlocked; cached buffers and display transforms remain available. Refresh preview still starts a new preview explicitly.')
         self.preview_lock.toggled.connect(self._lock_changed)
         self.final = QtWidgets.QPushButton('Render EXR…')
         self.final.clicked.connect(self.render_final)
@@ -265,7 +265,7 @@ class Panel(QtWidgets.QWidget):
         self.buffer.addItem('Beauty','beauty')
         for key,(label,attributes,channel) in options.AOVS.items():
             self.buffer.addItem(label,key)
-        self.buffer.setToolTip('Selecting a buffer starts a new preview. Normals map -1..1 to RGB; depth and position use logarithmic display compression. Saved EXR values are unchanged.')
+        self.buffer.setToolTip('Switch buffers from the last completed preview without restarting rendering. Available after the first pass. Saved EXR values are unchanged.')
         buffer_row.addWidget(self.buffer,1)
         layout.addLayout(buffer_row)
         self.preview = Preview()
@@ -315,14 +315,17 @@ class Panel(QtWidgets.QWidget):
         self._object_signature = None
         self._load_settings()
         self.buffer.currentIndexChanged.connect(self._buffer_changed)
-        self.execution_mode.currentIndexChanged.connect(self._buffer_changed)
+        self.execution_mode.currentIndexChanged.connect(self._preview_changed)
         self.display_timer=QtCore.QTimer(self)
-        self.display_timer.setSingleShot(True)
-        self.display_timer.setInterval(400)
+        self.display_timer.setSingleShot(True);self.display_timer.setInterval(200)
         self.display_timer.timeout.connect(lambda:self._buffer_changed(0))
-        for control in list(self.display_controls.values())+list(self.background_controls.values()):
-            signal=control.currentIndexChanged if isinstance(control,QtWidgets.QComboBox) else control.valueChanged if isinstance(control,QtWidgets.QDoubleSpinBox) else control.editingFinished
-            signal.connect(lambda *args:self.display_timer.start())
+        self.preview_timer=QtCore.QTimer(self)
+        self.preview_timer.setSingleShot(True);self.preview_timer.setInterval(400)
+        self.preview_timer.timeout.connect(lambda:self._preview_changed(0))
+        for controls,timer in ((self.display_controls,self.display_timer),(self.background_controls,self.preview_timer)):
+            for control in controls.values():
+                signal=control.currentIndexChanged if isinstance(control,QtWidgets.QComboBox) else control.valueChanged if isinstance(control,QtWidgets.QDoubleSpinBox) else control.editingFinished
+                signal.connect(lambda *args,t=timer:t.start())
         self.selection_timer = QtCore.QTimer(self)
         self.selection_timer.setInterval(750)
         self.selection_timer.timeout.connect(self._refresh_object)
@@ -343,19 +346,19 @@ class Panel(QtWidgets.QWidget):
 
 
     def _ipr_changed(self,enabled):
-        self.display_timer.stop()
+        self.preview_timer.stop()
         if self._output_busy():
             self.status.setText('IPR selection saved for the next preview. Output render continues.');return
         if enabled and not self.live.isChecked():
             self.live.setChecked(True)
         else:
-            self._buffer_changed(0)
+            self._preview_changed(0)
 
     def _ipr_quality_changed(self,*args):
         self.settings.setValue('ipr/width',self.ipr_width.currentData())
         self.settings.setValue('ipr/samples',self.ipr_samples.currentData())
         self.settings.setValue('ipr/error',self.ipr_error.value())
-        if self.ipr_mode.isChecked():self.display_timer.start()
+        if self.ipr_mode.isChecked():self.preview_timer.start()
 
     def _store_workspace(self,*args):
         self.settings.setValue('workspace/splitter',self.splitter.saveState())
@@ -379,7 +382,7 @@ class Panel(QtWidgets.QWidget):
     def _lock_changed(self,locked):
         if locked:
             self.timer.stop()
-            if hasattr(self,'display_timer'):self.display_timer.stop()
+            if hasattr(self,'preview_timer'):self.preview_timer.stop()
             self.status.setText('Preview locked. Automatic updates are held; the current render continues.')
         else:
             self.status.setText('Preview unlocked. Refresh to apply changes, or enable Live updates.')
@@ -504,7 +507,7 @@ class Panel(QtWidgets.QWidget):
         if path:
             self.background_controls['image'].setText(path)
             self.background_controls['mode'].setCurrentIndex(self.background_controls['mode'].findData('image'))
-            self.display_timer.start()
+            self.preview_timer.start()
 
     def _browse_display(self, key):
         filters='LUT files (*.cube *.spi1d *.spi3d *.3dl *.clf *.ctf);;All files (*)' if key=='lut' else 'OCIO config (*.ocio);;All files (*)'
@@ -574,20 +577,30 @@ class Panel(QtWidgets.QWidget):
         self.last_digest = original_digest
 
     def _digest(self, scene):
-        values = [scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value()]
+        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs')}
+        values = [render_scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value()]
         digest = hashlib.sha256()
         for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':')).iterencode(values):
             digest.update(chunk.encode('utf-8'))
         return digest.hexdigest()
 
-    def _buffer_changed(self, index):
+    def _buffer_changed(self,index):
+        if self.disposed:return
+        try:
+            from .display import values
+            display=values(self._settings_values()['display'])
+            self.renderer.buffers.select(self.buffer.currentData(),display)
+        except Exception as exc:
+            self.status.setText('Cannot update buffer display: '+str(exc))
+
+    def _preview_changed(self, index):
         if self.disposed: return
         if self.preview_lock.isChecked():
             self.status.setText('Preview locked. Selection saved for the next refresh.');return
         if (self.sequence is not None and self.sequence.running) or (
                 self.renderer.active and self.renderer.active.get('output') and
                 self.renderer.process.state()!=QtCore.QProcess.NotRunning):
-            self.status.setText('Buffer selected. It will display on the next preview after the output render finishes.')
+            self.status.setText('Preview settings changed. They will apply after the output render finishes.')
             return
         self.render_once()
 
@@ -620,7 +633,7 @@ class Panel(QtWidgets.QWidget):
             self._failed(str(exc))
 
     def stop(self):
-        self.display_timer.stop()
+        self.preview_timer.stop()
         if self.sequence is not None:
             self.sequence.stop()
         self.live.setChecked(False)
@@ -634,15 +647,17 @@ class Panel(QtWidgets.QWidget):
     def _image(self, path):
         try:
             self.preview.load(path)
-            active=self.renderer.active or {};snapshot=active.get('snapshot',{})
-            key=snapshot.get('preview_buffer','beauty');label='Beauty' if key=='beauty' else options.AOVS.get(key,(key,))[0]
-            self.image_info.setText('Showing %s · %d × %d · %s'%(label,self.preview.image.width(),self.preview.image.height(),self.renderer.backend_status))
+            active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
+            snapshot=frame.get('snapshot',active.get('snapshot',{}))
+            key=frame.get('key',snapshot.get('preview_buffer','beauty'));label='Beauty' if key=='beauty' else options.AOVS.get(key,(key,))[0]
+            self.image_info.setText('Showing %s · %d × %d · %s'%(label,self.preview.image.width(),self.preview.image.height(),frame.get('backend',self.renderer.backend_status)))
+            if frame:self.image_info.setText(self.image_info.text()+' · Last completed preview')
             if snapshot.get('_ipr'):
                 settings=snapshot['render_settings']
                 quality='1 SPP' if settings['max_adaptive_samples']==1 else '%d–%d SPP, error %g'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'],settings['target_adaptive_error'])
                 self.image_info.setText(self.image_info.text()+' · IPR '+quality)
         except ValueError as exc:
-            self._failed(str(exc))
+            self.status.setText('Cannot display cached preview: '+str(exc))
 
     def _render_progress(self,value,label):
         if self.sequence is not None and self.sequence.running:
@@ -732,6 +747,7 @@ class Panel(QtWidgets.QWidget):
             self._store_workspace()
             self.disposed = True
             self.display_timer.stop()
+            self.preview_timer.stop()
             self.timer.stop()
             self.selection_timer.stop()
             if self.sequence is not None:

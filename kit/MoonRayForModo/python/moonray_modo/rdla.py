@@ -346,18 +346,20 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
             lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value, str) else number(value))
                       for attr, value in attributes.items()]
             lines.append('}')
-    preview_key = scene.get('preview_buffer','beauty')
-    if not output_file and scene.get('preview_buffer_file'):
-        if preview_key!='beauty' and preview_key not in options.AOVS: raise ValueError('Unknown preview buffer')
-        buffer_file = scene.get('preview_buffer_file')
-        if not buffer_file: raise ValueError('Missing preview buffer output path')
-        lines += ['RenderOutput("/modo/preview/buffer") {',
-                  '  ["file_name"] = %s,' % string(str(buffer_file)),
-                  '  ["channel_format"] = 0,', '  ["compression"] = 1,']
-        attributes = {'result':0} if preview_key=='beauty' else options.AOVS[preview_key][1]
-        for attr,value in attributes.items():
-            lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else number(value)))
-        lines.append('}')
+    preview_files=scene.get('preview_buffer_files',{})
+    if not preview_files and scene.get('preview_buffer_file'):
+        preview_files={scene.get('preview_buffer','beauty'):scene['preview_buffer_file']}
+    if not output_file:
+        for key,path in preview_files.items():
+            if key!='beauty' and key not in options.AOVS:raise ValueError('Unknown preview buffer')
+            if not path:raise ValueError('Missing preview buffer output path')
+            lines += ['RenderOutput(%s) {'%string('/modo/preview/'+key),
+                      '  ["file_name"] = %s,'%string(str(path)),
+                      '  ["channel_format"] = 0,', '  ["compression"] = 1,']
+            attributes={'result':0} if key=='beauty' else options.AOVS[key][1]
+            for attr,value in attributes.items():
+                lines.append('  [%s] = %s,'%(string(attr),string(value) if isinstance(value,str) else number(value)))
+            lines.append('}')
     for key,path in scene.get('_denoise_guides',{}).items():
         attributes={'result':7,'material_aov':'albedo'} if key=='albedo' else {'result':3,'state_variable':2}
         lines += ['RenderOutput(%s) {' % string('/modo/denoise/'+key),
