@@ -1,11 +1,11 @@
 """Scene-owned node graphs compiled to the installed MoonRay shaders."""
 import copy
 import math
-from . import shader_library,coordinates
+from . import shader_library,coordinates,map_library
 
 MAPS={
  'constant':{'value':('Rgb',[.5,.5,.5])},
- 'image':{'file':('String',''),'srgb':('Bool',True),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0)},
+ 'image':{'file':('String',''),'srgb':('Bool',True),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0])},
  'multiply':{'in1':('Rgb',[1,1,1]),'in2':('Rgb',[1,1,1])},
  'add':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
  'subtract':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
@@ -18,6 +18,7 @@ MAPS={
 
 def specs(kind):
     if kind in shader_library.catalog(): return shader_library.catalog()[kind]['attributes']
+    if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
     return {key:{'name':key,'type':value[0],'default_value':value[1],
                   'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','uv_map','scale','channel') else ''} for key,value in MAPS[kind].items()}
@@ -25,12 +26,12 @@ def specs(kind):
 
 def category(kind):
     if kind in shader_library.catalog(): return 'material'
-    return 'normal' if kind=='normalmap' else 'map'
+    return 'normal' if kind=='normalmap' or map_library.catalog().get(kind,{}).get('type')=='NormalMap' else 'map'
 
 
 def connectable(kind,key):
     spec=specs(kind)[key]
-    return spec['type']=='SceneObject*' or 'FLAGS_BINDABLE' in spec.get('flags','')
+    return (spec['type']=='SceneObject*' and spec.get('interface','') in ('INTERFACE_MAP','INTERFACE_NORMALMAP','INTERFACE_MATERIAL','INTERFACE_DWABASELAYERABLE','INTERFACE_HAIRLAYERABLE')) or 'FLAGS_BINDABLE' in spec.get('flags','')
 
 
 def effective(graph):
@@ -70,7 +71,7 @@ def validate(graph):
                     if not shader_library.compatible(source_kind,interface): raise ValueError('Incompatible material input: '+key)
                 elif output=='normal':
                     if interface!='INTERFACE_NORMALMAP': raise ValueError('Normal output requires a NormalMap input')
-                else: raise ValueError('Map must connect to a bindable numeric/color input')
+                elif interface!='INTERFACE_MAP': raise ValueError('Map must connect to a Map or bindable numeric/color input')
             elif output!='map': raise ValueError('Expected a texture/value node at '+key)
     complete=set()
     def visit(identity,trail):
@@ -81,6 +82,10 @@ def validate(graph):
         complete.add(identity)
     for identity in nodes: visit(identity,())
     return g
+
+
+def kinds():
+    return list(MAPS)+sorted(map_library.catalog())+sorted(shader_library.catalog())
 
 
 def new(shader='DwaBaseMaterial',parameters=None):
@@ -96,7 +101,7 @@ def image_descriptor(node):
 
 def descriptors(graph):
     g=validate(graph)
-    return [image_descriptor(node) for node in g['nodes'].values() if node['type']=='image']
+    return [image_descriptor(node) for node in g['nodes'].values() if node['type']=='image' and 'texcoord' not in node.get('inputs',{})]
 
 
 def emit(material,name,index,lines,library):
@@ -126,11 +131,15 @@ def emit(material,name,index,lines,library):
             overrides={key:ref if schema[key]['type']=='SceneObject*' else binding(ref,schema[key]['type']) for key,ref in refs.items()}
             settings=dict(material if identity==g['root'] else {'color':[.5]*3},native_shader=kind,native_parameters=params)
             ref=shader_library.emit(settings,path,index,lines,library,authored_bindings=overrides)
+        elif kind in map_library.catalog():
+            ref=map_library.emit(kind,path,params,refs,definition)
         else:
             values={key:binding(refs[key],spec['type']) if key in refs else literal(params.get(key,spec['default_value']),spec['type']) for key,spec in schema.items()}
             if kind=='image':
                 descriptor=image_descriptor(item)
-                uv=definition('AttributeMap',path+'/uv',{'primitive_attribute_name':string(descriptor['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
+                uv=refs.get('texcoord')
+                if uv is None and 'texcoord' in params:uv=definition('ConstantColorMap',path+'/authored_uv',{'color_value':vector(params['texcoord'],'Rgb')})
+                if uv is None:uv=definition('AttributeMap',path+'/uv',{'primitive_attribute_name':string(descriptor['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
                 attributes={'texture':string(prepare(params.get('file',''),params.get('srgb',True))),'gamma':'0','texture_coordinates':'2','input_texture_coordinates':binding(uv,'Vec3f')}
                 rgb=definition('ImageMap',path+'/rgb',attributes)
                 alpha=definition('ImageMap',path+'/alpha',dict(attributes,alpha_only='true'))

@@ -102,9 +102,9 @@ def default_value(spec):
     if 'default_value' in spec:return spec['default_value']
     raw=str(spec.get('default','')).strip();kind=spec['type']
     if kind=='Bool':return raw.lower()=='true'
-    if kind in ('Rgb','Vec2f','Vec3f'):
+    if kind in ('Rgb','Vec2f','Vec3f','Vec2d','Vec3d'):
         values=re.findall(r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',raw[raw.find('(')+1:])
-        count=2 if kind=='Vec2f' else 3
+        count=2 if kind in ('Vec2f','Vec2d') else 3
         parsed=[float(v) for v in values]
         return (parsed*count if len(parsed)==1 else parsed)[:count] if parsed else [0.]*count
     if kind in ('Int','Long','Float','Double'):
@@ -130,7 +130,7 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
             widget=QtWidgets.QSpinBox(parent);widget.setRange(-2147483647,2147483647)
         elif kind in ('Float','Double'):
             widget=QtWidgets.QDoubleSpinBox(parent);widget.setRange(-1e12,1e12);widget.setDecimals(6);widget.setSingleStep(.1)
-        elif kind in ('Rgb','Vec2f','Vec3f'):widget=VectorEdit(2 if kind=='Vec2f' else 3,kind=='Rgb',parent)
+        elif kind in ('Rgb','Vec2f','Vec3f','Vec2d','Vec3d'):widget=VectorEdit(2 if kind in ('Vec2f','Vec2d') else 3,kind=='Rgb',parent)
         else:widget=QtWidgets.QLineEdit(parent)
         return widget
     def setEditorData(self,widget,index):

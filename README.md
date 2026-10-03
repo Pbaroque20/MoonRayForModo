@@ -594,3 +594,36 @@ selection is unchanged. Only completed passes are viewable, not unfinished nativ
 framebuffers. The cache retains the latest linear pass and up to 24 converted views
 (with an in-flight conversion temporarily retained) and is removed when the panel
 closes. No tests were run; deferred coverage is in `tests/test_preview_buffers.py`.
+
+
+### Native texture and normal node library (0.3.3 development)
+
+The node editor exposes 81 native Map/NormalMap schemas from the vendored
+MoonRay/MoonShine declarations. The Windows AVX/XPU runtime now builds the
+MoonShine map and normal-map libraries: noise/Worley, ramps, projections, UV
+transforms, color corrections, math, normal images, normal combinations and
+normal conversions. Native map inputs use their actual interface types; normals
+cannot connect directly to color sockets. Image nodes now accept coordinate
+connections. Native projector nodes default to identity TRS; host projector/camera
+object references are not yet wired. Filename inputs have texture browsing and
+mipmap preparation. Native gamma controls remain responsible for color decoding.
+
+Texture-only Shader Tree groups support the existing twelve blend modes, scoped
+opacity/masks, and RGB inversion. Groups containing base materials still report
+unsupported whole-material group operations; arbitrary layer-mask hierarchies
+are not silently claimed as translated.
+
+MaterialX import additionally translates common arithmetic/vector operations,
+remap, default texture-coordinate connections, graph interface inputs, and local
+single-output NodeDef implementations made from supported nodes. Native map and
+normal nodes can be exported using MoonRay-specific NodeDefs. This remains a
+translator, not an arbitrary MaterialX shader compiler: external implementation
+libraries, multi-output custom definitions, channel swizzles, unsupported node
+categories, and nonzero indexed UV sets are explicitly rejected. Procedural
+appearance follows MoonRay, not an assertion of identical Modo/MaterialX noise.
+
+No renderer, Modo, or automated tests were run. Deferred checks are in
+`tests/test_map_library.py`. Reference semantics:
+[MoonRay maps](https://docs.openmoonray.org/user-reference/scene-objects/maps/),
+[MaterialX specification](https://materialx.org/Specification.html), and
+[Modo material groups](https://learn.foundry.com/modo/16.1v8/content/help/pages/shading_lighting/shader_items/material_group.html).

@@ -7,11 +7,12 @@ import math
 
 
 class Groups:
-    def __init__(self, defaults, blend):
+    def __init__(self, defaults, blend, scoped_blend=None):
         self.current = dict(defaults)
         self.used = set()
         self.stack = []
         self.blend = blend
+        self.scoped_blend = scoped_blend
         self.mask_default = defaults['groupMask']
 
     def select(self, path):
@@ -26,7 +27,9 @@ class Groups:
             opacity = float(group.get('opacity', 1))
             if not math.isfinite(opacity) or not 0 <= opacity <= 1:
                 raise ValueError('Texture group opacity must be between zero and one')
-            if group.get('blend', 'normal') != 'normal':
+            from .layers import BLENDS
+            if group.get('blend','normal') not in BLENDS:raise ValueError('Unknown group blend mode')
+            if group.get('blend', 'normal') != 'normal' and self.scoped_blend is None:
                 raise ValueError('Non-normal texture group blending is not translated')
             self.stack.append((dict(group), dict(self.current), self.used))
             self.used = set()
@@ -37,8 +40,10 @@ class Groups:
         mask = self.current['groupMask'] if 'groupMask' in self.used else None
         affected = self.used - {'groupMask'}
         for effect in affected:
-            self.current[effect] = self.blend(previous[effect], self.current[effect],
-                                               group.get('opacity', 1), mask)
+            if self.scoped_blend:
+                self.current[effect] = self.scoped_blend(previous[effect],self.current[effect],group,mask,effect)
+            else:
+                self.current[effect] = self.blend(previous[effect], self.current[effect],group.get('opacity',1),mask)
         self.current['groupMask'] = previous['groupMask']
         self.used = parent_used | affected
 

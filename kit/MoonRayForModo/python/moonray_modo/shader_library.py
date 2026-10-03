@@ -30,13 +30,13 @@ def typed(value, attribute):
     if kind=='String':
         if not isinstance(value,str): raise ValueError('Expected text')
         return value
-    dimensions={'Rgb':3,'Rgba':4,'Vec2f':2,'Vec3f':3,'Vec4f':4,'Mat3f':9,'Mat4f':16}
+    dimensions={'Rgb':3,'Rgba':4,'Vec2f':2,'Vec3f':3,'Vec4f':4,'Mat3f':9,'Mat4f':16,'Vec2d':2,'Vec3d':3,'Vec4d':4,'Mat3d':9,'Mat4d':16}
     if kind in dimensions:
         if not isinstance(value,list) or len(value)!=dimensions[kind]: raise ValueError('Expected %d components'%dimensions[kind])
         return [typed(v,{'type':'Float'}) for v in value]
-    if kind not in ('Float','Int') or type(value) not in (float,int) or not math.isfinite(value):
+    if kind not in ('Float','Double','Int','Long') or type(value) not in (float,int) or not math.isfinite(value):
         raise ValueError('Expected a finite '+kind)
-    if kind=='Int' and int(value)!=value: raise ValueError('Expected an integer')
+    if kind in ('Int','Long') and int(value)!=value: raise ValueError('Expected an integer')
     for bound,compare in [('min',lambda a,b:a<b),('max',lambda a,b:a>b)]:
         if bound in attribute:
             try: limit=float(str(attribute[bound]).rstrip('f'))
@@ -44,7 +44,7 @@ def typed(value, attribute):
             if compare(value,limit): raise ValueError('Value violates '+bound+' '+str(limit))
     if 'enum' in attribute and str(int(value)) not in {str(v) for v in attribute['enum'].values()}:
         raise ValueError('Unknown enumerated value')
-    return int(value) if kind=='Int' else float(value)
+    return int(value) if kind in ('Int','Long') else float(value)
 
 
 def validate(shader, parameters):

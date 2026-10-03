@@ -42,7 +42,7 @@ def assign_materials(data, scene, warnings):
                     def contains(target):
                         return target.id in source_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
                     if targets and not any(contains(i) for i in targets): return False
-                    if (item.type in ('advancedMaterial','material.moonrayMaterialX') and channel(parent,'opacity',1)!=1) or channel(parent,'blend','normal')!='normal':
+                    if item.type in ('advancedMaterial','material.moonrayMaterialX') and (channel(parent,'opacity',1)!=1 or channel(parent,'blend','normal')!='normal' or channel(parent,'invert',False)):
                         warnings.append('Group opacity and blending are not translated: '+parent.name)
                         return False
                 parent=parent.parent

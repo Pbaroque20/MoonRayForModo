@@ -33,6 +33,9 @@ def main():
     catalog=json.loads((root/'kit/MoonRayForModo/python/moonray_modo/material_catalog.json').read_text(encoding='utf-8'))
     for shader in catalog:
         if not (runtime/(shader+'.so')).is_file(): raise ValueError('Missing material shader: '+shader)
+    maps=json.loads((root/'kit/MoonRayForModo/python/moonray_modo/map_catalog.json').read_text(encoding='utf-8'))
+    for shader in maps:
+        if not (runtime/(shader+'.so')).is_file():raise ValueError('Missing texture/normal shader: '+shader)
     build=json.loads(geometry.with_name('build.json').read_text(encoding='utf-8'))
     if not build.get('geometry_only') or digest(geometry)!=build.get('plugin_sha256'):
         raise ValueError('Geometry adapter does not match its build manifest')

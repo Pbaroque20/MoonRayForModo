@@ -39,7 +39,13 @@ def bindings(material, index, lines, glass=False):
         if mask is not None:
             attributes['mask'] = mask
         return node('ModoTextureMap', attributes)
-    groups = Groups(current, group_blend)
+    def scoped_blend(background,foreground,group,mask,effect):
+        if group.get('invert') and effect in textures.COLOR_EFFECTS:
+            foreground=node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
+        attributes={'background':background,'foreground':foreground,'blend':str(BLENDS[group.get('blend','normal')]),'opacity':number(group.get('opacity',1))}
+        if mask is not None:attributes['mask']=mask
+        return node('ModoTextureMap',attributes)
+    groups = Groups(current, group_blend, scoped_blend)
     layers = material.get('layers')
     if layers is None:
         layers = [dict(value,effect=key,kind=value.get('kind','imageMap')) for key,value in material.get('textures',{}).items()]

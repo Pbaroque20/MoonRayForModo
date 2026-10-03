@@ -58,3 +58,11 @@ foreach(target IN LISTS material_targets)
   list(APPEND all_material_targets ${target} ${target}_proxy)
 endforeach()
 add_custom_target(moonshine_material_library DEPENDS ${all_material_targets})
+
+# Texture and normal shaders share the same AVX ABI as the material library.
+add_subdirectory("${PROJECT_SOURCE_DIR}/dso/map" maps)
+add_subdirectory("${PROJECT_SOURCE_DIR}/dso/normalmap" normalmaps)
+collect_desktop_dsos("${PROJECT_SOURCE_DIR}/dso/map" map_targets)
+collect_desktop_dsos("${PROJECT_SOURCE_DIR}/dso/normalmap" normalmap_targets)
+add_custom_target(moonshine_map_library DEPENDS ${map_targets} ${normalmap_targets})
+add_dependencies(moonshine_material_library moonshine_map_library)

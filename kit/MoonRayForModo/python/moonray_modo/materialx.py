@@ -2,7 +2,7 @@
 import copy
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from . import nodes,shader_library
+from . import nodes,shader_library,map_library
 
 STANDARD={'base_color':'albedo','metalness':'metallic','diffuse_roughness':'diffuse_roughness',
           'specular':'specular','specular_roughness':'roughness','specular_IOR':'refractive_index',
@@ -30,6 +30,8 @@ def read(path, material_name=None):
     if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper(): raise ValueError('MaterialX document entities are not supported')
     document=ET.fromstring(raw)
     if document.tag!='materialx': raise ValueError('Expected a MaterialX document')
+    from .materialx_expand import expand
+    document=expand(document)
     definitions={e.get('name'):e for e in document.findall('nodedef')}
     elements={};graphs={}
     for element in document:
@@ -44,33 +46,56 @@ def read(path, material_name=None):
     if len(materials)!=1: raise ValueError('Choose a document with exactly one surface material (or specify its name)')
     graph={'version':1,'nodes':{},'overrides':[],'materialx_source':str(path),'materialx_version':document.get('version','')}
     visiting=set();cache={}
-    def resolve(port,scope):
-        if port.get('interfacename'): raise ValueError('MaterialX interface inputs require expansion before import')
+    def interface(port,scope,trail=()):
+        name=port.get('interfacename')
+        if not name:return port
+        if name in trail:raise ValueError('MaterialX interface cycle')
+        group=graphs.get(scope)
+        source=next((p for p in group.findall('input') if p.get('name')==name),None) if group is not None else None
+        if source is None:raise ValueError('Missing MaterialX interface input '+name)
+        value=copy.deepcopy(interface(source,scope,trail+(name,)));value.set('name',port.get('name',''));return value
+    def resolve(port,scope,trail=()):
+        port=interface(port,scope)
+        if port.get('channels'):raise ValueError('MaterialX channel swizzles require explicit channel nodes')
         if port.get('nodegraph'):
+            signature=(port.get('nodegraph'),port.get('output'))
+            if signature in trail or len(trail)>100:raise ValueError('MaterialX graph output cycle')
             name=port.get('nodegraph');group=graphs.get(name)
             if group is None: raise ValueError('Missing MaterialX nodegraph '+name)
-            output=next((child for child in group.findall('output') if child.get('name')==port.get('output','out')),None)
+            outputs=group.findall('output')
+            output=outputs[0] if len(outputs)==1 and not port.get('output') else next((child for child in outputs if child.get('name')==port.get('output','out')),None)
             if output is None: raise ValueError('Missing MaterialX graph output')
-            return resolve(output,name)
+            return resolve(output,name,trail+(signature,))
         name=port.get('nodename')
         if not name: raise ValueError('Expected a MaterialX node connection')
         key=scope+'/'+name if scope and scope+'/'+name in elements else name
         if key not in elements: raise ValueError('Missing MaterialX node '+key)
         return translate(key)
     def translate(key):
-        if key in cache: return cache[key]
         if key in visiting: raise ValueError('MaterialX connection cycle')
+        if key in cache:return cache[key]
         if len(visiting)>100: raise ValueError('MaterialX graph exceeds 100 connection levels')
         visiting.add(key);element=elements[key];category=element.tag;scope=key.rsplit('/',1)[0] if '/' in key else ''
+        if category=='output':
+            result=resolve(element,scope);visiting.remove(key);cache[key]=result;return result
         definition=definitions.get(element.get('nodedef'))
         if definition is not None: category=definition.get('node',category)
-        if category=='standard_surface': kind='DwaBaseMaterial';mapping=STANDARD
-        elif category.startswith('moonray_') and category[8:] in set(shader_library.catalog())|set(nodes.MAPS): kind=category[8:];mapping={k:k for k in nodes.specs(kind)}
+        extra={}
+        operations={'power':6,'min':5,'max':4,'absval':15,'ceil':16,'floor':17,'modulo':18,'fract':19,'magnitude':20,'sin':21,'cos':22,'normalize':10,'dotproduct':8,'crossproduct':7}
+        if category in operations:
+            kind='OpMap';mapping={'in':'op1','in1':'op1','in2':'op2'};extra={'operation':operations[category]}
+        elif category=='invert':kind='OpMap';mapping={'in':'op2','amount':'op1'};extra={'operation':1,'op1':[1,1,1]}
+        elif category=='remap':
+            kind='RemapMap';mapping={'in':'input','inlow':'input_min_RGB','inhigh':'input_max_RGB','outlow':'output_min_RGB','outhigh':'output_max_RGB'};extra={'remap_method':1,'clamp_RGB':False}
+        elif category=='standard_surface': kind='DwaBaseMaterial';mapping=STANDARD
+        elif category.startswith('moonray_') and category[8:] in set(nodes.kinds()): kind=category[8:];mapping={k:k for k in nodes.specs(kind)}
+        elif category=='texcoord':
+            kind='UVTransformMap';mapping={'index':'_uv_index'};extra={'space':6}
         elif category in nodes.MAPS: kind=category;mapping={k:k for k in nodes.specs(kind)}
         elif category=='constant': kind='constant';mapping={'value':'value'}
         else: raise ValueError('Unsupported MaterialX node: '+category+' ('+key+')')
         identity='n'+str(len(graph['nodes']));cache[key]=identity
-        item={'type':kind,'parameters':{},'inputs':{},'position':[len(graph['nodes'])*240,0]};graph['nodes'][identity]=item
+        item={'type':kind,'parameters':dict(extra),'inputs':{},'position':[len(graph['nodes'])*240,0]};graph['nodes'][identity]=item
         ports={p.get('name'):p for p in definition.findall('input')} if definition is not None else {}
         ports.update({p.get('name'):p for p in element.findall('input')})
         if category=='standard_surface':
@@ -78,27 +103,26 @@ def read(path, material_name=None):
                 albedo=[.8,.8,.8],metallic_color=[.8,.8,.8],roughness=.2,specular=1,
                 refractive_index=1.5,clearcoat=0,clearcoat_roughness=.1,
                 clearcoat_refractive_index=1.5,transmission=0,emission=[1,1,1])
+        ports={name:interface(port,scope) for name,port in ports.items()}
         for name,port in ports.items():
+            if port.get('channels'):raise ValueError('MaterialX channel swizzles require explicit channel nodes')
             if name in ('base','emission') and category=='standard_surface': continue
-            if name=='texcoord' and category=='image':
-                source=elements.get(scope+'/'+port.get('nodename',''))
-                if source is None: source=elements.get(port.get('nodename',''))
-                if source is None or source.tag!='texcoord': raise ValueError('Only default MaterialX texture coordinates are supported')
-                index=source.find("input[@name='index']")
-                if index is not None and index.get('value','0')!='0': raise ValueError('Named/indexed MaterialX UV sets require manual assignment in the node editor')
-                continue
             if not any(attr in port.attrib for attr in ('value','nodename','nodegraph','interfacename')): continue
             if name not in mapping: raise ValueError('Unsupported MaterialX input '+category+'.'+str(name))
             target=mapping[name]
+            if target=='_uv_index':
+                if port.get('value','0')!='0' or any(port.get(a) for a in ('nodename','nodegraph')):raise ValueError('Nonzero MaterialX UV indices require named UV assignment')
+                continue
             if port.get('nodename') or port.get('nodegraph') or port.get('interfacename'):
                 item['inputs'][target]=resolve(port,scope)
             elif 'value' in port.attrib:
                 value=parse_value(port)
                 if kind=='constant' and isinstance(value,(int,float)): value=[value]*3
-                if kind=='image' and name=='file':
+                if (kind=='image' and name=='file') or 'FLAGS_FILENAME' in nodes.specs(kind)[target].get('flags',''):
                     prefix=element.get('fileprefix',document.get('fileprefix',''))
                     value=str((path.parent/prefix/value).resolve())
-                if kind in nodes.MAPS and nodes.specs(kind)[target]['type']=='Rgb' and isinstance(value,(int,float)): value=[value]*3
+                if nodes.specs(kind)[target]['type'] in ('Rgb','Vec3f') and isinstance(value,(int,float)): value=[value]*3
+                if target=='texcoord' and isinstance(value,list) and len(value)==2:value=value+[0]
                 item['parameters'][target]=value
         if kind=='image' and not category.startswith('moonray_'):
             space=element.get('colorspace',document.get('colorspace',''))
@@ -143,10 +167,12 @@ def write(graph,path):
     kinds=sorted({node['type'] for node in graph['nodes'].values()})
     reverse={'Float':'float','Int':'integer','Bool':'boolean','Rgb':'color3','Vec2f':'vector2','Vec3f':'vector3','String':'string','SceneObject*':'surfaceshader'}
     def output_type(kind):
-        return 'surfaceshader' if kind in shader_library.catalog() else 'vector3' if kind=='normalmap' else 'color3'
+        return 'surfaceshader' if nodes.category(kind)=='material' else 'vector3' if nodes.category(kind)=='normal' else 'color3'
     def input_type(kind,key,spec):
-        if kind=='image' and key=='file': return 'filename'
-        if spec['type']=='SceneObject*' and spec.get('interface')=='INTERFACE_NORMALMAP': return 'vector3'
+        if kind=='image' and key=='file' or 'FLAGS_FILENAME' in spec.get('flags',''): return 'filename'
+        if spec['type']=='SceneObject*':
+            if spec.get('interface')=='INTERFACE_NORMALMAP':return 'vector3'
+            if spec.get('interface')=='INTERFACE_MAP':return 'color3'
         return reverse.get(spec['type'])
     for kind in kinds:
         definition=ET.SubElement(document,'nodedef',name='ND_moonray_'+kind,node='moonray_'+kind)
@@ -156,7 +182,7 @@ def write(graph,path):
             if xtype: ET.SubElement(definition,'input',name=key,type=xtype)
     for identity,node in graph['nodes'].items():
         native=node['type'] in shader_library.catalog();kind=node['type']
-        element=ET.SubElement(document,'moonray_'+kind,name=identity,type='surfaceshader' if native else 'vector3' if kind=='normalmap' else 'color3')
+        element=ET.SubElement(document,'moonray_'+kind,name=identity,type=output_type(kind))
         element.set('nodedef','ND_moonray_'+kind)
         schema=nodes.specs(kind)
         for key in sorted(set(node.get('parameters',{}))|set(node.get('inputs',{}))):

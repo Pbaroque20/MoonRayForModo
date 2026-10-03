@@ -23,7 +23,7 @@ def material_tag(item, texture=False):
             return None
         if parent.type != 'mask':
             raise ValueError('unsupported shader parent ' + parent.type)
-        if (not texture and channel(parent, 'opacity', 1) != 1) or channel(parent, 'blend', 'normal') != 'normal':
+        if not texture and (channel(parent,'opacity',1)!=1 or channel(parent,'blend','normal')!='normal' or channel(parent,'invert',False)):
             raise ValueError('group opacity and group blending are unsupported')
         kind, value = tag_kind(channel(parent, 'ptyp', '')), channel(parent, 'ptag', '')
         if kind == 'material' and value:
@@ -45,9 +45,8 @@ def texture_groups(layer, channel):
         if parent.type != 'mask':
             raise ValueError('unsupported shader parent ' + parent.type)
         blend = channel(parent, 'blend', 'normal')
-        if blend != 'normal':
-            raise ValueError('non-normal group blending is unsupported')
-        result.append({'id':parent.id, 'opacity':float(channel(parent,'opacity',1)), 'blend':blend})
+        if blend not in BLENDS:raise ValueError('unsupported group blend '+str(blend))
+        result.append({'id':parent.id, 'opacity':float(channel(parent,'opacity',1)), 'blend':blend,'invert':bool(channel(parent,'invert',False))})
         parent = parent.parent
     return list(reversed(result))
 
@@ -84,8 +83,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 base_groups = texture_groups(by_id[base], channel)
                 if base_groups is None:
                     continue
-                if any(g['opacity'] != 1 for g in base_groups):
-                    raise ValueError('opacity on a group containing the base material is not translated')
+                if any(g['opacity'] != 1 or g['blend']!='normal' or g.get('invert') for g in base_groups):
+                    raise ValueError('opacity, blend or inversion on a group containing a base material requires whole-material group translation')
                 # The common material scope owns its mask; nested texture-only
                 # scopes consume theirs locally when composited into that scope.
                 common = 0

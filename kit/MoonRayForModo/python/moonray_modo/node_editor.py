@@ -61,7 +61,7 @@ class Editor(QtWidgets.QDialog):
         self.undo_states=[];self.redo_states=[];self.selected_input=None;self.add_at=None
         self.setWindowTitle(('MaterialX Override — ' if materialx_override else 'MoonShine Node Editor — ')+item.name);self.resize(1150,760)
         layout=QtWidgets.QVBoxLayout(self);toolbar=QtWidgets.QHBoxLayout();layout.addLayout(toolbar)
-        self.kinds=QtWidgets.QComboBox();self.kinds.addItems(list(nodes.MAPS)+sorted(shader_library.catalog()));self.kinds.setEditable(True);self.kinds.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.kinds=QtWidgets.QComboBox();self.kinds.addItems(nodes.kinds());self.kinds.setEditable(True);self.kinds.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
         self.kinds.completer().setFilterMode(QtCore.Qt.MatchContains);self.kinds.completer().setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
         self.kinds.setMinimumWidth(210);self.kinds.setToolTip('Search for a material, texture or value node');toolbar.addWidget(self.kinds,1)
         for label,callback in [('Add node',self.add),('Delete',self.remove),('Set output',self.output),('Connect input…',self.connect_selected),('Disconnect…',self.disconnect)]:
@@ -151,7 +151,7 @@ class Editor(QtWidgets.QDialog):
         except ValueError as exc:self.graph=before;self.error(exc)
     def add(self):
         kind=self.kinds.currentText()
-        if kind not in nodes.MAPS and kind not in shader_library.catalog():self.error('Choose a supported node from the search results');return
+        if kind not in nodes.kinds():self.error('Choose a supported node from the search results');return
         before=copy.deepcopy(self.graph);identity='node_'+uuid.uuid4().hex[:12]
         point=self.add_at or self.view.mapToScene(self.view.viewport().rect().center());self.add_at=None
         self.graph['nodes'][identity]={'type':kind,'parameters':{},'inputs':{},'position':[point.x()-110,point.y()-30]}
@@ -165,11 +165,18 @@ class Editor(QtWidgets.QDialog):
         self.remember(before);self.rebuild();self.canvas.clearSelection();self.items[identity].setSelected(True)
     def browse_image(self):
         identity=self.selected()
-        if not identity or self.graph['nodes'][identity]['type']!='image':self.error('Select an Image node first');return
+        if not identity:self.error('Select a texture node first');return
+        kind=self.graph['nodes'][identity]['type'];schema=nodes.specs(kind)
+        filenames=['file'] if kind=='image' else [key for key,spec in schema.items() if spec['type']=='String' and 'FLAGS_FILENAME' in spec.get('flags','')]
+        if not filenames:self.error('This node has no texture file input');return
+        key=filenames[0]
+        if len(filenames)>1:
+            key,ok=QtWidgets.QInputDialog.getItem(self,'Texture input','Input',filenames,0,False)
+            if not ok:return
         path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Choose texture image','','Images (*.exr *.hdr *.png *.jpg *.jpeg *.tif *.tiff *.tx);;All files (*)')
         if path:
             before=copy.deepcopy(self.graph)
-            try:self.target(identity).setdefault('parameters',{})['file']=path;self.validate_draft();self.remember(before);self.inspect()
+            try:self.target(identity).setdefault('parameters',{})[key]=path;self.validate_draft();self.remember(before);self.inspect()
             except ValueError as exc:self.graph=before;self.error(exc)
     def reset_input(self):
         identity=self.selected();row=self.table.currentRow()
