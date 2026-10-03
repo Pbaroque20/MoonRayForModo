@@ -34,6 +34,9 @@ def medium(material):
     stack=material.get('material_stack')
     if not stack:
         return material if enabled(material) else None
+    from .material_groups import supported
+    if supported(stack):
+        return {'stack_medium':stack} if any(enabled(layer) for layer in stack) else None
     active=[]
     for index,layer in enumerate(stack):
         weight=layer.get('layer_opacity',1)

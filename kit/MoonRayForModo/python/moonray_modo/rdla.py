@@ -59,7 +59,9 @@ def mesh_array(values,counts=False):
 
 def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     from .serialization import revision
-    with textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
+    from .scene_references import configuration as reference_configuration
+    from .working_space import configuration as working_configuration
+    with working_configuration(scene.get('asset_settings',{})),reference_configuration(scene),textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
         return _scene_text(scene,width,height,samples,environment,output_file)
 
 def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
@@ -106,8 +108,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool(output_file and cryptomatte.enabled(scene))
-    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=crypto or bool(scene.get('production',{}).get('objects'))))
-    if output_file:cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,crypto)
+    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances={identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('mesh_light')}))
+    if output_file:cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,crypto,scene)
     lighting.emit(scene,render_meshes,float(environment),lines)
     # Keep material handles in a table to avoid Lua's local variable limit.
     lines.append('local materials = {}')
@@ -139,7 +141,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         glass = (material.get('transmission', 0) > 0 or material.get('presence', 1) < 1 or
                  'dissolve' in effects or any(k.startswith('tran') for k in effects))
         from .graph import bindings as graph_bindings
-        moonshine = material.get('shader') == 'DwaBaseMaterial' or bool({'aniso','subsCol','subsAmt'} & effects) or material.get('subsurface_amount',0)>0
+        moonshine = glass or material.get('dispersion_abbe',0)>0 or material.get('shader') == 'DwaBaseMaterial' or bool({'aniso','subsCol','subsAmt'} & effects) or material.get('subsurface_amount',0)>0
         if moonshine:
             material = dict(material,shader='DwaBaseMaterial')
         bindings = graph_bindings(material, index, lines, glass and not moonshine)
@@ -148,6 +150,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             emit(material, tag, index, bindings, lines)
             continue
         bindings.pop('layerMask',None)
+        from .working_space import color as working_color,surface as working_surface
+        material=dict(material)
+        for key in ('color','emission','specular','transmission_color'):
+            if key in material:material[key]=working_color(material[key])
+        bindings=working_surface(bindings,'/modo/material/'+str(index),lines,{'diffuseColor','specularColor','emissiveColor','transmissionColor'})
         if glass:
             lines += ['materials[%s] = ModoGlassMaterial("/modo/material/%s") {' % (string(tag), index),
                       '  ["transmission"] = %s,' % number(material.get('transmission', 0)),
@@ -189,18 +196,26 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     lines.append('local volumes = {}')
     for index,(tag,material) in enumerate(sorted(media.items())):
         if material is not None:
-            distance = material['absorption_distance']
-            sigma = [-math.log(max(1e-6,min(1,float(c))))/distance for c in material.get('transmission_color',[1,1,1])]
-            attenuation = vector(sigma,'Rgb')
-            color_layers = absorption.color_layers(material)
-            color_maps = {k:v for k,v in material.get('textures',{}).items() if textures.EFFECT_ALIASES.get(k,k)=='tranCol'}
-            if any(absorption.effect(v)=='tranCol' for v in color_layers) or color_maps:
+            if material.get('stack_medium'):
+                from .material_groups import merged
                 from .graph import bindings as volume_bindings
-                mapped = volume_bindings(dict(material,layers=color_layers if 'layers' in material else None,textures=color_maps),900000000+index,lines)
-                name = '/modo/absorption/map/%d'%index
-                lines += ['ModoTextureMap(%s) { ["mode"] = 4, ["foreground"] = %s, ["distance"] = %s }' %
-                          (string(name),mapped['transmissionColor'],number(distance))]
-                attenuation = 'bind(ModoTextureMap(%s), Rgb(1,1,1))'%string(name)
+                attenuation=volume_bindings(merged(material['stack_medium']),900000000+index,lines,absorption=True)['transmissionColor']
+            else:
+                distance = material['absorption_distance']
+                from .working_space import color as working_color
+                sigma = [-math.log(max(1e-6,min(1,float(c))))/distance for c in working_color(material.get('transmission_color',[1,1,1]))]
+                attenuation = vector(sigma,'Rgb')
+                color_layers = absorption.color_layers(material)
+                color_maps = {k:v for k,v in material.get('textures',{}).items() if textures.EFFECT_ALIASES.get(k,k)=='tranCol'}
+                if any(absorption.effect(v)=='tranCol' for v in color_layers) or color_maps:
+                    from .graph import bindings as volume_bindings
+                    mapped = volume_bindings(dict(material,layers=color_layers if 'layers' in material else None,textures=color_maps),900000000+index,lines)
+                    from .working_space import expression as working_expression
+                    mapped['transmissionColor']=working_expression(mapped['transmissionColor'],'/modo/absorption/working/'+str(index),lines)
+                    name = '/modo/absorption/map/%d'%index
+                    lines += ['ModoTextureMap(%s) { ["mode"] = 4, ["foreground"] = %s, ["distance"] = %s }' %
+                              (string(name),mapped['transmissionColor'],number(distance))]
+                    attenuation = 'bind(ModoTextureMap(%s), Rgb(1,1,1))'%string(name)
             lines += ['volumes[%s] = BaseVolume(%s) {' % (string(tag),string('/modo/absorption/%d'%index)),
                       '  ["diffuse_color"] = Rgb(0,0,0),',
                       '  ["attenuation_color"] = %s,' % attenuation,
@@ -240,7 +255,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         level = mesh.get('subdivision_level', 3)
         if type(level) is not int or not 1 <= level <= 5:
             raise ValueError('Subdivision level must be an integer between 1 and 5')
-        user_data = [cryptomatte.userdata(mesh,lines)] if crypto else []
+        user_data = [cryptomatte.userdata(mesh,lines,cryptomatte.category(scene),scene)] if crypto else []
         for uv_index, (uv_name, values) in enumerate(sorted(mesh.get('uv_sets', {}).items())):
             if len(values) != sum(map(len, faces)):
                 raise ValueError('Named UV set must match polygon corners: '+uv_name)
@@ -302,7 +317,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lines.append('  assign(geometry, "", %s, %s)' % (string(tag),string(lighting.owner(mesh))))
         if 'instances' in mesh:
             if mesh['instances']:
+                instance_crypto=cryptomatte.userdata(mesh,lines,cryptomatte.category(scene),scene,instances=True) if crypto and cryptomatte.category(scene)!='material' else None
                 lines += ['  local instances = RdlInstancerGeometry("/modo/instances/%s") {' % index,
+                          *(['    ["primitive_attributes"] = {%s},'%instance_crypto] if instance_crypto else []),
                           '    ["method"] = 2,',
                           '    ["references"] = {geometry},',
                           '    ["use_reference_xforms"] = false,',

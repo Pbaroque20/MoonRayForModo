@@ -25,6 +25,11 @@ def blend(background, foreground, mode, opacity):
         if mode=='overlay': return 2*a*b if a<.5 else 1-2*(1-a)*(1-b)
         if mode=='hardlight': return 2*a*b if b<.5 else 1-2*(1-a)*(1-b)
         if mode=='exclusion': return a+b-2*a*b
+        if mode=='softlight':
+            d=((16*a-12)*a+4)*a if a<=.25 else math.sqrt(max(0,a))
+            return a-(1-2*b)*a*(1-a) if b<=.5 else a+(2*b-1)*(d-a)
+        if mode=='colordodge':return 1 if b>=1 else min(1,a/max(1e-6,1-b))
+        if mode=='colorburn':return 0 if b<=0 else 1-min(1,(1-a)/max(1e-6,b))
         raise ValueError('Unsupported environment blend: '+mode)
     opacity = max(0,min(1,opacity))
     return [a+(component(a,b)-a)*opacity for a,b in zip(background,foreground)]
@@ -39,7 +44,17 @@ def image_pixels(layer, folder, width, height):
     source = textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''))
     target = folder/(uuid.uuid4().hex+'.pfm')
     try:
-        command = [str(converter),source,'--ch','R,G,B','--resize','%dx%d!'%(width,height),'-o',str(target)]
+        command = [str(converter),source,'--ch','R,G,B']
+        controls=layer.get('corrections',{})
+        if controls.get('gamma',1)!=1:command += ['--maxc','0','--powc',str(1/controls['gamma'])]
+        if controls.get('contrast',1)!=1:command += ['--subc','.5','--mulc',str(controls['contrast']),'--addc','.5']
+        if controls.get('brightness',1)!=1:command += ['--mulc',str(controls['brightness'])]
+        flips=layer.get('flips',[False]*3)
+        if any(flips):command += ['--mulc',','.join('-1' if v else '1' for v in flips),'--addc',','.join('1' if v else '0' for v in flips)]
+        channel=layer.get('image_channel','use')
+        if channel in ('red','green','blue'):command += ['--ch',','.join([{'red':'R','green':'G','blue':'B'}[channel]]*3)]
+        elif channel=='only':raise ValueError('Environment alpha-only processing requires an RGB environment image')
+        command += ['--resize','%dx%d!'%(width,height),'-o',str(target)]
         result = subprocess.run(command,env=native.environment(runtime),stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT,timeout=120,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         if result.returncode:

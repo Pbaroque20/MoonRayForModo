@@ -18,6 +18,10 @@ def assign_materials(data, scene, warnings):
     materials={}
     tags={}
     for surface in data['surfaces']:
+        surface.setdefault('source_material',surface['material'])
+        surface['material']=surface['source_material']
+        surface.setdefault('source_layers',list(surface['layers']))
+        surface['layers']=list(surface['source_layers'])
         source_ids={surface['source_item']}
         source=scene.item(surface['source_item'])
         while source.type=='meshInst':
@@ -42,9 +46,6 @@ def assign_materials(data, scene, warnings):
                     def contains(target):
                         return target.id in source_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
                     if targets and not any(contains(i) for i in targets): return False
-                    if item.type in ('advancedMaterial','material.moonrayMaterialX') and (channel(parent,'opacity',1)!=1 or channel(parent,'blend','normal')!='normal' or channel(parent,'invert',False)):
-                        warnings.append('Group opacity and blending are not translated: '+parent.name)
-                        return False
                 parent=parent.parent
             return True
         # In 16.1 the returned stack may include item masks that still need to
@@ -66,7 +67,7 @@ def assign_materials(data, scene, warnings):
                 materials[tag]['shader']='DwaBaseMaterial'
             collect(scene,{tag:materials[tag]},warnings,baked_effects=('displace',),
                     layer_filter=set(stack),material_key=tag)
-            if len(candidates)>1:
+            if candidates:
                 from .layers import material_stack
                 materials[tag]['material_stack']=material_stack(scene,candidates,warnings,tag,set(stack))
         surface['material']=tags[stack]
@@ -156,6 +157,11 @@ def meshes(data, materials, warnings, scene=None):
                 if descriptor.get('projection','uv') != 'uv':
                     continue
                 source_name = descriptor.get('uv_map','')
+                if source_name.startswith('@index:'):
+                    names=sorted(uv_names);uv_index=int(source_name.split(':',1)[1])
+                    if uv_index>=len(names):raise ValueError('Evaluated mesh has no UV set '+str(uv_index))
+                    source_name=names[uv_index]
+                elif not source_name and uv_names:source_name=sorted(uv_names)[0]
                 if source_name not in uv_names:
                     raise ValueError('Evaluated mesh is missing UV map '+source_name)
                 source_index = uv_names.index(source_name)

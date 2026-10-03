@@ -5,6 +5,10 @@ from . import shader_library,coordinates,map_library
 
 MAPS={
  'constant':{'value':('Rgb',[.5,.5,.5])},
+ 'texcoord':{'index':('Int',0),'uv_map':('String','')},
+ 'swizzle':{'in':('Rgb',[0,0,0]),'channels':('String','rgb'),'index':('Int',0)},
+ 'combine':{'in1':('Float',0),'in2':('Float',0),'in3':('Float',0)},
+ 'clamp':{'in':('Rgb',[0,0,0]),'low':('Rgb',[0,0,0]),'high':('Rgb',[1,1,1])},
  'image':{'file':('String',''),'srgb':('Bool',True),'color_space':('String',''),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0])},
  'multiply':{'in1':('Rgb',[1,1,1]),'in2':('Rgb',[1,1,1])},
  'add':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
@@ -21,7 +25,7 @@ def specs(kind):
     if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
     return {key:{'name':key,'type':value[0],'default_value':value[1],
-                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel') else ''} for key,value in MAPS[kind].items()}
+                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index') else ''} for key,value in MAPS[kind].items()}
 
 
 def category(kind):
@@ -98,7 +102,11 @@ def new(shader='DwaBaseMaterial',parameters=None):
 
 
 def image_descriptor(node):
-    value=node.get('parameters',{})
+    value=dict(node.get('parameters',{}))
+    if node['type']=='texcoord' and not value.get('uv_map'):
+        index=int(value.get('index',0))
+        if index<0:raise ValueError('UV set index cannot be negative')
+        value['uv_map']='@index:'+str(index)
     layer={'projection':'uv','uv_map':value.get('uv_map',''),'scale':value.get('scale',[1,1])}
     layer['coordinate_key']=coordinates.key(layer)
     return layer
@@ -106,7 +114,7 @@ def image_descriptor(node):
 
 def descriptors(graph):
     g=validate(graph)
-    return [image_descriptor(node) for node in g['nodes'].values() if node['type']=='image' and 'texcoord' not in node.get('inputs',{})]
+    return [image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
 
 
 def emit(material,name,index,lines,library,output="root"):
@@ -153,6 +161,31 @@ def emit(material,name,index,lines,library,output="root"):
                 if not 0<=channel<=4: raise ValueError('Image channel must be 0 (RGB), 1-3 (RGB components), or 4 (alpha)')
                 if channel==4: ref=alpha
                 elif channel: ref=definition('ModoTextureMap',path+'/component',{'mode':'7','foreground':binding(ref,'Rgb'),'component':str(channel-1)})
+            elif kind=='texcoord':
+                ref=definition('AttributeMap',path,{'primitive_attribute_name':string(image_descriptor(item)['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
+            elif kind=='swizzle':
+                channels=params.get('channels','rgb')
+                if len(channels) not in (1,2,3) or any(c not in 'rgbxyz01' for c in channels):raise ValueError('Invalid component swizzle')
+                if len(channels)==1:channels*=3
+                elif len(channels)==2:channels+='0'
+                components=[]
+                for i,c in enumerate(channels):
+                    component='Rgb(%s,%s,%s)'%(c,c,c) if c in '01' else binding(definition('ModoTextureMap',path+'/extract'+str(i),{'mode':'7','foreground':values['in'],'component':str('rgbxyz'.index(c)%3)}),'Rgb')
+                    unit=[0,0,0];unit[i]=1
+                    components.append(definition('ModoTextureMap',path+'/isolate'+str(i),{'background':component,'foreground':vector(unit,'Rgb'),'blend':'1'}))
+                ref=definition('ModoTextureMap',path+'/sum01',{'background':binding(components[0],'Rgb'),'foreground':binding(components[1],'Rgb'),'blend':'2'})
+                ref=definition('ModoTextureMap',path,{'background':binding(ref,'Rgb'),'foreground':binding(components[2],'Rgb'),'blend':'2'})
+            elif kind=='combine':
+                components=[]
+                for i,key in enumerate(('in1','in2','in3')):
+                    unit=[0,0,0];unit[i]=1
+                    val=binding(refs[key],'Rgb') if key in refs else vector([params.get(key,0)]*3,'Rgb')
+                    components.append(definition('ModoTextureMap',path+'/isolate'+str(i),{'background':val,'foreground':vector(unit,'Rgb'),'blend':'1'}))
+                ref=definition('ModoTextureMap',path+'/sum01',{'background':binding(components[0],'Rgb'),'foreground':binding(components[1],'Rgb'),'blend':'2'})
+                ref=definition('ModoTextureMap',path,{'background':binding(ref,'Rgb'),'foreground':binding(components[2],'Rgb'),'blend':'2'})
+            elif kind=='clamp':
+                low=definition('OpMap',path+'/low',{'operation':'4','op1':values['in'],'op2':values['low']})
+                ref=definition('OpMap',path,{'operation':'5','op1':binding(low,'Rgb'),'op2':values['high']})
             elif kind=='constant': ref=definition('ModoTextureMap',path,{'foreground':values['value']})
             elif kind in ('multiply','add','subtract','divide'):
                 ref=definition('ModoTextureMap',path,{'background':values['in1'],'foreground':values['in2'],'blend':str({'multiply':1,'add':2,'subtract':3,'divide':5}[kind])})

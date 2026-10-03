@@ -2,10 +2,12 @@
 import copy,hashlib,json,os,re,shutil,tempfile
 from pathlib import Path
 
-# The renderer and authored Modo RGB values share linear Rec.709 primaries.
-# OCIO source names are configurable; arbitrary working primaries are not implied.
+# Modo channel graphs evaluate in Rec.709. Renderer-facing colors may use AP1.
+# Input OCIO targets name the Rec.709 graph space, not the chosen render primaries.
 def values(settings):
-    v=dict(settings);v.setdefault('config','');v.setdefault('linear_space','Linear Rec.709 (sRGB)');v.setdefault('texture_cache_mb',4000);v.setdefault('rules',[])
+    v=dict(settings);v.setdefault('working_space','rec709')
+    if v['working_space'] not in ('rec709','acescg'):raise ValueError('Choose linear Rec.709 or ACEScg working primaries')
+    v.setdefault('config','');v.setdefault('linear_space','Linear Rec.709 (sRGB)');v.setdefault('texture_cache_mb',4000);v.setdefault('rules',[])
     v['texture_cache_mb']=int(v['texture_cache_mb'])
     if not 64<=v['texture_cache_mb']<=131072:raise ValueError('Texture cache must be between 64 and 131072 MB')
     if len(v['rules'])>256:raise ValueError('Use at most 256 input color rules')
@@ -22,7 +24,10 @@ def paths(value):
         elif isinstance(node,(list,tuple)):
             for child in node:visit(child)
         elif isinstance(node,str) and (re.match(r'^[A-Za-z]:[/\\]',node) or node.startswith('//')) and Path(node).suffix:found.add(node)
-    visit(value);return sorted(found)
+    visit(value)
+    for settings in value.get('production',{}).get('lights',{}).values() if isinstance(value,dict) else []:
+        for key in ('cookie_file','filter_vdb'):visit(settings.get(key,''))
+    return sorted(found)
 
 def inventory(scene):
     from .textures import source_tiles
@@ -38,6 +43,7 @@ def signature(scene):
 
 def package(scene,destination,width,height,samples,environment):
     from . import rdla,textures
+    from .working_space import label as working_label
     destination=Path(destination).expanduser().resolve()
     if destination.exists():raise ValueError('Choose a new package folder; existing folders are preserved')
     missing=[entry['path'] for entry in inventory(scene) if entry['missing']]
@@ -90,8 +96,8 @@ def package(scene,destination,width,height,samples,environment):
         listed={v['file'] for v in manifest}
         for path in (staging/'assets').rglob('*'):
             if path.is_file() and path.relative_to(staging).as_posix() not in listed:manifest.append({'file':path.relative_to(staging).as_posix(),'bytes':path.stat().st_size,'sha256':file_hash(path)})
-        (staging/'manifest.json').write_text(json.dumps({'format':1,'working_space':'linear Rec.709','assets':manifest,'runtime_required':'MoonRayForModo matching native runtime','display':display},indent=2),encoding='utf-8')
-        (staging/'README.txt').write_text('Open a command prompt in this folder. Set RDL2_DSO_PATH to the matching MoonRayForModo runtime, then run moonray.exe -in scene.rdla -out output/beauty.exr. Converted textures are already in render working space. Display transforms are not baked into linear render outputs. This is a frame package; animated sequences must be packaged frame by frame.\n',encoding='utf-8')
+        (staging/'manifest.json').write_text(json.dumps({'format':1,'working_space':working_label(scene.get('asset_settings',{})),'assets':manifest,'runtime_required':'MoonRayForModo matching native runtime','display':display},indent=2),encoding='utf-8')
+        (staging/'README.txt').write_text('Open a command prompt in this folder. Set RDL2_DSO_PATH to the matching MoonRayForModo runtime, then run moonray.exe -in scene.rdla -out output/beauty.exr. Material texture inputs use the linear graph space and convert to render primaries at shader boundaries; prepared environment images already use render primaries. Display transforms are not baked into linear render outputs. This is a frame package; animated sequences must be packaged frame by frame.\n',encoding='utf-8')
         staging.rename(destination)
         return str(destination)
     except Exception:

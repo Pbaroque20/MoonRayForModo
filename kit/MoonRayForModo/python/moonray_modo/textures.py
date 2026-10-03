@@ -45,7 +45,7 @@ EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
            'tranAmt': 'transmission', 'tranCol': 'transmissionColor', 'tranRough': 'refractionRoughness',
            'normal':'normal', 'bump':'bump', 'diffAmt':'diffuseAmount',
            'specAmt':'specularAmount', 'groupMask':'layerMask', 'aniso':'anisotropy', 'lumiAmt':'emissiveAmount', 'dissolve':'presence',
-           'subsCol':'subsurfaceColor', 'subsAmt':'subsurfaceAmount'}
+           'subsCol':'subsurfaceColor', 'subsAmt':'subsurfaceAmount', 'ior':'ior'}
 COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol', 'subsCol'}
 
 # Shader Tree effect identifiers differ from advancedMaterial channel names.

@@ -68,7 +68,8 @@ def render_meshes(meshes, expand_instances=False):
     for mesh in meshes:
         settings=options.object_values(mesh.get('geometry_settings',{}))
         dynamic=settings['override'] and settings['dynamic_tessellation'] and mesh.get('subdivision') and not mesh.get('evaluated_geometry')
-        split=expand_instances or (settings['override'] and (not settings['share_instances'] or dynamic))
+        affected=bool(set(map(str,mesh.get('instance_ids',[]))) & expand_instances) if isinstance(expand_instances,set) else expand_instances
+        split=affected or (settings['override'] and (not settings['share_instances'] or dynamic))
         if split and 'instances' in mesh:
             transforms=mesh['instances'];ids=mesh.get('instance_ids',list(range(len(transforms))))
             if len(ids)!=len(transforms): raise ValueError('Instance IDs must match transform count')

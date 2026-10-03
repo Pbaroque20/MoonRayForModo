@@ -25,6 +25,7 @@ def emit(material, tag, index, bindings, lines):
         'refractive_index':number(reflection_ior),
         'use_independent_transmission_refractive_index':'true',
         'independent_transmission_refractive_index':number(material.get('ior',1.5)),
+        'dispersion_abbe_number':number(material.get('dispersion_abbe',0)),
         'transmission':number(material.get('transmission',0)),
         'transmission_color':vector(material.get('transmission_color',[1,1,1]),'Rgb'),
         'use_independent_transmission_roughness':'true',
@@ -50,12 +51,27 @@ def emit(material, tag, index, bindings, lines):
             name='/modo/normal/%s' % index
             lines += ['ModoNormalMap(%s) { ["input"] = %s }' % (string(name),value)]
             attributes['input_normal']='ModoNormalMap(%s)' % string(name)
+        elif key=='ior':
+            attributes['independent_transmission_refractive_index']=value
+            if not material.get('standard_material'):attributes['refractive_index']=value
+        elif key=='specularAmount' and material.get('standard_material'):
+            attributes['specular']='1'
+            attributes['show_specular']='true'
         elif key!='specularColor':
             attributes[names.get(key,key)]=value
             if key=='diffuseColor':
                 attributes['metallic_color']=value
             if key=='specularAmount':
                 attributes['show_specular']='true'
+    if material.get('standard_material') and 'specularColor' in bindings:
+        # Modo's standard specular amount is normal-incidence reflectance,
+        # whereas Dwa specular is an additional lobe weight. Preserve that distinction.
+        path='/modo/fresnel/'+str(index)
+        lines.append('ModoTextureMap(%s) { ["mode"] = 9, ["foreground"] = %s }'%(string(path),bindings['specularColor']))
+        attributes['refractive_index']='bind(ModoTextureMap(%s), 1)'%string(path)
+        attributes['specular']='1';attributes['show_specular']='true'
+    from .working_space import surface as working_surface
+    attributes=working_surface(attributes,'/modo/material/'+str(index),lines,{'albedo','metallic_color','scattering_color','transmission_color','emission','clearcoat_attenuation_color'})
     lines.append('materials[%s] = DwaBaseMaterial("/modo/material/%s") {' % (string(tag),index))
     lines.extend('  [%s] = %s,' % (string(k),v) for k,v in attributes.items())
     lines.append('}')
@@ -74,6 +90,14 @@ def emit(material, tag, index, bindings, lines):
 def emit_stack(stack, tag, index, lines, library=None, native_index=None):
     from .rdla import string, number
     from .graph import bindings
+    from .material_groups import supported, merged
+    if supported(stack):
+        material=merged(stack)
+        maps=bindings(material,index,lines)
+        emit(material,tag,index,maps,lines)
+        return
+    if any(any(g.get('opacity',1)!=1 or g.get('blend','normal')!='normal' or g.get('invert') for g in m.get('material_groups',[])) for m in stack):
+        raise ValueError('Native shader graph groups require explicit material-mix nodes for group processing')
     for i, material in enumerate(stack):
         key = '/modo/internal/%s/%s' % (index,i)
         identity = 1000000 + index*1000+i

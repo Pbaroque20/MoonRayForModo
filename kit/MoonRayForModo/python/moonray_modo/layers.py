@@ -3,7 +3,7 @@ from pathlib import Path
 from . import textures
 from .mask_types import tag_kind
 
-BLENDS = {'normal':0, 'multiply':1, 'add':2, 'subtract':3, 'screen':4, 'divide':5, 'difference':6, 'darken':7, 'lighten':8, 'overlay':9, 'hardlight':10, 'exclusion':11}
+BLENDS = {'normal':0, 'multiply':1, 'add':2, 'subtract':3, 'screen':4, 'divide':5, 'difference':6, 'darken':7, 'lighten':8, 'overlay':9, 'hardlight':10, 'exclusion':11, 'softlight':12, 'colordodge':13, 'colorburn':14}
 
 def ordered_items(parent):
     """Yield visible Shader Tree order (top to bottom), preserving group scopes."""
@@ -23,12 +23,10 @@ def material_tag(item, texture=False):
             return None
         if parent.type != 'mask':
             raise ValueError('unsupported shader parent ' + parent.type)
-        if not texture and (channel(parent,'opacity',1)!=1 or channel(parent,'blend','normal')!='normal' or channel(parent,'invert',False)):
-            raise ValueError('group opacity and group blending are unsupported')
         kind, value = tag_kind(channel(parent, 'ptyp', '')), channel(parent, 'ptag', '')
         if kind == 'material' and value:
             if tag is not None and tag != value:
-                raise ValueError('nested material selections are unsupported')
+                return None  # Intersection of two different material tags is empty.
             tag = value
         elif kind not in ('','material') or value:
             raise ValueError('mask requires Modo evaluated membership (type=%r, tag=%r)' % (kind,value))
@@ -83,8 +81,6 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 base_groups = texture_groups(by_id[base], channel)
                 if base_groups is None:
                     continue
-                if any(g['opacity'] != 1 or g['blend']!='normal' or g.get('invert') for g in base_groups):
-                    raise ValueError('opacity, blend or inversion on a group containing a base material requires whole-material group translation')
                 # The common material scope owns its mask; nested texture-only
                 # scopes consume theirs locally when composited into that scope.
                 common = 0
@@ -103,7 +99,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             if blend not in BLENDS:
                 raise ValueError('unsupported blend '+blend)
             node = {'kind':layer.type, 'effect':effect, 'opacity':float(channel(layer,'opacity',1)),
-                    'blend':blend, 'uv_map':'', 'invert':bool(channel(layer,'invert',0)), 'groups':groups}
+                    'blend':blend, 'uv_map':'', 'invert':bool(channel(layer,'invert',0)), 'groups':groups, 'absolute_groups':texture_groups(layer,channel) or []}
             if effect == 'normal' and (blend != 'normal' or layer.type != 'imageMap'):
                 raise ValueError('normal maps require an image and Normal blending')
             is_color = effect in textures.COLOR_EFFECTS or effect == 'normal'
@@ -141,9 +137,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     clip = next((i for i in connected if i.type=='videoStill'),None)
                     if not clip:
                         raise ValueError('requires a still image or a <UDIM> filename')
-                    checks = {'gamma':1,'brightness':1,'contrast':1}
-                    if any(channel(layer,key,value) != value for key,value in checks.items()):
-                        raise ValueError('image color corrections are unsupported')
+                    from .texture_controls import capture
+                    node['corrections'] = capture(layer, channel)
                     source_channel = channel(layer,'rgba','use') if channel(layer,'swizzling',0) else channel(layer,'alpha','use')
                     if source_channel not in ('use','ignore','only','red','green','blue'):
                         raise ValueError('unsupported image channel '+str(source_channel))
@@ -173,8 +168,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 else:
                     node.update(color1=color(layer,'color1',(0,0,0)) if is_color else [float(channel(layer,'value1',0))]*3,
                                 color2=color(layer,'color2') if is_color else [float(channel(layer,'value2',1))]*3)
-                    if channel(layer,'bias',.5)!=.5 or channel(layer,'gain',.5)!=.5:
-                        raise ValueError('procedural bias/gain adjustments are unsupported')
+                    node['bias'] = float(channel(layer,'bias',.5))
+                    node['gain'] = float(channel(layer,'gain',.5))
                     if layer.type=='checker' and (channel(layer,'type','square')!='square' or channel(layer,'variation',0)):
                         raise ValueError('only unvaried square checkers are supported')
                     if layer.type=='noise':
@@ -204,13 +199,14 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
     for index, base in reversed(list(enumerate(candidates))):
         value = material_values(base)
         value['shader'] = 'DwaBaseMaterial'
+        value['material_groups'] = texture_groups(base, channel) or []
         allowed = set()
         upper = positions[candidates[index-1].id] if index else -1
         for layer in ordered[upper+1:positions[base.id]]:
             if membership is not None and layer.id not in membership:
                 continue
             try:
-                if membership is not None or material_tag(layer, texture=True) == tag:
+                if membership is not None or material_tag(layer, texture=True) in (tag,''):
                     allowed.add(layer.id)
             except ValueError:
                 continue

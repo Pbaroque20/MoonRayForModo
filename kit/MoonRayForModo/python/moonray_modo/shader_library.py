@@ -18,6 +18,8 @@ def typed(value, attribute):
     kind=attribute['type']
     if kind=='SceneObject*':
         if value is None: return None
+        if isinstance(value,dict) and set(value)=={'item'} and isinstance(value['item'],str) and attribute.get('interface') in ('INTERFACE_CAMERA','INTERFACE_NODE'):
+            return value
         if not isinstance(value,dict) or set(value)!={'material'} or not isinstance(value['material'],str):
             raise ValueError('Choose a material reference')
         return value
@@ -131,6 +133,22 @@ def emit(material, name, index, lines, library, trail=(), authored_bindings=None
             raise ValueError(shader+' cannot accept the mapped '+key+' effect; put this texture on a compatible input material')
         authored[target]=value
     authored.update(authored_bindings or {})
+    from .working_space import enabled as working_enabled,color as working_color
+    if working_enabled():
+        import re
+        for key,spec in attributes.items():
+            if key in authored or spec['type']!='Rgb' or key=='TMI':continue
+            text=str(spec.get('default',''));match=re.fullmatch(r'(?:Rgb|Color)\(([^()]*)\)',text.strip())
+            if not match:continue
+            try:
+                values=[float(v.strip().rstrip('f')) for v in match.group(1).split(',')]
+                if len(values)==1:values*=3
+                if len(values)==3:authored[key]=literal(values,spec)
+            except ValueError:continue
+        for key,spec in attributes.items():
+            if spec['type']=='RgbVector' and key in parameters:authored[key]=literal([working_color(v) for v in parameters[key]],spec)
+    from .working_space import surface as working_surface
+    authored=working_surface(authored,name,lines,{key for key,spec in attributes.items() if spec['type']=='Rgb' and key!='TMI'})
     lines.append('%s(%s) {'%(shader,string(name)))
     lines.extend('  [%s] = %s,'%(string(key),value) for key,value in authored.items())
     lines.append('}')

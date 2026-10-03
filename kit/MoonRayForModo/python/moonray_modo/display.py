@@ -2,12 +2,13 @@
 import math
 from pathlib import Path
 
-DEFAULTS={'view':'reinhard','exposure':0.0,'lut':'','lut_space':'display',
+DEFAULTS={'working_space':'rec709','view':'reinhard','exposure':0.0,'lut':'','lut_space':'display',
           'config':'','source':'Linear Rec.709 (sRGB)','display':'sRGB','ocio_view':'ACES 1.0 - SDR Video'}
 
 
 def values(settings):
     result={key:settings.get(key,value) for key,value in DEFAULTS.items()}
+    if result['working_space'] not in ('rec709','acescg'):raise ValueError('Unknown render working space')
     if result['view'] not in ('srgb','reinhard','raw','ocio'): raise ValueError('Unknown display transform')
     if result['lut_space'] not in ('linear','display'): raise ValueError('Unknown LUT placement')
     result['exposure']=float(result['exposure'])
@@ -21,7 +22,11 @@ def arguments(settings):
     v=values(settings)
     for key in ('lut','config'):
         if v[key] and not Path(v[key]).is_file(): raise ValueError('Missing '+key+' file: '+v[key])
-    args=['--mulc',str(2.0**v['exposure'])]
+    args=[]
+    if v['working_space']=='acescg' and v['view'] not in ('raw','ocio'):
+        from .working_space import TO_REC709,matrix_argument
+        args += ['--colormatrix',matrix_argument(TO_REC709)]
+    args += ['--mulc',str(2.0**v['exposure'])]
     if v['view']=='ocio' and v['config']: args += ['--colorconfig',v['config']]
     if v['lut'] and v['lut_space']=='linear': args += ['--ociofiletransform',v['lut']]
     if v['view']=='reinhard':

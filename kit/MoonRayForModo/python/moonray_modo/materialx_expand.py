@@ -1,4 +1,4 @@
-"""Expand local, single-output MaterialX NodeDef graph implementations safely."""
+"""Expand local, named-output MaterialX NodeDef graph implementations safely."""
 import copy
 
 CONNECTION=('value','nodename','nodegraph','output','interfacename','channels')
@@ -21,13 +21,13 @@ def expand(document):
             # Infer a local definition only when category and output type identify it uniquely.
             if definition is None:
                 matches=[d for d in definitions.values() if d.get('node')==node.tag and d.get('name') in implementations
-                    and any(o.get('type')==node.get('type') for o in d.findall('output'))]
+                    and (node.get('type')=='multioutput' or any(o.get('type')==node.get('type') for o in d.findall('output')))]
                 if len(matches)==1:definition=matches[0];name=definition.get('name')
             template=implementations.get(name)
             if template is None:continue
             if name in trail or len(trail)>=32:raise ValueError('Recursive MaterialX NodeDef graph: '+str(name))
             outputs=template.findall('output')
-            if len(outputs)!=1:raise ValueError('MaterialX NodeDef implementations currently require one output: '+str(name))
+            if not outputs:raise ValueError('MaterialX NodeDef implementation has no outputs: '+str(name))
             count+=1
             if count>1000:raise ValueError('MaterialX expansion exceeds 1000 graph instances')
             clone=copy.deepcopy(template);clone_name='__moonray_expanded_'+str(count)
@@ -55,5 +55,6 @@ def expand(document):
             # Keep the original instance name as a connection alias.
             identity=node.get('name');xtype=node.get('type');node.clear();node.tag='output'
             node.set('name',identity);node.set('type',xtype or outputs[0].get('type','color3'))
-            node.set('nodegraph',clone_name);node.set('output',outputs[0].get('name','out'))
+            node.set('nodegraph',clone_name)
+            if len(outputs)==1:node.set('output',outputs[0].get('name','out'))
     return document

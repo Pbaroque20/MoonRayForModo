@@ -46,10 +46,16 @@ def apply_motion(scene, start, end, endpoints):
         first=indexed(start.get(category,[]),category)
         last=indexed(end.get(category,[]),category)
         if set(center)!=set(first) or set(center)!=set(last):
-            raise ValueError('Motion blur cannot export changing '+category+' identities')
+            affected=set(center)^set(first) | set(center)^set(last)
+            if category!='meshes' or any(scene.get('motion_policies',{}).get(str(i).split('|')[0],'strict')=='strict' for i in affected):
+                raise ValueError('Motion blur cannot export changing '+category+' identities')
+            warnings.append('Changing mesh membership uses frame-time visibility; births/deaths inside the shutter are not integrated.')
         outputs=[]
         for identity,original in center.items():
-            a,b=first[identity],last[identity]
+            a,b=first.get(identity,original),last.get(identity,original)
+            policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'strict')
+            if category=='meshes' and policy=='freeze' and any(v['faces']!=original['faces'] or len(v['vertices'])!=len(original['vertices']) for v in (a,b)):
+                outputs.append(dict(original));warnings.append('Frame-time topology used without deformation blur: '+str(identity));continue
             node=dict(original)
             node.update(matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY))
             if category=='lights':
@@ -82,9 +88,20 @@ def apply_motion(scene, start, end, endpoints):
         else: lights=outputs
     extras=[]
     center=indexed(scene.get('extra_geometry',[]),'curves/points');first=indexed(start.get('extra_geometry',[]),'curves/points');last=indexed(end.get('extra_geometry',[]),'curves/points')
-    if set(center)!=set(first) or set(center)!=set(last):raise ValueError('Motion blur requires stable curve/particle identities')
+    affected=set(center)^set(first) | set(center)^set(last)
+    if any(scene.get('motion_policies',{}).get(str(i).split('|')[0],'strict')=='strict' for i in affected):raise ValueError('Motion blur requires stable curve/particle identities')
+    if affected:warnings.append('Particle/strand membership uses frame-time visibility; births/deaths inside the shutter are not integrated.')
     for identity,original in center.items():
-        a,b=first[identity],last[identity]
+        a,b=first.get(identity,original),last.get(identity,original)
+        policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'strict')
+        if policy=='velocity':
+            velocity=original.get('velocities',[])
+            if len(velocity)!=len(original['vertices']):raise ValueError('Velocity topology mode requires one velocity per point/strand vertex: '+str(identity))
+            fps=float(scene.get('fps',24))
+            if fps<=0:raise ValueError('Motion requires positive FPS')
+            points=lambda t:[[p[k]+v[k]*t/fps for k in range(3)] for p,v in zip(original['vertices'],velocity)]
+            value=dict(original,vertices=points(endpoints[0]),vertices_close=points(endpoints[1]));value.pop('velocities',None);extras.append(value);continue
+        if policy=='freeze':extras.append(dict(original));continue
         if len(a['vertices'])!=len(original['vertices']) or len(b['vertices'])!=len(original['vertices']) or a.get('counts')!=b.get('counts'):raise ValueError('Motion blur requires stable curve/point topology')
         node=dict(original,matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY),vertices=a['vertices'],vertices_close=b['vertices'])
         extras.append(node)

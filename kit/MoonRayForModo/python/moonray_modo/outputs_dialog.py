@@ -8,7 +8,7 @@ class OutputsDialog(QtWidgets.QDialog):
         layout=QtWidgets.QVBoxLayout(self)
         note=QtWidgets.QLabel('Add named channels to the final EXR. LPE uses MoonRay expressions; Material AOV uses its native expression. Object Cryptomatte uses fixed Cryptomatte00… channel names, stable item IDs, an embedded manifest, and 32-bit channels. Motion vectors require motion samples.');note.setWordWrap(True);layout.addWidget(note)
         group=QtWidgets.QPushButton('Add light-group output…');group.clicked.connect(self.light_group);layout.addWidget(group)
-        self.table=QtWidgets.QTableWidget(0,7);self.table.setHorizontalHeaderLabels(['Name','Type','Expression','Precision','Filter','EXR part','Crypto depth']);layout.addWidget(self.table)
+        self.table=QtWidgets.QTableWidget(0,8);self.table.setHorizontalHeaderLabels(['Name','Type','Expression','Precision','Filter','EXR part','Crypto depth','Crypto category']);layout.addWidget(self.table)
         row=QtWidgets.QHBoxLayout();layout.addLayout(row)
         add=QtWidgets.QPushButton('Add output');add.clicked.connect(lambda:self.add({'name':'pass_'+str(self.table.rowCount()+1),'kind':'lpe','expression':'diffuse'}));row.addWidget(add)
         remove=QtWidgets.QPushButton('Remove selected');remove.clicked.connect(lambda:self.table.removeRow(self.table.currentRow()));row.addWidget(remove)
@@ -27,13 +27,16 @@ class OutputsDialog(QtWidgets.QDialog):
             widget=QtWidgets.QComboBox()
             for label,value in choices:widget.addItem(label,value)
             widget.setCurrentIndex(max(0,widget.findData(v.get(key,default))));self.table.setCellWidget(row,col,widget)
+        category=QtWidgets.QComboBox()
+        for key in ('object','material','asset'):category.addItem(key.title(),key)
+        category.setCurrentIndex(max(0,category.findData(v.get('category','object'))));self.table.setCellWidget(row,7,category)
         depth=QtWidgets.QSpinBox();depth.setRange(1,16);depth.setValue(v.get('depth',6));self.table.setCellWidget(row,6,depth)
     def accept(self):
         try:
             entries=[]
             for row in range(self.table.rowCount()):
                 v={key:self.table.item(row,col).text().strip() for col,key in ((0,'name'),(2,'expression'),(5,'part'))}
-                v.update({key:self.table.cellWidget(row,col).currentData() for col,key in ((1,'kind'),(3,'precision'),(4,'filter'))});v['depth']=self.table.cellWidget(row,6).value();entries.append(v)
+                v.update({key:self.table.cellWidget(row,col).currentData() for col,key in ((1,'kind'),(3,'precision'),(4,'filter'))});v['depth']=self.table.cellWidget(row,6).value();v['category']=self.table.cellWidget(row,7).currentData();entries.append(v)
             self.entries=outputs.values(entries)
         except ValueError as exc:QtWidgets.QMessageBox.warning(self,'Render outputs',str(exc));return
         super().accept()

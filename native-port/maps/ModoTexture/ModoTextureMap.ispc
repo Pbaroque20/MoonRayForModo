@@ -9,6 +9,12 @@ static float tileCoordinate(float value,int mode) {
     }
     return clamp(value,0.0f,1.0f);
 }
+static float layerGain(float value,float amount) {
+    float x=clamp(value,0.0f,1.0f), g=clamp(amount,.00001f,.99999f);
+    float y=x<.5f?2*x:2-2*x;
+    float b=y/((1/(1-g)-2)*(1-y)+1);
+    return x<.5f?.5f*b:1-.5f*b;
+}
 static float hash2(int x,int y) {
     unsigned int h=(unsigned int)x*73856093u ^ (unsigned int)y*19349663u;
     h^=h>>16;h*=0x7feb352du;h^=h>>15;h*=0x846ca68bu;h^=h>>16;
@@ -53,10 +59,24 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         return Color_ctor(tileCoordinate(x,u),tileCoordinate(y,v),0);
     }
     Color a=evalAttrBackground(me,tls,state),b=evalAttrForeground(me,tls,state);
+    if(mode==10) {
+        Color r1=evalAttrNormal(me,tls,state),r2=evalAttrCoordinates(me,tls,state);
+        return Color_ctor(a.r*b.r+a.g*b.g+a.b*b.b,r1.r*b.r+r1.g*b.g+r1.b*b.b,r2.r*b.r+r2.g*b.g+r2.b*b.b);
+    }
+    if(mode==9) {
+        float f=sqrt(clamp((b.r+b.g+b.b)/3,0.0f,.99f));return Color_ctor((1+f)/(1-f));
+    }
+    if(mode==8) {
+        float g=getAttrDistance(me);
+        return Color_ctor(layerGain(b.r,g),layerGain(b.g,g),layerGain(b.b,g));
+    }
     if(mode==7) {
         uniform int component=getAttrComponent(me);
         float value=component==0?b.r:(component==1?b.g:b.b);
         return Color_ctor(value,value,value);
+    }
+    if(mode==11) {
+        return Color_ctor(-log(clamp(b.r,1.e-6f,1.0f)),-log(clamp(b.g,1.e-6f,1.0f)),-log(clamp(b.b,1.e-6f,1.0f)))*max(0.f,a.r);
     }
     if(mode==4) {
         float distance=max(1.e-9f,getAttrDistance(me));
@@ -92,6 +112,9 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         case 9:mixed=Color_ctor((a.r<.5f?2*a.r*b.r:1-2*(1-a.r)*(1-b.r)),(a.g<.5f?2*a.g*b.g:1-2*(1-a.g)*(1-b.g)),(a.b<.5f?2*a.b*b.b:1-2*(1-a.b)*(1-b.b)));break;
         case 10:mixed=Color_ctor((b.r<.5f?2*a.r*b.r:1-2*(1-a.r)*(1-b.r)),(b.g<.5f?2*a.g*b.g:1-2*(1-a.g)*(1-b.g)),(b.b<.5f?2*a.b*b.b:1-2*(1-a.b)*(1-b.b)));break;
         case 11:mixed=Color_ctor(a.r+b.r-2*a.r*b.r,a.g+b.g-2*a.g*b.g,a.b+b.b-2*a.b*b.b);break;
+        case 12:mixed=Color_ctor((b.r<=.5f?a.r-(1-2*b.r)*a.r*(1-a.r):a.r+(2*b.r-1)*((a.r<=.25f?((16*a.r-12)*a.r+4)*a.r:sqrt(max(0.f,a.r)))-a.r)),(b.g<=.5f?a.g-(1-2*b.g)*a.g*(1-a.g):a.g+(2*b.g-1)*((a.g<=.25f?((16*a.g-12)*a.g+4)*a.g:sqrt(max(0.f,a.g)))-a.g)),(b.b<=.5f?a.b-(1-2*b.b)*a.b*(1-a.b):a.b+(2*b.b-1)*((a.b<=.25f?((16*a.b-12)*a.b+4)*a.b:sqrt(max(0.f,a.b)))-a.b)));break;
+        case 13:mixed=Color_ctor((b.r>=1?1:min(1.f,a.r/max(1.e-6f,1-b.r))),(b.g>=1?1:min(1.f,a.g/max(1.e-6f,1-b.g))),(b.b>=1?1:min(1.f,a.b/max(1.e-6f,1-b.b))));break;
+        case 14:mixed=Color_ctor((b.r<=0?0:1-min(1.f,(1-a.r)/max(1.e-6f,b.r))),(b.g<=0?0:1-min(1.f,(1-a.g)/max(1.e-6f,b.g))),(b.b<=0?0:1-min(1.f,(1-a.b)/max(1.e-6f,b.b))));break;
     }
     float alpha=saturate(evalAttrOpacity(me,tls,state)*evalAttrMask(me,tls,state));
     return a*(1-alpha)+mixed*alpha;

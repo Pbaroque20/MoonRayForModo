@@ -12,6 +12,7 @@ from .buffers import conversion
 
 class BufferCache(QtCore.QObject):
     image_ready=QtCore.Signal(str)
+    selected=QtCore.Signal(str)
     notice=QtCore.Signal(str)
 
     def __init__(self,parent=None):
@@ -23,12 +24,13 @@ class BufferCache(QtCore.QObject):
         self.process.finished.connect(self._finished)
         self.process.errorOccurred.connect(self._error)
         self.process.readyReadStandardOutput.connect(self._read)
-        self.frame=None;self.progressive=None;self.job=None;self.displayed=None
+        self.frame=None;self.progressive=None;self.progressive_frames={};self.progressive_scene=None;self.job=None;self.displayed=None
         self.key='beauty';self.display={};self.serial=0;self.closed=False;self.log=''
 
     def select(self,key,display):
         if not isinstance(key,str) or not key or not all(c.isalnum() or c=='_' for c in key):raise ValueError('Unknown preview buffer')
         self.key=key;self.display=dict(display);self.serial+=1
+        self.selected.emit(key)
         self._request()
 
     def publish(self,files,runtime,snapshot,backend,partial=False):
@@ -43,8 +45,12 @@ class BufferCache(QtCore.QObject):
         except Exception:
             shutil.rmtree(folder);raise
         frame={'folder':folder,'files':copied,'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':partial}
-        if partial:self.progressive=frame
-        else:self.frame=frame;self.progressive=None
+        if partial:
+            if self.progressive_scene is not snapshot:self.progressive_frames.clear()
+            self.progressive_scene=snapshot;self.progressive=frame
+            for key in copied:self.progressive_frames[key]=frame
+        else:
+            self.frame=frame;self.progressive=None;self.progressive_frames.clear();self.progressive_scene=None
         self.serial+=1;self._request();self._prune()
 
     def _request(self):
@@ -57,7 +63,7 @@ class BufferCache(QtCore.QObject):
         self._start()
 
     def _start(self):
-        frame=self.progressive if self.key=='beauty' and self.progressive else self.frame
+        frame=self.progressive_frames.get(self.key,self.frame)
         if frame is None or self.key not in frame['files']:
             self.notice.emit('Selected output will be available after a preview with these outputs completes.');return
         signature=hashlib.sha256(json.dumps([self.key,self.display],sort_keys=True).encode('utf-8')).hexdigest()
@@ -65,7 +71,9 @@ class BufferCache(QtCore.QObject):
         self.job=dict(frame=frame,key=self.key,serial=self.serial,destination=destination)
         if destination.is_file():self._show();self.job=None;self._prune();return
         try:
-            args=conversion(outputs.display_kind(frame['snapshot'],self.key),frame['files'][self.key],destination,self.display)
+            display=dict(self.display,working_space=frame['snapshot'].get('asset_settings',{}).get('working_space','rec709'))
+            if display['working_space']=='acescg' and display.get('view')=='ocio' and display.get('source')=='Linear Rec.709 (sRGB)':display['source']='ACEScg'
+            args=conversion(outputs.display_kind(frame['snapshot'],self.key),frame['files'][self.key],destination,display)
             env=QtCore.QProcessEnvironment()
             for key,value in native.environment(frame['runtime']).items():env.insert(key,value)
             self.process.setProcessEnvironment(env)
@@ -106,7 +114,7 @@ class BufferCache(QtCore.QObject):
             self.job=None;self.notice.emit('Cannot start buffer display converter: '+self.process.errorString());self._prune()
 
     def _prune(self):
-        keep={entry['folder'] for entry in (self.frame,self.progressive,self.job['frame'] if self.job else None) if entry}
+        keep={entry['folder'] for entry in list(self.progressive_frames.values())+[self.frame,self.job['frame'] if self.job else None] if entry}
         for folder in self.root.iterdir():
             if folder.is_dir() and folder not in keep:
                 try:shutil.rmtree(folder)

@@ -58,6 +58,8 @@ class Panel(QtWidgets.QWidget):
         asset_controls=QtWidgets.QPushButton('Input color spaces and texture cache…');asset_controls.clicked.connect(self._edit_assets);self.pages['display'].addRow(asset_controls)
         asset_report=QtWidgets.QPushButton('Report scene assets…');asset_report.clicked.connect(self._report_assets);self.pages['system'].addRow(asset_report)
         package=QtWidgets.QPushButton('Package portable render scene…');package.clicked.connect(self._package_assets);self.pages['system'].addRow(package)
+        sequence=QtWidgets.QPushButton('Package animation and assets…');sequence.clicked.connect(self._package_sequence);self.pages['system'].addRow(sequence)
+        relink=QtWidgets.QPushButton('Relink missing image clips…');relink.clicked.connect(lambda:lx.eval('moonray.assets.relink'));self.pages['system'].addRow(relink)
         controls = self.pages['render']
         self.size = QtWidgets.QComboBox()
         self.size.addItems(['320 px wide', '640 px wide', '960 px wide', 'Scene resolution'])
@@ -432,6 +434,7 @@ class Panel(QtWidgets.QWidget):
         self.buffer.blockSignals(False)
         from .display import values as display_values
         for key,value in display_values(values.get('display',{})).items():
+            if key not in self.display_controls:continue
             control=self.display_controls[key];control.blockSignals(True)
             if isinstance(control,QtWidgets.QComboBox): control.setCurrentIndex(max(0,control.findData(value)))
             elif isinstance(control,QtWidgets.QDoubleSpinBox): control.setValue(value)
@@ -522,6 +525,23 @@ class Panel(QtWidgets.QWidget):
             self.status.setText('Packaged render scene: '+output)
         except Exception as exc:self._failed(str(exc))
 
+    def _package_sequence(self):
+        if getattr(getattr(self,'packaging',None),'running',False):return
+        if self._output_busy():self.status.setText('Wait for the active output to finish before packaging.');return
+        import modo
+        first,ok=QtWidgets.QInputDialog.getInt(self,'Package animation','First frame',1,-100000,100000)
+        if not ok:return
+        last,ok=QtWidgets.QInputDialog.getInt(self,'Package animation','Last frame',first,first,100000)
+        if not ok:return
+        step,ok=QtWidgets.QInputDialog.getInt(self,'Package animation','Frame step',1,1,10000)
+        if not ok:return
+        path=self._save_path('New sequence package folder','sequence','','All names (*)')
+        if not path:return
+        try:
+            from .package_sequence import PackageSequence
+            self.packaging=PackageSequence(self,path,first,last,step,float(modo.Scene().fps),self.final_motion.isChecked());self.packaging.start()
+        except Exception as exc:self._failed(str(exc))
+
     def _edit_production(self):
         from .production_dialog import Controls
         dialog=Controls(self.production,self)
@@ -597,11 +617,16 @@ class Panel(QtWidgets.QWidget):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
             self._load_settings();self._geometry_cache=None
-        scene = host.snapshot(evaluated_geometry=self.surface.currentIndex() == 2,reuse_geometry=self._geometry_cache if reuse else None)
+        scene = host.snapshot(evaluated_geometry=self.surface.currentIndex() == 2,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials')
+        if reuse=='transforms':
+            from .incremental import refresh_transforms
+            refresh_transforms(modo.Scene(),scene)
         import copy,time
-        if not reuse:
+        full_capture=scene.pop('_full_capture',not reuse)
+        if not reuse or reuse in ('materials','transforms'):
             self._geometry_cache=dict(scene,meshes=[dict(m) for m in scene['meshes']],materials=copy.deepcopy(scene['materials']),native_materials=copy.deepcopy(scene.get('native_materials',{})))
-            self._last_full_capture=time.monotonic()
+        if full_capture:self._last_full_capture=time.monotonic()
+        scene.pop('_evaluated_data',None)
         scene['_geometry_revision']=str(id(self))+':'+str(self._last_full_capture)
         configured=self._configure_snapshot(scene)
         from .assets import signature
@@ -627,7 +652,10 @@ class Panel(QtWidgets.QWidget):
         scene['execution_mode'] = values['execution_mode']
         scene['denoising'] = values['denoising']
         from .display import values as display_values
-        scene['display'] = display_values(values['display'])
+        scene['display'] = display_values(dict(values['display'],working_space=values['asset_settings'].get('working_space','rec709')))
+        if scene['display']['working_space']=='acescg':
+            if scene['display']['view']=='ocio' and scene['display']['source']=='Linear Rec.709 (sRGB)':scene['display']['source']='ACEScg'
+            scene['warnings'].append('ACEScg color boundaries are enabled. Native spectral presets and volume color grids must be authored for this working space; color parity is not yet validated.')
         if values['region_enabled']:
             scene['region'] = values['region']
         if not self.modo_environment.isChecked():
@@ -724,9 +752,8 @@ class Panel(QtWidgets.QWidget):
             if not (full or items or changed):return
             reuse=not full and not changed and bool(items) and self._geometry_cache is not None
             if reuse:
-                for identity in items:
-                    if modo.Scene().item(identity).type not in ('camera','sunLight','pointLight','areaLight','spotLight','lightMaterial'):
-                        reuse=False;break
+                from .incremental import classify
+                reuse=classify(modo.Scene(),items,self._geometry_cache)
             scene = self._capture(reuse)
             self._last_time=time;self._live_settings=settings
             if self._digest(scene) != self.last_digest:self._submit(scene)

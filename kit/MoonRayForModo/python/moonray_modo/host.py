@@ -28,11 +28,12 @@ def first_map(mesh, map_type, name=None):
     found = []
     class Maps(lxifc.Visitor):
         def vis_Evaluate(self):
-            if accessor.Type() == map_type and (not name or accessor.Name() == name):
+            if accessor.Type() == map_type and (not name or str(name).startswith('@index:') or accessor.Name() == name):
                 found.append((accessor.Name(), int(accessor.ID())))
     visitor = Maps()
     accessor.Enumerate(lx.symbol.iMARK_ANY, visitor, 0)
-    return sorted(found)[0][1] if found else None
+    index=int(name.split(':',1)[1]) if str(name).startswith('@index:') else 0
+    return sorted(found)[index][1] if len(found)>index else None
 
 
 def corner_values(polygons, map_id, count, dimension):
@@ -82,7 +83,7 @@ def material_values(material):
     controls = material_settings(settings)
     diffuse = color(material, 'diffCol', (.5, .5, .5))
     diffuse_amount = float(channel(material, 'diffAmt', 1))
-    return {'color': [c * diffuse_amount for c in diffuse],
+    return {'name':material.name,'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
                                 'node_graph': settings.get('node_graph'),
                                 'node_override': settings.get('node_override',False) or material.type=='material.moonrayMaterialX',
@@ -107,11 +108,14 @@ def material_values(material):
                                 'subsurface_color': color(material,'subsCol'),
                                 'absorption_distance': max(0,float(channel(material,'tranDist',0))),
                                 'layer_opacity': float(channel(material,'opacity',1)),
+                                'layer_blend': channel(material,'blend','normal'),
+                                'layer_invert': bool(channel(material,'invert',False)),
                                 'anisotropy': float(channel(material, 'aniso', 0)),
                                 'metallic': float(channel(material, 'metallic', 0)),
                                 'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
                                 'emission': [c * float(channel(material, 'radiance', 0)) for c in color(material, 'lumiCol')],
                                 'ior': max(1.0, float(channel(material, 'refIndex', 1.5))),
+                                'dispersion_abbe': settings.get('dispersion_abbe',max(0,float(channel(material,'refIndex',1.5))-1)/float(channel(material,'disperse',0)) if float(channel(material,'disperse',0))>0 else 0),
                                 'transmission': min(1.0, max(0.0, float(channel(material, 'tranAmt', 0)))),
                                 'transmission_color': color(material, 'tranCol'),
                                 'refraction_roughness': min(1.0, max(0.0, float(channel(material, 'tranRough', 0)))),
@@ -121,7 +125,7 @@ def material_values(material):
                                 'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
 
 
-def snapshot(evaluated_geometry=False,reuse_geometry=None):
+def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False):
     scene = modo.Scene()
     if scene.items('replicator',superType=False):
         # Render Cache resolves generated replica transforms and source meshes.
@@ -180,8 +184,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None):
         result['region'] = bounds
     if projection=='ortho':
         warnings.append('Orthographic width uses target distance and film/focal ratio; reference parity is unverified.')
+    result['_full_capture']=reuse_geometry is None
     from .layers import ordered_items, material_tag
-    if reuse_geometry is not None:
+    if reuse_geometry is not None and not refresh_materials:
         result['materials']=reuse_geometry['materials'];result['native_materials']=reuse_geometry.get('native_materials',{})
         result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes']]
         warnings.extend(reuse_geometry.get('warnings',[]))
@@ -214,24 +219,21 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None):
                 warnings.append('Anisotropy requires MoonShine Material: ' + material.name)
             if channel(material, 'tranAmt', 0):
                 if channel(material, 'disperse', 0):
-                    warnings.append('Dispersion is not translated: ' + material.name)
+                    warnings.append('Dispersion uses an Abbe approximation of Modo’s violet-to-red index span: ' + material.name)
                 if channel(material, 'metallic', 0) or channel(material, 'coatAmt', 0):
-                    warnings.append('Glass uses dielectric Fresnel reflection; metalness and clearcoat are not translated: ' + material.name)
+                    result['materials'][tag]['shader']='DwaBaseMaterial'
         if not evaluated_geometry:
             image_layers(scene, result['materials'], warnings)
             from .layers import material_stack
             for tag,candidates in material_candidates.items():
-                if len(candidates)>1:
-                    result['materials'][tag]['material_stack'] = material_stack(scene,candidates,warnings,tag)
+                inherited = [m for m in material_candidates.get('',[]) if m not in candidates] if tag else []
+                result['materials'][tag]['material_stack'] = material_stack(scene,candidates+inherited,warnings,tag)
         for tag, material in result['materials'].items():
             maps = material.get('textures', {})
             if material.get('shader') == 'DwaBaseMaterial':
                 if 'specCol' in maps:
                     warnings.append('MoonShine uses dielectric IOR or metallic base color; specular-color maps are not translated: ' + (tag or 'base material'))
                 continue
-            if material['transmission'] > 0 or material['presence'] < 1 or 'dissolve' in maps or any(k.startswith('tran') for k in maps):
-                if any(k in maps for k in ('specCol', 'specAmt', 'coatAmt', 'coatRough', 'metallic')):
-                    warnings.append('The standard glass/dissolve material ignores specular-color, clearcoat and metalness maps. MoonShine supports mapped clearcoat and metalness: ' + (tag or 'base material'))
         from . import shader_library
         from .layers import material_stack
         library = {}
@@ -246,14 +248,20 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None):
         shader_library.attach_dependencies(result['materials'],library)
         if evaluated_geometry:
             from . import evaluated
-            data = evaluated.capture(lx.service.Selection().GetTime())
+            cached=reuse_geometry.get('_evaluated_data') if reuse_geometry else None
+            data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())
+            result['_evaluated_data']=data
             result['materials'] = evaluated.assign_materials(data, scene, warnings)
             shader_library.attach_dependencies(result['materials'],library)
             result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)
             result['extra_geometry']=evaluated.extra_geometry(data,warnings)
+        if reuse_geometry is not None and refresh_materials and not evaluated_geometry:
+            if coordinates.descriptors(result['materials']) != coordinates.descriptors(reuse_geometry['materials']):
+                return snapshot(evaluated_geometry=False)
+            result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes']]
         # Resolve each visible instance to one mesh prototype, including hidden sources.
         instances = {}
-        for instance in ([] if evaluated_geometry else scene.items('meshInst', superType=False)):
+        for instance in ([] if evaluated_geometry or reuse_geometry is not None else scene.items('meshInst', superType=False)):
             if not render_visible(instance):
                 continue
             source, visited = instance, set()
@@ -272,7 +280,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None):
             except (ValueError, LookupError) as exc:
                 warnings.append('Instance %s: %s.' % (instance.name, exc))
         # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
-        for item in ([] if evaluated_geometry else scene.items('mesh', superType=False)):
+        for item in ([] if evaluated_geometry or reuse_geometry is not None else scene.items('mesh', superType=False)):
             if not render_visible(item) and item.id not in instances:
                 continue
             mesh = modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item, 'deformed')
@@ -385,6 +393,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None):
             # Modo emits along local +Z; MoonRay's authored spot emits along -Z.
             # Precompose a local X half-turn, keeping the world position intact.
             light['matrix'][4:12] = [-v for v in light['matrix'][4:12]]
+        if channel(item,'linkEnable',False):warnings.append('Native Modo light-item linking needs explicit MoonRay Object light links: '+item.name)
         result['lights'].append(light)
     for kind in (('textureLayer',) if evaluated_geometry else ('replicator', 'textureLayer')):
         if scene.items(kind, superType=False):
@@ -395,12 +404,27 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None):
     from .environments import collect as collect_environments
     result['environments'] = collect_environments(scene, warnings)
     from .extra_geometry import collect as collect_extra
-    result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None else result.get('extra_geometry',[]) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
+    result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None and not (evaluated_geometry and refresh_materials) else result.get('extra_geometry',[]) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
+    from .scene_references import capture as capture_references
+    result['scene_references']=capture_references(scene,result)
     result['time']=lx.service.Selection().GetTime();result['fps']=float(scene.fps);result['frame']=round(result['time']*result['fps'])
     result['asset_owners']={}
     for identity,settings in properties.scene_settings().get('production',{}).get('objects',{}).items():
         if settings.get('geometry_file'):
             try:result['asset_owners'][identity]={'matrix':world_matrix(scene.item(identity))}
             except LookupError:warnings.append('Geometry asset owner is missing: '+identity)
+    result['motion_policies']={identity:v.get('motion_topology','strict') for identity,v in properties.scene_settings().get('production',{}).get('objects',{}).items()}
+    result['source_assets']=[]
+    for clip in scene.items('videoStill',superType=False):
+        filename=channel(clip,'filename','')
+        if filename:
+            from .textures import resolve_scene_source
+            try:path,_=resolve_scene_source(filename,getattr(scene,'filename',None))
+            except ValueError as exc:
+                warnings.append(str(exc));path=filename
+            from pathlib import Path
+            result['source_assets'].append(str(Path(path).resolve()))
+    for shader in scene.items('defaultShader',superType=False):
+        if channel(shader,'lgtEnable',False):warnings.append('Native Shader light linking needs explicit MoonRay Object light links: '+shader.name)
     result['warnings'] = sorted(set(warnings))
     return result

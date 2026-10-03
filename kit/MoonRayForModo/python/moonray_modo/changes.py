@@ -8,7 +8,11 @@ class Changes(lxifc.SceneItemListener):
         except (RuntimeError,LookupError):pass
     def invalidate(self,*args):self.full=True
     def sil_ChannelValue(self,action,item,index):
-        try:self.items.add(lx.object.Item(item).Ident())
+        try:
+            item=lx.object.Item(item)
+            if item.ChannelName(index) in ('enable','render','visible','ptag','ptyp','effect','opacity'):
+                self.full=True
+            self.items.add(item.Ident())
         except (RuntimeError,LookupError):self.full=True
     def consume(self):
         result=(self.full or not self.registered,set(self.items));self.full=False;self.items.clear();return result

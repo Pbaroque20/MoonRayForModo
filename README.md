@@ -1,11 +1,13 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development status: CPU compatibility work is ongoing. The current source adds an
-experimental Modo Render Cache path for evaluated subdivision/displacement,
-named UVs, shared instances and item-scoped material overrides. Native PView
-startup, image-buffer handling and shutdown are still under validation; the
-installer blocks unvalidated native adapters. See [the CPU checklist](docs/CPU_READINESS.md)
-for verified features and remaining work. This is not yet production-ready.
+Development version **0.3.5** expands nested material-channel groups, texture
+corrections, local MaterialX libraries, native light filters, Cryptomatte categories,
+progressive AOV selection, incremental capture, motion policies, ACEScg working
+primaries and animation asset packaging. The native renderer builds, but this
+release has **not run automated, rendering or Modo UI tests**, as requested.
+It is not a claim of full Modo parity or production readiness. See
+[the release scope and remaining gaps](docs/COMPATIBILITY_035.md) and
+[the CPU readiness checklist](docs/CPU_READINESS.md).
 
 Target: **Modo 16.1v9, Windows x64, Python 3.9**.
 
@@ -22,7 +24,8 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to `\MoonRayForModo\runtime\native-avx`.
+to the runtime recorded in its `runtime.json`. Version 0.3.5 uses a separate
+`runtime/xpu-compatibility-20261003` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.
 The menu also opens Live Preview, Object Properties, Shading and Lighting,
@@ -39,10 +42,13 @@ and shadow-boundary correction. Lighting includes an additional environment
 and a multiplier for translated Modo lights. Use **Store render settings in scene**
 on the Render tab, then save the LXO, to keep these settings and selected AOVs.
 
-The preview refines through separate 1, 4 and target sample-grid renders.
-Live updates check supported scene data every 1.2 seconds and replace obsolete
-render requests. This is image-pass refinement, not persistent bucket streaming.
-The default execution mode is AVX vectorized CPU rendering.
+Persistent preview keeps the renderer session alive and publishes intermediate
+images while a pass runs. The selected beauty/AOV view is cached independently of
+display settings. Supported camera, light, material and direct-transform edits
+reuse captured geometry; unknown dependencies and periodic reconciliation trigger
+a full capture. IPR uses reduced resolution and sampling. Automatic execution
+fallback follows **XPU → Vector → Scalar**, subject to the runtime and scene.
+Image delivery still uses intermediate files and a display converter.
 
 ### Docking the preview
 
@@ -68,9 +74,9 @@ Moonshine is the upstream shader collection. This entry renders with the real
 `DwaBaseMaterial`, compiled for native Windows AVX1; it is not just a renamed Modo
 material. Modo's standard material channels store the exposed values, so supported
 image layers above it work too. Dielectric reflection uses IOR; specular-color
-maps are not translated for this shader. The full Moonshine shader catalog and
-every DwaBase attribute are not exposed. Other Modo materials retain their existing
-translation until explicitly switched.
+maps are not translated for this shader. The material dropdown exposes the compiled Moonshine catalog and updates its
+properties. Native graph sockets and the supported MaterialX translator provide
+additional authoring options; unsupported graph operations report limitations.
 
 Place an image **above** its material inside the same Shader Tree group and use
 the mesh's named UV map. Layers below their material now produce a placement

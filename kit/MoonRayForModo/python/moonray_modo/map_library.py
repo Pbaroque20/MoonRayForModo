@@ -31,6 +31,11 @@ def emit(kind,path,parameters,inputs,definition):
     for key,value in parameters.items():
         if key in inputs:continue
         spec=schema[key]
+        if spec['type']=='SceneObject*' and isinstance(value,dict) and 'item' in value:
+            from .scene_references import emit as emit_reference
+            attributes[key]=emit_reference(value,definition,path+'/reference/'+key)
+            if key=='projector' and 'projection_mode' in schema:attributes['projection_mode']='0'
+            continue
         # Native gamma controls perform color decoding. Prepare/mipmap without
         # an additional sRGB transform; normal maps always remain data textures.
         if spec['type']=='String' and 'FLAGS_FILENAME' in spec.get('flags','') and value:

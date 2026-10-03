@@ -12,15 +12,16 @@ def values(entries):
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}',name) or name.casefold() in {n.casefold() for n in names}:raise ValueError('Output names must be unique: '+name)
         names.add(name)
         if v.get('kind') not in KINDS:raise ValueError('Unknown output type')
-        v.setdefault('precision',0);v.setdefault('filter',0);v.setdefault('part','');v.setdefault('expression','');v.setdefault('depth',6)
+        v.setdefault('precision',0);v.setdefault('filter',0);v.setdefault('part','');v.setdefault('expression','');v.setdefault('depth',6);v.setdefault('category','object')
         if v['precision'] not in (0,1) or v['filter'] not in range(6):raise ValueError('Invalid output precision/filter')
         if not isinstance(v['part'],str) or not re.fullmatch(r'[A-Za-z0-9_]*',v['part']):raise ValueError('EXR part name must use letters, numbers and underscores')
         if not isinstance(v['expression'],str) or len(v['expression'])>4096:raise ValueError('Invalid AOV expression')
         if v['kind'] in ('lpe','material') and not v['expression'].strip():raise ValueError('Enter a light path or material AOV expression')
         if type(v['depth']) is not int or not 1<=v['depth']<=16:raise ValueError('Cryptomatte depth must be between 1 and 16')
+        if v['category'] not in ('object','material','asset'):raise ValueError('Unknown Cryptomatte category')
         if v['kind']=='cryptomatte':v.update(precision=0,filter=0)
         result.append(v)
-    if sum(v['kind']=='cryptomatte' for v in result)>1:raise ValueError('This MoonRay runtime provides one object Cryptomatte set per render')
+    if sum(v['kind']=='cryptomatte' for v in result)>1:raise ValueError('This MoonRay runtime provides one Cryptomatte category per render')
     return result
 
 def attributes(entry):

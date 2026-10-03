@@ -348,3 +348,11 @@ class CaptureMotion(lxu.command.BasicCommand):
         if animation.single_request is not None:animation.single_result=animation.single_request()
 
 lx.bless(CaptureMotion,'moonray.captureMotion')
+
+
+class RelinkAssets(lxu.command.BasicCommand):
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+    def basic_Execute(self,msg,flags):
+        from moonray_modo.asset_relink import show
+        show()
+lx.bless(RelinkAssets,'moonray.assets.relink')

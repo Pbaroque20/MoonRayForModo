@@ -2,7 +2,7 @@
 from . import textures
 from .layers import BLENDS
 
-def bindings(material, index, lines, glass=False):
+def bindings(material, index, lines, glass=False, absorption=False):
     from .rdla import string, number, vector
     count = [0]
     def node(kind, attributes):
@@ -17,20 +17,8 @@ def bindings(material, index, lines, glass=False):
         return 'bind(%s(%s))' % (kind,string(name))
     def rgb(value):
         return vector(value if isinstance(value,(list,tuple)) else [value]*3,'Rgb')
-    defaults = {'diffCol':material['color'], 'rough':material.get('roughness',.4),
-        'metallic':material.get('metallic',0),'specCol':material.get('specular',[.04]*3),
-        'lumiCol':material.get('emission',[0]*3),'coatAmt':material.get('clearcoat',0),
-        'coatRough':material.get('clearcoat_roughness',.01),'tranAmt':material.get('transmission',0),
-        'tranCol':material.get('transmission_color',[1]*3),'tranRough':material.get('refraction_roughness',0),
-        'normal':[.5,.5,1], 'bump':0, 'groupMask':1, 'aniso':material.get('anisotropy',0),
-        'subsCol':material.get('subsurface_color',[1,1,1]), 'subsAmt':material.get('subsurface_amount',0),
-        'diffAmt':material.get('diffuse_amount',1), 'specAmt':material.get('specular_amount',1),
-        'lumiAmt':material.get('emission_amount',1), 'dissolve':1-material.get('presence',1)}
-    for effect, raw, amount in [('diffCol','raw_color','diffuse_amount'),
-                                ('specCol','raw_specular','specular_amount'),
-                                ('lumiCol','raw_emission','emission_amount')]:
-        gain = material.get(amount, 1)
-        defaults[effect] = material.get(raw, [v/gain if gain else 0 for v in defaults[effect]])
+    defaults = defaults_for(material)
+    if absorption:defaults.update(absorption_values(material))
     current = {key:rgb(value) for key,value in defaults.items()}
     from .compositing import Groups
     def group_blend(background, foreground, opacity, mask):
@@ -53,6 +41,18 @@ def bindings(material, index, lines, glass=False):
         groups.select(layer.get('groups', []))
         current, used = groups.current, groups.used
         effect = textures.EFFECT_ALIASES.get(layer['effect'], layer['effect'])
+        if layer.get('kind')=='materialBase':
+            source=layer['material']
+            base_values=defaults_for(source)
+            if absorption:base_values.update(absorption_values(source))
+            for target,foreground in base_values.items():
+                if target=='groupMask':continue
+                if layer.get('invert') and target in textures.COLOR_EFFECTS:
+                    foreground=[1-v for v in foreground] if isinstance(foreground,list) else 1-foreground
+                current[target]=node('ModoTextureMap',{'background':current[target],'foreground':rgb(foreground),'blend':str(BLENDS[layer.get('blend','normal')]),'opacity':number(layer.get('opacity',1))})
+                used.add(target)
+            continue
+        if absorption and effect=='tranCol' and layer.get('absorption_distance',material.get('absorption_distance',0))<=0:continue
         if effect not in textures.EFFECTS:
             raise ValueError('Unsupported image effect: '+effect)
         if glass and effect in ('specCol','specAmt','coatAmt','coatRough','metallic'):
@@ -67,11 +67,16 @@ def bindings(material, index, lines, glass=False):
             foreground = rgb(layer['value'])
         elif kind in ('checker','noise'):
             foreground = node('ModoTextureMap', {'mode':str(2 if kind=='checker' else 3),
-                'background':rgb(layer['color1']), 'foreground':rgb(layer['color2']),
+                'background':rgb(0), 'foreground':rgb(1),
                 'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2'),
                 **({'coordinates':coordinates,'use_coordinates':'true'} if coordinates else {}),
                 'octaves':str(layer.get('octaves',4)),'lacunarity':number(layer.get('lacunarity',2)),
                 'persistence':number(layer.get('persistence',.5))})
+            if layer.get('bias',.5)!=.5:
+                foreground=node('RemapMap',{'input':foreground,'midpoint_bias':number(layer['bias'])})
+            if layer.get('gain',.5)!=.5:
+                foreground=node('ModoTextureMap',{'mode':'8','foreground':foreground,'distance':number(layer['gain'])})
+            foreground=node('ModoTextureMap',{'background':rgb(layer['color1']),'foreground':rgb(layer['color2']),'opacity':foreground})
         else:
             prepared = textures.prepare(layer['path'],layer.get('srgb',False),color_space=layer.get('color_space',''))
             tile_modes = {'repeat':0, 'edge':1, 'mirror':2, 'reset':3}
@@ -120,6 +125,13 @@ def bindings(material, index, lines, glass=False):
                 if source_channel in ('red','green','blue'):
                     foreground = node('ModoTextureMap',{'mode':'7','foreground':foreground,
                         'component':str(('red','green','blue').index(source_channel))})
+        if layer.get('corrections'):
+            from .texture_controls import emit as correct
+            foreground=correct(foreground,layer['corrections'],node,number)
+        if kind not in ('checker','noise') and layer.get('bias',.5)!=.5:
+            foreground=node('RemapMap',{'input':foreground,'midpoint_bias':number(layer['bias'])})
+        if kind not in ('checker','noise') and layer.get('gain',.5)!=.5:
+            foreground=node('ModoTextureMap',{'mode':'8','foreground':foreground,'distance':number(layer['gain'])})
         if layer.get('invert'):
             foreground = node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
         blend = layer.get('blend','normal')
@@ -132,6 +144,14 @@ def bindings(material, index, lines, glass=False):
         current[effect] = node('ModoTextureMap',attributes)
         used.add(effect)
     current, used = groups.finish()
+    if absorption:
+        from .working_space import expression
+        value=current['tranCol']
+        value=value[:-1]+', Rgb(1,1,1))' if value.startswith('bind(') else value
+        value=expression(value,'/modo/absorption/working/'+str(index),lines)
+        if value.startswith('bind('):value=value.rsplit(', Rgb(1,1,1)',1)[0]+')'
+        attenuation=node('ModoTextureMap',{'mode':'11','foreground':value,'background':current['absorptionDensity']})
+        return {'transmissionColor':attenuation[:-1]+', Rgb(1,1,1))'}
     result = {}
     amounts = {'diffCol':'diffAmt', 'specCol':'specAmt', 'lumiCol':'lumiAmt'}
     for color_effect, amount_effect in amounts.items():
@@ -155,3 +175,29 @@ def bindings(material, index, lines, glass=False):
             'height':current['bump'] if 'bump' in used else '0',
             'bump_strength':number(material.get('bump_strength',.005) if 'bump' in used else 0)})
     return result
+
+
+def defaults_for(material):
+    defaults = {'diffCol':material['color'], 'rough':material.get('roughness',.4),
+        'metallic':material.get('metallic',0),'specCol':material.get('specular',[.04]*3),
+        'lumiCol':material.get('emission',[0]*3),'coatAmt':material.get('clearcoat',0),
+        'coatRough':material.get('clearcoat_roughness',.01),'tranAmt':material.get('transmission',0),
+        'tranCol':material.get('transmission_color',[1]*3),'tranRough':material.get('refraction_roughness',0),
+        'normal':[.5,.5,1], 'bump':0, 'groupMask':1, 'aniso':material.get('anisotropy',0),
+        'subsCol':material.get('subsurface_color',[1,1,1]), 'subsAmt':material.get('subsurface_amount',0),
+        'diffAmt':material.get('diffuse_amount',1), 'specAmt':material.get('specular_amount',1),
+        'lumiAmt':material.get('emission_amount',1), 'dissolve':1-material.get('presence',1)}
+    for effect, raw, amount in [('diffCol','raw_color','diffuse_amount'),
+                                ('specCol','raw_specular','specular_amount'),
+                                ('lumiCol','raw_emission','emission_amount')]:
+        gain = material.get(amount, 1)
+        defaults[effect] = material.get(raw, [v/gain if gain else 0 for v in defaults[effect]])
+    defaults["ior"] = material.get("ior",1.5)
+    return defaults
+
+
+def absorption_values(material):
+    from .absorption import enabled
+    active=enabled(material)
+    return {'tranCol':material.get('transmission_color',[1,1,1]) if active else [1,1,1],
+            'absorptionDensity':1/material['absorption_distance'] if active else 0}

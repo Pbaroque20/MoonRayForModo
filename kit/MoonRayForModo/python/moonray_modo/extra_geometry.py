@@ -66,13 +66,14 @@ def attach(scene,settings):
 
 def emit(scene,materials,lines,crypto=False):
     from .lighting import owner
+    from .working_space import color as working_color
     for index,entry in enumerate(scene.get('extra_geometry',[])):
         path='/modo/extra/'+entry['identity'];kind=entry['kind'];tag=entry.get('material','');tag=tag if tag in materials else ''
         attrs={'node_xform':node_matrix(entry)}
         if kind=='vdb':
             shader='VdbVolume(%s)'%string(path+'/volume');gain=max(0,float(entry.get('density',1)));emission=max(0,float(entry.get('emission',1)));anisotropy=float(entry.get('anisotropy',0))
             if not -1<=anisotropy<=1:raise ValueError('Volume anisotropy must be between -1 and 1')
-            lines.append('%s { ["opacity_gain_mult"] = Rgb(%s,%s,%s), ["color_mult"] = %s, ["incandescence_gain_mult"] = Rgb(%s,%s,%s), ["anisotropy"] = %s }'%(shader,number(gain),number(gain),number(gain),vector(entry.get('volume_color',[1,1,1]),'Rgb'),number(emission),number(emission),number(emission),number(anisotropy)))
+            lines.append('%s { ["opacity_gain_mult"] = Rgb(%s,%s,%s), ["color_mult"] = %s, ["incandescence_gain_mult"] = Rgb(%s,%s,%s), ["anisotropy"] = %s }'%(shader,number(gain),number(gain),number(gain),vector(working_color(entry.get('volume_color',[1,1,1])),'Rgb'),number(emission),number(emission),number(emission),number(anisotropy)))
             attrs.update(model=string(entry['file']),density_grid=string(entry.get('density_grid','density')),emission_grid=string(entry.get('emission_grid','')),velocity_grid=string(entry.get('velocity_grid','')),velocity_scale=number(entry.get('velocity_scale',1)))
             constructor='VdbGeometry'
         else:
@@ -101,8 +102,8 @@ def emit(scene,materials,lines,crypto=False):
             camera,indirect,reflection,refraction,subsurface,shadow=entry['visibility']
             for key,value in [('visible_in_camera',camera),('visible_shadow',shadow),('visible_diffuse_reflection',indirect),('visible_diffuse_transmission',indirect),('visible_glossy_reflection',reflection),('visible_mirror_reflection',reflection),('visible_glossy_transmission',refraction),('visible_mirror_transmission',refraction)]:attrs[key]='true' if value else 'false'
         if crypto and kind!='vdb':
-            from .cryptomatte import userdata
-            attrs['primitive_attributes']=array([userdata(entry,lines)])
+            from .cryptomatte import userdata,category
+            attrs['primitive_attributes']=array([userdata(entry,lines,category(scene),scene)])
         lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':
             lines += ['  local a = {g, "", %s, objectLightSets[%s] or lightSet}'%(shader,string(owner(entry))),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']

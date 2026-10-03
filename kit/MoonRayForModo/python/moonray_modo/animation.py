@@ -17,6 +17,7 @@ def capture_frame(time, evaluated=False, motion=False, fps=24):
     try:
         selection.SetTime(float(time))
         snapshot = host.snapshot(evaluated_geometry=evaluated)
+        snapshot.pop('_evaluated_data',None);snapshot.pop('_full_capture',None)
         if motion:
             camera = snapshot['camera']
             length = max(0,float(camera.get('shutter_length',.5)))

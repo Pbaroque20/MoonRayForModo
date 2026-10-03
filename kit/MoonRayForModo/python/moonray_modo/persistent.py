@@ -18,7 +18,7 @@ def supported(runtime):
 class Session(QtCore.QObject):
     output=QtCore.Signal(str)
     ready=QtCore.Signal(int)
-    image=QtCore.Signal(int,str)
+    image=QtCore.Signal(int,str,str)
     acknowledged=QtCore.Signal(int)
     failed=QtCore.Signal(str)
     status=QtCore.Signal(str)
@@ -33,7 +33,12 @@ class Session(QtCore.QObject):
         self.workspace=tempfile.TemporaryDirectory(prefix='MoonRaySession-')
         self.root=Path(self.workspace.name)
         self.latest=None;self.sent=None;self.applied=None;self.signature=None
-        self.partial='';self.stopping=False;self.closed=False
+        self.partial='';self.stopping=False;self.closed=False;self.view='beauty'
+
+    def select_view(self,key):
+        if not key or not key.isascii() or len(key)>64 or not all(c.isalnum() or c=='_' for c in key):return
+        self.view=key
+        staged=self.root/'view.tmp';staged.write_text(key,encoding='ascii');staged.replace(self.root/'view.txt')
 
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
 
@@ -57,6 +62,7 @@ class Session(QtCore.QObject):
         if not request or self.closed:return
         for path in self.root.iterdir():
             if path.is_file():path.unlink()
+        self.select_view(self.view)
         self.partial='';self.applied=None;self.sent=request
         self.signature=(str(request['runtime']),request['threads'],request['mode'])
         scene=self._write_scene(request,'full',request['text'])
@@ -107,10 +113,12 @@ class Session(QtCore.QObject):
                     if path.name.split('.')[0] not in keep:
                         try:path.unlink()
                         except OSError:pass
-            elif parts[1]=='FRAME':
-                path=self.root/('preview_%d.pfm'%generation)
+            elif parts[1]=='FRAME' or parts[1].startswith('FRAME_'):
+                key=parts[1][6:] if parts[1].startswith('FRAME_') else 'beauty'
+                if not key or not all(c.isalnum() or c=='_' for c in key):continue
+                path=self.root/('preview_%d_%s.pfm'%(generation,key) if parts[1]!='FRAME' else 'preview_%d.pfm'%generation)
                 try:
-                    if self.latest and generation==self.latest['id'] and path.is_file():self.image.emit(generation,str(path))
+                    if self.latest and generation==self.latest['id'] and path.is_file():self.image.emit(generation,key,str(path))
                 finally:
                     try:path.unlink()
                     except OSError:pass

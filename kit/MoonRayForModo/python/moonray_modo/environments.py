@@ -20,7 +20,7 @@ def collect(scene, warnings):
         intensity = float(channel(environment, 'radiance', 1))
         if intensity <= 0:
             continue
-        item = {'name':environment.name, 'intensity':intensity,
+        item = {'identity':environment.id,'name':environment.name, 'intensity':intensity,
                 'camera':bool(channel(environment,'visCam',1)),
                 'indirect':bool(channel(environment,'visInd',1)),
                 'reflection':bool(channel(environment,'visRefl',1)),
@@ -71,9 +71,11 @@ def collect(scene, warnings):
                         raise ValueError('environment images require Spherical projection (latitude/longitude)')
                     if not clip:
                         raise ValueError('environment images require a still image')
-                    if any(channel(layer,k,v)!=v for k,v in {'gamma':1,'brightness':1,'contrast':1,
-                            'swizzling':0,'redInv':0,'greenInv':0,'blueInv':0}.items()):
-                        raise ValueError('environment image color corrections are unsupported')
+                    from .texture_controls import capture
+                    entry['corrections']=capture(layer,channel)
+                    entry['image_channel']=channel(layer,'rgba','use') if channel(layer,'swizzling',0) else channel(layer,'alpha','use')
+                    if entry['image_channel']=='only':raise ValueError('Environment alpha-only images require a dedicated RGB mask image')
+                    entry['flips']=[bool(channel(layer,c+'Inv',0)) for c in ('red','green','blue')]
                     if channel(locator,'randOffset','none')!='none':
                         raise ValueError('environment random offsets are unsupported')
                     entry.update(uv_matrix=[float(channel(locator,k,v)) for k,v in zip(
@@ -98,7 +100,7 @@ def collect(scene, warnings):
             except (ValueError, LookupError, OSError) as exc:
                 warnings.append('Environment %s: %s.' % (layer.name,exc))
         if stack:
-            if len(stack)==1 and stack[0]['kind']!='physical' and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed'):
+            if len(stack)==1 and stack[0]['kind']!='physical' and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections'):
                 result.append(stack[0])
             else:
                 result.append(dict(item,kind='stack',layers=stack))
@@ -144,6 +146,7 @@ def gradient_texture(environment):
 
 def emit(environments, lines):
     from .rdla import string,number,vector,matrix
+    from .working_space import color as working_color,texture as working_texture
     for index,environment in enumerate(environments):
         attributes={'intensity':number(environment['intensity']),
                     'visible_in_camera':'1' if environment.get('camera',True) else '0'}
@@ -153,14 +156,14 @@ def emit(environments, lines):
             attributes['visible_'+lobe]='true' if environment.get(visible,True) else 'false'
         if environment['kind']=='stack':
             from .environment_layers import texture
-            attributes['texture'] = string(textures.register(texture(environment)))
+            attributes['texture'] = string(textures.register(working_texture(texture(environment))))
             attributes['texture_filter'] = '1'
         elif environment['kind']=='constant':
-            attributes['color']=vector(environment['zenith'],'Rgb')
+            attributes['color']=vector(working_color(environment['zenith']),'Rgb')
         else:
             path=(textures.prepare(environment['path'],environment.get('srgb',False),mipmaps=False,color_space=environment.get('color_space',''))
                   if environment['kind']=='image' else gradient_texture(environment))
-            attributes['texture']=string(textures.register(path))
+            attributes['texture']=string(textures.register(working_texture(path)))
             # EnvLight's importance distribution rejects the terminal 1x1 mip.
             # Use a full-resolution tiled image with bilinear filtering.
             attributes['texture_filter']='1'

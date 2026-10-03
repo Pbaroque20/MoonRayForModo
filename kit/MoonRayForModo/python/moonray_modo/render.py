@@ -23,6 +23,7 @@ class Renderer(QtCore.QObject):
         self.buffers.image_ready.connect(self.image_ready.emit)
         self.buffers.notice.connect(self.status.emit)
         self.session=Session(self)
+        self.buffers.selected.connect(self.session.select_view)
         self.session.output.connect(self._consume_log)
         self.session.ready.connect(self._persistent_ready)
         self.session.image.connect(self._persistent_image)
@@ -234,9 +235,9 @@ class Renderer(QtCore.QObject):
                 try:path.unlink()
                 except OSError:pass
 
-    def _persistent_image(self,serial,path):
+    def _persistent_image(self,serial,key,path):
         if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
-        try:self.buffers.publish({'beauty':path},self.active['runtime'],self.active['snapshot'],self.backend_status,partial=True)
+        try:self.buffers.publish({key:path},self.active['runtime'],self.active['snapshot'],self.backend_status,partial=True)
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
 
     def _persistent_ready(self,serial):

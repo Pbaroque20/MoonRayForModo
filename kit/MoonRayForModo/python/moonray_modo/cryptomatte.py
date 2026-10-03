@@ -21,20 +21,52 @@ def float_id(name):
 
 def enabled(scene):return any(v.get('kind')=='cryptomatte' for v in scene.get('custom_aovs',[]))
 
-def name(geometry):
-    from .lighting import owner
-    return geometry.get('name','Object')+' ['+owner(geometry)+']'
+def category(scene):
+    return next((v.get('category','object') for v in scene.get('custom_aovs',[]) if v.get('kind')=='cryptomatte'),'object')
 
-def userdata(geometry,lines):
-    label=name(geometry);path='/modo/crypto/'+str(hash32(label))
-    lines.append('UserData(%s) { ["float_key"] = "modo_object_id", ["float_values_0"] = {%s}, ["rate"] = 1 }'%(string(path),number(float_id(label))))
+
+def name(geometry,category='object',scene=None,identity=None):
+    from .lighting import owner
+    item=identity or owner(geometry)
+    if category=='material':return material_name(geometry.get('material',''),scene)
+    if category=='asset':return (scene or {}).get('production',{}).get('objects',{}).get(item.split('|')[0],{}).get('asset_label') or item
+    return geometry.get('name','Object')+' ['+item+']'
+
+
+def material_name(tag,scene):
+    material=(scene or {}).get('materials',{}).get(tag,{})
+    name=material.get('name')
+    return (name+' ['+tag+']') if name else tag or 'Base Material'
+
+
+def labels(geometry,category='object',scene=None,instances=False):
+    if instances:return [name(geometry,category,scene,str(identity)) for identity in geometry.get('instance_ids',[])]
+    if category=='material' and geometry.get('face_materials'):
+        return [material_name(tag,scene) for tag in geometry['face_materials']]
+    return [name(geometry,category,scene)]
+
+
+def userdata(geometry,lines,category='object',scene=None,instances=False):
+    values=labels(geometry,category,scene,instances)
+    if not values:raise ValueError('Cryptomatte instances require stable identities')
+    import hashlib
+    path='/modo/crypto/'+hashlib.sha256(json.dumps([values,instances]).encode()).hexdigest()[:24]
+    rate=0 if instances else 3 if len(values)>1 else 1
+    lines.append('UserData(%s) { ["float_key"] = "modo_object_id", ["float_values_0"] = %s, ["rate"] = %d }'%(string(path),array(number(float_id(value)) for value in values),rate))
     return 'UserData(%s)'%string(path)
 
-def metadata(geometries,lines,crypto=False):
-    names=['MoonRayForModo/workingSpace'];types=['string'];values=['linear Rec.709']
+
+def metadata(geometries,lines,crypto=False,scene=None):
+    from .working_space import label
+    names=['MoonRayForModo/workingSpace'];types=['string'];values=[label((scene or {}).get('asset_settings',{}))]
     if crypto:
-        manifest={name(g):'%08x'%hash32(name(g)) for g in geometries if g.get('kind')!='vdb'}
+        cat=category(scene or {});manifest={}
+        for g in geometries:
+            if g.get('kind')=='vdb':continue
+            entries=labels(g,cat,scene,instances='instances' in g and cat!='material')
+            for value in entries:manifest[value]='%08x'%hash32(value)
         prefix='cryptomatte/'+('%08x'%hash32('Cryptomatte'))[:7]+'/'
         fields={'name':'Cryptomatte','hash':'MurmurHash3_32','conversion':'uint32_to_float32','manifest':json.dumps(manifest,separators=(',',':'),sort_keys=True)}
         for key,value in fields.items():names.append(prefix+key);types.append('string');values.append(value)
+        names.append('MoonRayForModo/cryptomatteCategory');types.append('string');values.append(cat)
     lines.append('Metadata("/modo/outputMetadata") '+array(array(string(v) for v in row) for row in zip(names,types,values)))

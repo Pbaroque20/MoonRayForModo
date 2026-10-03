@@ -8,7 +8,9 @@ STANDARD={'base_color':'albedo','metalness':'metallic','diffuse_roughness':'diff
           'specular':'specular','specular_roughness':'roughness','specular_IOR':'refractive_index',
           'specular_anisotropy':'anisotropy','transmission':'transmission','transmission_color':'transmission_color',
           'coat':'clearcoat','coat_roughness':'clearcoat_roughness','coat_IOR':'clearcoat_refractive_index',
-          'emission_color':'emission','normal':'input_normal','thin_walled':'thin_geometry'}
+          'emission_color':'emission','normal':'input_normal','thin_walled':'thin_geometry',
+          'sheen':'fuzz','sheen_color':'fuzz_albedo','sheen_roughness':'fuzz_roughness',
+          'coat_color':'clearcoat_attenuation_color','coat_normal':'independent_clearcoat_normal'}
 TYPES={'float':'Float','integer':'Int','boolean':'Bool','color3':'Rgb','vector2':'Vec2f','vector3':'Vec3f','filename':'String','string':'String'}
 
 
@@ -25,11 +27,9 @@ def parse_value(element):
 
 
 def read(path, material_name=None):
-    path=Path(path).resolve();raw=path.read_bytes()
-    if len(raw)>4*1024*1024: raise ValueError('MaterialX file exceeds 4 MiB')
-    if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper(): raise ValueError('MaterialX document entities are not supported')
-    document=ET.fromstring(raw)
-    if document.tag!='materialx': raise ValueError('Expected a MaterialX document')
+    path=Path(path).resolve()
+    from .materialx_document import load
+    document,dependencies=load(path)
     from .materialx_expand import expand
     document=expand(document)
     definitions={e.get('name'):e for e in document.findall('nodedef')}
@@ -44,7 +44,7 @@ def read(path, material_name=None):
     if material_name:
         materials=[e for e in materials if e.get('name')==material_name]
     if len(materials)!=1: raise ValueError('Choose a document with exactly one surface material (or specify its name)')
-    graph={'version':1,'nodes':{},'overrides':[],'materialx_source':str(path),'materialx_version':document.get('version','')}
+    graph={'version':1,'nodes':{},'overrides':[],'materialx_source':str(path),'materialx_version':document.get('version',''),'materialx_dependencies':dependencies}
     visiting=set();cache={}
     def interface(port,scope,trail=()):
         name=port.get('interfacename')
@@ -56,7 +56,9 @@ def read(path, material_name=None):
         value=copy.deepcopy(interface(source,scope,trail+(name,)));value.set('name',port.get('name',''));return value
     def resolve(port,scope,trail=()):
         port=interface(port,scope)
-        if port.get('channels'):raise ValueError('MaterialX channel swizzles require explicit channel nodes')
+        if port.get('channels'):
+            plain=copy.deepcopy(port);channels=plain.attrib.pop('channels');source=resolve(plain,scope,trail)
+            return swizzle(source,channels)
         if port.get('nodegraph'):
             signature=(port.get('nodegraph'),port.get('output'))
             if signature in trail or len(trail)>100:raise ValueError('MaterialX graph output cycle')
@@ -66,11 +68,28 @@ def read(path, material_name=None):
             output=outputs[0] if len(outputs)==1 and not port.get('output') else next((child for child in outputs if child.get('name')==port.get('output','out')),None)
             if output is None: raise ValueError('Missing MaterialX graph output')
             return resolve(output,name,trail+(signature,))
+        if 'value' in port.attrib:
+            value=parse_value(port)
+            if isinstance(value,(int,float)):value=[value]*3
+            if isinstance(value,list) and len(value)==2:value=value+[0]
+            if not isinstance(value,list) or len(value)!=3:raise ValueError('Only scalar and three-component graph values can feed a map')
+            identity='n'+str(len(graph['nodes']));graph['nodes'][identity]={'type':'constant','parameters':{'value':value},'inputs':{},'position':[0,0]}
+            return identity
         name=port.get('nodename')
         if not name: raise ValueError('Expected a MaterialX node connection')
         key=scope+'/'+name if scope and scope+'/'+name in elements else name
         if key not in elements: raise ValueError('Missing MaterialX node '+key)
+        target=elements[key]
+        if target.tag=='output' and target.get('nodegraph') and port.get('output'):
+            alias=copy.deepcopy(target);alias.set('output',port.get('output'))
+            return resolve(alias,scope,trail+((key,port.get('output')),))
         return translate(key)
+    def swizzle(source,channels):
+        if len(channels) not in (1,2,3) or any(c not in 'rgbxyz01' for c in channels):
+            raise ValueError('MaterialX swizzles support RGB/XYZ, constants and up to three components')
+        identity='n'+str(len(graph['nodes']))
+        graph['nodes'][identity]={'type':'swizzle','parameters':{'channels':channels},'inputs':{'in':source},'position':[0,0]}
+        return identity
     def translate(key):
         if key in visiting: raise ValueError('MaterialX connection cycle')
         if key in cache:return cache[key]
@@ -90,40 +109,48 @@ def read(path, material_name=None):
         elif category=='standard_surface': kind='DwaBaseMaterial';mapping=STANDARD
         elif category.startswith('moonray_') and category[8:] in set(nodes.kinds()): kind=category[8:];mapping={k:k for k in nodes.specs(kind)}
         elif category=='texcoord':
-            kind='UVTransformMap';mapping={'index':'_uv_index'};extra={'space':6}
+            kind='texcoord';mapping={'index':'index'}
         elif category in nodes.MAPS: kind=category;mapping={k:k for k in nodes.specs(kind)}
         elif category=='constant': kind='constant';mapping={'value':'value'}
+        elif category=='extract':kind='swizzle';mapping={'in':'in','index':'index'}
+        elif category in ('combine2','combine3'):kind='combine';mapping={k:k for k in ('in1','in2','in3')}
+        elif category=='clamp':kind='clamp';mapping={'in':'in','low':'low','high':'high'}
         else: raise ValueError('Unsupported MaterialX node: '+category+' ('+key+')')
         identity='n'+str(len(graph['nodes']));cache[key]=identity
         item={'type':kind,'parameters':dict(extra),'inputs':{},'position':[len(graph['nodes'])*240,0]};graph['nodes'][identity]=item
         ports={p.get('name'):p for p in definition.findall('input')} if definition is not None else {}
         ports.update({p.get('name'):p for p in element.findall('input')})
         if category=='standard_surface':
-            item['parameters'].update(show_emission=True,show_clearcoat=True,
+            item['parameters'].update(show_emission=True,show_clearcoat=True,show_fuzz=True,use_independent_clearcoat_normal='coat_normal' in ports,
                 albedo=[.8,.8,.8],metallic_color=[.8,.8,.8],roughness=.2,specular=1,
                 refractive_index=1.5,clearcoat=0,clearcoat_roughness=.1,
                 clearcoat_refractive_index=1.5,transmission=0,emission=[1,1,1])
         ports={name:interface(port,scope) for name,port in ports.items()}
         for name,port in ports.items():
-            if port.get('channels'):raise ValueError('MaterialX channel swizzles require explicit channel nodes')
             if name in ('base','emission') and category=='standard_surface': continue
             if not any(attr in port.attrib for attr in ('value','nodename','nodegraph','interfacename')): continue
             if name not in mapping: raise ValueError('Unsupported MaterialX input '+category+'.'+str(name))
             target=mapping[name]
-            if target=='_uv_index':
-                if port.get('value','0')!='0' or any(port.get(a) for a in ('nodename','nodegraph')):raise ValueError('Nonzero MaterialX UV indices require named UV assignment')
-                continue
             if port.get('nodename') or port.get('nodegraph') or port.get('interfacename'):
                 item['inputs'][target]=resolve(port,scope)
             elif 'value' in port.attrib:
                 value=parse_value(port)
+                if port.get('channels'):
+                    original=value if isinstance(value,list) else [value]*3
+                    value=[float(c) if c in '01' else original['rgbxyz'.index(c)%3] for c in port.get('channels')]
+                    if len(value)==1:value=value[0]
                 if kind=='constant' and isinstance(value,(int,float)): value=[value]*3
+                if kind=='constant' and isinstance(value,list) and len(value)==2:value=value+[0]
                 if (kind=='image' and name=='file') or 'FLAGS_FILENAME' in nodes.specs(kind)[target].get('flags',''):
                     prefix=element.get('fileprefix',document.get('fileprefix',''))
                     value=str((path.parent/prefix/value).resolve())
                 if nodes.specs(kind)[target]['type'] in ('Rgb','Vec3f') and isinstance(value,(int,float)): value=[value]*3
                 if target=='texcoord' and isinstance(value,list) and len(value)==2:value=value+[0]
                 item['parameters'][target]=value
+        if category=='extract':
+            component=int(item['parameters'].pop('index',0))
+            if not 0<=component<3:raise ValueError('MaterialX extract index must be 0, 1 or 2')
+            item['parameters']['channels']='rgb'[component]
         if kind=='image' and not category.startswith('moonray_'):
             space=element.get('colorspace',document.get('colorspace',''))
             file_port=ports.get('file')

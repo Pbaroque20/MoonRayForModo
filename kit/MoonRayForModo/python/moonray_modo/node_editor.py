@@ -249,7 +249,15 @@ class Editor(QtWidgets.QDialog):
         if identity:
             node=nodes.effective(self.graph)['nodes'][identity]
             for key,spec in nodes.specs(node['type']).items():
-                if spec['type']=='SceneObject*': continue
+                if spec['type']=='SceneObject*':
+                    if spec.get('interface') in ('INTERFACE_CAMERA','INTERFACE_NODE'):
+                        import modo
+                        row=self.table.rowCount();self.table.insertRow(row);self.table.setItem(row,0,QtWidgets.QTableWidgetItem(key))
+                        pick=QtWidgets.QComboBox();pick.addItem('None',None)
+                        for item in sorted(modo.Scene().items('camera' if spec.get('interface')=='INTERFACE_CAMERA' else 'locator'),key=lambda i:i.name.casefold()):pick.addItem(item.name,item.id)
+                        chosen=node.get('parameters',{}).get(key) or {};pick.setCurrentIndex(max(0,pick.findData(chosen.get('item'))));self.table.setCellWidget(row,1,pick)
+                        pick.currentIndexChanged.connect(lambda _index,n=identity,k=key,w=pick:self.scene_reference(n,k,w.currentData()))
+                    continue
                 row=self.table.rowCount();self.table.insertRow(row)
                 label=QtWidgets.QTableWidgetItem(key);label.setFlags(label.flags() & ~QtCore.Qt.ItemIsEditable)
                 value=node.get('parameters',{}).get(key)
@@ -258,6 +266,13 @@ class Editor(QtWidgets.QDialog):
                 cell.setToolTip(str(spec.get('comment',''))+' Default: '+str(spec.get('default',spec.get('default_value',''))))
                 self.table.setItem(row,0,label);self.table.setItem(row,1,cell)
         self.busy=False;self.filter_properties()
+    def scene_reference(self,identity,key,value):
+        before=copy.deepcopy(self.graph)
+        try:
+            self.target(identity).setdefault('parameters',{})[key]={'item':value} if value else None
+            self.validate_draft();self.remember(before)
+        except (ValueError,TypeError) as exc:self.graph=before;self.error(exc)
+
     def edited(self,cell):
         if self.busy or cell.column()!=1: return
         identity=self.selected()
