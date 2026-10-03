@@ -20,6 +20,8 @@ class AnimationDialog(QtWidgets.QDialog):
         form.addRow('First frame',self.first);form.addRow('Last frame',self.last)
         form.addRow('Frame step',self.step);form.addRow('Frames per second',self.fps)
         self.motion=QtWidgets.QCheckBox('Include motion blur');form.addRow(self.motion)
+        self.missing=QtWidgets.QCheckBox('Render missing frames / resume sequence');form.addRow(self.missing)
+        self.missing.setToolTip('Keep recognizable EXR frames and render gaps. Use the same scene and render settings as the original sequence.')
         self.summary=QtWidgets.QLabel();self.summary.setWordWrap(True);form.addRow(self.summary)
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok|QtWidgets.QDialogButtonBox.Cancel)
         buttons.button(QtWidgets.QDialogButtonBox.Ok).setText('Render sequence')
@@ -33,7 +35,7 @@ class AnimationDialog(QtWidgets.QDialog):
 
     def update_summary(self,*args):
         count=max(0,(self.last.value()-self.first.value())//self.step.value()+1)
-        self.summary.setText('%d frames · %s.%06d.exr\nExisting frames are never overwritten. Use a folder without a sequence manifest.'%(count,self.prefix.text(),self.first.value()))
+        self.summary.setText('%d frames · %s.%06d.exr\nExisting frames are never overwritten. Enable Render missing frames to fill gaps in a matching sequence.'%(count,self.prefix.text(),self.first.value()))
 
     def accept(self):
         import re

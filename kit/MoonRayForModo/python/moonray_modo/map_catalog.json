@@ -1566,6 +1566,76 @@
     "source": "upstream/openmoonray/moonray/moonshine/dso/map/ColorCorrectTMIMap/ColorCorrectTMIMap.json",
     "type": "Map"
   },
+  "CombineDisplacement": {
+    "attributes": {
+      "bound_padding": {
+        "comment": "Object-space bound padding for displaced geometry; keep close to the maximum displacement.",
+        "default": "0.0f",
+        "min": "0",
+        "name": "bound_padding",
+        "type": "Float"
+      },
+      "input_1": {
+        "aliases": [
+          "input 1"
+        ],
+        "comment": "Displacement object 1",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "input 1",
+        "name": "input_1",
+        "type": "SceneObject*"
+      },
+      "input_2": {
+        "aliases": [
+          "input 2"
+        ],
+        "comment": "Displacement object 2",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "input 2",
+        "name": "input_2",
+        "type": "SceneObject*"
+      },
+      "operation": {
+        "comment": "The method used for combining the displacements",
+        "default": "0",
+        "enum": {
+          "add": "0",
+          "max magnitude": "1",
+          "min magnitude": "2"
+        },
+        "flags": "FLAGS_ENUMERABLE",
+        "name": "operation",
+        "type": "Int"
+      },
+      "scale_1": {
+        "aliases": [
+          "scale 1"
+        ],
+        "comment": "Scale of input 1",
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "scale 1",
+        "name": "scale_1",
+        "type": "Float"
+      },
+      "scale_2": {
+        "aliases": [
+          "scale 2"
+        ],
+        "comment": "Scale of input 2",
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "scale 2",
+        "name": "scale_2",
+        "type": "Float"
+      }
+    },
+    "package": "moonray",
+    "source": "upstream/openmoonray/moonray/moonray/dso/displacement/CombineDisplacement/CombineDisplacement.json",
+    "type": "Displacement"
+  },
   "CombineNormalMap": {
     "attributes": {
       "input_1": {
@@ -4156,6 +4226,46 @@
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/map/NoiseWorleyMap/v3/NoiseWorleyMap_v3.json",
     "type": "Map"
+  },
+  "NormalDisplacement": {
+    "attributes": {
+      "bound_padding": {
+        "comment": "Object-space bound padding for displaced geometry; keep close to the maximum displacement.",
+        "default": "0.0f",
+        "min": "0",
+        "name": "bound_padding",
+        "type": "Float"
+      },
+      "height": {
+        "comment": "This parameter is used as the initial displacement before the zero_value and height_multiplier are applied.",
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "interface": "INTERFACE_MAP",
+        "name": "height",
+        "type": "Float"
+      },
+      "height_multiplier": {
+        "comment": "Multiply the computed (post zero-value) height with this factor.",
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "height multiplier",
+        "name": "height_multiplier",
+        "type": "Float"
+      },
+      "zero_value": {
+        "aliases": [
+          "zero value"
+        ],
+        "comment": "This value is added to the displacement before applying the height_multiplier.",
+        "default": "0.0f",
+        "label": "zero value",
+        "name": "zero_value",
+        "type": "Float"
+      }
+    },
+    "package": "moonray",
+    "source": "upstream/openmoonray/moonray/moonray/dso/displacement/NormalDisplacement/NormalDisplacement.json",
+    "type": "Displacement"
   },
   "NormalToRgbMap": {
     "attributes": {
@@ -10937,6 +11047,64 @@
     "package": "moonray",
     "source": "upstream/openmoonray/moonray/moonray/dso/map/UsdUVTexture/UsdUVTexture.json",
     "type": "Map"
+  },
+  "VectorDisplacement": {
+    "attributes": {
+      "bound_padding": {
+        "comment": "Object-space bound padding for displaced geometry; keep close to the maximum displacement.",
+        "default": "0.0f",
+        "min": "0",
+        "name": "bound_padding",
+        "type": "Float"
+      },
+      "factor": {
+        "comment": "A multiplier applied to the input vector",
+        "default": "1.0f",
+        "name": "factor",
+        "type": "Float"
+      },
+      "source_space": {
+        "aliases": [
+          "source space"
+        ],
+        "comment": "The space that the map bound to the vector parameter is in",
+        "default": "0",
+        "enum": {
+          "object": "1",
+          "tangent": "0"
+        },
+        "flags": "FLAGS_ENUMERABLE",
+        "label": "source space",
+        "name": "source_space",
+        "type": "Int"
+      },
+      "tangent_space_style": {
+        "aliases": [
+          "tangent space style"
+        ],
+        "comment": "Controls how RGB maps to Tangent, Normal, and Bi-Normal",
+        "default": "0",
+        "enum": {
+          "tbn": "1",
+          "tnb": "0"
+        },
+        "flags": "FLAGS_ENUMERABLE",
+        "label": "tangent space style",
+        "name": "tangent_space_style",
+        "type": "Int"
+      },
+      "vector": {
+        "comment": "The direction to apply the displacement.  Bind a map with tangent or object space vector values here.",
+        "default": "Vec3f(0.0f, 0.0f, 0.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "interface": "INTERFACE_MAP",
+        "name": "vector",
+        "type": "Vec3f"
+      }
+    },
+    "package": "moonray",
+    "source": "upstream/openmoonray/moonray/moonray/dso/displacement/VectorDisplacement/VectorDisplacement.json",
+    "type": "Displacement"
   },
   "WireframeMap": {
     "attributes": {

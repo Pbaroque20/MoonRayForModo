@@ -3,7 +3,7 @@ import copy,json,re
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes
 
-COLORS={'map':'#77bce8','material':'#89ce94','normal':'#c6a0e9'}
+COLORS={'map':'#77bce8','material':'#89ce94','normal':'#c6a0e9','displacement':'#e4b367'}
 
 def curve(a,b):
     distance=max(65,abs(b.x()-a.x())*.5)

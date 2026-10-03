@@ -63,17 +63,17 @@ def prepare(mesh):
     return result
 
 
-def render_meshes(meshes):
+def render_meshes(meshes, expand_instances=False):
     """Expand only explicit opt-outs and camera-adaptive subdivision instances."""
     for mesh in meshes:
         settings=options.object_values(mesh.get('geometry_settings',{}))
         dynamic=settings['override'] and settings['dynamic_tessellation'] and mesh.get('subdivision') and not mesh.get('evaluated_geometry')
-        split=settings['override'] and (not settings['share_instances'] or dynamic)
+        split=expand_instances or (settings['override'] and (not settings['share_instances'] or dynamic))
         if split and 'instances' in mesh:
             transforms=mesh['instances'];ids=mesh.get('instance_ids',list(range(len(transforms))))
             if len(ids)!=len(transforms): raise ValueError('Instance IDs must match transform count')
             for identity,transform in zip(ids,transforms):
-                value=dict(mesh,matrix=transform,name=mesh['name']+' / '+str(identity),identity=str(mesh.get('identity',mesh['name']))+'|'+str(identity))
+                value=dict(mesh,source_item=str(identity),matrix=transform,name=mesh['name']+' / '+str(identity),identity=str(mesh.get('identity',mesh['name']))+'|'+str(identity))
                 value.pop('instances');value.pop('instance_ids',None)
                 yield prepare(value)
         else:

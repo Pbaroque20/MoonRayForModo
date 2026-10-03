@@ -1,6 +1,6 @@
 """Pure Python scene serializer. Does not import or change the Modo scene."""
 import math
-from . import options, textures, __version__
+from . import options, textures, outputs, __version__
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -49,7 +49,20 @@ def array(values):
     return '{' + ', '.join(values) + '}'
 
 
+def vector_array(values,kind='Vec3'):
+    from .serialization import array as cached
+    return cached(kind,values,lambda:array(vector(v,kind) for v in values))
+
+def mesh_array(values,counts=False):
+    from .serialization import array as cached
+    return cached('counts' if counts else 'indices',values,lambda:array(str(len(v)) for v in values) if counts else array(str(v) for f in values for v in f))
+
 def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
+    from .serialization import revision
+    with textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
+        return _scene_text(scene,width,height,samples,environment,output_file)
+
+def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     """Serialize a snapshot to an RDLA scene. samples is MoonRay's grid side."""
     if not 16 <= int(width) <= 16384 or not 16 <= int(height) <= 16384:
         raise ValueError("Image dimensions must be between 16 and 16384")
@@ -90,33 +103,12 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
              '  ["mb_shutter_close"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[-1]),
              '  ["near"] = 0.001,', '}',
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
-    if float(environment) > 0:
-        lines += ['table.insert(lights, EnvLight("/modo/environment") {',
-                  '  ["intensity"] = %s,' % number(environment), '})']
-    for index, light in enumerate(scene.get('lights', [])):
-        kind = light['kind']
-        if kind not in ('DistantLight', 'SphereLight', 'RectLight', 'SpotLight'):
-            raise ValueError('Unsupported light: ' + kind)
-        lines += ['table.insert(lights, %s("/modo/light/%s") {' % (kind, index),
-                  '  ["node_xform"] = %s,' % node_matrix(light),
-                  '  ["color"] = %s,' % vector(light['color'], 'Rgb'),
-                  '  ["intensity"] = %s,' % number(light['intensity'])]
-        if kind == 'DistantLight':
-            lines += ['  ["angular_extent"] = %s,' % number(light.get('angle', 0.5))]
-        elif kind == 'SphereLight':
-            lines += ['  ["radius"] = %s,' % number(max(0.001, light.get('radius', 0.05)))]
-        elif kind == 'RectLight':
-            lines += ['  ["width"] = %s,' % number(light['width']),
-                      '  ["height"] = %s,' % number(light['height'])]
-        elif kind == 'SpotLight':
-            cone = light.get('cone', 45)
-            lines += ['  ["outer_cone_angle"] = %s,' % number(cone),
-                      '  ["inner_cone_angle"] = %s,' % number(max(0, cone - 2 * light.get('soft_edge', 0))),
-                      '  ["lens_radius"] = %s,' % number(light.get('radius', .001))]
-        lines.append('})')
-    from .environments import emit as emit_environments
-    emit_environments(scene.get('environments', []), lines)
-    lines.append('local lightSet = LightSet("/modo/lightSet")(lights)')
+    from . import geometry, lighting
+    from . import cryptomatte
+    crypto=bool(output_file and cryptomatte.enabled(scene))
+    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=crypto or bool(scene.get('production',{}).get('objects'))))
+    if output_file:cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,crypto)
+    lighting.emit(scene,render_meshes,float(environment),lines)
     # Keep material handles in a table to avoid Lua's local variable limit.
     lines.append('local materials = {}')
     materials = dict(scene.get('materials', {}))
@@ -185,6 +177,15 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         for attribute, binding in bindings.items():
             lines.append('  [%s] = %s,' % (string(attribute), binding))
         lines.append('}')
+    displacement_tags=set()
+    lines.append('local displacements = {}')
+    for index,(tag,material) in enumerate(sorted(materials.items())):
+        # The topmost explicit displacement assignment wins across material layers.
+        source=next((m for m in reversed(material.get('material_stack',[material])) if m.get('node_graph',{} ) and m['node_graph'].get('displacement')),None)
+        if source:
+            from .nodes import emit as emit_graph
+            ref=emit_graph(source,'/modo/displacement/%d'%index,native_index,lines,scene.get('native_materials',{}),output='displacement')
+            lines.append('displacements[%s] = %s'%(string(tag),ref));displacement_tags.add(tag)
     lines.append('local volumes = {}')
     for index,(tag,material) in enumerate(sorted(media.items())):
         if material is not None:
@@ -205,12 +206,14 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
                       '  ["attenuation_color"] = %s,' % attenuation,
                       '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
                       '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
-    lines += ['local function assign(g, part, tag)',
-              '  local a = {g, part, materials[tag], lightSet}',
+    lines += ['local function assign(g, part, tag, owner)',
+              '  local a = {g, part, materials[tag], objectLightSets[owner] or lightSet}',
+              '  if objectShadowSets[owner] then table.insert(a, objectShadowSets[owner]) end',
+              '  if displacements[tag] then table.insert(a, displacements[tag]) end',
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
               '  table.insert(assignments, a)', 'end']
     from . import geometry
-    for index, mesh in enumerate(geometry.render_meshes(scene.get('meshes', []))):
+    for index, mesh in enumerate(render_meshes):
         vertices = mesh['vertices']
         faces = mesh['faces']
         if not faces:
@@ -230,10 +233,14 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
                 face_tag = face_tag if face_tag in materials else ''
                 parts.setdefault(face_tag, []).append(face_index)
         subdivision = bool(mesh.get('subdivision', False))
+        displaced=bool(({tag}|set(parts)) & displacement_tags)
+        if displaced and not mesh.get('subdivision'):
+            settings=options.object_values(mesh.get('geometry_settings',{}))
+            mesh=dict(mesh,adaptive_error=settings['adaptive_error'])
         level = mesh.get('subdivision_level', 3)
         if type(level) is not int or not 1 <= level <= 5:
             raise ValueError('Subdivision level must be an integer between 1 and 5')
-        user_data = []
+        user_data = [cryptomatte.userdata(mesh,lines)] if crypto else []
         for uv_index, (uv_name, values) in enumerate(sorted(mesh.get('uv_sets', {}).items())):
             if len(values) != sum(map(len, faces)):
                 raise ValueError('Named UV set must match polygon corners: '+uv_name)
@@ -241,21 +248,21 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
             lines += ['UserData(%s) {' % string(name),
                       '  ["vec2f_key"] = %s,' % string(uv_name),
                       '  ["rate"] = 6,',
-                      '  ["vec2f_values_0"] = %s,' % array(vector(v,'Vec2') for v in values), '}']
+                      '  ["vec2f_values_0"] = %s,' % vector_array(values,'Vec2'), '}']
             user_data.append('UserData(%s)' % string(name))
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,
                   '    ["node_xform"] = %s,' % node_matrix(mesh),
-                  '    ["vertex_list_0"] = %s,' % array(vector(v) for v in vertices),
-                  '    ["vertices_by_index"] = %s,' % array(str(v) for f in faces for v in f),
-                  '    ["face_vertex_count"] = %s,' % array(str(len(f)) for f in faces),
+                  '    ["vertex_list_0"] = %s,' % vector_array(vertices),
+                  '    ["vertices_by_index"] = %s,' % mesh_array(faces),
+                  '    ["face_vertex_count"] = %s,' % mesh_array(faces,True),
                   '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
-                  *(['    ["mesh_resolution"] = %d,' % mesh.get('mesh_resolution',2 ** level)] if subdivision else []),
-                  *(['    ["adaptive_error"] = %s,' % number(mesh['adaptive_error'])] if subdivision and 'adaptive_error' in mesh else []),
+                  *(['    ["mesh_resolution"] = %d,' % mesh.get('mesh_resolution',2 ** level)] if subdivision or displaced else []),
+                  *(['    ["adaptive_error"] = %s,' % number(mesh['adaptive_error'])] if (subdivision or displaced) and 'adaptive_error' in mesh else []),
                   '    ["smooth_normal"] = %s,' % ('true' if mesh.get('smooth', True) else 'false')]
         if 'vertices_close' in mesh:
             if len(mesh['vertices_close']) != len(vertices):
                 raise ValueError('Motion samples must have equal vertex counts')
-            lines.append('    ["vertex_list_1"] = %s,' % array(vector(v) for v in mesh['vertices_close']))
+            lines.append('    ["vertex_list_1"] = %s,' % vector_array(mesh['vertices_close']))
         if user_data:
             lines.append('    ["primitive_attributes"] = %s,' % array(user_data))
         creases = mesh.get('creases', [])
@@ -281,7 +288,7 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
             if values:
                 if len(values) != sum(map(len, faces)):
                     raise ValueError('Face-varying %s must match the corner count' % source)
-                lines.append('    [%s] = %s,' % (string(attribute), array(vector(v, kind) for v in values)))
+                lines.append('    [%s] = %s,' % (string(attribute), vector_array(values,kind)))
         if parts:
             lines += ['    ["part_list"] = %s,' % array(string('part%d' % i) for i in range(len(parts))),
                       '    ["part_face_count_list"] = %s,' % array(str(len(v)) for v in parts.values()),
@@ -289,10 +296,10 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         lines += ['  }']
         if parts:
             for part_index, face_tag in enumerate(parts):
-                lines.append('  assign(geometry, %s, %s)' %
-                             (string('part%d' % part_index), string(face_tag)))
+                lines.append('  assign(geometry, %s, %s, %s)' %
+                             (string('part%d' % part_index), string(face_tag),string(lighting.owner(mesh))))
         else:
-            lines.append('  assign(geometry, "", %s)' % string(tag))
+            lines.append('  assign(geometry, "", %s, %s)' % (string(tag),string(lighting.owner(mesh))))
         if 'instances' in mesh:
             if mesh['instances']:
                 lines += ['  local instances = RdlInstancerGeometry("/modo/instances/%s") {' % index,
@@ -302,14 +309,18 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
                           '    ["use_reference_attributes"] = true,',
                           '    ["xform_list"] = %s,' % array(matrix(m) for m in mesh['instances']),
                           '  }', '  table.insert(geometries, instances)',
-                          '  assign(instances, "", %s)' % string(tag)]
+                          '  assign(instances, "", %s, %s)' % (string(tag),string(lighting.owner(mesh)))]
         else:
             lines.append('  table.insert(geometries, geometry)')
         lines.append('end')
+    from .extra_geometry import emit as emit_extra
+    emit_extra(scene,materials,lines,crypto)
     lines += ['GeometrySet("/modo/geometrySet")(geometries)',
               'local layer = Layer("/modo/layer")(assignments)', 'SceneVariables {',
               '  ["camera"] = camera,', '  ["layer"] = layer,',
               '  ["scene_scale"] = 1,',
+              '  ["fps"] = %s,'%number(scene.get('fps',24)),
+              '  ["texture_cache_size"] = %d,'%max(64,min(131072,int(scene.get('asset_settings',{}).get('texture_cache_mb',4000)))),
               '  ["image_width"] = %d,' % int(width), '  ["image_height"] = %d,' % int(height),
               '  ["pixel_samples"] = %d,' % int(samples),
               '  ["enable_motion_blur"] = %s,' % ('true' if scene.get('motion_steps') else 'false'),
@@ -318,8 +329,14 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
               # Renderer already writes into its private temp folder and atomically
               # publishes the finished EXR; avoid a second OS-specific staging layer.
               '  ["two_stage_output"] = false,']
+    if crypto:lines.append('  ["deep_id_attribute_names"] = {"modo_object_id"},')
     for key, value in options.render_values(scene.get('render_settings', {})).items():
         lines.append('  [%s] = %s,' % (string(key), number(value)))
+    recovery=scene.get('_recovery') if output_file else None
+    if recovery:
+        lines += ['  ["checkpoint_active"] = true,','  ["resumable_output"] = true,','  ["checkpoint_bg_write"] = false,',
+                  '  ["checkpoint_interval"] = %s,'%number(recovery['minutes']),
+                  '  ["resume_render"] = %s,'%('true' if recovery['resume'] else 'false')]
     region = scene.get('region')
     if region is not None:
         if len(region) != 4 or any(not math.isfinite(float(v)) for v in region):
@@ -336,14 +353,20 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         selected = scene.get('aovs', ['alpha'])
         if any(key not in options.AOVS for key in selected):
             raise ValueError('Unknown AOV')
-        outputs = [('beauty', {'result': 0}, '')]
-        outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
-        for key, attributes, channel in outputs:
+        render_outputs = [('beauty', {'result': 0}, '')]
+        render_outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
+        if crypto:render_outputs.append(('object_id',{'result':4,'primitive_attribute':'modo_object_id','primitive_attribute_type':0},'modo_object_id'))
+        render_outputs += [(v['name'],outputs.attributes(v),v['name']) for v in outputs.values(scene.get('custom_aovs',[]))]
+        from .recovery import attributes as recovery_attributes
+        for key, attributes, channel in render_outputs:
+            attributes=dict(attributes,**recovery_attributes(recovery))
+            attributes=dict(channel_format=0,**attributes) if 'channel_format' not in attributes else attributes
             lines += ['RenderOutput(%s) {' % string('/modo/aov/' + key),
                       '  ["file_name"] = %s,' % string(str(output_file)),
-                      '  ["channel_name"] = %s,' % string(channel),
-                      '  ["channel_format"] = 0,', '  ["compression"] = 1,']
-            lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value, str) else number(value))
+                      *(['  ["channel_name"] = %s,' % string(channel)] if 'channel_name' not in attributes else []),
+                      '  ["exr_header_attributes"] = Metadata("/modo/outputMetadata"),',
+                      '  ["compression"] = 1,']
+            lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value))
                       for attr, value in attributes.items()]
             lines.append('}')
     preview_files=scene.get('preview_buffer_files',{})
@@ -351,17 +374,21 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         preview_files={scene.get('preview_buffer','beauty'):scene['preview_buffer_file']}
     if not output_file:
         for key,path in preview_files.items():
-            if key!='beauty' and key not in options.AOVS:raise ValueError('Unknown preview buffer')
+            available=outputs.preview(scene)
+            if key not in available:raise ValueError('Unknown preview buffer')
             if not path:raise ValueError('Missing preview buffer output path')
             lines += ['RenderOutput(%s) {'%string('/modo/preview/'+key),
                       '  ["file_name"] = %s,'%string(str(path)),
                       '  ["channel_format"] = 0,', '  ["compression"] = 1,']
-            attributes={'result':0} if key=='beauty' else options.AOVS[key][1]
+            attributes={k:v for k,v in available[key].items() if k!='channel_format'}
             for attr,value in attributes.items():
                 lines.append('  [%s] = %s,'%(string(attr),string(value) if isinstance(value,str) else number(value)))
             lines.append('}')
     for key,path in scene.get('_denoise_guides',{}).items():
         attributes={'result':7,'material_aov':'albedo'} if key=='albedo' else {'result':3,'state_variable':2}
+        if recovery:
+            from .recovery import attributes as recovery_attributes
+            attributes.update(recovery_attributes(recovery,key))
         lines += ['RenderOutput(%s) {' % string('/modo/denoise/'+key),
                   '  ["file_name"] = %s,' % string(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else number(value)))

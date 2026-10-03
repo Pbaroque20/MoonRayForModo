@@ -6,7 +6,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from PySide2 import QtCore
-from . import native, options
+from . import native, options, outputs
 from .buffers import conversion
 
 
@@ -23,24 +23,28 @@ class BufferCache(QtCore.QObject):
         self.process.finished.connect(self._finished)
         self.process.errorOccurred.connect(self._error)
         self.process.readyReadStandardOutput.connect(self._read)
-        self.frame=None;self.job=None;self.displayed=None
+        self.frame=None;self.progressive=None;self.job=None;self.displayed=None
         self.key='beauty';self.display={};self.serial=0;self.closed=False;self.log=''
 
     def select(self,key,display):
-        if key!='beauty' and key not in options.AOVS:raise ValueError('Unknown preview buffer')
+        if not isinstance(key,str) or not key or not all(c.isalnum() or c=='_' for c in key):raise ValueError('Unknown preview buffer')
         self.key=key;self.display=dict(display);self.serial+=1
         self._request()
 
-    def publish(self,files,runtime,snapshot,backend):
-        folder=self.root/uuid.uuid4().hex;folder.mkdir()
+    def publish(self,files,runtime,snapshot,backend,partial=False):
+        if partial and self.job and self.process.state()!=QtCore.QProcess.NotRunning:return
+        folder=self.root/uuid.uuid4().hex;folder.mkdir();copied={}
         try:
             for key,source in files.items():
                 if not Path(source).is_file() or Path(source).stat().st_size<16:
                     raise ValueError('Missing rendered buffer: '+key)
-                shutil.copyfile(str(source),str(folder/(key+'.exr')))
+                copied[key]=folder/(key+Path(source).suffix)
+                shutil.copyfile(str(source),str(copied[key]))
         except Exception:
             shutil.rmtree(folder);raise
-        self.frame={'folder':folder,'runtime':Path(runtime),'snapshot':snapshot,'backend':backend}
+        frame={'folder':folder,'files':copied,'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':partial}
+        if partial:self.progressive=frame
+        else:self.frame=frame;self.progressive=None
         self.serial+=1;self._request();self._prune()
 
     def _request(self):
@@ -48,18 +52,20 @@ class BufferCache(QtCore.QObject):
         if self.process.state()!=QtCore.QProcess.NotRunning:
             # Only stop our display converter; never stop the renderer or denoiser.
             self.process.kill();return
-        if self.frame is None:
+        if self.frame is None and self.progressive is None:
             self.notice.emit('Buffers will be available after the first preview pass completes.');return
         self._start()
 
     def _start(self):
-        frame=self.frame
+        frame=self.progressive if self.key=='beauty' and self.progressive else self.frame
+        if frame is None or self.key not in frame['files']:
+            self.notice.emit('Selected output will be available after a preview with these outputs completes.');return
         signature=hashlib.sha256(json.dumps([self.key,self.display],sort_keys=True).encode('utf-8')).hexdigest()
         destination=frame['folder']/(signature+'.png')
         self.job=dict(frame=frame,key=self.key,serial=self.serial,destination=destination)
         if destination.is_file():self._show();self.job=None;self._prune();return
         try:
-            args=conversion(self.key,frame['folder']/(self.key+'.exr'),destination,self.display)
+            args=conversion(outputs.display_kind(frame['snapshot'],self.key),frame['files'][self.key],destination,self.display)
             env=QtCore.QProcessEnvironment()
             for key,value in native.environment(frame['runtime']).items():env.insert(key,value)
             self.process.setProcessEnvironment(env)
@@ -100,7 +106,7 @@ class BufferCache(QtCore.QObject):
             self.job=None;self.notice.emit('Cannot start buffer display converter: '+self.process.errorString());self._prune()
 
     def _prune(self):
-        keep={entry['folder'] for entry in (self.frame,self.job['frame'] if self.job else None) if entry}
+        keep={entry['folder'] for entry in (self.frame,self.progressive,self.job['frame'] if self.job else None) if entry}
         for folder in self.root.iterdir():
             if folder.is_dir() and folder not in keep:
                 try:shutil.rmtree(folder)

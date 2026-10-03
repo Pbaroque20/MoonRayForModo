@@ -18,6 +18,7 @@ def supported(runtime):
 class Session(QtCore.QObject):
     output=QtCore.Signal(str)
     ready=QtCore.Signal(int)
+    image=QtCore.Signal(int,str)
     acknowledged=QtCore.Signal(int)
     failed=QtCore.Signal(str)
     status=QtCore.Signal(str)
@@ -106,6 +107,13 @@ class Session(QtCore.QObject):
                     if path.name.split('.')[0] not in keep:
                         try:path.unlink()
                         except OSError:pass
+            elif parts[1]=='FRAME':
+                path=self.root/('preview_%d.pfm'%generation)
+                try:
+                    if self.latest and generation==self.latest['id'] and path.is_file():self.image.emit(generation,str(path))
+                finally:
+                    try:path.unlink()
+                    except OSError:pass
             elif parts[1]=='DONE' and self.latest and generation==self.latest['id']:
                 self.ready.emit(generation)
         self.partial=self.partial[-65536:]

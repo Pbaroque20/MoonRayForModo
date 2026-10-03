@@ -339,3 +339,12 @@ class AboutMoonRay(lxu.command.BasicCommand):
         show()
 
 lx.bless(AboutMoonRay,'moonray.about')
+
+
+class CaptureMotion(lxu.command.BasicCommand):
+    def cmd_Flags(self):return lx.symbol.fCMD_UI
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import animation
+        if animation.single_request is not None:animation.single_result=animation.single_request()
+
+lx.bless(CaptureMotion,'moonray.captureMotion')

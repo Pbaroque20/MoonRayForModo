@@ -21,6 +21,8 @@ class Panel(QtWidgets.QWidget):
             self.settings.setValue('runtime',native.default_runtime())
             self.settings.setValue('runtime_installation',installation_id)
         self.renderer = Renderer(self)
+        from .changes import Changes
+        self.changes=Changes();self._geometry_cache=None;self._last_time=None;self._live_settings=None;self._asset_signature=[];self._asset_scene={};self._last_full_capture=0
         self.last_digest = None
         self.disposed = False
         self.sequence = None
@@ -53,6 +55,9 @@ class Panel(QtWidgets.QWidget):
         self.persistent_preview.setToolTip('Update compatible scene attributes in a persistent renderer. Structural edits reload the scene. Requires the bundled session-capable runtime; older runtimes use separate renders.')
         self.persistent_preview.toggled.connect(lambda value:self.settings.setValue('persistent_preview',value))
         self.pages['system'].addRow(self.persistent_preview)
+        asset_controls=QtWidgets.QPushButton('Input color spaces and texture cache…');asset_controls.clicked.connect(self._edit_assets);self.pages['display'].addRow(asset_controls)
+        asset_report=QtWidgets.QPushButton('Report scene assets…');asset_report.clicked.connect(self._report_assets);self.pages['system'].addRow(asset_report)
+        package=QtWidgets.QPushButton('Package portable render scene…');package.clicked.connect(self._package_assets);self.pages['system'].addRow(package)
         controls = self.pages['render']
         self.size = QtWidgets.QComboBox()
         self.size.addItems(['320 px wide', '640 px wide', '960 px wide', 'Scene resolution'])
@@ -108,6 +113,10 @@ class Panel(QtWidgets.QWidget):
         self.timeout.setSpecialValueText('No limit')
         self.timeout.setSuffix(' min')
         self.pages['system'].addRow('Render time limit',self.timeout)
+        scene_controls=QtWidgets.QPushButton('Object light links, emitters and volumes…');scene_controls.clicked.connect(self._edit_production)
+        self.pages['lighting'].addRow(scene_controls)
+        geometry_assets=QtWidgets.QPushButton('Strands, points and VDB assets…');geometry_assets.clicked.connect(self._edit_production)
+        self.pages['object'].addRow(geometry_assets)
         self.pages['lighting'].addRow('Uniform environment', self.environment)
         self.modo_environment = QtWidgets.QCheckBox('Use Modo environments')
         self.modo_environment.setChecked(True)
@@ -203,6 +212,7 @@ class Panel(QtWidgets.QWidget):
             checkbox.setChecked(key == 'alpha')
             self.aov_controls[key] = checkbox
             self.pages['aovs'].addRow(checkbox)
+        edit_outputs=QtWidgets.QPushButton('Configure named outputs…');edit_outputs.clicked.connect(self._edit_outputs);self.pages['aovs'].addRow(edit_outputs)
         from .display import DEFAULTS
         self.display_controls = {}
         for key,label in [('view','Display transform'),('exposure','Exposure (stops)'),('lut','LUT file'),
@@ -228,6 +238,10 @@ class Panel(QtWidgets.QWidget):
         lighting_note = QtWidgets.QLabel('Glass uses Modo Transparency Amount/Color, Refraction Index, Roughness and Transparency Roughness. Use closed meshes for solid glass. Start with IOR 1.5 and Transparency 100%; increase Glossy and Mirror/refraction bounces for multiple glass surfaces. UV images can drive transmission amount, color and roughness. Absorption distance uses a closed-volume model. Dispersion is not translated. New material features are unverified; see compatibility notices below.')
         lighting_note.setWordWrap(True)
         self.pages['lighting'].addRow(lighting_note)
+        self.final_motion=QtWidgets.QCheckBox('Include motion blur / motion vectors in final outputs');controls.addRow(self.final_motion)
+        self.checkpoint=QtWidgets.QCheckBox('Save checkpoints for final renders');controls.addRow(self.checkpoint)
+        self.resume_checkpoint=QtWidgets.QCheckBox('Resume matching checkpoint');self.resume_checkpoint.setChecked(True);controls.addRow(self.resume_checkpoint)
+        self.checkpoint_minutes=QtWidgets.QDoubleSpinBox();self.checkpoint_minutes.setRange(.1,1440);self.checkpoint_minutes.setValue(1);controls.addRow('Checkpoint interval (minutes)',self.checkpoint_minutes)
         save_settings = QtWidgets.QPushButton('Store render settings in scene')
         save_settings.clicked.connect(self._save_settings)
         controls.addRow(save_settings)
@@ -402,6 +416,13 @@ class Panel(QtWidgets.QWidget):
         import modo
         self._scene_id = modo.Scene().renderItem.id
         values = properties.scene_settings()
+        recovery=values.get('recovery',{})
+        self.checkpoint.setChecked(recovery.get('enabled',False));self.resume_checkpoint.setChecked(recovery.get('resume',True));self.checkpoint_minutes.setValue(recovery.get('minutes',1))
+        self.custom_aovs=values.get('custom_aovs',[])
+        self.production=values.get('production',{})
+        self.final_motion.setChecked(values.get('final_motion',False))
+        self.asset_settings=values.get('asset_settings',{})
+        self._sync_output_menu()
         mode=values.get('execution_mode',native.default_execution_mode(self.runtime.text()))
         self.execution_mode.blockSignals(True)
         self.execution_mode.setCurrentIndex(max(0,self.execution_mode.findData(mode)))
@@ -446,7 +467,7 @@ class Panel(QtWidgets.QWidget):
             control.setValue(value*100)
 
     def _settings_values(self):
-        return {'render': {key: control.currentData() if isinstance(control, QtWidgets.QComboBox) else control.value()
+        return {'final_motion':self.final_motion.isChecked(),'production':self.production,'asset_settings':self.asset_settings,'recovery':{'enabled':self.checkpoint.isChecked(),'resume':self.resume_checkpoint.isChecked(),'minutes':self.checkpoint_minutes.value()},'custom_aovs':self.custom_aovs,'render': {key: control.currentData() if isinstance(control, QtWidgets.QComboBox) else control.value()
                            for key, control in self.render_controls.items()},
                 'background': {key:control.currentData() if isinstance(control,QtWidgets.QComboBox) else control.value() if isinstance(control,QtWidgets.QDoubleSpinBox) else control.text().strip() for key,control in self.background_controls.items()},
                 'display': {key:control.currentData() if isinstance(control,QtWidgets.QComboBox) else control.value() if isinstance(control,QtWidgets.QDoubleSpinBox) else control.text().strip() for key,control in self.display_controls.items()},
@@ -461,6 +482,52 @@ class Panel(QtWidgets.QWidget):
                 'environment_multiplier':self.environment_multiplier.value(),
                 'region_enabled':self.region_enabled.isChecked(),
                 'region':[control.value()/100 for control in self.region_controls]}
+
+    def _sync_output_menu(self):
+        key=self.buffer.currentData();self.buffer.blockSignals(True)
+        while self.buffer.count()>1+len(options.AOVS):self.buffer.removeItem(self.buffer.count()-1)
+        for v in self.custom_aovs:
+            if v['kind']!='cryptomatte':self.buffer.addItem(v['name'],v['name'])
+        self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));self.buffer.blockSignals(False)
+
+    def _edit_outputs(self):
+        from .outputs_dialog import OutputsDialog
+        dialog=OutputsDialog(self.custom_aovs,self)
+        if dialog.exec_():
+            self.custom_aovs=dialog.entries;self._sync_output_menu()
+            self.status.setText('Named outputs updated. Refresh preview to populate new buffers; store render settings to save them with the scene.')
+
+    def _edit_assets(self):
+        from .assets_dialog import AssetsDialog
+        dialog=AssetsDialog(self.asset_settings,self)
+        if dialog.exec_()==QtWidgets.QDialog.Accepted:
+            self.asset_settings=dialog.entries;self._save_settings();self.changes.invalidate()
+
+    def _report_assets(self):
+        try:
+            from .assets import inventory
+            scene=self._capture();entries=inventory(scene)
+            text='\n'.join(('%s | %d file(s) | %.1f MB | %s'%('MISSING' if v['missing'] else 'Found',v['tiles'],v['bytes']/1048576,v['path'])) for v in entries)
+            text+='\n\nScene notices:\n'+'\n'.join(scene.get('warnings',[]))
+            dialog=QtWidgets.QDialog(self);dialog.setWindowTitle('Scene asset report');dialog.resize(900,480);layout=QtWidgets.QVBoxLayout(dialog);view=QtWidgets.QPlainTextEdit(text);view.setReadOnly(True);layout.addWidget(view);dialog.exec_()
+        except Exception as exc:self._failed(str(exc))
+
+    def _package_assets(self):
+        path=self._save_path('New portable scene folder','package','','All names (*)')
+        if not path:return
+        try:
+            from .assets import package
+            scene=self._capture_output();width,height=self._dimensions(scene,True)
+            output=package(scene,path,width,height,self.samples.value(),self.environment.value())
+            self.status.setText('Packaged render scene: '+output)
+        except Exception as exc:self._failed(str(exc))
+
+    def _edit_production(self):
+        from .production_dialog import Controls
+        dialog=Controls(self.production,self)
+        if dialog.exec_()==QtWidgets.QDialog.Accepted:
+            self.production=dialog.values;self._save_settings();self.changes.invalidate()
+            self.status.setText('Scene controls saved. Refresh preview to apply.')
 
     def _sampling_controls(self,*args):
         adaptive=self.render_controls['sampling_mode'].currentData()==2
@@ -526,17 +593,36 @@ class Panel(QtWidgets.QWidget):
         width = scene_w if final or self.size.currentIndex() == 3 else (320, 640, 960)[self.size.currentIndex()]
         return width, max(16, round(width * scene_h / max(1, scene_w)))
 
-    def _capture(self):
+    def _capture(self,reuse=False):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
-            self._load_settings()
-        scene = host.snapshot(evaluated_geometry=self.surface.currentIndex() == 2)
-        return self._configure_snapshot(scene)
+            self._load_settings();self._geometry_cache=None
+        scene = host.snapshot(evaluated_geometry=self.surface.currentIndex() == 2,reuse_geometry=self._geometry_cache if reuse else None)
+        import copy,time
+        if not reuse:
+            self._geometry_cache=dict(scene,meshes=[dict(m) for m in scene['meshes']],materials=copy.deepcopy(scene['materials']),native_materials=copy.deepcopy(scene.get('native_materials',{})))
+            self._last_full_capture=time.monotonic()
+        scene['_geometry_revision']=str(id(self))+':'+str(self._last_full_capture)
+        configured=self._configure_snapshot(scene)
+        from .assets import signature
+        self._asset_scene=configured;self._asset_signature=signature(configured)
+        return configured
+
+    def _capture_output(self):
+        if not self.final_motion.isChecked():return self._capture()
+        from .animation import capture_current
+        return self._configure_snapshot(capture_current(self.surface.currentIndex()==2))
 
     def _configure_snapshot(self, scene):
         values = self._settings_values()
         scene['render_settings'] = values['render']
         scene['aovs'] = values['aovs']
+        scene['production']=values['production']
+        scene['asset_settings']=values['asset_settings']
+        from .extra_geometry import attach as attach_geometry
+        attach_geometry(scene,values['production'])
+        scene['custom_aovs']=values['custom_aovs']
+        scene['recovery']=values['recovery']
         scene['preview_buffer'] = values['preview_buffer']
         scene['execution_mode'] = values['execution_mode']
         scene['denoising'] = values['denoising']
@@ -577,7 +663,7 @@ class Panel(QtWidgets.QWidget):
         self.last_digest = original_digest
 
     def _digest(self, scene):
-        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs')}
+        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision')}
         values = [render_scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value()]
         digest = hashlib.sha256()
         for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':')).iterencode(values):
@@ -626,11 +712,26 @@ class Panel(QtWidgets.QWidget):
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         try:
-            scene = self._capture()
-            if self._digest(scene) != self.last_digest:
-                self._submit(scene)
+            import modo
+            full,items=self.changes.consume();time=lx.service.Selection().GetTime()
+            import time as clock
+            from .assets import signature
+            # Periodic reconciliation covers host notifications omitted by some
+            # procedural mesh providers. Normal idle ticks do not capture geometry.
+            full=full or clock.monotonic()-self._last_full_capture>15 or signature(self._asset_scene)!=self._asset_signature
+            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery')}
+            changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
+            if not (full or items or changed):return
+            reuse=not full and not changed and bool(items) and self._geometry_cache is not None
+            if reuse:
+                for identity in items:
+                    if modo.Scene().item(identity).type not in ('camera','sunLight','pointLight','areaLight','spotLight','lightMaterial'):
+                        reuse=False;break
+            scene = self._capture(reuse)
+            self._last_time=time;self._live_settings=settings
+            if self._digest(scene) != self.last_digest:self._submit(scene)
         except Exception as exc:
-            self._failed(str(exc))
+            self.changes.invalidate();self._failed(str(exc))
 
     def stop(self):
         self.preview_timer.stop()
@@ -651,7 +752,7 @@ class Panel(QtWidgets.QWidget):
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             key=frame.get('key',snapshot.get('preview_buffer','beauty'));label='Beauty' if key=='beauty' else options.AOVS.get(key,(key,))[0]
             self.image_info.setText('Showing %s · %d × %d · %s'%(label,self.preview.image.width(),self.preview.image.height(),frame.get('backend',self.renderer.backend_status)))
-            if frame:self.image_info.setText(self.image_info.text()+' · Last completed preview')
+            if frame:self.image_info.setText(self.image_info.text()+(' · Rendering' if frame.get('partial') else ' · Last completed preview'))
             if snapshot.get('_ipr'):
                 settings=snapshot['render_settings']
                 quality='1 SPP' if settings['max_adaptive_samples']==1 else '%d–%d SPP, error %g'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'],settings['target_adaptive_error'])
@@ -687,7 +788,7 @@ class Panel(QtWidgets.QWidget):
             return
         self.stop()
         try:
-            self._submit(self._capture(), path)
+            self._submit(self._capture_output(), path)
         except Exception as exc:
             self._failed(str(exc))
 
@@ -696,7 +797,7 @@ class Panel(QtWidgets.QWidget):
         if not path:
             return
         try:
-            scene = self._capture()
+            scene = self._capture_output()
             width, height = self._dimensions(scene, True)
             text = rdla.scene_text(scene, width, height, self.samples.value(), self.environment.value(),
                                    str(Path(path).with_suffix('.exr')))
@@ -746,6 +847,7 @@ class Panel(QtWidgets.QWidget):
         if not self.disposed:
             self._store_workspace()
             self.disposed = True
+            self.changes.close()
             self.display_timer.stop()
             self.preview_timer.stop()
             self.timer.stop()
@@ -768,7 +870,7 @@ class Panel(QtWidgets.QWidget):
         try:
             candidate=Sequence(self,directory,dialog.first.value(),dialog.last.value(),
                                dialog.fps.value(),dialog.motion.isChecked(),
-                               step=dialog.step.value(),prefix=dialog.prefix.text())
+                               step=dialog.step.value(),prefix=dialog.prefix.text(),missing=dialog.missing.isChecked())
             self.settings.setValue('output/animation',directory)
             self.stop()
             self.sequence=candidate

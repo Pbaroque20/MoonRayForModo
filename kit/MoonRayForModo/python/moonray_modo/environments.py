@@ -87,9 +87,7 @@ def collect(scene, warnings):
                     if not path.is_file():
                         raise ValueError('missing image '+str(path))
                     space = channel(clip,'colorspace','(default)')
-                    if space not in ('(default)','(none)','sRGB','Linear','linear'):
-                        raise ValueError('unsupported color space '+space)
-                    entry.update(kind='image',path=str(path.resolve()),mtime=path.stat().st_mtime_ns,
+                    entry.update(kind='image',color_space=space,path=str(path.resolve()),mtime=path.stat().st_mtime_ns,
                         size=path.stat().st_size, matrix=world_matrix(locator),
                         srgb=space=='sRGB' or (space=='(default)' and path.suffix.lower() not in ('.exr','.hdr','.tx')))
                 else:
@@ -155,14 +153,14 @@ def emit(environments, lines):
             attributes['visible_'+lobe]='true' if environment.get(visible,True) else 'false'
         if environment['kind']=='stack':
             from .environment_layers import texture
-            attributes['texture'] = string(texture(environment))
+            attributes['texture'] = string(textures.register(texture(environment)))
             attributes['texture_filter'] = '1'
         elif environment['kind']=='constant':
             attributes['color']=vector(environment['zenith'],'Rgb')
         else:
-            path=(textures.prepare(environment['path'],environment.get('srgb',False),mipmaps=False)
+            path=(textures.prepare(environment['path'],environment.get('srgb',False),mipmaps=False,color_space=environment.get('color_space',''))
                   if environment['kind']=='image' else gradient_texture(environment))
-            attributes['texture']=string(path)
+            attributes['texture']=string(textures.register(path))
             # EnvLight's importance distribution rejects the terminal 1x1 mip.
             # Use a full-resolution tiled image with bilinear filtering.
             attributes['texture_filter']='1'

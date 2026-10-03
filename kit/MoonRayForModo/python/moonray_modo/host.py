@@ -121,7 +121,7 @@ def material_values(material):
                                 'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
 
 
-def snapshot(evaluated_geometry=False):
+def snapshot(evaluated_geometry=False,reuse_geometry=None):
     scene = modo.Scene()
     if scene.items('replicator',superType=False):
         # Render Cache resolves generated replica transforms and source meshes.
@@ -181,180 +181,187 @@ def snapshot(evaluated_geometry=False):
     if projection=='ortho':
         warnings.append('Orthographic width uses target distance and film/focal ratio; reference parity is unverified.')
     from .layers import ordered_items, material_tag
-    material_candidates = {}
-    for material in reversed(list(ordered_items(scene.renderItem))):
-        from .materials import active as material_active
-        if material.type not in ('advancedMaterial','material.moonrayMaterialX') or not material_active(material) or not channel(material, 'enable', 1):
-            continue
-        try:
-            tag = material_tag(material)
-        except ValueError as exc:
-            if not evaluated_geometry:
-                warnings.append('Material %s: %s' % (material.name, exc))
-            continue
-        if tag is None:
-            continue
-        material_candidates.setdefault(tag,[]).append(material)
-        result['materials'][tag] = material_values(material)
-        from .channel_values import fresnel_controls
-        unmatched = fresnel_controls(properties.read(material),
-            float(channel(material,'specAmt',0)),float(channel(material,'reflAmt',0)),
-            float(channel(material,'specFres',1)),float(channel(material,'reflFres',1)))
-        if unmatched:
-            warnings.append("%s: %s differs from MoonRay's IOR-based Fresnel response." %
-                            (material.name,', '.join(unmatched)))
-        if channel(material,'subsAmt',0) or channel(material,'aniso',0):
-            result['materials'][tag]['shader'] = 'DwaBaseMaterial'
-        if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
-            warnings.append('Anisotropy requires MoonShine Material: ' + material.name)
-        if channel(material, 'tranAmt', 0):
-            if channel(material, 'disperse', 0):
-                warnings.append('Dispersion is not translated: ' + material.name)
-            if channel(material, 'metallic', 0) or channel(material, 'coatAmt', 0):
-                warnings.append('Glass uses dielectric Fresnel reflection; metalness and clearcoat are not translated: ' + material.name)
-    if not evaluated_geometry:
-        image_layers(scene, result['materials'], warnings)
-        from .layers import material_stack
-        for tag,candidates in material_candidates.items():
-            if len(candidates)>1:
-                result['materials'][tag]['material_stack'] = material_stack(scene,candidates,warnings,tag)
-    for tag, material in result['materials'].items():
-        maps = material.get('textures', {})
-        if material.get('shader') == 'DwaBaseMaterial':
-            if 'specCol' in maps:
-                warnings.append('MoonShine uses dielectric IOR or metallic base color; specular-color maps are not translated: ' + (tag or 'base material'))
-            continue
-        if material['transmission'] > 0 or material['presence'] < 1 or 'dissolve' in maps or any(k.startswith('tran') for k in maps):
-            if any(k in maps for k in ('specCol', 'specAmt', 'coatAmt', 'coatRough', 'metallic')):
-                warnings.append('The standard glass/dissolve material ignores specular-color, clearcoat and metalness maps. MoonShine supports mapped clearcoat and metalness: ' + (tag or 'base material'))
-    from . import shader_library
-    from .layers import material_stack
-    library = {}
-    for item in scene.items('advancedMaterial', superType=True):
-        if properties.read(item).get('native_shader') or properties.read(item).get('materialx_override'):
-            try:
-                tag = material_tag(item)
-            except ValueError:
-                tag = None
-            library[item.id] = material_stack(scene,[item],warnings,tag)[0]
-    result['native_materials'] = library
-    shader_library.attach_dependencies(result['materials'],library)
-    if evaluated_geometry:
-        from . import evaluated
-        data = evaluated.capture(lx.service.Selection().GetTime())
-        result['materials'] = evaluated.assign_materials(data, scene, warnings)
-        shader_library.attach_dependencies(result['materials'],library)
-        result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)
-    # Resolve each visible instance to one mesh prototype, including hidden sources.
-    instances = {}
-    for instance in ([] if evaluated_geometry else scene.items('meshInst', superType=False)):
-        if not render_visible(instance):
-            continue
-        source, visited = instance, set()
-        try:
-            while source.type == 'meshInst':
-                if source.id in visited:
-                    raise ValueError('cyclic instance source')
-                visited.add(source.id)
-                links = source.itemGraph('source').forward()
-                if len(links) != 1:
-                    raise ValueError('missing or ambiguous source')
-                source = links[0]
-            if source.type != 'mesh':
-                raise ValueError('source is not a mesh')
-            instances.setdefault(source.id, []).append((instance.id,world_matrix(instance)))
-        except (ValueError, LookupError) as exc:
-            warnings.append('Instance %s: %s.' % (instance.name, exc))
-    # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
-    for item in ([] if evaluated_geometry else scene.items('mesh', superType=False)):
-        if not render_visible(item) and item.id not in instances:
-            continue
-        mesh = modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item, 'deformed')
-        if not mesh.PolygonCount():
-            continue
-        points = lx.object.Point(mesh.PointAccessor())
-        polygons = lx.object.Polygon(mesh.PolygonAccessor())
-        vertices, point_indices = [], {}
-        for index in range(mesh.PointCount()):
-            points.SelectByIndex(index)
-            point_indices[int(points.ID())] = index
-            vertices.append(list(points.Pos()))
-        groups = {}
-        uv_maps = {}
-        normal_map = first_map(mesh, lx.symbol.i_VMAP_NORMAL)
-        tags = lx.object.StringTag(polygons)
-        transform = world_matrix(item)
-        for index in range(mesh.PolygonCount()):
-            polygons.SelectByIndex(index)
-            count = polygons.VertexCount()
-            if count < 3:
-                warnings.append('Skipped curve/line polygon in ' + item.name)
+    if reuse_geometry is not None:
+        result['materials']=reuse_geometry['materials'];result['native_materials']=reuse_geometry.get('native_materials',{})
+        result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes']]
+        warnings.extend(reuse_geometry.get('warnings',[]))
+    else:
+        material_candidates = {}
+        for material in reversed(list(ordered_items(scene.renderItem))):
+            from .materials import active as material_active
+            if material.type not in ('advancedMaterial','material.moonrayMaterialX') or not material_active(material) or not channel(material, 'enable', 1):
                 continue
             try:
-                tag = tags.Get(lx.symbol.i_POLYTAG_MATERIAL) or ''
-            except LookupError:
-                tag = ''
-            face = [point_indices[int(polygons.VertexByIndex(v))] for v in range(count)]
-            subdivision = lxu.utils.decodeID4(polygons.Type()) in ('SUBD', 'PSUB')
-            maps = result['materials'].get(tag, {}).get('textures', {})
-            uv_name = result['materials'].get(tag, {}).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
-            if uv_name not in uv_maps:
-                uv_maps[uv_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, uv_name)
-            face_uv = corner_values(polygons, uv_maps[uv_name], count, 2)
-            if uv_name and not face_uv:
-                raise ValueError('Mesh %s is missing UV values in map %s.' % (item.name, uv_name))
-            extra_uvs = {}
-            for key, descriptor in coordinates.descriptors({tag:result['materials'].get(tag,{})}).items():
-                source_name = descriptor.get('uv_map','')
-                source_uv = []
-                if descriptor.get('projection','uv') == 'uv':
-                    if source_name not in uv_maps:
-                        uv_maps[source_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, source_name)
-                    source_uv = corner_values(polygons, uv_maps[source_name], count, 2)
-                extra_uvs[key] = coordinates.face(descriptor, [vertices[v] for v in face], source_uv, transform)
-            groups.setdefault((subdivision, uv_name), []).append((face, tag,
-                face_uv, corner_values(polygons, normal_map, count, 3), extra_uvs))
-        transform = world_matrix(item)
-        object_settings = options.object_values(properties.read(item))
-        instance_records = sorted(instances.get(item.id, []),key=lambda pair:pair[0])
-        if item.id in instances and render_visible(item):
-            instance_records = [(item.id,transform)] + instance_records
-        transforms = [value for identity,value in instance_records]
-        for (subdivision, uv_name), tagged_faces in sorted(groups.items()):
-            faces, face_materials, face_uvs, face_normals, extras = zip(*tagged_faces)
-            result['meshes'].append({'name': item.name, 'identity':item.id+'|'+str(subdivision)+'|'+uv_name, 'vertices': vertices,
-                                     'uv_sets': {key:[uv for face,values in zip(faces,extras) for uv in values.get(key,[[0,0]]*len(face))]
-                                                 for key in sorted({k for values in extras for k in values})},
-                                     'faces': list(faces), 'matrix': transform, 'material': '',
-                                     'face_materials': list(face_materials),
-                                     'uvs': [uv for values in face_uvs for uv in values] if all(face_uvs) else [],
-                                     'normals': [n for values in face_normals for n in values] if all(face_normals) else [],
-                                     'geometry_settings': object_settings, 'object_override': object_settings['override'],
-                                     'smooth': object_settings['smooth'] if object_settings['override'] else True,
-                                     'subdivision_level': object_settings['level'],
-                                     'subdivision': object_settings['subdivision'] if object_settings['override'] else subdivision})
-            if item.id in instances:
-                result['meshes'][-1]['instances'] = transforms
-                result['meshes'][-1]['instance_ids'] = [identity for identity,value in instance_records]
-    # World/locator projections cannot share baked UVs across transforms.
-    # Keep ordinary UV instances shared; expand only affected prototypes.
-    expanded = []
-    descriptors = coordinates.descriptors(result['materials'])
-    for mesh in result['meshes']:
-        projected = {k:d for k,d in descriptors.items() if d.get('projection','uv')!='uv' and k in mesh.get('uv_sets',{})}
-        if not projected or 'instances' not in mesh:
-            expanded.append(mesh)
-            continue
-        for index, transform in enumerate(mesh['instances']):
-            instance = dict(mesh,name=mesh['name']+' / instance %d'%index,
-                            identity=mesh['identity']+'|'+mesh['instance_ids'][index],matrix=transform,uv_sets=dict(mesh['uv_sets']))
-            instance.pop('instances')
-            instance.pop('instance_ids',None)
-            for key,descriptor in projected.items():
-                instance['uv_sets'][key] = [uv for face in mesh['faces'] for uv in coordinates.face(
-                    descriptor,[mesh['vertices'][v] for v in face],[],transform)]
-            expanded.append(instance)
-    result['meshes'] = expanded
+                tag = material_tag(material)
+            except ValueError as exc:
+                if not evaluated_geometry:
+                    warnings.append('Material %s: %s' % (material.name, exc))
+                continue
+            if tag is None:
+                continue
+            material_candidates.setdefault(tag,[]).append(material)
+            result['materials'][tag] = material_values(material)
+            from .channel_values import fresnel_controls
+            unmatched = fresnel_controls(properties.read(material),
+                float(channel(material,'specAmt',0)),float(channel(material,'reflAmt',0)),
+                float(channel(material,'specFres',1)),float(channel(material,'reflFres',1)))
+            if unmatched:
+                warnings.append("%s: %s differs from MoonRay's IOR-based Fresnel response." %
+                                (material.name,', '.join(unmatched)))
+            if channel(material,'subsAmt',0) or channel(material,'aniso',0):
+                result['materials'][tag]['shader'] = 'DwaBaseMaterial'
+            if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
+                warnings.append('Anisotropy requires MoonShine Material: ' + material.name)
+            if channel(material, 'tranAmt', 0):
+                if channel(material, 'disperse', 0):
+                    warnings.append('Dispersion is not translated: ' + material.name)
+                if channel(material, 'metallic', 0) or channel(material, 'coatAmt', 0):
+                    warnings.append('Glass uses dielectric Fresnel reflection; metalness and clearcoat are not translated: ' + material.name)
+        if not evaluated_geometry:
+            image_layers(scene, result['materials'], warnings)
+            from .layers import material_stack
+            for tag,candidates in material_candidates.items():
+                if len(candidates)>1:
+                    result['materials'][tag]['material_stack'] = material_stack(scene,candidates,warnings,tag)
+        for tag, material in result['materials'].items():
+            maps = material.get('textures', {})
+            if material.get('shader') == 'DwaBaseMaterial':
+                if 'specCol' in maps:
+                    warnings.append('MoonShine uses dielectric IOR or metallic base color; specular-color maps are not translated: ' + (tag or 'base material'))
+                continue
+            if material['transmission'] > 0 or material['presence'] < 1 or 'dissolve' in maps or any(k.startswith('tran') for k in maps):
+                if any(k in maps for k in ('specCol', 'specAmt', 'coatAmt', 'coatRough', 'metallic')):
+                    warnings.append('The standard glass/dissolve material ignores specular-color, clearcoat and metalness maps. MoonShine supports mapped clearcoat and metalness: ' + (tag or 'base material'))
+        from . import shader_library
+        from .layers import material_stack
+        library = {}
+        for item in scene.items('advancedMaterial', superType=True):
+            if properties.read(item).get('native_shader') or properties.read(item).get('materialx_override'):
+                try:
+                    tag = material_tag(item)
+                except ValueError:
+                    tag = None
+                library[item.id] = material_stack(scene,[item],warnings,tag)[0]
+        result['native_materials'] = library
+        shader_library.attach_dependencies(result['materials'],library)
+        if evaluated_geometry:
+            from . import evaluated
+            data = evaluated.capture(lx.service.Selection().GetTime())
+            result['materials'] = evaluated.assign_materials(data, scene, warnings)
+            shader_library.attach_dependencies(result['materials'],library)
+            result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)
+            result['extra_geometry']=evaluated.extra_geometry(data,warnings)
+        # Resolve each visible instance to one mesh prototype, including hidden sources.
+        instances = {}
+        for instance in ([] if evaluated_geometry else scene.items('meshInst', superType=False)):
+            if not render_visible(instance):
+                continue
+            source, visited = instance, set()
+            try:
+                while source.type == 'meshInst':
+                    if source.id in visited:
+                        raise ValueError('cyclic instance source')
+                    visited.add(source.id)
+                    links = source.itemGraph('source').forward()
+                    if len(links) != 1:
+                        raise ValueError('missing or ambiguous source')
+                    source = links[0]
+                if source.type != 'mesh':
+                    raise ValueError('source is not a mesh')
+                instances.setdefault(source.id, []).append((instance.id,world_matrix(instance)))
+            except (ValueError, LookupError) as exc:
+                warnings.append('Instance %s: %s.' % (instance.name, exc))
+        # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
+        for item in ([] if evaluated_geometry else scene.items('mesh', superType=False)):
+            if not render_visible(item) and item.id not in instances:
+                continue
+            mesh = modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item, 'deformed')
+            if not mesh.PolygonCount():
+                continue
+            points = lx.object.Point(mesh.PointAccessor())
+            polygons = lx.object.Polygon(mesh.PolygonAccessor())
+            vertices, point_indices = [], {}
+            for index in range(mesh.PointCount()):
+                points.SelectByIndex(index)
+                point_indices[int(points.ID())] = index
+                vertices.append(list(points.Pos()))
+            groups = {}
+            uv_maps = {}
+            normal_map = first_map(mesh, lx.symbol.i_VMAP_NORMAL)
+            tags = lx.object.StringTag(polygons)
+            transform = world_matrix(item)
+            for index in range(mesh.PolygonCount()):
+                polygons.SelectByIndex(index)
+                if lxu.utils.decodeID4(polygons.Type()) in ('CURV','BEZR','BSPL','LINE','OPNT'):continue
+                count = polygons.VertexCount()
+                if count < 3:
+                    warnings.append('Skipped curve/line polygon in ' + item.name)
+                    continue
+                try:
+                    tag = tags.Get(lx.symbol.i_POLYTAG_MATERIAL) or ''
+                except LookupError:
+                    tag = ''
+                face = [point_indices[int(polygons.VertexByIndex(v))] for v in range(count)]
+                subdivision = lxu.utils.decodeID4(polygons.Type()) in ('SUBD', 'PSUB')
+                maps = result['materials'].get(tag, {}).get('textures', {})
+                uv_name = result['materials'].get(tag, {}).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
+                if uv_name not in uv_maps:
+                    uv_maps[uv_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, uv_name)
+                face_uv = corner_values(polygons, uv_maps[uv_name], count, 2)
+                if uv_name and not face_uv:
+                    raise ValueError('Mesh %s is missing UV values in map %s.' % (item.name, uv_name))
+                extra_uvs = {}
+                for key, descriptor in coordinates.descriptors({tag:result['materials'].get(tag,{})}).items():
+                    source_name = descriptor.get('uv_map','')
+                    source_uv = []
+                    if descriptor.get('projection','uv') == 'uv':
+                        if source_name not in uv_maps:
+                            uv_maps[source_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, source_name)
+                        source_uv = corner_values(polygons, uv_maps[source_name], count, 2)
+                    extra_uvs[key] = coordinates.face(descriptor, [vertices[v] for v in face], source_uv, transform)
+                groups.setdefault((subdivision, uv_name), []).append((face, tag,
+                    face_uv, corner_values(polygons, normal_map, count, 3), extra_uvs))
+            transform = world_matrix(item)
+            object_settings = options.object_values(properties.read(item))
+            instance_records = sorted(instances.get(item.id, []),key=lambda pair:pair[0])
+            if item.id in instances and render_visible(item):
+                instance_records = [(item.id,transform)] + instance_records
+            transforms = [value for identity,value in instance_records]
+            for (subdivision, uv_name), tagged_faces in sorted(groups.items()):
+                faces, face_materials, face_uvs, face_normals, extras = zip(*tagged_faces)
+                result['meshes'].append({'name': item.name, 'identity':item.id+'|'+str(subdivision)+'|'+uv_name, 'vertices': vertices,
+                                         'uv_sets': {key:[uv for face,values in zip(faces,extras) for uv in values.get(key,[[0,0]]*len(face))]
+                                                     for key in sorted({k for values in extras for k in values})},
+                                         'faces': list(faces), 'matrix': transform, 'material': '',
+                                         'face_materials': list(face_materials),
+                                         'uvs': [uv for values in face_uvs for uv in values] if all(face_uvs) else [],
+                                         'normals': [n for values in face_normals for n in values] if all(face_normals) else [],
+                                         'geometry_settings': object_settings, 'object_override': object_settings['override'],
+                                         'smooth': object_settings['smooth'] if object_settings['override'] else True,
+                                         'subdivision_level': object_settings['level'],
+                                         'subdivision': object_settings['subdivision'] if object_settings['override'] else subdivision})
+                if item.id in instances:
+                    result['meshes'][-1]['instances'] = transforms
+                    result['meshes'][-1]['instance_ids'] = [identity for identity,value in instance_records]
+        # World/locator projections cannot share baked UVs across transforms.
+        # Keep ordinary UV instances shared; expand only affected prototypes.
+        expanded = []
+        descriptors = coordinates.descriptors(result['materials'])
+        for mesh in result['meshes']:
+            projected = {k:d for k,d in descriptors.items() if d.get('projection','uv')!='uv' and k in mesh.get('uv_sets',{})}
+            if not projected or 'instances' not in mesh:
+                expanded.append(mesh)
+                continue
+            for index, transform in enumerate(mesh['instances']):
+                instance = dict(mesh,name=mesh['name']+' / instance %d'%index,
+                                identity=mesh['identity']+'|'+mesh['instance_ids'][index],matrix=transform,uv_sets=dict(mesh['uv_sets']))
+                instance.pop('instances')
+                instance.pop('instance_ids',None)
+                for key,descriptor in projected.items():
+                    instance['uv_sets'][key] = [uv for face in mesh['faces'] for uv in coordinates.face(
+                        descriptor,[mesh['vertices'][v] for v in face],[],transform)]
+                expanded.append(instance)
+        result['meshes'] = expanded
     for item in scene.items('light'):
         if not render_visible(item):
             continue
@@ -363,7 +370,7 @@ def snapshot(evaluated_geometry=False):
             warnings.append('Skipped unsupported light: ' + item.name)
             continue
         material = item.material
-        light = {'kind': types[item.type], 'identity':item.id, 'matrix': world_matrix(item),
+        light = {'kind': types[item.type], 'identity':item.id, 'name':item.name, 'matrix': world_matrix(item),
                  'color': color(material, 'lightCol') if material else [1, 1, 1],
                  'intensity': float(channel(item, 'radiance', 1)),
                  'angle': max(.01, math.degrees(float(channel(item, 'spread', 0)))),
@@ -379,10 +386,21 @@ def snapshot(evaluated_geometry=False):
             # Precompose a local X half-turn, keeping the world position intact.
             light['matrix'][4:12] = [-v for v in light['matrix'][4:12]]
         result['lights'].append(light)
-    for kind in (('textureLayer', 'volume') if evaluated_geometry else ('replicator', 'textureLayer', 'volume')):
+    for kind in (('textureLayer',) if evaluated_geometry else ('replicator', 'textureLayer')):
         if scene.items(kind, superType=False):
             warnings.append('%s items are not translated in this version.' % kind)
+    for volume in scene.items('volume',superType=False):
+        if not properties.scene_settings().get('production',{}).get('objects',{}).get(volume.id,{}).get('geometry_file'):
+            warnings.append('Volume '+volume.name+': attach a VDB file in MoonRay scene controls.')
     from .environments import collect as collect_environments
     result['environments'] = collect_environments(scene, warnings)
+    from .extra_geometry import collect as collect_extra
+    result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None else result.get('extra_geometry',[]) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
+    result['time']=lx.service.Selection().GetTime();result['fps']=float(scene.fps);result['frame']=round(result['time']*result['fps'])
+    result['asset_owners']={}
+    for identity,settings in properties.scene_settings().get('production',{}).get('objects',{}).items():
+        if settings.get('geometry_file'):
+            try:result['asset_owners'][identity]={'matrix':world_matrix(scene.item(identity))}
+            except LookupError:warnings.append('Geometry asset owner is missing: '+identity)
     result['warnings'] = sorted(set(warnings))
     return result

@@ -93,7 +93,21 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
             for(int k=0;k<perFace;++k){if(k)out<<',';out<<indices[f*perFace+k];}
             out<<']';
         }
-        out<<"],\"normals\":";
+        out<<"],\"radii\":[";
+        int radiusCount=0;segment.VertexFeatureCount(LXiRENDERCACHE_GEOVERT_RAD,&radiusCount);
+        if(vertices && radiusCount) {
+            std::vector<float> radii(vertices);
+            check(segment.GetVertexFeature(LXiRENDERCACHE_GEOVERT_RAD,radii.data(),vertices,0),"Vertex radii");
+            for(int v=0;v<vertices;++v) { if(v)out<<',';number(out,radii[v]); }
+        }
+        out<<"],\"velocities\":";
+        int velocityCount=0;segment.VertexFeatureCount(LXiRENDERCACHE_GEOVERT_OVEL,&velocityCount);
+        if(vertices && velocityCount) {
+            std::vector<std::array<float,3>> velocities(vertices);
+            check(segment.GetVertexFeature(LXiRENDERCACHE_GEOVERT_OVEL,velocities.data(),vertices,0),"Vertex velocities");
+            vectors(out,velocities);
+        } else out<<"[]";
+        out<<",\"normals\":";
         if(corners && LXx_OK(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_ONRM,normals.data(),corners,0))) vectors(out,normals);
         else out<<"[]";
         out<<",\"uv_sets\":[";

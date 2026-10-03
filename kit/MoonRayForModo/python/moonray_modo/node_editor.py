@@ -16,7 +16,7 @@ class Socket(QtWidgets.QGraphicsEllipseItem):
         category=nodes.category(editor.graph['nodes'][identity]['type']) if key is None else 'map'
         if key is not None:
             spec=nodes.specs(editor.graph['nodes'][identity]['type'])[key]
-            if spec['type']=='SceneObject*':category='normal' if spec.get('interface')=='INTERFACE_NORMALMAP' else 'material'
+            if spec['type']=='SceneObject*':category={'INTERFACE_NORMALMAP':'normal','INTERFACE_MAP':'map','INTERFACE_DISPLACEMENT':'displacement'}.get(spec.get('interface'),'material')
         self.setBrush(QtGui.QColor(COLORS[category]));self.setPen(QtGui.QPen(QtGui.QColor('#171b22'),2))
         self.setToolTip('Drag output to a compatible input' if key is None else key+' — drag a connection here; right-click to disconnect')
     def mousePressEvent(self,event):
@@ -35,7 +35,7 @@ class Node(QtWidgets.QGraphicsRectItem):
         self.editor,self.identity=editor,identity
         self.setFlags(self.ItemIsMovable|self.ItemIsSelectable|self.ItemSendsGeometryChanges)
         self.setBrush(QtGui.QColor('#293039'));self.setPen(QtGui.QPen(QtGui.QColor('#89ce94' if identity==editor.graph['root'] else '#669dba'),2))
-        title=QtWidgets.QGraphicsTextItem(value.get('label',value['type'])+('  [OUTPUT]' if identity==editor.graph['root'] else ''),self)
+        title=QtWidgets.QGraphicsTextItem(value.get('label',value['type'])+('  [OUTPUT]' if identity==editor.graph['root'] else '  [DISPLACEMENT]' if identity==editor.graph.get('displacement') else ''),self)
         title.setToolTip(title.toPlainText());title.setPlainText(QtGui.QFontMetrics(title.font()).elidedText(title.toPlainText(),QtCore.Qt.ElideRight,195));title.setDefaultTextColor(QtGui.QColor('white'));title.setPos(7,3)
         self.sockets={None:Socket(editor,identity,None,self)};self.sockets[None].setPos(225,20)
         for index,key in enumerate(ports):
@@ -64,7 +64,7 @@ class Editor(QtWidgets.QDialog):
         self.kinds=QtWidgets.QComboBox();self.kinds.addItems(nodes.kinds());self.kinds.setEditable(True);self.kinds.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
         self.kinds.completer().setFilterMode(QtCore.Qt.MatchContains);self.kinds.completer().setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
         self.kinds.setMinimumWidth(210);self.kinds.setToolTip('Search for a material, texture or value node');toolbar.addWidget(self.kinds,1)
-        for label,callback in [('Add node',self.add),('Delete',self.remove),('Set output',self.output),('Connect input…',self.connect_selected),('Disconnect…',self.disconnect)]:
+        for label,callback in [('Add node',self.add),('Delete',self.remove),('Set output',self.output),('Displacement output',self.displacement_output),('Connect input…',self.connect_selected),('Disconnect…',self.disconnect)]:
             button=QtWidgets.QPushButton(label);button.clicked.connect(callback);toolbar.addWidget(button)
         tools=QtWidgets.QHBoxLayout();layout.addLayout(tools)
         for label,callback in [('Undo',self.undo),('Redo',self.redo),('Frame all',self.frame),('Browse image…',self.browse_image),('Reset input',self.reset_input),('Import MaterialX…',self.import_file),('Export definitions…',self.export_file)]:
@@ -195,6 +195,7 @@ class Editor(QtWidgets.QDialog):
         if identity==self.graph['root']: self.error('Choose another output before deleting this node');return
         before=copy.deepcopy(self.graph)
         self.graph['nodes'].pop(identity)
+        if self.graph.get('displacement')==identity:self.graph.pop('displacement')
         for node in self.graph['nodes'].values(): node['inputs']={k:v for k,v in node.get('inputs',{}).items() if v!=identity}
         self.graph['overrides']=[v for v in self.graph.get('overrides',[]) if v['node']!=identity]
         for layer in self.graph['overrides']: layer['inputs']={k:v for k,v in layer.get('inputs',{}).items() if v!=identity}
@@ -204,6 +205,15 @@ class Editor(QtWidgets.QDialog):
         if identity and nodes.category(self.graph['nodes'][identity]['type'])=='material':
             before=copy.deepcopy(self.graph);self.graph['root']=identity;self.remember(before);self.rebuild()
         else: self.error('Select a surface material node')
+    def displacement_output(self):
+        identity=self.selected()
+        if identity and nodes.category(self.graph['nodes'][identity]['type'])=='displacement':
+            before=copy.deepcopy(self.graph)
+            if self.graph.get('displacement')==identity:self.graph.pop('displacement')
+            else:self.graph['displacement']=identity
+            self.remember(before);self.rebuild()
+        else:self.error('Select a scalar, vector or combined displacement node. Click again to detach it.')
+
     def target(self,identity):
         index=self.layers.currentData()
         if index is None or index<0: return self.graph['nodes'][identity]

@@ -627,3 +627,112 @@ No renderer, Modo, or automated tests were run. Deferred checks are in
 [MoonRay maps](https://docs.openmoonray.org/user-reference/scene-objects/maps/),
 [MaterialX specification](https://materialx.org/Specification.html), and
 [Modo material groups](https://learn.foundry.com/modo/16.1v8/content/help/pages/shading_lighting/shader_items/material_group.html).
+
+
+### Production feature expansion (0.3.4 development)
+
+This update implements the feature paths below. The native renderer and geometry
+adapter were compiled, and Python source syntax was checked. **No automated,
+standalone-render, or Modo UI tests were run**, as requested. The deferred checks
+below must pass before this update can be described as production validated.
+
+- **Displacement:** add `NormalDisplacement` (scalar height), `VectorDisplacement`,
+  or `CombineDisplacement` in the material node editor and select **Displacement
+  output**. The surface output remains separate. The exporter assigns displacement
+  through each MoonRay Layer material/part assignment. Edit `bound_padding` on the
+  displacement node and subdivision level/adaptive error in Object controls.
+  Polygon displacement also receives a tessellation budget. Use raw/linear images
+  for displacement data. Modo evaluated displacement remains baked into evaluated
+  geometry; a native displacement graph adds to that surface, so do not author
+  the same displacement twice.
+- **Lighting:** Lighting → **Object light links, emitters and volumes** provides
+  per-item LightSets and ShadowSets, mesh emitters, Disk/Cylinder/Portal overrides,
+  light group labels, IntensityLightFilter color/exposure, and DecayLightFilter
+  distances. Shadow exclusions control which lights an object casts shadows for.
+  A portal targets the single lighting environment; independent camera backgrounds
+  do not count as portal targets. Mesh-light illumination is separate from its
+  visible surface material; use an emissive material for a glowing visible surface.
+  These are MoonRay scene overrides, not an assertion that all Modo light-link
+  graphs or every upstream light-filter type are automatically translated.
+- **Outputs:** AOVs → **Configure named outputs** adds custom LPE, light-group,
+  material, motion-vector, depth/normal/position/alpha and object Cryptomatte
+  outputs. Set channel names, EXR parts, half/float precision and math filtering.
+  Cryptomatte uses native fixed `Cryptomatte00…` names, float channels, stable
+  item-derived MurmurHash3 IDs, an embedded manifest and resume support. One
+  Cryptomatte set is supported per render. Shared mesh instances are expanded
+  when per-instance assignments or unique IDs require them. VDB volume IDs are
+  not included in the object manifest. Enable **Include motion blur / motion
+  vectors in final outputs** to sample the shutter for stills, exports and
+  packaged scenes; animation has its own motion-blur checkbox.
+- **Preview:** native persistent sessions publish in-progress linear beauty images
+  once per second with one-image backpressure. Modo keeps completed AOVs available
+  while a new beauty converges. Switching cached AOVs or display/LUT settings does
+  not restart rendering. Scene listeners suppress idle recaptures; camera/light
+  channel edits can reuse geometry, with a bounded 64-MB serialized-array cache.
+  Other edits conservatively recapture; a 15-second reconciliation catches host
+  providers that omit notifications. Texture-file timestamps also trigger updates.
+  Progressive beauty still uses temporary PFM and the display converter; it is not
+  a zero-copy GPU viewer. AOVs become available at completed-pass boundaries.
+- **Recovery:** enable final-render checkpoints and resume matching checkpoints.
+  Persistent `.exr.recovery` folders keep native checkpoint and guide files, with
+  scene/settings/runtime/asset signatures. Animation **Render missing frames**
+  resumes matching completion manifests, verifies recorded output hashes and
+  fills gaps without replacing completed files. Save the scene before starting a
+  resumable sequence and keep the same saved scene/settings. Legacy manifests
+  without a signature cannot be automatically certified as matching. Completed
+  raw frames whose denoising was interrupted retain `.exr.postprocess` guide files
+  and can finish denoising without rerendering. Invalid/mismatched recovery data is
+  preserved and reported. Stopping cannot recover samples since the last written
+  checkpoint; checkpoint EXRs are ultimately decoded/validated by MoonRay.
+- **Geometry:** the rebuilt read-only adapter exports evaluated hair/fur segments
+  and particle points, with radii, velocities, visibility and Shader Tree surface
+  assignments. Choose evaluated geometry for procedural hair/particles. Native
+  hair materials can shade the exported strands. Ordinary curve items are sampled
+  through Modo's CurveGroup API in control-cage mode. Objects → **Strands, points
+  and VDB assets** supplies radius, curve sampling, material tags and file geometry
+  attached to a locator. VDB controls include density/emission/velocity grids,
+  scattering color/anisotropy and multipliers. `####` filenames select animation
+  frames. A VDB simulation must already exist; Modo procedural fog is not a VDB
+  simulator. Native point/strand motion and VDB velocities use scene FPS.
+- **Color/assets:** Color / LUT → **Input color spaces and texture cache** sets
+  an input OCIO config, its linear Rec.709 target-space name, per-file/UDIM input
+  overrides and the native texture-cache budget. Modo/MaterialX named input spaces
+  are converted explicitly; normal/bump and scalar Shader Tree maps remain data.
+  Native map color rules disable the map's extra gamma conversion. Rendering and
+  authored RGB values have a declared **linear Rec.709** contract; changing the
+  OCIO target name does not turn the renderer into an arbitrary-primary working
+  space. System → **Report scene assets** lists files/UDIMs, missing paths and
+  compatibility notices. **Package portable render scene** writes a fresh folder
+  containing RDLA, prepared textures, VDBs, display LUT/config dependencies and
+  hashes. It packages the current frame, not an editable Modo project or a whole
+  animation; run it per frame for animated assets. Missing OCIO file dependencies
+  fail packaging rather than producing a knowingly broken package.
+
+File-backed strand/point JSON uses `kind: "curves"` or `"points"`, `vertices`,
+`radius` or `radii`, optional `velocities` / `vertices_close`, and a `material` tag.
+Curves also require `counts` summing to the vertex count and `curve_type` (`0`
+linear, `1` Bezier with 3n+1 controls, `2` B-spline). Curve UVs are per strand.
+Coordinates are local to the selected owner. Radius values are meters; zero tips
+are allowed, but the geometry must contain at least one positive radius.
+
+Deferred checks (run explicitly when testing is authorized):
+
+```powershell
+python -m unittest discover -s tests -p test_production.py
+python tools/check_production.py --runtime runtime/xpu-production-20261003
+# The previous command only writes a fixture. This one executes the renderer:
+python tools/check_production.py --runtime runtime/xpu-production-20261003 --run --mode scalar
+# Repeat in vector / xpu mode, optionally adding --vdb path/to/smoke.vdb.
+```
+
+Manual acceptance still includes shutter topology changes, light-link inheritance,
+filter distances, displacement bounds at grazing angles, EXR compositor import,
+stop/reopen/resume under load, procedural hair/particle variation, OCIO reference
+swatches, relocating a package, and visual evaluation in Modo 16.1v9. Full Modo
+scene parity and arbitrary MaterialX implementation graphs remain outside the
+validated compatibility claim.
+
+References: [displacement](https://docs.openmoonray.org/user-reference/how-to-guides/displacement/),
+[light sets](https://docs.openmoonray.org/user-reference/scene-objects/light-set/LightSet/),
+[Cryptomatte setup](https://docs.openmoonray.org/user-reference/how-to-guides/render-outputs/cryptomatte/),
+[checkpoint rendering](https://docs.openmoonray.org/user-reference/how-to-guides/checkpoint-resume/checkpoint/).

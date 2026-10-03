@@ -128,7 +128,7 @@ def read(path, material_name=None):
             space=element.get('colorspace',document.get('colorspace',''))
             file_port=ports.get('file')
             if file_port is not None: space=file_port.get('colorspace',space)
-            if space not in ('','srgb_texture','lin_rec709','raw','linear','sRGB'): raise ValueError('Unsupported MaterialX image color space: '+space)
+            item['parameters']['color_space']=space
             item['parameters']['srgb']=space in ('srgb_texture','sRGB')
             if element.get('type','color3')=='float': item['parameters']['channel']=1
             elif element.get('type','color3') not in ('color3','vector3'): raise ValueError('Only float/color3/vector3 images are supported')
@@ -156,6 +156,8 @@ def read(path, material_name=None):
     surface=materials[0].find("input[@name='surfaceshader']")
     if surface is None: raise ValueError('MaterialX surface material has no surfaceshader input')
     graph['root']=resolve(surface,'')
+    displacement=materials[0].find("input[@name='displacementshader']")
+    if displacement is not None:graph['displacement']=resolve(displacement,'')
     nodes.validate(graph)
     return graph
 
@@ -167,12 +169,13 @@ def write(graph,path):
     kinds=sorted({node['type'] for node in graph['nodes'].values()})
     reverse={'Float':'float','Int':'integer','Bool':'boolean','Rgb':'color3','Vec2f':'vector2','Vec3f':'vector3','String':'string','SceneObject*':'surfaceshader'}
     def output_type(kind):
-        return 'surfaceshader' if nodes.category(kind)=='material' else 'vector3' if nodes.category(kind)=='normal' else 'color3'
+        return 'surfaceshader' if nodes.category(kind)=='material' else 'displacementshader' if nodes.category(kind)=='displacement' else 'vector3' if nodes.category(kind)=='normal' else 'color3'
     def input_type(kind,key,spec):
         if kind=='image' and key=='file' or 'FLAGS_FILENAME' in spec.get('flags',''): return 'filename'
         if spec['type']=='SceneObject*':
             if spec.get('interface')=='INTERFACE_NORMALMAP':return 'vector3'
             if spec.get('interface')=='INTERFACE_MAP':return 'color3'
+            if spec.get('interface')=='INTERFACE_DISPLACEMENT':return 'displacementshader'
         return reverse.get(spec['type'])
     for kind in kinds:
         definition=ET.SubElement(document,'nodedef',name='ND_moonray_'+kind,node='moonray_'+kind)
@@ -200,5 +203,6 @@ def write(graph,path):
                 port.set('value',str(value).lower() if isinstance(value,bool) else ', '.join(str(v) for v in value) if isinstance(value,list) else str(value))
     output=ET.SubElement(document,'surfacematerial',name='MoonRayMaterial',type='material')
     ET.SubElement(output,'input',name='surfaceshader',type='surfaceshader',nodename=graph['root'])
+    if graph.get('displacement'):ET.SubElement(output,'input',name='displacementshader',type='displacementshader',nodename=graph['displacement'])
     ET.indent(document)
     ET.ElementTree(document).write(str(path),encoding='utf-8',xml_declaration=True)

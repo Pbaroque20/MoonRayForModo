@@ -36,7 +36,7 @@ def image_pixels(layer, folder, width, height):
     if not converter.is_file():
         raise ValueError('Layered environments require oiiotool.exe in the MoonRay runtime')
     # prepare performs the same explicit color conversion as material maps.
-    source = textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False)
+    source = textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''))
     target = folder/(uuid.uuid4().hex+'.pfm')
     try:
         command = [str(converter),source,'--ch','R,G,B','--resize','%dx%d!'%(width,height),'-o',str(target)]
@@ -62,7 +62,7 @@ def texture(environment, width=512, height=256):
     from .daylight import color as daylight_color
     if any(layer['kind']=='physical' for layer in environment['layers']):
         width,height = 256,128
-    digest = hashlib.sha256(('stack-v3|%dx%d|'%(width,height)+json.dumps(environment,sort_keys=True)).encode()).hexdigest()
+    digest = hashlib.sha256(('stack-v3|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
     folder = Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')

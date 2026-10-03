@@ -9,7 +9,7 @@ LITERALS = {'true','false','Rgb','Rgba','Vec2','Vec3','Vec4','Mat4','blur'}
 # These affect layout/geometry representation; rebuild a clean scene context.
 STRUCTURAL = {'"image_width"','"image_height"','"vertices_by_index"',
               '"face_vertex_count"','"part_list"','"part_face_count_list"',
-              '"part_face_indices"','"is_subd"','"sub_viewport"'}
+              '"part_face_indices"','"is_subd"','"sub_viewport"','"curves_vertex_count"','"curve_type"'}
 
 
 def difference(previous, current):

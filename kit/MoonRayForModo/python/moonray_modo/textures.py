@@ -7,6 +7,36 @@ from pathlib import Path
 import subprocess
 import tempfile
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
+_policy=ContextVar("moonray_texture_policy",default={})
+_collector=ContextVar("moonray_asset_collector",default=None)
+
+@contextmanager
+def configuration(settings):
+    from .assets import values
+    token=_policy.set(values(settings))
+    try:yield
+    finally:_policy.reset(token)
+
+@contextmanager
+def collect_files(files):
+    token=_collector.set(files)
+    try:yield
+    finally:_collector.reset(token)
+
+def register(path):
+    files=_collector.get()
+    if files is not None:files.append(str(path))
+    return str(path)
+
+def color_rule(source):
+    key=str(Path(source).resolve()).casefold()
+    return next((r["space"] for r in _policy.get().get("rules",[]) if str(Path(r["path"]).resolve()).casefold()==key),"")
+
+def prepare(source,srgb=False,mipmaps=True,color_space=""):
+    return register(_prepare(source,srgb,mipmaps,color_space))
+
 from . import native
 
 EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
@@ -37,19 +67,28 @@ def source_tiles(source):
             if path.is_file() for match in [pattern.match(path.name)] if match}
 
 
-def prepare(source, srgb=False, mipmaps=True):
+def _prepare(source, srgb=False, mipmaps=True, color_space=""):
+    policy=_policy.get();space=color_rule(source) or color_space
+    aliases={"(default)":"","(none)":"raw","Linear":"linear","lin_rec709":"linear","srgb_texture":"sRGB"}
+    space=aliases.get(space,space)
+    if not space:space="sRGB" if srgb else "raw"
+    custom=space not in ("sRGB","linear","raw")
+    config=policy.get("config","")
+    if custom and (not config or not Path(config).is_file()):raise ValueError("An input OCIO config is required for color space "+space)
+    config_key=(str(Path(config).resolve()),Path(config).stat().st_mtime_ns) if custom else None
+    transform_key=(space,config_key,policy.get("linear_space","Linear Rec.709 (sRGB)"))
     if '<UDIM>' in str(source):
         tiles = source_tiles(source)
         if not tiles:
             raise ValueError('No UDIM tiles found: ' + str(source))
         signature = [(n, str(p), p.stat().st_size, p.stat().st_mtime_ns) for n,p in sorted(tiles.items())]
-        digest = hashlib.sha256(repr((signature,srgb,mipmaps)).encode()).hexdigest()
+        digest = hashlib.sha256(repr((signature,transform_key,mipmaps)).encode()).hexdigest()
         cache = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/Textures' / digest
         cache.mkdir(parents=True, exist_ok=True)
         for tile,path in tiles.items():
             target = cache / ('tile.%d.tx' % tile)
             if not target.is_file():
-                prepared = prepare(path, srgb, mipmaps)
+                prepared = prepare(path, srgb, mipmaps, space)
                 staged = target.with_name(target.name+'.'+uuid.uuid4().hex+'.tmp')
                 try:
                     shutil.copyfile(prepared, staged)
@@ -60,7 +99,7 @@ def prepare(source, srgb=False, mipmaps=True):
 
     source = Path(source).resolve()
     stat = source.stat()
-    key_data = '%s|%d|%d|%s|v3-alpha-color-conversion' % (source, stat.st_size, stat.st_mtime_ns, srgb)
+    key_data = repr((str(source),stat.st_size,stat.st_mtime_ns,transform_key,'v4-input-ocio'))
     if not mipmaps:
         key_data += '|no-mips'
     key = hashlib.sha256(key_data.encode('utf-8')).hexdigest()
@@ -77,8 +116,8 @@ def prepare(source, srgb=False, mipmaps=True):
     args = [str(converter), '--oiio', '--threads', '2', '-d', 'float', '--unpremult']
     if not mipmaps:
         args += ['--nomipmap']
-    if srgb:
-        args += ['--colorconvert', 'sRGB', 'linear']
+    if custom:args += ['--colorconfig',config,'--colorconvert',space,policy.get('linear_space','Linear Rec.709 (sRGB)')]
+    elif space=='sRGB':args += ['--colorconvert','sRGB','linear']
     args += ['-o', str(staged), str(source)]
     try:
         result = subprocess.run(args, env=native.environment(runtime), stdout=subprocess.PIPE,

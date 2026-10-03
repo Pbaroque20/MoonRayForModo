@@ -165,9 +165,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     if not sources:
                         raise ValueError('missing image '+str(path))
                     space = channel(clip,'colorspace','(default)')
-                    if space not in ('(default)','(none)','sRGB','Linear','linear'):
-                        raise ValueError('unsupported color space '+space)
-                    node.update(path=str(path.resolve()),mtime=max(p.stat().st_mtime_ns for p in sources.values()),size=sum(p.stat().st_size for p in sources.values()),
+                    node.update(color_space=space if effect in textures.COLOR_EFFECTS else 'raw',path=str(path.resolve()),mtime=max(p.stat().st_mtime_ns for p in sources.values()),size=sum(p.stat().st_size for p in sources.values()),
                         tile_signature=[(n,p.stat().st_size,p.stat().st_mtime_ns) for n,p in sorted(sources.items())],
                         srgb=effect not in ('normal','bump') and (space=='sRGB' or
                             (space=='(default)' and effect in textures.COLOR_EFFECTS and path.suffix.lower() not in ('.exr','.hdr','.tx'))),

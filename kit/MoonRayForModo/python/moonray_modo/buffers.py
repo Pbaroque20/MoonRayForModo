@@ -3,13 +3,13 @@ from . import options
 
 
 def conversion(key, source, destination, display=None):
-    if key!='beauty' and key not in options.AOVS: raise ValueError('Unknown preview buffer: '+key)
+    if key!='beauty' and key not in options.AOVS and key!='motion': raise ValueError('Unknown preview buffer: '+key)
     # Drop coverage alpha before any transform or PNG encoding. Never divide
     # RGB (which already includes the environment) by silhouette coverage.
     args=['--no-autopremult',str(source),'--fixnan','black']
     if key in ('alpha','depth','wireframe','sample_count'):
         args += ['--ch','0,0,0']
-    elif key=='uv':
+    elif key in ('uv','motion'):
         args += ['--ch','0,1,B=0']
     else:
         args += ['--ch','0,1,2']
@@ -17,9 +17,11 @@ def conversion(key, source, destination, display=None):
         args += ['--mulc','0.5','--addc','0.5']
     elif key in ('depth','sample_count'):
         args += ['--rangecompress']
+    elif key=='motion':
+        args += ['--mulc','0.5','--addc','0.5']
     elif key=='position':
         args += ['--rangecompress','--mulc','0.5','--addc','0.5']
-    elif key not in ('alpha','uv','wireframe'):
+    elif key not in ('alpha','uv','wireframe','motion'):
         from .display import arguments
         args += arguments(display or {})
     return args+['-d','uint8','-o',str(destination)]

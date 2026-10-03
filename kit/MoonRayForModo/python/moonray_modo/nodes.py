@@ -5,7 +5,7 @@ from . import shader_library,coordinates,map_library
 
 MAPS={
  'constant':{'value':('Rgb',[.5,.5,.5])},
- 'image':{'file':('String',''),'srgb':('Bool',True),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0])},
+ 'image':{'file':('String',''),'srgb':('Bool',True),'color_space':('String',''),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0])},
  'multiply':{'in1':('Rgb',[1,1,1]),'in2':('Rgb',[1,1,1])},
  'add':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
  'subtract':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
@@ -21,17 +21,18 @@ def specs(kind):
     if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
     return {key:{'name':key,'type':value[0],'default_value':value[1],
-                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','uv_map','scale','channel') else ''} for key,value in MAPS[kind].items()}
+                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel') else ''} for key,value in MAPS[kind].items()}
 
 
 def category(kind):
     if kind in shader_library.catalog(): return 'material'
+    if map_library.catalog().get(kind,{}).get('type')=='Displacement':return 'displacement'
     return 'normal' if kind=='normalmap' or map_library.catalog().get(kind,{}).get('type')=='NormalMap' else 'map'
 
 
 def connectable(kind,key):
     spec=specs(kind)[key]
-    return (spec['type']=='SceneObject*' and spec.get('interface','') in ('INTERFACE_MAP','INTERFACE_NORMALMAP','INTERFACE_MATERIAL','INTERFACE_DWABASELAYERABLE','INTERFACE_HAIRLAYERABLE')) or 'FLAGS_BINDABLE' in spec.get('flags','')
+    return (spec['type']=='SceneObject*' and spec.get('interface','') in ('INTERFACE_MAP','INTERFACE_NORMALMAP','INTERFACE_MATERIAL','INTERFACE_DWABASELAYERABLE','INTERFACE_HAIRLAYERABLE','INTERFACE_DISPLACEMENT')) or 'FLAGS_BINDABLE' in spec.get('flags','')
 
 
 def effective(graph):
@@ -55,6 +56,8 @@ def validate(graph):
     g=effective(graph);nodes=g['nodes']
     root=g.get('root')
     if root not in nodes or category(nodes[root]['type'])!='material': raise ValueError('Choose a surface material as graph output')
+    if g.get('displacement') and (g['displacement'] not in nodes or category(nodes[g['displacement']]['type'])!='displacement'):
+        raise ValueError('Choose a Displacement node for the displacement output')
     for identity,node in nodes.items():
         if not isinstance(identity,str) or not identity: raise ValueError('Invalid node identity')
         schema=specs(node['type'])
@@ -69,6 +72,8 @@ def validate(graph):
                 interface=spec.get('interface','')
                 if output=='material':
                     if not shader_library.compatible(source_kind,interface): raise ValueError('Incompatible material input: '+key)
+                elif output=='displacement':
+                    if interface!='INTERFACE_DISPLACEMENT':raise ValueError('Displacement output requires a Displacement socket')
                 elif output=='normal':
                     if interface!='INTERFACE_NORMALMAP': raise ValueError('Normal output requires a NormalMap input')
                 elif interface!='INTERFACE_MAP': raise ValueError('Map must connect to a Map or bindable numeric/color input')
@@ -104,7 +109,7 @@ def descriptors(graph):
     return [image_descriptor(node) for node in g['nodes'].values() if node['type']=='image' and 'texcoord' not in node.get('inputs',{})]
 
 
-def emit(material,name,index,lines,library):
+def emit(material,name,index,lines,library,output="root"):
     from .rdla import string,number,vector
     from .textures import prepare
     g=validate(material['node_graph']);cache={}
@@ -140,7 +145,7 @@ def emit(material,name,index,lines,library):
                 uv=refs.get('texcoord')
                 if uv is None and 'texcoord' in params:uv=definition('ConstantColorMap',path+'/authored_uv',{'color_value':vector(params['texcoord'],'Rgb')})
                 if uv is None:uv=definition('AttributeMap',path+'/uv',{'primitive_attribute_name':string(descriptor['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
-                attributes={'texture':string(prepare(params.get('file',''),params.get('srgb',True))),'gamma':'0','texture_coordinates':'2','input_texture_coordinates':binding(uv,'Vec3f')}
+                attributes={'texture':string(prepare(params.get('file',''),params.get('srgb',True),color_space=params.get('color_space',''))),'gamma':'0','texture_coordinates':'2','input_texture_coordinates':binding(uv,'Vec3f')}
                 rgb=definition('ImageMap',path+'/rgb',attributes)
                 alpha=definition('ImageMap',path+'/alpha',dict(attributes,alpha_only='true'))
                 ref=definition('ModoTextureMap',path,{'background':binding(rgb,'Rgb'),'foreground':binding(alpha,'Rgb'),'blend':'5'})
@@ -158,7 +163,7 @@ def emit(material,name,index,lines,library):
                 ref=definition('ModoNormalMap',path,{'input':binding(mapped,'Vec3f')})
         cache[identity]=ref
         return ref
-    return node(g['root'])
+    return node(g[output])
 
 
 def from_material(item):

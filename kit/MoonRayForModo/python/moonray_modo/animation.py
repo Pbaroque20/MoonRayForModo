@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import math
 import re
+import hashlib
 from PySide2 import QtCore
 import lx
 from . import host
@@ -36,7 +37,7 @@ from .motion import apply_motion
 
 
 class Sequence(QtCore.QObject):
-    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame"):
+    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False):
         super().__init__(panel)
         if last < first or last-first > 100000 or not math.isfinite(fps) or fps<=0:
             raise ValueError('Invalid animation frame range or frame rate')
@@ -47,18 +48,20 @@ class Sequence(QtCore.QObject):
         self.first,self.step,self.prefix=first,step,prefix
         self.total=len(range(first,last+1,step))
         self.panel, self.directory = panel, Path(directory)
-        if (self.directory/'moonray-sequence.json').exists():
-            raise ValueError('Choose a new animation folder; a sequence manifest already exists')
-        existing={path.name.casefold() for path in self.directory.iterdir()} if self.directory.exists() else set()
-        for frame in range(first,last+1,step):
-            destination=self.directory/('%s.%06d.exr'%(prefix,frame))
-            sidecar=destination.with_name(destination.stem+'.denoised.exr')
-            if destination.name.casefold() in existing or sidecar.name.casefold() in existing:
-                raise ValueError('Animation output already exists for frame %d. Choose another folder or prefix.'%frame)
+        from .sequence_plan import plan
+        from .assets import file_hash,signature as asset_signature
+        import modo
+        filename=modo.Scene().filename
+        if missing and not (filename and Path(filename).is_file()):raise ValueError('Save the scene before resuming a sequence; unsaved scene revisions cannot be verified')
+        source=[str(filename),file_hash(filename)] if filename and Path(filename).is_file() else ['unsaved',modo.Scene().renderItem.id]
+        settings={k:v for k,v in panel._settings_values().items() if k not in ('display','preview_buffer','recovery')}
+        snapshot=panel._capture()
+        self.signature=hashlib.sha256(json.dumps([source,settings,asset_signature(snapshot)],sort_keys=True).encode()).hexdigest()
+        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,panel.denoise_final.isChecked() and panel.denoiser.currentData()!='off',self.signature)
         self.directory.mkdir(parents=True,exist_ok=True)
         self.frame, self.last, self.fps, self.motion = first,last,fps,motion
         self.running = False
-        self.completed = []
+        if self.pending_frames:self.frame=self.pending_frames.pop(0)
         self.expected_output = None
 
     def start(self):
@@ -74,7 +77,8 @@ class Sequence(QtCore.QObject):
         except OSError as exc:
             self.failed('Cannot create sequence manifest: '+str(exc))
             return
-        self.next_frame()
+        if len(self.completed)==self.total:self.stop('complete');self.panel.status.setText('All sequence frames already exist.')
+        else:self.next_frame()
 
     def next_frame(self):
         if self.running:
@@ -88,9 +92,12 @@ class Sequence(QtCore.QObject):
             return
         destination = self.directory/('%s.%06d.exr'%(self.prefix,self.frame))
         if destination.exists():
-            raise ValueError('Animation output already exists: '+str(destination))
+            self.expected_output=destination.resolve()
+            self.panel.renderer.resume_denoise(destination,self.panel.runtime.text(),self.panel._settings_values()['denoising'])
+            return
         snapshot = capture_frame(self.frame/self.fps, self.panel.surface.currentIndex()==2,
                                  self.motion, self.fps)
+        snapshot['frame']=self.frame;snapshot['fps']=self.fps
         snapshot = self.panel._configure_snapshot(snapshot)
         self.expected_output = destination.resolve()
         self.panel._submit(snapshot,str(destination))
@@ -102,23 +109,27 @@ class Sequence(QtCore.QObject):
             self.failed('Received output from a different render; sequence stopped to protect frame numbering')
             return
         self.expected_output = None
-        self.completed.append({'frame':self.frame,'file':output})
+        from .assets import file_hash
+        from .denoising import sidecar
+        entry={'frame':self.frame,'file':output,'sha256':file_hash(output)}
+        if sidecar(output).is_file():entry['denoised_sha256']=file_hash(sidecar(output))
+        self.completed.append(entry)
         try:
             self.write_manifest('rendering')
         except OSError as exc:
             self.failed('Frame saved, but sequence manifest could not be updated: '+str(exc))
             return
-        if self.frame+self.step > self.last:
+        if not self.pending_frames:
             if not self.stop('complete'):
                 self.panel.status.setText('Animation complete: %d frames'%len(self.completed))
         else:
-            self.frame += self.step
+            self.frame=self.pending_frames.pop(0)
             QtCore.QTimer.singleShot(0,self.next_frame)
 
     def write_manifest(self, status):
         path = self.directory/'moonray-sequence.json'
         staged = path.with_suffix('.json.tmp')
-        staged.write_text(json.dumps({'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'motion_blur':self.motion,'total_frames':self.total,'frames':self.completed},indent=2),encoding='utf-8')
+        staged.write_text(json.dumps({'signature':self.signature,'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'motion_blur':self.motion,'total_frames':self.total,'frames':sorted(self.completed,key=lambda value:value['frame'])},indent=2),encoding='utf-8')
         staged.replace(path)
 
     def failed(self, message):
@@ -142,3 +153,19 @@ class Sequence(QtCore.QObject):
             message = 'Could not save animation manifest: '+str(exc)
             self.panel.status.setText(message)
             return message
+
+
+single_request=None
+single_result=None
+
+def capture_current(evaluated=False):
+    global single_request,single_result
+    import modo
+    if single_request is not None:raise ValueError('A motion capture is already running')
+    moment=lx.service.Selection().GetTime();fps=float(modo.Scene().fps)
+    single_request=lambda:capture_frame(moment,evaluated,True,fps);single_result=None
+    try:
+        lx.eval('moonray.captureMotion')
+        if single_result is None:raise ValueError('Motion capture did not return a scene')
+        return single_result
+    finally:single_request=None;single_result=None

@@ -124,6 +124,7 @@ def meshes(data, materials, warnings, scene=None):
         prototype = data['prototypes'][str(source)]
         if not prototype['segments']:
             warnings.append('Modo returned no mesh segments for evaluated surface ' + surfaces[0]['source_item'])
+        if not any(segment['faces'] and len(segment['faces'][0])>=3 for segment in prototype['segments']):continue
         material = materials.get(tag, materials.get('', {}))
         uv_name = material.get('uv_map', '')
         uv_names = [f['name'] for f in prototype['features'] if f['type'] == 0x54585556]
@@ -132,7 +133,7 @@ def meshes(data, materials, warnings, scene=None):
         uv_index = uv_names.index(uv_name) if uv_name else 0
         surfaces.sort(key=lambda s:(s['source_item'],s.get('instance_index',0)))
         for segment_index,segment in enumerate(prototype['segments']):
-            if not segment['faces']: continue
+            if not segment['faces'] or len(segment['faces'][0])<3: continue
             indices = [i for face in segment['faces'] for i in face]
             uv_sets = segment['uv_sets']
             if uv_name and uv_index >= len(uv_sets):
@@ -178,4 +179,30 @@ def meshes(data, materials, warnings, scene=None):
                     value['instances'] = [s['matrix'] for s in surfaces]
                     value['instance_ids'] = [s['source_item']+'|'+str(s.get('instance_index',0)) for s in surfaces]
                 result.append(value)
+    return result
+
+
+def extra_geometry(data,warnings):
+    """SDK segments explicitly use 2 vertices for hair/curves, 1 for particles."""
+    result=[]
+    for surface in data['surfaces']:
+        if not any(surface['visibility']):continue
+        prototype=data['prototypes'][str(surface['source_id'])]
+        for index,segment in enumerate(prototype['segments']):
+            faces=segment['faces'];per_face=len(faces[0]) if faces else 0
+            if per_face>=3 or not segment['vertices']:continue
+            indices=[v for face in faces for v in face] if faces else list(range(len(segment['vertices'])))
+            if any(v<0 or v>=len(segment['vertices']) for v in indices):raise ValueError('Invalid curve/particle vertex index')
+            kind='curves' if per_face==2 else 'points'
+            item=dict(kind=kind,identity=surface['source_item']+'|'+str(surface.get('instance_index',-1))+'|'+surface['material']+'|extra|'+str(index),source_item=surface['source_item'],name=surface['source_item'],material=surface['material'],matrix=surface['matrix'],visibility=list(surface['visibility']),vertices=[segment['vertices'][i] for i in indices])
+            radii=segment.get('radii',[])
+            item['radii']=[radii[i] for i in indices] if radii else [.001]*len(indices)
+            if not radii:warnings.append('Modo did not provide curve/particle radii; using 1 mm: '+surface['source_item'])
+            if segment.get('velocities'):item['velocities']=[segment['velocities'][i] for i in indices]
+            if kind=='curves':
+                item.update(counts=[2]*len(faces),curve_type=0)
+                if segment.get('uv_sets'):
+                    uvs=segment['uv_sets'][0]
+                    item['uvs']=[uvs[2*i if segment.get('face_varying') else face[0]] for i,face in enumerate(faces)]
+            result.append(item)
     return result

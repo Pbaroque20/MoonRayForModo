@@ -80,5 +80,18 @@ def apply_motion(scene, start, end, endpoints):
                 outputs.append(node)
         if category=='meshes': expanded=outputs
         else: lights=outputs
+    extras=[]
+    center=indexed(scene.get('extra_geometry',[]),'curves/points');first=indexed(start.get('extra_geometry',[]),'curves/points');last=indexed(end.get('extra_geometry',[]),'curves/points')
+    if set(center)!=set(first) or set(center)!=set(last):raise ValueError('Motion blur requires stable curve/particle identities')
+    for identity,original in center.items():
+        a,b=first[identity],last[identity]
+        if len(a['vertices'])!=len(original['vertices']) or len(b['vertices'])!=len(original['vertices']) or a.get('counts')!=b.get('counts'):raise ValueError('Motion blur requires stable curve/point topology')
+        node=dict(original,matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY),vertices=a['vertices'],vertices_close=b['vertices'])
+        extras.append(node)
+    owners={}
+    for identity,owner in scene.get('asset_owners',{}).items():
+        if identity not in start.get('asset_owners',{}) or identity not in end.get('asset_owners',{}):raise ValueError('Volume/asset owner changed during the shutter')
+        owners[identity]=dict(owner,matrix=start['asset_owners'][identity]['matrix'],matrix_close=end['asset_owners'][identity]['matrix'])
+    scene.update(extra_geometry=extras,asset_owners=owners)
     frozen('Materials and environments',scene,start,end,('materials','environments'))
     scene.update(camera=camera,meshes=expanded,lights=lights,motion_steps=list(endpoints),warnings=warnings)

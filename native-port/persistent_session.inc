@@ -5,6 +5,7 @@
 #include <thread>
 #include <chrono>
 #include <memory>
+#include <scene_rdl2/common/fb_util/FbTypes.h>
 
 void moonray::RaasCommandLineApplication::renderPersistent(const std::string& directory)
 {
@@ -32,9 +33,36 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
             const auto prep = context->startFrame();
             if (prep == rndr::RenderContext::RP_RESULT::FINISHED) {
                 auto driver = rndr::getRenderDriver();
+                auto lastSnapshot = std::chrono::steady_clock::now();
+                const auto preview = fs::u8path(directory) / ("preview_" + id + ".pfm");
+                auto snapshot = [&]() {
+                    // A single outstanding image bounds storage and provides backpressure.
+                    if (fs::exists(preview)) return;
+                    scene_rdl2::fb_util::RenderBuffer pixels;
+                    context->snapshotRenderBuffer(&pixels, true, false, false);
+                    if (!pixels.getWidth() || !pixels.getHeight()) return;
+                    const auto temporary = fs::u8path(directory) / ("preview_" + id + ".tmp");
+                    std::ofstream file(temporary, std::ios::binary);
+                    file << "PF\n" << pixels.getWidth() << " " << pixels.getHeight() << "\n-1.0\n";
+                    const auto* data = pixels.getData();
+                    for (size_t i=0; i<size_t(pixels.getWidth())*pixels.getHeight(); ++i) {
+                        float rgb[3] = {data[i][0], data[i][1], data[i][2]};
+                        file.write(reinterpret_cast<const char*>(rgb), sizeof(rgb));
+                    }
+                    file.close();
+                    if (!file) { fs::remove(temporary); return; }
+                    fs::rename(temporary, preview);
+                    event("FRAME", id);
+                };
                 while (!context->isFrameComplete() && !waiting()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
                     printStatusLine(*context, driver->getLastFrameMcrtStartTime(), false);
+                    if (std::chrono::steady_clock::now()-lastSnapshot >= std::chrono::seconds(1)) {
+                        try { snapshot(); } catch (const std::exception& e) {
+                            std::cerr << "Modo progressive snapshot: " << e.what() << std::endl;
+                        }
+                        lastSnapshot=std::chrono::steady_clock::now();
+                    }
                 }
                 complete = context->isFrameComplete() && !waiting();
                 context->stopFrame();

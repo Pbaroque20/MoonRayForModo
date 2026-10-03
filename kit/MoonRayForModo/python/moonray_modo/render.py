@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import uuid
 from PySide2 import QtCore
-from . import native, rdla, options, denoising
+from . import native, rdla, options, denoising, outputs
 from .progress import Progress, duration
 from .buffer_cache import BufferCache
 from .persistent import Session, supported as persistent_supported
@@ -25,6 +25,7 @@ class Renderer(QtCore.QObject):
         self.session=Session(self)
         self.session.output.connect(self._consume_log)
         self.session.ready.connect(self._persistent_ready)
+        self.session.image.connect(self._persistent_image)
         self.session.acknowledged.connect(self._persistent_applied)
         self.session_files={}
         self.session.failed.connect(self.failed.emit)
@@ -100,6 +101,18 @@ class Renderer(QtCore.QObject):
         else:
             self._begin_pending()
 
+    def resume_denoise(self,output,runtime,settings):
+        from .postprocess import recover
+        runtime=native.find_runtime(runtime);engine=denoising.settings(settings)['engine'];guides=recover(output,engine)
+        self.generation+=1;self.canceled=False;self.pending=None;self.using_session=False
+        self.active={'output':str(output),'runtime':runtime,'snapshot':{'denoising':settings},'generation':self.generation}
+        self.image_path=Path(output);self.original_published=True;self.current_base=Path(self.directory.name)/uuid.uuid4().hex
+        self.post_jobs=denoising.jobs(runtime,self.image_path,self.current_base,engine,guides);self.denoise_result=self.post_jobs[-1][2]
+        self.progress_state=Progress();self.progress_timer.start()
+        env=QtCore.QProcessEnvironment()
+        for key,value in native.environment(runtime).items():env.insert(key,value)
+        self.process.setProcessEnvironment(env);self._next_post()
+
     def stop(self):
         self._progress_end(False)
         self.watchdog.stop()
@@ -149,7 +162,7 @@ class Renderer(QtCore.QObject):
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
         if not request['output'] and not request.get('linear_preview'):
-            self.preview_files={key:self.current_base.with_suffix('.'+key+'.exr') for key in ('beauty',*options.AOVS)}
+            self.preview_files={key:self.current_base.with_suffix('.'+key+'.exr') for key in outputs.preview(snapshot)}
             self.buffer_path=self.preview_files['beauty']
             snapshot['preview_buffer_files']={key:str(path) for key,path in self.preview_files.items()}
             snapshot.pop('preview_buffer_file',None)
@@ -161,10 +174,14 @@ class Renderer(QtCore.QObject):
             if use_denoise:
                 if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))
                 snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')}
+                self.denoise_guides=snapshot['_denoise_guides']
                 self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'])
                 self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
                 raise ValueError('The selected runtime has no XPU GPU program/CUDA runtime. Choose the XPU runtime or CPU mode.')
+            if request['output']:
+                from .recovery import prepare as prepare_recovery
+                snapshot['_recovery']=prepare_recovery(snapshot,request['output'],request['width'],request['height'],self.sample_grid,request['environment'],request['runtime'])
             text = rdla.scene_text(snapshot, request['width'], request['height'],
                                    self.sample_grid, request['environment'],
                                    str(self.image_path) if request['output'] else None)
@@ -217,6 +234,11 @@ class Renderer(QtCore.QObject):
                 try:path.unlink()
                 except OSError:pass
 
+    def _persistent_image(self,serial,path):
+        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
+        try:self.buffers.publish({'beauty':path},self.active['runtime'],self.active['snapshot'],self.backend_status,partial=True)
+        except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
+
     def _persistent_ready(self,serial):
         if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
         self._exited(0,QtCore.QProcess.NormalExit)
@@ -258,7 +280,10 @@ class Renderer(QtCore.QObject):
             return
         if self.phase=='render' and self.post_jobs:
             if self.active['output']:
-                try: self._publish(self.image_path,Path(self.active['output']));self.original_published=True
+                try:
+                    self._publish(self.image_path,Path(self.active['output']));self.original_published=True
+                    from .postprocess import preserve
+                    preserve(self.active['output'],self.denoise_guides,denoising.settings(self.active['snapshot']['denoising'])['engine'])
                 except OSError as exc: self.failed.emit('Cannot save original EXR: '+str(exc));return
             self._next_post();return
         if self.phase in ('render','postdone') and not self.active['output'] and not self.active.get('linear_preview'):

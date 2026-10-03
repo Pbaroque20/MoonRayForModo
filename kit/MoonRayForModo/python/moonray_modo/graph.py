@@ -73,7 +73,7 @@ def bindings(material, index, lines, glass=False):
                 'octaves':str(layer.get('octaves',4)),'lacunarity':number(layer.get('lacunarity',2)),
                 'persistence':number(layer.get('persistence',.5))})
         else:
-            prepared = textures.prepare(layer['path'],layer.get('srgb',False))
+            prepared = textures.prepare(layer['path'],layer.get('srgb',False),color_space=layer.get('color_space',''))
             tile_modes = {'repeat':0, 'edge':1, 'mirror':2, 'reset':3}
             tile_u = layer.get('tile_u', 'repeat' if layer.get('repeat',True) else 'edge')
             tile_v = layer.get('tile_v', tile_u)
