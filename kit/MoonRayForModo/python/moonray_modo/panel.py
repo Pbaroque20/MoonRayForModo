@@ -71,6 +71,20 @@ class Panel(QtWidgets.QWidget):
         self.threads.setValue(4)
         controls.addRow('Preview size', self.size)
         controls.addRow('Pixel sample grid', self.samples)
+        self.ipr_width=QtWidgets.QComboBox()
+        for value in (80,160,240):self.ipr_width.addItem('%d px maximum'%value,value)
+        self.ipr_width.setCurrentIndex(max(0,self.ipr_width.findData(int(self.settings.value('ipr/width',160)))))
+        self.ipr_samples=QtWidgets.QComboBox()
+        for value in (1,4,16):self.ipr_samples.addItem('%d SPP maximum'%value,value)
+        self.ipr_samples.setCurrentIndex(max(0,self.ipr_samples.findData(int(self.settings.value('ipr/samples',1)))))
+        self.ipr_error=QtWidgets.QDoubleSpinBox();self.ipr_error.setRange(.1,1000);self.ipr_error.setDecimals(1)
+        self.ipr_error.setValue(float(self.settings.value('ipr/error',100)));self.ipr_error.setSingleStep(10)
+        self.ipr_error.setToolTip('Higher adaptive error stops sooner. The 1-SPP preset uses uniform sampling; higher caps use adaptive sampling from 2 SPP.')
+        controls.addRow('IPR width cap',self.ipr_width)
+        controls.addRow('IPR sample cap',self.ipr_samples)
+        controls.addRow('IPR adaptive error',self.ipr_error)
+        ipr_note=QtWidgets.QLabel('IPR uses uniform sampling at 1 SPP, adaptive sampling for higher caps, and one light/material/subsurface sample per grid side. Final renders and stored scene settings keep their regular quality.');ipr_note.setWordWrap(True);controls.addRow(ipr_note)
+
         self.region_enabled = QtWidgets.QCheckBox('Render region')
         controls.addRow(self.region_enabled)
         self.region_controls = []
@@ -243,6 +257,9 @@ class Panel(QtWidgets.QWidget):
             actions.addWidget(widget)
         layout.addLayout(actions)
         buffer_row = QtWidgets.QHBoxLayout()
+        self.ipr_mode=QtWidgets.QCheckBox('IPR')
+        self.ipr_mode.setToolTip('Start live previews with lower resolution and sampling. Disable to return to regular preview quality. Stops remain manual; no automatic full-quality refinement.')
+        buffer_row.addWidget(self.ipr_mode)
         buffer_row.addWidget(QtWidgets.QLabel('Render buffer'))
         self.buffer = QtWidgets.QComboBox()
         self.buffer.addItem('Beauty','beauty')
@@ -319,6 +336,26 @@ class Panel(QtWidgets.QWidget):
         self.splitter.splitterMoved.connect(self._store_workspace)
         self.tabs.currentChanged.connect(self._store_workspace)
         self.settings_toggle.toggled.connect(self._store_workspace)
+        self.ipr_mode.toggled.connect(self._ipr_changed)
+        self.ipr_width.currentIndexChanged.connect(self._ipr_quality_changed)
+        self.ipr_samples.currentIndexChanged.connect(self._ipr_quality_changed)
+        self.ipr_error.valueChanged.connect(self._ipr_quality_changed)
+
+
+    def _ipr_changed(self,enabled):
+        self.display_timer.stop()
+        if self._output_busy():
+            self.status.setText('IPR selection saved for the next preview. Output render continues.');return
+        if enabled and not self.live.isChecked():
+            self.live.setChecked(True)
+        else:
+            self._buffer_changed(0)
+
+    def _ipr_quality_changed(self,*args):
+        self.settings.setValue('ipr/width',self.ipr_width.currentData())
+        self.settings.setValue('ipr/samples',self.ipr_samples.currentData())
+        self.settings.setValue('ipr/error',self.ipr_error.value())
+        if self.ipr_mode.isChecked():self.display_timer.start()
 
     def _store_workspace(self,*args):
         self.settings.setValue('workspace/splitter',self.splitter.saveState())
@@ -525,14 +562,19 @@ class Panel(QtWidgets.QWidget):
 
     def _submit(self, scene, output=None):
         width, height = self._dimensions(scene, bool(output))
+        original_digest=self._digest(scene)
+        if self.ipr_mode.isChecked() and not output:
+            from .ipr import prepare
+            scene,width,height=prepare(scene,width,height,self.samples.value(),
+                                       self.ipr_width.currentData(),self.ipr_samples.currentData(),self.ipr_error.value())
         self.renderer.timeout_seconds = self.timeout.value()*60
-        self.renderer.submit(scene, self.runtime.text(), width, height, self.samples.value(),
+        self.renderer.submit(scene, self.runtime.text(), width, height, 1 if scene.get('_ipr') and not output else self.samples.value(),
                              self.environment.value(), self.threads.value(), output, persistent_preview=self.persistent_preview.isChecked())
         self.settings.setValue('runtime', self.runtime.text())
-        self.last_digest = self._digest(scene)
+        self.last_digest = original_digest
 
     def _digest(self, scene):
-        values = [scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked()]
+        values = [scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value()]
         digest = hashlib.sha256()
         for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':')).iterencode(values):
             digest.update(chunk.encode('utf-8'))
@@ -595,6 +637,10 @@ class Panel(QtWidgets.QWidget):
             active=self.renderer.active or {};snapshot=active.get('snapshot',{})
             key=snapshot.get('preview_buffer','beauty');label='Beauty' if key=='beauty' else options.AOVS.get(key,(key,))[0]
             self.image_info.setText('Showing %s · %d × %d · %s'%(label,self.preview.image.width(),self.preview.image.height(),self.renderer.backend_status))
+            if snapshot.get('_ipr'):
+                settings=snapshot['render_settings']
+                quality='1 SPP' if settings['max_adaptive_samples']==1 else '%d–%d SPP, error %g'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'],settings['target_adaptive_error'])
+                self.image_info.setText(self.image_info.text()+' · IPR '+quality)
         except ValueError as exc:
             self._failed(str(exc))
 

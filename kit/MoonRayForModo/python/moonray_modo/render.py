@@ -170,6 +170,7 @@ class Renderer(QtCore.QObject):
             if sampling['sampling_mode']==2 and '-info' not in args: args.append('-info')
             self.process.setArguments(args)
             label=('Adaptive rendering, %d–%d SPP, error %g' % (sampling['min_adaptive_samples'],sampling['max_adaptive_samples'],sampling['target_adaptive_error'])) if sampling['sampling_mode']==2 else ('Rendering %d samples/pixel' % (self.sample_grid**2))
+            if snapshot.get('_ipr'):label='IPR · '+label
             self.status.emit(label+' · '+self.backend_status)
             if self.using_session:
                 self.session_serial+=1

@@ -546,3 +546,28 @@ optional standalone check for same-process rendering, a transform delta, changed
 image pixels, a structural reload and orderly shutdown. It has not been run.
 The normal native build applies `tools/port_persistent.py`; the implementation
 is tracked in `native-port/persistent_session.inc`.
+
+
+### Low-cost IPR mode (0.3.1 development)
+
+Toggle **IPR** next to the render-buffer selector to start live previews at reduced
+quality. Defaults are a 160-pixel width cap, minimum and maximum both 1 SPP,
+and target adaptive error **100** (the error threshold has no stopping effect at the default one-sample cap). The Render tab offers 80/160/240-pixel caps,
+1/4/16-SPP caps and an adjustable error. Normal preview/scene width and sampling
+caps remain upper limits. A looser existing adaptive error stays looser. Light,
+BSDF and subsurface sample grids use a side of one during IPR. MoonRay internally
+clamps adaptive sampling to at least two samples, so the one-sample preset uses
+uniform sampling with pixel grid 1; higher caps use adaptive sampling from 2 SPP.
+
+IPR limits are applied only to a preview request copy. Final EXR, animation, RDLA
+export and stored scene settings retain their regular quality. Denoising follows
+the existing preview preference. Disable IPR to refresh at regular preview quality;
+there is no automatic idle refinement. Lock preview holds automatic changes, and
+active output renders cannot be interrupted by toggling IPR. Stop stops live
+updates; Refresh can still render an IPR image. Quality preferences persist locally,
+but IPR starts off when opening a panel so it does not trigger renders at startup.
+
+This reduces rendering work; it still displays completed passes, not streaming
+buckets, and still captures the scene for live updates. Instant feedback is not
+guaranteed. No tests were run for this update. Deferred checks are in
+`tests/test_ipr.py`.
