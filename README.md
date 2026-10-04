@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.37** removes the redundant MoonShine Material properties tab from standard Modo materials. Add MoonShine Material Override through Add Layer or the material context menu, then use Enable Override and Edit Material Graph on that layer. Includes the black graph-inspector property labels from 0.3.36. Tests skipped as requested.
+Development version **0.3.38** retains both Beauty and Denoised Beauty in the preview buffer selector without rerendering. Enable a Beauty denoiser and Denoise beauty preview before rendering to generate both. Also includes the streamlined override-layer properties workflow and black graph property labels. Tests skipped as requested.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native

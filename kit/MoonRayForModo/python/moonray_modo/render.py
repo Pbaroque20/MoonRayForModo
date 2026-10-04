@@ -260,6 +260,7 @@ class Renderer(QtCore.QObject):
                 except OSError:pass
 
     def _select_view(self,key):
+        if key=='denoised_beauty':return # Post-process result, not a native render output.
         snapshot=self.active['snapshot'] if getattr(self,'active',None) else {}
         if outputs.display_kind(snapshot,key)=='cryptomatte':
             self.status.emit('Cryptomatte ID colors become available when the current pass completes.')
@@ -313,11 +314,16 @@ class Renderer(QtCore.QObject):
             if self.active['output']:
                 try: self._publish(self.denoise_result,denoising.sidecar(self.active['output']))
                 except OSError as exc: self.failed.emit('Cannot save denoised beauty; original EXR preserved: '+str(exc));return
-            else: self.buffer_path=self.denoise_result
+            # Keep the original beauty available for comparison.
         if self.phase=='render' and self.gpu_error:
             self.failed.emit('GPU execution failed. Open Render Log for details or select CPU (AVX).')
             return
         if self.phase=='render' and self.post_jobs:
+            if not self.active['output'] and not self.active.get('linear_preview'):
+                try:
+                    self.buffers.publish(dict(self.preview_files,beauty=self.buffer_path),self.active['runtime'],self.active['snapshot'],self.backend_status)
+                except Exception as exc:
+                    self.failed.emit('Cannot retain original preview buffers: '+str(exc));return
             if self.active['output']:
                 try:
                     self._publish(self.image_path,Path(self.active['output']));self.original_published=True
@@ -328,6 +334,8 @@ class Renderer(QtCore.QObject):
         if self.phase in ('render','postdone') and not self.active['output'] and not self.active.get('linear_preview'):
             try:
                 files=dict(self.preview_files,beauty=self.buffer_path)
+                if self.phase=='postdone' and self.denoise_result:
+                    files['denoised_beauty']=self.denoise_result
                 self.buffers.publish(files,self.active['runtime'],self.active['snapshot'],self.backend_status)
             except Exception as exc:
                 self.failed.emit('Cannot retain preview buffers: '+str(exc));return

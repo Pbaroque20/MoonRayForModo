@@ -103,7 +103,7 @@ class BufferCache(QtCore.QObject):
     def _start(self):
         frame=self.progressive_frames.get(self.key,self.frame)
         if frame is None or (self.key not in frame['files'] and self.key not in frame.get('linear',{})):
-            self.notice.emit('Selected output will be available after a preview with these outputs completes.');return
+            self.notice.emit('Denoised Beauty requires a completed pass with Beauty denoiser enabled and Denoise beauty preview checked.' if self.key=='denoised_beauty' else 'Selected output will be available after a preview with these outputs completes.');return
         signature=hashlib.sha256(json.dumps([self.key,self.display],sort_keys=True).encode('utf-8')).hexdigest()
         destination=frame['folder']/(signature+'.png')
         self.job=dict(frame=frame,key=self.key,serial=self.serial,destination=destination)

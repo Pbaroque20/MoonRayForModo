@@ -295,9 +295,10 @@ class Panel(QtWidgets.QWidget):
         buffer_row.addWidget(QtWidgets.QLabel('Render buffer'))
         self.buffer = QtWidgets.QComboBox()
         self.buffer.addItem('Beauty','beauty')
+        self.buffer.addItem('Denoised Beauty','denoised_beauty')
         for key,(label,attributes,channel) in options.AOVS.items():
             self.buffer.addItem(label,key)
-        self.buffer.setToolTip('Switch buffers from the last completed preview without restarting rendering. Available after the first pass. Saved EXR values are unchanged.')
+        self.buffer.setToolTip('Switch cached buffers without restarting rendering. Denoised Beauty is available after a pass with Beauty denoiser enabled and Denoise beauty preview checked. Saved EXR values are unchanged.')
         buffer_row.addWidget(self.buffer,1)
         layout.addLayout(buffer_row)
         from .clay import CHOICES
@@ -523,7 +524,7 @@ class Panel(QtWidgets.QWidget):
 
     def _sync_output_menu(self):
         key=self.buffer.currentData();self.buffer.blockSignals(True)
-        while self.buffer.count()>1+len(options.AOVS):self.buffer.removeItem(self.buffer.count()-1)
+        while self.buffer.count()>2+len(options.AOVS):self.buffer.removeItem(self.buffer.count()-1)
         for v in self.custom_aovs:
             self.buffer.addItem(v['name']+(' (ID colors)' if v['kind']=='cryptomatte' else ''),v['name'])
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));self.buffer.blockSignals(False)
@@ -840,7 +841,7 @@ class Panel(QtWidgets.QWidget):
             else:self.preview.load(path)
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
-            key=frame.get('key',snapshot.get('preview_buffer','beauty'));label='Beauty' if key=='beauty' else options.AOVS.get(key,(key,))[0]
+            key=frame.get('key',snapshot.get('preview_buffer','beauty'));label={'beauty':'Beauty','denoised_beauty':'Denoised Beauty'}.get(key,options.AOVS.get(key,(key,))[0])
             self.image_info.setText('Showing %s · %d × %d · %s'%(label,self.preview.image.width(),self.preview.image.height(),frame.get('backend',self.renderer.backend_status)))
             if frame:self.image_info.setText(self.image_info.text()+(' · Rendering' if frame.get('partial') else ' · Last completed preview'))
             if snapshot.get('_ipr'):
