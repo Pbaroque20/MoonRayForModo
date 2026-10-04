@@ -3,6 +3,11 @@ import copy,json,re
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes
 
+def file_parameter(spec):
+    return spec.get('type')=='String' and (
+        'FLAGS_FILENAME' in spec.get('flags','') or spec.get('name')=='file' or
+        str(spec.get('comment','')).lower().startswith('filename that points to'))
+
 COLORS={'map':'#77bce8','material':'#89ce94','normal':'#c6a0e9','displacement':'#e4b367'}
 
 def curve(a,b):
@@ -126,6 +131,13 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
         return nodes.specs(self.editor.graph['nodes'][identity]['type'])[key]
     def paint(self,painter,option,index):
+        if index.column()==1 and file_parameter(self.schema(index)):
+            text_option=QtWidgets.QStyleOptionViewItem(option)
+            text_option.rect=option.rect.adjusted(0,0,-28,0)
+            super().paint(painter,text_option,index)
+            icon=self.editor.style().standardIcon(QtWidgets.QStyle.SP_DirOpenIcon)
+            icon.paint(painter,QtCore.QRect(option.rect.right()-24,option.rect.center().y()-8,16,16))
+            return
         try:
             color_field=index.column()==1 and self.schema(index)['type']=='Rgb'
             values=json.loads(index.data()) if color_field else None
@@ -137,6 +149,11 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         painter.setBrush(QtGui.QColor.fromRgbF(*[max(0,min(1,v)) for v in values]))
         painter.drawRoundedRect(option.rect.adjusted(3,4,0,-4).adjusted(0,0,24-option.rect.width(),0),2,2);painter.restore()
     def editorEvent(self,event,model,option,index):
+        if index.column()==1 and file_parameter(self.schema(index)):
+            if event.type()==QtCore.QEvent.MouseButtonRelease and event.button()==QtCore.Qt.LeftButton:
+                identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
+                self.editor.choose_node_file(identity,key);return True
+            if event.type()==QtCore.QEvent.MouseButtonDblClick:return True
         if event.type()==QtCore.QEvent.MouseButtonRelease and event.button()==QtCore.Qt.LeftButton and event.pos().x()<option.rect.left()+29:
             try:
                 if index.column()==1 and self.schema(index)['type']=='Rgb':

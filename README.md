@@ -1,6 +1,10 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.18** adds **MoonShine Material Override** to the
+Development version **0.3.19** adds file pickers to graph texture/path fields.
+Click a file value or its folder icon to browse; selection commits immediately
+to the graph draft. F2 retains manual path entry, including UDIM patterns.
+
+Version **0.3.18** adds **MoonShine Material Override** to the
 native Shader Tree's **Add Layer** list. Place it above the Modo material in the
 same mask, enable its override, and choose **Edit Material Graph**. Disabling
 or hiding the layer restores materials below it. The MoonRay menu also has an

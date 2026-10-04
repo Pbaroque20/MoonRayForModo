@@ -1,10 +1,11 @@
 """Visual node authoring with editable inputs and non-destructive override layers."""
 import copy
 import json
+import os
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes,materialx,properties,shader_library,node_defaults
-from .node_widgets import GraphView,ParameterDelegate,COLORS,curve
+from .node_widgets import GraphView,ParameterDelegate,COLORS,curve,file_parameter
 
 
 class Socket(QtWidgets.QGraphicsEllipseItem):
@@ -165,6 +166,23 @@ class Editor(QtWidgets.QDialog):
             target=self.target(identity);target.setdefault('parameters',{})[key]=[color.redF(),color.greenF(),color.blueF()]
             target.setdefault('inputs',{}).pop(key,None);self.validate_draft();self.remember(before);self.rebuild()
         except ValueError as exc:self.graph=before;self.error(exc)
+    def choose_node_file(self,identity,key):
+        self.table.itemDelegateForColumn(1).commit_pending()
+        node=nodes.effective(self.graph)['nodes'][identity];spec=nodes.specs(node['type'])[key]
+        current=node.get('parameters',{}).get(key,node_defaults.value(spec)) or ''
+        start=os.path.expandvars(os.path.expanduser(current))
+        if not os.path.isfile(start):start=os.path.dirname(start) or getattr(self,'last_asset_directory','')
+        filters=('OpenVDB (*.vdb);;All files (*)' if node['type']=='OpenVdbMap' else
+                 'Textures (*.exr *.tx *.hdr *.png *.jpg *.jpeg *.tif *.tiff *.tga *.bmp *.dds *.pic *.rat);;All files (*)')
+        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Choose '+key,start,filters)
+        if not path:return
+        self.last_asset_directory=os.path.dirname(path)
+        before=copy.deepcopy(self.graph)
+        try:
+            target=self.target(identity);target.setdefault('parameters',{})[key]=path
+            target.setdefault('inputs',{}).pop(key,None)
+            self.validate_draft();self.remember(before);self.rebuild()
+        except (ValueError,TypeError) as exc:self.graph=before;self.error(exc)
     def preview_draft(self):
         self.table.itemDelegateForColumn(1).commit_pending()
         material=copy.deepcopy(properties.read(self.item))
@@ -380,6 +398,7 @@ class Editor(QtWidgets.QDialog):
                 if inherited:
                     font=cell.font();font.setItalic(True);cell.setFont(font)
                 cell.setToolTip(('Renderer default; edit to override. ' if inherited else '')+str(spec.get('comment',''))+' Default: '+str(spec.get('default',spec.get('default_value',''))))
+                if file_parameter(spec):cell.setToolTip(cell.toolTip()+' Click to browse for a file. Press F2 to type or paste a path, including <UDIM> patterns.')
                 self.table.setItem(row,0,label);self.table.setItem(row,1,cell)
         self.busy=False;self.filter_properties()
     def scene_reference(self,identity,key,value):
