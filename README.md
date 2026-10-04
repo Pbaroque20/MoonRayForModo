@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.36** makes property names in the graph editor's right-hand inspector black for clearer contrast, including camera and locator references. Tests skipped as requested.
+Development version **0.3.37** removes the redundant MoonShine Material properties tab from standard Modo materials. Add MoonShine Material Override through Add Layer or the material context menu, then use Enable Override and Edit Material Graph on that layer. Includes the black graph-inspector property labels from 0.3.36. Tests skipped as requested.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native

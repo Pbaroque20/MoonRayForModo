@@ -38,30 +38,7 @@ for key, label in [('override', 'Use Object Overrides'), ('subdivision', 'Subdiv
 old=attributes.find("hash[@key='MoonShineMaterialProperties:sheet']")
 if old is not None:
     attributes.remove(old)
-sheet=ET.SubElement(attributes,'hash',type='Sheet',key='MoonShineMaterialProperties:sheet')
-ET.SubElement(sheet,'atom',type='Label').text='MoonShine Material'
-ET.SubElement(sheet,'atom',type='Layout').text='properties'
-ET.SubElement(sheet,'atom',type='FilterCommand').text='item.withTypeIsSelected advancedMaterial testSupertypes:true'
-category=ET.SubElement(sheet,'hash',type='InCategory',key='itemprops:general#head')
-ET.SubElement(category,'atom',type='Ordinal').text='129'
-for command,label in [('moonray.material.enable ?','Use MoonShine (DwaBaseMaterial)'),
-    ('item.channel advancedMaterial$diffCol ?','Base Color'),
-    ('item.channel advancedMaterial$diffAmt ?','Diffuse Amount'),
-    ('item.channel advancedMaterial$metallic ?','Metalness'),
-    ('item.channel advancedMaterial$rough ?','Reflection Roughness'),
-    ('item.channel advancedMaterial$refIndex ?','Index of Refraction'),
-    ('item.channel advancedMaterial$tranAmt ?','Transmission'),
-    ('item.channel advancedMaterial$tranCol ?','Transmission Color'),
-    ('item.channel advancedMaterial$tranRough ?','Transmission Roughness'),
-    ('item.channel advancedMaterial$coatAmt ?','Clearcoat'),
-    ('item.channel advancedMaterial$coatRough ?','Clearcoat Roughness'),
-    ('item.channel advancedMaterial$lumiCol ?','Emission Color'),
-    ('item.channel advancedMaterial$radiance ?','Emission Amount'),
-    ('item.channel advancedMaterial$bumpAmp ?','Bump Distance'),
-    ('item.channel advancedMaterial$dissAmt ?','Dissolve'),
-    ('moonray.material.thin ?','Thin Geometry')]:
-    control=ET.SubElement(sheet,'list',type='Control',val='cmd '+command)
-    ET.SubElement(control,'atom',type='Label').text=label
+# Standard Modo materials use their native properties; graph controls live on the override layer.
 ET.indent(tree, space='  ')
 tree.write(path, encoding='utf-8', xml_declaration=True)
 print(path)
