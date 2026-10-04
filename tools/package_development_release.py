@@ -16,6 +16,7 @@ def digest(path):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--kit-only',action='store_true',help='Repackage the kit while retaining the already packaged runtime archive')
     parser.add_argument('--runtime',type=Path,required=True)
     parser.add_argument('--geometry',type=Path,required=True)
     args=parser.parse_args()
@@ -66,7 +67,10 @@ def main():
     for folder in (ROOT/'toolchain/msys64/var/lib/pacman/local').glob('mingw-w64-ucrt-x86_64-*'):
         if (folder/'desc').is_file():entries[rprefix+'provenance/msys2/'+folder.name+'.txt']=folder/'desc'
     generated={rprefix+'build-manifest.json':json.dumps({name:{'sha256':entry['sha256'],'source':Path(entry['source']).name} for name,entry in manifest.items()},indent=2).encode(),rprefix+'provenance/SOURCES.txt':b'MSYS2 dependency source recipes: https://github.com/msys2/MINGW-packages\nPackage source/version metadata: msys2/ alongside this file.\nMoonRay port source and patches: https://github.com/Pbaroque20/MoonRayForModo\nPinned upstream source locations: sources.json\n'}
-    runtime_file=package('MoonRayForModo-'+version+'-windows-runtime.zip',entries,generated)
+    runtime_file=destination/('MoonRayForModo-'+version+'-windows-runtime.zip')
+    if args.kit_only:
+        if not runtime_file.is_file():raise ValueError('Package the runtime before using --kit-only')
+    else:runtime_file=package(runtime_file.name,entries,generated)
     instructions=destination/'INSTALLATION.md';instructions.write_bytes((ROOT/'docs/INSTALLATION.md').read_bytes())
     (destination/'SHA256SUMS.txt').write_text(''.join(digest(p)+'  '+p.name+'\n' for p in (kit_file,runtime_file,instructions)),encoding='utf-8')
     print('Package hashes written; no render or host tests run.',flush=True)
