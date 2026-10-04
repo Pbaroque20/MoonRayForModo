@@ -33,6 +33,10 @@ previous = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_pat
 validation = destination / 'validated-render.json'
 if validation.exists():
     validation.unlink()
+# Fail packaging rather than ship examples whose constructors cannot load.
+for name in ('SphereGeometry.dll','SphereGeometry.so.proxy','BoxGeometry.dll','BoxGeometry.so.proxy'):
+    if not (build/'bin'/name).is_file():
+        raise ValueError('Rebuild the MoonShine geometry library before staging: '+name)
 pending = [build / 'bin/moonray.exe']
 if (build/'bin/modo_rdl_import.exe').is_file(): pending.append(build/'bin/modo_rdl_import.exe')
 if (build/'bin/modo_display_stream.exe').is_file(): pending.append(build/'bin/modo_display_stream.exe')

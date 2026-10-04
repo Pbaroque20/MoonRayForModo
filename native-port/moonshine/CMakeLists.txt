@@ -66,3 +66,8 @@ collect_desktop_dsos("${PROJECT_SOURCE_DIR}/dso/map" map_targets)
 collect_desktop_dsos("${PROJECT_SOURCE_DIR}/dso/normalmap" normalmap_targets)
 add_custom_target(moonshine_map_library DEPENDS ${map_targets} ${normalmap_targets})
 add_dependencies(moonshine_material_library moonshine_map_library)
+
+# Example scenes use these analytic geometry DSOs as well as core mesh geometry.
+add_subdirectory("${PROJECT_SOURCE_DIR}/dso/geometry" geometries)
+add_custom_target(moonshine_geometry_library DEPENDS SphereGeometry SphereGeometry_proxy BoxGeometry BoxGeometry_proxy)
+add_dependencies(moonshine_material_library moonshine_geometry_library)

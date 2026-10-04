@@ -798,3 +798,15 @@ References: [displacement](https://docs.openmoonray.org/user-reference/how-to-gu
 [light sets](https://docs.openmoonray.org/user-reference/scene-objects/light-set/LightSet/),
 [Cryptomatte setup](https://docs.openmoonray.org/user-reference/how-to-guides/render-outputs/cryptomatte/),
 [checkpoint rendering](https://docs.openmoonray.org/user-reference/how-to-guides/checkpoint-resume/checkpoint/).
+
+### 0.3.22 RDL import repair
+
+The Windows runtime now includes the upstream SphereGeometry and BoxGeometry
+plugins and their parser proxies. RDL import converts these shapes to editable
+meshes (spheres are polygon approximations), preserves clipping and assignments,
+and handles multiple instancer prototypes and disabled indices. The importer
+refreshes its runtime selection after installation even before Preview is opened.
+Missing-DSO errors now identify the required plugin. Arbitrary geometry DSOs,
+exact analytic shading/box UVs, and animated editable import remain unsupported.
+Native compilation completed; runtime/Modo tests remain deferred. Regression
+checks are provided in tests/test_rdl_primitives.py and are not run automatically.

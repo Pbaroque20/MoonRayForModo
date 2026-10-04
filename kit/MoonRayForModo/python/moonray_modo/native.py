@@ -115,3 +115,13 @@ def _paired_instance_capability(directory,signature):
             if hashlib.sha256((root/name).read_bytes()).hexdigest()!=data['sha256'][name]:return False
         return True
     except (OSError,ValueError,KeyError,TypeError):return False
+
+
+def configured_runtime(settings):
+    """Apply installed-runtime changes even when importing before opening Preview."""
+    stamp = installation_id()
+    if stamp and settings.value('runtime_installation') != stamp:
+        settings.setValue('previous_runtime', settings.value('runtime', ''))
+        settings.setValue('runtime', default_runtime())
+        settings.setValue('runtime_installation', stamp)
+    return find_runtime(str(settings.value('runtime', default_runtime())))

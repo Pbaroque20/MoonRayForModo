@@ -38,6 +38,11 @@ def graph(root,objects,base,warnings):
 def plan(document,path):
  if document.get('version')!=1 or not isinstance(document.get('objects'),list):raise ValueError('Invalid RDL conversion document')
  objects={v['name']:v for v in document['objects']};warnings=[];meshes=[];materials={};cameras=[];lights=[]
+ from . import rdl_primitives
+ for name,record in list(objects.items()):
+  if record['type'] in rdl_primitives.KINDS:
+   objects[name]=rdl_primitives.mesh_record(record)
+   warnings.append(name+': '+record['type']+' converted to an editable polygon approximation; analytic shading and UV matching need review')
  base=Path(path).resolve().parent
  from . import shader_library
  variables=next((v.get('attributes',{}) for v in objects.values() if v['type']=='SceneVariables'),{})
@@ -80,9 +85,19 @@ def plan(document,path):
    if record['name'] not in referenced or record['name'] in geometry_sets:mesh(record)
   elif kind=='RdlInstancerGeometry':
    refs=a.get('references',[]);transforms=a.get('xform_list',[])
-   if a.get('method')!=2 or len(refs)!=1 or objects.get(refs[0],{}).get('type')!='RdlMeshGeometry':warnings.append(record['name']+': unsupported instancer method or prototype');continue
-   proto=objects[refs[0]]
+   if a.get('method')!=2 or not refs:warnings.append(record['name']+': unsupported instancer method or missing prototype');continue
+   ref_indices=a.get('ref_indices',[]);disabled=set(a.get('disable_indices',[]))
+   if not transforms and ref_indices:transforms=[IDENTITY]*len(ref_indices)
+   apply_indices=len(ref_indices)==len(transforms)
+   if ref_indices and not apply_indices:warnings.append(record['name']+': ref_indices length mismatch; using the first prototype as MoonRay does')
    for index,xform in enumerate(transforms):
+    if index in disabled:continue
+    ref_index=ref_indices[index] if apply_indices else 0
+    if ref_index<0:warnings.append(record['name']+': skipped negative prototype index');continue
+    if ref_index>=len(refs):ref_index=0
+    proto=objects.get(refs[ref_index],{})
+    if proto.get('type')!='RdlMeshGeometry':warnings.append(record['name']+': unsupported instance prototype '+str(refs[ref_index]));continue
+    if len(xform)!=16 or any(not math.isfinite(v) for v in xform):raise ValueError('Invalid instance transform: '+record['name'])
     mat=product(xform,a.get('node_xform',IDENTITY))
     if a.get('use_reference_xforms',True):mat=product(proto['attributes'].get('node_xform',IDENTITY),mat)
     mesh(proto,mat,record['name']+' / '+str(index),record['name'])

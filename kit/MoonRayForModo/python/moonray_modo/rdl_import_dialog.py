@@ -1,5 +1,5 @@
 """Asynchronous RDL decoding followed by an undoable editable scene import."""
-import json
+import json,re
 from pathlib import Path
 from PySide2 import QtCore,QtWidgets
 from . import native,rdl_import
@@ -25,7 +25,7 @@ class Dialog(QtWidgets.QDialog):
    self.path=Path(path).resolve()
    if not self.path.is_file() or self.path.suffix.lower() not in ('.rdla','.rdlb','.rdl'):raise ValueError('Choose an existing RDL scene')
    if self.path.suffix.lower()=='.rdl':raise ValueError('Use .rdla for an ASCII MoonRay scene or .rdlb for a binary MoonRay scene; generic .rdl is ambiguous.')
-   settings=QtCore.QSettings('MoonRayForModo','NativePreview');runtime=native.find_runtime(str(settings.value('runtime',native.default_runtime())))
+   settings=QtCore.QSettings('MoonRayForModo','NativePreview');runtime=native.configured_runtime(settings)
    helper=runtime/'modo_rdl_import.exe'
    if not helper.is_file():raise ValueError('Install the RDL-import runtime before importing')
    self.data=None;self.output.clear();self.errors='';self.import_button.setEnabled(False);self.choose.setEnabled(False);self.cancel.setEnabled(True)
@@ -51,7 +51,13 @@ class Dialog(QtWidgets.QDialog):
    counts='%d meshes, %d cameras, %d lights, %d materials ready.'%(len(self.data['meshes']),len(self.data['cameras']),len(self.data['lights']),len(self.data['materials']))
    self.report.setPlainText(counts+'\n\n'+'\n'.join(self.data['warnings']))
    self.import_button.setEnabled(bool(self.data['meshes'] or self.data['cameras'] or self.data['lights'] or self.data['materials']))
-  except Exception as exc:self.report.setPlainText('Cannot import: '+str(exc))
+  except Exception as exc:
+   message=str(exc)
+   missing=re.search(r"global variable '([^']+)' was never declared",message)
+   if missing and 'DSO' in message:
+    message=('The scene requires '+missing.group(1)+', which could not be loaded from the selected MoonRay runtime. '
+     'Choose the updated bundled runtime in MoonRay settings. Third-party geometry or shader plugins require a compatible Windows build.\n\n'+message)
+   self.report.setPlainText('Cannot import: '+message)
  def apply(self):
   if self.data is None:return
   try:
