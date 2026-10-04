@@ -464,8 +464,16 @@ class Editor(QtWidgets.QDialog):
                 except ValueError as exc:raise ValueError(key+': '+str(exc))
                 target.setdefault('parameters',{})[key]=value
                 target.setdefault('inputs',{}).pop(key,None)
-            self.validate_draft();self.remember(old);QtCore.QTimer.singleShot(0,self.rebuild)
-        except (ValueError,TypeError) as exc: self.graph=old;self.error(exc);self.inspect()
+            self.validate_draft();self.remember(old)
+            # Scalar edits do not change the node layout. Keep the active Qt
+            # cell editor alive until its delegate has finished committing.
+            self.edges();self.material_preview.graph_changed(self.graph)
+        except (ValueError,TypeError) as exc:
+            self.graph=old
+            # No modal dialog or table destruction inside setModelData: both
+            # can re-enter Qt while it still owns the committing editor.
+            self.info.setText(str(exc))
+            QtCore.QTimer.singleShot(0,self.inspect)
     def add_override(self):
         identity=self.selected()
         if not identity: self.error('Select a node to override');return

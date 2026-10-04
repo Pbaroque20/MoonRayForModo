@@ -1,6 +1,7 @@
 """Mouse graph navigation and schema-driven property editors for Modo Qt."""
 import copy,json,re
 from PySide2 import QtCore,QtGui,QtWidgets
+from shiboken2 import isValid
 from . import nodes
 
 from .file_inputs import file_parameter
@@ -170,6 +171,13 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
             widget=QtWidgets.QDoubleSpinBox(parent);widget.setRange(-1e12,1e12);widget.setDecimals(6);widget.setSingleStep(.1)
         elif kind in ('Rgb','Vec2f','Vec3f','Vec2d','Vec3d'):widget=VectorEdit(2 if kind in ('Vec2f','Vec2d') else 3,kind=='Rgb',parent)
         else:widget=QtWidgets.QLineEdit(parent)
+        # Apply schema bounds before the editor receives its initial value.
+        spins=widget.spins if isinstance(widget,VectorEdit) else ([widget] if isinstance(widget,QtWidgets.QAbstractSpinBox) else [])
+        for spin in spins:
+            for key,setter in (('min',spin.setMinimum),('max',spin.setMaximum)):
+                if key in spec:
+                    limit=float(str(spec[key]).rstrip('f'))
+                    setter(int(limit) if isinstance(spin,QtWidgets.QSpinBox) else limit)
         self.active_editor=widget
         widget.installEventFilter(self)
         for child in widget.findChildren(QtWidgets.QWidget):child.installEventFilter(self)
@@ -178,6 +186,9 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         return widget
     def eventFilter(self,watched,event):
         widget=self.active_editor
+        if widget is not None and not isValid(widget):
+            self.active_editor=None;widget=None
+        if not isValid(watched):return False
         belongs=widget is not None and (watched is widget or widget.isAncestorOf(watched))
         if belongs:
             if event.type()==QtCore.QEvent.KeyPress:
@@ -195,7 +206,7 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
             if watched is not widget:return False
         return super().eventFilter(watched,event)
     def commit_if_left(self,widget):
-        if self.active_editor is not widget or getattr(widget,'choosing_color',False):return
+        if self.active_editor is not widget or not isValid(widget) or getattr(widget,'choosing_color',False):return
         focus=QtWidgets.QApplication.focusWidget()
         if focus is widget or (focus is not None and widget.isAncestorOf(focus)):return
         self.commit_pending()
@@ -205,12 +216,13 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         widget=self.active_editor
         if widget is None:return
         self.active_editor=None
+        if not isValid(widget):return
         try:
             if isinstance(widget,QtWidgets.QAbstractSpinBox):widget.interpretText()
             if isinstance(widget,VectorEdit):
                 for spin in widget.spins:spin.interpretText()
             self.commitData.emit(widget)
-            self.closeEditor.emit(widget,QtWidgets.QAbstractItemDelegate.NoHint)
+            if isValid(widget):self.closeEditor.emit(widget,QtWidgets.QAbstractItemDelegate.NoHint)
         except RuntimeError:pass  # Qt may have already destroyed a closed cell editor.
     def setEditorData(self,widget,index):
         spec=self.schema(index);raw=index.data();value=json.loads(raw) if raw else default_value(spec)

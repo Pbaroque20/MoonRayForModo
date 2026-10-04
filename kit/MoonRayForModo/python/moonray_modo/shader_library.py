@@ -13,6 +13,8 @@ def catalog():
         for name in ('metallic_color','metallic_edge_color'):
             spec=material['attributes'].get(name)
             if spec and spec['type']=='Rgb':spec.update(min=0,max=1)
+        spec=material['attributes'].get('metallic')
+        if spec and spec['type']=='Float':spec.update(min=0,max=1)
     return result
 
 
@@ -159,8 +161,10 @@ def emit(material, name, index, lines, library, trail=(), authored_bindings=None
     authored=working_surface(authored,name,lines,{key for key,spec in attributes.items() if spec['type']=='Rgb' and key!='TMI'})
     # A connected texture can exceed the authored field limits. Bound Fresnel
     # colors after working-space conversion, before they reach the material.
-    for key in ('metallic_color','metallic_edge_color'):
+    for key in ('metallic','metallic_color','metallic_edge_color'):
         if key not in authored:continue
+        if key=='metallic' and not authored[key].startswith('bind('):
+            authored[key]='Rgb('+', '.join([authored[key]]*3)+')'
         low=name+'/limits/'+key+'/low';high=name+'/limits/'+key+'/high'
         lines.append('OpMap(%s) { ["operation"] = 4, ["op1"] = %s, ["op2"] = Rgb(0,0,0) }'%(string(low),authored[key]))
         lines.append('OpMap(%s) { ["operation"] = 5, ["op1"] = bind(OpMap(%s)), ["op2"] = Rgb(1,1,1) }'%(string(high),string(low)))
