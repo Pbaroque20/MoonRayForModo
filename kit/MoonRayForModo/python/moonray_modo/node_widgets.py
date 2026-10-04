@@ -1,5 +1,6 @@
 """Mouse graph navigation and schema-driven property editors for Modo Qt."""
 import copy,json,re,weakref
+from pathlib import Path
 from PySide2 import QtCore,QtGui,QtWidgets
 from shiboken2 import isValid
 from . import nodes
@@ -168,24 +169,15 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
     def schema(self,index):
         identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
         return nodes.specs(self.editor.graph['nodes'][identity]['type'])[key]
-    def paint(self,painter,option,index):
-        if index.column()==1 and file_parameter(self.schema(index)):
-            text_option=QtWidgets.QStyleOptionViewItem(option)
-            text_option.rect=option.rect.adjusted(0,0,-28,0)
-            super().paint(painter,text_option,index)
-            icon=self.editor.style().standardIcon(QtWidgets.QStyle.SP_DirOpenIcon)
-            icon.paint(painter,QtCore.QRect(option.rect.right()-24,option.rect.center().y()-8,16,16))
-            return
-        try:
-            color_field=index.column()==1 and self.schema(index)['type']=='Rgb'
-            values=json.loads(index.data()) if color_field else None
-        except (ValueError,TypeError,KeyError,AttributeError):values=None
-        if not isinstance(values,list) or len(values)!=3:return super().paint(painter,option,index)
-        text_option=QtWidgets.QStyleOptionViewItem(option);text_option.rect=option.rect.adjusted(30,0,0,0)
-        super().paint(painter,text_option,index)
-        painter.save();painter.setPen(QtGui.QColor('#888'))
-        painter.setBrush(QtGui.QColor.fromRgbF(*[max(0,min(1,v)) for v in values]))
-        painter.drawRoundedRect(option.rect.adjusted(3,4,0,-4).adjusted(0,0,24-option.rect.width(),0),2,2);painter.restore()
+    def decorate(self,cell,spec,value):
+        # Use Qt's native delegate painting. Borrowed QPainter/style-option
+        # wrappers must not cross a Python paint callback in the Modo host.
+        decoration=None
+        if file_parameter(spec):
+            decoration=QtGui.QIcon(str(Path(__file__).resolve().parents[2]/'assets/folder.svg'))
+        elif spec['type']=='Rgb' and isinstance(value,(list,tuple)) and len(value)==3:
+            decoration=QtGui.QColor.fromRgbF(*[max(0,min(1,float(v))) for v in value])
+        cell.setData(QtCore.Qt.DecorationRole,decoration)
     def editorEvent(self,event,model,option,index):
         if index.column()==1 and file_parameter(self.schema(index)):
             if event.type()==QtCore.QEvent.MouseButtonRelease and event.button()==QtCore.Qt.LeftButton:

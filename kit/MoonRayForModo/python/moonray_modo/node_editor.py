@@ -479,6 +479,7 @@ class Editor(QtWidgets.QDialog):
                     cell.setToolTip(cell.toolTip()+' Allowed range: '+str(spec.get('min','unbounded'))+' to '+str(spec.get('max','unbounded')))
                 if file_parameter(spec):cell.setToolTip(cell.toolTip()+' Click to browse for a file. Press F2 to type or paste a path, including <UDIM> patterns.')
                 self.table.setItem(row,0,label);self.table.setItem(row,1,cell)
+                self.table.itemDelegateForColumn(1).decorate(cell,spec,value)
                 if spec['type'] in ('Float','Double') and not spec.get('enum'):
                     field=NumericField(identity,key,self.layers.currentData() if self.layers.currentData() is not None else -1,spec,value,self.table)
                     field.setToolTip(cell.toolTip());field.changed.connect(self.numeric_changed);field.focused.connect(self.numeric_focus)
@@ -509,6 +510,10 @@ class Editor(QtWidgets.QDialog):
                 target.setdefault('parameters',{})[key]=value
                 target.setdefault('inputs',{}).pop(key,None)
             self.validate_draft();self.remember(old)
+            blocker=QtCore.QSignalBlocker(self.table)
+            self.table.itemDelegateForColumn(1).decorate(cell,nodes.specs(self.graph['nodes'][identity]['type'])[key],
+                nodes.effective(self.graph)['nodes'][identity].get('parameters',{}).get(key,node_defaults.value(nodes.specs(self.graph['nodes'][identity]['type'])[key])))
+            del blocker
             # Scalar edits do not change the node layout. Keep the active Qt
             # cell editor alive until its delegate has finished committing.
             self.edges();self.material_preview.graph_changed(self.graph)

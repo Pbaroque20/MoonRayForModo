@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.29** adds [persistent numeric graph fields and deferred preview capture](docs/COMPATIBILITY_0329.md). All 161 host checks passed in Modo 16.1v9. Typing Metallic 0.5 and clicking preview rendered successfully in isolated tests, including copied user UI settings. The intermittent user crash remains unconfirmed as resolved.
+Development version **0.3.30** replaces Python property-table painting with [native Qt swatches and icons](docs/COMPATIBILITY_0330.md). All 163 host checks passed in Modo 16.1v9. Manual confirmation of the recurring preview-start crash remains pending.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native

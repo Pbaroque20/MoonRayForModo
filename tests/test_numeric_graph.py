@@ -3,7 +3,7 @@ import json,sys,unittest,gc
 from pathlib import Path
 try:
     import modo
-    from PySide2 import QtCore,QtWidgets
+    from PySide2 import QtCore,QtGui,QtWidgets
 except ImportError:raise unittest.SkipTest('Requires Modo Python/Qt')
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'kit/MoonRayForModo/python'))
 from moonray_modo import nodes,properties
@@ -46,6 +46,27 @@ class NumericGraph(unittest.TestCase):
         field=self.type_value('0.5');self.editor.property_search.setFocus();self.app.processEvents()
         self.assertEqual(self.editor.graph['nodes']['surface']['parameters']['metallic'],.5)
         self.assertIs(self.field(),field)
+    def test_color_swatch_uses_native_decoration_without_python_paint(self):
+        delegate=self.editor.table.itemDelegateForColumn(1)
+        self.assertNotIn('paint',type(delegate).__dict__)
+        row=next(r for r in range(self.editor.table.rowCount()) if self.editor.table.item(r,0).text()=='metallic_color')
+        cell=self.editor.table.item(row,1)
+        self.assertIsInstance(cell.data(QtCore.Qt.DecorationRole),QtGui.QColor)
+        cell.setText('[0.8, 0.1, 0.5]')
+        self.assertEqual(cell.data(QtCore.Qt.DecorationRole).name(),'#cc1a80')
+        self.editor.table.scrollToItem(cell)
+        for _ in range(10):
+            self.editor.table.viewport().repaint();self.app.processEvents();gc.collect()
+
+    def test_file_icon_does_not_borrow_host_style(self):
+        delegate=self.editor.table.itemDelegateForColumn(1)
+        cell=QtWidgets.QTableWidgetItem('texture.exr')
+        self.editor.style=lambda:(_ for _ in ()).throw(RuntimeError('Deleted host style'))
+        delegate.decorate(cell,{'name':'file','type':'String'},'texture.exr')
+        icon=cell.data(QtCore.Qt.DecorationRole)
+        self.assertIsInstance(icon,QtGui.QIcon)
+        self.assertFalse(icon.isNull())
+
     def test_preview_click_defers_capture_until_mouse_event_returns(self):
         panel=self.editor.material_preview;calls=[]
         panel.capture_snapshot=lambda:(calls.append('capture') or {'render_settings':{}})

@@ -1,0 +1,41 @@
+{
+  "version": "0.3.30",
+  "runtime": "runtime/xpu-compatibility-0327",
+  "user_crash_reproduced_in_0329": true,
+  "manual_candidate_confirmation": false,
+  "host_suite": {
+    "pid": 25516,
+    "runtime": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\runtime\\xpu-compatibility-0327",
+    "tests": 163,
+    "passed": true,
+    "failures": [],
+    "errors": [],
+    "skipped": []
+  },
+  "host_exit": {
+    "pid": 25516,
+    "exit_code": 1,
+    "clean_shutdown": true
+  },
+  "preview": {
+    "pid": 3364,
+    "frames": 10,
+    "cycles": 1,
+    "passed": true,
+    "finished": true
+  },
+  "preview_exit": {
+    "pid": 3364,
+    "exit_code": 1,
+    "clean_shutdown": true
+  },
+  "first_candidate_failure": {
+    "pid": 8888,
+    "frames": 0,
+    "cycles": 0,
+    "passed": false,
+    "finished": true,
+    "error": "Traceback (most recent call last):\n  File \"<string>\", line 37, in edited_live\nStopIteration\n"
+  },
+  "style_failure": "Internal C++ object (PySide2.QtWidgets.QCommonStyle) already deleted: editor.style().standardIcon"
+}
