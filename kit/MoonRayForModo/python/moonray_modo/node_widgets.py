@@ -3,10 +3,7 @@ import copy,json,re
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes
 
-def file_parameter(spec):
-    return spec.get('type')=='String' and (
-        'FLAGS_FILENAME' in spec.get('flags','') or spec.get('name')=='file' or
-        str(spec.get('comment','')).lower().startswith('filename that points to'))
+from .file_inputs import file_parameter
 
 COLORS={'map':'#77bce8','material':'#89ce94','normal':'#c6a0e9','displacement':'#e4b367'}
 

@@ -2,6 +2,7 @@
 import copy,hashlib,json,shutil,uuid
 from pathlib import Path
 from . import nodes,shader_library
+from .file_inputs import file_parameter
 
 def digest(path):
  h=hashlib.sha256()
@@ -40,7 +41,7 @@ def files(settings,callback):
  for parameters,schema in parameter_sets(settings):
   for key,value in list(parameters.items()):
    spec=schema.get(key,{})
-   if key=='file' or 'FLAGS_FILENAME' in spec.get('flags',''):
+   if key=='file' or file_parameter(spec):
     if isinstance(value,str) and value:parameters[key]=callback(value)
     elif spec.get('type')=='StringVector' and isinstance(value,list):parameters[key]=[callback(v) if v else v for v in value]
 
@@ -70,7 +71,7 @@ def save(root_id,lookup,destination):
  destination=Path(destination).resolve()
  if destination.exists():raise ValueError('Choose a new material bundle folder')
  materials={};identities={}
- allowed={'shader','native_shader','native_parameters','node_graph','node_override','materialx_graph','materialx_override','thin_geometry','subsurface_model','anisotropy_angle','sss_input_normal','sss_resolve_self_intersections'}
+ allowed={'moonshine_override','shader','native_shader','native_parameters','node_graph','node_override','materialx_graph','materialx_override','thin_geometry','subsurface_model','anisotropy_angle','sss_input_normal','sss_resolve_self_intersections'}
  def collect(identity,trail=()):
   if identity in trail:raise ValueError('Material reference cycle')
   if len(trail)>64:raise ValueError('Material dependency depth exceeds 64')

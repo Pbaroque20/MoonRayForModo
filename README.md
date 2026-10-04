@@ -1,6 +1,11 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.19** adds file pickers to graph texture/path fields.
+Development version **0.3.20** adds multi-file browsing for filename lists,
+right-click property reset, and **Graph > Check asset files** with missing-path
+details and UDIM checks. Portable bundles now preserve the override enable state
+and include filename-described assets whose catalog flags are incomplete.
+
+Version **0.3.19** adds file pickers to graph texture/path fields.
 Click a file value or its folder icon to browse; selection commits immediately
 to the graph draft. F2 retains manual path entry, including UDIM patterns.
 

@@ -70,7 +70,7 @@ class Editor(QtWidgets.QDialog):
                 if label is None:menu.addSeparator()
                 else:menu.addAction(label,callback)
             button.setMenu(menu);toolbar.addWidget(button);return menu
-        menu_button('Graph', [('Import MaterialX…',self.import_file),('Export definitions…',self.export_file),
+        menu_button('Graph', [('Check asset files...',self.check_assets),('Import MaterialX…',self.import_file),('Export definitions…',self.export_file),
                     (None,None),('Add override layer…',self.add_override),('Toggle override layer',self.toggle_override)])
         menu_button('Node', [('Set material output',self.output),('Set / clear displacement output',self.displacement_output),
                     (None,None),('Connect input…',self.connect_selected),('Disconnect input…',self.disconnect),
@@ -94,6 +94,8 @@ class Editor(QtWidgets.QDialog):
         self.layers=QtWidgets.QComboBox();self.layers.setToolTip('Property override layer');right.addWidget(self.layers)
         self.table=QtWidgets.QTableWidget(0,2);self.table.setHorizontalHeaderLabels(['Input','Value']);self.table.horizontalHeader().setStretchLastSection(True);self.table.verticalHeader().hide();self.table.setShowGrid(False);self.table.setAlternatingRowColors(True);right.addWidget(self.table)
         self.table.setItemDelegateForColumn(1,ParameterDelegate(self))
+        self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.property_menu)
         self.property_search=QtWidgets.QLineEdit();self.property_search.setClearButtonEnabled(True);self.property_search.setPlaceholderText('Filter properties…');right.insertWidget(1,self.property_search);self.property_search.textChanged.connect(self.filter_properties)
         from .material_preview import Panel
         self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([320,380])
@@ -170,13 +172,16 @@ class Editor(QtWidgets.QDialog):
         self.table.itemDelegateForColumn(1).commit_pending()
         node=nodes.effective(self.graph)['nodes'][identity];spec=nodes.specs(node['type'])[key]
         current=node.get('parameters',{}).get(key,node_defaults.value(spec)) or ''
-        start=os.path.expandvars(os.path.expanduser(current))
+        multiple=spec['type']=='StringVector'
+        start=current[0] if multiple and current else current if isinstance(current,str) else ''
+        start=os.path.expandvars(os.path.expanduser(start))
         if not os.path.isfile(start):start=os.path.dirname(start) or getattr(self,'last_asset_directory','')
         filters=('OpenVDB (*.vdb);;All files (*)' if node['type']=='OpenVdbMap' else
                  'Textures (*.exr *.tx *.hdr *.png *.jpg *.jpeg *.tif *.tiff *.tga *.bmp *.dds *.pic *.rat);;All files (*)')
-        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Choose '+key,start,filters)
+        chooser=QtWidgets.QFileDialog.getOpenFileNames if multiple else QtWidgets.QFileDialog.getOpenFileName
+        path,_=chooser(self,'Choose '+key,start,filters)
         if not path:return
-        self.last_asset_directory=os.path.dirname(path)
+        self.last_asset_directory=os.path.dirname(path[0] if multiple else path)
         before=copy.deepcopy(self.graph)
         try:
             target=self.target(identity);target.setdefault('parameters',{})[key]=path
@@ -296,18 +301,50 @@ class Editor(QtWidgets.QDialog):
         identity=self.selected()
         if not identity:self.error('Select a texture node first');return
         kind=self.graph['nodes'][identity]['type'];schema=nodes.specs(kind)
-        filenames=['file'] if kind=='image' else [key for key,spec in schema.items() if spec['type']=='String' and 'FLAGS_FILENAME' in spec.get('flags','')]
-        if not filenames:self.error('This node has no texture file input');return
+        filenames=[key for key,spec in schema.items() if file_parameter(spec)]
+        if not filenames:self.error('This node has no file input');return
         key=filenames[0]
         if len(filenames)>1:
-            key,ok=QtWidgets.QInputDialog.getItem(self,'Texture input','Input',filenames,0,False)
+            key,ok=QtWidgets.QInputDialog.getItem(self,'File input','Input',filenames,0,False)
             if not ok:return
-        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Choose texture image','','Images (*.exr *.hdr *.png *.jpg *.jpeg *.tif *.tiff *.tx);;All files (*)')
-        if path:
-            before=copy.deepcopy(self.graph)
-            try:self.target(identity).setdefault('parameters',{})[key]=path;self.validate_draft();self.remember(before);self.inspect()
-            except ValueError as exc:self.graph=before;self.error(exc)
+        self.choose_node_file(identity,key)
+    def property_menu(self,point):
+        row=self.table.rowAt(point.y());identity=self.selected()
+        if row<0 or not identity:return
+        self.table.setCurrentCell(row,1)
+        key=self.table.item(row,0).text();spec=nodes.specs(self.graph['nodes'][identity]['type'])[key]
+        if spec['type']=='SceneObject*':return
+        menu=QtWidgets.QMenu(self);browse=None
+        if file_parameter(spec):browse=menu.addAction('Browse files...')
+        reset=menu.addAction('Reset input to inherited value')
+        action=menu.exec_(self.table.viewport().mapToGlobal(point))
+        if action is None:return
+        if browse is not None and action==browse:self.choose_node_file(identity,key)
+        elif action==reset:self.reset_input()
+    def check_assets(self):
+        self.table.itemDelegateForColumn(1).commit_pending()
+        from .textures import source_tiles
+        missing=[];checked=0
+        graph=nodes.effective(self.graph)
+        for identity,node in graph['nodes'].items():
+            for key,spec in nodes.specs(node['type']).items():
+                if not file_parameter(spec):continue
+                value=node.get('parameters',{}).get(key,node_defaults.value(spec))
+                for path in value if isinstance(value,list) else [value]:
+                    if not path:continue
+                    checked+=1
+                    try:exists=bool(source_tiles(path))
+                    except (OSError,ValueError):exists=False
+                    if not exists:missing.append(node.get('label',node['type'])+' / '+key+': '+path)
+        dialog=QtWidgets.QMessageBox(self)
+        dialog.setWindowTitle('Graph asset files')
+        dialog.setIcon(QtWidgets.QMessageBox.Warning if missing else QtWidgets.QMessageBox.Information)
+        dialog.setText(str(len(missing))+' missing file inputs out of '+str(checked)+'.' if missing else 'All '+str(checked)+' assigned file inputs were found.')
+        dialog.setInformativeText('Checks the current graph and enabled overrides, including UDIM tiles. External referenced materials are not included.')
+        if missing:dialog.setDetailedText('\n'.join(missing))
+        dialog.exec_()
     def reset_input(self):
+        self.table.itemDelegateForColumn(1).commit_pending()
         identity=self.selected();row=self.table.currentRow()
         if not identity or row<0:return
         key=self.table.item(row,0).text();before=copy.deepcopy(self.graph)

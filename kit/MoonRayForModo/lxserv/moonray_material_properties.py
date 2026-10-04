@@ -234,3 +234,26 @@ class MoonShineLayerFilter(Observed):
 
 lx.bless(AddMoonShineOverride,'moonray.material.addMoonShineOverride')
 lx.bless(MoonShineLayerFilter,'moonray.material.layerFilter')
+
+
+class AddOverrideAbove(OpenNodes):
+    def basic_Enable(self,msg):
+        items=selected()
+        return len(items)==1 and items[0].type=='advancedMaterial'
+    def basic_Execute(self,msg,flags):
+        import modo
+        import copy
+        from moonray_modo import nodes
+        if not self.basic_Enable(msg):raise ValueError('Select one Modo material')
+        source=selected()[0];parent=source.parent;index=source.parentIndex
+        if parent is None:raise ValueError('The material must belong to the Shader Tree')
+        settings=properties.read(source)
+        graph=copy.deepcopy(settings.get('node_graph')) if material_override.enabled(settings) and settings.get('node_graph') else nodes.from_material(source)
+        settings=material_override.synchronize({},graph)
+        scene=modo.Scene()
+        item=scene.addItem('material.moonrayMoonShine',name='MoonShine Override - '+source.name)
+        item.setParent(parent,index)
+        properties.write(item,settings)
+        scene.select(item)
+
+lx.bless(AddOverrideAbove,'moonray.material.addOverrideAbove')
