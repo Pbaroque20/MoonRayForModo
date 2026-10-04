@@ -375,3 +375,12 @@ class AssignLibraryMaterial(lxu.command.BasicCommand):
 
 lx.bless(AssetLibrary,'moonray.library')
 lx.bless(AssignLibraryMaterial,'moonray.library.assign')
+
+class AssignMaterialBundle(lxu.command.BasicCommand):
+    def __init__(self):
+        super().__init__();self.dyna_Add('settings',lx.symbol.sTYPE_STRING)
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import properties,material_bundle
+        material_bundle.assign(properties.decode(self.dyna_String(0))['path'])
+lx.bless(AssignMaterialBundle,'moonray.library.bundle')

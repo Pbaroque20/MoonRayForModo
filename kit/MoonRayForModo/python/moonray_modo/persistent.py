@@ -19,6 +19,7 @@ class Session(QtCore.QObject):
     output=QtCore.Signal(str)
     ready=QtCore.Signal(int)
     image=QtCore.Signal(int,str,str)
+    memory_image=QtCore.Signal(object)
     acknowledged=QtCore.Signal(int)
     failed=QtCore.Signal(str)
     status=QtCore.Signal(str)
@@ -69,6 +70,7 @@ class Session(QtCore.QObject):
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(request['runtime']).items():env.insert(key,value)
         env.insert('MOONRAY_MODO_BUCKETS','1')
+        env.insert('MOONRAY_MODO_SHARED','1')
         env.insert('MOONRAY_MODO_SESSION',str(self.root))
         env.insert('MOONRAY_MODO_GENERATION',str(request['id']))
         self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.root))
@@ -96,6 +98,13 @@ class Session(QtCore.QObject):
         self.partial+=text
         while '\n' in self.partial:
             line,self.partial=self.partial.split('\n',1)
+            if line.startswith('@@MODO_SHARED '):
+                try:
+                    from .shared_image import receive
+                    packet=receive(line,self.process.processId())
+                    if not self.stopping and not self.closed and self.latest and packet[0]==self.latest['id']:self.memory_image.emit(packet)
+                except (ValueError,OSError) as exc:self.status.emit('Progressive image skipped: '+str(exc))
+                continue
             if not line.startswith('@@MODO_SESSION '):continue
             parts=line.strip().split()
             if len(parts)!=3:continue

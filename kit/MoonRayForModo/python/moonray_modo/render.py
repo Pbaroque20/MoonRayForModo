@@ -13,6 +13,7 @@ from .persistent import Session, supported as persistent_supported
 class Renderer(QtCore.QObject):
     buckets = QtCore.Signal(object)
     image_ready = QtCore.Signal(str)
+    image_object = QtCore.Signal(object)
     status = QtCore.Signal(str)
     failed = QtCore.Signal(str)
     finished = QtCore.Signal(str)
@@ -22,12 +23,14 @@ class Renderer(QtCore.QObject):
         super().__init__(parent)
         self.buffers=BufferCache(self)
         self.buffers.image_ready.connect(self.image_ready.emit)
+        self.buffers.image_object.connect(self.image_object.emit)
         self.buffers.notice.connect(self.status.emit)
         self.session=Session(self)
         self.buffers.selected.connect(self.session.select_view)
         self.session.output.connect(self._consume_log)
         self.session.ready.connect(self._persistent_ready)
         self.session.image.connect(self._persistent_image)
+        self.session.memory_image.connect(self._persistent_memory)
         self.session.acknowledged.connect(self._persistent_applied)
         self.session_files={}
         self.session.failed.connect(self.failed.emit)
@@ -251,6 +254,12 @@ class Renderer(QtCore.QObject):
             for path in base.parent.glob(base.name+'*'):
                 try:path.unlink()
                 except OSError:pass
+
+    def _persistent_memory(self,packet):
+        serial,key,width,height,pixels=packet
+        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
+        try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
+        except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
 
     def _persistent_image(self,serial,key,path):
         if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return

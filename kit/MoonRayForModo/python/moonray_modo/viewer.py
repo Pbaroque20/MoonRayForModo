@@ -21,6 +21,9 @@ class Preview(QtWidgets.QOpenGLWidget):
 
     def load(self, path):
         image = QtGui.QImage(str(path))
+        self.set_image(image)
+
+    def set_image(self,image):
         if image.isNull():
             raise ValueError('MoonRay output could not be decoded as an image.')
         if image.size() != self.image.size():

@@ -113,6 +113,16 @@
       "name": "component",
       "type": "Int",
       "default": "0"
+    },
+    "attrUvAffine": {
+      "name": "uv_affine",
+      "type": "Vec4f",
+      "default": "Vec4f(1,0,0,1)"
+    },
+    "attrUvOffset": {
+      "name": "uv_offset",
+      "type": "Vec2f",
+      "default": "Vec2f(0.f,0.f)"
     }
   }
 }

@@ -62,6 +62,24 @@ public:
             }
             n=normalize(Vec3f(sx,sy,1)); *out=Color(n.x,n.y,n.z); return;
         }
+        if(mode==12) {
+            const auto a=me->get(attrUvAffine);const auto offset=me->get(attrUvOffset);const auto st=state.getSt();
+            *out=Color(a.x*st.x+a.y*st.y+offset.x,a.z*st.x+a.w*st.y+offset.y,0);return;
+        }
+        if(mode==13) {
+            const auto a=me->get(attrUvAffine);const float det=a.x*a.w-a.y*a.z;
+            const Vec3f N=state.getN();Vec3f T=state.getdPds()-N*dot(N,state.getdPds());
+            Vec3f U=(state.getdPds()*a.w-state.getdPdt()*a.z);
+            if(std::abs(det)<1e-12f || length(T)<1e-9f){*out=Color(.5f,.5f,1);return;}
+            U=U/det;U=U-N*dot(N,U);
+            if(length(U)<1e-9f){*out=Color(.5f,.5f,1);return;}
+            T=normalize(T);U=normalize(U);Vec3f B=cross(N,T),V=cross(N,U);
+            const Vec3f derivativeV=(-state.getdPds()*a.y+state.getdPdt()*a.x)/det;
+            if(dot(V,derivativeV)<0)V=-V;
+            const Color encoded=evalColor(me,attrForeground,tls,state);
+            const Vec3f normal=U*(encoded.r*2-1)+V*(encoded.g*2-1)+N*(encoded.b*2-1);
+            *out=Color(dot(normal,T)*.5f+.5f,dot(normal,B)*.5f+.5f,dot(normal,N)*.5f+.5f);return;
+        }
         if(mode==5 || mode==6) {
             const Color st=evalColor(me,attrCoordinates,tls,state);
             Vec2f uv=(me->get(attrUseCoordinates)?Vec2f(st.r,st.g):state.getSt())*me->get(attrScale);

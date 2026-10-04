@@ -16,7 +16,13 @@ def capture_frame(time, evaluated=False, motion=False, fps=24):
     original = selection.GetTime()
     try:
         selection.SetTime(float(time))
-        snapshot = host.snapshot(evaluated_geometry=evaluated)
+        from . import properties
+        from .extra_geometry import attach
+        import copy
+        asset_controls=copy.deepcopy(properties.scene_settings().get('production',{}))
+        def capture():
+            value=host.snapshot(evaluated_geometry=evaluated);attach(value,asset_controls);return value
+        snapshot = capture()
         snapshot.pop('_evaluated_data',None);snapshot.pop('_full_capture',None)
         if motion:
             camera = snapshot['camera']
@@ -27,8 +33,9 @@ def capture_frame(time, evaluated=False, motion=False, fps=24):
                 samples = []
                 for endpoint in endpoints:
                     selection.SetTime(float(time)+endpoint/fps)
-                    samples.append(host.snapshot(evaluated_geometry=evaluated))
+                    samples.append(capture())
                 apply_motion(snapshot, samples[0], samples[1], endpoints)
+                snapshot['_external_motion_settings']=asset_controls
         return snapshot
     finally:
         selection.SetTime(original)

@@ -9,7 +9,7 @@ MAPS={
  'swizzle':{'in':('Rgb',[0,0,0]),'channels':('String','rgb'),'index':('Int',0)},
  'combine':{'in1':('Float',0),'in2':('Float',0),'in3':('Float',0)},
  'clamp':{'in':('Rgb',[0,0,0]),'low':('Rgb',[0,0,0]),'high':('Rgb',[1,1,1])},
- 'image':{'file':('String',''),'srgb':('Bool',True),'color_space':('String',''),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0])},
+ 'image':{'file':('String',''),'srgb':('Bool',True),'color_space':('String',''),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0]),'uaddressmode':('String','periodic'),'vaddressmode':('String','periodic'),'default':('Rgb',[0,0,0]),'filtertype':('String','linear')},
  'multiply':{'in1':('Rgb',[1,1,1]),'in2':('Rgb',[1,1,1])},
  'add':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
  'subtract':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
@@ -27,7 +27,7 @@ def specs(kind):
     if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
     return {key:{'name':key,'type':value[0],'default_value':value[1],
-                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp') else ''} for key,value in MAPS[kind].items()}
+                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype') else ''} for key,value in MAPS[kind].items()}
 
 
 def category(kind):
@@ -158,7 +158,22 @@ def emit(material,name,index,lines,library,output="root"):
                 uv=refs.get('texcoord')
                 if uv is None and 'texcoord' in params:uv=definition('ConstantColorMap',path+'/authored_uv',{'color_value':vector(params['texcoord'],'Rgb')})
                 if uv is None:uv=definition('AttributeMap',path+'/uv',{'primitive_attribute_name':string(descriptor['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
-                attributes={'texture':string(prepare(params.get('file',''),params.get('srgb',True),color_space=params.get('color_space',''))),'gamma':'0','texture_coordinates':'2','input_texture_coordinates':binding(uv,'Vec3f')}
+                address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
+                u,v=params.get('uaddressmode','periodic'),params.get('vaddressmode','periodic')
+                if u not in address or v not in address:raise ValueError('Unknown image address mode')
+                if params.get('filtertype','linear')!='linear':raise ValueError('This image node supports linear filtering; choose a native ImageMap for other texture controls')
+                filename=params.get('file','')
+                if not filename:
+                    ref=definition('ConstantColorMap',path,{'color_value':values['default']})
+                    cache[identity]=ref
+                    return ref
+                coverage=None
+                if (u,v)!=('periodic','periodic'):
+                    if '<UDIM>' in filename:raise ValueError('UDIM images require periodic address modes')
+                    wrap={'coordinates':binding(uv,'Rgb'),'use_coordinates':'true','tile_u':str(address[u]),'tile_v':str(address[v])}
+                    if 'constant' in (u,v):coverage=definition('ModoTextureMap',path+'/coverage',dict(wrap,mode='6'))
+                    uv=definition('ModoTextureMap',path+'/wrapped',dict(wrap,mode='5'))
+                attributes={'texture':string(prepare(filename,params.get('srgb',True),color_space=params.get('color_space',''))),'gamma':'0','texture_coordinates':'2','input_texture_coordinates':binding(uv,'Vec3f'),'wrap_around':'true' if (u,v)==('periodic','periodic') else 'false'}
                 rgb=definition('ImageMap',path+'/rgb',attributes)
                 alpha=definition('ImageMap',path+'/alpha',dict(attributes,alpha_only='true'))
                 ref=definition('ModoTextureMap',path,{'background':binding(rgb,'Rgb'),'foreground':binding(alpha,'Rgb'),'blend':'5'})
@@ -166,6 +181,7 @@ def emit(material,name,index,lines,library,output="root"):
                 if not 0<=channel<=4: raise ValueError('Image channel must be 0 (RGB), 1-3 (RGB components), or 4 (alpha)')
                 if channel==4: ref=alpha
                 elif channel: ref=definition('ModoTextureMap',path+'/component',{'mode':'7','foreground':binding(ref,'Rgb'),'component':str(channel-1)})
+                if coverage:ref=definition('ModoTextureMap',path+'/default',{'background':values['default'],'foreground':binding(ref,'Rgb'),'mask':binding(coverage,'Float')})
             elif kind=='texcoord':
                 ref=definition('AttributeMap',path,{'primitive_attribute_name':string(image_descriptor(item)['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
             elif kind=='swizzle':

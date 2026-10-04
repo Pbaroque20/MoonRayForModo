@@ -46,7 +46,10 @@ def attach(scene,settings):
     from .host import world_matrix
     import modo,lx
     frame=scene.get('frame',round(lx.service.Selection().GetTime()*float(modo.Scene().fps)))
-    values=list(scene.get('extra_geometry',[]))
+    if '_external_motion_settings' in scene:
+        if scene['_external_motion_settings']!=settings:raise ValueError('Geometry asset settings changed after shutter capture; capture the frame again')
+        return
+    values=[value for value in scene.get('extra_geometry',[]) if not value.get('_external_asset')]
     for identity,entry in settings.get('objects',{}).items():
         path=entry.get('geometry_file','')
         if not path:continue
@@ -61,6 +64,10 @@ def attach(scene,settings):
             data=json.loads(path.read_text(encoding='utf-8'))
             if data.get('kind') not in ('curves','points'):raise ValueError('Geometry JSON needs kind curves or points')
             value=dict(data,identity=identity+'|external',source_item=identity,name=item.name,**transform,file=str(path),material=entry.get('material') or data.get('material',''))
+        value['_external_asset']=True
+        if value['kind'] in ('curves','points') and 'ids' in value:
+            from .geometry_ids import align
+            align(value,value)
         values.append(value)
     scene['extra_geometry']=values
 

@@ -117,3 +117,14 @@ def mesh_corners(layer, vertices, faces, uv, world_matrix):
         result.extend(face(layer,[vertices[i] for i in polygon],uv[offset:offset+size],world_matrix))
         offset += size
     return result
+
+
+def affine(layer):
+    a,b,c,d,e,f=layer.get('uv_matrix',[1,0,0,0,1,0])
+    angle=layer.get('rotation',0);co,si=math.cos(angle),math.sin(angle)
+    sx,sy=layer.get('scale',[1,1])
+    matrix=[sx*(co*a-si*d),sx*(co*b-si*e),sy*(si*a+co*d),sy*(si*b+co*e)]
+    offset=[sx*(co*c-si*f),sy*(si*c+co*f)]
+    if any(not math.isfinite(v) for v in matrix+offset):raise ValueError('UV transform must be finite')
+    if abs(matrix[0]*matrix[3]-matrix[1]*matrix[2])<1e-12:raise ValueError('Normal/bump UV transform is singular')
+    return matrix,offset

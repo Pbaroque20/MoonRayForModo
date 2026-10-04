@@ -5,13 +5,15 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from PySide2 import QtCore
+from PySide2 import QtCore,QtGui
+_retired_workers=set()
 from . import native, options, outputs
 from .buffers import conversion
 
 
 class BufferCache(QtCore.QObject):
     image_ready=QtCore.Signal(str)
+    image_object=QtCore.Signal(object)
     selected=QtCore.Signal(str)
     notice=QtCore.Signal(str)
 
@@ -25,6 +27,7 @@ class BufferCache(QtCore.QObject):
         self.process.errorOccurred.connect(self._error)
         self.process.readyReadStandardOutput.connect(self._read)
         self.frame=None;self.progressive=None;self.progressive_frames={};self.progressive_scene=None;self.job=None;self.displayed=None
+        self.worker=None
         self.key='beauty';self.display={};self.serial=0;self.closed=False;self.log=''
 
     def select(self,key,display):
@@ -33,8 +36,21 @@ class BufferCache(QtCore.QObject):
         self.selected.emit(key)
         self._request()
 
+    def publish_memory(self,key,width,height,pixels,runtime,snapshot,backend):
+        if self.closed or self.worker is not None or self.process.state()!=QtCore.QProcess.NotRunning:return
+        if not 0<len(pixels)<=64*1024*1024 or len(pixels)!=width*height*12:raise ValueError('Invalid shared image size')
+        folder=self.root/uuid.uuid4().hex;folder.mkdir()
+        frame={'folder':folder,'files':{},'linear':{key:(width,height,pixels)},'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':True}
+        if self.progressive_scene is not snapshot:self.progressive_frames.clear()
+        self.progressive_scene=snapshot;self.progressive=frame
+        self.progressive_frames.pop(key,None);self.progressive_frames[key]=frame
+        # Bound float AOV storage. Re-selecting an evicted AOV requests another snapshot.
+        while sum(sum(len(v[2]) for v in f.get('linear',{}).values()) for f in self.progressive_frames.values())>128*1024*1024:
+            self.progressive_frames.pop(next(iter(self.progressive_frames)))
+        self.serial+=1;self._request();self._prune()
+
     def publish(self,files,runtime,snapshot,backend,partial=False):
-        if partial and self.job and self.process.state()!=QtCore.QProcess.NotRunning:return
+        if partial and (self.worker is not None or (self.job and self.process.state()!=QtCore.QProcess.NotRunning)):return
         folder=self.root/uuid.uuid4().hex;folder.mkdir();copied={}
         try:
             for key,source in files.items():
@@ -55,6 +71,7 @@ class BufferCache(QtCore.QObject):
 
     def _request(self):
         if self.closed:return
+        if self.worker is not None:return
         if self.process.state()!=QtCore.QProcess.NotRunning:
             # Only stop our display converter; never stop the renderer or denoiser.
             self.process.kill();return
@@ -64,7 +81,7 @@ class BufferCache(QtCore.QObject):
 
     def _start(self):
         frame=self.progressive_frames.get(self.key,self.frame)
-        if frame is None or self.key not in frame['files']:
+        if frame is None or (self.key not in frame['files'] and self.key not in frame.get('linear',{})):
             self.notice.emit('Selected output will be available after a preview with these outputs completes.');return
         signature=hashlib.sha256(json.dumps([self.key,self.display],sort_keys=True).encode('utf-8')).hexdigest()
         destination=frame['folder']/(signature+'.png')
@@ -73,7 +90,18 @@ class BufferCache(QtCore.QObject):
         try:
             display=dict(self.display,working_space=frame['snapshot'].get('asset_settings',{}).get('working_space','rec709'))
             if display['working_space']=='acescg' and display.get('view')=='ocio' and display.get('source')=='Linear Rec.709 (sRGB)':display['source']='ACEScg'
-            args=conversion(outputs.display_kind(frame['snapshot'],self.key),frame['files'][self.key],destination,display)
+            kind=outputs.display_kind(frame['snapshot'],self.key)
+            if self.key in frame.get('linear',{}):
+                from .memory_display import supported,Worker
+                width,height,pixels=frame['linear'][self.key]
+                if not frame.get('memory_display_failed') and supported(kind,display,frame['runtime']):
+                    self.worker=Worker(pixels,width,height,kind,display,frame['runtime'],self)
+                    self.worker.finished.connect(self._memory_finished);self.worker.start();return
+                if self.key not in frame['files']:
+                    path=frame['folder']/(self.key+'.pfm')
+                    with path.open('wb') as stream:stream.write(('PF\n%d %d\n-1.0\n'%(width,height)).encode('ascii'));stream.write(pixels)
+                    frame['files'][self.key]=path
+            args=conversion(kind,frame['files'][self.key],destination,display)
             env=QtCore.QProcessEnvironment()
             for key,value in native.environment(frame['runtime']).items():env.insert(key,value)
             self.process.setProcessEnvironment(env)
@@ -81,6 +109,24 @@ class BufferCache(QtCore.QObject):
             self.process.setArguments(args);self.log='';self.process.start()
         except Exception as exc:
             self.job=None;self.notice.emit('Cannot display buffer: '+str(exc));self._prune()
+
+    def _memory_finished(self):
+        worker=self.worker
+        if worker is None:return
+        self.worker=None;job=self.job;self.job=None
+        data,width,height,error=getattr(worker,'outcome',(None,0,0,'Display worker produced no image'))
+        worker.deleteLater()
+        if self.closed:return
+        if job and job['serial']==self.serial:
+            if error:
+                job['frame']['memory_display_failed']=True
+                self.notice.emit('Using file display fallback: '+error);self._request()
+            else:
+                self.displayed=dict(job['frame'],key=job['key'])
+                image=QtGui.QImage(data,width,height,width*4,QtGui.QImage.Format_RGBA8888).copy()
+                self.image_object.emit(image)
+        else:self._request()
+        self._prune()
 
     def _read(self):
         self.log=(self.log+bytes(self.process.readAllStandardOutput()).decode('utf-8',errors='replace'))[-4096:]
@@ -130,6 +176,13 @@ class BufferCache(QtCore.QObject):
 
     def close(self):
         self.closed=True
+        if self.worker is not None:
+            worker=self.worker;self.worker=None
+            worker.finished.disconnect(self._memory_finished)
+            if not worker.wait(2000):
+                worker.setParent(None);_retired_workers.add(worker)
+                worker.finished.connect(lambda w=worker:(_retired_workers.discard(w),w.deleteLater()))
+            else:worker.deleteLater()
         if self.process.state()!=QtCore.QProcess.NotRunning:
             self.process.kill();self.process.waitForFinished(2000)
         if self.process.state()==QtCore.QProcess.NotRunning:self.directory.cleanup()

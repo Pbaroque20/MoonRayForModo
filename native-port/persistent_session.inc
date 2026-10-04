@@ -9,6 +9,7 @@
 #include <scene_rdl2/common/fb_util/VariablePixelBuffer.h>
 #include <moonray/rendering/rndr/RenderOutputDriver.h>
 #include <cctype>
+#include "modo_shared_image.h"
 
 void moonray::RaasCommandLineApplication::renderPersistent(const std::string& directory)
 {
@@ -28,6 +29,8 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
         context->setRenderPrepCallBack({}, waiting);
     };
     load();
+    ModoSharedImage sharedImage;
+    const bool useShared=std::getenv("MOONRAY_MODO_SHARED")!=nullptr;
     for (;;) {
         event("APPLIED", id);
         bool complete = false;
@@ -39,6 +42,7 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                 auto lastSnapshot = std::chrono::steady_clock::now();
 
                 auto snapshot = [&]() {
+                    if(useShared && !sharedImage.ready())return;
                     // The selector changes independently of scene commands: never restart a frame.
                     std::string key="beauty";
                     { std::ifstream view(fs::u8path(directory)/"view.txt"); std::string selected;
@@ -55,13 +59,25 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         const auto* outputs=context->getRenderOutputDriver();
                         for (unsigned i=0;i<outputs->getNumberOfRenderOutputs();++i) {
                             if (outputs->getRenderOutput(i)->getName()!="/modo/preview/"+key) continue;
-                            // Heat, weight, odd and deep outputs need additional snapshot APIs.
-                            if (outputs->requiresHeatMap(i)||outputs->requiresWeightBuffer(i)||outputs->requiresRenderBufferOdd(i)||outputs->requiresDeepBuffer(i)||outputs->requiresCryptomatteBuffer(i)) break;
-                            context->snapshotRenderOutput(&aov,i,&pixels,&pixels,nullptr,nullptr,nullptr,true,false);
+                            if (outputs->requiresDeepBuffer(i)||outputs->requiresCryptomatteBuffer(i)) break;
+                            scene_rdl2::fb_util::HeatMapBuffer heat;
+                            scene_rdl2::fb_util::FloatBuffer weight;
+                            scene_rdl2::fb_util::RenderBuffer odd;
+                            if(outputs->requiresHeatMap(i))context->snapshotHeatMapBuffer(&heat,true,false);
+                            if(outputs->requiresWeightBuffer(i))context->snapshotWeightBuffer(&weight,true,false);
+                            if(outputs->requiresRenderBufferOdd(i))context->snapshotRenderBufferOdd(&odd,true,false);
+                            context->snapshotRenderOutput(&aov,i,&pixels,&pixels,
+                                outputs->requiresHeatMap(i)?&heat:nullptr,outputs->requiresWeightBuffer(i)?&weight:nullptr,
+                                outputs->requiresRenderBufferOdd(i)?&odd:nullptr,true,false);
                             channels=outputs->getNumberOfChannels(i);break;
                         }
                         if (!channels || channels>3 || aov.getWidth()!=pixels.getWidth() || aov.getHeight()!=pixels.getHeight()) return;
                     }
+                    if(useShared && sharedImage.publish(id,key,pixels.getWidth(),pixels.getHeight(),[&](size_t i,float* rgb){
+                        const auto& pixel=pixels.getData()[i];rgb[0]=pixel[0];rgb[1]=pixel[1];rgb[2]=pixel[2];
+                        if(channels){const float* value=reinterpret_cast<const float*>(aov.getData())+i*channels;
+                            rgb[0]=value[0];rgb[1]=channels>1?value[1]:value[0];rgb[2]=channels>2?value[2]:(channels==1?value[0]:0);}
+                    }))return;
                     const auto temporary = fs::u8path(directory) / ("preview_" + id + ".tmp");
                     std::ofstream file(temporary, std::ios::binary);
                     file << "PF\n" << pixels.getWidth() << " " << pixels.getHeight() << "\n-1.0\n";
@@ -83,7 +99,7 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
                     printStatusLine(*context, driver->getLastFrameMcrtStartTime(), false);
                     modoBucketOutput(id,driver->getWidth(),driver->getHeight());
-                    if (std::chrono::steady_clock::now()-lastSnapshot >= std::chrono::seconds(1)) {
+                    if (std::chrono::steady_clock::now()-lastSnapshot >= std::chrono::milliseconds(250)) {
                         try { snapshot(); } catch (const std::exception& e) {
                             std::cerr << "Modo progressive snapshot: " << e.what() << std::endl;
                         }

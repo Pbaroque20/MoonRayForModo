@@ -103,6 +103,11 @@ def apply_motion(scene, start, end, endpoints):
     if affected:warnings.append('Particle/strand membership uses frame-time visibility; births/deaths inside the shutter are not integrated.')
     for identity,original in center.items():
         a,b=first.get(identity,original),last.get(identity,original)
+        if original.get('kind')=='vdb':
+            # VDB deformation comes from its velocity grid; density uses frame time.
+            extras.append(dict(original,matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY)))
+            if a.get('file')!=original.get('file') or b.get('file')!=original.get('file'):warnings.append('Animated VDB density uses the frame-time grid; shutter motion requires its velocity grid.')
+            continue
         policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'strict')
         if policy=='velocity':
             velocity=original.get('velocities',[])
@@ -112,6 +117,8 @@ def apply_motion(scene, start, end, endpoints):
             points=lambda t:[[p[k]+v[k]*t/fps for k in range(3)] for p,v in zip(original['vertices'],velocity)]
             value=dict(original,vertices=points(endpoints[0]),vertices_close=points(endpoints[1]));value.pop('velocities',None);extras.append(value);continue
         if policy=='freeze':extras.append(dict(original));continue
+        from .geometry_ids import align
+        a,b=align(original,a),align(original,b)
         if len(a['vertices'])!=len(original['vertices']) or len(b['vertices'])!=len(original['vertices']) or a.get('counts')!=b.get('counts'):raise ValueError('Motion blur requires stable curve/point topology')
         node=dict(original,matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY),vertices=a['vertices'],vertices_close=b['vertices'])
         extras.append(node)

@@ -63,6 +63,12 @@ def bindings(material, index, lines, glass=False, absorption=False):
         if layer.get('coordinate_key'):
             coordinates = node('AttributeMap', {'primitive_attribute_name':string(layer['coordinate_key']),
                 'primitive_attribute_type':'1', 'warn_when_unavailable':'true', 'default_value':'Rgb(0,0,0)'})
+        normal_basis=None
+        if effect in ('normal','bump') and kind!='constant' and not coordinates:
+            from .coordinates import affine
+            matrix,offset=affine(layer)
+            normal_basis=matrix
+            coordinates=node('ModoTextureMap',{'mode':'12','uv_affine':vector(matrix,'Vec4'),'uv_offset':vector(offset,'Vec2')})
         if kind=='constant':
             foreground = rgb(layer['value'])
         elif kind in ('checker','noise'):
@@ -134,6 +140,8 @@ def bindings(material, index, lines, glass=False, absorption=False):
             foreground=node('ModoTextureMap',{'mode':'8','foreground':foreground,'distance':number(layer['gain'])})
         if layer.get('invert'):
             foreground = node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
+        if effect=='normal' and normal_basis is not None:
+            foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_affine':vector(normal_basis,'Vec4')})
         blend = layer.get('blend','normal')
         if blend not in BLENDS:
             raise ValueError('Unsupported blend: '+blend)

@@ -238,7 +238,7 @@ class Panel(QtWidgets.QWidget):
             else: self.pages['display'].addRow(label,widget)
         note=QtWidgets.QLabel('Display controls affect Beauty and lighting buffers only. EXRs remain linear. Select a LUT matching its chosen input space. Depth, normals and other data buffers bypass the view transform.')
         note.setWordWrap(True);self.pages['display'].addRow(note)
-        lighting_note = QtWidgets.QLabel('Glass uses Modo Transparency Amount/Color, Refraction Index, Roughness and Transparency Roughness. Use closed meshes for solid glass. Start with IOR 1.5 and Transparency 100%; increase Glossy and Mirror/refraction bounces for multiple glass surfaces. UV images can drive transmission amount, color and roughness. Absorption distance uses a closed-volume model. Dispersion is not translated. New material features are unverified; see compatibility notices below.')
+        lighting_note = QtWidgets.QLabel('Glass uses Modo Transparency Amount/Color, Refraction Index, Roughness and Transparency Roughness. Use closed meshes for solid glass. Start with IOR 1.5 and Transparency 100%; increase Glossy and Mirror/refraction bounces for multiple glass surfaces. UV images can drive transmission amount, color and roughness. Absorption distance uses a closed-volume model. Dispersion uses an Abbe approximation. New material features are unverified; see compatibility notices below.')
         lighting_note.setWordWrap(True)
         self.pages['lighting'].addRow(lighting_note)
         self.final_motion=QtWidgets.QCheckBox('Include motion blur / motion vectors in final outputs');controls.addRow(self.final_motion)
@@ -335,6 +335,7 @@ class Panel(QtWidgets.QWidget):
         self.renderer.status.connect(self.status.setText)
         self.renderer.failed.connect(self._failed)
         self.renderer.image_ready.connect(self._image)
+        self.renderer.image_object.connect(self._image)
         self.renderer.finished.connect(self._finished)
         self._scene_id = None
         self._object_signature = None
@@ -783,7 +784,8 @@ class Panel(QtWidgets.QWidget):
 
     def _image(self, path):
         try:
-            self.preview.load(path)
+            if isinstance(path,QtGui.QImage):self.preview.set_image(path)
+            else:self.preview.load(path)
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             key=frame.get('key',snapshot.get('preview_buffer','beauty'));label='Beauty' if key=='beauty' else options.AOVS.get(key,(key,))[0]

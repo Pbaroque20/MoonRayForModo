@@ -19,7 +19,7 @@ class Browser(QtWidgets.QDialog):
   self.import_model=QtWidgets.QPushButton('Import model');self.import_model.clicked.connect(self.import_asset);actions.addWidget(self.import_model)
   copy=QtWidgets.QPushButton('Copy path');copy.clicked.connect(self.copy_path);actions.addWidget(copy)
   row=QtWidgets.QHBoxLayout();layout.addLayout(row)
-  for title,callback in [('Add asset folder…',self.add_folder),('Remove folder...',self.remove_folder),('Refresh',self.refresh),('Save selected material…',self.save_material)]:
+  for title,callback in [('Add asset folder…',self.add_folder),('Remove folder...',self.remove_folder),('Refresh',self.refresh),('Save selected material…',self.save_material),('Save graph bundle...',self.save_bundle)]:
    button=QtWidgets.QPushButton(title);button.clicked.connect(callback);row.addWidget(button)
   self.status=QtWidgets.QLabel();layout.addWidget(self.status)
   self.search.textChanged.connect(self.filter);self.category.currentTextChanged.connect(self.filter);self.list.itemSelectionChanged.connect(self.selection)
@@ -74,7 +74,13 @@ class Browser(QtWidgets.QDialog):
   try:
    from . import properties
    import lx
-   row=self.selected();shader,parameters=library.read_preset(row['path']) if row.get('category')=='Saved materials' else (row['shader'],row['parameters'])
+   row=self.selected()
+   if row.get('category')=='Saved materials':
+    path=Path(row['path'])
+    if path.stat().st_size>16*1024*1024:raise ValueError('Preset exceeds size limit')
+    if json.loads(path.read_text(encoding='utf-8')).get('format')==2:
+     lx.eval('moonray.library.bundle '+properties.encode({'path':str(path)}));self.status.setText('Material graph and dependencies assigned.');return
+   shader,parameters=library.read_preset(row['path']) if row.get('category')=='Saved materials' else (row['shader'],row['parameters'])
    payload=properties.encode({'shader':shader,'parameters':parameters});lx.eval('moonray.library.assign '+payload)
    self.status.setText('Material assigned. Its properties are available in the MoonShine panel.')
   except Exception as exc:self.status.setText(str(exc))
@@ -85,7 +91,7 @@ class Browser(QtWidgets.QDialog):
    if len(selected)!=1:raise ValueError('Select one MoonShine material in the Shader Tree')
    values=properties.read(selected[0]);shader=values.get('native_shader')
    if not shader:raise ValueError('Choose a native MoonRay material type before saving a preset')
-   if values.get('node_graph') or values.get('materialx_override'):raise ValueError('Graph presets need their dependencies. Export a MaterialX document from the node editor instead.')
+   if values.get('node_graph') or values.get('materialx_override'):raise ValueError('Use Save graph bundle to include graph dependencies and textures.')
    parameters=shader_library.validate(shader,values.get('native_parameters',{}))
    for key,value in parameters.items():
     if shader_library.catalog()[shader]['attributes'][key]['type'].startswith('SceneObject') and value is not None:raise ValueError('This material references other scene items; save a self-contained preset')
@@ -96,6 +102,24 @@ class Browser(QtWidgets.QDialog):
    target.write_text(json.dumps({'format':1,'name':selected[0].name,'shader':shader,'parameters':parameters},indent=2),encoding='utf-8')
    if str(target.parent) not in self.roots:self.roots.append(str(target.parent));self.settings.setValue('roots',json.dumps(self.roots))
    self.refresh()
+  except Exception as exc:self.status.setText(str(exc))
+ def save_bundle(self):
+  try:
+   from . import materials,properties,material_bundle
+   import modo
+   selected=materials.selected()
+   if len(selected)!=1:raise ValueError('Select one native MoonShine material or MaterialX override')
+   parent=QtWidgets.QFileDialog.getExistingDirectory(self,'Choose a parent folder for the new material bundle')
+   if not parent:return
+   name,ok=QtWidgets.QInputDialog.getText(self,'Material bundle','New folder name:')
+   if not ok:return
+   if not name or name in ('.','..') or any(c in name for c in '<>:"/\\|?*') or name[-1] in '. ':raise ValueError('Enter a valid folder name')
+   items={item.id:item for item in modo.Scene().items()}
+   def lookup(identity):
+    item=items[identity];return {'name':item.name,'settings':properties.read(item)}
+   manifest=material_bundle.save(selected[0].id,lookup,Path(parent)/name)
+   if parent not in self.roots:self.roots.append(parent);self.settings.setValue('roots',json.dumps(self.roots))
+   self.refresh();self.status.setText('Saved graph, referenced materials and textures: '+str(manifest))
   except Exception as exc:self.status.setText(str(exc))
  def closeEvent(self,event):self.timer.stop();super().closeEvent(event)
 

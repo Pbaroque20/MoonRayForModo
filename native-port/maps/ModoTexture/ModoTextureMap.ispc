@@ -46,6 +46,23 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         }
         n=normalize(Vec3f_ctor(sx,sy,1));return Color_ctor(n.x,n.y,n.z);
     }
+    if(mode==12) {
+        Vec4f a=getAttrUvAffine(me);Vec2f offset=getAttrUvOffset(me);
+        return Color_ctor(a.x*state.mSt.x+a.y*state.mSt.y+offset.x,a.z*state.mSt.x+a.w*state.mSt.y+offset.y,0);
+    }
+    if(mode==13) {
+        Vec4f a=getAttrUvAffine(me);float det=a.x*a.w-a.y*a.z;
+        Vec3f N=getN(state);Vec3f T=state.mdPds-N*dot(N,state.mdPds);
+        if(abs(det)<1e-12f || length(T)<1e-9f)return Color_ctor(.5f,.5f,1);
+        Vec3f U=(state.mdPds*a.w-state.mdPdt*a.z)/det;U=U-N*dot(N,U);
+        if(length(U)<1e-9f)return Color_ctor(.5f,.5f,1);
+        T=normalize(T);U=normalize(U);Vec3f B=cross(N,T),V=cross(N,U);
+        Vec3f derivativeV=(state.mdPds*(-a.y)+state.mdPdt*a.x)/det;
+        if(dot(V,derivativeV)<0)V=V*(-1.f);
+        Color encoded=evalAttrForeground(me,tls,state);
+        Vec3f normal=U*(encoded.r*2-1)+V*(encoded.g*2-1)+N*(encoded.b*2-1);
+        return Color_ctor(dot(normal,T)*.5f+.5f,dot(normal,B)*.5f+.5f,dot(normal,N)*.5f+.5f);
+    }
     if(mode==5 || mode==6) {
         Color st=evalAttrCoordinates(me,tls,state);
         Vec2f scale=getAttrScale(me);

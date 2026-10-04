@@ -28,7 +28,7 @@ def string(value):
 
 
 def vector(values, kind='Vec3'):
-    expected = 2 if kind == 'Vec2' else 3
+    expected = 2 if kind == 'Vec2' else (4 if kind in ('Vec4', 'Rgba') else 3)
     if len(values) != expected:
         raise ValueError("Invalid vector dimension")
     return '%s(%s)' % (kind, ', '.join(number(v) for v in values))
