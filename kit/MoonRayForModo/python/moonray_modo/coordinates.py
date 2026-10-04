@@ -128,3 +128,14 @@ def affine(layer):
     if any(not math.isfinite(v) for v in matrix+offset):raise ValueError('UV transform must be finite')
     if abs(matrix[0]*matrix[3]-matrix[1]*matrix[2])<1e-12:raise ValueError('Normal/bump UV transform is singular')
     return matrix,offset
+
+
+def fallback_uvs(faces):
+    """A nondegenerate local surface basis for locator-projected meshes without UVs."""
+    result=[]
+    for face in faces:
+        n=len(face)
+        if n==3:result.extend([[0,0],[1,0],[0,1]])
+        elif n==4:result.extend([[0,0],[1,0],[1,1],[0,1]])
+        else:result.extend([[.5+.5*math.cos(2*math.pi*i/n),.5+.5*math.sin(2*math.pi*i/n)] for i in range(n)])
+    return result

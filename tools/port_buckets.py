@@ -25,3 +25,15 @@ if '#include "modo_bucket_output.h"' not in s:
     s=s.replace(anchor,anchor+'\n        modoBucketOutput("0",driver->getWidth(),driver->getHeight());')
     p.write_bytes(s.encode('utf-8'))
 print('Active tile telemetry source enabled')
+
+# Upstream BATCH hard-codes Morton. Use the supported scene setting also
+# exported for progressive previews, rather than an undeclared batch attribute.
+p=base/'lib/rendering/rndr/RenderContext.cc'
+s=p.read_text(encoding='utf-8')
+old='case RenderMode::BATCH:\n        fs->mTileSchedulerType = TileScheduler::MORTON;'
+new='case RenderMode::BATCH:\n        fs->mTileSchedulerType = (unsigned)vars.get(scene_rdl2::rdl2::SceneVariables::sProgressiveTileOrder);'
+if old in s:
+    s=s.replace(old,new,1)
+    p.write_bytes(s.encode('utf-8'))
+elif new not in s:
+    raise RuntimeError('Batch scheduler source changed; cannot apply tile-order setting safely')

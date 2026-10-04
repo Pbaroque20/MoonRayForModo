@@ -34,11 +34,20 @@ static float noise2(float x,float y) {
 }
 RDL2_DSO_CLASS_BEGIN(ModoTextureMap, scene_rdl2::rdl2::Map)
 public:
+    ispc::ModoTextureMap mData;
     ModoTextureMap(const scene_rdl2::rdl2::SceneClass& sc,const std::string& name):Parent(sc,name) {
         mSampleFunc=sample;
         mSampleFuncv=(scene_rdl2::rdl2::SampleFuncv)ispc::ModoTextureMap_getSampleFunc();
     }
-    void update() override {}
+    void update() override {
+        mOptionalAttributes.clear();mData.uv=-1;mData.base=-1;
+        mData.missing=sLogEventRegistry.createEvent(scene_rdl2::logging::WARN_LEVEL,"Normal/bump UV coordinates or derivatives unavailable; using neutral result");
+        if(!get(attrUvName).empty()) {
+            TypedAttributeKey<Vec2f> uv(get(attrUvName),true),base("modo_primary_uv");
+            mData.uv=uv;mData.base=base;
+            mOptionalAttributes.push_back(uv);mOptionalAttributes.push_back(base);
+        }
+    }
     static void sample(const scene_rdl2::rdl2::Map* self,TLState* tls,const State& state,Color* out) {
         const auto* me=static_cast<const ModoTextureMap*>(self);
         const int mode=me->get(attrMode);
@@ -57,17 +66,38 @@ public:
                 shifted.setSt(uv-Vec2f(e,0)); float left=evalFloat(me,attrHeight,tls,other);
                 shifted.setSt(uv+Vec2f(0,e)); float up=evalFloat(me,attrHeight,tls,other);
                 shifted.setSt(uv-Vec2f(0,e)); float down=evalFloat(me,attrHeight,tls,other);
-                sx-=me->get(attrBumpStrength)*(right-left)/(2*e*max(1.e-6f,length(state.getdPds())));
-                sy-=me->get(attrBumpStrength)*(up-down)/(2*e*max(1.e-6f,length(state.getdPdt())));
+                const Vec3f N=state.getN();Vec3f T=state.getdPds()-N*dot(N,state.getdPds());
+                const float lengthT=length(T);
+                if(lengthT>1.e-9f) {
+                    T=T/lengthT;const Vec3f B=cross(N,T);
+                    const float dx=(right-left)/(2*e*lengthT),dy=(up-down)/(2*e);
+                    const float crossT=dot(state.getdPdt(),T),crossB=dot(state.getdPdt(),B);
+                    sx-=me->get(attrBumpStrength)*dx;
+                    if(std::abs(crossB)>1.e-9f)sy-=me->get(attrBumpStrength)*(dy-dx*crossT)/crossB;
+                }
             }
             n=normalize(Vec3f(sx,sy,1)); *out=Color(n.x,n.y,n.z); return;
         }
+        Vec2f namedUv(0.f,0.f);Vec4f jacobian(1.f,0.f,0.f,1.f);
+        const bool named=me->mData.uv>=0;
+        if((mode==12 || mode==13) && named) {
+            TypedAttributeKey<Vec2f> key(me->mData.uv),baseKey(me->mData.base);
+            if(!state.isProvided(key) || !state.isProvided(baseKey) || !state.isdsProvided(key) || !state.isdtProvided(key)) {
+                moonray::shading::logEvent(me,me->mData.missing);
+                *out=mode==13?Color(.5f,.5f,1.f):Color(0.f);return;
+            }
+            const Vec2f ds=state.getdAttributeds(key),dt=state.getdAttributedt(key);
+            const Vec2f delta=state.getSt()-state.getAttribute(baseKey);
+            namedUv=state.getAttribute(key)+ds*delta.x+dt*delta.y;
+            jacobian=Vec4f(ds.x,dt.x,ds.y,dt.y);
+        }
         if(mode==12) {
+            if(named){*out=Color(namedUv.x,namedUv.y,0);return;}
             const auto a=me->get(attrUvAffine);const auto offset=me->get(attrUvOffset);const auto st=state.getSt();
             *out=Color(a.x*st.x+a.y*st.y+offset.x,a.z*st.x+a.w*st.y+offset.y,0);return;
         }
         if(mode==13) {
-            const auto a=me->get(attrUvAffine);const float det=a.x*a.w-a.y*a.z;
+            const auto a=named?jacobian:me->get(attrUvAffine);const float det=a.x*a.w-a.y*a.z;
             const Vec3f N=state.getN();Vec3f T=state.getdPds()-N*dot(N,state.getdPds());
             Vec3f U=(state.getdPds()*a.w-state.getdPdt()*a.z);
             if(std::abs(det)<1e-12f || length(T)<1e-9f){*out=Color(.5f,.5f,1);return;}
@@ -78,7 +108,7 @@ public:
             if(dot(V,derivativeV)<0)V=-V;
             Color encoded=evalColor(me,attrForeground,tls,state);
             const auto offset=me->get(attrUvOffset);const auto st=state.getSt();
-            const float u=a.x*st.x+a.y*st.y+offset.x,v=a.z*st.x+a.w*st.y+offset.y;
+            const float u=named?namedUv.x:a.x*st.x+a.y*st.y+offset.x,v=named?namedUv.y:a.z*st.x+a.w*st.y+offset.y;
             if(me->get(attrTileU)==2 && u-2*std::floor(u/2)>1)encoded.r=1-encoded.r;
             if(me->get(attrTileV)==2 && v-2*std::floor(v/2)>1)encoded.g=1-encoded.g;
             const Vec3f normal=U*(encoded.r*2-1)+V*(encoded.g*2-1)+N*(encoded.b*2-1);

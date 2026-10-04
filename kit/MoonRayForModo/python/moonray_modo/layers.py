@@ -129,10 +129,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     node['axis'] = channel(locator,'projAxis','z')
                     warnings.append('Locator projection is baked at polygon corners; curved projections require sufficient mesh detail: '+layer.name)
                 from .coordinates import key
-                if effect not in ('bump','normal'):
-                    node['coordinate_key'] = key(node)
-                elif projection!='uv':
-                    raise ValueError('Normal/bump locator projections require a UV map; affine UV transforms are supported')
+                node['coordinate_key'] = key(node)
                 if layer.type == 'imageMap':
                     clip = next((i for i in connected if i.type=='videoStill'),None)
                     if not clip:
@@ -180,11 +177,6 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         warnings.append('Noise uses a MoonRay UV fractal approximation, not the exact Modo pattern: '+layer.name)
             material = materials[tag]
             uv = node['uv_map']
-            if uv and effect in ('normal','bump'):
-                previous=material.get('_normal_uv_map')
-                if previous and previous!=uv:
-                    raise ValueError('Normal/bump layers on one material must share a UV map; multiple tangent bases are not yet supported')
-                material['_normal_uv_map']=uv
             if uv and (effect in ('normal','bump') or not material.get('uv_map')):
                 material['uv_map'] = uv
             material.setdefault('layers',[]).append(node)

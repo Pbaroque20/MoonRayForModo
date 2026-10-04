@@ -290,7 +290,7 @@ class Panel(QtWidgets.QWidget):
         self.show_buckets=QtWidgets.QCheckBox('Active tiles')
         self.show_buckets.setChecked(str(self.settings.value('show_buckets','true')).lower()!='false')
         self.preview.set_show_buckets(self.show_buckets.isChecked())
-        self.show_buckets.setToolTip('Outline sampled active CPU tile workers. Native tiles are 8 pixels wide. XPU rays may continue on the GPU after CPU dispatch ends. This display does not change rendering.')
+        self.show_buckets.setToolTip('Worker activity only; outlines are not a pixel completion map. Checkerboard pixels have not received samples yet. Adaptive pixels finish independently. Outline sampled active CPU tile workers. Native tiles are 8 pixels wide. XPU rays may continue on the GPU after CPU dispatch ends. This display does not change rendering.')
         self.show_buckets.toggled.connect(self.preview.set_show_buckets)
         self.show_buckets.toggled.connect(lambda value:self.settings.setValue('show_buckets',value))
         buffer_row.addWidget(self.show_buckets)

@@ -60,10 +60,13 @@ def bindings(material, index, lines, glass=False, absorption=False):
         kind = layer.get('kind','imageMap')
         mask = None
         coordinates = None
-        if layer.get('coordinate_key'):
+        if layer.get('coordinate_key') and effect not in ('normal','bump'):
             coordinates = node('AttributeMap', {'primitive_attribute_name':string(layer['coordinate_key']),
                 'primitive_attribute_type':'1', 'warn_when_unavailable':'true', 'default_value':'Rgb(0,0,0)'})
         normal_basis=None
+        named_basis=layer.get('coordinate_key') if effect in ('normal','bump') else None
+        if named_basis:
+            coordinates=node('ModoTextureMap',{'mode':'12','uv_name':string(named_basis)})
         if effect in ('normal','bump') and kind!='constant' and not coordinates:
             from .coordinates import affine
             matrix,offset=affine(layer)
@@ -140,7 +143,9 @@ def bindings(material, index, lines, glass=False, absorption=False):
             foreground=node('ModoTextureMap',{'mode':'8','foreground':foreground,'distance':number(layer['gain'])})
         if layer.get('invert'):
             foreground = node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
-        if effect=='normal' and normal_basis is not None:
+        if effect=='normal' and named_basis:
+            foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_name':string(named_basis),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
+        elif effect=='normal' and normal_basis is not None:
             foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_affine':vector(normal_basis,'Vec4'),'uv_offset':vector(offset,'Vec2'),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
         blend = layer.get('blend','normal')
         if blend not in BLENDS:

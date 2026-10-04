@@ -1,5 +1,7 @@
 #include "attributes.isph"
 #include <moonray/rendering/shading/ispc/MapApi.isph>
+struct ModoTextureMap { uniform int uv; uniform int base; uniform int missing; };
+ISPC_UTIL_EXPORT_UNIFORM_STRUCT_TO_HEADER(ModoTextureMap);
 // Repeat=0, Edge=1, Mirror=2, Reset=3. Apply after interpolation.
 static float tileCoordinate(float value,int mode) {
     if(mode==0) return value-floor(value);
@@ -41,17 +43,36 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
             other.mSt.x=state.mSt.x-e;float left=evalAttrHeight(me,tls,other);
             other.mSt.x=state.mSt.x;other.mSt.y=state.mSt.y+e;float up=evalAttrHeight(me,tls,other);
             other.mSt.y=state.mSt.y-e;float down=evalAttrHeight(me,tls,other);
-            sx-=getAttrBumpStrength(me)*(right-left)/(2*e*max(1.e-6f,length(state.mdPds)));
-            sy-=getAttrBumpStrength(me)*(up-down)/(2*e*max(1.e-6f,length(state.mdPdt)));
+            Vec3f N=getN(state);Vec3f T=state.mdPds-N*dot(N,state.mdPds);
+            float lengthT=length(T);
+            if(lengthT>1.e-9f) {
+                T=T/lengthT;Vec3f B=cross(N,T);
+                float dx=(right-left)/(2*e*lengthT),dy=(up-down)/(2*e);
+                float crossT=dot(state.mdPdt,T),crossB=dot(state.mdPdt,B);
+                sx-=getAttrBumpStrength(me)*dx;
+                if(abs(crossB)>1.e-9f)sy-=getAttrBumpStrength(me)*(dy-dx*crossT)/crossB;
+            }
         }
         n=normalize(Vec3f_ctor(sx,sy,1));return Color_ctor(n.x,n.y,n.z);
     }
+    const uniform ModoTextureMap* uniform data=MAP_GET_ISPC_PTR(ModoTextureMap,me);
+    uniform bool named=data->uv>=0;
+    Vec2f namedUv=Vec2f_ctor(0.f,0.f);Vec4f jacobian=Vec4f_ctor(1.f,0.f,0.f,1.f);
+    if((mode==12 || mode==13) && named) {
+        if(!isProvided(state,data->uv) || !isProvided(state,data->base) || !isdsProvided(state,data->uv) || !isdtProvided(state,data->uv)){logEvent(me,data->missing);return mode==13?Color_ctor(.5f,.5f,1.f):Color_ctor(0.f);}
+        Vec2f ds=getdVec2fAttributeds(tls,state,data->uv),dt=getdVec2fAttributedt(tls,state,data->uv);
+        Vec2f delta=state.mSt-getVec2fAttribute(tls,state,data->base);
+        namedUv=getVec2fAttribute(tls,state,data->uv)+ds*delta.x+dt*delta.y;
+        jacobian=Vec4f_ctor(ds.x,dt.x,ds.y,dt.y);
+    }
     if(mode==12) {
+        if(named)return Color_ctor(namedUv.x,namedUv.y,0.f);
         Vec4f a=getAttrUvAffine(me);Vec2f offset=getAttrUvOffset(me);
         return Color_ctor(a.x*state.mSt.x+a.y*state.mSt.y+offset.x,a.z*state.mSt.x+a.w*state.mSt.y+offset.y,0);
     }
     if(mode==13) {
-        Vec4f a=getAttrUvAffine(me);float det=a.x*a.w-a.y*a.z;
+        Vec4f a=getAttrUvAffine(me);if(named)a=jacobian;
+        float det=a.x*a.w-a.y*a.z;
         Vec3f N=getN(state);Vec3f T=state.mdPds-N*dot(N,state.mdPds);
         if(abs(det)<1e-12f || length(T)<1e-9f)return Color_ctor(.5f,.5f,1);
         Vec3f U=(state.mdPds*a.w-state.mdPdt*a.z)/det;U=U-N*dot(N,U);
@@ -61,7 +82,7 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         if(dot(V,derivativeV)<0)V=V*(-1.f);
         Color encoded=evalAttrForeground(me,tls,state);
         Vec2f offset=getAttrUvOffset(me);
-        float u=a.x*state.mSt.x+a.y*state.mSt.y+offset.x,v=a.z*state.mSt.x+a.w*state.mSt.y+offset.y;
+        float u=named?namedUv.x:a.x*state.mSt.x+a.y*state.mSt.y+offset.x,v=named?namedUv.y:a.z*state.mSt.x+a.w*state.mSt.y+offset.y;
         if(getAttrTileU(me)==2 && u-2*floor(u/2)>1)encoded.r=1-encoded.r;
         if(getAttrTileV(me)==2 && v-2*floor(v/2)>1)encoded.g=1-encoded.g;
         Vec3f normal=U*(encoded.r*2-1)+V*(encoded.g*2-1)+N*(encoded.b*2-1);

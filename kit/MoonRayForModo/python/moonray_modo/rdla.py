@@ -256,7 +256,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if type(level) is not int or not 1 <= level <= 5:
             raise ValueError('Subdivision level must be an integer between 1 and 5')
         user_data = [cryptomatte.userdata(mesh,lines,cryptomatte.category(scene),scene)] if crypto else []
-        for uv_index, (uv_name, values) in enumerate(sorted(mesh.get('uv_sets', {}).items())):
+        named_uvs=dict(mesh.get('uv_sets',{}))
+        if named_uvs:
+            if not mesh.get('uvs'):
+                from .coordinates import fallback_uvs
+                mesh=dict(mesh,uvs=fallback_uvs(faces))
+            named_uvs['modo_primary_uv']=mesh['uvs']
+        for uv_index, (uv_name, values) in enumerate(sorted(named_uvs.items())):
             if len(values) != sum(map(len, faces)):
                 raise ValueError('Named UV set must match polygon corners: '+uv_name)
             name = '/modo/mesh/%d/uv/%d' % (index,uv_index)
@@ -353,7 +359,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               '  ["two_stage_output"] = false,']
     if crypto:lines.append('  ["deep_id_attribute_names"] = {"modo_object_id"},')
     for key, value in options.render_values(scene.get('render_settings', {})).items():
-        lines.append('  [%s] = %s,' % (string(key), number(value)))
+        if key!='batch_tile_order':
+            lines.append('  [%s] = %s,' % (string(key), number(value)))
         if key=='batch_tile_order':
             lines.extend('  [%s] = %s,'%(string(name),number(value)) for name in ('progressive_tile_order','checkpoint_tile_order'))
     recovery=scene.get('_recovery') if output_file else None

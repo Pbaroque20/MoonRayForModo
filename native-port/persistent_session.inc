@@ -9,6 +9,7 @@
 #include <scene_rdl2/common/fb_util/VariablePixelBuffer.h>
 #include <moonray/rendering/rndr/RenderOutputDriver.h>
 #include <cctype>
+#include <cmath>
 #include "modo_shared_image.h"
 
 void moonray::RaasCommandLineApplication::renderPersistent(const std::string& directory)
@@ -39,7 +40,12 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
             const auto prep = context->startFrame();
             if (prep == rndr::RenderContext::RP_RESULT::FINISHED) {
                 auto driver = rndr::getRenderDriver();
+                const char* tileNames[]={"Top to bottom","Bottom to top","Left to right","Right to left","Morton","Random","Spiral square","Spiral rectangle","Morton shift / flip"};
+                const unsigned tileOrder=driver->getFrameState().mTileSchedulerType;
+                std::cout << "MoonRay tile dispatch order: " << (tileOrder<9?tileNames[tileOrder]:"Unknown")
+                          << "; adaptive skipping and parallel completion can appear scattered." << std::endl;
                 auto lastSnapshot = std::chrono::steady_clock::now();
+                bool reportedMissingSamples=false;
 
                 auto snapshot = [&]() {
                     if(useShared && !sharedImage.ready())return;
@@ -50,6 +56,10 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                           std::all_of(selected.begin(),selected.end(),[](unsigned char c){return std::isalnum(c)||c=='_';})) key=selected; }
                     const auto preview=fs::u8path(directory)/("preview_"+id+"_"+key+".pfm");
                     if (fs::exists(preview) || !context->isFrameReadyForDisplay()) return;
+                    // Snapshot sample coverage BEFORE color. Coverage alpha is unrelated:
+                    // the environment can have zero alpha and valid, sampled RGB.
+                    scene_rdl2::fb_util::FloatBuffer sampleWeights;
+                    driver->snapshotWeightBuffer(&sampleWeights, true, false);
                     scene_rdl2::fb_util::RenderBuffer pixels;
                     context->snapshotRenderBuffer(&pixels, true, false, false);
                     if (!pixels.getWidth() || !pixels.getHeight()) return;
@@ -73,23 +83,37 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         }
                         if (!channels || channels>3 || aov.getWidth()!=pixels.getWidth() || aov.getHeight()!=pixels.getHeight()) return;
                     }
-                    if(useShared && sharedImage.publish(id,key,pixels.getWidth(),pixels.getHeight(),[&](size_t i,float* rgb){
-                        const auto& pixel=pixels.getData()[i];rgb[0]=pixel[0];rgb[1]=pixel[1];rgb[2]=pixel[2];
+                    if(sampleWeights.getWidth()!=pixels.getWidth() || sampleWeights.getHeight()!=pixels.getHeight())return;
+                    size_t missingSamples=0;
+                    auto readPixel=[&](size_t i,float* rgb) {
+                        const unsigned x=i%pixels.getWidth(),y=i/pixels.getWidth();
+                        const auto& pixel=pixels.getRow(y)[x];
+                        rgb[0]=pixel[0];rgb[1]=pixel[1];rgb[2]=pixel[2];
                         if(channels){const float* value=reinterpret_cast<const float*>(aov.getData())+i*channels;
                             rgb[0]=value[0];rgb[1]=channels>1?value[1]:value[0];rgb[2]=channels>2?value[2]:(channels==1?value[0]:0);}
-                    }))return;
+                        if(!(sampleWeights.getRow(y)[x]>0.f)) {
+                            // Display-only placeholder; never write this into render output.
+                            // A checker distinguishes unfinished adaptive pixels from black shading.
+                            const float shade=((x/4+y/4)&1)?0.08f:0.16f;
+                            rgb[0]=rgb[1]=rgb[2]=shade;
+                            ++missingSamples;
+                        }
+                    };
+                    auto reportMissing=[&]() {
+                        if(missingSamples && !reportedMissingSamples){
+                            std::cerr << "MoonRay preview: checkerboard marks pixels without samples; worker outlines are activity, not completion." << std::endl;
+                            reportedMissingSamples=true;
+                        }
+                    };
+                    if(useShared && sharedImage.publish(id,key,pixels.getWidth(),pixels.getHeight(),readPixel)){reportMissing();return;}
                     const auto temporary = fs::u8path(directory) / ("preview_" + id + ".tmp");
                     std::ofstream file(temporary, std::ios::binary);
                     file << "PF\n" << pixels.getWidth() << " " << pixels.getHeight() << "\n-1.0\n";
-                    const auto* data = pixels.getData();
                     for (size_t i=0; i<size_t(pixels.getWidth())*pixels.getHeight(); ++i) {
-                        float rgb[3] = {data[i][0], data[i][1], data[i][2]};
-                        if (channels) {
-                            const float* value=reinterpret_cast<const float*>(aov.getData())+i*channels;
-                            rgb[0]=value[0];rgb[1]=channels>1?value[1]:value[0];rgb[2]=channels>2?value[2]:(channels==1?value[0]:0);
-                        }
+                        float rgb[3];readPixel(i,rgb);
                         file.write(reinterpret_cast<const char*>(rgb), sizeof(rgb));
                     }
+                    reportMissing();
                     file.close();
                     if (!file) { fs::remove(temporary); return; }
                     fs::rename(temporary, preview);

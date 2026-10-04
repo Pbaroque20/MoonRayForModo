@@ -123,6 +123,11 @@
       "name": "uv_offset",
       "type": "Vec2f",
       "default": "Vec2f(0.f,0.f)"
+    },
+    "attrUvName": {
+      "name": "uv_name",
+      "type": "String",
+      "default": "\"\""
     }
   }
 }

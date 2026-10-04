@@ -74,7 +74,8 @@ class Preview(QtWidgets.QOpenGLWidget):
             else:
                 painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
                 painter.drawImage(self.image_rect(), self.image)
-            if self.show_buckets and self.buckets:
+            if (self.show_buckets and self.buckets and
+                    (self.image.isNull() or (self.image.width(),self.image.height())==self.buckets[1:3])):
                 _,width,height,rectangles=self.buckets
                 scale=min(self.width()/width,self.height()/height)*self.zoom
                 left=(self.width()-width*scale)/2+self.pan.x()
