@@ -145,8 +145,8 @@ def normal_descriptor(node,graph):
     if source.get('type')!='image':return None
     coord=source.get('inputs',{}).get('texcoord')
     if coord:
-        uv=graph['nodes'][coord]
-        return image_descriptor(uv) if uv['type']=='texcoord' else None
+        from .graph_coordinates import descriptor
+        return descriptor(coord,graph)
     if 'texcoord' in source.get('parameters',{}):return None
     return image_descriptor(source)
 

@@ -1,6 +1,7 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.21** adds paired shutter transforms to the shared native
+Development version **0.3.23** includes the [latest compatibility and input-safety updates](docs/COMPATIBILITY_0323.md).
+The 0.3.21 update added paired shutter transforms to the shared native
 instancer, independent normal-map UV basis controls, format-specific asset import,
 and MaterialX implementation-target selection and compatibility reports. It also
 puts MoonShine Material Override directly in Add Layer, fixes creation order above

@@ -7,7 +7,13 @@ from pathlib import Path
 
 @lru_cache(maxsize=1)
 def catalog():
-    return json.loads(Path(__file__).with_name('material_catalog.json').read_text(encoding='utf-8'))
+    result=json.loads(Path(__file__).with_name('material_catalog.json').read_text(encoding='utf-8'))
+    # Reflectance is bounded; emission and generic data/map colors remain HDR.
+    for material in result.values():
+        for name in ('metallic_color','metallic_edge_color'):
+            spec=material['attributes'].get(name)
+            if spec and spec['type']=='Rgb':spec.update(min=0,max=1)
+    return result
 
 
 def compatible(shader, interface):
@@ -35,7 +41,9 @@ def typed(value, attribute):
     dimensions={'Rgb':3,'Rgba':4,'Vec2f':2,'Vec3f':3,'Vec4f':4,'Mat3f':9,'Mat4f':16,'Vec2d':2,'Vec3d':3,'Vec4d':4,'Mat3d':9,'Mat4d':16}
     if kind in dimensions:
         if not isinstance(value,list) or len(value)!=dimensions[kind]: raise ValueError('Expected %d components'%dimensions[kind])
-        return [typed(v,{'type':'Float'}) for v in value]
+        component={'type':'Float'}
+        component.update({key:attribute[key] for key in ('min','max') if key in attribute})
+        return [typed(v,component) for v in value]
     if kind not in ('Float','Double','Int','Long') or type(value) not in (float,int) or not math.isfinite(value):
         raise ValueError('Expected a finite '+kind)
     if kind in ('Int','Long') and int(value)!=value: raise ValueError('Expected an integer')
@@ -149,6 +157,14 @@ def emit(material, name, index, lines, library, trail=(), authored_bindings=None
             if spec['type']=='RgbVector' and key in parameters:authored[key]=literal([working_color(v) for v in parameters[key]],spec)
     from .working_space import surface as working_surface
     authored=working_surface(authored,name,lines,{key for key,spec in attributes.items() if spec['type']=='Rgb' and key!='TMI'})
+    # A connected texture can exceed the authored field limits. Bound Fresnel
+    # colors after working-space conversion, before they reach the material.
+    for key in ('metallic_color','metallic_edge_color'):
+        if key not in authored:continue
+        low=name+'/limits/'+key+'/low';high=name+'/limits/'+key+'/high'
+        lines.append('OpMap(%s) { ["operation"] = 4, ["op1"] = %s, ["op2"] = Rgb(0,0,0) }'%(string(low),authored[key]))
+        lines.append('OpMap(%s) { ["operation"] = 5, ["op1"] = bind(OpMap(%s)), ["op2"] = Rgb(1,1,1) }'%(string(high),string(low)))
+        authored[key]='bind(OpMap(%s))'%string(high)
     lines.append('%s(%s) {'%(shader,string(name)))
     lines.extend('  [%s] = %s,'%(string(key),value) for key,value in authored.items())
     lines.append('}')

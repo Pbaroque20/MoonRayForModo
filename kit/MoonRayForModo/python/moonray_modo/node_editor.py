@@ -435,6 +435,9 @@ class Editor(QtWidgets.QDialog):
                 if inherited:
                     font=cell.font();font.setItalic(True);cell.setFont(font)
                 cell.setToolTip(('Renderer default; edit to override. ' if inherited else '')+str(spec.get('comment',''))+' Default: '+str(spec.get('default',spec.get('default_value',''))))
+                limits=[str(spec[k]) for k in ('min','max') if k in spec]
+                if limits:
+                    cell.setToolTip(cell.toolTip()+' Allowed range: '+str(spec.get('min','unbounded'))+' to '+str(spec.get('max','unbounded')))
                 if file_parameter(spec):cell.setToolTip(cell.toolTip()+' Click to browse for a file. Press F2 to type or paste a path, including <UDIM> patterns.')
                 self.table.setItem(row,0,label);self.table.setItem(row,1,cell)
         self.busy=False;self.filter_properties()
@@ -456,7 +459,9 @@ class Editor(QtWidgets.QDialog):
                 if self.layers.currentData()>=0: raise ValueError('For an override, enter a value or disable the layer to restore the base')
                 target.setdefault('parameters',{}).pop(key,None)
             else:
-                value=json.loads(text);shader_library.typed(value,nodes.specs(self.graph['nodes'][identity]['type'])[key])
+                spec=nodes.specs(self.graph['nodes'][identity]['type'])[key]
+                try:value=shader_library.typed(json.loads(text),spec)
+                except ValueError as exc:raise ValueError(key+': '+str(exc))
                 target.setdefault('parameters',{})[key]=value
                 target.setdefault('inputs',{}).pop(key,None)
             self.validate_draft();self.remember(old);QtCore.QTimer.singleShot(0,self.rebuild)

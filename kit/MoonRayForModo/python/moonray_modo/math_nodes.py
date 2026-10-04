@@ -10,6 +10,12 @@ SCHEMAS={
  'range':{'in':rgb(0),'inlow':rgb(0),'inhigh':rgb(1),'gamma':rgb(1),'outlow':rgb(0),'outhigh':rgb(1),'doclamp':('Bool',False)},
  'convert':{'in':rgb(0)},'sign':{'in':rgb(0)},'sqrt':{'in':rgb(0)},'exp':{'in':rgb(0)},
 }
+SCHEMAS.update({
+ 'rotate2d':{'in':rgb(0),'amount':('Float',0)},
+ 'rotate3d':{'in':rgb(0),'amount':('Float',0),'axis':('Rgb',[0,1,0])},
+ 'saturate':{'in':rgb(0),'amount':('Float',1),'lumacoeffs':('Rgb',[.2722287,.6740818,.0536895])},
+ 'distance':{'in1':rgb(0),'in2':rgb(0)},
+})
 for name in ('ifgreater','ifgreatereq','ifequal'):
  SCHEMAS[name]={'value1':('Float',1),'value2':('Float',0),'in1':rgb(0),'in2':rgb(0)}
 
@@ -28,6 +34,21 @@ def emit(kind,path,parameters,inputs,definition):
  if kind=='lerp':out=op(0,value('bg'),op(2,op(1,value('fg'),value('bg')),value('mix')))
  elif kind=='contrast':out=op(0,op(2,op(1,value('in'),value('pivot')),value('amount')),value('pivot'))
  elif kind=='luminance':out=op(8,value('in'),value('lumacoeffs'))
+ elif kind=='saturate':
+  gray=op(8,value('in'),value('lumacoeffs'))
+  out=op(0,gray,op(2,op(1,value('in'),gray),value('amount')))
+ elif kind=='distance':out=op(20,op(1,value('in1'),value('in2')))
+ elif kind in ('rotate2d','rotate3d'):
+  angle=op(2,value('amount'),vector([math.pi/180]*3,'Rgb'))
+  co,si=op(22,angle),op(21,angle)
+  v=value('in')
+  if kind=='rotate2d':
+   x=op(8,v,'Rgb(1,0,0)');y=op(8,v,'Rgb(0,1,0)')
+   out=op(0,op(2,op(1,op(2,x,co),op(2,y,si)),'Rgb(1,0,0)'),
+            op(2,op(0,op(2,x,si),op(2,y,co)),'Rgb(0,1,0)'))
+  else:
+   axis=value('axis')
+   out=op(0,op(0,op(2,v,co),op(2,op(7,axis,v),si)),op(2,op(2,axis,op(8,axis,v)),op(1,one,co)))
  elif kind=='convert':out=value('in')
  elif kind=='sign':out=op(1,op(27,value('in')),op(25,value('in')))
  elif kind=='sqrt':out=op(6,value('in'),'Rgb(.5,.5,.5)')

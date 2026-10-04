@@ -1,9 +1,9 @@
-"""Capture unambiguous host shading-group links without touching selection."""
+"""Capture host shading-group links without touching selection."""
 
 def linked_members(item):
     import modo
     linked=[v for v in item.itemGraph('shadeLoc').forward() if v.type in ('group','groupLocator')]
-    if len(linked)!=1:raise ValueError('Expected one connected Modo group; use explicit MoonRay Object links for this item')
+    if not linked:return None # No selected group is not an empty, explicitly linked group.
     members=set()
     def visit(group,trail):
         if group.id in trail:raise ValueError('Cyclic light-link group')
@@ -11,7 +11,7 @@ def linked_members(item):
         elif group.type=='groupLocator':children=group.children()
         else:members.add(group.id);return
         for child in children:visit(child,trail+(group.id,))
-    visit(linked[0],())
+    for group in linked:visit(group,())
     return sorted(members)
 
 
@@ -24,15 +24,20 @@ def capture(scene,snapshot,warnings):
     def rule(item,mode):
         value=channel(item,mode,'include')
         if value not in ('include','exclude',0,1):raise ValueError('Unknown light-link mode')
-        return {'mode':'exclude' if value in ('exclude',1) else 'include','members':linked_members(item)}
+        members=linked_members(item)
+        return None if members is None else {'mode':'exclude' if value in ('exclude',1) else 'include','members':members}
     for item in scene.items('light'):
         if not channel(item,'linkEnable',False):continue
-        try:lights[item.id]=rule(item,'linkMode')
+        try:
+            value=rule(item,'linkMode')
+            if value is not None:lights[item.id]=value
         except (ValueError,LookupError,RuntimeError,AttributeError) as exc:warnings.append('Light links for '+item.name+': '+str(exc))
     ordered=list(ordered_items(scene.renderItem));order={item.id:i for i,item in enumerate(ordered)}
     for item in ordered:
         if item.type!='defaultShader' or not channel(item,'enable',True) or not channel(item,'render',True) or not channel(item,'lgtEnable',False):continue
-        try:shaders[item.id]=(item,rule(item,'lightLink'))
+        try:
+            value=rule(item,'lightLink')
+            if value is not None:shaders[item.id]=(item,value)
         except (ValueError,LookupError,RuntimeError,AttributeError) as exc:warnings.append('Shader links for '+item.name+': '+str(exc))
     materials={};data=snapshot.get('_evaluated_data')
     if data:

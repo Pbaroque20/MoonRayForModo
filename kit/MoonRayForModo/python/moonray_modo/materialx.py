@@ -21,7 +21,14 @@ def parse_value(element):
         if text not in ('true','false','0','1'): raise ValueError('Invalid MaterialX boolean')
         return text in ('true','1')
     if kind=='integer': return int(text)
-    if kind=='float': return float(text)
+    if kind=='float':
+        value=float(text)
+        if element.get('unittype')=='angle' or element.get('unit') in ('radian','degree'):
+            if element.get('unit')=='radian':
+                import math
+                value=math.degrees(value)
+            elif element.get('unit','degree')!='degree':raise ValueError('Unsupported MaterialX angle unit')
+        return value
     if kind in ('color3','vector2','vector3'): return [float(v.strip()) for v in text.split(',')]
     raise ValueError('Unsupported MaterialX value type: '+str(kind))
 
@@ -133,6 +140,10 @@ def read(path, material_name=None):
             from .materialx_standard import SPECIAL
             if category=='standard_surface' and name in SPECIAL|{'base','emission'}:continue
             if not any(attr in port.attrib for attr in ('value','nodename','nodegraph','interfacename')): continue
+            if kind=='image' and name in ('layer','framerange','frameoffset','frameendaction'):
+                neutral={'layer':'','framerange':'','frameoffset':0,'frameendaction':'constant'}[name]
+                if 'value' in port.attrib and parse_value(port)==neutral:continue
+                raise ValueError('MaterialX image '+name+' requires image sequence/layer extraction, which is not implemented')
             if name not in mapping: raise ValueError('Unsupported MaterialX input '+category+'.'+str(name))
             target=mapping[name]
             if port.get('nodename') or port.get('nodegraph') or port.get('interfacename'):
