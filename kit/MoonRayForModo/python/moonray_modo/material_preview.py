@@ -4,7 +4,7 @@ import json
 import math
 from pathlib import Path
 from PySide2 import QtCore, QtWidgets
-from . import coordinates, native, nodes, shader_library
+from . import coordinates, native, nodes, options, shader_library
 from .rdla import IDENTITY
 from .preview_diagnostics import record
 from .render import Renderer
@@ -55,8 +55,7 @@ def snapshot(material, library, all_parts=False):
                        'color':[1,1,1],'intensity':3,'width':2,'height':2},
                       {'identity':'widget/rim','kind':'RectLight','matrix':look_at((-2,1,-2)),
                        'color':[1,1,1],'intensity':2,'width':2,'height':3}],
-            'display':{'view':'srgb'},'render_settings':{'sampling_mode':2,
-                'min_adaptive_samples':4,'max_adaptive_samples':64,'target_adaptive_error':5.0}}
+            'display':{'view':'srgb'},'render_settings':options.render_values({'target_adaptive_error':5.0})}
 
 
 class WidgetPreview(Preview):
@@ -145,7 +144,7 @@ class Panel(QtWidgets.QWidget):
             record("Capture draft complete")
             self.timer.stop()  # Draft commit can itself notify graph_changed.
             size=256 if self.live.isChecked() else 384
-            if self.live.isChecked():scene['render_settings'].update(max_adaptive_samples=16,target_adaptive_error=10.0)
+            if self.live.isChecked():scene['render_settings'].update(target_adaptive_error=10.0)
             settings=QtCore.QSettings('MoonRayForModo','NativePreview')
             runtime=native.default_runtime() or str(settings.value('runtime',''))
             record("Submit material preview; runtime="+str(runtime))

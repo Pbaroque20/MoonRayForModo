@@ -3,23 +3,23 @@ import math
 ENUMS = {'sampling_mode': [('Uniform',0),('Adaptive',2)],
          'light_sampling_mode': [('Uniform lights',0),('Adaptive lights',1)],
          'shadow_terminator_fix': [('Off',0),('Targeted',1),('Sine',2),('GGX',3),('Cosine',4)]}
-ENUMS['batch_tile_order'] = [('Morton (default)',4),('Top to bottom',0),('Bottom to top',1),('Left to right',2),('Right to left',3),('Random',5),('Spiral square',6),('Spiral rectangle',7),('Morton shift / flip',8)]
+ENUMS['batch_tile_order'] = [('Morton',4),('Top to bottom',0),('Bottom to top',1),('Left to right',2),('Right to left',3),('Random',5),('Spiral square (default)',6),('Spiral rectangle',7),('Morton shift / flip',8)]
 ENUMS['bucket_size'] = [('Auto (resolution)',0),('32 × 32',32),('64 × 64',64),('128 × 128',128),('256 × 256',256)]
 RENDER = {
     'bucket_size': (0, 0, 256, 'Bucket size (preview and final)'),
-    'batch_tile_order': (4, 0, 8, 'Tile order (preview and final)'),
+    'batch_tile_order': (6, 0, 8, 'Tile order (preview and final)'),
     'sampling_mode': (2, 0, 2, 'Sampling mode'),
-    'min_adaptive_samples': (16, 1, 1048576, 'Minimum samples / pixel'),
-    'max_adaptive_samples': (256, 1, 1048576, 'Maximum samples / pixel'),
+    'min_adaptive_samples': (4, 1, 1048576, 'Minimum samples / pixel'),
+    'max_adaptive_samples': (12, 1, 1048576, 'Maximum samples / pixel'),
     'target_adaptive_error': (1.5, 0.000001, 1000.0, 'Target adaptive error'),
-    'light_sampling_mode': (0, 0, 1, 'Light sampling mode'),
+    'light_sampling_mode': (1, 0, 1, 'Light sampling mode'),
     'light_sampling_quality': (0.5, 0.0, 1.0, 'Adaptive light quality'),
     'bsdf_samples': (2, 1, 16, 'Material / BSDF sample grid'),
     'bssrdf_samples': (2, 1, 16, 'Subsurface sample grid'),
-    'max_depth': (8, 0, 64, 'Total bounces'),
+    'max_depth': (4, 0, 64, 'Total bounces'),
     'max_diffuse_depth': (2, 0, 64, 'Diffuse bounces'),
     'max_glossy_depth': (2, 0, 64, 'Glossy bounces'),
-    'max_mirror_depth': (8, 0, 64, 'Mirror / refraction bounces'),
+    'max_mirror_depth': (4, 0, 64, 'Mirror / refraction bounces'),
     'light_samples': (2, 1, 16, 'Light sample grid'),
     'shadow_terminator_fix': (1, 0, 4, 'Shadow boundary correction'),
 }

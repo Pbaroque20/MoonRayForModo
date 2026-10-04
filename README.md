@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.32** adds [automatic bucket sizing](docs/COMPATIBILITY_0332.md) and manual 32/64/128/256px choices. Scheduler and progress boxes use the same size. Includes the widget top crop and confirmed graph-editor style fix.
+Development version **0.3.33** defaults to Spiral square traversal, adaptive sampling at 4–12 samples/pixel, 4 total bounces, 4 mirror/refraction bounces, and adaptive lights. Material-widget previews use the same sampling and bounce defaults. Explicit saved scene settings still take precedence. Includes [automatic bucket sizing](docs/COMPATIBILITY_0332.md). No tests were run for this defaults-only update, as requested.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native
