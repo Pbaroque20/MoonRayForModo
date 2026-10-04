@@ -265,9 +265,6 @@ class Panel(QtWidgets.QWidget):
         self.start.clicked.connect(self.render_once)
         stop = QtWidgets.QPushButton('Stop')
         stop.clicked.connect(self.stop)
-        self.live = QtWidgets.QCheckBox('Live')
-        self.live.setToolTip('Update after releasing a drag or committing a value. The current render continues while you drag.')
-        self.live.toggled.connect(self._toggle_live)
         self.preview_lock=QtWidgets.QCheckBox('Lock')
         self.preview_lock.setToolTip('Keep the current render running. Hold automatic scene changes until unlocked; cached buffers and display transforms remain available. Refresh preview still starts a new preview explicitly.')
         self.preview_lock.toggled.connect(self._lock_changed)
@@ -285,12 +282,12 @@ class Panel(QtWidgets.QWidget):
         output_menu.addAction('Export scene…',self.export)
         output_button=QtWidgets.QToolButton();output_button.setText('Output');output_button.setMenu(output_menu);output_button.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.final.hide();export.hide()
-        for widget in (self.start, stop, self.live, self.preview_lock, self.settings_toggle, output_button):
+        for widget in (self.start, stop, self.preview_lock, self.settings_toggle, output_button):
             actions.addWidget(widget)
         layout.addLayout(actions)
         buffer_row = QtWidgets.QHBoxLayout()
         self.ipr_mode=QtWidgets.QCheckBox('IPR')
-        self.ipr_mode.setToolTip('Start live previews with lower resolution and sampling. Disable to return to regular preview quality. Stops remain manual; no automatic full-quality refinement.')
+        self.ipr_mode.setToolTip('Automatically update low-resolution previews after releasing a drag or committing a value. Turn off for manual rendering with Render; the current pass may finish.')
         buffer_row.addWidget(self.ipr_mode)
         buffer_row.addWidget(QtWidgets.QLabel('Render buffer'))
         self.buffer = QtWidgets.QComboBox()
@@ -400,13 +397,18 @@ class Panel(QtWidgets.QWidget):
 
 
     def _ipr_changed(self,enabled):
-        self.preview_timer.stop()
+        self.preview_timer.stop();self.timer.stop()
+        self._pending_preview=False;self.release_timer.stop()
+        if not enabled:
+            self.status.setText('IPR off. Use Render to update the preview; the current pass may finish.')
+            return
         if self._output_busy():
-            self.status.setText('IPR selection saved for the next preview. Output render continues.');return
-        if enabled and not self.live.isChecked():
-            self.live.setChecked(True)
-        else:
-            self._preview_changed(0)
+            blocker=QtCore.QSignalBlocker(self.ipr_mode);self.ipr_mode.setChecked(False)
+            self.status.setText('Output render continues. Enable IPR after it finishes.');return
+        if self.preview_lock.isChecked():
+            self.status.setText('IPR enabled. Automatic updates will resume when unlocked.');return
+        self.render_once()
+        if self.ipr_mode.isChecked():self.timer.start()
 
     def _ipr_quality_changed(self,*args):
         self.settings.setValue('ipr/width',self.ipr_width.currentData())
@@ -439,8 +441,8 @@ class Panel(QtWidgets.QWidget):
             if hasattr(self,'preview_timer'):self.preview_timer.stop()
             self.status.setText('Preview locked. Automatic updates are held; the current render continues.')
         else:
-            self.status.setText('Preview unlocked. Refresh to apply changes, or enable Live updates.')
-            if self.live.isChecked():self.timer.start();self._live_tick()
+            self.status.setText('Preview unlocked. Use Render to apply changes, or enable IPR.')
+            if self.ipr_mode.isChecked():self.timer.start();self._live_tick()
 
     def copy_image(self):
         if self.preview.image.isNull():self.status.setText('Render a preview first.');return
@@ -767,6 +769,8 @@ class Panel(QtWidgets.QWidget):
 
     def _preview_changed(self, index):
         if self.disposed: return
+        if not self.ipr_mode.isChecked():
+            self.status.setText('Settings saved for the next preview. Use Render to update.');return
         if self.preview_lock.isChecked():
             self.status.setText('Preview locked. Selection saved for the next refresh.');return
         if (self.sequence is not None and self.sequence.running) or (
@@ -782,7 +786,7 @@ class Panel(QtWidgets.QWidget):
         if dragging():self.release_timer.start();return
         if self._pending_preview:
             self._pending_preview=False;self.render_once()
-        elif self.live.isChecked():self._live_tick()
+        elif self.ipr_mode.isChecked():self._live_tick()
 
     def render_once(self):
         from .interaction import dragging
@@ -795,17 +799,8 @@ class Panel(QtWidgets.QWidget):
         except Exception as exc:
             self._failed(str(exc))
 
-    def _toggle_live(self, on):
-        if on and self.preview_lock.isChecked():
-            self.status.setText('Live updates will resume when the preview is unlocked.');return
-        if on:
-            self.render_once()
-            if self.live.isChecked():
-                self.timer.start()
-        else:
-            self.timer.stop()
-
     def _live_tick(self):
+        if self.disposed or not self.ipr_mode.isChecked():return
         from .interaction import dragging
         if dragging():self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
@@ -836,11 +831,11 @@ class Panel(QtWidgets.QWidget):
         self.preview_timer.stop()
         if self.sequence is not None:
             self.sequence.stop()
-        self.live.setChecked(False)
+        self.ipr_mode.setChecked(False)
         self.renderer.stop()
 
     def _failed(self, message):
-        self.live.setChecked(False)
+        self.ipr_mode.setChecked(False)
         self.renderer.stop()
         self.status.setText('Render unavailable: ' + message)
 
@@ -868,7 +863,7 @@ class Panel(QtWidgets.QWidget):
         self.render_timing.setText(label)
 
     def _finished(self, output):
-        message=('Saved ' + output) if output else ('Preview complete' + (' · Watching scene changes' if self.live.isChecked() else ''))
+        message=('Saved ' + output) if output else ('Preview complete' + (' · Watching scene changes' if self.ipr_mode.isChecked() else ''))
         if not output and self.renderer.session.running():message+=' · MoonRay session retained'
         self.status.setText(message+' · '+self.renderer.backend_status)
         if not output:
