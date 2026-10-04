@@ -1,6 +1,10 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.16** shows default values directly in the right-hand
+Development version **0.3.17** embeds the MoonRay Widget in the graph editor.
+**Live material preview** is off by default; opt in for debounced updates while
+editing, or use **Refresh** manually. Node-library tooltips explain node purposes.
+
+Version **0.3.16** shows default values directly in the right-hand
 Properties fields, with clickable RGB swatches. Node cards stay compact.
 
 Version **0.3.15** adds an explicit **MoonShine Material Override**
@@ -46,7 +50,7 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.16 uses the existing
+to the runtime recorded in its `runtime.json`. Version 0.3.17 uses the existing
 `runtime/xpu-compatibility-0311` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.

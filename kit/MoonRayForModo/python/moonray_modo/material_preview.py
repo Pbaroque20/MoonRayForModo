@@ -58,39 +58,77 @@ def snapshot(material, library, all_parts=False):
                 'min_adaptive_samples':4,'max_adaptive_samples':64,'target_adaptive_error':5.0}}
 
 
-class Dialog(QtWidgets.QDialog):
-    def __init__(self, item, draft, parent=None):
+class Panel(QtWidgets.QWidget):
+    def __init__(self,item,draft,parent=None,embedded=False):
         super().__init__(parent)
-        self.item,self.draft=item,draft
-        self.setWindowTitle('MoonRay Widget — '+item.name);self.resize(520,620)
-        layout=QtWidgets.QVBoxLayout(self);bar=QtWidgets.QHBoxLayout();layout.addLayout(bar)
-        refresh=QtWidgets.QPushButton('Render / Refresh');bar.addWidget(refresh)
+        self.item,self.draft=item,draft;self.closed=False;self.last_signature=None
+        layout=QtWidgets.QVBoxLayout(self);layout.setContentsMargins(4,4,4,4)
+        layout.addWidget(QtWidgets.QLabel('MoonRay Widget'))
+        bar=QtWidgets.QHBoxLayout();layout.addLayout(bar)
+        self.live=QtWidgets.QCheckBox('Live material preview');self.live.setChecked(False);self.live.setVisible(embedded);bar.addWidget(self.live)
+        refresh=QtWidgets.QPushButton('Refresh');bar.addWidget(refresh)
         stop=QtWidgets.QPushButton('Stop');bar.addWidget(stop)
-        self.parts=QtWidgets.QCheckBox('Apply to base and stand');bar.addWidget(self.parts)
+        for button in (refresh,stop):button.setAutoDefault(False);button.setDefault(False)
+        self.parts=QtWidgets.QCheckBox('Apply material to base and stand');layout.addWidget(self.parts)
         self.viewer=Preview(self);layout.addWidget(self.viewer,1)
-        self.status=QtWidgets.QLabel('Click Render / Refresh to preview the current draft.');self.status.setWordWrap(True);layout.addWidget(self.status)
-        note=QtWidgets.QLabel('Native material / node draft with widget UVs and studio lighting. Refresh reads current draft edits. External Shader Tree masks, scene projectors and hair strands are not reproduced.');note.setWordWrap(True);layout.addWidget(note)
-        credit=QtWidgets.QLabel('MoonRay Widget Copyright 2023–2025 DreamWorks Animation LLC. All rights reserved.\nASWF Digital Assets License v1.1 · Material demonstration asset.');credit.setWordWrap(True);layout.addWidget(credit)
+        self.status=QtWidgets.QLabel('Live preview is off. Enable it or click Refresh.');self.status.setWordWrap(True);layout.addWidget(self.status)
+        self.setToolTip('Previews the current draft with widget UVs and studio lighting. Scene masks, projectors and hair geometry are not recreated. Live preview updates committed graph edits after a short pause.')
+        credit=QtWidgets.QLabel('MoonRay Widget Copyright 2023–2025 DreamWorks Animation LLC. All rights reserved.\nASWF Digital Assets License v1.1');credit.setWordWrap(True);layout.addWidget(credit)
         self.renderer=Renderer(self)
         self.renderer.image_object.connect(self.viewer.set_image);self.renderer.image_ready.connect(self.viewer.load)
         self.renderer.status.connect(self.status.setText);self.renderer.failed.connect(lambda message:self.status.setText('Preview failed: '+message))
         self.renderer.buckets.connect(self.viewer.set_buckets)
-        refresh.clicked.connect(self.refresh);stop.clicked.connect(self.renderer.stop)
+        self.timer=QtCore.QTimer(self);self.timer.setSingleShot(True);self.timer.setInterval(650);self.timer.timeout.connect(self.refresh)
+        self.live.toggled.connect(self.live_changed)
+        self.parts.toggled.connect(lambda *_:self.schedule())
+        refresh.clicked.connect(self.refresh);stop.clicked.connect(self.stop)
         self.viewer.start_requested.connect(self.refresh)
-        self.finished.connect(lambda *_:self.renderer.close())
+    def live_changed(self,enabled):
+        if enabled:self.schedule()
+        else:
+            self.timer.stop();self.renderer.stop();self.status.setText('Live preview off. Last image retained.')
+    def schedule(self):
+        if not self.closed and self.live.isChecked():self.timer.start()
+    def graph_changed(self,graph):
+        data=copy.deepcopy(graph)
+        for node in data.get('nodes',{}).values():
+            for key in ('position','expanded','label'):node.pop(key,None)
+        signature=json.dumps(data,sort_keys=True)
+        if signature!=self.last_signature:
+            self.last_signature=signature;self.schedule()
+    def stop(self):
+        self.timer.stop()
+        if self.live.isChecked():self.live.setChecked(False)
+        else:self.renderer.stop()
     def refresh(self):
+        if self.closed:return
         try:
             import modo
             from .host import material_values
             library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=False)}
             draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
+            self.timer.stop()  # Draft commit can itself notify graph_changed.
             scene=snapshot(draft,library,self.parts.isChecked())
+            size=256 if self.live.isChecked() else 384
+            if self.live.isChecked():scene['render_settings'].update(max_adaptive_samples=16,target_adaptive_error=10.0)
             settings=QtCore.QSettings('MoonRayForModo','NativePreview')
             runtime=native.default_runtime() or str(settings.value('runtime',''))
-            self.renderer.submit(scene,runtime,384,384,2,.2,0)
+            self.renderer.submit(scene,runtime,size,size,2,.2,0)
         except Exception as exc:self.status.setText('Preview could not start: '+str(exc))
+    def shutdown(self):
+        if self.closed:return
+        self.closed=True;self.timer.stop();self.renderer.close()
     def closeEvent(self,event):
-        self.renderer.close();super().closeEvent(event)
+        self.shutdown();super().closeEvent(event)
+
+
+class Dialog(QtWidgets.QDialog):
+    def __init__(self,item,draft,parent=None):
+        super().__init__(parent);self.setWindowTitle('MoonRay Widget — '+item.name);self.resize(520,620)
+        layout=QtWidgets.QVBoxLayout(self);self.panel=Panel(item,draft,self);layout.addWidget(self.panel)
+        self.finished.connect(lambda *_:self.panel.shutdown())
+    def closeEvent(self,event):
+        self.panel.shutdown();super().closeEvent(event)
 
 
 def show(item,draft,parent=None):

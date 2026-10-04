@@ -83,18 +83,20 @@ class Editor(QtWidgets.QDialog):
             button=QtWidgets.QPushButton(label);button.clicked.connect(callback);toolbar.addWidget(button)
         self.output_label=QtWidgets.QLabel();self.output_label.setToolTip('The Output material is rendered. Apply or Save updates the scene override.');toolbar.addWidget(self.output_label)
         toolbar.addStretch(1)
-        preview=QtWidgets.QPushButton('Widget preview');preview.clicked.connect(self.preview_widget);toolbar.addWidget(preview)
-        self.finished.connect(lambda *_:getattr(self,'_widget_preview',None) and self._widget_preview.close())
         splitter=QtWidgets.QSplitter();layout.addWidget(splitter,1)
         self.build_node_browser(splitter)
         self.canvas=QtWidgets.QGraphicsScene(self);self.view=GraphView(self,self.canvas)
         self.view.setRenderHint(QtGui.QPainter.Antialiasing);self.view.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag);splitter.addWidget(self.view)
-        pane=QtWidgets.QWidget();right=QtWidgets.QVBoxLayout(pane);splitter.addWidget(pane);splitter.setSizes([245,650,320]);splitter.setStretchFactor(1,1)
+        inspector=QtWidgets.QSplitter(QtCore.Qt.Vertical);splitter.addWidget(inspector)
+        pane=QtWidgets.QWidget();right=QtWidgets.QVBoxLayout(pane);inspector.addWidget(pane);splitter.setSizes([225,600,360]);splitter.setStretchFactor(1,1)
         self.property_title=QtWidgets.QLabel('Select a node');right.addWidget(self.property_title)
         self.layers=QtWidgets.QComboBox();self.layers.setToolTip('Property override layer');right.addWidget(self.layers)
         self.table=QtWidgets.QTableWidget(0,2);self.table.setHorizontalHeaderLabels(['Input','Value']);self.table.horizontalHeader().setStretchLastSection(True);self.table.verticalHeader().hide();self.table.setShowGrid(False);self.table.setAlternatingRowColors(True);right.addWidget(self.table)
         self.table.setItemDelegateForColumn(1,ParameterDelegate(self))
         self.property_search=QtWidgets.QLineEdit();self.property_search.setClearButtonEnabled(True);self.property_search.setPlaceholderText('Filter properties…');right.insertWidget(1,self.property_search);self.property_search.textChanged.connect(self.filter_properties)
+        from .material_preview import Panel
+        self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([320,380])
+        self.finished.connect(lambda *_:self.material_preview.shutdown())
         self.info=QtWidgets.QLabel('Drag sockets to connect. Enter commits values; Save applies the graph.')
         self.info.setWordWrap(True)
         self.info.setToolTip('Green wire: compatible input. Right-click a socket or wire to disconnect. Wheel: zoom. Middle drag: pan. F: frame all. Double-click a property to edit. Node and Graph menus contain additional actions.')
@@ -133,7 +135,8 @@ class Editor(QtWidgets.QDialog):
                 groups[group]=QtWidgets.QTreeWidgetItem(self.node_tree,[group])
                 groups[group].setExpanded(group=='Materials')
             row=QtWidgets.QTreeWidgetItem(groups[group],[kind]);row.setData(0,QtCore.Qt.UserRole,kind)
-            row.setToolTip(0,kind+' — click to add')
+            from .node_descriptions import tooltip
+            row.setToolTip(0,tooltip(kind))
         self.node_tree.sortItems(0,QtCore.Qt.AscendingOrder)
         self.node_tree.itemClicked.connect(self.add_from_browser)
         self.node_search.textChanged.connect(self.filter_node_browser)
@@ -162,14 +165,11 @@ class Editor(QtWidgets.QDialog):
             target=self.target(identity);target.setdefault('parameters',{})[key]=[color.redF(),color.greenF(),color.blueF()]
             target.setdefault('inputs',{}).pop(key,None);self.validate_draft();self.remember(before);self.rebuild()
         except ValueError as exc:self.graph=before;self.error(exc)
-    def preview_widget(self):
-        from .material_preview import show
-        def draft():
-            self.table.itemDelegateForColumn(1).commit_pending()
-            material=copy.deepcopy(properties.read(self.item))
-            material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
-            return material
-        show(self.item,draft,self)
+    def preview_draft(self):
+        self.table.itemDelegateForColumn(1).commit_pending()
+        material=copy.deepcopy(properties.read(self.item))
+        material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
+        return material
     def error(self,exc): QtWidgets.QMessageBox.warning(self,'Node graph',str(exc))
     def selected(self): return next((item.identity for item in self.canvas.selectedItems() if isinstance(item,Node)),None)
     def rebuild(self,*args):
@@ -186,6 +186,7 @@ class Editor(QtWidgets.QDialog):
         self.layers.setCurrentIndex(min(max(0,old),self.layers.count()-1));self.busy=False
         if selected in self.items:self.items[selected].setSelected(True)
         self.canvas.setSceneRect(self.canvas.itemsBoundingRect().adjusted(-250,-250,250,250));self.inspect()
+        self.material_preview.graph_changed(self.graph)
     def edges(self):
         if not hasattr(self,'canvas'): return
         for item in self.links:
@@ -201,6 +202,7 @@ class Editor(QtWidgets.QDialog):
                 edge=self.canvas.addPath(path,QtGui.QPen(QtGui.QColor('#8bc6d8'),2));edge.setZValue(-1);edge.connection=(identity,key);edge.setToolTip('Right-click to disconnect '+key);self.links.append(edge)
     def remember(self,before):
         if before!=self.graph:self.undo_states.append(before);self.undo_states=self.undo_states[-50:];self.redo_states=[]
+        self.material_preview.graph_changed(self.graph)
     def undo(self):
         if self.undo_states:self.redo_states.append(copy.deepcopy(self.graph));self.graph=self.undo_states.pop();self.rebuild()
     def redo(self):
