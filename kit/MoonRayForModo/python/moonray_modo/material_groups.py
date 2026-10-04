@@ -13,7 +13,7 @@ def flatten(stack):
     layers=[]
     for material in stack:
         scopes=material.get('material_groups',[])
-        layers.append({'kind':'materialBase','effect':'diffCol','material':material,
+        layers.append({'identity':material.get('base_layer_id'),'kind':'materialBase','effect':'diffCol','material':material,
                        'opacity':material.get('layer_opacity',1),'groups':scopes,
                        'blend':material.get('layer_blend','normal'),'invert':material.get('layer_invert',False)})
         for layer in material.get('layers',[]):

@@ -50,8 +50,8 @@ EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
            'rough': 'roughness', 'metallic': 'metallic', 'lumiCol': 'emissiveColor',
            'coatAmt': 'clearcoat', 'coatRough': 'clearcoatRoughness',
            'tranAmt': 'transmission', 'tranCol': 'transmissionColor', 'tranRough': 'refractionRoughness',
-           'normal':'normal', 'bump':'bump', 'diffAmt':'diffuseAmount',
-           'specAmt':'specularAmount', 'groupMask':'layerMask', 'aniso':'anisotropy', 'lumiAmt':'emissiveAmount', 'dissolve':'presence',
+           'normal':'normal', 'normalCoat':'coatNormal', 'coatBump':'coatBump', 'diffRough':'diffuseRoughness', 'bump':'bump', 'diffAmt':'diffuseAmount',
+           'specAmt':'specularAmount', 'layerMask':'singleLayerMask', 'groupMask':'layerMask', 'aniso':'anisotropy', 'lumiAmt':'emissiveAmount', 'dissolve':'presence',
            'subsCol':'subsurfaceColor', 'subsAmt':'subsurfaceAmount', 'ior':'ior'}
 COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol', 'subsCol'}
 
@@ -61,7 +61,7 @@ EFFECT_ALIASES = {'diffColor': 'diffCol', 'specColor': 'specCol',
                   'lumiColor': 'lumiCol', 'tranColor': 'tranCol',
                   'tranAmount': 'tranAmt', 'coatAmount': 'coatAmt',
                   'diffAmount': 'diffAmt', 'specAmount': 'specAmt', 'lumiAmount': 'lumiAmt',
-                  'subsColor':'subsCol', 'subsAmount':'subsAmt'}
+                  'subsColor':'subsCol', 'subsAmount':'subsAmt', 'anisotropic':'aniso'}
 
 
 def source_tiles(source):

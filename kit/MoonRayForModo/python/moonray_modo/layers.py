@@ -33,11 +33,11 @@ def material_tag(item, texture=False):
         parent = parent.parent
     return tag if tag is not None else ''
 
-def texture_groups(layer, channel):
+def texture_groups(layer, channel, stop_type='polyRender'):
     """Capture outer-to-inner scopes without flattening group masks or opacity."""
     result = []
     parent = layer.parent
-    while parent and parent.type != 'polyRender':
+    while parent and parent.type != stop_type:
         if not channel(parent, 'enable', 1) or not channel(parent, 'render', 1):
             return None
         if parent.type != 'mask':
@@ -55,13 +55,19 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
     positions = {item.id:i for i,item in enumerate(items)}
     by_id = {item.id:item for item in items}
     for layer in reversed(items): # Modo's upper rows are applied last.
-        if layer.type not in ('imageMap','constant','checker','noise'):
-            continue
         if layer_filter is not None and layer.id not in layer_filter:
             continue
         if not channel(layer,'enable',1) or not channel(layer,'render',1):
             continue
         if channel(layer,'effect','') in baked_effects:
+            continue
+        if layer.type not in ('imageMap','constant','checker','noise','grid','dots'):
+            if layer.type not in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','defaultShader','mask','envMaterial') and channel(layer,'effect',None) is not None:
+                try:
+                    scope=material_key if layer_filter is not None else material_tag(layer,texture=True)
+                    if scope in materials and texture_groups(layer,channel) is not None:
+                        warnings.append('Layer %s (%s): no Shader Tree translator for effect %s; use a MoonShine graph or baked image.'%(layer.name,layer.type,channel(layer,'effect','')))
+                except ValueError:pass
             continue
         try:
             if layer_filter is None:
@@ -96,13 +102,17 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             if effect not in textures.EFFECTS:
                 raise ValueError('unsupported effect '+effect)
             blend = channel(layer,'blend','normal')
-            if blend not in BLENDS:
+            if blend not in BLENDS and not (effect in ('normal','normalCoat') and blend=='normalblend'):
                 raise ValueError('unsupported blend '+blend)
-            node = {'kind':layer.type, 'effect':effect, 'opacity':float(channel(layer,'opacity',1)),
+            node = {'identity':layer.id,'kind':layer.type, 'effect':effect, 'opacity':float(channel(layer,'opacity',1)),
                     'blend':blend, 'uv_map':'', 'invert':bool(channel(layer,'invert',0)), 'groups':groups, 'absolute_groups':texture_groups(layer,channel) or []}
-            if effect == 'normal' and (blend != 'normal' or layer.type != 'imageMap'):
-                raise ValueError('normal maps require an image and Normal blending')
-            is_color = effect in textures.COLOR_EFFECTS or effect == 'normal'
+            if effect=='layerMask':
+                siblings=list(reversed(list(layer.parent.children())))
+                above=next(i for i,v in enumerate(siblings) if v.id==layer.id)-1
+                node['mask_target']=siblings[above].id if above>=0 else ''
+            if effect in ('normal','normalCoat') and (blend not in ('normal','normalblend') or layer.type != 'imageMap'):
+                raise ValueError('normal maps require an image and Normal or Normal Map Blend blending')
+            is_color = effect in textures.COLOR_EFFECTS or effect in ('normal','normalCoat')
             if layer.type == 'constant':
                 node['value'] = color(layer,'color',(0,0,0)) if is_color else [float(channel(layer,'value',1))]*3
             else:
@@ -159,12 +169,17 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     space = channel(clip,'colorspace','(default)')
                     node.update(color_space=space if effect in textures.COLOR_EFFECTS else 'raw',path=str(path.resolve()),mtime=max(p.stat().st_mtime_ns for p in sources.values()),size=sum(p.stat().st_size for p in sources.values()),
                         tile_signature=[(n,p.stat().st_size,p.stat().st_mtime_ns) for n,p in sorted(sources.items())],
-                        srgb=effect not in ('normal','bump') and (space=='sRGB' or
+                        srgb=effect not in ('normal','normalCoat','bump','coatBump') and (space=='sRGB' or
                             (space=='(default)' and effect in textures.COLOR_EFFECTS and path.suffix.lower() not in ('.exr','.hdr','.tx'))),
                         use_alpha=source_channel=='use')
+                elif layer.type in ('grid','dots'):
+                    from .procedurals import capture
+                    node['procedural']=capture(layer,channel,color,is_color)
+                    warnings.append('Procedural '+layer.name+': sampled 2D '+layer.type+' translation; Modo pattern equivalence is unverified.')
                 else:
                     node.update(color1=color(layer,'color1',(0,0,0)) if is_color else [float(channel(layer,'value1',0))]*3,
                                 color2=color(layer,'color2') if is_color else [float(channel(layer,'value2',1))]*3)
+                    node.update(alpha1=float(channel(layer,'alpha1',1)),alpha2=float(channel(layer,'alpha2',1)))
                     node['bias'] = float(channel(layer,'bias',.5))
                     node['gain'] = float(channel(layer,'gain',.5))
                     if layer.type=='checker' and (channel(layer,'type','square')!='square' or channel(layer,'variation',0)):
@@ -177,7 +192,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         warnings.append('Noise uses a MoonRay UV fractal approximation, not the exact Modo pattern: '+layer.name)
             material = materials[tag]
             uv = node['uv_map']
-            if uv and (effect in ('normal','bump') or not material.get('uv_map')):
+            if uv and (effect in ('normal','normalCoat','bump','coatBump') or not material.get('uv_map')):
                 material['uv_map'] = uv
             material.setdefault('layers',[]).append(node)
             # Keep source metadata available to existing callers and live digests.

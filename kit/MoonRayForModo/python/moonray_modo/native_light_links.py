@@ -17,6 +17,11 @@ def linked_members(item):
 
 def capture(scene,snapshot,warnings):
     from .host import channel
+    def active(item):
+        while item and item.type!='polyRender':
+            if not channel(item,'enable',True) or not channel(item,'render',True):return False
+            item=item.parent
+        return True
     from .layers import ordered_items,material_tag
     lights={};shaders={}
     if any(channel(item,'linkEnable',False) for item in scene.items('light')):
@@ -34,7 +39,7 @@ def capture(scene,snapshot,warnings):
         except (ValueError,LookupError,RuntimeError,AttributeError) as exc:warnings.append('Light links for '+item.name+': '+str(exc))
     ordered=list(ordered_items(scene.renderItem));order={item.id:i for i,item in enumerate(ordered)}
     for item in ordered:
-        if item.type!='defaultShader' or not channel(item,'enable',True) or not channel(item,'render',True) or not channel(item,'lgtEnable',False):continue
+        if item.type!='defaultShader' or not active(item) or not channel(item,'enable',True) or not channel(item,'render',True) or not channel(item,'lgtEnable',False):continue
         try:
             value=rule(item,'lightLink')
             if value is not None:shaders[item.id]=(item,value)

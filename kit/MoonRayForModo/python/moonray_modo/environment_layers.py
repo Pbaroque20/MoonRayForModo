@@ -96,9 +96,11 @@ def image_pixels(layer, folder, width, height):
 def texture(environment, width=512, height=256):
     from .environments import gradient_color
     from .daylight import color as daylight_color
+    from .compositing import Groups
+    from .procedurals import sample
     if any(layer['kind']=='physical' for layer in environment['layers']):
         width,height = 256,128
-    digest = hashlib.sha256(('stack-v4-alpha|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
+    digest = hashlib.sha256(('stack-v5-scopes|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
     folder = Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')
@@ -117,10 +119,27 @@ def texture(environment, width=512, height=256):
                     for x in range(width):
                         longitude = ((x+.5)/width-.5)*2*math.pi
                         direction = (math.sin(longitude)*math.cos(latitude), math.sin(latitude), math.cos(longitude)*math.cos(latitude))
-                        color = [0,0,0]
+                        pending_masks={}
+                        def composite(a,b,group,mask,effect):
+                            weight=group.get('opacity',1)
+                            if mask is not None:weight*=sum(mask)/3
+                            if group['id'] in pending_masks:weight*=sum(pending_masks[group['id']])/3
+                            if group.get('invert') and effect=='envColor':b=[1-c for c in b]
+                            return blend(a,b,group.get('blend','normal'),weight)
+                        scopes=Groups({'envColor':[0,0,0],'groupMask':[1,1,1]},None,composite)
                         for layer,pixels,alpha,inv in layers:
+                            scopes.select(layer.get('groups',[]))
+                            effect=layer.get('effect','envColor')
                             coverage=1.0
-                            if pixels is None:
+                            if layer['kind']=='color':
+                                foreground=layer['color']
+                            elif layer['kind']=='procedural':
+                                d=direction if inv is None else [sum(direction[j]*inv[j*4+i] for j in range(3)) for i in range(3)]
+                                length=max(1e-12,math.sqrt(sum(v*v for v in d)))
+                                uv=(.5+math.atan2(d[0],d[2])/(2*math.pi),.5+math.asin(max(-1,min(1,d[1]/length)))/math.pi)
+                                u,v=coordinates.transform_uv(layer,[uv])[0]
+                                foreground,coverage=sample(layer['procedural'],u,v)
+                            elif pixels is None:
                                 foreground = daylight_color(direction,layer) if layer['kind']=='physical' else gradient_color(layer,direction[1])
                             else:
                                 d = direction if inv is None else [sum(direction[j]*inv[j*4+i] for j in range(3)) for i in range(3)]
@@ -141,7 +160,14 @@ def texture(environment, width=512, height=256):
                             if layer['kind']=='physical' and layer.get('normalize'):
                                 foreground=[min(1,max(0,c))**(1/layer.get('sky_gamma',1)) for c in foreground]
                             if layer.get('invert'): foreground = [1-c for c in foreground]
-                            color = blend(color,foreground,layer.get('blend','normal'),layer.get('opacity',1)*coverage)
+                            row_mask=pending_masks.pop(layer.get('layer_identity'),None)
+                            if row_mask is not None:coverage*=sum(row_mask)/3
+                            if effect=='layerMask':
+                                pending_masks[layer.get('mask_target','')]=blend([1,1,1],foreground,layer.get('blend','normal'),layer.get('opacity',1)*coverage)
+                            else:
+                                scopes.current[effect]=blend(scopes.current[effect],foreground,layer.get('blend','normal'),layer.get('opacity',1)*coverage)
+                                scopes.used.add(effect)
+                        color=scopes.finish()[0]['envColor']
                         out.write(struct.pack('<3f',*color))
             staged.replace(target)
         finally:

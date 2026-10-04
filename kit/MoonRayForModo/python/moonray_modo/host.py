@@ -106,6 +106,7 @@ def material_values(material):
                                 'specular_amount': float(channel(material, 'specAmt', .04)),
                                 'emission_amount': float(channel(material, 'radiance', 0)),
                                 'roughness': float(channel(material, 'rough', .4)),
+                                'diffuse_roughness': float(channel(material, 'diffRough', 0)),
                                 'subsurface_amount': min(1,max(0,float(channel(material,'subsAmt',0)))),
                                 'subsurface_distance': max(0,float(channel(material,'subsDist',0))),
                                 'subsurface_color': color(material,'subsCol'),

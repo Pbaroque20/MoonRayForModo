@@ -25,23 +25,36 @@ def collect(scene, warnings):
                 'indirect':bool(channel(environment,'visInd',1)),
                 'reflection':bool(channel(environment,'visRefl',1)),
                 'refraction':bool(channel(environment,'visRefr',1))}
-        children = [i for i in reversed(list(environment.children()))
-                    if channel(i,'enable',1) and channel(i,'render',1) and channel(i,'opacity',1)>0]
+        from .layers import ordered_items,texture_groups
+        children = [i for i in ordered_items(environment) if i.type!='mask'
+                    and channel(i,'enable',1) and channel(i,'render',1) and channel(i,'opacity',1)>0]
         stack = []
         for index, layer in enumerate(children):
             try:
-                if channel(layer,'effect','envColor') != 'envColor':
-                    raise ValueError('only Environment Color layers are supported')
+                effect=channel(layer,'effect','envColor')
+                if effect not in ('envColor','groupMask','layerMask'):
+                    raise ValueError('unsupported environment effect '+str(effect))
+                scopes=texture_groups(layer,channel,stop_type='environment')
+                if scopes is None:continue
+                parent=layer.parent
+                while parent and parent.type!='environment':
+                    if channel(parent,'ptag','') or parent.itemGraph('shadeLoc').forward():
+                        raise ValueError('Item/tag masks cannot be evaluated on a direction-only environment')
+                    parent=parent.parent
                 from .layers import BLENDS
                 mode = channel(layer,'blend','normal')
                 if mode not in BLENDS:
                     raise ValueError('unsupported environment blend '+mode)
                 opacity = float(channel(layer,'opacity',1))
-                entry = dict(item, opacity=opacity, blend=mode, invert=bool(channel(layer,'invert',0)))
+                entry = dict(item, layer_identity=layer.id, effect=effect, groups=scopes, opacity=opacity, blend=mode, invert=bool(channel(layer,'invert',0)))
+                if effect=='layerMask':
+                    siblings=list(reversed(list(layer.parent.children())))
+                    above=next(i for i,v in enumerate(siblings) if v.id==layer.id)-1
+                    entry['mask_target']=siblings[above].id if above>=0 else ''
                 if layer.type == 'envMaterial':
                     kind = channel(layer,'type','grad4')
                     if kind not in ('constant','grad2','grad4','overcast','physical'):
-                        raise ValueError('physical daylight is not yet translated')
+                        raise ValueError('unsupported environment material type '+str(kind))
                     entry.update(kind=kind,zenith=color(layer,'zenColor'),sky=color(layer,'skyColor'),
                         ground=color(layer,'gndColor'),nadir=color(layer,'nadColor'),
                         sky_exponent=float(channel(layer,'skyExp',4)),
@@ -63,6 +76,15 @@ def collect(scene, warnings):
                         warnings.append('Physical daylight uses a single-scattering approximation; sun angles, linked Sun Light, haze, ground albedo and sky clamp/gamma are translated; ozone and solar-disc parity remain unverified: '+layer.name)
                     if channel(layer,'fogType','none') != 'none':
                         warnings.append('Environment fog is not translated: '+layer.name)
+                elif layer.type=='constant':
+                    entry.update(kind='color',color=color(layer,'color',(0,0,0)) if effect=='envColor' else [float(channel(layer,'value',1))]*3)
+                elif layer.type in ('grid','dots'):
+                    from .procedurals import capture
+                    entry.update(kind='procedural',procedural=capture(layer,channel,color,effect=='envColor'))
+                    locator=next((i for i in layer.itemGraph('shadeLoc').forward() if i.type=='txtrLocator'),None)
+                    if not locator or channel(locator,'projType')!='spherical':raise ValueError('Environment procedurals require a spherical Texture Locator')
+                    entry.update(matrix=world_matrix(locator),scale=[float(channel(locator,'wrapU',1)),float(channel(locator,'wrapV',1))],rotation=float(channel(locator,'uvRotation',0)),
+                        uv_matrix=[float(channel(locator,k,v)) for k,v in zip(('m00','m01','m02','m10','m11','m12'),(1,0,0,0,1,0))])
                 elif layer.type == 'imageMap':
                     connected = layer.itemGraph('shadeLoc').forward()
                     locator = next((i for i in connected if i.type=='txtrLocator'),None)
@@ -94,12 +116,11 @@ def collect(scene, warnings):
                 else:
                     raise ValueError('unsupported environment layer type '+layer.type)
                 stack.append(entry)
-                if opacity==1 and mode=='normal' and not (entry['kind']=='image' and entry.get('image_channel')=='use'):
-                    break
+                # Keep lower rows: nested groups and Layer Masks can expose them.
             except (ValueError, LookupError, OSError) as exc:
                 warnings.append('Environment %s: %s.' % (layer.name,exc))
         if stack:
-            if len(stack)==1 and stack[0]['kind']!='physical' and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections') and stack[0].get('image_channel','ignore') not in ('use','only'):
+            if len(stack)==1 and not stack[0].get('groups') and stack[0].get('effect')=='envColor' and stack[0]['kind'] not in ('physical','color','procedural') and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections') and stack[0].get('image_channel','ignore') not in ('use','only'):
                 result.append(stack[0])
             else:
                 result.append(dict(item,kind='stack',layers=stack))

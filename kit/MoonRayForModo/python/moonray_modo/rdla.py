@@ -153,7 +153,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         glass = (material.get('transmission', 0) > 0 or material.get('presence', 1) < 1 or
                  'dissolve' in effects or any(k.startswith('tran') for k in effects))
         from .graph import bindings as graph_bindings
-        moonshine = glass or material.get('dispersion_abbe',0)>0 or material.get('shader') == 'DwaBaseMaterial' or bool({'aniso','subsCol','subsAmt'} & effects) or material.get('subsurface_amount',0)>0
+        moonshine = glass or material.get('dispersion_abbe',0)>0 or material.get('shader') == 'DwaBaseMaterial' or bool({'aniso','subsCol','subsAmt','normalCoat','coatBump','diffRough'} & effects) or material.get('subsurface_amount',0)>0 or material.get('diffuse_roughness',0)>0
         if moonshine:
             material = dict(material,shader='DwaBaseMaterial')
         bindings = graph_bindings(material, index, lines, glass and not moonshine)

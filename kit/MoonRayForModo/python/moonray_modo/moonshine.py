@@ -14,6 +14,7 @@ def emit(material, tag, index, bindings, lines):
         'metallic':number(material.get('metallic',0)),
         'metallic_color':vector(material['color'],'Rgb'),
         'roughness':number(material.get('roughness',.4)),
+        'diffuse_roughness':number(material.get('diffuse_roughness',0)),
         'scattering_radius':number(max(0,material.get('subsurface_distance',0)) if material.get('subsurface_amount',0)>0 or sss_weight else 0),
         'scattering_color':vector(material.get('subsurface_color',[1,1,1]),'Rgb'),
         'bssrdf':str(controls['subsurface_model']),
@@ -41,16 +42,17 @@ def emit(material, tag, index, bindings, lines):
     }
     names={'diffuseColor':'albedo','emissiveColor':'emission','ior':'refractive_index',
         'transmissionColor':'transmission_color','refractionRoughness':'independent_transmission_roughness',
-        'clearcoatRoughness':'clearcoat_roughness','specularAmount':'specular', 'subsurfaceColor':'scattering_color'}
+        'diffuseRoughness':'diffuse_roughness','clearcoatRoughness':'clearcoat_roughness','specularAmount':'specular', 'subsurfaceColor':'scattering_color'}
     for key,value in bindings.items():
         if key in ('layerMask','subsurfaceAmount'):
             continue
         if key=='anisotropy':
             attributes['specular_model']='0'
-        if key=='normal':
-            name='/modo/normal/%s' % index
+        if key in ('normal','coatNormal'):
+            name='/modo/normal/%s/%s' % (index,key)
             lines += ['ModoNormalMap(%s) { ["input"] = %s }' % (string(name),value)]
-            attributes['input_normal']='ModoNormalMap(%s)' % string(name)
+            attributes['input_normal' if key=='normal' else 'independent_clearcoat_normal']='ModoNormalMap(%s)' % string(name)
+            if key=='coatNormal':attributes['use_independent_clearcoat_normal']='true'
         elif key=='ior':
             attributes['independent_transmission_refractive_index']=value
             if not material.get('standard_material'):attributes['refractive_index']=value
