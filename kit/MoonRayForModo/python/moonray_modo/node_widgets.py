@@ -92,7 +92,13 @@ class VectorEdit(QtWidgets.QWidget):
         for _ in range(count):
             spin=QtWidgets.QDoubleSpinBox();spin.setRange(-1e12,1e12);spin.setDecimals(6);spin.setSingleStep(.1);layout.addWidget(spin);self.spins.append(spin)
         if color:
-            button=QtWidgets.QPushButton('Color');button.setAutoDefault(False);button.setDefault(False);layout.addWidget(button);button.clicked.connect(self.choose)
+            self.swatch=QtWidgets.QPushButton();self.swatch.setFixedSize(40,24);self.swatch.setAutoDefault(False);self.swatch.setDefault(False);self.swatch.setAccessibleName('Choose color');layout.addWidget(self.swatch);self.swatch.clicked.connect(self.choose)
+            for spin in self.spins:spin.valueChanged.connect(self.update_swatch)
+            self.update_swatch()
+    def update_swatch(self,*args):
+        color=QtGui.QColor.fromRgbF(*[max(0,min(1,s.value())) for s in self.spins[:3]])
+        self.swatch.setStyleSheet('background-color: '+color.name()+'; border: 1px solid #888; border-radius: 3px;')
+        self.swatch.setToolTip('Choose color — RGB '+', '.join(format(s.value(),'.4g') for s in self.spins[:3]))
     def choose(self):
         initial=QtGui.QColor.fromRgbF(*[max(0,min(1,s.value())) for s in self.spins[:3]])
         self.choosing_color=True
@@ -109,6 +115,25 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
     def schema(self,index):
         identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
         return nodes.specs(self.editor.graph['nodes'][identity]['type'])[key]
+    def paint(self,painter,option,index):
+        try:
+            color_field=index.column()==1 and self.schema(index)['type']=='Rgb'
+            values=json.loads(index.data()) if color_field else None
+        except (ValueError,TypeError,KeyError,AttributeError):values=None
+        if not isinstance(values,list) or len(values)!=3:return super().paint(painter,option,index)
+        text_option=QtWidgets.QStyleOptionViewItem(option);text_option.rect=option.rect.adjusted(30,0,0,0)
+        super().paint(painter,text_option,index)
+        painter.save();painter.setPen(QtGui.QColor('#888'))
+        painter.setBrush(QtGui.QColor.fromRgbF(*[max(0,min(1,v)) for v in values]))
+        painter.drawRoundedRect(option.rect.adjusted(3,4,0,-4).adjusted(0,0,24-option.rect.width(),0),2,2);painter.restore()
+    def editorEvent(self,event,model,option,index):
+        if event.type()==QtCore.QEvent.MouseButtonRelease and event.button()==QtCore.Qt.LeftButton and event.pos().x()<option.rect.left()+29:
+            try:
+                if index.column()==1 and self.schema(index)['type']=='Rgb':
+                    identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
+                    self.editor.choose_node_color(identity,key);return True
+            except (ValueError,TypeError,KeyError):pass
+        return super().editorEvent(event,model,option,index)
     def createEditor(self,parent,option,index):
         if index.column()!=1:return None
         spec=self.schema(index);kind=spec['type'];enum=spec.get('enum')

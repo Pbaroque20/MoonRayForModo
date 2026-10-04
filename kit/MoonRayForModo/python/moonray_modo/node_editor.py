@@ -151,6 +151,17 @@ class Editor(QtWidgets.QDialog):
         kind=item.data(0,QtCore.Qt.UserRole)
         if not kind:return
         self.kinds.setCurrentText(kind);self.add()
+    def choose_node_color(self,identity,key):
+        self.table.itemDelegateForColumn(1).commit_pending()
+        node=nodes.effective(self.graph)['nodes'][identity];spec=nodes.specs(node['type'])[key]
+        current=node.get('parameters',{}).get(key,node_defaults.value(spec))
+        color=QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[max(0,min(1,v)) for v in current[:3]]),self,'Choose '+key)
+        if not color.isValid():return
+        before=copy.deepcopy(self.graph)
+        try:
+            target=self.target(identity);target.setdefault('parameters',{})[key]=[color.redF(),color.greenF(),color.blueF()]
+            target.setdefault('inputs',{}).pop(key,None);self.validate_draft();self.remember(before);self.rebuild()
+        except ValueError as exc:self.graph=before;self.error(exc)
     def preview_widget(self):
         from .material_preview import show
         def draft():
