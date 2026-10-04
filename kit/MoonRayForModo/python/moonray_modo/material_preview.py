@@ -144,6 +144,9 @@ class Panel(QtWidgets.QWidget):
     @QtCore.Slot()
     def refresh(self):
         if self.closed or self.refreshing:return
+        from .interaction import dragging
+        if dragging():self.timer.start(80);return
+        self.timer.setInterval(650)
         self.refreshing=True
         try:
             record("Capture draft begin")

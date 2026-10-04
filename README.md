@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.34** adds Materials / Clay — Terracotta / Clay — Gray selectors to the main preview and material widget. Clay overrides surface shading only during previews, retaining displacement and scene lighting; final renders and authored materials are unaffected. Includes 0.3.33 rendering defaults (Spiral square, 4–12 SPP, 4 total and mirror/refraction bounces, adaptive lights). Tests skipped as requested.
+Development version **0.3.35** defers preview capture while a mouse drag is held, gates inactive object-override controls, and simplifies the preview toolbar. Override edits retain the Apply to selected geometry workflow. Settings start collapsed for new layouts; existing workspace preferences are preserved. Tests skipped as requested.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native

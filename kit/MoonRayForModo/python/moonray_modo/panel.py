@@ -24,14 +24,15 @@ class Panel(QtWidgets.QWidget):
         from .changes import Changes
         self.changes=Changes();self._geometry_cache=None;self._last_time=None;self._live_settings=None;self._asset_signature=[];self._asset_scene={};self._last_full_capture=0
         self.last_digest = None
+        self._pending_preview=False
+        self.release_timer=QtCore.QTimer(self);self.release_timer.setSingleShot(True);self.release_timer.setInterval(80)
+        self.release_timer.timeout.connect(self._after_drag)
         self.disposed = False
         self.sequence = None
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(1200)
         self.timer.timeout.connect(self._live_tick)
-        layout = QtWidgets.QVBoxLayout(self)
-        title = QtWidgets.QLabel('MoonRay Preview')
-        layout.addWidget(title)
+        layout = QtWidgets.QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(4)
         self.tabs = QtWidgets.QTabWidget()
         self.pages = {}
         for key, label in [('render', 'Render'), ('lighting', 'Lighting'), ('object', 'Objects'),
@@ -259,14 +260,15 @@ class Panel(QtWidgets.QWidget):
         animation.clicked.connect(self.render_animation)
         controls.addRow(animation)
         actions = QtWidgets.QHBoxLayout()
-        self.start = QtWidgets.QPushButton('Refresh preview')
+        self.start = QtWidgets.QPushButton('Render')
         self.start.setToolTip('Capture the current scene and start a fresh preview. The previous image stays visible until its replacement is ready.')
         self.start.clicked.connect(self.render_once)
         stop = QtWidgets.QPushButton('Stop')
         stop.clicked.connect(self.stop)
-        self.live = QtWidgets.QCheckBox('Live updates')
+        self.live = QtWidgets.QCheckBox('Live')
+        self.live.setToolTip('Update after releasing a drag or committing a value. The current render continues while you drag.')
         self.live.toggled.connect(self._toggle_live)
-        self.preview_lock=QtWidgets.QCheckBox('Lock preview')
+        self.preview_lock=QtWidgets.QCheckBox('Lock')
         self.preview_lock.setToolTip('Keep the current render running. Hold automatic scene changes until unlocked; cached buffers and display transforms remain available. Refresh preview still starts a new preview explicitly.')
         self.preview_lock.toggled.connect(self._lock_changed)
         self.final = QtWidgets.QPushButton('Render EXR…')
@@ -275,9 +277,15 @@ class Panel(QtWidgets.QWidget):
         export.clicked.connect(self.export)
         self.settings_toggle = QtWidgets.QPushButton('Settings')
         self.settings_toggle.setCheckable(True)
-        self.settings_toggle.setChecked(True)
+        self.settings_toggle.setChecked(False)
+        self.tabs.hide()
         self.settings_toggle.toggled.connect(self.tabs.setVisible)
-        for widget in (self.start, stop, self.live, self.preview_lock, self.settings_toggle, self.final, export):
+        output_menu=QtWidgets.QMenu(self)
+        output_menu.addAction('Render EXR…',self.render_final);output_menu.addAction('Render animation…',self.render_animation)
+        output_menu.addAction('Export scene…',self.export)
+        output_button=QtWidgets.QToolButton();output_button.setText('Output');output_button.setMenu(output_menu);output_button.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.final.hide();export.hide()
+        for widget in (self.start, stop, self.live, self.preview_lock, self.settings_toggle, output_button):
             actions.addWidget(widget)
         layout.addLayout(actions)
         buffer_row = QtWidgets.QHBoxLayout()
@@ -296,14 +304,14 @@ class Panel(QtWidgets.QWidget):
         self.clay_mode=QtWidgets.QComboBox()
         for label,key in CHOICES:self.clay_mode.addItem(label,key)
         self.clay_mode.setToolTip('Preview surface override. Keeps scene lighting and displacement; final renders use authored materials.')
-        clay_row=QtWidgets.QHBoxLayout();clay_row.addWidget(QtWidgets.QLabel('Preview material'));clay_row.addWidget(self.clay_mode,1);layout.addLayout(clay_row)
+        self.clay_mode.setAccessibleName('Preview material');buffer_row.addWidget(self.clay_mode,1)
 
         self.preview = Preview()
         self.renderer.buckets.connect(self.preview.set_buckets)
-        self.show_buckets=QtWidgets.QCheckBox('Active tiles')
+        self.show_buckets=QtWidgets.QCheckBox('Buckets')
         self.show_buckets.setChecked(str(self.settings.value('show_buckets','true')).lower()!='false')
         self.preview.set_show_buckets(self.show_buckets.isChecked())
-        self.show_buckets.setToolTip('Worker activity only; outlines are not a pixel completion map. Checkerboard pixels have not received samples yet. Adaptive pixels finish independently. Outline sampled active CPU tile workers. Native tiles are 8 pixels wide. XPU rays may continue on the GPU after CPU dispatch ends. This display does not change rendering.')
+        self.show_buckets.setToolTip('Show active render buckets. Adaptive passes may revisit a bucket; boxes do not indicate completed pixels.')
         self.show_buckets.toggled.connect(self.preview.set_show_buckets)
         self.show_buckets.toggled.connect(lambda value:self.settings.setValue('show_buckets',value))
         buffer_row.addWidget(self.show_buckets)
@@ -319,7 +327,7 @@ class Panel(QtWidgets.QWidget):
         self.render_progress.setRange(0,100);self.render_progress.setValue(0)
         self.render_progress.setToolTip('MoonRay progress for the current pass. Adaptive sampling estimates can change; preparation and denoising have no reliable percentage.')
         self.render_timing=QtWidgets.QLabel('Elapsed 0m 00s · Remaining: —')
-        layout.addWidget(self.render_progress);layout.addWidget(self.render_timing)
+        progress_row=QtWidgets.QHBoxLayout();progress_row.addWidget(self.render_progress,1);progress_row.addWidget(self.render_timing);layout.addLayout(progress_row)
         self.renderer.progress.connect(self._render_progress)
         self.status = QtWidgets.QLabel('Ready. Click the preview or choose Refresh preview.')
         self.status.setWordWrap(True)
@@ -370,12 +378,15 @@ class Panel(QtWidgets.QWidget):
         self.selection_timer.setInterval(750)
         self.selection_timer.timeout.connect(self._refresh_object)
         self.selection_timer.start()
+        self.object_controls['override'].setToolTip('Enable MoonRay geometry overrides, then Apply to selected geometry. When off, inactive settings do not affect the preview.')
+        self.object_controls['override'].toggled.connect(self._object_controls_state)
         self._refresh_object()
+        for spin in self.findChildren(QtWidgets.QAbstractSpinBox):spin.setKeyboardTracking(False)
         stored_split=self.settings.value('workspace/splitter')
         if isinstance(stored_split,QtCore.QByteArray):self.splitter.restoreState(stored_split)
         try:self.tabs.setCurrentIndex(max(0,min(self.tabs.count()-1,int(self.settings.value('workspace/tab',0)))))
         except (ValueError,TypeError):pass
-        self.settings_toggle.setChecked(str(self.settings.value('workspace/settings_visible','true')).lower()!='false')
+        self.settings_toggle.setChecked(str(self.settings.value('workspace/settings_visible','false')).lower()!='false')
         self.splitter.splitterMoved.connect(self._store_workspace)
         self.tabs.currentChanged.connect(self._store_workspace)
         self.settings_toggle.toggled.connect(self._store_workspace)
@@ -597,19 +608,29 @@ class Panel(QtWidgets.QWidget):
             self.selected_object.setText(', '.join(item.name for item in selected) or 'Select a mesh, instance or replicator in Modo')
             values = options.object_values(properties.read(selected[0])) if selected else options.object_values({})
             for key, widget in self.object_controls.items():
-                widget.setEnabled(bool(selected))
+                blocker=QtCore.QSignalBlocker(widget)
                 widget.setChecked(values[key]) if isinstance(widget, QtWidgets.QCheckBox) else widget.setValue(values[key])
+                del blocker
+            self.object_controls['override'].setEnabled(bool(selected))
+            self._object_controls_state()
         except Exception:
             self.object_apply.setEnabled(False)
+
+    def _object_controls_state(self,*args):
+        enabled=self.object_controls['override'].isEnabled() and self.object_controls['override'].isChecked()
+        for key,widget in self.object_controls.items():
+            if key!='override':widget.setEnabled(enabled)
 
     def _save_object(self):
         try:
             values = {key: control.isChecked() if isinstance(control, QtWidgets.QCheckBox) else control.value()
                       for key, control in self.object_controls.items()}
+            selected=properties.selected_geometry()
+            if not selected or all(options.object_values(properties.read(item))==values for item in selected):return
             lx.eval('moonray.objectSettings ' + properties.encode(values))
             self._object_signature = None
             self._refresh_object()
-            self.status.setText('Object properties updated. Per-object overrides take precedence over scene defaults.')
+            self.status.setText('Object overrides applied.' if values['override'] else 'Object overrides disabled. Using captured Modo geometry and scene defaults.')
         except Exception as exc:
             self.status.setText('Cannot update object properties: ' + str(exc))
 
@@ -693,6 +714,8 @@ class Panel(QtWidgets.QWidget):
         for mesh in scene['meshes']:
             if mesh.get('object_override'):
                 continue
+            # Dormant UI settings must not change the rendered-scene digest.
+            if 'geometry_settings' in mesh:mesh['geometry_settings']={'override':False}
             if self.surface.currentIndex() == 1:
                 mesh['subdivision'] = True
             mesh['subdivision_level'] = self.subdivision_level.value()
@@ -743,7 +766,18 @@ class Panel(QtWidgets.QWidget):
             return
         self.render_once()
 
+    def _after_drag(self):
+        if self.disposed:return
+        from .interaction import dragging
+        if dragging():self.release_timer.start();return
+        if self._pending_preview:
+            self._pending_preview=False;self.render_once()
+        elif self.live.isChecked():self._live_tick()
+
     def render_once(self):
+        from .interaction import dragging
+        if dragging():
+            self._pending_preview=True;self.release_timer.start();return
         if self._output_busy():
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
         try:
@@ -762,6 +796,8 @@ class Panel(QtWidgets.QWidget):
             self.timer.stop()
 
     def _live_tick(self):
+        from .interaction import dragging
+        if dragging():self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         try:
@@ -786,6 +822,7 @@ class Panel(QtWidgets.QWidget):
             self.changes.invalidate();self._failed(str(exc))
 
     def stop(self):
+        self._pending_preview=False;self.release_timer.stop()
         self.preview_timer.stop()
         if self.sequence is not None:
             self.sequence.stop()
@@ -901,6 +938,7 @@ class Panel(QtWidgets.QWidget):
             self._store_workspace()
             self.disposed = True
             self.changes.close()
+            self.release_timer.stop()
             self.display_timer.stop()
             self.preview_timer.stop()
             self.timer.stop()
