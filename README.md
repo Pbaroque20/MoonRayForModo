@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.30** replaces Python property-table painting with [native Qt swatches and icons](docs/COMPATIBILITY_0330.md). All 163 host checks passed in Modo 16.1v9. Manual confirmation of the recurring preview-start crash remains pending.
+Development version **0.3.31** trims the top 10% of the material-widget preview to reduce empty space, including matching progress-box clipping. The crop affects widget display only. It includes the [0.3.30 property-pane correction](docs/COMPATIBILITY_0330.md), which passed 163 host checks and was confirmed working by the user. The crop change received a syntax check; no additional render test was run.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native

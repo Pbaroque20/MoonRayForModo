@@ -59,6 +59,30 @@ def snapshot(material, library, all_parts=False):
                 'min_adaptive_samples':4,'max_adaptive_samples':64,'target_adaptive_error':5.0}}
 
 
+class WidgetPreview(Preview):
+    """Trim empty upper margin only in the material widget's displayed image."""
+    TOP_CROP=0.10
+
+    @QtCore.Slot(object)
+    def set_image(self,image):
+        if not image.isNull():
+            top=min(image.height()-1,int(image.height()*self.TOP_CROP))
+            image=image.copy(0,top,image.width(),image.height()-top)
+        super().set_image(image)
+
+    @QtCore.Slot(object)
+    def set_buckets(self,packet):
+        if packet:
+            generation,width,height,rectangles=packet
+            cropped_height=height-min(height-1,int(height*self.TOP_CROP))
+            # Render telemetry uses bottom-left coordinates, so removing the
+            # upper edge leaves the origin unchanged. Clip the upper bounds.
+            rectangles=[(x0,y0,x1,min(y1,cropped_height))
+                        for x0,y0,x1,y1 in rectangles if y0<cropped_height]
+            packet=(generation,width,cropped_height,rectangles)
+        super().set_buckets(packet)
+
+
 class Panel(QtWidgets.QWidget):
     def __init__(self,item,draft,parent=None,embedded=False):
         super().__init__(parent)
@@ -71,7 +95,7 @@ class Panel(QtWidgets.QWidget):
         stop=QtWidgets.QPushButton('Stop');bar.addWidget(stop)
         for button in (refresh,stop):button.setAutoDefault(False);button.setDefault(False)
         self.parts=QtWidgets.QCheckBox('Apply material to base and stand');layout.addWidget(self.parts)
-        self.viewer=Preview(self);layout.addWidget(self.viewer,1)
+        self.viewer=WidgetPreview(self);layout.addWidget(self.viewer,1)
         self.status=QtWidgets.QLabel('Live preview is off. Enable it or click Refresh.');self.status.setWordWrap(True);layout.addWidget(self.status)
         self.setToolTip('Previews the current draft with widget UVs and studio lighting. Scene masks, projectors and hair geometry are not recreated. Live preview updates committed graph edits after a short pause.')
         credit=QtWidgets.QLabel('MoonRay Widget Copyright 2023–2025 DreamWorks Animation LLC. All rights reserved.\nASWF Digital Assets License v1.1');credit.setWordWrap(True);layout.addWidget(credit)
