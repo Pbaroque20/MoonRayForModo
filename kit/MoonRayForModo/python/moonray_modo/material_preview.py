@@ -105,7 +105,7 @@ class Panel(QtWidgets.QWidget):
         try:
             import modo
             from .host import material_values
-            library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=False)}
+            library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=True)}
             draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
             self.timer.stop()  # Draft commit can itself notify graph_changed.
             scene=snapshot(draft,library,self.parts.isChecked())

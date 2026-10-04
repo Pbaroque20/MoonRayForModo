@@ -208,7 +208,7 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
             except ValueError:
                 continue
         collect(scene, {tag:value}, warnings, layer_filter=allowed, material_key=tag)
-        if value.get("node_override") and value.get("node_graph"):
+        if value.get("node_override") and (value.get("node_graph") or value.get("native_shader")):
             if value.get("layer_opacity",1)!=1: raise ValueError("Node override layers currently require 100% opacity")
             result=[]
         result.append(value)

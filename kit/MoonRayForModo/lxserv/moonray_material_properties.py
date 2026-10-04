@@ -6,16 +6,23 @@ package_root=os.path.join(os.path.dirname(os.path.dirname(__file__)),"python")
 if package_root not in sys.path: sys.path.insert(0,package_root)
 import lx
 import lxu.command
-from moonray_modo import properties,shader_library,material_override
+from moonray_modo import properties,shader_library,material_override,property_notifications
 from moonray_modo.materials import selected
 
 TYPES=['']+sorted(shader_library.catalog())
 
 
+lx.bless(property_notifications.Notifier,property_notifications.NAME)
+
 class Observed(lxu.command.BasicCommand):
-    def basic_Notifier(self,index):
-        if index==0: return ('select.event','item +v')
-        if index==1: return ('scene.edit','')
+    def cmd_NotifyAddClient(self,argidx,client):
+        if not getattr(self,'_notifications',None):
+            self._notifications=lxu.command.NotifierHost()
+            self._notifications.add('select.event','item +v')
+            self._notifications.add(property_notifications.NAME,'')
+        self._notifications.add_client(client)
+    def cmd_NotifyRemoveClient(self,client):
+        if getattr(self,'_notifications',None):self._notifications.rem_client(client)
 
 
 class MaterialType(Observed):
@@ -120,7 +127,7 @@ class MoonShineOverride(Observed):
         super().__init__();self.dyna_Add('enabled',lx.symbol.sTYPE_BOOLEAN)
         self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
     def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-    def basic_Enable(self,msg):return bool(selected()) and all(i.type=='advancedMaterial' for i in selected())
+    def basic_Enable(self,msg):return bool(selected()) and all(i.type in ('advancedMaterial','material.moonrayMoonShine') for i in selected())
     def cmd_Query(self,index,query):
         values=lx.object.ValueArray(query)
         for item in selected():values.AddInt(int(material_override.enabled(properties.read(item))))
@@ -142,7 +149,7 @@ class OpenNodes(Observed):
     def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
     def basic_Enable(self,msg):
         items=selected()
-        return len(items)==1 and items[0].type=='advancedMaterial' and material_override.enabled(properties.read(items[0]))
+        return len(items)==1 and items[0].type in ('advancedMaterial','material.moonrayMoonShine') and material_override.enabled(properties.read(items[0]))
     def basic_Execute(self,msg,flags):
         from moonray_modo.node_editor import Editor
         if not self.basic_Enable(msg):raise ValueError('Enable MoonShine Material Override to open its node editor')
@@ -204,3 +211,26 @@ class RegularMaterialFilter(Observed):
     def basic_Execute(self,msg,flags): pass
 
 lx.bless(RegularMaterialFilter,'moonray.material.regularFilter')
+
+
+class AddMoonShineOverride(OpenNodes):
+    def basic_Enable(self,msg):return True
+    def basic_Execute(self,msg,flags):
+        import modo
+        from moonray_modo import nodes
+        lx.eval('shader.create material.moonrayMoonShine')
+        items=[item for item in modo.Scene().selected if item.type=='material.moonrayMoonShine']
+        if len(items)!=1:raise ValueError('Could not identify the new MoonShine Material Override layer')
+        item=items[0]
+        item.name='MoonShine Material Override'
+        properties.write(item,material_override.synchronize({},nodes.from_material(item)))
+
+class MoonShineLayerFilter(Observed):
+    def cmd_Flags(self):return lx.symbol.fCMD_UI
+    def basic_Enable(self,msg):
+        items=selected()
+        return bool(items) and all(item.type=='material.moonrayMoonShine' for item in items)
+    def basic_Execute(self,msg,flags):pass
+
+lx.bless(AddMoonShineOverride,'moonray.material.addMoonShineOverride')
+lx.bless(MoonShineLayerFilter,'moonray.material.layerFilter')

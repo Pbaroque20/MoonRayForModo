@@ -311,8 +311,9 @@ class Editor(QtWidgets.QDialog):
         self.graph['overrides']=[v for v in self.graph.get('overrides',[]) if v['node']!=identity]
         for layer in self.graph['overrides']: layer['inputs']={k:v for k,v in layer.get('inputs',{}).items() if v!=identity}
         self.remember(before);self.rebuild()
-    def output(self):
-        identity=self.selected()
+    def output(self,identity=None):
+        self.table.itemDelegateForColumn(1).commit_pending()
+        if not isinstance(identity,str):identity=self.selected()
         if identity and nodes.category(self.graph['nodes'][identity]['type'])=='material':
             before=copy.deepcopy(self.graph);self.graph['root']=identity;self.remember(before);self.rebuild()
         else: self.error('Select a surface material node')

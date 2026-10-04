@@ -17,6 +17,8 @@ def read(item):
 
 def write(item, values):
     item.setTag(TAG, json.dumps(values, sort_keys=True, separators=(',', ':')))
+    from .property_notifications import notify
+    notify()
 
 
 def selected_meshes():

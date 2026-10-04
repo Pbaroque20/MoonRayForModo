@@ -64,7 +64,7 @@ def edit(item, scene):
                     widget.addItem('Off',False);widget.addItem('On',True)
                 elif kind=='SceneObject*':
                     interface=spec.get('interface','')
-                    for candidate in scene.items('advancedMaterial',superType=False):
+                    for candidate in scene.items('advancedMaterial',superType=True):
                         shader=properties.read(candidate).get('native_shader')
                         if candidate.id!=item.id and shader and shader_library.compatible(shader,interface):
                             widget.addItem(candidate.name,{'material':candidate.id})
@@ -91,7 +91,7 @@ def edit(item, scene):
     def save():
         try:
             params=values()
-            library={candidate.id:properties.read(candidate) for candidate in scene.items('advancedMaterial',superType=False)}
+            library={candidate.id:properties.read(candidate) for candidate in scene.items('advancedMaterial',superType=True)}
             native=dict(settings,moonshine_override=True,native_shader=current[0],native_parameters=params,shader='DwaBaseMaterial')
             graph=native.get('node_graph')
             if graph:

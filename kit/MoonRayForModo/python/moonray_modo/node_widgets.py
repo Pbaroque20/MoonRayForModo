@@ -71,19 +71,29 @@ class GraphView(QtWidgets.QGraphicsView):
         if event.key()==QtCore.Qt.Key_F:self.editor.frame();event.accept();return
         super().keyPressEvent(event)
     def contextMenuEvent(self,event):
-        socket=self.socket_at(event.pos())
+        socket=self.socket_at(event.pos());item=self.itemAt(event.pos())
+        owner=item
+        while owner is not None and not hasattr(owner,'identity'):owner=owner.parentItem()
+        identity=getattr(owner,'identity',None)
+        menu=QtWidgets.QMenu(self);output=None;disconnect=None;connection=None
+        if identity in self.editor.graph['nodes'] and nodes.category(self.editor.graph['nodes'][identity]['type'])=='material':
+            output=menu.addAction('Set as Material Output')
+            output.setEnabled(identity!=self.editor.graph['root'])
+            if identity==self.editor.graph['root']:output.setText('Material Output (current)')
         if socket and socket.key is not None:
-            menu=QtWidgets.QMenu(self);action=menu.addAction('Disconnect '+socket.key)
-            if menu.exec_(event.globalPos())==action:self.editor.unlink(socket.identity,socket.key)
-            return
-        item=self.itemAt(event.pos())
-        if item and getattr(item,'connection',None):
-            menu=QtWidgets.QMenu(self);action=menu.addAction('Disconnect')
-            if menu.exec_(event.globalPos())==action:self.editor.unlink(*item.connection)
-            return
-        menu=QtWidgets.QMenu(self);add=menu.addAction('Add node…');frame=menu.addAction('Frame all (F)');chosen=menu.exec_(event.globalPos())
-        if chosen==add:self.editor.add_at=self.mapToScene(event.pos());self.editor.node_search.setFocus();self.editor.node_search.selectAll()
+            connection=(socket.identity,socket.key);disconnect=menu.addAction('Disconnect '+socket.key)
+        elif item and getattr(item,'connection',None):
+            connection=item.connection;disconnect=menu.addAction('Disconnect')
+        if output or disconnect:menu.addSeparator()
+        add=menu.addAction('Add node…');frame=menu.addAction('Frame all (F)')
+        chosen=menu.exec_(event.globalPos())
+        if chosen is None:return
+        if output is not None and chosen==output:self.editor.output(identity)
+        elif disconnect is not None and chosen==disconnect:self.editor.unlink(*connection)
+        elif chosen==add:
+            self.editor.add_at=self.mapToScene(event.pos());self.editor.node_search.setFocus();self.editor.node_search.selectAll()
         elif chosen==frame:self.editor.frame()
+
 
 class VectorEdit(QtWidgets.QWidget):
     color_accepted=QtCore.Signal()

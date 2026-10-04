@@ -89,7 +89,7 @@ def material_values(material):
     return {'name':material.name,'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
                                 'node_graph': settings.get('node_graph'),
-                                'node_override': settings.get('node_override',False) or material.type=='material.moonrayMaterialX',
+                                'node_override': settings.get('node_override',False) or material.type in ('material.moonrayMaterialX','material.moonrayMoonShine'),
                                 'native_shader': settings.get('native_shader',''),
                                 'native_parameters': settings.get('native_parameters',{}),
                                 'shader': settings.get('shader',''),
@@ -198,7 +198,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         material_candidates = {}
         for material in reversed(list(ordered_items(scene.renderItem))):
             from .materials import active as material_active
-            if material.type not in ('advancedMaterial','material.moonrayMaterialX') or not material_active(material) or not channel(material, 'enable', 1):
+            if material.type not in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX') or not material_active(material) or not channel(material, 'enable', 1):
                 continue
             try:
                 tag = material_tag(material)

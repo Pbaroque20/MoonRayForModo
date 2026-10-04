@@ -1,6 +1,19 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.17** embeds the MoonRay Widget in the graph editor.
+Development version **0.3.18** adds **MoonShine Material Override** to the
+native Shader Tree's **Add Layer** list. Place it above the Modo material in the
+same mask, enable its override, and choose **Edit Material Graph**. Disabling
+or hiding the layer restores materials below it. The MoonRay menu also has an
+**Add MoonShine Material Override** shortcut that creates an enabled layer.
+The properties panel uses one graph-editor entry instead of the redundant
+Material inputs / searchable editor button. Existing material overrides remain
+compatible. Material property commands now subscribe to Modo's UI notifications.
+
+Version **0.3.18** also adds **Set as Material Output** to a material
+node's right-click menu, including its title and sockets. Apply or Save commits
+the output to the scene; live preview follows the draft output.
+
+Version **0.3.17** embeds the MoonRay Widget in the graph editor.
 **Live material preview** is off by default; opt in for debounced updates while
 editing, or use **Refresh** manually. Node-library tooltips explain node purposes.
 
@@ -50,7 +63,7 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.17 uses the existing
+to the runtime recorded in its `runtime.json`. Version 0.3.18 uses the existing
 `runtime/xpu-compatibility-0311` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.

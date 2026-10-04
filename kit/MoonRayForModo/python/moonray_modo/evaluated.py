@@ -54,7 +54,7 @@ def assign_materials(data, scene, warnings):
         surface['layers']=list(stack)
         if stack not in tags:
             candidates=[by_id[identity] for identity in stack if identity in by_id
-                        and by_id[identity].type in ('advancedMaterial','material.moonrayMaterialX') and material_active(by_id[identity]) and channel(by_id[identity],'enable',1)]
+                        and by_id[identity].type in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX') and material_active(by_id[identity]) and channel(by_id[identity],'enable',1)]
             if not candidates:
                 tags[stack]=''
                 warnings.append('Evaluated surface has no supported material: '+surface['source_item'])
