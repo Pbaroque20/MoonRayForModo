@@ -4,6 +4,13 @@ MATERIALS={'advancedMaterial','material.moonrayMaterialX','imageMap','constant',
 
 def classify(scene, identities, cache):
     types={scene.item(identity).type for identity in identities}
+    if 'mesh' in types and types<=LIGHTS|{'mesh'}:
+        if cache.get('_evaluated_data') is None and not cache.get('extra_geometry'):
+            try:
+                if not scene.items('deformer',superType=True) and not scene.items('meshInst',superType=False) and not scene.items('replicator',superType=False):
+                    return {'dirty_meshes':{identity for identity in identities if scene.item(identity).type=='mesh'}}
+            except (RuntimeError,LookupError,AttributeError):pass
+        return False
     if types<=LIGHTS:return True
     if types<=LIGHTS|MATERIALS:return 'materials'
     if types<=LIGHTS|{'translation','rotation','scale'}:

@@ -69,6 +69,8 @@ class Editor(QtWidgets.QDialog):
         tools=QtWidgets.QHBoxLayout();layout.addLayout(tools)
         for label,callback in [('Undo',self.undo),('Redo',self.redo),('Frame all',self.frame),('Browse image…',self.browse_image),('Reset input',self.reset_input),('Import MaterialX…',self.import_file),('Export definitions…',self.export_file)]:
             button=QtWidgets.QPushButton(label);button.clicked.connect(callback);tools.addWidget(button)
+        preview=QtWidgets.QPushButton('Widget preview');preview.clicked.connect(self.preview_widget);tools.addWidget(preview)
+        self.finished.connect(lambda *_:getattr(self,'_widget_preview',None) and self._widget_preview.close())
         self.auto_connect=QtWidgets.QCheckBox('Auto-connect new node');self.auto_connect.setChecked(True);tools.addWidget(self.auto_connect)
         self.show_all=QtWidgets.QCheckBox('Show all inputs');self.show_all.setToolTip('Expand every connectable socket. Connected inputs are always visible.');tools.addWidget(self.show_all);self.show_all.toggled.connect(self.rebuild)
         splitter=QtWidgets.QSplitter();layout.addWidget(splitter,1)
@@ -87,6 +89,13 @@ class Editor(QtWidgets.QDialog):
         buttons.accepted.connect(self.save);buttons.rejected.connect(self.reject)
         self.canvas.selectionChanged.connect(self.inspect);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
         self.rebuild();self.frame()
+    def preview_widget(self):
+        from .material_preview import show
+        def draft():
+            material=copy.deepcopy(properties.read(self.item))
+            material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
+            return material
+        show(self.item,draft,self)
     def error(self,exc): QtWidgets.QMessageBox.warning(self,'Node graph',str(exc))
     def selected(self): return next((item.identity for item in self.canvas.selectedItems() if isinstance(item,Node)),None)
     def rebuild(self,*args):

@@ -3,7 +3,7 @@ import copy
 
 def align(reference,sample):
  ids=reference.get('ids');other=sample.get('ids')
- if ids is None and other is None:return sample
+ if ids is None and other is None:raise ValueError('Strict point/strand motion requires persistent IDs; provide simulation IDs, a point-ID map or strand-ID tag, or choose freeze/velocity motion')
  if ids is None or other is None:raise ValueError('Every shutter sample must provide geometry IDs')
  def validate(entry,values):
   size=len(entry.get('counts',[])) if entry['kind']=='curves' else len(entry['vertices'])

@@ -38,6 +38,8 @@ class Controls(QtWidgets.QDialog):
                         row=QtWidgets.QListWidgetItem(name,w);row.setData(QtCore.Qt.UserRole,identity);row.setFlags(row.flags()|QtCore.Qt.ItemIsUserCheckable);row.setCheckState(QtCore.Qt.Unchecked)
                     form.addRow(label,w)
                 field('motion_topology','Changing topology during shutter','choice','strict',choices=[('Require stable topology','strict'),('Frame-time geometry; no deformation blur','freeze'),('Frame-time points / strands with velocities','velocity')])
+                field('point_id_map','Persistent point ID weight map','text','')
+                field('strand_id_tag','Persistent strand ID tag (4 characters)','text','')
                 field('asset_label','Cryptomatte asset label','text','')
                 field('mesh_light','Use mesh as emitter','bool',False);field('light_intensity','Emitter intensity','number',1,0)
                 field('light_label','Emitter AOV group','text','');field('light_color','Emitter color (linear RGB)','color',[1,1,1])

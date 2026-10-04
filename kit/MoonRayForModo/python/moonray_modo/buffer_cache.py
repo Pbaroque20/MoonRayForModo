@@ -91,6 +91,12 @@ class BufferCache(QtCore.QObject):
             display=dict(self.display,working_space=frame['snapshot'].get('asset_settings',{}).get('working_space','rec709'))
             if display['working_space']=='acescg' and display.get('view')=='ocio' and display.get('source')=='Linear Rec.709 (sRGB)':display['source']='ACEScg'
             kind=outputs.display_kind(frame['snapshot'],self.key)
+            from .display_stream import available
+            if available(frame['runtime']):
+                from .memory_display import Worker
+                width,height,pixels=frame.get('linear',{}).get(self.key,(0,0,None))
+                self.worker=Worker(pixels,width,height,kind,display,frame['runtime'],self,source=frame['files'].get(self.key) if pixels is None else None)
+                self.worker.finished.connect(self._memory_finished);self.worker.start();return
             if self.key in frame.get('linear',{}):
                 from .memory_display import supported,Worker
                 width,height,pixels=frame['linear'][self.key]
@@ -119,6 +125,10 @@ class BufferCache(QtCore.QObject):
         if self.closed:return
         if job and job['serial']==self.serial:
             if error:
+                from .display_stream import available
+                if available(job['frame']['runtime']):
+                    self.notice.emit('Cannot display buffer; render continues: '+error)
+                    self._prune();return
                 job['frame']['memory_display_failed']=True
                 self.notice.emit('Using file display fallback: '+error);self._request()
             else:

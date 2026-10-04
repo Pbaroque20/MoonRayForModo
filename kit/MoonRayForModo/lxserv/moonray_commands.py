@@ -384,3 +384,20 @@ class AssignMaterialBundle(lxu.command.BasicCommand):
         from moonray_modo import properties,material_bundle
         material_bundle.assign(properties.decode(self.dyna_String(0))['path'])
 lx.bless(AssignMaterialBundle,'moonray.library.bundle')
+
+
+class ImportRdl(lxu.command.BasicCommand):
+    def cmd_Flags(self):return lx.symbol.fCMD_UI
+    def basic_Execute(self,msg,flags):
+        from moonray_modo.rdl_import_dialog import show
+        show()
+
+class ApplyRdl(lxu.command.BasicCommand):
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import rdl_import
+        if rdl_import.pending is None:raise ValueError('Choose an RDL scene in MoonRay > Import RDL scene first')
+        rdl_import.result=rdl_import.apply(rdl_import.pending)
+
+lx.bless(ImportRdl,'moonray.rdl.import')
+lx.bless(ApplyRdl,'moonray.rdl.apply')

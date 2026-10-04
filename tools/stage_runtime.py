@@ -34,6 +34,8 @@ validation = destination / 'validated-render.json'
 if validation.exists():
     validation.unlink()
 pending = [build / 'bin/moonray.exe']
+if (build/'bin/modo_rdl_import.exe').is_file(): pending.append(build/'bin/modo_rdl_import.exe')
+if (build/'bin/modo_display_stream.exe').is_file(): pending.append(build/'bin/modo_display_stream.exe')
 if (build/'bin/denoise.exe').is_file(): pending.append(build/'bin/denoise.exe')
 pending.append(tools / 'maketx.exe')
 pending.append(tools / 'oiiotool.exe')
@@ -88,7 +90,7 @@ if args.xpu:
 executable=destination/'moonray.exe'
 if b'MOONRAY_MODO_SESSION' in executable.read_bytes():
     capability=destination/'modo-session.json'
-    capability.write_text(json.dumps({'protocol':1,'executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest()},indent=2),encoding='utf-8')
+    capability.write_text(json.dumps({'protocol':1,'scene_memory':True,'command_memory':True,'executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest()},indent=2),encoding='utf-8')
     manifest['modo-session.json']={'source':str(capability),'sha256':hashlib.sha256(capability.read_bytes()).hexdigest()}
 (destination / 'build-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
 print('Staged', len(manifest), 'native binaries in', destination)

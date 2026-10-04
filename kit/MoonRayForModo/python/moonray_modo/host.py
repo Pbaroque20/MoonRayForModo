@@ -125,7 +125,7 @@ def material_values(material):
                                 'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
 
 
-def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False):
+def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):
     scene = modo.Scene()
     if scene.items('replicator',superType=False):
         # Render Cache resolves generated replica transforms and source meshes.
@@ -259,7 +259,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         if reuse_geometry is not None and refresh_materials and not evaluated_geometry:
             if coordinates.descriptors(result['materials']) != coordinates.descriptors(reuse_geometry['materials']):
                 return snapshot(evaluated_geometry=False)
-            result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes']]
+            result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes'] if not dirty_meshes or mesh['identity'].split('|')[0] not in dirty_meshes]
         # Resolve each visible instance to one mesh prototype, including hidden sources.
         instances = {}
         for instance in ([] if evaluated_geometry or reuse_geometry is not None else scene.items('meshInst', superType=False)):
@@ -281,7 +281,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             except (ValueError, LookupError) as exc:
                 warnings.append('Instance %s: %s.' % (instance.name, exc))
         # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
-        for item in ([] if evaluated_geometry or reuse_geometry is not None else scene.items('mesh', superType=False)):
+        for item in ([] if evaluated_geometry or (reuse_geometry is not None and not dirty_meshes) else scene.items('mesh', superType=False)):
+            if dirty_meshes and item.id not in dirty_meshes:continue
             if not render_visible(item) and item.id not in instances:
                 continue
             mesh = modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item, 'deformed')
@@ -371,6 +372,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                         descriptor,[mesh['vertices'][v] for v in face],[],transform)]
                 expanded.append(instance)
         result['meshes'] = expanded
+    if dirty_meshes and reuse_geometry:
+        ranks={m['identity']:i for i,m in enumerate(reuse_geometry['meshes'])}
+        result['meshes'].sort(key=lambda m:(ranks.get(m['identity'],len(ranks)),m['identity']))
     for item in scene.items('light'):
         if not render_visible(item):
             continue
@@ -404,7 +408,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     from .environments import collect as collect_environments
     result['environments'] = collect_environments(scene, warnings)
     from .extra_geometry import collect as collect_extra
-    result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None and not (evaluated_geometry and refresh_materials) else result.get('extra_geometry',[]) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
+    result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None and not dirty_meshes and not (evaluated_geometry and refresh_materials) else result.get('extra_geometry',[]) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
     from .scene_references import capture as capture_references
     result['scene_references']=capture_references(scene,result)
     result['time']=lx.service.Selection().GetTime();result['fps']=float(scene.fps);result['frame']=round(result['time']*result['fps'])

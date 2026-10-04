@@ -40,7 +40,9 @@ def files(settings,callback):
  for parameters,schema in parameter_sets(settings):
   for key,value in list(parameters.items()):
    spec=schema.get(key,{})
-   if isinstance(value,str) and value and (key=='file' or 'FLAGS_FILENAME' in spec.get('flags','')):parameters[key]=callback(value)
+   if key=='file' or 'FLAGS_FILENAME' in spec.get('flags',''):
+    if isinstance(value,str) and value:parameters[key]=callback(value)
+    elif spec.get('type')=='StringVector' and isinstance(value,list):parameters[key]=[callback(v) if v else v for v in value]
 
 def validate(data):
  if data.get('format')!=2 or not isinstance(data.get('materials'),dict) or not 1<=len(data['materials'])<=256:raise ValueError('Invalid material bundle')

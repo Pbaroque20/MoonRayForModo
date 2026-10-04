@@ -107,5 +107,25 @@ def edit(item, scene):
             properties.write(item,native)
             dialog.accept()
         except (ValueError,KeyError) as exc: QtWidgets.QMessageBox.warning(dialog,'Invalid material',str(exc))
+    def preview_draft():
+        import copy
+        native=copy.deepcopy(settings)
+        native.update(native_shader=current[0],native_parameters=values(),shader='DwaBaseMaterial')
+        graph=native.get('node_graph')
+        if graph:
+            root=graph['nodes'][graph['root']]
+            if root['type']!=current[0]:native.pop('node_graph',None)
+            else:
+                old=root.get('parameters',{});params=native['native_parameters']
+                for key in set(old)|set(params):
+                    if old.get(key)!=params.get(key):root.setdefault('inputs',{}).pop(key,None)
+                root['parameters']=params
+        return native
+    def preview_widget():
+        from .material_preview import show
+        show(item,preview_draft,dialog)
+    preview=QtWidgets.QPushButton('Preview on MoonRay Widget')
+    preview.clicked.connect(preview_widget);layout.insertWidget(2,preview)
+    dialog.finished.connect(lambda *_:getattr(dialog,'_widget_preview',None) and dialog._widget_preview.close())
     buttons.accepted.connect(save);buttons.rejected.connect(dialog.reject)
     populate(types.currentText());dialog.exec_()

@@ -40,3 +40,8 @@ class Changes(lxifc.SceneItemListener):
     sil_ChanLinkAdd=invalidate
     sil_ChanLinkRemAfter=invalidate
     sil_ChanLinkSet=invalidate
+
+    sil_ItemChannelName=invalidate
+    sil_ItemChannelDefault=invalidate
+    sil_ItemChannelMinMax=invalidate
+    sil_ItemChannelType=invalidate

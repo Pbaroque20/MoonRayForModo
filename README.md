@@ -1,11 +1,15 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.10** defaults CPU threads to **Automatic (all CPU threads)**.
-Saved scene thread limits remain respected. The 0.3.9 update connects the selected tile order to native batch
-rendering, distinguishes unsampled progressive pixels with a checkerboard, and
-adds named-UV derivatives for normal and bump maps. Includes the 0.3.8 updates.
-Compilation and syntax checks are performed; render and host tests are deferred.
-Full Modo parity remains incomplete. See [scope and limitations](docs/COMPATIBILITY_039.md).
+Development version **0.3.11** adds a reusable in-memory OCIO/LUT/AOV display
+processor, shared-memory scene updates, targeted ordinary-mesh capture, and
+**MoonRay > Import RDL scene...** for editable conversion of supported objects.
+It also fixes direct image-to-normal UV bases and adds explicit persistent motion
+ID sources. The supplied MoonRay Widget is bundled for material demonstrations:
+use **Preview on MoonRay Widget** in native material properties or **Widget preview**
+in the node editor, then **Render / Refresh**. Its separate asset license and
+credits are included. CPU threads default to all available threads. Native compilation and
+syntax checks passed; render and Modo tests remain deferred. Full Modo parity is
+not complete. See [implemented paths and limits](docs/COMPATIBILITY_0311.md).
 
 Target: **Modo 16.1v9, Windows x64, Python 3.9**.
 
@@ -22,8 +26,8 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.10 uses a separate
-`runtime/xpu-compatibility-039` build; previous runtimes are preserved.
+to the runtime recorded in its `runtime.json`. Version 0.3.11 uses a separate
+`runtime/xpu-compatibility-0311` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.
 The menu also opens Live Preview, Object Properties, Shading and Lighting,

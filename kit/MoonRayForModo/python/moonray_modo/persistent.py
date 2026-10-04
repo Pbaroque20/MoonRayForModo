@@ -1,6 +1,7 @@
 """A private persistent MoonRay process, with acknowledged/coalesced scene edits."""
 import json
 import hashlib
+import mmap,os,uuid
 import tempfile
 from pathlib import Path
 from PySide2 import QtCore
@@ -34,6 +35,7 @@ class Session(QtCore.QObject):
         self.workspace=tempfile.TemporaryDirectory(prefix='MoonRaySession-')
         self.root=Path(self.workspace.name)
         self.latest=None;self.sent=None;self.applied=None;self.signature=None
+        self.scene_memory=False;self.mappings={};self.command_channel=None
         self.partial='';self.stopping=False;self.closed=False;self.view='beauty'
 
     def select_view(self,key):
@@ -54,28 +56,51 @@ class Session(QtCore.QObject):
         elif self.sent is None:self._dispatch()
 
     def _write_scene(self,request,suffix,text):
+        if self.scene_memory:
+            payload=text.encode('utf-8')
+            if not 0<len(payload)<=256*1024*1024:raise ValueError('Scene text exceeds the 256 MiB shared-scene limit')
+            name='Local\\MoonRayForModoScene_%d_%s'%(os.getpid(),uuid.uuid4().hex)
+            mapping=mmap.mmap(-1,len(payload),tagname=name,access=mmap.ACCESS_WRITE)
+            mapping.write(payload)
+            self.mappings.setdefault(request['id'],[]).append(mapping)
+            return 'modo-memory:%d:%s'%(len(payload),name)
         path=self.root/('%d.%s.rdla'%(request['id'],suffix))
         path.write_text(text,encoding='utf-8')
         return path
 
+    def _release_mappings(self):
+        for mappings in self.mappings.values():
+            for mapping in mappings:mapping.close()
+        self.mappings.clear()
+        if self.command_channel:self.command_channel.close();self.command_channel=None
+
     def _launch(self):
         request=self.latest
         if not request or self.closed:return
+        self._release_mappings()
         for path in self.root.iterdir():
             if path.is_file():path.unlink()
         self.select_view(self.view)
         self.partial='';self.applied=None;self.sent=request
         self.signature=(str(request['runtime']),request['threads'],request['mode'])
+        metadata=json.loads((request['runtime']/'modo-session.json').read_text(encoding='utf-8'))
+        self.scene_memory=metadata.get('scene_memory',False)
         scene=self._write_scene(request,'full',request['text'])
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(request['runtime']).items():env.insert(key,value)
         env.insert('MOONRAY_MODO_BUCKETS','1')
         env.insert('MOONRAY_MODO_SHARED','1')
+        if metadata.get('command_memory'):
+            from .session_channel import Channel
+            self.command_channel=Channel()
+            env.insert('MOONRAY_MODO_COMMAND',self.command_channel.name)
         env.insert('MOONRAY_MODO_SESSION',str(self.root))
         env.insert('MOONRAY_MODO_GENERATION',str(request['id']))
         self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.root))
         self.process.setProgram(str(request['runtime']/'moonray.exe'))
-        self.process.setArguments(native.arguments(scene,self.root/'main.exr',request['threads'],request['mode']))
+        args=native.arguments(self.root/'bootstrap.rdla',self.root/'main.exr',request['threads'],request['mode'])
+        args[args.index('-in')+1]=str(scene)
+        self.process.setArguments(args)
         self.status.emit('Starting persistent MoonRay session')
         self.process.start()
 
@@ -87,8 +112,10 @@ class Session(QtCore.QObject):
         path=self._write_scene(request,'delta',delta) if delta is not None else full
         mode='delta' if delta is not None else 'full'
         staged=self.root/'command.tmp'
-        staged.write_text('%d\n%s\n%s\n%s\n'%(request['id'],mode,path.as_posix(),full.as_posix()),encoding='utf-8')
-        staged.replace(self.root/'command.txt')
+        command='%d\n%s\n%s\n%s\n'%(request['id'],mode,str(path).replace('\\','/') if not self.scene_memory else str(path),str(full).replace('\\','/') if not self.scene_memory else str(full))
+        if self.command_channel:self.command_channel.send(command)
+        else:
+            staged.write_text(command,encoding='utf-8');staged.replace(self.root/'command.txt')
         self.sent=request
         self.status.emit('Updating loaded scene' if mode=='delta' else 'Reloading scene structure in persistent session')
 
@@ -113,6 +140,9 @@ class Session(QtCore.QObject):
             if self.stopping or self.closed:continue
             if parts[1]=='APPLIED' and self.sent and generation==self.sent['id']:
                 self.applied=self.sent;self.sent=None
+                for identity in list(self.mappings):
+                    if identity<=generation:
+                        for mapping in self.mappings.pop(identity):mapping.close()
                 self.acknowledged.emit(generation)
                 try:self._dispatch()
                 except (OSError,ValueError) as exc:
@@ -138,11 +168,13 @@ class Session(QtCore.QObject):
 
     def _error(self,error):
         if error==QtCore.QProcess.FailedToStart and not self.stopping and not self.closed:
+            self._release_mappings()
             self.failed.emit('Cannot start persistent MoonRay: '+self.process.errorString())
 
     def _exit(self,code,status):
         self._read()
         self.sent=None;self.applied=None
+        self._release_mappings()
         if self.stopping:
             self.stopping=False
             if self.latest and not self.closed:self._launch()
@@ -156,4 +188,4 @@ class Session(QtCore.QObject):
     def close(self):
         self.closed=True;self.stop()
         if self.running():self.process.waitForFinished(2000)
-        if not self.running():self.workspace.cleanup()
+        if not self.running():self._release_mappings();self.workspace.cleanup()

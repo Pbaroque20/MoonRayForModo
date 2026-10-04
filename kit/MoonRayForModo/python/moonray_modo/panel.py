@@ -55,6 +55,11 @@ class Panel(QtWidgets.QWidget):
         self.persistent_preview.setToolTip('Update compatible scene attributes in a persistent renderer. Structural edits reload the scene. Requires the bundled session-capable runtime; older runtimes use separate renders.')
         self.persistent_preview.toggled.connect(lambda value:self.settings.setValue('persistent_preview',value))
         self.pages['system'].addRow(self.persistent_preview)
+        self.capture_safety=QtWidgets.QCheckBox('Periodically check for missed scene changes')
+        self.capture_safety.setChecked(str(self.settings.value('capture_safety','true')).lower()!='false')
+        self.capture_safety.setToolTip('Safety capture every 15 seconds for procedural providers that omit notifications. Disable for notification-driven updates; use Refresh if an external provider fails to notify Modo.')
+        self.capture_safety.toggled.connect(lambda value:self.settings.setValue('capture_safety',value))
+        self.pages['system'].addRow(self.capture_safety)
         asset_controls=QtWidgets.QPushButton('Input color spaces and texture cache…');asset_controls.clicked.connect(self._edit_assets);self.pages['display'].addRow(asset_controls)
         asset_report=QtWidgets.QPushButton('Report scene assets…');asset_report.clicked.connect(self._report_assets);self.pages['system'].addRow(asset_report)
         package=QtWidgets.QPushButton('Package portable render scene…');package.clicked.connect(self._package_assets);self.pages['system'].addRow(package)
@@ -629,15 +634,15 @@ class Panel(QtWidgets.QWidget):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
             self._load_settings();self._geometry_cache=None
-        scene = host.snapshot(evaluated_geometry=self.surface.currentIndex() == 2,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials')
+        scene = host.snapshot(evaluated_geometry=self.surface.currentIndex() == 2,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None)
         if reuse=='transforms':
             from .incremental import refresh_transforms
             refresh_transforms(modo.Scene(),scene)
         import copy,time
         full_capture=scene.pop('_full_capture',not reuse)
-        if not reuse or reuse in ('materials','transforms'):
+        if not reuse or reuse in ('materials','transforms') or isinstance(reuse,dict):
             self._geometry_cache=dict(scene,meshes=[dict(m) for m in scene['meshes']],materials=copy.deepcopy(scene['materials']),native_materials=copy.deepcopy(scene.get('native_materials',{})))
-        if full_capture:self._last_full_capture=time.monotonic()
+        if full_capture or isinstance(reuse,dict):self._last_full_capture=time.monotonic()
         scene.pop('_evaluated_data',None)
         scene['_geometry_revision']=str(id(self))+':'+str(self._last_full_capture)
         configured=self._configure_snapshot(scene)
@@ -758,7 +763,7 @@ class Panel(QtWidgets.QWidget):
             from .assets import signature
             # Periodic reconciliation covers host notifications omitted by some
             # procedural mesh providers. Normal idle ticks do not capture geometry.
-            full=full or clock.monotonic()-self._last_full_capture>15 or signature(self._asset_scene)!=self._asset_signature
+            full=full or (self.capture_safety.isChecked() and clock.monotonic()-self._last_full_capture>15) or signature(self._asset_scene)!=self._asset_signature
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             if not (full or items or changed):return

@@ -47,7 +47,7 @@ class Browser(QtWidgets.QDialog):
   items=self.list.selectedItems();return items[0].data(0,QtCore.Qt.UserRole) if items else {}
  def selection(self):
   row=self.selected();self.details.setPlainText('\n'.join([row.get('name',''),row.get('description',''),'License: '+row.get('license',''),'Source: '+row.get('source','')]))
-  self.import_model.setEnabled(Path(row.get('path','')).suffix.lower() in ('.obj','.fbx'))
+  self.import_model.setEnabled(Path(row.get('path','')).suffix.lower() in ('.obj','.fbx','.rdla','.rdlb'))
   self.apply.setEnabled(bool(row.get('shader') or row.get('category')=='Saved materials'));self.reveal.setEnabled(bool(row.get('path') or row.get('url')))
  def add_folder(self):
   folder=QtWidgets.QFileDialog.getExistingDirectory(self,'Add an asset folder')
@@ -64,6 +64,9 @@ class Browser(QtWidgets.QDialog):
   try:
    import lx
    path=self.selected().get('path','')
+   if Path(path).suffix.lower() in ('.rdla','.rdlb'):
+    from .rdl_import_dialog import show
+    show(path);return
    if Path(path).suffix.lower() not in ('.obj','.fbx') or not Path(path).is_file():raise ValueError('Select an existing OBJ or FBX model')
    if any(c in path for c in '{}\r\n'):raise ValueError('Rename the file to remove command delimiters before importing')
    lx.eval('scene.open {'+path+'} import')

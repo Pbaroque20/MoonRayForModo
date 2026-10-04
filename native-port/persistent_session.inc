@@ -11,12 +11,14 @@
 #include <cctype>
 #include <cmath>
 #include "modo_shared_image.h"
+#include "modo_scene_memory.h"
 
 void moonray::RaasCommandLineApplication::renderPersistent(const std::string& directory)
 {
     namespace fs = std::filesystem;
     const auto mailbox = fs::u8path(directory) / "command.txt";
-    auto waiting = [&]() { return fs::exists(mailbox); };
+    ModoSceneCommand command(std::getenv("MOONRAY_MODO_COMMAND"));
+    auto waiting = [&]() { return command.enabled()?command.ready():fs::exists(mailbox); };
     auto event = [](const char* kind, const std::string& id) {
         std::cout << "\n@@MODO_SESSION " << kind << " " << id << std::endl;
     };
@@ -146,12 +148,14 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
         while (!waiting()) std::this_thread::sleep_for(std::chrono::milliseconds(50));
         std::string mode, delta, full;
         {
-            std::ifstream input(mailbox);
+            std::ifstream file;std::istringstream memory;
+            if(command.enabled())memory.str(command.receive());else file.open(mailbox);
+            std::istream& input=command.enabled()?static_cast<std::istream&>(memory):static_cast<std::istream&>(file);
             if (!std::getline(input,id) || !std::getline(input,mode) ||
                 !std::getline(input,delta) || !std::getline(input,full))
                 throw std::runtime_error("Incomplete Modo session command");
         }
-        fs::remove(mailbox);
+        if(!command.enabled())fs::remove(mailbox);
         if (mode == "quit") return;
         if (mode == "full" || (mode == "delta" && requireReload)) {
             mOptions.setSceneFiles({full});

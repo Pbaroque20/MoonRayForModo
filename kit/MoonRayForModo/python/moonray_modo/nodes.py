@@ -213,7 +213,13 @@ def emit(material,name,index,lines,library,output="root"):
             elif kind=='mix': ref=definition('ModoTextureMap',path,{'background':values['bg'],'foreground':values['fg'],'opacity':values['mix']})
             elif kind=='checker': ref=definition('ModoTextureMap',path,{'mode':'2','background':values['color1'],'foreground':values['color2'],'scale':values['scale']})
             elif kind=='normalmap':
-                mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':values['in'],'normal_strength':values['scale']})
+                normal=values['in']
+                source=g['nodes'].get(item.get('inputs',{}).get('in'),{})
+                if source.get('type')=='image' and not source.get('inputs',{}).get('texcoord') and 'texcoord' not in source.get('parameters',{}):
+                    descriptor=image_descriptor(source);p=source.get('parameters',{});address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
+                    corrected=definition('ModoTextureMap',path+'/uv_basis',{'mode':'13','foreground':normal,'uv_name':string(descriptor['coordinate_key']),'tile_u':str(address[p.get('uaddressmode','periodic')]),'tile_v':str(address[p.get('vaddressmode','periodic')])})
+                    normal=binding(corrected,'Rgb')
+                mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':normal,'normal_strength':values['scale']})
                 ref=definition('ModoNormalMap',path,{'input':binding(mapped,'Vec3f')})
         cache[identity]=ref
         return ref

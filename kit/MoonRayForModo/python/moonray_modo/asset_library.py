@@ -12,8 +12,9 @@ def builtins():
  from . import map_library
  for kind,schema in sorted(map_library.catalog().items()):
   rows.append({'name':kind,'category':'Texture / normal node types','source':'MoonRay / MoonShine','license':'Apache-2.0','description':'Available in the node editor. Parameters: '+', '.join(schema['attributes'])})
- for name,description,license in [('MoonRay Widget','DreamWorks shader ball in USD formats.','ASWF Digital Assets License 1.1'),('MoonRay example scenes','Scenes curated by Benedikt Bitterli. Preserve each scene\'s own license and dependencies.','See individual scene credits'),('ALab 2.2.0','Netflix Animation Studios production scene, including 4K textures. Large optional download.','ASWF Digital Assets License 1.1'),('MoonRay USD sphere','Simple DreamWorks Hydra test scene.','ASWF Digital Assets License 1.1')]:
+ for name,description,license in [('MoonRay example scenes','Scenes curated by Benedikt Bitterli. Preserve each scene\'s own license and dependencies.','See individual scene credits'),('ALab 2.2.0','Netflix Animation Studios production scene, including 4K textures. Large optional download.','ASWF Digital Assets License 1.1'),('MoonRay USD sphere','Simple DreamWorks Hydra test scene.','ASWF Digital Assets License 1.1')]:
   rows.append({'name':name,'category':'Official downloads','url':SOURCE,'source':SOURCE,'license':license,'description':description+' Not bundled. Download from the source page, extract, then add its folder to this library.'})
+ rows.append({'name':'MoonRay Widget','category':'Bundled preview models','source':SOURCE,'license':'ASWF Digital Assets License 1.1','description':'Bundled six-part material demonstration model. Use Preview on MoonRay Widget in material properties or Widget preview in the node editor. Copyright 2023–2025 DreamWorks Animation LLC. Converted USD mesh arrays with reversed left-handed winding; license included beside geometry.json.'})
  return rows
 
 def scan(roots):

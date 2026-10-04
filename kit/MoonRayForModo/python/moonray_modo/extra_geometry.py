@@ -9,7 +9,7 @@ def asset_frame(path,frame):
 
 def collect(scene,warnings,controls):
     import lx,modo,lxu.utils
-    from .host import render_visible,world_matrix
+    from .host import render_visible,world_matrix,first_map
     objects=controls.get('objects',{});result=[]
     for item in scene.items('mesh',superType=False):
         if not render_visible(item):continue
@@ -30,15 +30,35 @@ def collect(scene,warnings,controls):
                     for j in range(count+1):curve.SetParam(j/count);vertices.append(list(curve.Position()))
                     try:tag=lx.object.StringTag(curve).Get(lx.symbol.i_POLYTAG_MATERIAL) or ''
                     except (LookupError,RuntimeError):tag=''
-                    result.append(dict(kind='curves',identity=item.id+'|curve|'+str(i),source_item=item.id,name=item.name,vertices=vertices,counts=[len(vertices)],radius=float(settings.get('radius',.001)),curve_type=0,material=settings.get('material') or tag,matrix=world_matrix(item)))
+                    stable=None
+                    id_tag=settings.get('strand_id_tag','')
+                    if id_tag:
+                        if len(id_tag)!=4 or not id_tag.isascii():raise ValueError('Strand ID tag must contain four characters')
+                        try:stable=lx.object.StringTag(curve).Get(lxu.utils.lxID4(id_tag))
+                        except (LookupError,RuntimeError):raise ValueError('Strand is missing its persistent ID tag: '+item.name)
+                        if not stable:raise ValueError('Strand ID tag is empty: '+item.name)
+                    result.append(dict(kind='curves',identity=item.id+'|curve|'+(str(stable) if stable is not None else str(i)),source_item=item.id,name=item.name,vertices=vertices,counts=[len(vertices)],radius=float(settings.get('radius',.001)),curve_type=0,material=settings.get('material') or tag,matrix=world_matrix(item)))
+                    if stable is not None:result[-1]['ids']=[str(stable)]
             except (LookupError,RuntimeError,TypeError,AttributeError) as exc:
                 raise ValueError('Cannot read evaluated curves for '+item.name+': '+str(exc))
         if not mesh.PolygonCount() or point_ids or settings.get('points'):
-            vertices=[]
+            vertices=[];stable=[];id_name=settings.get('point_id_map','')
+            id_map=first_map(mesh,lx.symbol.i_VMAP_WEIGHT,id_name) if id_name else None
+            if id_name and id_map is None:raise ValueError('Missing point ID weight map: '+id_name)
+            storage=lx.object.storage();storage.setType('f');storage.setSize(1)
             for i in range(mesh.PointCount()):
                 points.SelectByIndex(i)
-                if settings.get('points') or not mesh.PolygonCount() or int(points.ID()) in point_ids:vertices.append(list(points.Pos()))
+                if settings.get('points') or not mesh.PolygonCount() or int(points.ID()) in point_ids:
+                    vertices.append(list(points.Pos()))
+                    if id_map is not None:
+                        if not points.MapValue(id_map,storage):raise ValueError('Point has no persistent ID value: '+item.name)
+                        raw=storage.get();value=raw[0] if isinstance(raw,(list,tuple)) else raw
+                        if not math.isfinite(value) or int(value)!=value or abs(value)>16777216:raise ValueError('Point IDs must be exact float integers within +/-16777216')
+                        stable.append(int(value))
             if vertices:result.append(dict(kind='points',identity=item.id+'|points',source_item=item.id,name=item.name,vertices=vertices,radius=float(settings.get('radius',.001)),material=settings.get('material',''),matrix=world_matrix(item)))
+            if vertices and id_map is not None:
+                if len(set(stable))!=len(stable):raise ValueError('Duplicate point IDs: '+item.name)
+                result[-1]['ids']=stable
     return result
 
 def attach(scene,settings):

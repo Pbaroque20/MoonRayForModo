@@ -7,15 +7,21 @@ from . import display,working_space
 KINDS={'beauty':0,'normal':1,'geometric_normal':1,'alpha':2,'wireframe':2,'uv':3,'diffuse_direct':0,'glossy_direct':0,'emission':0,'transmission':0}
 
 def supported(kind,settings,runtime):
+ from .display_stream import available
+ if available(runtime):return True
  v=display.values(settings)
  return kind in KINDS and v['view']!='ocio' and not v['lut'] and (Path(runtime)/'modo_display.dll').is_file()
 
 class Worker(QtCore.QThread):
  result=QtCore.Signal(object)
- def __init__(self,pixels,width,height,kind,settings,runtime,parent=None):
-  super().__init__(parent);self.pixels=pixels;self.width=width;self.height=height;self.kind=kind;self.settings=settings;self.runtime=Path(runtime)
+ def __init__(self,pixels,width,height,kind,settings,runtime,parent=None,source=None):
+  super().__init__(parent);self.pixels=pixels;self.width=width;self.height=height;self.kind=kind;self.settings=settings;self.runtime=Path(runtime);self.source=source
  def run(self):
   try:
+   from .display_stream import available,convert
+   if available(self.runtime):
+    data,width,height=convert(self.pixels,self.width,self.height,self.kind,self.settings,self.runtime,self.source)
+    self.outcome=(data,width,height,'');return
    v=display.values(self.settings);size=self.width*self.height*4
    if len(self.pixels)!=self.width*self.height*12 or len(self.pixels)>64*1024*1024:raise ValueError('Invalid float image size')
    # Loading by absolute path and scoping dependency lookup avoids Modo DLL collisions.
