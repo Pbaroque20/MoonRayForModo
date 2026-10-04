@@ -82,7 +82,7 @@ class GraphView(QtWidgets.QGraphicsView):
             if menu.exec_(event.globalPos())==action:self.editor.unlink(*item.connection)
             return
         menu=QtWidgets.QMenu(self);add=menu.addAction('Add node…');frame=menu.addAction('Frame all (F)');chosen=menu.exec_(event.globalPos())
-        if chosen==add:self.editor.add_at=self.mapToScene(event.pos());self.editor.kinds.setFocus();self.editor.kinds.lineEdit().selectAll()
+        if chosen==add:self.editor.add_at=self.mapToScene(event.pos());self.editor.node_search.setFocus();self.editor.node_search.selectAll()
         elif chosen==frame:self.editor.frame()
 
 class VectorEdit(QtWidgets.QWidget):

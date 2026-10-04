@@ -61,10 +61,8 @@ class Editor(QtWidgets.QDialog):
         self.undo_states=[];self.redo_states=[];self.selected_input=None;self.add_at=None
         self.setWindowTitle(('MaterialX Override — ' if materialx_override else 'MoonShine Node Editor — ')+item.name);self.resize(1150,760)
         layout=QtWidgets.QVBoxLayout(self);toolbar=QtWidgets.QHBoxLayout();layout.addLayout(toolbar)
-        self.kinds=QtWidgets.QComboBox();self.kinds.addItems(nodes.kinds());self.kinds.setEditable(True);self.kinds.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
-        self.kinds.completer().setFilterMode(QtCore.Qt.MatchContains);self.kinds.completer().setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
-        self.kinds.setMinimumWidth(210);self.kinds.setToolTip('Search for a material, texture or value node');toolbar.addWidget(self.kinds,1)
-        for label,callback in [('Add node',self.add),('Delete',self.remove),('Set output',self.output),('Displacement output',self.displacement_output),('Connect input…',self.connect_selected),('Disconnect…',self.disconnect)]:
+        self.kinds=QtWidgets.QComboBox(self);self.kinds.addItems(nodes.kinds());self.kinds.hide()
+        for label,callback in [('Delete',self.remove),('Set output',self.output),('Displacement output',self.displacement_output),('Connect input…',self.connect_selected),('Disconnect…',self.disconnect)]:
             button=QtWidgets.QPushButton(label);button.clicked.connect(callback);toolbar.addWidget(button)
         tools=QtWidgets.QHBoxLayout();layout.addLayout(tools)
         for label,callback in [('Undo',self.undo),('Redo',self.redo),('Frame all',self.frame),('Browse image…',self.browse_image),('Reset input',self.reset_input),('Import MaterialX…',self.import_file),('Export definitions…',self.export_file)]:
@@ -74,9 +72,10 @@ class Editor(QtWidgets.QDialog):
         self.auto_connect=QtWidgets.QCheckBox('Auto-connect new node');self.auto_connect.setChecked(True);tools.addWidget(self.auto_connect)
         self.show_all=QtWidgets.QCheckBox('Show all inputs');self.show_all.setToolTip('Expand every connectable socket. Connected inputs are always visible.');tools.addWidget(self.show_all);self.show_all.toggled.connect(self.rebuild)
         splitter=QtWidgets.QSplitter();layout.addWidget(splitter,1)
+        self.build_node_browser(splitter)
         self.canvas=QtWidgets.QGraphicsScene(self);self.view=GraphView(self,self.canvas)
         self.view.setRenderHint(QtGui.QPainter.Antialiasing);self.view.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag);splitter.addWidget(self.view)
-        pane=QtWidgets.QWidget();right=QtWidgets.QVBoxLayout(pane);splitter.addWidget(pane);splitter.setSizes([800,350])
+        pane=QtWidgets.QWidget();right=QtWidgets.QVBoxLayout(pane);splitter.addWidget(pane);splitter.setSizes([245,650,320]);splitter.setStretchFactor(1,1)
         self.layers=QtWidgets.QComboBox();right.addWidget(self.layers)
         layer_buttons=QtWidgets.QHBoxLayout();right.addLayout(layer_buttons)
         for label,callback in [('Add override',self.add_override),('Toggle layer',self.toggle_override)]:
@@ -89,6 +88,46 @@ class Editor(QtWidgets.QDialog):
         buttons.accepted.connect(self.save);buttons.rejected.connect(self.reject)
         self.canvas.selectionChanged.connect(self.inspect);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
         self.rebuild();self.frame()
+    def build_node_browser(self,splitter):
+        pane=QtWidgets.QWidget();layout=QtWidgets.QVBoxLayout(pane)
+        layout.addWidget(QtWidgets.QLabel('Node library'))
+        self.node_search=QtWidgets.QLineEdit();self.node_search.setPlaceholderText('Search nodes or groups…');layout.addWidget(self.node_search)
+        self.node_tree=QtWidgets.QTreeWidget();self.node_tree.setHeaderHidden(True);self.node_tree.setIndentation(12);layout.addWidget(self.node_tree,1)
+        hint=QtWidgets.QLabel('Click a node to add it to the graph. Group headings expand or collapse.');hint.setWordWrap(True);layout.addWidget(hint)
+        groups={}
+        for kind in nodes.kinds():
+            category=nodes.category(kind);name=kind.casefold()
+            if category=='material':group='Hair materials' if 'hair' in name else 'Materials'
+            elif category=='normal':group='Normals and bump'
+            elif category=='displacement':group='Displacement'
+            elif any(v in name for v in ('image','udim','uvtexture')):group='Image textures'
+            elif any(v in name for v in ('project','texcoord','transform','primvar')):group='Coordinates and projections'
+            elif any(v in name for v in ('colorcorrect','hsv','rgbto','gamma','saturation','contrast')):group='Color adjustments'
+            elif any(v in name for v in ('noise','checker','ramp','gradient','random','wireframe','curvature','vdb')):group='Procedural textures'
+            elif kind in nodes.MAPS or any(v in name for v in ('opmap','blend','mix','layer','switch','clamp','remap','constant')):group='Math and blending'
+            else:group='Data and utilities'
+            if group not in groups:
+                groups[group]=QtWidgets.QTreeWidgetItem(self.node_tree,[group])
+                groups[group].setExpanded(True)
+            row=QtWidgets.QTreeWidgetItem(groups[group],[kind]);row.setData(0,QtCore.Qt.UserRole,kind)
+            row.setToolTip(0,kind+' — click to add')
+        self.node_tree.sortItems(0,QtCore.Qt.AscendingOrder)
+        self.node_tree.itemClicked.connect(self.add_from_browser)
+        self.node_search.textChanged.connect(self.filter_node_browser)
+        splitter.addWidget(pane)
+    def filter_node_browser(self,text):
+        query=text.casefold().strip()
+        for index in range(self.node_tree.topLevelItemCount()):
+            group=self.node_tree.topLevelItem(index);visible=False
+            for child in range(group.childCount()):
+                row=group.child(child);match=query in (group.text(0)+' '+row.text(0)).casefold()
+                row.setHidden(not match);visible=visible or match
+            group.setHidden(not visible)
+            if query and visible:group.setExpanded(True)
+    def add_from_browser(self,item,column):
+        kind=item.data(0,QtCore.Qt.UserRole)
+        if not kind:return
+        self.kinds.setCurrentText(kind);self.add()
     def preview_widget(self):
         from .material_preview import show
         def draft():
@@ -163,15 +202,22 @@ class Editor(QtWidgets.QDialog):
         if kind not in nodes.kinds():self.error('Choose a supported node from the search results');return
         before=copy.deepcopy(self.graph);identity='node_'+uuid.uuid4().hex[:12]
         point=self.add_at or self.view.mapToScene(self.view.viewport().rect().center());self.add_at=None
-        self.graph['nodes'][identity]={'type':kind,'parameters':{},'inputs':{},'position':[point.x()-110,point.y()-30]}
+        origin=QtCore.QPointF(point.x()-110,point.y()-30)
+        # Repeated library clicks should not bury new nodes beneath earlier nodes.
+        for slot in range(1001):
+            position=origin+QtCore.QPointF((slot%8)*265,(slot//8)*370)
+            bounds=QtCore.QRectF(position,QtCore.QSizeF(245,350))
+            if not any(bounds.intersects(item.sceneBoundingRect()) for item in self.items.values()):break
+        self.graph['nodes'][identity]={'type':kind,'parameters':{},'inputs':{},'position':[position.x(),position.y()]}
+        unconnected=copy.deepcopy(self.graph)
         if self.auto_connect.isChecked() and self.selected_input:
             target,key=self.selected_input
             if target in self.graph['nodes']:
                 try:
                     self.target(target).setdefault('inputs',{})[key]=identity;self.validate_draft()
                 except (ValueError,KeyError) as exc:
-                    self.graph=before;self.error('Cannot auto-connect this node: '+str(exc));return
-        self.remember(before);self.rebuild();self.canvas.clearSelection();self.items[identity].setSelected(True)
+                    self.graph=unconnected;self.info.setText('Node added without a connection: '+str(exc))
+        self.remember(before);self.rebuild();self.canvas.clearSelection();self.items[identity].setSelected(True);self.view.ensureVisible(self.items[identity],40,40)
     def browse_image(self):
         identity=self.selected()
         if not identity:self.error('Select a texture node first');return

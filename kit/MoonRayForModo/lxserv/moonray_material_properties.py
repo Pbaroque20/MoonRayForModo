@@ -22,7 +22,7 @@ class MaterialType(Observed):
     def __init__(self):
         super().__init__()
         self.dyna_Add('type',lx.symbol.sTYPE_INTEGER)
-        self.dyna_SetHint(0,tuple((i,name or 'Modo controls') for i,name in enumerate(TYPES)))
+        self.dyna_SetHint(0,tuple((i,(name+' (override)') if name else 'Modo controls (no native override)') for i,name in enumerate(TYPES)))
         self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
     def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
     def basic_Enable(self,msg): return bool(selected())

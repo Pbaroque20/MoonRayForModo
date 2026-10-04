@@ -191,7 +191,7 @@ def bindings(material, index, lines, glass=False, absorption=False):
 
 
 def defaults_for(material):
-    defaults = {'diffCol':material['color'], 'rough':material.get('roughness',.4),
+    defaults = {'diffCol':material.get('color',[.5,.5,.5]), 'rough':material.get('roughness',.4),
         'metallic':material.get('metallic',0),'specCol':material.get('specular',[.04]*3),
         'lumiCol':material.get('emission',[0]*3),'coatAmt':material.get('clearcoat',0),
         'coatRough':material.get('clearcoat_roughness',.01),'tranAmt':material.get('transmission',0),

@@ -73,7 +73,7 @@ class Dialog(QtWidgets.QDialog):
         credit=QtWidgets.QLabel('MoonRay Widget Copyright 2023–2025 DreamWorks Animation LLC. All rights reserved.\nASWF Digital Assets License v1.1 · Material demonstration asset.');credit.setWordWrap(True);layout.addWidget(credit)
         self.renderer=Renderer(self)
         self.renderer.image_object.connect(self.viewer.set_image);self.renderer.image_ready.connect(self.viewer.load)
-        self.renderer.status.connect(self.status.setText);self.renderer.failed.connect(self.status.setText)
+        self.renderer.status.connect(self.status.setText);self.renderer.failed.connect(lambda message:self.status.setText('Preview failed: '+message))
         self.renderer.buckets.connect(self.viewer.set_buckets)
         refresh.clicked.connect(self.refresh);stop.clicked.connect(self.renderer.stop)
         self.viewer.start_requested.connect(self.refresh)
@@ -81,13 +81,14 @@ class Dialog(QtWidgets.QDialog):
     def refresh(self):
         try:
             import modo
-            library={candidate.id:properties.read(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=False)}
-            draft=self.draft();library[self.item.id]=draft
+            from .host import material_values
+            library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=False)}
+            draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
             scene=snapshot(draft,library,self.parts.isChecked())
             settings=QtCore.QSettings('MoonRayForModo','NativePreview')
             runtime=native.default_runtime() or str(settings.value('runtime',''))
             self.renderer.submit(scene,runtime,384,384,2,.2,0)
-        except Exception as exc:self.status.setText(str(exc))
+        except Exception as exc:self.status.setText('Preview could not start: '+str(exc))
     def closeEvent(self,event):
         self.renderer.close();super().closeEvent(event)
 

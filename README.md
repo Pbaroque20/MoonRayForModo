@@ -1,6 +1,10 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.11** adds a reusable in-memory OCIO/LUT/AOV display
+Development version **0.3.12** fixes the widget preview missing-color error, labels
+native material overrides, and adds a grouped, searchable node library on the
+left. Click a node to add it. See [update notes](docs/COMPATIBILITY_0312.md).
+
+Version **0.3.11** added a reusable in-memory OCIO/LUT/AOV display
 processor, shared-memory scene updates, targeted ordinary-mesh capture, and
 **MoonRay > Import RDL scene...** for editable conversion of supported objects.
 It also fixes direct image-to-normal UV bases and adds explicit persistent motion
@@ -26,7 +30,7 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.11 uses a separate
+to the runtime recorded in its `runtime.json`. Version 0.3.12 uses the existing
 `runtime/xpu-compatibility-0311` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.
