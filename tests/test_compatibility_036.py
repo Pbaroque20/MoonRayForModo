@@ -13,7 +13,8 @@ class Compatibility036(unittest.TestCase):
  def test_tile_order_all_render_modes(self):
   value=scene();value['render_settings']={'batch_tile_order':7}
   text=rdla.scene_text(value)
-  for key in ('batch_tile_order','progressive_tile_order','checkpoint_tile_order'):self.assertIn('["%s"] = 7'%key,text)
+  for key in ('progressive_tile_order','checkpoint_tile_order'):self.assertIn('["%s"] = 7'%key,text)
+  self.assertNotIn('["batch_tile_order"]',text)  # Not a native SceneVariables attribute.
   with self.assertRaises(ValueError):options.render_values({'batch_tile_order':9})
  def test_shared_translation_and_override_expansion(self):
   value=scene();mesh=value['meshes'][0];mesh['instances']=[list(rdla.IDENTITY)];mesh['instance_ids']=['owner|0']

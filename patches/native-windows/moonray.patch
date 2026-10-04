@@ -2304,6 +2304,38 @@ index e94728d..d1b448f 100644
          return std::string("");
      }
      return std::string(buff);
+diff --git a/lib/rendering/rndr/TileScheduler.cc b/lib/rendering/rndr/TileScheduler.cc
+index 53a12af..da9e478 100644
+--- a/lib/rendering/rndr/TileScheduler.cc
++++ b/lib/rendering/rndr/TileScheduler.cc
+@@ -80,6 +80,27 @@ TileScheduler::generateTiles(scene_rdl2::alloc::Arena *arena,
+     // under multi-machine context, each mcrt computation uses different random seed
+     generateTileIndices(arena, numTilesX, numTilesY, mTileIndices.get(), uint32_t(mRenderNodeIdx));
+ 
++    // Modo 256px scheduling buckets; do not change the 8x8 film storage.
++    const unsigned bucketTiles = 32;
++    const unsigned offsetX = (unsigned(viewport.mMinX) >> 3) % bucketTiles;
++    const unsigned offsetY = (unsigned(viewport.mMinY) >> 3) % bucketTiles;
++    const unsigned bucketsX = (offsetX + numTilesX + bucketTiles - 1) / bucketTiles;
++    const unsigned bucketsY = (offsetY + numTilesY + bucketTiles - 1) / bucketTiles;
++    std::vector<uint32_t> bucketOrder(bucketsX * bucketsY);
++    generateTileIndices(arena, bucketsX, bucketsY, bucketOrder.data(), uint32_t(mRenderNodeIdx));
++    std::vector<uint32_t> orderedTiles(numTiles);
++    for (unsigned i = 0; i < numTiles; ++i) orderedTiles[i] = i;
++    auto bucketRank = [&](unsigned i) {
++        return bucketOrder[((i / numTilesX + offsetY) / bucketTiles) * bucketsX +
++                           ((i % numTilesX + offsetX) / bucketTiles)];
++    };
++    std::sort(orderedTiles.begin(), orderedTiles.end(), [&](unsigned a, unsigned b) {
++        unsigned ba = bucketRank(a), bb = bucketRank(b);
++        return ba == bb ? mTileIndices[a] < mTileIndices[b] : ba < bb;
++    });
++    for (unsigned rank = 0; rank < numTiles; ++rank) mTileIndices[orderedTiles[rank]] = rank;
++
++
+ #ifdef DEBUG
+ 
+     // Validate data:
 diff --git a/lib/rendering/rt/CMakeLists.txt b/lib/rendering/rt/CMakeLists.txt
 index da45928..67dc945 100644
 --- a/lib/rendering/rt/CMakeLists.txt

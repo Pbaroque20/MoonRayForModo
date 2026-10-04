@@ -1,0 +1,128 @@
+{
+  "version": "0.3.27",
+  "host": "Modo 16.1v9 Windows",
+  "host_suite": {
+    "pid": 13856,
+    "runtime": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\runtime\\xpu-compatibility-0327",
+    "tests": 153,
+    "passed": true,
+    "failures": [],
+    "errors": [],
+    "skipped": []
+  },
+  "metallic_live": {
+    "pid": 18836,
+    "frames": 38,
+    "cycles": 5,
+    "passed": true,
+    "finished": true
+  },
+  "metallic_host_exit": {
+    "pid": 18836,
+    "exit_code": 1,
+    "clean_shutdown": true
+  },
+  "bucket_schedule": "0\n36 scheduler/region cases passed; 256px groups contiguous; pixels covered exactly once\n",
+  "checkpoint_resume": {
+    "runtime_capability": {
+      "version": 1,
+      "surface_categories": [
+        "object",
+        "material",
+        "asset"
+      ],
+      "volume_coverage": false,
+      "render_validated": false,
+      "sha256": {
+        "libscene_rdl2.dll": "cccd0a3c8538a40c01b6305fd45e40b91b8a9fbdf6c824a371366b7ed945fa66",
+        "librendering_rndr.dll": "68d436985bc0f8ba7fc71af3a873a9d7a11532c7273d77200bc852bf5e7b6ee7",
+        "moonray.exe": "1e129c963b03cbf215d74ad524cb18f86f9807d134a49f8722b1dece99720a5c"
+      }
+    },
+    "checks": [
+      {
+        "mode": "scalar",
+        "category": "object",
+        "max_coverage_difference": 5.960464477539063e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 3,
+        "passed": true
+      },
+      {
+        "mode": "scalar",
+        "category": "material",
+        "max_coverage_difference": 5.960464477539063e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 2,
+        "passed": true
+      },
+      {
+        "mode": "scalar",
+        "category": "asset",
+        "max_coverage_difference": 5.960464477539063e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 1,
+        "passed": true
+      },
+      {
+        "mode": "vector",
+        "category": "object",
+        "max_coverage_difference": 1.1920928955078125e-07,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 3,
+        "passed": true
+      },
+      {
+        "mode": "vector",
+        "category": "material",
+        "max_coverage_difference": 1.1920928955078125e-07,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 2,
+        "passed": true
+      },
+      {
+        "mode": "vector",
+        "category": "asset",
+        "max_coverage_difference": 1.1920928955078125e-07,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 1,
+        "passed": true
+      },
+      {
+        "mode": "xpu",
+        "category": "object",
+        "max_coverage_difference": 5.960464477539063e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 3,
+        "passed": true
+      },
+      {
+        "mode": "xpu",
+        "category": "material",
+        "max_coverage_difference": 5.960464477539063e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 2,
+        "passed": true
+      },
+      {
+        "mode": "xpu",
+        "category": "asset",
+        "max_coverage_difference": 1.1920928955078125e-07,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 1,
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "limitations": [
+    "Metallic host crash not reproduced; root cause remains unresolved.",
+    "Bounded validation only; no production or clean-machine certification.",
+    "Volume Cryptomatte, arbitrary MaterialX, and exact Modo parity remain incomplete."
+  ],
+  "runtime_sha256": {
+    "moonray.exe": "1e129c963b03cbf215d74ad524cb18f86f9807d134a49f8722b1dece99720a5c",
+    "librendering_rndr.dll": "68d436985bc0f8ba7fc71af3a873a9d7a11532c7273d77200bc852bf5e7b6ee7",
+    "libscene_rdl2.dll": "cccd0a3c8538a40c01b6305fd45e40b91b8a9fbdf6c824a371366b7ed945fa66"
+  }
+}

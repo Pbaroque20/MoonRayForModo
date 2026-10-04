@@ -48,7 +48,7 @@ if '--build-only' not in sys.argv or not (BUILD / 'build.ninja').exists() or not
     run(configure_args, 'configure')
 targets = ['moonray_avx_probe', 'moonray_ispc_mask_probe'] + (['rdl2_print', 'moonray_codec_probe', 'moonray_platform_probe'] if scene else [])
 if renderer:
-    targets.extend(['moonray_desktop_renderer' if '--dsos' in sys.argv else 'moonray', 'moonray_desktop_probe', 'moonray_embree_probe'])
+    targets.extend(['moonray_desktop_renderer' if '--dsos' in sys.argv else 'moonray', 'moonray_desktop_probe', 'moonray_embree_probe', 'moonray_bucket_probe'])
 jobs = os.environ.get('MOONRAY_BUILD_JOBS', '8')
 run([BIN / 'cmake.exe', '--build', BUILD, '--parallel', jobs, '--target'] + targets + ['--', '-k', '20'], 'compile')
 if '--skip-tests' not in sys.argv:

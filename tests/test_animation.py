@@ -3,6 +3,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+import hashlib
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -27,6 +29,9 @@ class SequenceRecovery(unittest.TestCase):
         self.panel=QtCore.QObject()
         self.panel.renderer=Renderer(self.panel)
         self.panel.status=Status()
+        self.panel._settings_values=lambda:{}
+        self.panel._capture=lambda:{'meshes':[],'materials':{}}
+        self.panel.denoise_final=SimpleNamespace(isChecked=lambda:False)
         self.sequence=animation.Sequence(self.panel,self.directory.name,1,2,24)
         with patch.object(self.sequence,'next_frame'):
             self.sequence.start()
@@ -52,7 +57,7 @@ class SequenceRecovery(unittest.TestCase):
         self.assertFalse(self.sequence.running)
         self.assertIsNone(animation.active)
         self.assertTrue(output.exists())
-        self.assertEqual(self.sequence.completed,[{'frame':1,'file':str(output)}])
+        self.assertEqual(self.sequence.completed,[{'frame':1,'file':str(output),'sha256':hashlib.sha256(b'completed fixture').hexdigest()}])
         self.assertIn('disk full',self.panel.status.text)
 
 

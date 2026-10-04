@@ -23,21 +23,21 @@ class CoreTests(unittest.TestCase):
                                   'ior':1.45, 'roughness':.1, 'refraction_roughness':.25,
                                   'transmission_color':[.2,.9,.3]}}
         text = rdla.scene_text(data)
-        self.assertIn('ModoGlassMaterial(', text)
+        self.assertIn('DwaBaseMaterial(', text)
         self.assertIn('["transmission"] = 0.8', text)
         self.assertIn('["presence"] = 0.7', text)
-        self.assertIn('["refractionRoughness"] = 0.25', text)
+        self.assertIn('["independent_transmission_roughness"] = 0.25', text)
         self.assertNotIn('useSpecularWorkflow', text)
         data['materials']['']['transmission'] = 0
         data['materials']['']['presence'] = 1
-        self.assertNotIn('ModoGlassMaterial(', rdla.scene_text(data))
+        self.assertIn('UsdPreviewSurface(', rdla.scene_text(data))
 
     def test_transmission_texture_selects_glass_even_at_zero_base_amount(self):
         data = scene()
         data['materials'] = {'': {'color':[1,1,1], 'textures': {'tranAmt': {'path':'amount.png'}}}}
         with patch('moonray_modo.textures.prepare', return_value='amount.tx'):
             text = rdla.scene_text(data)
-        self.assertIn('ModoGlassMaterial(', text)
+        self.assertIn('DwaBaseMaterial(', text)
         self.assertIn('["transmission"] = bind(ModoTextureMap(', text)
 
     def test_image_bindings_and_safe_texture_paths(self):
@@ -78,7 +78,8 @@ class CoreTests(unittest.TestCase):
         text = rdla.scene_text(data)
         self.assertEqual(text.count('RdlMeshGeometry('), 1)
         self.assertIn('["part_face_indices"] = {0, 1}', text)
-        self.assertIn('{geometry, "part0", materials["red"]', text)
+        self.assertIn('assign(geometry, "part0", "red", "")', text)
+        self.assertIn('assign(geometry, "part1", "", "")', text)
 
     def test_uv_and_normal_corner_counts_are_checked(self):
         data = scene()
@@ -140,7 +141,10 @@ class CoreTests(unittest.TestCase):
     def test_default_material_for_unknown_tag(self):
         data = scene()
         data['meshes'][0]['material'] = 'missing'
-        self.assertIn('materials[""], lightSet', rdla.scene_text(data))
+        text=rdla.scene_text(data)
+        self.assertIn('materials[""] = UsdPreviewSurface(',text)
+        self.assertIn('assign(geometry, "", "", "")',text)
+        self.assertNotIn('assign(geometry, "", "missing"',text)
 
     def test_native_discovery_and_spaces_in_arguments(self):
         with tempfile.TemporaryDirectory(prefix='MoonRay test ') as name:

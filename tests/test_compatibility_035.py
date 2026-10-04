@@ -76,7 +76,7 @@ class Compatibility035(unittest.TestCase):
               <surfacematerial name="m" type="material"><input name="surfaceshader" type="surfaceshader" nodename="s"/></surfacematerial>
             </materialx>""")
             document,_=materialx_document.load(main)
-            self.assertEqual(Path(document.find("image/input").get('value')),root/'maps/test.exr')
+            self.assertEqual(Path(document.find("image/input").get('value')),(root/'maps/test.exr').resolve())
             graph=materialx.read(main)
             self.assertTrue(any(n.get('parameters',{}).get('value')==[0,1,0] for n in graph['nodes'].values()))
             self.assertIn(str(library.resolve()),graph['materialx_dependencies'])

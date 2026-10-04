@@ -37,3 +37,34 @@ if old in s:
     p.write_bytes(s.encode('utf-8'))
 elif new not in s:
     raise RuntimeError('Batch scheduler source changed; cannot apply tile-order setting safely')
+
+# Schedule contiguous 256px buckets while retaining MoonRay's required 8px
+# film/SIMD tiles. The selected traversal orders buckets and their inner tiles.
+p=base/'lib/rendering/rndr/TileScheduler.cc'
+s=p.read_text(encoding='utf-8')
+anchor='    generateTileIndices(arena, numTilesX, numTilesY, mTileIndices.get(), uint32_t(mRenderNodeIdx));'
+if 'Modo 256px scheduling buckets' not in s:
+    assert anchor in s
+    s=s.replace(anchor,anchor+"""
+
+    // Modo 256px scheduling buckets; do not change the 8x8 film storage.
+    const unsigned bucketTiles = 32;
+    const unsigned offsetX = (unsigned(viewport.mMinX) >> 3) % bucketTiles;
+    const unsigned offsetY = (unsigned(viewport.mMinY) >> 3) % bucketTiles;
+    const unsigned bucketsX = (offsetX + numTilesX + bucketTiles - 1) / bucketTiles;
+    const unsigned bucketsY = (offsetY + numTilesY + bucketTiles - 1) / bucketTiles;
+    std::vector<uint32_t> bucketOrder(bucketsX * bucketsY);
+    generateTileIndices(arena, bucketsX, bucketsY, bucketOrder.data(), uint32_t(mRenderNodeIdx));
+    std::vector<uint32_t> orderedTiles(numTiles);
+    for (unsigned i = 0; i < numTiles; ++i) orderedTiles[i] = i;
+    auto bucketRank = [&](unsigned i) {
+        return bucketOrder[((i / numTilesX + offsetY) / bucketTiles) * bucketsX +
+                           ((i % numTilesX + offsetX) / bucketTiles)];
+    };
+    std::sort(orderedTiles.begin(), orderedTiles.end(), [&](unsigned a, unsigned b) {
+        unsigned ba = bucketRank(a), bb = bucketRank(b);
+        return ba == bb ? mTileIndices[a] < mTileIndices[b] : ba < bb;
+    });
+    for (unsigned rank = 0; rank < numTiles; ++rank) mTileIndices[orderedTiles[rank]] = rank;
+""",1)
+    p.write_bytes(s.encode('utf-8'))

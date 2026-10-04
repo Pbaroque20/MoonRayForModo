@@ -122,7 +122,13 @@ class RenderTests(unittest.TestCase):
     def setUp(self):
         self.app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
         self.renderer = Renderer()
-        self.renderer.active = {'output': None, 'generation': 3}
+        self.renderer.active = {'output': None, 'generation': 3, 'snapshot':{}, 'runtime':''}
+        # Model a pass after _begin_pass initialized its completion bookkeeping.
+        self.renderer.original_published=False
+        self.renderer.gpu_error=False
+        self.renderer.post_jobs=[]
+        self.renderer.preview_files={}
+        self.renderer.buffer_path=pathlib.Path(self.renderer.directory.name)/'buffer.exr'
         self.renderer.passes = []
         self.renderer.image_path = pathlib.Path(self.renderer.directory.name) / 'render.png'
         self.errors, self.images = [], []

@@ -30,9 +30,16 @@ def register(path):
     if files is not None:files.append(str(path))
     return str(path)
 
+def asset_path(source):
+    source=Path(source)
+    # Windows Python 3.9 rejects the UDIM token as an actual file name.
+    # Resolve its directory (including short-path aliases), retaining the pattern.
+    return source.parent.resolve()/source.name if '<UDIM>' in source.name else source.resolve()
+
+
 def color_rule(source):
-    key=str(Path(source).resolve()).casefold()
-    return next((r["space"] for r in _policy.get().get("rules",[]) if str(Path(r["path"]).resolve()).casefold()==key),"")
+    key=str(asset_path(source)).casefold()
+    return next((r["space"] for r in _policy.get().get("rules",[]) if str(asset_path(r["path"])).casefold()==key),"")
 
 def prepare(source,srgb=False,mipmaps=True,color_space=""):
     return register(_prepare(source,srgb,mipmaps,color_space))
@@ -58,7 +65,7 @@ EFFECT_ALIASES = {'diffColor': 'diffCol', 'specColor': 'specCol',
 
 
 def source_tiles(source):
-    source = Path(source).resolve()
+    source = asset_path(source)
     if '<UDIM>' not in source.name:
         return {0: source} if source.is_file() else {}
     if not source.parent.is_dir(): return {}

@@ -4,8 +4,9 @@ import json
 import math
 from pathlib import Path
 from PySide2 import QtCore, QtWidgets
-from . import coordinates, native, nodes, properties, shader_library
+from . import coordinates, native, nodes, shader_library
 from .rdla import IDENTITY
+from .preview_diagnostics import record
 from .render import Renderer
 from .viewer import SoftwarePreview as Preview
 
@@ -86,6 +87,7 @@ class Panel(QtWidgets.QWidget):
     def preview_failed(self,message):
         if not self.closed:self.status.setText('Preview failed: '+message)
     def live_changed(self,enabled):
+        record("Live preview "+("enabled" if enabled else "disabled"))
         if enabled:self.schedule()
         else:
             self.timer.stop();self.renderer.stop();self.status.setText('Live preview off. Last image retained.')
@@ -102,20 +104,26 @@ class Panel(QtWidgets.QWidget):
         self.timer.stop()
         if self.live.isChecked():self.live.setChecked(False)
         else:self.renderer.stop()
+    def capture_snapshot(self):
+        import modo
+        from .host import material_values
+        library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=True)}
+        draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
+        return snapshot(draft,library,self.parts.isChecked())
+
     def refresh(self):
         if self.closed or self.refreshing:return
         self.refreshing=True
         try:
-            import modo
-            from .host import material_values
-            library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=True)}
-            draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
+            record("Capture draft begin")
+            scene=self.capture_snapshot()
+            record("Capture draft complete")
             self.timer.stop()  # Draft commit can itself notify graph_changed.
-            scene=snapshot(draft,library,self.parts.isChecked())
             size=256 if self.live.isChecked() else 384
             if self.live.isChecked():scene['render_settings'].update(max_adaptive_samples=16,target_adaptive_error=10.0)
             settings=QtCore.QSettings('MoonRayForModo','NativePreview')
             runtime=native.default_runtime() or str(settings.value('runtime',''))
+            record("Submit material preview; runtime="+str(runtime))
             self.renderer.submit(scene,runtime,size,size,2,.2,0)
         except Exception as exc:self.status.setText('Preview could not start: '+str(exc))
         finally:self.refreshing=False

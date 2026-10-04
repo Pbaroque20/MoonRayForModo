@@ -192,23 +192,30 @@ class Materials(unittest.TestCase):
             with self.assertRaises(ValueError): validate(key,bad)
 
     def test_layered_common_absorption_is_only_applied_in_volume(self):
-        value=scene()
-        glass={'color':[1]*3,'transmission':1,'absorption_distance':2,
-               'transmission_color':[math.exp(-1)]*3}
-        value['materials']['']['material_stack']=[glass,dict(glass,roughness=.4,layer_opacity=.5)]
+        from moonray_modo import graph,material_groups,absorption
+        from constant_graph import evaluate
+        value=scene();glass={'color':[1]*3,'transmission':1,'absorption_distance':2,
+                             'transmission_color':[math.exp(-1)]*3}
+        stack=[glass,dict(glass,roughness=.4,layer_opacity=.5)]
+        value['materials']['']['material_stack']=stack
         text=rdla.scene_text(value)
-        self.assertIn('["attenuation_color"] = Rgb(0.5, 0.5, 0.5)',text)
-        self.assertEqual(text.count('["transmission_color"] = Rgb(1, 1, 1)'),2)
+        self.assertIn('BaseVolume(',text)
+        self.assertEqual(text.count('DwaBaseMaterial('),1)
+        lines=[];maps=graph.bindings(material_groups.merged(stack),0,lines,absorption=True)
+        for channel in evaluate(lines,maps['transmissionColor']):self.assertAlmostEqual(channel,.5,places=7)
+        lines=[];maps=graph.bindings(material_groups.merged([absorption.surface(m) for m in stack]),0,lines)
+        self.assertEqual(evaluate(lines,maps['transmissionColor']),[1]*3)
 
-    def test_incompatible_active_interiors_rejected_but_hidden_layer_ignored(self):
-        from moonray_modo.absorption import medium
-        a={'transmission':1,'absorption_distance':1}
-        b={'transmission':1,'absorption_distance':2,'layer_opacity':.5}
-        with self.assertRaises(ValueError): medium({'material_stack':[a,b]})
-        b['layer_opacity']=1
-        self.assertIs(medium({'material_stack':[a,b]}),b)
-        b['layer_opacity']=0
-        self.assertIs(medium({'material_stack':[a,b]}),a)
+    def test_layered_absorption_blends_density_and_respects_opacity(self):
+        from moonray_modo import graph,material_groups,absorption
+        from constant_graph import evaluate
+        a={'transmission':1,'absorption_distance':1,'transmission_color':[math.exp(-1)]*3}
+        for opacity,expected in ((.5,.75),(1,.5),(0,1)):
+            b=dict(a,absorption_distance=2,layer_opacity=opacity)
+            stack=[a,b]
+            self.assertEqual(absorption.medium({'material_stack':stack}),{'stack_medium':stack})
+            lines=[];maps=graph.bindings(material_groups.merged(stack),0,lines,absorption=True)
+            for channel in evaluate(lines,maps['transmissionColor']):self.assertAlmostEqual(channel,expected,places=7)
 
     def test_transmission_group_mask_is_retained_for_volume_mapping(self):
         from moonray_modo.absorption import color_layers,surface
@@ -232,10 +239,17 @@ class Materials(unittest.TestCase):
         self.assertIn('["transmission_color"] = Rgb(1, 1, 1)',text)
 
     def test_material_order_and_opacity(self):
-        value=scene(); value['materials']['']['material_stack']=[{'color':[1,0,0]}, {'color':[0,1,0],'layer_opacity':.25}]
+        from moonray_modo import graph,material_groups
+        from constant_graph import evaluate
+        value=scene();stack=[{'color':[1,0,0]}, {'color':[0,1,0],'layer_opacity':.25}]
+        value['materials']['']['material_stack']=stack
         text=rdla.scene_text(value)
-        self.assertIn('["mask"] = 0.25',text)
-        self.assertLess(text.index('Rgb(1, 0, 0)'),text.index('Rgb(0, 1, 0)'))
+        self.assertEqual(text.count('DwaBaseMaterial('),1)
+        self.assertNotIn('DwaLayerMaterial(',text)
+        lines=[];maps=graph.bindings(material_groups.merged(stack),0,lines)
+        self.assertEqual(evaluate(lines,maps['diffuseColor']),[.75,.25,0])
+        lines=[];maps=graph.bindings(material_groups.merged(list(reversed(stack))),0,lines)
+        self.assertEqual(evaluate(lines,maps['diffuseColor']),[1,0,0])
 
 
 class Geometry(unittest.TestCase):
@@ -335,9 +349,11 @@ class Rendering(unittest.TestCase):
         start,end=copy.deepcopy(value),copy.deepcopy(value)
         end['meshes'][0].update(instances=[shifted,rdla.IDENTITY],instance_ids=['b','a'])
         apply_motion(value,start,end,[-.25,.25])
-        self.assertEqual(len(value['meshes']),2)
-        self.assertEqual(value['meshes'][0]['matrix_close'],rdla.IDENTITY)
-        self.assertEqual(value['meshes'][1]['matrix_close'],shifted)
+        self.assertEqual(len(value['meshes']),1)
+        mesh=value['meshes'][0]
+        self.assertEqual(mesh['instance_ids'],['a','b'])
+        self.assertEqual(mesh['instances_close'],[rdla.IDENTITY,shifted])
+        self.assertEqual(mesh['instance_velocities'],[[0,0,0],[0,0,0]])
 
     def test_orthographic_and_region(self):
         value=scene(); value['camera'].update(projection='ortho',ortho_width=4)
