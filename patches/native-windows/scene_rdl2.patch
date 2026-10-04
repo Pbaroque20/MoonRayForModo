@@ -1398,6 +1398,48 @@ index 14d874b..e3c6f4f 100644
  #endif
  
  
+diff --git a/lib/scene/rdl2/RenderOutput.cc b/lib/scene/rdl2/RenderOutput.cc
+index ede9a6c..11ae49d 100644
+--- a/lib/scene/rdl2/RenderOutput.cc
++++ b/lib/scene/rdl2/RenderOutput.cc
+@@ -36,6 +36,7 @@ AttributeKey<String> RenderOutput::sAttrCheckpointFileName;
+ AttributeKey<String> RenderOutput::sAttrCheckpointMultiVersionFileName;
+ AttributeKey<String> RenderOutput::sAttrResumeFileName;
+ AttributeKey<Int> RenderOutput::sAttrCryptomatteDepth;
++AttributeKey<Int> RenderOutput::sAttrCryptomatteIdChannel;
+ AttributeKey<Bool> RenderOutput::sAttrCryptomatteOutputPositions;
+ AttributeKey<Bool> RenderOutput::sAttrCryptomatteOutputP0;
+ AttributeKey<Bool> RenderOutput::sAttrCryptomatteOutputNormals;
+@@ -385,6 +386,9 @@ RenderOutput::declare(SceneClass &sceneClass)
+     sceneClass.setMetadata(sAttrResumeFileName, SceneClass::sComment, "Name of input file for resume render start condition");
+ 
+     // "cryptomatte depth"
++    sAttrCryptomatteIdChannel = sceneClass.declareAttribute<Int>("cryptomatte_id_channel", 0);
++    sceneClass.setMetadata(sAttrCryptomatteIdChannel, SceneClass::sComment,
++                          "Modo surface category: 0 primary deep ID, 1 modo_material_id, 2 modo_asset_id.");
+     sAttrCryptomatteDepth = sceneClass.declareAttribute<Int>("cryptomatte_depth", 6);
+     sceneClass.setMetadata(sAttrCryptomatteDepth, SceneClass::sComment,
+         "Number of cryptomatte (id,coverage) data sets to output");
+diff --git a/lib/scene/rdl2/RenderOutput.h b/lib/scene/rdl2/RenderOutput.h
+index 442132d..d1e1ef7 100644
+--- a/lib/scene/rdl2/RenderOutput.h
++++ b/lib/scene/rdl2/RenderOutput.h
+@@ -266,6 +266,7 @@ public:
+ 
+     // Cryptomatte depth & number of layers
+     int getCryptomatteDepth() const;
++    int getCryptomatteIdChannel() const { return get(sAttrCryptomatteIdChannel); }
+     int getCryptomatteNumLayers() const;
+ 
+     // Cryptomatte output settings
+@@ -311,6 +312,7 @@ private:
+     static AttributeKey<String> sAttrCheckpointMultiVersionFileName;
+     static AttributeKey<String> sAttrResumeFileName;
+     static AttributeKey<Int> sAttrCryptomatteDepth;
++    static AttributeKey<Int> sAttrCryptomatteIdChannel;
+     static AttributeKey<Bool> sAttrCryptomatteOutputPositions;
+     static AttributeKey<Bool> sAttrCryptomatteOutputP0;
+     static AttributeKey<Bool> sAttrCryptomatteOutputNormals;
 diff --git a/lib/scene/rdl2/SceneContext.cc b/lib/scene/rdl2/SceneContext.cc
 index c380cf4..c58f494 100644
 --- a/lib/scene/rdl2/SceneContext.cc

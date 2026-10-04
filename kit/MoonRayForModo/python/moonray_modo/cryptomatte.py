@@ -21,6 +21,18 @@ def float_id(name):
 
 def enabled(scene):return any(v.get('kind')=='cryptomatte' for v in scene.get('custom_aovs',[]))
 
+def multiple(scene):return sum(v.get('kind')=='cryptomatte' for v in scene.get('custom_aovs',[]))>1
+
+
+def userdata_set(geometry,lines,scene,instances=False):
+    cats=('object','material','asset') if multiple(scene) else (category(scene),)
+    return [userdata(geometry,lines,cat,scene,instances) for cat in cats if not (instances and cat=='material')]
+
+
+def instance_userdata(geometry,lines,scene):
+    return ', '.join(userdata_set(geometry,lines,scene,instances=True))
+
+
 def category(scene):
     return next((v.get('category','object') for v in scene.get('custom_aovs',[]) if v.get('kind')=='cryptomatte'),'object')
 
@@ -50,17 +62,18 @@ def userdata(geometry,lines,category='object',scene=None,instances=False):
     values=labels(geometry,category,scene,instances)
     if not values:raise ValueError('Cryptomatte instances require stable identities')
     import hashlib
-    path='/modo/crypto/'+hashlib.sha256(json.dumps([values,instances]).encode()).hexdigest()[:24]
+    key='modo_'+category+'_id' if multiple(scene or {}) else 'modo_object_id'
+    path='/modo/crypto/'+hashlib.sha256(json.dumps([key,values,instances]).encode()).hexdigest()[:24]
     rate=0 if instances else 3 if len(values)>1 else 1
-    lines.append('UserData(%s) { ["float_key"] = "modo_object_id", ["float_values_0"] = %s, ["rate"] = %d }'%(string(path),array(number(float_id(value)) for value in values),rate))
+    lines.append('UserData(%s) { ["float_key"] = %s, ["float_values_0"] = %s, ["rate"] = %d }'%(string(path),string(key),array(number(float_id(value)) for value in values),rate))
     return 'UserData(%s)'%string(path)
 
 
-def metadata(geometries,lines,crypto=False,scene=None):
+def metadata(geometries,lines,crypto=False,scene=None,category_override=None):
     from .working_space import label
     names=['MoonRayForModo/workingSpace'];types=['string'];values=[label((scene or {}).get('asset_settings',{}))]
     if crypto:
-        cat=category(scene or {});manifest={}
+        cat=category_override or category(scene or {});manifest={}
         for g in geometries:
             if g.get('kind')=='vdb':continue
             entries=labels(g,cat,scene,instances='instances' in g and cat!='material')
@@ -69,4 +82,5 @@ def metadata(geometries,lines,crypto=False,scene=None):
         fields={'name':'Cryptomatte','hash':'MurmurHash3_32','conversion':'uint32_to_float32','manifest':json.dumps(manifest,separators=(',',':'),sort_keys=True)}
         for key,value in fields.items():names.append(prefix+key);types.append('string');values.append(value)
         names.append('MoonRayForModo/cryptomatteCategory');types.append('string');values.append(cat)
-    lines.append('Metadata("/modo/outputMetadata") '+array(array(string(v) for v in row) for row in zip(names,types,values)))
+    path='/modo/outputMetadata'+('/'+category_override if category_override else '')
+    lines.append('Metadata('+string(path)+') '+array(array(string(v) for v in row) for row in zip(names,types,values)))

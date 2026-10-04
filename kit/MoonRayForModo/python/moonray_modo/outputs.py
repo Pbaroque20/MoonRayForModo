@@ -21,10 +21,18 @@ def values(entries):
         if v['category'] not in ('object','material','asset'):raise ValueError('Unknown Cryptomatte category')
         if v['kind']=='cryptomatte':v.update(precision=0,filter=0)
         result.append(v)
-    if sum(v['kind']=='cryptomatte' for v in result)>1:raise ValueError('This MoonRay runtime provides one Cryptomatte category per render')
+    crypto=[v for v in result if v['kind']=='cryptomatte']
+    if len({v['category'] for v in crypto})!=len(crypto):raise ValueError('Use one Cryptomatte output per category')
+    if len(crypto)>1:
+        # Native Cryptomatte channel names are fixed; isolate category rank
+        # channels and their manifests in distinct EXR parts.
+        for v in crypto:v['part']=v['part'] or 'crypto_'+v['category']
+        for v in crypto:
+            if any(other is not v and other['part']==v['part'] for other in result):
+                raise ValueError('Each Cryptomatte category needs its own EXR part')
     return result
 
-def attributes(entry):
+def attributes(entry,multiple=False):
     kind=entry['kind']
     attrs={'channel_format':entry['precision'],'math_filter':entry['filter'],'file_part':entry['part'],'channel_name':entry['name']}
     if kind=='lpe':attrs.update(result=8,lpe=entry['expression'])
@@ -32,12 +40,13 @@ def attributes(entry):
     elif kind=='cryptomatte':attrs.update(result=13,cryptomatte_depth=entry['depth'],cryptomatte_support_resume_render=True)
     elif kind=='motion':attrs.update(result=3,state_variable=12)
     else:attrs.update(options.AOVS[kind][1])
+    if kind=='cryptomatte' and multiple:attrs['cryptomatte_id_channel']=('object','material','asset').index(entry['category'])
     return attrs
 
 def preview(scene):
     result={key:dict(value[1]) for key,value in options.AOVS.items()};result['beauty']={'result':0}
     for entry in values(scene.get('custom_aovs',[])):
-        attrs=attributes(entry);attrs.pop('file_part',None);attrs.pop('channel_name',None);attrs['channel_format']=0
+        attrs=attributes(entry,sum(v.get('kind')=='cryptomatte' for v in scene.get('custom_aovs',[]))>1);attrs.pop('file_part',None);attrs.pop('channel_name',None);attrs['channel_format']=0
         result[entry['name']]=attrs
     return result
 

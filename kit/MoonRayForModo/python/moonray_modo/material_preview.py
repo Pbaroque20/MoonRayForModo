@@ -7,7 +7,7 @@ from PySide2 import QtCore, QtWidgets
 from . import coordinates, native, nodes, properties, shader_library
 from .rdla import IDENTITY
 from .render import Renderer
-from .viewer import Preview
+from .viewer import SoftwarePreview as Preview
 
 
 def look_at(eye, target=(0, 0, 0)):
@@ -61,7 +61,7 @@ def snapshot(material, library, all_parts=False):
 class Panel(QtWidgets.QWidget):
     def __init__(self,item,draft,parent=None,embedded=False):
         super().__init__(parent)
-        self.item,self.draft=item,draft;self.closed=False;self.last_signature=None
+        self.item,self.draft=item,draft;self.closed=False;self.refreshing=False;self.last_signature=None
         layout=QtWidgets.QVBoxLayout(self);layout.setContentsMargins(4,4,4,4)
         layout.addWidget(QtWidgets.QLabel('MoonRay Widget'))
         bar=QtWidgets.QHBoxLayout();layout.addLayout(bar)
@@ -76,13 +76,15 @@ class Panel(QtWidgets.QWidget):
         credit=QtWidgets.QLabel('MoonRay Widget Copyright 2023–2025 DreamWorks Animation LLC. All rights reserved.\nASWF Digital Assets License v1.1');credit.setWordWrap(True);layout.addWidget(credit)
         self.renderer=Renderer(self)
         self.renderer.image_object.connect(self.viewer.set_image);self.renderer.image_ready.connect(self.viewer.load)
-        self.renderer.status.connect(self.status.setText);self.renderer.failed.connect(lambda message:self.status.setText('Preview failed: '+message))
+        self.renderer.status.connect(self.status.setText);self.renderer.failed.connect(self.preview_failed)
         self.renderer.buckets.connect(self.viewer.set_buckets)
         self.timer=QtCore.QTimer(self);self.timer.setSingleShot(True);self.timer.setInterval(650);self.timer.timeout.connect(self.refresh)
         self.live.toggled.connect(self.live_changed)
         self.parts.toggled.connect(lambda *_:self.schedule())
         refresh.clicked.connect(self.refresh);stop.clicked.connect(self.stop)
         self.viewer.start_requested.connect(self.refresh)
+    def preview_failed(self,message):
+        if not self.closed:self.status.setText('Preview failed: '+message)
     def live_changed(self,enabled):
         if enabled:self.schedule()
         else:
@@ -101,7 +103,8 @@ class Panel(QtWidgets.QWidget):
         if self.live.isChecked():self.live.setChecked(False)
         else:self.renderer.stop()
     def refresh(self):
-        if self.closed:return
+        if self.closed or self.refreshing:return
+        self.refreshing=True
         try:
             import modo
             from .host import material_values
@@ -115,9 +118,20 @@ class Panel(QtWidgets.QWidget):
             runtime=native.default_runtime() or str(settings.value('runtime',''))
             self.renderer.submit(scene,runtime,size,size,2,.2,0)
         except Exception as exc:self.status.setText('Preview could not start: '+str(exc))
+        finally:self.refreshing=False
     def shutdown(self):
         if self.closed:return
-        self.closed=True;self.timer.stop();self.renderer.close()
+        self.closed=True;self.timer.stop()
+        # waitForFinished can dispatch queued signals during shutdown. Detach
+        # UI receivers first so they cannot touch a closing widget/context.
+        for signal,slot in ((self.renderer.image_object,self.viewer.set_image),
+                            (self.renderer.image_ready,self.viewer.load),
+                            (self.renderer.status,self.status.setText),
+                            (self.renderer.failed,self.preview_failed),
+                            (self.renderer.buckets,self.viewer.set_buckets)):
+            try:signal.disconnect(slot)
+            except (RuntimeError,TypeError):pass
+        self.viewer.bucket_timeout.stop();self.renderer.close()
     def closeEvent(self,event):
         self.shutdown();super().closeEvent(event)
 

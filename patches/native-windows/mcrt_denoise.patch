@@ -1,8 +1,19 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index ebfd9ea..34be238 100644
+index ebfd9ea..79d73e0 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -59,7 +59,9 @@ endif()
+@@ -24,7 +24,9 @@ option(${PROJECT_NAME_UPPER}_BUILD_TESTING "Whether or not to build the unittest
+ # Find dependencies
+ # ================================================
+ if (MOONRAY_USE_OPTIX)
+-    find_package(CUDAToolkit REQUIRED) # built-in
++    if(NOT TARGET CUDA::cudart)
++        find_package(CUDAToolkit REQUIRED)
++    endif()
+     find_package(OptiX REQUIRED)
+ endif()
+ 
+@@ -59,7 +61,9 @@ endif()
  
  # Create include/${PACKAGE_NAME} link in the build directory for generated headers.
  file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/include)
@@ -26,3 +37,31 @@ index a48bb07..ae48df7 100644
                  -pipe                           # Use pipes rather than intermediate files.
                  -pthread                        # Define additional macros required for using the POSIX threads library.
                  -w                              # Inhibit all warning messages.
+diff --git a/lib/denoiser/OptixDenoiserImpl.cc b/lib/denoiser/OptixDenoiserImpl.cc
+index df8c82a..bba3b3d 100644
+--- a/lib/denoiser/OptixDenoiserImpl.cc
++++ b/lib/denoiser/OptixDenoiserImpl.cc
+@@ -284,6 +284,14 @@ OptixDenoiserImpl::createOptixContext(OptixLogCallback logCallback,
+ {
+     *errorMsg = "";
+ 
++#if defined(_WIN32)
++    // Windows CUDA driver capability check; optixInit verifies OptiX ABI support.
++    int cudaVersion = 0;
++    if (cudaDriverGetVersion(&cudaVersion) != cudaSuccess || cudaVersion < 12000) {
++        *errorMsg = "CUDA driver unavailable or too old (CUDA 12 required)";
++        return false;
++    }
++#else
+     int major, minor;
+     if (!getNVIDIADriverVersion(&major, &minor)) {
+         *errorMsg = "Unable to query NVIDIA driver version";
+@@ -294,6 +302,8 @@ OptixDenoiserImpl::createOptixContext(OptixLogCallback logCallback,
+         return false;
+     }
+ 
++#endif
++
+     cudaFree(0);    // init CUDA
+ 
+     int numDevices = 0;

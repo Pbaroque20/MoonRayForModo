@@ -1,7 +1,7 @@
 """Expand local, named-output MaterialX NodeDef graph implementations safely."""
 import copy
 
-CONNECTION=('value','nodename','nodegraph','output','interfacename','channels')
+CONNECTION=('value','nodename','nodegraph','output','interfacename','channels','defaultgeomprop','unit','unittype','colorspace')
 
 def expand(document):
     definitions={e.get('name'):e for e in document.findall('nodedef')}

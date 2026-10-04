@@ -104,5 +104,13 @@ if instancer.is_file() and b'xform_list_close' in instancer.read_bytes():
             for name in ('RdlInstancerGeometry.dll','librendering_geom.dll')}
     capability.write_text(json.dumps({'version':1,'sha256':hashes},indent=2),encoding='utf-8')
     manifest[capability.name]={'source':str(capability),'sha256':hashlib.sha256(capability.read_bytes()).hexdigest()}
+# Category support requires matching scene schema, scalar/vector accumulation,
+# and film/output libraries. Marker does not claim render validation.
+crypto_libs=('libscene_rdl2.dll','librendering_rndr.dll','moonray.exe')
+if all((destination/n).is_file() for n in crypto_libs) and b'Modo surface category: 0 primary deep ID' in (destination/crypto_libs[0]).read_bytes() and b'Cryptomatte category unavailable' in (destination/crypto_libs[1]).read_bytes():
+    capability=destination/'modo-crypto-categories.json'
+    hashes={n:hashlib.sha256((destination/n).read_bytes()).hexdigest() for n in crypto_libs}
+    capability.write_text(json.dumps({'version':1,'surface_categories':['object','material','asset'],'volume_coverage':False,'render_validated':False,'sha256':hashes},indent=2),encoding='utf-8')
+    manifest[capability.name]={'source':str(capability),'sha256':hashlib.sha256(capability.read_bytes()).hexdigest()}
 (destination / 'build-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
 print('Staged', len(manifest), 'native binaries in', destination)

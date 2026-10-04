@@ -28,6 +28,7 @@ def run(args, name):
         raise SystemExit(completed.returncode)
 
 if renderer:
+    run([sys.executable, ROOT / 'tools/port_crypto_categories.py'], 'port-crypto-categories')
     run([sys.executable, ROOT / 'tools/port_instance_motion.py'], 'port-instance-motion')
     run([sys.executable, ROOT / 'tools/port_persistent.py'], 'port-persistent')
     run([sys.executable, ROOT / 'tools/port_buckets.py'], 'port-buckets')

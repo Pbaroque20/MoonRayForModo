@@ -7,6 +7,25 @@ import uuid
 from pathlib import Path
 from PySide2 import QtCore,QtGui
 _retired_workers=set()
+
+class _WorkerRetirement(QtCore.QObject):
+    """Own worker and input files until the native thread has fully exited."""
+    def __init__(self,worker,directory):
+        super().__init__()
+        self.worker=worker;self.directory=directory
+        worker.setParent(None)
+        self.timer=QtCore.QTimer(self);self.timer.setInterval(100)
+        self.timer.timeout.connect(self.reap)
+        _retired_workers.add(self);self.timer.start()
+
+    @QtCore.Slot()
+    def reap(self):
+        if not self.worker.wait(0):return
+        self.timer.stop();self.worker.deleteLater()
+        try:self.directory.cleanup()
+        except OSError:pass
+        _retired_workers.discard(self);self.deleteLater()
+
 from . import native, options, outputs
 from .buffers import conversion
 
@@ -118,6 +137,7 @@ class BufferCache(QtCore.QObject):
         except Exception as exc:
             self.job=None;self.notice.emit('Cannot display buffer: '+str(exc));self._prune()
 
+    @QtCore.Slot()
     def _memory_finished(self):
         worker=self.worker
         if worker is None:return
@@ -187,14 +207,15 @@ class BufferCache(QtCore.QObject):
                     except OSError:pass
 
     def close(self):
+        if self.closed:return
         self.closed=True
+        retired=False
         if self.worker is not None:
             worker=self.worker;self.worker=None
             worker.finished.disconnect(self._memory_finished)
             if not worker.wait(2000):
-                worker.setParent(None);_retired_workers.add(worker)
-                worker.finished.connect(lambda w=worker:(_retired_workers.discard(w),w.deleteLater()))
+                _WorkerRetirement(worker,self.directory);retired=True
             else:worker.deleteLater()
         if self.process.state()!=QtCore.QProcess.NotRunning:
             self.process.kill();self.process.waitForFinished(2000)
-        if self.process.state()==QtCore.QProcess.NotRunning:self.directory.cleanup()
+        if not retired and self.process.state()==QtCore.QProcess.NotRunning:self.directory.cleanup()

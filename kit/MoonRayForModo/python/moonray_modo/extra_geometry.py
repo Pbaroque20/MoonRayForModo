@@ -129,8 +129,8 @@ def emit(scene,materials,lines,crypto=False):
             camera,indirect,reflection,refraction,subsurface,shadow=entry['visibility']
             for key,value in [('visible_in_camera',camera),('visible_shadow',shadow),('visible_diffuse_reflection',indirect),('visible_diffuse_transmission',indirect),('visible_glossy_reflection',reflection),('visible_mirror_reflection',reflection),('visible_glossy_transmission',refraction),('visible_mirror_transmission',refraction)]:attrs[key]='true' if value else 'false'
         if crypto and kind!='vdb':
-            from .cryptomatte import userdata,category
-            attrs['primitive_attributes']=array([userdata(entry,lines,category(scene),scene)])
+            from .cryptomatte import userdata_set
+            attrs['primitive_attributes']=array(userdata_set(entry,lines,scene))
         lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':
             lines += ['  local a = {g, "", %s, objectLightSets[%s] or (nativeLightSets[%s] and nativeLightSets[%s][%s]) or lightSet}'%(shader,string(owner(entry)),string(owner(entry)),string(owner(entry)),string(tag)),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']

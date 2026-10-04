@@ -125,3 +125,20 @@ def configured_runtime(settings):
         settings.setValue('runtime', default_runtime())
         settings.setValue('runtime_installation', stamp)
     return find_runtime(str(settings.value('runtime', default_runtime())))
+
+
+_CRYPTO_LIBS=('libscene_rdl2.dll','librendering_rndr.dll','moonray.exe')
+def supports_crypto_categories(directory):
+    root=Path(directory).resolve()
+    try:signature=tuple((p.stat().st_size,p.stat().st_mtime_ns) for p in [root/'modo-crypto-categories.json']+[root/n for n in _CRYPTO_LIBS])
+    except OSError:return False
+    return _crypto_capability(str(root),signature)
+
+@lru_cache(maxsize=8)
+def _crypto_capability(directory,signature):
+    import hashlib
+    root=Path(directory)
+    try:
+        data=json.loads((root/'modo-crypto-categories.json').read_text(encoding='utf-8'))
+        return data.get('version')==1 and all(hashlib.sha256((root/n).read_bytes()).hexdigest()==data['sha256'][n] for n in _CRYPTO_LIBS)
+    except (OSError,ValueError,KeyError,TypeError):return False

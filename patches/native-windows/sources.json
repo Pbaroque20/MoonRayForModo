@@ -12,21 +12,21 @@
       "commit": "1229d3eaa1ee41dc1ddefbe781c623edceafbac8",
       "origin": "https://github.com/OpenMoonRay/scene_rdl2",
       "patch": "patches/native-windows/scene_rdl2.patch",
-      "patch_sha256": "8d7f019bec50ff6d94b536bd67f93cb4a51ac1b7c6bfce2f555f1137b16433b4"
+      "patch_sha256": "307659a82c76223443216de4f6c9db786c8c972fb00d61ef1d4743726eb0c236"
     },
     "moonray": {
       "path": "upstream/openmoonray/moonray/moonray",
       "commit": "eef67ae992b5037943a7716cca96ed443c36dcec",
       "origin": "https://github.com/OpenMoonRay/moonray",
       "patch": "patches/native-windows/moonray.patch",
-      "patch_sha256": "4b5564b9d8acceba8a3a65d13666c26cb41aea979a002e567f1114f9ad5f462c"
+      "patch_sha256": "0e0015f3f071f212b8affd148fe17a719828089603a4f7fece9a6b9700574daa"
     },
     "mcrt_denoise": {
       "path": "upstream/openmoonray/moonray/mcrt_denoise",
       "commit": "0050e726309a533e7964bd05380430e6b06cce7a",
       "origin": "https://github.com/OpenMoonRay/mcrt_denoise",
       "patch": "patches/native-windows/mcrt_denoise.patch",
-      "patch_sha256": "dc5b76d7010cbe44c714338809f0cd19797dc484fac0485f0e9e395f94d1b862"
+      "patch_sha256": "b118bc10fa628d8af8707fd93c95756ef7ac9fec9ddfaa6e2d835a872d133ed7"
     },
     "moonshine": {
       "path": "upstream/openmoonray/moonray/moonshine",

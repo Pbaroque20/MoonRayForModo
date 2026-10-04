@@ -830,3 +830,16 @@ MaterialX separate2/separate3 named outputs, tangent, arcsine and atan2 translat
 extend the existing subset; four-component and arbitrary source graphs remain
 unsupported. Native display compilation and syntax parsing completed. Render,
 visual and host tests remain deferred; tests/test_compatibility_0324.py is unrun.
+
+
+### 0.3.26 — preview stability, MaterialX and Cryptomatte candidate
+
+Graph thumbnails use software Qt painting and safer asynchronous teardown. MaterialX
+translation now includes geometric property reads, object/world coordinate transforms,
+RGB/HSV conversions, vector2 images and supported default geometric inputs.
+
+A separately compiled native candidate adds simultaneous **surface** object/material/asset
+Cryptomatte accumulation, EXR parts, manifests and preview selection. It is not the
+installed default runtime and has not been render-validated. Volume coverage, arbitrary
+MaterialX execution and full Modo parity remain incomplete. See
+[implementation status and deferred checks](docs/COMPATIBILITY_0326.md).

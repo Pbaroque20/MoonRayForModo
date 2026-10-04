@@ -2,8 +2,7 @@
 from PySide2 import QtCore, QtGui, QtWidgets
 
 
-class Preview(QtWidgets.QOpenGLWidget):
-    start_requested=QtCore.Signal()
+class _PreviewBody:
     def __init__(self, parent=None):
         super().__init__(parent)
         self.image = QtGui.QImage()
@@ -19,10 +18,12 @@ class Preview(QtWidgets.QOpenGLWidget):
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         self.setToolTip('Click empty preview to render. Wheel: zoom. Middle drag: pan. Double-click: fit image.')
 
+    @QtCore.Slot(str)
     def load(self, path):
         image = QtGui.QImage(str(path))
         self.set_image(image)
 
+    @QtCore.Slot(object)
     def set_image(self,image):
         if image.isNull():
             raise ValueError('MoonRay output could not be decoded as an image.')
@@ -44,6 +45,7 @@ class Preview(QtWidgets.QOpenGLWidget):
             scale=min(self.width()/self.image.width(),self.height()/self.image.height())
             if scale>0:self.zoom=1./scale;self.pan=QtCore.QPointF();self.update()
 
+    @QtCore.Slot(object)
     def set_buckets(self,packet):
         self.buckets=packet
         if packet:self.bucket_timeout.start(1500)
@@ -119,3 +121,15 @@ class Preview(QtWidgets.QOpenGLWidget):
         self._drag = None
         self.unsetCursor()
         self.fit()
+
+
+class Preview(_PreviewBody,QtWidgets.QOpenGLWidget):
+    start_requested=QtCore.Signal()
+
+
+class SoftwarePreview(_PreviewBody,QtWidgets.QWidget):
+    """Embedded graph thumbnails need no additional OpenGL context in Modo."""
+    start_requested=QtCore.Signal()
+
+    def paintEvent(self,event):
+        self.paintGL()

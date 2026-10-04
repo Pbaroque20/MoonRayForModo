@@ -1,8 +1,28 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 34bf67f..6d9b338 100644
+index 34bf67f..1cb646a 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -171,7 +171,9 @@ endif()
+@@ -60,6 +60,7 @@ set(BUILD_SHARED_LIBS ON)
+ find_package(Boost REQUIRED)
+ 
+ if(MOONRAY_USE_OPTIX)
++    if(NOT MOONRAY_WINDOWS_XPU)
+     include(CheckLanguage)
+     check_language(CUDA)
+     if(CMAKE_CUDA_COMPILER)
+@@ -67,7 +68,10 @@ if(MOONRAY_USE_OPTIX)
+     else()
+         message(STATUS "No CUDA support")
+     endif()
+-    find_package(CUDAToolkit REQUIRED) # built-in
++    endif()
++    if(NOT TARGET CUDA::cudart)
++        find_package(CUDAToolkit REQUIRED)
++    endif()
+     find_package(OptiX REQUIRED)
+ endif()
+ 
+@@ -171,7 +175,9 @@ endif()
  
  # Create include/${PACKAGE_NAME} link in the build directory for generated headers.
  file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/include)
@@ -44,11 +64,66 @@ index b719930..b8a5792 100644
                  -mavx
                  -Qoption,cpp,--print_include_stack
                  -fmerge-debug-strings
+diff --git a/cmd/denoise_cmd/main.cc b/cmd/denoise_cmd/main.cc
+index dde0002..fc3f2a0 100644
+--- a/cmd/denoise_cmd/main.cc
++++ b/cmd/denoise_cmd/main.cc
+@@ -62,7 +62,10 @@ readImage(const std::string &filename, scene_rdl2::fb_util::RenderBuffer *buffer
+ 
+     buffer->init(imageSpec.width, imageSpec.height);
+ 
+-    // TODO: Should we check the number of channels here?
++    if (imageSpec.width <= 0 || imageSpec.height <= 0 ||
++        (imageSpec.nchannels != 3 && imageSpec.nchannels != 4)) {
++        throw scene_rdl2::except::IoError("Denoiser requires an RGB or RGBA image");
++    }
+     std::vector<float> tmpBuffer(imageSpec.width * imageSpec.height * 4);
+ 
+ #   if OIIO_VERSION < OIIO_MAKE_VERSION(3,0,0)
+@@ -276,7 +279,7 @@ main(int argc, char* argv[])
+                           &errorMsg);
+ 
+         if (!errorMsg.empty()) {
+-            std::cerr << "Error denoising: " << errorMsg << std::endl;
++            throw std::runtime_error("Error denoising: " + errorMsg);
+         }
+ 
+         // Output results.
 diff --git a/cmd/raas_cmd/moonray/moonray.cc b/cmd/raas_cmd/moonray/moonray.cc
-index 2e73a05..ed37f89 100644
+index 2e73a05..adbb826 100644
 --- a/cmd/raas_cmd/moonray/moonray.cc
 +++ b/cmd/raas_cmd/moonray/moonray.cc
-@@ -114,6 +114,11 @@ RaasCommandLineApplication::run()
+@@ -1,3 +1,4 @@
++#include "modo_bucket_output.h"
+ // Copyright 2023-2024 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ 
+@@ -25,6 +26,7 @@ protected:
+     void parseOptions();
+     void render(rndr::RenderContext & renderContext);
+     void renderOutput(rndr::RenderContext &renderContext);
++    void renderPersistent(const std::string& directory);
+     void run();
+ };
+ 
+@@ -60,6 +62,7 @@ RaasCommandLineApplication::render(rndr::RenderContext & renderContext)
+         usleep(100000);
+         // TODO: Do we want a 'verbosity' setting.  Maybe we don't want to print status always
+         printStatusLine(renderContext, driver->getLastFrameMcrtStartTime(), false);
++        modoBucketOutput("0",driver->getWidth(),driver->getHeight());
+     }
+     // Inform the status line that we're done rendering.
+     printStatusLine(renderContext, driver->getLastFrameMcrtStartTime(), true);
+@@ -109,14 +112,27 @@ RaasCommandLineApplication::renderOutput(rndr::RenderContext &renderContext)
+     }
+ }
+ 
++} // namespace moonray
++#include "persistent_session.inc"
++namespace moonray {
++
+ void
+ RaasCommandLineApplication::run()
  {
      // Run global init (creates a RenderDriver) This *must* be called on the same thread we
      // intend to call RenderContext::startFrame from.
@@ -60,7 +135,14 @@ index 2e73a05..ed37f89 100644
      rndr::initGlobalDriver(mOptions);
  
      logInitMessages();
-@@ -142,7 +147,6 @@ RaasCommandLineApplication::run()
++    if (const char* session = std::getenv("MOONRAY_MODO_SESSION")) {
++        renderPersistent(session);
++        return;
++    }
+ 
+     // Create a RenderContext. Since the RenderContext internally holds a
+     // ref on the RenderDriver, scope it to this block so it gets destroyed
+@@ -142,7 +158,6 @@ RaasCommandLineApplication::run()
          }
      }
  
@@ -68,6 +150,43 @@ index 2e73a05..ed37f89 100644
  }
  
  } // namespace
+diff --git a/dso/geometry/RdlInstancerGeometry/RdlInstancerGeometry.cc b/dso/geometry/RdlInstancerGeometry/RdlInstancerGeometry.cc
+index bcaa6e8..5992174 100644
+--- a/dso/geometry/RdlInstancerGeometry/RdlInstancerGeometry.cc
++++ b/dso/geometry/RdlInstancerGeometry/RdlInstancerGeometry.cc
+@@ -87,7 +87,8 @@ public:
+                            instanceGeometry->get(attrPositions),
+                            instanceGeometry->get(attrOrientations),
+                            instanceGeometry->get(attrScales),
+-                           instanceGeometry->get(attrXformList));
++                           instanceGeometry->get(attrXformList),
++                           instanceGeometry->get(attrXformListClose));
+     }
+ };
+ 
+diff --git a/dso/geometry/RdlInstancerGeometry/attributes.cc b/dso/geometry/RdlInstancerGeometry/attributes.cc
+index 152b1b6..16bda1c 100644
+--- a/dso/geometry/RdlInstancerGeometry/attributes.cc
++++ b/dso/geometry/RdlInstancerGeometry/attributes.cc
+@@ -12,6 +12,7 @@ RDL2_DSO_ATTR_DECLARE
+     scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Int> attrInstanceMethod;
+     scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Int> attrInstanceLevel;
+     scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Mat4dVector> attrXformList;
++    scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Mat4dVector> attrXformListClose;
+     scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Vec3fVector> attrPositions;
+     scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Vec4fVector> attrOrientations;
+     scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Vec3fVector> attrScales;
+@@ -64,6 +65,10 @@ RDL2_DSO_ATTR_DEFINE(scene_rdl2::rdl2::Geometry)
+             "OrderedDict([(u'method', u'2')])");
+     sceneClass.setGroup("Instancing", attrXformList);
+ 
++    attrXformListClose = sceneClass.declareAttribute<scene_rdl2::rdl2::Mat4dVector>("xform_list_close");
++    sceneClass.setMetadata(attrXformListClose, "comment", "Optional shutter-close affine transforms paired with shutter-open xform_list. Requires matching counts; supersedes velocities when motion blur is enabled.");
++    sceneClass.setGroup("Motion Blur", attrXformListClose);
++
+     attrPositions =
+         sceneClass.declareAttribute<scene_rdl2::rdl2::Vec3fVector>("positions");
+     sceneClass.setMetadata(attrPositions, "comment",
 diff --git a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc b/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
 index 598a705..224e4ab 100644
 --- a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
@@ -452,6 +571,59 @@ index 1b3ea6a..94cfb04 100644
      ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
      # If we don't request the C++ linker, cmake will complain about
      # a missing variable CMAKE_ISPC_CREATE_SHARED_LIBRARY. This seems
+diff --git a/lib/rendering/geom/InstanceProceduralLeaf.cc b/lib/rendering/geom/InstanceProceduralLeaf.cc
+index 900a9a9..b14fa2d 100644
+--- a/lib/rendering/geom/InstanceProceduralLeaf.cc
++++ b/lib/rendering/geom/InstanceProceduralLeaf.cc
+@@ -145,7 +145,8 @@ InstanceProceduralLeaf::instanceWithXforms(const GenerateContext& generateContex
+                                            const scene_rdl2::rdl2::Vec3fVector& positions,
+                                            const scene_rdl2::rdl2::Vec4fVector& orientations,
+                                            const scene_rdl2::rdl2::Vec3fVector& scales,
+-                                           const scene_rdl2::rdl2::Mat4dVector& xforms)
++                                           const scene_rdl2::rdl2::Mat4dVector& xforms,
++                                           const scene_rdl2::rdl2::Mat4dVector& xformsClose)
+     {
+         const scene_rdl2::rdl2::Geometry* rdlGeometry = generateContext.getRdlGeometry();
+ 
+@@ -157,6 +158,12 @@ InstanceProceduralLeaf::instanceWithXforms(const GenerateContext& generateContex
+             xformsCount = xforms.size();
+         }
+ 
++        // Modo paired affine instance motion; endpoints use SceneVariables motion_steps.
++        if (!xformsClose.empty() && (instanceMethod != InstanceMethod::XFORMS || xformsClose.size() != xforms.size())) {
++            rdlGeometry->error("xform_list_close requires xform-list method and matching sample counts");
++            return;
++        }
++        const bool applyAffineMotion = generateContext.isMotionBlurOn() && !xformsClose.empty();
+         // motion blur
+         bool applyVelocity;
+         bool hasValidVelocity = velocities.size() == xformsCount;
+@@ -349,7 +356,10 @@ InstanceProceduralLeaf::instanceWithXforms(const GenerateContext& generateContex
+                                            positions[i]);
+                     }
+                 } else if (instanceMethod == InstanceMethod::XFORMS) {
+-                    if (applyVelocity) {
++                    if (applyAffineMotion) {
++                        xform.push_back(scene_rdl2::math::xform<scene_rdl2::math::Xform3f>(xforms[i]));
++                        xform.push_back(scene_rdl2::math::xform<scene_rdl2::math::Xform3f>(xformsClose[i]));
++                    } else if (applyVelocity) {
+                         const auto& mat4 = xforms[i];
+ 
+                         scene_rdl2::math::Xform3f xf0 = scene_rdl2::math::xform<scene_rdl2::math::Xform3f>(mat4);
+diff --git a/lib/rendering/geom/InstanceProceduralLeaf.h b/lib/rendering/geom/InstanceProceduralLeaf.h
+index 672cc4b..d1a6f49 100644
+--- a/lib/rendering/geom/InstanceProceduralLeaf.h
++++ b/lib/rendering/geom/InstanceProceduralLeaf.h
+@@ -72,7 +72,8 @@ protected:
+                             const scene_rdl2::rdl2::Vec3fVector& positions,
+                             const scene_rdl2::rdl2::Vec4fVector& orientations,
+                             const scene_rdl2::rdl2::Vec3fVector& scales,
+-                            const scene_rdl2::rdl2::Mat4dVector& xforms);
++                            const scene_rdl2::rdl2::Mat4dVector& xforms,
++                            const scene_rdl2::rdl2::Mat4dVector& xformsClose = {});
+ 
+ };
+ 
 diff --git a/lib/rendering/geom/prim/LineSegments.cc b/lib/rendering/geom/prim/LineSegments.cc
 index 3b216fa..0cdcc13 100644
 --- a/lib/rendering/geom/prim/LineSegments.cc
@@ -838,6 +1010,287 @@ index 3101e16..8266d94 100644
 +    target_link_libraries(rendering_pbr INTERFACE rendering_rndr)
 +    install(TARGETS rendering_pbr EXPORT ${exportGroup})
 +endif()
+diff --git a/lib/rendering/pbr/Types.h b/lib/rendering/pbr/Types.h
+index c326b86..812b6da 100644
+--- a/lib/rendering/pbr/Types.h
++++ b/lib/rendering/pbr/Types.h
+@@ -251,6 +251,7 @@ struct CryptomatteData
+         mHit = 0;                                   // if zero, hit a presence surface or terminated early
+         mPrevPresence = 0;                          // whether previously on presence path (0 = false, 1 = true)
+         mId = 0;                                    // id for hit
++        mMaterialId = 0; mAssetId = 0; mCryptoPadding = 0;
+         mPosition = scene_rdl2::math::Vec3f(0.f);   // position at hit
+         mNormal = scene_rdl2::math::Vec3f(0.f);     // shading normal at hit
+         mPresenceDepth = -1;                        // presence depth, -1 indicates that this isn't a presence path
+@@ -259,6 +260,8 @@ struct CryptomatteData
+     }
+ };
+ 
++static_assert(sizeof(CryptomatteData) <= 64, "CryptomatteData must fit the ray allocation cache line");
++
+ finline void
+ uint32ToPixelLocation(uint32_t val, unsigned *px, unsigned *py)
+ {
+diff --git a/lib/rendering/pbr/Types.hh b/lib/rendering/pbr/Types.hh
+index bb6f65e..212e04f 100644
+--- a/lib/rendering/pbr/Types.hh
++++ b/lib/rendering/pbr/Types.hh
+@@ -210,14 +210,17 @@ enum BundledOcclRayDataFlags
+ #define CRYPTOMATTE_DATA_MEMBERS                                    \
+     HUD_CPP_MEMBER(std::atomic<int>, mRefCount, 4);                 \
+     HUD_CPP_PTR(pbr::CryptomatteBuffer*, mCryptomatteBuffer);       \
+-    HUD_MEMBER(uint32_t, mHit);                                     \
+-    HUD_MEMBER(uint32_t, mPrevPresence);                            \
++    HUD_MEMBER(uint8_t, mHit);                                     \
++    HUD_MEMBER(uint8_t, mPrevPresence);                            \
++    HUD_MEMBER(uint8_t, mIsFirstSample);                           \
++    HUD_MEMBER(uint8_t, mCryptoPadding);                            \
+     HUD_MEMBER(float, mId);                                         \
++    HUD_MEMBER(float, mMaterialId);                                 \
++    HUD_MEMBER(float, mAssetId);                                         \
+     HUD_MEMBER(HVD_NAMESPACE(scene_rdl2::math, Vec3f), mPosition);  \
+     HUD_MEMBER(HVD_NAMESPACE(scene_rdl2::math, Vec3f), mNormal);    \
+     HUD_MEMBER(int32_t, mPresenceDepth);                            \
+-    HUD_MEMBER(float, mPathPixelWeight);                            \
+-    HUD_MEMBER(uint32_t, mIsFirstSample)                   
++    HUD_MEMBER(float, mPathPixelWeight) /* compact category record */                   
+ 
+ #define CRYPTOMATTE_DATA_VALIDATION                     \
+     HUD_BEGIN_VALIDATION(CryptomatteData);              \
+@@ -226,6 +229,9 @@ enum BundledOcclRayDataFlags
+     HUD_VALIDATE(CryptomatteData, mHit);                \
+     HUD_VALIDATE(CryptomatteData, mPrevPresence);       \
+     HUD_VALIDATE(CryptomatteData, mId);                 \
++    HUD_VALIDATE(CryptomatteData, mMaterialId);         \
++    HUD_VALIDATE(CryptomatteData, mAssetId);            \
++    HUD_VALIDATE(CryptomatteData, mCryptoPadding);                 \
+     HUD_VALIDATE(CryptomatteData, mPosition);           \
+     HUD_VALIDATE(CryptomatteData, mNormal);             \
+     HUD_VALIDATE(CryptomatteData, mPresenceDepth);      \
+diff --git a/lib/rendering/pbr/core/Cryptomatte.cc b/lib/rendering/pbr/core/Cryptomatte.cc
+index e2f9e10..41fe295 100644
+--- a/lib/rendering/pbr/core/Cryptomatte.cc
++++ b/lib/rendering/pbr/core/Cryptomatte.cc
+@@ -27,8 +27,20 @@ CryptomatteBuffer::~CryptomatteBuffer()
+ 
+ void CryptomatteBuffer::init(unsigned width, unsigned height, unsigned numIdChannels, bool multiPresenceOn)
+ {
+-    MNRY_ASSERT_REQUIRE(numIdChannels == 1);     // Production only wants simple 32-bit ids at present
++    if (numIdChannels < 1 || numIdChannels > 3) throw std::runtime_error("Cryptomatte supports one to three category channels");
++    mCategories.clear();
++    resetCategory(width, height, multiPresenceOn);
++    for (unsigned channel = 1; channel < numIdChannels; ++channel) {
++        std::unique_ptr<CryptomatteBuffer> buffer(new CryptomatteBuffer);
++        buffer->mCategoryIndex = channel;
++        buffer->resetCategory(width, height, multiPresenceOn);
++        mCategories.push_back(std::move(buffer));
++    }
++}
+ 
++void CryptomatteBuffer::resetCategory(unsigned width, unsigned height, bool multiPresenceOn)
++{
++    for (auto &entries : mPixelEntries) entries.clear();
+     mWidth = width;
+     mHeight = height;
+     for (int iType = 0; iType < NUM_CRYPTOMATTE_TYPES; iType++) {
+@@ -43,6 +55,7 @@ void CryptomatteBuffer::init(unsigned width, unsigned height, unsigned numIdChan
+ 
+ void CryptomatteBuffer::clear()
+ {
++    for (auto &buffer : mCategories) buffer->clear();
+     for (int iType = 0; iType < NUM_CRYPTOMATTE_TYPES; iType++) {
+         for (size_t iPixel = 0; iPixel < mWidth * mHeight; iPixel++) {
+             PixelEntry &pixelEntry = mPixelEntries[iType][iPixel];
+@@ -53,6 +66,14 @@ void CryptomatteBuffer::clear()
+ }
+ 
+ 
++void computeCryptomatteCategoryIds(moonray::shading::Intersection &isect, float &material, float &asset)
++{
++    static const shading::TypedAttributeKey<float> materialKey("modo_material_id");
++    static const shading::TypedAttributeKey<float> assetKey("modo_asset_id");
++    material = isect.isProvided(materialKey) ? isect.getAttribute(materialKey) : 0.f;
++    asset = isect.isProvided(assetKey) ? isect.getAttribute(assetKey) : 0.f;
++}
++
+ void computeCryptomatteResults(CryptomatteResults &results, int cryptoIdAttrIdx, int cryptoUVAttrIdx,
+                                moonray::shading::Intersection &isect)
+ {
+@@ -60,6 +81,7 @@ void computeCryptomatteResults(CryptomatteResults &results, int cryptoIdAttrIdx,
+     results.mPosition = isect.getP();
+     results.mNormal   = isect.getN();
+ 
++    computeCryptomatteCategoryIds(isect, results.mMaterialId, results.mAssetId);
+     results.mId = 0.0f;
+     if (cryptoIdAttrIdx >= 0) {
+         moonray::shading::TypedAttributeKey<float> cryptoIdAttrKey(cryptoIdAttrIdx);
+@@ -94,6 +116,11 @@ void CryptomatteBuffer::addSampleScalar(unsigned x, unsigned y, float weight,
+                                         unsigned presenceDepth,
+                                         int cryptoType)
+ {
++    for (auto &buffer : mCategories) {
++        CryptomatteResults result = cryptomatteResults;
++        result.mId = buffer->mCategoryIndex == 1 ? result.mMaterialId : result.mAssetId;
++        buffer->addSampleScalar(x, y, weight, result, beauty, presenceDepth, cryptoType);
++    }
+     PixelEntry &pixelEntry = mPixelEntries[cryptoType][y * mWidth + x];
+ 
+     const float                    sampleId = cryptomatteResults.mId;
+@@ -138,8 +165,12 @@ void CryptomatteBuffer::addSampleVector(unsigned x, unsigned y, float sampleId,
+                                         const scene_rdl2::math::Vec3f refN,
+                                         const scene_rdl2::math::Vec2f uv,
+                                         unsigned presenceDepth,
+-                                        bool incrementSamples)
++                                        bool incrementSamples, float materialId, float assetId)
+ {
++    for (auto &buffer : mCategories) {
++        buffer->addSampleVector(x, y, buffer->mCategoryIndex == 1 ? materialId : assetId, weight,
++                                position, normal, beauty, refP, p0, refN, uv, presenceDepth, incrementSamples);
++    }
+     // Lock in case multiple threads want to add samples to this pixel
+     tbb::mutex::scoped_lock lock(mPixelMutexes[getMutexIdx(x, y)]);
+ 
+@@ -171,7 +202,7 @@ void CryptomatteBuffer::addSampleVector(unsigned x, unsigned y, float sampleId,
+ 
+ void CryptomatteBuffer::addBeautySampleVector(unsigned x, unsigned y, 
+                                               float id, const scene_rdl2::math::Color4& beauty,
+-                                              unsigned depth) 
++                                              unsigned depth, float materialId, float assetId) 
+ {
+     // Only adds beauty, with all other data zeroed out
+     // We only call this function when dealing with presence paths in vector mode. When a presence path is encountered, 
+@@ -182,11 +213,12 @@ void CryptomatteBuffer::addBeautySampleVector(unsigned x, unsigned y,
+     // to the incrementSamples parameter in order to suppress this incrementation 
+     addSampleVector(x, y, id, 0.f, scene_rdl2::math::Vec3f(0.f), scene_rdl2::math::Vec3f(0.f), beauty,
+                     scene_rdl2::math::Vec3f(0.f), scene_rdl2::math::Vec3f(0.f), scene_rdl2::math::Vec3f(0.f),
+-                    scene_rdl2::math::Vec2f(0.f), depth, false);
++                    scene_rdl2::math::Vec2f(0.f), depth, false, materialId, assetId);
+ }
+ 
+ void CryptomatteBuffer::finalize(const scene_rdl2::fb_util::PixelBuffer<unsigned>& samplesCount) 
+ {
++    for (auto &buffer : mCategories) buffer->finalize(samplesCount);
+     if (mFinalized) {
+         return;
+     }
+@@ -238,6 +270,10 @@ void CryptomatteBuffer::outputFragments(unsigned x, unsigned y,
+                                         int numLayers, float *dest, 
+                                         const scene_rdl2::rdl2::RenderOutput& ro) const
+ {
++    if (ro.getCryptomatteIdChannel() != mCategoryIndex) {
++        categoryBuffer(ro.getCryptomatteIdChannel())->outputFragments(x, y, numLayers, dest, ro);
++        return;
++    }
+     // Clamp numLayers so the output string will contain 2 digits 00-99 (per Cryptomatte spec)
+     if (numLayers < 1)   numLayers = 1;
+     if (numLayers > 100) numLayers = 100;
+@@ -366,6 +402,7 @@ void CryptomatteBuffer::outputFragments(unsigned x, unsigned y,
+ // accumulation following a checkpoint
+ void CryptomatteBuffer::unfinalize(const scene_rdl2::fb_util::PixelBuffer<unsigned>& samplesCount)
+ {
++    for (auto &buffer : mCategories) buffer->unfinalize(samplesCount);
+     if (!mFinalized) {
+         return;
+     }
+diff --git a/lib/rendering/pbr/core/Cryptomatte.h b/lib/rendering/pbr/core/Cryptomatte.h
+index 2fa6c14..d5260d0 100644
+--- a/lib/rendering/pbr/core/Cryptomatte.h
++++ b/lib/rendering/pbr/core/Cryptomatte.h
+@@ -10,6 +10,8 @@
+ 
+ #include <cstring>
+ #include <list>
++#include <memory>
++#include <stdexcept>
+ #include <tbb/mutex.h>
+ #include <vector>
+ 
+@@ -79,6 +81,8 @@ struct CryptomatteResults
+     // intersection results
+     bool mHit;
+     float mId;
++    float mMaterialId;
++    float mAssetId;
+     scene_rdl2::math::Vec3f mPosition;
+     scene_rdl2::math::Vec3f mP0;
+     scene_rdl2::math::Vec3f mNormal;
+@@ -92,6 +96,8 @@ struct CryptomatteResults
+ };
+ 
+ 
++void computeCryptomatteCategoryIds(moonray::shading::Intersection &isect, float &material, float &asset);
++
+ void computeCryptomatteResults(CryptomatteResults &results, int cryptoIdAttrIdx, int cryptoUVAttrIdx,
+                                moonray::shading::Intersection &isect);
+ 
+@@ -150,6 +156,15 @@ public:
+     void init(unsigned width, unsigned height, unsigned numIdChannels, bool multiPresenceOn);
+ 
+     void clear();
++    void resetCategory(unsigned width, unsigned height, bool multiPresenceOn);
++    CryptomatteBuffer* categoryBuffer(int index) {
++        if (index == mCategoryIndex) return this;
++        if (mCategoryIndex == 0 && index > 0 && size_t(index) <= mCategories.size()) return mCategories[index-1].get();
++        throw std::runtime_error("Cryptomatte category unavailable; export all three Modo deep ID attributes");
++    }
++    const CryptomatteBuffer* categoryBuffer(int index) const {
++        return const_cast<CryptomatteBuffer*>(this)->categoryBuffer(index);
++    }
+ 
+     // ---------------------------------------- Setters ----------------------------------------------------------------
+     void setFinalized(bool finalized) { mFinalized = finalized; }
+@@ -178,10 +193,10 @@ public:
+                          const scene_rdl2::math::Vec3f refN,
+                          const scene_rdl2::math::Vec2f uv,
+                          unsigned presenceDepth,
+-                         bool incrementSamples = true);
++                         bool incrementSamples = true, float materialId = 0.f, float assetId = 0.f);
+ 
+     // see CryptomatteBuffer.cc::addBeautySampleVector for info on why this function exists only in vector mode
+-    void addBeautySampleVector(unsigned x, unsigned y, float id, const scene_rdl2::math::Color4& beauty, unsigned depth);
++    void addBeautySampleVector(unsigned x, unsigned y, float id, const scene_rdl2::math::Color4& beauty, unsigned depth, float materialId = 0.f, float assetId = 0.f);
+ 
+     void finalize(const scene_rdl2::fb_util::PixelBuffer<unsigned>& samplesCount);
+     void outputFragments(unsigned x, unsigned y, int numLayers, float *dest, const scene_rdl2::rdl2::RenderOutput& ro) const;
+@@ -211,6 +226,8 @@ private:
+ 
+     // buffer dimensions
+     unsigned mWidth;
++    int mCategoryIndex = 0;
++    std::vector<std::unique_ptr<CryptomatteBuffer>> mCategories;
+     unsigned mHeight;
+ 
+     bool mFinalized;
+diff --git a/lib/rendering/pbr/handlers/ShadeBundleHandler.cc b/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
+index 0b0687c..f224efa 100644
+--- a/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
++++ b/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
+@@ -253,6 +253,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                         isect->getAttribute(shading::StandardAttributes::sP0));
+                 }
+ 
++                computeCryptomatteCategoryIds(*isect, cryptomatteData->mMaterialId, cryptomatteData->mAssetId);
+                 // Retrieve the first deep id (if present) for this intersection from the primitive attrs.
+                 // At the request of production, cryptomatte currently only supports one deep id associated
+                 // with each layer, rather than a generalized vector of ids. So here we are only interested
+@@ -600,7 +601,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                                                                                     rs->mCryptoP0,
+                                                                                     rs->mCryptoRefN,
+                                                                                     rs->mCryptoUV,
+-                                                                                    rs->mPathVertex.presenceDepth);
++                                                                                    rs->mPathVertex.presenceDepth, true, cryptomatteData->mMaterialId, cryptomatteData->mAssetId);
+                             }
+                             // update cryptomatte info for current presence ray
+                             cryptomatteData->mPrevPresence = 1;
+@@ -646,7 +647,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                                                                                 rs->mCryptoP0,
+                                                                                 rs->mCryptoRefN,
+                                                                                 rs->mCryptoUV,
+-                                                                                rs->mPathVertex.presenceDepth);
++                                                                                rs->mPathVertex.presenceDepth, true, cryptomatteData->mMaterialId, cryptomatteData->mAssetId);
+                         }
+                         // update cryptomatte info for current ray
+                         cryptomatteData->mPresenceDepth = rs->mPathVertex.presenceDepth;
 diff --git a/lib/rendering/pbr/light/LightTree.cc b/lib/rendering/pbr/light/LightTree.cc
 index 392ca34..ade8c56 100644
 --- a/lib/rendering/pbr/light/LightTree.cc
@@ -1004,6 +1457,31 @@ index ad064bd..a214dc3 100644
      std::string e("Unknown error");
      if (strerror_r(errno, errbuf.data(), errbuf.size()) >= 0) {
          e = errbuf.data();
+diff --git a/lib/rendering/rndr/Film.cc b/lib/rendering/rndr/Film.cc
+index 7c8ff55..2792b87 100644
+--- a/lib/rendering/rndr/Film.cc
++++ b/lib/rendering/rndr/Film.cc
+@@ -1021,17 +1021,17 @@ Film::addSampleBundleHandlerHelper(mcrt_common::ThreadLocalState *tls,
+                             // numFragSamples if we're dealing with the first sample for this path. We don't want 
+                             // any data from the subsequent bounces except for the beauty (for GI)
+                             film.mCryptomatteBuf->addSampleVector(px, py, id, 1.f, position, normal, beauty,
+-                                                                  refP, p0, refN, uv, depth);
++                                                                  refP, p0, refN, uv, depth, true, cryptomatteData->mMaterialId, cryptomatteData->mAssetId);
+                             cryptomatteData->mIsFirstSample = 0;
+                         } else {
+-                            film.mCryptomatteBuf->addBeautySampleVector(px, py, id, beauty, depth);
++                            film.mCryptomatteBuf->addBeautySampleVector(px, py, id, beauty, depth, cryptomatteData->mMaterialId, cryptomatteData->mAssetId);
+                         }
+                     } else if (cryptomatteData->mPresenceDepth >= 0 && cryptomatteData->mPathPixelWeight > 0.01f) {
+                         // We divide by pathPixelWeight to compute Cryptomatte beauty.  This can cause fireflies if
+                         // the value is small, so we clamp at 0.01.
+                         beauty.a = 0.f;
+                         // presence path: only add beauty -- the rest of the data is populated in the shadeBundleHandler 
+-                        film.mCryptomatteBuf->addBeautySampleVector(px, py, id, beauty, depth);
++                        film.mCryptomatteBuf->addBeautySampleVector(px, py, id, beauty, depth, cryptomatteData->mMaterialId, cryptomatteData->mAssetId);
+                     }
+                 }
+                 pbrTls->releaseCryptomatteData(br->mCryptomatteDataHandle);
 diff --git a/lib/rendering/rndr/FrameState.h b/lib/rendering/rndr/FrameState.h
 index 811a0c3..87916b3 100644
 --- a/lib/rendering/rndr/FrameState.h
@@ -1391,10 +1869,15 @@ index f88d871..6d33635 100644
  
      // Non-copyable
 diff --git a/lib/rendering/rndr/RenderContext.cc b/lib/rendering/rndr/RenderContext.cc
-index 0a864ad..57b1f4d 100644
+index 0a864ad..4629fe3 100644
 --- a/lib/rendering/rndr/RenderContext.cc
 +++ b/lib/rendering/rndr/RenderContext.cc
-@@ -13,7 +13,9 @@
+@@ -1,3 +1,4 @@
++#include "modo_scene_memory.h"
+ // Copyright 2023-2026 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ #include <scene_rdl2/render/util/AtomicFloat.h> // Needs to be included before any OpenImageIO file
+@@ -13,7 +14,9 @@
  #include "PathVisualizerManager.h"
  #include "PixelBufferUtils.h"
  #include "ProcKeeper.h"
@@ -1404,7 +1887,7 @@ index 0a864ad..57b1f4d 100644
  #include "RenderDriver.h"
  #include "RenderOptions.h"
  #include "RenderOutputDriver.h"
-@@ -66,7 +68,7 @@
+@@ -66,7 +69,7 @@
  #include <algorithm>
  #include <cstddef>
  #include <cstdint>
@@ -1413,7 +1896,7 @@ index 0a864ad..57b1f4d 100644
  #include <malloc.h>
  #endif
  #include <memory>
-@@ -204,6 +206,12 @@ cleanUpGlobalDriver()
+@@ -204,6 +207,12 @@ cleanUpGlobalDriver()
  {
      // just a pass through to keep API clean
      cleanUpRenderDriver();
@@ -1426,7 +1909,7 @@ index 0a864ad..57b1f4d 100644
  }
  
  //////////////////////// RenderContext //////////////////////////
-@@ -515,10 +523,12 @@ RenderContext::initActiveCamera(const scene_rdl2::rdl2::Camera *camera)
+@@ -515,10 +524,12 @@ RenderContext::initActiveCamera(const scene_rdl2::rdl2::Camera *camera)
  
  RenderContext::~RenderContext()
  {
@@ -1439,7 +1922,17 @@ index 0a864ad..57b1f4d 100644
  
      if (mRendering) {
          stopFrame();
-@@ -815,6 +825,10 @@ RenderContext::startFrame(const bool simulationMode)
+@@ -756,7 +767,8 @@ RenderContext::updateScene(const std::string& filename)
+         return false;
+     } else {
+         RenderTimer funcTimer(mRenderStats->mUpdateSceneTime);
+-        readSceneFromFile(filename, *mSceneContext);
++        if (modoSceneMemory(filename)) { scene_rdl2::rdl2::AsciiReader reader(*mSceneContext); reader.fromString(modoReadSceneMemory(filename)); }
++        else readSceneFromFile(filename, *mSceneContext);
+         mSceneUpdated = true;
+ 
+         return checkGeometryChangesRequireReload();
+@@ -815,6 +827,10 @@ RenderContext::startFrame(const bool simulationMode)
      const scene_rdl2::rdl2::SceneVariables &vars = mSceneContext->getSceneVariables();
  
  
@@ -1450,7 +1943,7 @@ index 0a864ad..57b1f4d 100644
      { // renderContext console setup for debug purpose
          int debugConsolePort = vars.get(scene_rdl2::rdl2::SceneVariables::sDebugConsole);
          if (debugConsolePort >= 0) {
-@@ -828,6 +842,8 @@ RenderContext::startFrame(const bool simulationMode)
+@@ -828,6 +844,8 @@ RenderContext::startFrame(const bool simulationMode)
          }
      }
  
@@ -1459,7 +1952,36 @@ index 0a864ad..57b1f4d 100644
      // Determine if to render this frame in scalar, vectorized, or xpu mode.
      mExecutionMode = ExecutionMode::XPU;
      ExecutionMode desiredExecutionMode = mOptions.getDesiredExecutionMode();
-@@ -2534,7 +2550,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
+@@ -875,16 +893,10 @@ RenderContext::startFrame(const bool simulationMode)
+             executionModeString += ".";
+             mExecutionMode = ExecutionMode::SCALAR;
+         } else {
+-            // Uncomment the following to have AUTO mode start with XPU:
+-            //   executionModeString = "Executing an XPU render since execution mode was set to auto.";
+-            //   allowUnsupportedXPUFeatures = false; // want to fall back if unsupported
+-            //   mExecutionMode = ExecutionMode::XPU;
+-            // If there is an error setting up the GPU, we will fall back to vector mode
+-            // in GeometryManager::updateGPUAccelerator().
+-
+-            // AUTO mode starts with vector mode
+-            executionModeString = "Executing a vectorized render since execution mode was set to auto.";
+-            mExecutionMode = ExecutionMode::VECTORIZED;
++            // MoonRayForModo: Auto prioritizes feature support, then XPU > Vector > Scalar.
++            executionModeString = "Executing an XPU render since execution mode was set to auto.";
++            allowUnsupportedXPUFeatures = false;
++            mExecutionMode = ExecutionMode::XPU;
+         }    
+     }
+ 
+@@ -2104,6 +2116,7 @@ RenderContext::loadScene(std::stringstream &initMessages)
+     // Load each scene file in order.
+     const auto& sceneFiles = mOptions.getSceneFiles();
+     for (const auto& sceneFile : sceneFiles) {
++        if (modoSceneMemory(sceneFile)) { asciiReader.fromString(modoReadSceneMemory(sceneFile)); continue; }
+         if (!sceneFile.empty()) {
+             mRenderStats->logLoadingScene(initMessages, sceneFile);
+             // Grab the file extension and convert it to lower case.
+@@ -2534,7 +2547,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
  
      timer.stop();
  
@@ -1468,6 +1990,15 @@ index 0a864ad..57b1f4d 100644
      // return unused memory from malloc() arena to OS so process memory usage
      // stats are accurate
      malloc_trim(0);
+@@ -3006,7 +3019,7 @@ RenderContext::buildFrameState(FrameState *fs, double frameStartTime, const bool
+     switch (getRenderMode())
+     {
+     case RenderMode::BATCH:
+-        fs->mTileSchedulerType = TileScheduler::MORTON;
++        fs->mTileSchedulerType = (unsigned)vars.get(scene_rdl2::rdl2::SceneVariables::sProgressiveTileOrder);
+         break;
+     case RenderMode::PROGRESSIVE:
+     case RenderMode::PROGRESSIVE_FAST:
 diff --git a/lib/rendering/rndr/RenderDriver.h b/lib/rendering/rndr/RenderDriver.h
 index 2b6886d..39a6ca1 100644
 --- a/lib/rendering/rndr/RenderDriver.h
@@ -1482,10 +2013,16 @@ index 2b6886d..39a6ca1 100644
      scene_rdl2::math::Viewport mCachedViewport;
      SamplingMode               mCachedSamplingMode;
 diff --git a/lib/rendering/rndr/RenderFramePasses.cc b/lib/rendering/rndr/RenderFramePasses.cc
-index 6f7b815..ca0c43b 100644
+index 6f7b815..ca85aae 100644
 --- a/lib/rendering/rndr/RenderFramePasses.cc
 +++ b/lib/rendering/rndr/RenderFramePasses.cc
-@@ -188,7 +188,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+@@ -1,3 +1,5 @@
++#define MODO_BUCKET_IMPLEMENTATION
++#include "modo_bucket_tracker.h"
+ // Copyright 2023-2024 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ 
+@@ -188,7 +190,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
      size_t parallelInitFrameUpdateMinTileTotal = 0;
      if (driver->mParallelInitFrameUpdate) {
          parallelInitFrameUpdateMinTileTotal =
@@ -1494,6 +2031,15 @@ index 6f7b815..ca0c43b 100644
                       static_cast<size_t>(workQueue->getNumTiles()) / driver->mParallelInitFrameUpdateMcrtCount);
          /* useful debug message
          std::cerr << ">> RenderFramePasses.cc init minTileTotal:" << parallelInitFrameUpdateMinTileTotal
+@@ -580,6 +582,8 @@ RenderDriver::renderTile(RenderDriver *driver,
+         }
+     }
+ 
++    const auto& modoTile=(*driver->getTiles())[params.mTileIdx];
++    ModoBucketScope modoBucket(tls->mThreadIdx,modoTile.mMinX,modoTile.mMinY,modoTile.mMaxX,modoTile.mMaxY);
+     const Pass &pass = driver->mTileWorkQueue.getPass(group.mPassIdx);
+     if (fs.mSamplingMode == SamplingMode::UNIFORM || pass.isCoarsePass()) {
+         //
 diff --git a/lib/rendering/rndr/RenderOutputDriver.cc b/lib/rendering/rndr/RenderOutputDriver.cc
 index 4db394f..c657a9e 100644
 --- a/lib/rendering/rndr/RenderOutputDriver.cc
@@ -1526,6 +2072,23 @@ index 4db394f..c657a9e 100644
  }
  
  } // namespace
+diff --git a/lib/rendering/rndr/RenderOutputDriverImplRead.cc b/lib/rendering/rndr/RenderOutputDriverImplRead.cc
+index adf52c6..8739ab2 100644
+--- a/lib/rendering/rndr/RenderOutputDriverImplRead.cc
++++ b/lib/rendering/rndr/RenderOutputDriverImplRead.cc
+@@ -518,9 +518,9 @@ RenderOutputDriver::Impl::readSubImageOneEntry(OiioReader& reader,
+     case scene_rdl2::rdl2::RenderOutput::RESULT_CRYPTOMATTE:
+         {
+             // Clear the cryptomatte buffer ready for loading resume data
+-            pbr::CryptomatteBuffer* cryptomatteBuf = film.getCryptomatteBuffer();
+-            cryptomatteBuf->clear();
+-            cryptomatteBuf->init(reader.getWidth(), reader.getHeight(), 1, cryptomatteBuf->getMultiPresenceOn());
++            pbr::CryptomatteBuffer* cryptomatteBuf = film.getCryptomatteBuffer()->categoryBuffer(ro->getCryptomatteIdChannel());
++            // Reset only this category: other EXR parts may already be restored.
++            cryptomatteBuf->resetCategory(reader.getWidth(), reader.getHeight(), cryptomatteBuf->getMultiPresenceOn());
+ 
+             scene_rdl2::fb_util::Tiler tiler(reader.getWidth(), reader.getHeight());
+             reader.crawlAllTiledScanline
 diff --git a/lib/rendering/rndr/RenderStatistics.cc b/lib/rendering/rndr/RenderStatistics.cc
 index 706473e..d3597e9 100644
 --- a/lib/rendering/rndr/RenderStatistics.cc
@@ -1699,7 +2262,7 @@ index e94728d..d1b448f 100644
      }
      return std::string(buff);
 diff --git a/lib/rendering/rt/CMakeLists.txt b/lib/rendering/rt/CMakeLists.txt
-index da45928..fc8646e 100644
+index da45928..67dc945 100644
 --- a/lib/rendering/rt/CMakeLists.txt
 +++ b/lib/rendering/rt/CMakeLists.txt
 @@ -2,11 +2,16 @@
@@ -1720,7 +2283,47 @@ index da45928..fc8646e 100644
  add_library(${PROJECT_NAME}::${component} ALIAS ${component})
  
  if(MOONRAY_USE_OPTIX)
-@@ -229,3 +234,10 @@ install(TARGETS ${component}
+@@ -14,6 +19,16 @@ if(MOONRAY_USE_OPTIX)
+     # compile optix sources to ptx files
+     set(optixLib ${component}_optix)
+ 
++    if(MOONRAY_WINDOWS_XPU)
++        file(GLOB xpuHeaders CONFIGURE_DEPENDS gpu/optix/*.h gpu/*.h)
++        set(XPU_PTX "${CMAKE_BINARY_DIR}/shaders/OptixGPUPrograms.ptx")
++        add_custom_command(OUTPUT "${XPU_PTX}"
++            COMMAND "${PYTHON_EXECUTABLE}" "${ROOT}/tools/compile_xpu_ptx.py" "${XPU_PTX}"
++            DEPENDS gpu/optix/OptixGPUPrograms.cu ${xpuHeaders} "${ROOT}/tools/compile_xpu_ptx.py"
++            VERBATIM)
++        add_custom_target(${optixLib} DEPENDS "${XPU_PTX}")
++        add_dependencies(${component} ${optixLib})
++    else()
+     add_library(${optixLib} OBJECT)
+ 
+     target_sources(${optixLib}
+@@ -36,6 +51,7 @@ if(MOONRAY_USE_OPTIX)
+         PUBLIC
+             OptiX::OptiX
+     )
++    endif()
+ endif()
+ 
+ if (MOONRAY_USE_METAL)
+@@ -196,10 +212,14 @@ include(GNUInstallDirs)
+ 
+ if(MOONRAY_USE_OPTIX)
+     # install optix ptx files
++    if(MOONRAY_WINDOWS_XPU)
++        install(FILES "${XPU_PTX}" DESTINATION shaders)
++    else()
+     install(
+         FILES $<TARGET_OBJECTS:${optixLib}>
+         DESTINATION shaders
+     )
++    endif()
+ elseif(MOONRAY_USE_METAL)
+     # install Metal lib files
+     install(
+@@ -229,3 +249,10 @@ install(TARGETS ${component}
  #     NAMESPACE ${PROJECT_NAME}::
  #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
  # )
@@ -1762,6 +2365,54 @@ index d45bb68..8740ee0 100644
      // return unused memory from malloc() arena to OS so process memory usage
      // stats are accurate
      malloc_trim(0);
+diff --git a/lib/rendering/rt/gpu/optix/EmbreeSupport.h b/lib/rendering/rt/gpu/optix/EmbreeSupport.h
+index c73b4e5..79fcead 100644
+--- a/lib/rendering/rt/gpu/optix/EmbreeSupport.h
++++ b/lib/rendering/rt/gpu/optix/EmbreeSupport.h
+@@ -72,9 +72,15 @@ unsigned int bsf(unsigned int v)
+     return count;
+ }
+ 
++#if defined(__CUDACC_RTC__)
++#define pos_inf (__int_as_float(0x7f800000))
++#define inf pos_inf
++#define neg_inf (-pos_inf)
++#else
+ constexpr __device__ float pos_inf = std::numeric_limits<float>::infinity();
+ constexpr __device__ float inf = pos_inf;
+ constexpr __device__ float neg_inf = -pos_inf;
++#endif
+ constexpr __device__ float ulp = std::numeric_limits<float>::epsilon();
+ constexpr __device__ float min_rcp_input = 1E-18f;
+ 
+diff --git a/lib/rendering/rt/gpu/optix/OptixGPUUtils.cc b/lib/rendering/rt/gpu/optix/OptixGPUUtils.cc
+index 01d5ef8..ee71322 100644
+--- a/lib/rendering/rt/gpu/optix/OptixGPUUtils.cc
++++ b/lib/rendering/rt/gpu/optix/OptixGPUUtils.cc
+@@ -50,6 +50,14 @@ createOptixContext(OptixLogCallback logCallback,
+ {
+     *errorMsg = "";
+ 
++#if defined(_WIN32)
++    // Windows CUDA driver capability check; optixInit verifies OptiX ABI support.
++    int cudaVersion = 0;
++    if (cudaDriverGetVersion(&cudaVersion) != cudaSuccess || cudaVersion < 12000) {
++        *errorMsg = "CUDA driver unavailable or too old (CUDA 12 required)";
++        return false;
++    }
++#else
+     int major, minor;
+     if (!getNVIDIADriverVersion(&major, &minor)) {
+         *errorMsg = "Unable to query NVIDIA driver version";
+@@ -60,6 +68,8 @@ createOptixContext(OptixLogCallback logCallback,
+         return false;
+     }
+ 
++#endif
++
+     cudaFree(0);    // init CUDA
+ 
+     int numDevices = 0;
 diff --git a/lib/rendering/shading/BasicTexture.cc b/lib/rendering/shading/BasicTexture.cc
 index 31c070c..ace62fc 100644
 --- a/lib/rendering/shading/BasicTexture.cc
@@ -2283,6 +2934,19 @@ index 31f5d3c..2ba07cd 100644
      ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
      LINKER_LANGUAGE CXX
  )
+diff --git a/lib/statistics/Formatters.h b/lib/statistics/Formatters.h
+index 9ca491f..e3929dd 100644
+--- a/lib/statistics/Formatters.h
++++ b/lib/statistics/Formatters.h
+@@ -30,7 +30,7 @@ inline std::locale getLocale()
+     try {
+         return std::locale("en_US.UTF-8");
+     } catch (...) {
+-        return std::locale("");
++        return std::locale::classic(); // deterministic fallback without an installed OS locale
+     }
+ }
+ 
 diff --git a/lib/statistics/Util.cc b/lib/statistics/Util.cc
 index 0a1f794..0c3d4d4 100644
 --- a/lib/statistics/Util.cc

@@ -41,6 +41,8 @@ def read(path, material_name=None):
     document=normalize(document)
     from .materialx_expand import expand
     document=expand(document)
+    from .materialx_geometry import lower
+    document=lower(document)
     definitions={e.get('name'):e for e in document.findall('nodedef')}
     elements={};graphs={}
     for element in document:
@@ -187,7 +189,11 @@ def read(path, material_name=None):
             item['parameters']['color_space']=space
             item['parameters']['srgb']=space in ('srgb_texture','sRGB')
             if element.get('type','color3')=='float': item['parameters']['channel']=1
-            elif element.get('type','color3') not in ('color3','vector3'): raise ValueError('Only float/color3/vector3 images are supported')
+            elif element.get('type','color3')=='vector2':
+                filtered='n'+str(len(graph['nodes']))
+                graph['nodes'][filtered]={'type':'swizzle','parameters':{'channels':'rg0'},'inputs':{'in':identity},'position':[0,200]}
+                identity=filtered;cache[key]=identity
+            elif element.get('type','color3') not in ('color3','vector3'): raise ValueError('Only float/color3/vector2/vector3 images are supported')
         if category=='standard_surface':
             # Metal tint follows unweighted base_color; diffuse base weight is separate.
             item['parameters']['metallic_color']=copy.deepcopy(item['parameters'].get('albedo',[.8,.8,.8]))

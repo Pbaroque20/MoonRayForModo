@@ -109,7 +109,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     from . import cryptomatte
     crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
     render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('mesh_light')}))
-    if output_file:cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,crypto,scene)
+    multi_crypto=crypto and cryptomatte.multiple(scene)
+    if multi_crypto and not scene.get('_crypto_categories'):
+        raise ValueError('Multiple Cryptomatte categories require a matching category-enabled runtime')
+    if multi_crypto and any(g.get('kind')=='vdb' for g in scene.get('extra_geometry',[])):
+        raise ValueError('Volume Cryptomatte coverage is not implemented; disable Cryptomatte or exclude volumes')
+    if output_file:
+        cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,crypto and not multi_crypto,scene)
+        if multi_crypto:
+            for cat in ('object','material','asset'):
+                cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,True,scene,cat)
     lighting.emit(scene,render_meshes,float(environment),lines)
     # Keep material handles in a table to avoid Lua's local variable limit.
     lines.append('local materials = {}')
@@ -255,7 +264,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         level = mesh.get('subdivision_level', 3)
         if type(level) is not int or not 1 <= level <= 5:
             raise ValueError('Subdivision level must be an integer between 1 and 5')
-        user_data = [cryptomatte.userdata(mesh,lines,cryptomatte.category(scene),scene)] if crypto else []
+        user_data = cryptomatte.userdata_set(mesh,lines,scene) if crypto else []
         named_uvs=dict(mesh.get('uv_sets',{}))
         if named_uvs:
             if not mesh.get('uvs'):
@@ -326,7 +335,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             emit_instance_motion(mesh,index,tag,scene,crypto,lines)
         elif 'instances' in mesh:
             if mesh['instances']:
-                instance_crypto=cryptomatte.userdata(mesh,lines,cryptomatte.category(scene),scene,instances=True) if crypto and cryptomatte.category(scene)!='material' else None
+                instance_crypto=cryptomatte.instance_userdata(mesh,lines,scene) if crypto else None
                 lines += ['  local instances = RdlInstancerGeometry("/modo/instances/%s") {' % index,
                           *(['    ["primitive_attributes"] = {%s},'%instance_crypto] if instance_crypto else []),
                           '    ["method"] = 2,',
@@ -357,7 +366,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               # Renderer already writes into its private temp folder and atomically
               # publishes the finished EXR; avoid a second OS-specific staging layer.
               '  ["two_stage_output"] = false,']
-    if crypto:lines.append('  ["deep_id_attribute_names"] = {"modo_object_id"},')
+    if crypto:lines.append('  ["deep_id_attribute_names"] = '+array(string('modo_'+cat+'_id') for cat in (('object','material','asset') if multi_crypto else ('object',)))+',')
     for key, value in options.render_values(scene.get('render_settings', {})).items():
         if key!='batch_tile_order':
             lines.append('  [%s] = %s,' % (string(key), number(value)))
@@ -387,15 +396,17 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         render_outputs = [('beauty', {'result': 0}, '')]
         render_outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
         if crypto:render_outputs.append(('object_id',{'result':4,'primitive_attribute':'modo_object_id','primitive_attribute_type':0},'modo_object_id'))
-        render_outputs += [(v['name'],outputs.attributes(v),v['name']) for v in outputs.values(scene.get('custom_aovs',[]))]
+        render_outputs += [(v['name'],outputs.attributes(v,multi_crypto),v['name']) for v in outputs.values(scene.get('custom_aovs',[]))]
         from .recovery import attributes as recovery_attributes
         for key, attributes, channel in render_outputs:
+            crypto_category=next((v.get('category','object') for v in scene.get('custom_aovs',[]) if v.get('name')==key and v.get('kind')=='cryptomatte'),None)
+            metadata_path='/modo/outputMetadata'+('/'+crypto_category if multi_crypto and crypto_category else '')
             attributes=dict(attributes,**recovery_attributes(recovery))
             attributes=dict(channel_format=0,**attributes) if 'channel_format' not in attributes else attributes
             lines += ['RenderOutput(%s) {' % string('/modo/aov/' + key),
                       '  ["file_name"] = %s,' % string(str(output_file)),
                       *(['  ["channel_name"] = %s,' % string(channel)] if 'channel_name' not in attributes else []),
-                      '  ["exr_header_attributes"] = Metadata("/modo/outputMetadata"),',
+                      '  ["exr_header_attributes"] = Metadata('+string(metadata_path)+'),',
                       '  ["compression"] = 1,']
             lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value))
                       for attr, value in attributes.items()]
