@@ -5,7 +5,7 @@ from pathlib import Path
 import lx
 from PySide2 import QtCore
 ROOT=Path('C:/Users/Raphael Tobar/MoonRayForModo')
-folder=ROOT/'test-results/regression-0327-host';folder.mkdir(parents=True,exist_ok=True)
+folder=ROOT/'test-results/regression-0328-host';folder.mkdir(parents=True,exist_ok=True)
 (folder/'progress.txt').write_text('Started in Modo',encoding='utf-8')
 os.environ['MOONRAY_TEST_RUNTIME']=str(ROOT/'runtime/xpu-compatibility-0327')
 sys.path.insert(0,str(ROOT/'tests'))

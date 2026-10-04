@@ -1,5 +1,5 @@
 """Qt event-level parameter editing checks; uses Modo's bundled PySide2."""
-import json,sys,unittest
+import json,sys,unittest,gc,weakref
 from pathlib import Path
 try:
     from PySide2 import QtCore,QtWidgets,QtGui
@@ -37,4 +37,30 @@ class MetallicEditing(unittest.TestCase):
             spin=window.delegate.active_editor;spin.setFocus();spin.selectAll();key_text(spin,'0.5')
             window.table.clearContents();window.close();window.deleteLater()
             self.app.processEvents();QtCore.QCoreApplication.sendPostedEvents(None,QtCore.QEvent.DeferredDelete)
+    def test_closed_editor_does_not_commit_again_or_remain_referenced(self):
+        window=Dummy();window.show();self.app.processEvents()
+        commits=[];window.delegate.commitData.connect(lambda widget:commits.append(widget.value()))
+        window.table.editItem(window.table.item(0,1));self.app.processEvents()
+        spin=window.delegate.active_editor;spin.setValue(.5);reference=weakref.ref(spin)
+        window.delegate.pending_focus=reference;window.delegate.focus_timer.start(0)
+        window.delegate.commit_pending()
+        self.assertEqual(commits,[.5]);self.assertIsNone(window.delegate.active_editor)
+        self.assertFalse(window.delegate.focus_timer.isActive())
+        self.app.processEvents();QtCore.QCoreApplication.sendPostedEvents(None,QtCore.QEvent.DeferredDelete)
+        del spin;gc.collect()
+        self.assertIsNone(reference());self.assertEqual(commits,[.5])
+        window.close();window.deleteLater()
+
+    def test_old_editor_cleanup_preserves_new_pending_focus(self):
+        window=Dummy();window.show();self.app.processEvents()
+        old=QtWidgets.QDoubleSpinBox(window.table)
+        window.table.editItem(window.table.item(0,1));self.app.processEvents()
+        current=window.delegate.active_editor
+        window.delegate.pending_focus=weakref.ref(current);window.delegate.focus_timer.start(0)
+        window.delegate.detach_editor(old)
+        self.assertIs(window.delegate.active_editor,current)
+        self.assertIs(window.delegate.pending_focus(),current)
+        self.assertTrue(window.delegate.focus_timer.isActive())
+        window.delegate.commit_pending();old.deleteLater();window.close();window.deleteLater()
+
 if __name__=='__main__':unittest.main()

@@ -1,5 +1,5 @@
 """Mouse graph navigation and schema-driven property editors for Modo Qt."""
-import copy,json,re
+import copy,json,re,weakref
 from PySide2 import QtCore,QtGui,QtWidgets
 from shiboken2 import isValid
 from . import nodes
@@ -124,7 +124,28 @@ class VectorEdit(QtWidgets.QWidget):
 from .node_defaults import value as default_value
 
 class ParameterDelegate(QtWidgets.QStyledItemDelegate):
-    def __init__(self,editor):super().__init__(editor.table);self.editor=editor;self.active_editor=None
+    def __init__(self,editor):
+        super().__init__(editor.table);self.editor=editor;self.active_editor=None
+        self.pending_focus=None
+        self.focus_timer=QtCore.QTimer(self);self.focus_timer.setSingleShot(True)
+        self.focus_timer.timeout.connect(self.commit_focus)
+    def detach_editor(self,widget):
+        if self.pending_focus is not None and self.pending_focus() is widget:
+            self.focus_timer.stop();self.pending_focus=None
+        if self.active_editor is widget:self.active_editor=None
+        if isValid(widget):
+            widget.removeEventFilter(self)
+            for child in widget.findChildren(QtWidgets.QWidget):child.removeEventFilter(self)
+    def destroyEditor(self,widget,index):
+        # Drop Python callbacks/filters before Qt destroys the cell editor.
+        # Never capture the dying widget in its own destroyed signal.
+        self.detach_editor(widget)
+        super().destroyEditor(widget,index)
+    @QtCore.Slot()
+    def commit_focus(self):
+        reference=self.pending_focus;self.pending_focus=None
+        widget=reference() if reference else None
+        if widget is not None:self.commit_if_left(widget)
     def schema(self,index):
         identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
         return nodes.specs(self.editor.graph['nodes'][identity]['type'])[key]
@@ -181,27 +202,27 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         self.active_editor=widget
         widget.installEventFilter(self)
         for child in widget.findChildren(QtWidgets.QWidget):child.installEventFilter(self)
-        widget.destroyed.connect(lambda *_:self.forget(widget))
         if isinstance(widget,VectorEdit):widget.color_accepted.connect(self.commit_pending)
         return widget
     def eventFilter(self,watched,event):
         widget=self.active_editor
         if widget is not None and not isValid(widget):
             self.active_editor=None;widget=None
-        if not isValid(watched):return False
+        if widget is None or not isValid(watched):return False
         belongs=widget is not None and (watched is widget or widget.isAncestorOf(watched))
+        if not belongs:return False
         if belongs:
             if event.type()==QtCore.QEvent.KeyPress:
                 if event.key() in (QtCore.Qt.Key_Return,QtCore.Qt.Key_Enter):
                     self.commit_pending();event.accept();return True
                 if event.key()==QtCore.Qt.Key_Escape:
-                    self.active_editor=None
+                    self.detach_editor(widget)
                     self.closeEditor.emit(widget,QtWidgets.QAbstractItemDelegate.RevertModelCache)
                     event.accept();return True
             if event.type()==QtCore.QEvent.FocusOut:
                 # Moving between RGB components or into the color picker is not
                 # leaving this composite editor. Check once focus has settled.
-                QtCore.QTimer.singleShot(0,lambda:self.commit_if_left(widget))
+                self.pending_focus=weakref.ref(widget);self.focus_timer.start(0)
                 return False
             if watched is not widget:return False
         return super().eventFilter(watched,event)
@@ -210,12 +231,10 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         focus=QtWidgets.QApplication.focusWidget()
         if focus is widget or (focus is not None and widget.isAncestorOf(focus)):return
         self.commit_pending()
-    def forget(self,widget):
-        if self.active_editor is widget:self.active_editor=None
     def commit_pending(self):
         widget=self.active_editor
         if widget is None:return
-        self.active_editor=None
+        self.detach_editor(widget)
         if not isValid(widget):return
         try:
             if isinstance(widget,QtWidgets.QAbstractSpinBox):widget.interpretText()

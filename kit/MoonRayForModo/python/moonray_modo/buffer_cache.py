@@ -47,6 +47,8 @@ class BufferCache(QtCore.QObject):
         self.process.readyReadStandardOutput.connect(self._read)
         self.frame=None;self.progressive=None;self.progressive_frames={};self.progressive_scene=None;self.job=None;self.displayed=None
         self.worker=None
+        self.worker_poll=QtCore.QTimer(self);self.worker_poll.setSingleShot(True)
+        self.worker_poll.setInterval(10);self.worker_poll.timeout.connect(self._memory_finished)
         self.key='beauty';self.display={};self.serial=0;self.closed=False;self.log=''
 
     def select(self,key,display):
@@ -141,6 +143,11 @@ class BufferCache(QtCore.QObject):
     def _memory_finished(self):
         worker=self.worker
         if worker is None:return
+        # finished may arrive while QThread is still unwinding native cleanup.
+        # Keep its Python/Qt wrapper and buffers alive until wait confirms exit.
+        if not worker.wait(0):
+            self.worker_poll.start();return
+        self.worker_poll.stop()
         self.worker=None;job=self.job;self.job=None
         data,width,height,error=getattr(worker,'outcome',(None,0,0,'Display worker produced no image'))
         worker.deleteLater()
@@ -208,7 +215,7 @@ class BufferCache(QtCore.QObject):
 
     def close(self):
         if self.closed:return
-        self.closed=True
+        self.closed=True;self.worker_poll.stop()
         retired=False
         if self.worker is not None:
             worker=self.worker;self.worker=None

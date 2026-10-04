@@ -1,0 +1,35 @@
+{
+  "version": "0.3.28",
+  "runtime": "runtime/xpu-compatibility-0327",
+  "original_crash": {
+    "process": 10252,
+    "exception": "0xC0000005",
+    "module": "shiboken2.cp39-win_amd64.dll",
+    "offset": "0x1463",
+    "python_stack": "material_preview.refresh -> capture_snapshot -> snapshot -> json.loads -> raw_decode",
+    "reproduced": false
+  },
+  "host_suite": {
+    "pid": 25632,
+    "runtime": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\runtime\\xpu-compatibility-0327",
+    "tests": 156,
+    "passed": true,
+    "failures": [],
+    "errors": [],
+    "skipped": []
+  },
+  "active_preview_stress": {
+    "pid": 25732,
+    "frames": 10,
+    "cycles": 30,
+    "passed": true,
+    "editing_started": true,
+    "finished": true
+  },
+  "active_preview_exit": {
+    "pid": 25732,
+    "exit_code": 1,
+    "clean_shutdown": true
+  },
+  "status": "Candidate lifetime fix; intermittent user crash resolution unconfirmed"
+}

@@ -26,4 +26,18 @@ class PreviewLifetime0326(unittest.TestCase):
         viewer=SoftwarePreview();self.assertNotIsInstance(viewer,QtWidgets.QOpenGLWidget)
         viewer.close();viewer.deleteLater()
 
+class DisplayThreadCompletion(unittest.TestCase):
+    def test_finished_signal_waits_for_native_thread_exit(self):
+        app=QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        class Finishing(QtCore.QThread):
+            fully_stopped=False
+            outcome=(None,0,0,'unused')
+            def wait(self,timeout=0):return self.fully_stopped
+        cache=BufferCache();worker=Finishing(cache);cache.worker=worker
+        cache._memory_finished()
+        self.assertIs(cache.worker,worker);self.assertTrue(cache.worker_poll.isActive())
+        worker.fully_stopped=True;cache._memory_finished()
+        self.assertIsNone(cache.worker);self.assertFalse(cache.worker_poll.isActive())
+        cache.close();cache.deleteLater()
+
 if __name__=='__main__':unittest.main()
