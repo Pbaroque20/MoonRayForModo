@@ -1,6 +1,10 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.13** adds a node-search clear button, places new nodes
+Development version **0.3.14** initializes new nodes with typed defaults and shows
+inherited defaults for existing nodes. Connections and authored edits are preserved.
+The graph editor now has a compact toolbar, grouped menus and a cleaner inspector.
+
+Version **0.3.13** adds a node-search clear button, places new nodes
 within the visible canvas, and explicitly commits color-picker edits before
 preview/save. Render verification remains deferred.
 
@@ -34,7 +38,7 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.13 uses the existing
+to the runtime recorded in its `runtime.json`. Version 0.3.14 uses the existing
 `runtime/xpu-compatibility-0311` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.

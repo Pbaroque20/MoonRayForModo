@@ -3,7 +3,7 @@ import copy
 import json
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
-from . import nodes,materialx,properties,shader_library
+from . import nodes,materialx,properties,shader_library,node_defaults
 from .node_widgets import GraphView,ParameterDelegate,COLORS,curve
 
 
@@ -62,28 +62,42 @@ class Editor(QtWidgets.QDialog):
         self.setWindowTitle(('MaterialX Override — ' if materialx_override else 'MoonShine Node Editor — ')+item.name);self.resize(1150,760)
         layout=QtWidgets.QVBoxLayout(self);toolbar=QtWidgets.QHBoxLayout();layout.addLayout(toolbar)
         self.kinds=QtWidgets.QComboBox(self);self.kinds.addItems(nodes.kinds());self.kinds.hide()
-        for label,callback in [('Delete',self.remove),('Set output',self.output),('Displacement output',self.displacement_output),('Connect input…',self.connect_selected),('Disconnect…',self.disconnect)]:
+        def menu_button(title,actions):
+            button=QtWidgets.QToolButton();button.setText(title);button.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+            menu=QtWidgets.QMenu(button)
+            for label,callback in actions:
+                if label is None:menu.addSeparator()
+                else:menu.addAction(label,callback)
+            button.setMenu(menu);toolbar.addWidget(button);return menu
+        menu_button('Graph', [('Import MaterialX…',self.import_file),('Export definitions…',self.export_file),
+                    (None,None),('Add override layer…',self.add_override),('Toggle override layer',self.toggle_override)])
+        menu_button('Node', [('Set material output',self.output),('Set / clear displacement output',self.displacement_output),
+                    (None,None),('Connect input…',self.connect_selected),('Disconnect input…',self.disconnect),
+                    ('Browse image…',self.browse_image),('Reset selected input',self.reset_input),
+                    (None,None),('Delete selected node',self.remove)])
+        view_menu=menu_button('View',[])
+        self.auto_connect=view_menu.addAction('Auto-connect new nodes');self.auto_connect.setCheckable(True);self.auto_connect.setChecked(True)
+        self.show_all=view_menu.addAction('Show all input sockets');self.show_all.setCheckable(True)
+        self.show_all.setToolTip('Connected inputs are always visible.');self.show_all.toggled.connect(self.rebuild)
+        for label,callback in [('Undo',self.undo),('Redo',self.redo),('Frame all',self.frame)]:
             button=QtWidgets.QPushButton(label);button.clicked.connect(callback);toolbar.addWidget(button)
-        tools=QtWidgets.QHBoxLayout();layout.addLayout(tools)
-        for label,callback in [('Undo',self.undo),('Redo',self.redo),('Frame all',self.frame),('Browse image…',self.browse_image),('Reset input',self.reset_input),('Import MaterialX…',self.import_file),('Export definitions…',self.export_file)]:
-            button=QtWidgets.QPushButton(label);button.clicked.connect(callback);tools.addWidget(button)
-        preview=QtWidgets.QPushButton('Widget preview');preview.clicked.connect(self.preview_widget);tools.addWidget(preview)
+        toolbar.addStretch(1)
+        preview=QtWidgets.QPushButton('Widget preview');preview.clicked.connect(self.preview_widget);toolbar.addWidget(preview)
         self.finished.connect(lambda *_:getattr(self,'_widget_preview',None) and self._widget_preview.close())
-        self.auto_connect=QtWidgets.QCheckBox('Auto-connect new node');self.auto_connect.setChecked(True);tools.addWidget(self.auto_connect)
-        self.show_all=QtWidgets.QCheckBox('Show all inputs');self.show_all.setToolTip('Expand every connectable socket. Connected inputs are always visible.');tools.addWidget(self.show_all);self.show_all.toggled.connect(self.rebuild)
         splitter=QtWidgets.QSplitter();layout.addWidget(splitter,1)
         self.build_node_browser(splitter)
         self.canvas=QtWidgets.QGraphicsScene(self);self.view=GraphView(self,self.canvas)
         self.view.setRenderHint(QtGui.QPainter.Antialiasing);self.view.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag);splitter.addWidget(self.view)
         pane=QtWidgets.QWidget();right=QtWidgets.QVBoxLayout(pane);splitter.addWidget(pane);splitter.setSizes([245,650,320]);splitter.setStretchFactor(1,1)
-        self.layers=QtWidgets.QComboBox();right.addWidget(self.layers)
-        layer_buttons=QtWidgets.QHBoxLayout();right.addLayout(layer_buttons)
-        for label,callback in [('Add override',self.add_override),('Toggle layer',self.toggle_override)]:
-            button=QtWidgets.QPushButton(label);button.clicked.connect(callback);layer_buttons.addWidget(button)
-        self.table=QtWidgets.QTableWidget(0,2);self.table.setHorizontalHeaderLabels(['Input','Value']);self.table.horizontalHeader().setStretchLastSection(True);right.addWidget(self.table)
+        self.property_title=QtWidgets.QLabel('Select a node');right.addWidget(self.property_title)
+        self.layers=QtWidgets.QComboBox();self.layers.setToolTip('Property override layer');right.addWidget(self.layers)
+        self.table=QtWidgets.QTableWidget(0,2);self.table.setHorizontalHeaderLabels(['Input','Value']);self.table.horizontalHeader().setStretchLastSection(True);self.table.verticalHeader().hide();self.table.setShowGrid(False);self.table.setAlternatingRowColors(True);right.addWidget(self.table)
         self.table.setItemDelegateForColumn(1,ParameterDelegate(self))
-        self.property_search=QtWidgets.QLineEdit();self.property_search.setPlaceholderText('Filter properties…');right.insertWidget(1,self.property_search);self.property_search.textChanged.connect(self.filter_properties)
-        self.info=QtWidgets.QLabel('Drag output → input to connect. Green wire = compatible. Right-click a socket or wire to disconnect. Wheel: zoom · middle drag: pan · F: frame. Select an input to auto-connect a new node. Double-click values to edit. Enter commits a field; Save applies the graph.');self.info.setWordWrap(True);right.addWidget(self.info)
+        self.property_search=QtWidgets.QLineEdit();self.property_search.setClearButtonEnabled(True);self.property_search.setPlaceholderText('Filter properties…');right.insertWidget(1,self.property_search);self.property_search.textChanged.connect(self.filter_properties)
+        self.info=QtWidgets.QLabel('Drag sockets to connect. Enter commits values; Save applies the graph.')
+        self.info.setWordWrap(True)
+        self.info.setToolTip('Green wire: compatible input. Right-click a socket or wire to disconnect. Wheel: zoom. Middle drag: pan. F: frame all. Double-click a property to edit. Node and Graph menus contain additional actions.')
+        layout.addWidget(self.info)
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save|QtWidgets.QDialogButtonBox.Cancel);layout.addWidget(buttons)
         buttons.accepted.connect(self.save);buttons.rejected.connect(self.reject)
         self.canvas.selectionChanged.connect(self.inspect);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
@@ -100,7 +114,7 @@ class Editor(QtWidgets.QDialog):
         layout.addWidget(QtWidgets.QLabel('Node library'))
         self.node_search=QtWidgets.QLineEdit();self.node_search.setClearButtonEnabled(True);self.node_search.setPlaceholderText('Search nodes or groups…');layout.addWidget(self.node_search)
         self.node_tree=QtWidgets.QTreeWidget();self.node_tree.setHeaderHidden(True);self.node_tree.setIndentation(12);layout.addWidget(self.node_tree,1)
-        hint=QtWidgets.QLabel('Click a node to add it to the graph. Group headings expand or collapse.');hint.setWordWrap(True);layout.addWidget(hint)
+        hint=QtWidgets.QLabel('Click a node to add it.');hint.setWordWrap(True);layout.addWidget(hint)
         groups={}
         for kind in nodes.kinds():
             category=nodes.category(kind);name=kind.casefold()
@@ -115,7 +129,7 @@ class Editor(QtWidgets.QDialog):
             else:group='Data and utilities'
             if group not in groups:
                 groups[group]=QtWidgets.QTreeWidgetItem(self.node_tree,[group])
-                groups[group].setExpanded(True)
+                groups[group].setExpanded(group=='Materials')
             row=QtWidgets.QTreeWidgetItem(groups[group],[kind]);row.setData(0,QtCore.Qt.UserRole,kind)
             row.setToolTip(0,kind+' — click to add')
         self.node_tree.sortItems(0,QtCore.Qt.AscendingOrder)
@@ -209,6 +223,8 @@ class Editor(QtWidgets.QDialog):
         self.table.itemDelegateForColumn(1).commit_pending()
         kind=self.kinds.currentText()
         if kind not in nodes.kinds():self.error('Choose a supported node from the search results');return
+        try:defaults=node_defaults.parameters(kind)
+        except ValueError as exc:self.error('Cannot initialize node defaults: '+str(exc));return
         before=copy.deepcopy(self.graph);identity='node_'+uuid.uuid4().hex[:12]
         visible=self.view.mapToScene(self.view.viewport().rect()).boundingRect()
         ports=sum(1 for key in nodes.specs(kind) if nodes.connectable(kind,key))
@@ -232,7 +248,7 @@ class Editor(QtWidgets.QDialog):
             return total
         # Search only the visible area. Crowded views may overlap, never jump offscreen.
         position=min(candidates,key=overlap)
-        self.graph['nodes'][identity]={'type':kind,'parameters':{},'inputs':{},'position':[position.x(),position.y()]}
+        self.graph['nodes'][identity]={'type':kind,'parameters':defaults,'inputs':{},'position':[position.x(),position.y()]}
         unconnected=copy.deepcopy(self.graph)
         if self.auto_connect.isChecked() and self.selected_input:
             target,key=self.selected_input
@@ -325,6 +341,7 @@ class Editor(QtWidgets.QDialog):
     def inspect(self,*args):
         if self.busy: return
         self.busy=True;self.table.setRowCount(0);identity=self.selected()
+        self.property_title.setText(self.graph['nodes'][identity].get('label',self.graph['nodes'][identity]['type']) if identity else 'Select a node')
         if identity:
             node=nodes.effective(self.graph)['nodes'][identity]
             for key,spec in nodes.specs(node['type']).items():
@@ -339,10 +356,13 @@ class Editor(QtWidgets.QDialog):
                     continue
                 row=self.table.rowCount();self.table.insertRow(row)
                 label=QtWidgets.QTableWidgetItem(key);label.setFlags(label.flags() & ~QtCore.Qt.ItemIsEditable)
-                value=node.get('parameters',{}).get(key)
+                inherited=key not in node.get('parameters',{})
+                value=node.get('parameters',{}).get(key,node_defaults.value(spec))
                 cell=QtWidgets.QTableWidgetItem('' if value is None else json.dumps(value))
                 if key in node.get('inputs',{}):cell.setBackground(QtGui.QColor('#294757'));label.setToolTip('Connected from '+node['inputs'][key]+'; editing this value replaces the connection')
-                cell.setToolTip(str(spec.get('comment',''))+' Default: '+str(spec.get('default',spec.get('default_value',''))))
+                if inherited:
+                    font=cell.font();font.setItalic(True);cell.setFont(font)
+                cell.setToolTip(('Renderer default; edit to override. ' if inherited else '')+str(spec.get('comment',''))+' Default: '+str(spec.get('default',spec.get('default_value',''))))
                 self.table.setItem(row,0,label);self.table.setItem(row,1,cell)
         self.busy=False;self.filter_properties()
     def scene_reference(self,identity,key,value):

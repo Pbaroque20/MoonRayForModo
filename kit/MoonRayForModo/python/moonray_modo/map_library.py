@@ -5,7 +5,11 @@ from pathlib import Path
 
 @lru_cache(maxsize=1)
 def catalog():
-    return json.loads(Path(__file__).with_name('map_catalog.json').read_text(encoding='utf-8'))
+    result=json.loads(Path(__file__).with_name('map_catalog.json').read_text(encoding='utf-8'))
+    for schema in result.values():
+        for spec in schema['attributes'].values():
+            if spec['type']=='float':spec['type']='Float'
+    return result
 
 def literal(value,kind):
     from .rdla import string,number

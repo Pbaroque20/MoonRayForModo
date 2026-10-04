@@ -102,22 +102,7 @@ class VectorEdit(QtWidgets.QWidget):
             for spin,value in zip(self.spins,(color.redF(),color.greenF(),color.blueF())):spin.setValue(value)
             self.color_accepted.emit()
 
-def default_value(spec):
-    if 'default_value' in spec:return spec['default_value']
-    raw=str(spec.get('default','')).strip();kind=spec['type']
-    if kind=='Bool':return raw.lower()=='true'
-    if kind in ('Rgb','Vec2f','Vec3f','Vec2d','Vec3d'):
-        values=re.findall(r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',raw[raw.find('(')+1:])
-        count=2 if kind in ('Vec2f','Vec2d') else 3
-        parsed=[float(v) for v in values]
-        return (parsed*count if len(parsed)==1 else parsed)[:count] if parsed else [0.]*count
-    if kind in ('Int','Long','Float','Double'):
-        match=re.search(r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',raw)
-        return float(match.group()) if match else 0
-    if kind=='String':
-        try:return json.loads(raw)
-        except ValueError:return ''
-    return None
+from .node_defaults import value as default_value
 
 class ParameterDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self,editor):super().__init__(editor.table);self.editor=editor;self.active_editor=None
