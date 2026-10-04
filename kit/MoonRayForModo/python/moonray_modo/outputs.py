@@ -6,7 +6,7 @@ KINDS={'lpe':'Light path expression','material':'Material AOV','cryptomatte':'Cr
 
 def values(entries):
     if not isinstance(entries,list) or len(entries)>128:raise ValueError('Use at most 128 custom outputs')
-    result=[];names=set(options.AOVS)|{'beauty','denoised_beauty','R','G','B','A','object_id','modo_object_id'}
+    result=[];names=set(options.AOVS)|{'beauty','denoised_beauty','denoise_albedo','denoise_normal','R','G','B','A','object_id','modo_object_id'}
     for entry in entries:
         v=dict(entry);name=v.get('name','')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}',name) or name.casefold() in {n.casefold() for n in names}:raise ValueError('Output names must be unique: '+name)

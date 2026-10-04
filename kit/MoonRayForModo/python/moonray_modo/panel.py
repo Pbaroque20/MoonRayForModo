@@ -298,7 +298,7 @@ class Panel(QtWidgets.QWidget):
         self.buffer.addItem('Denoised Beauty','denoised_beauty')
         for key,(label,attributes,channel) in options.AOVS.items():
             self.buffer.addItem(label,key)
-        self.buffer.setToolTip('Switch cached buffers without restarting rendering. Denoised Beauty is available after a pass with Beauty denoiser enabled and Denoise beauty preview checked. Saved EXR values are unchanged.')
+        self.buffer.setToolTip('Switch cached buffers without restarting rendering. Enable Beauty denoiser after a completed pass to create Denoised Beauty without rerendering. Saved EXR values are unchanged.')
         buffer_row.addWidget(self.buffer,1)
         layout.addLayout(buffer_row)
         from .clay import CHOICES
@@ -362,6 +362,8 @@ class Panel(QtWidgets.QWidget):
         self._scene_id = None
         self._object_signature = None
         self._load_settings()
+        self.denoiser.currentIndexChanged.connect(self._denoising_changed)
+        self.denoise_preview.toggled.connect(self._denoising_changed)
         self.buffer.currentIndexChanged.connect(self._buffer_changed)
         self.clay_mode.currentIndexChanged.connect(self._preview_changed)
         self.execution_mode.currentIndexChanged.connect(self._preview_changed)
@@ -740,12 +742,19 @@ class Panel(QtWidgets.QWidget):
         self.last_digest = original_digest
 
     def _digest(self, scene):
-        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision')}
+        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising')}
         values = [render_scene, self.clay_mode.currentData(), self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value()]
         digest = hashlib.sha256()
         for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':')).iterencode(values):
             digest.update(chunk.encode('utf-8'))
         return digest.hexdigest()
+
+    def _denoising_changed(self,*args):
+        if self.disposed:return
+        engine=self.denoiser.currentData() if self.denoise_preview.isChecked() else 'off'
+        self.renderer.buffers.denoiser.request(engine)
+        key='beauty' if engine=='off' else 'denoised_beauty'
+        self.buffer.setCurrentIndex(self.buffer.findData(key))
 
     def _buffer_changed(self,index):
         if self.disposed:return
@@ -809,7 +818,7 @@ class Panel(QtWidgets.QWidget):
             # Periodic reconciliation covers host notifications omitted by some
             # procedural mesh providers. Normal idle ticks do not capture geometry.
             full=full or (self.capture_safety.isChecked() and clock.monotonic()-self._last_full_capture>15) or signature(self._asset_scene)!=self._asset_signature
-            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery')}
+            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             if not (full or items or changed):return
             reuse=not full and not changed and bool(items) and self._geometry_cache is not None
@@ -862,6 +871,9 @@ class Panel(QtWidgets.QWidget):
         message=('Saved ' + output) if output else ('Preview complete' + (' · Watching scene changes' if self.live.isChecked() else ''))
         if not output and self.renderer.session.running():message+=' · MoonRay session retained'
         self.status.setText(message+' · '+self.renderer.backend_status)
+        if not output:
+            engine=self.denoiser.currentData() if self.denoise_preview.isChecked() else 'off'
+            self.renderer.buffers.denoiser.request(engine)
 
     def _save_path(self,title,key,suffix,name_filter):
         dialog=QtWidgets.QFileDialog(self,title,str(self.settings.value('output/'+key,'')))

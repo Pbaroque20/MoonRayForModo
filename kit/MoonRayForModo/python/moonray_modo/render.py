@@ -183,10 +183,11 @@ class Renderer(QtCore.QObject):
             snapshot.pop('preview_buffer_files',None)
         try:
             use_denoise=denoising.enabled(snapshot,bool(request['output']),request.get('linear_preview',False))
-            if use_denoise:
-                if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))
+            if use_denoise or (not request['output'] and not request.get('linear_preview')):
                 snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')}
                 self.denoise_guides=snapshot['_denoise_guides']
+            if use_denoise:
+                if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))
                 self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'])
                 self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
@@ -321,7 +322,7 @@ class Renderer(QtCore.QObject):
         if self.phase=='render' and self.post_jobs:
             if not self.active['output'] and not self.active.get('linear_preview'):
                 try:
-                    self.buffers.publish(dict(self.preview_files,beauty=self.buffer_path),self.active['runtime'],self.active['snapshot'],self.backend_status)
+                    self.buffers.publish(dict(self.preview_files,beauty=self.buffer_path,**{'denoise_'+k:v for k,v in self.denoise_guides.items()}),self.active['runtime'],self.active['snapshot'],self.backend_status)
                 except Exception as exc:
                     self.failed.emit('Cannot retain original preview buffers: '+str(exc));return
             if self.active['output']:
@@ -333,10 +334,11 @@ class Renderer(QtCore.QObject):
             self._next_post();return
         if self.phase in ('render','postdone') and not self.active['output'] and not self.active.get('linear_preview'):
             try:
-                files=dict(self.preview_files,beauty=self.buffer_path)
+                files=dict(self.preview_files,beauty=self.buffer_path,**{'denoise_'+k:v for k,v in self.denoise_guides.items()})
                 if self.phase=='postdone' and self.denoise_result:
                     files['denoised_beauty']=self.denoise_result
                 self.buffers.publish(files,self.active['runtime'],self.active['snapshot'],self.backend_status)
+                if self.phase=='postdone':self.buffers.frame['denoise_engine']=denoising.settings(self.active['snapshot']['denoising'])['engine']
             except Exception as exc:
                 self.failed.emit('Cannot retain preview buffers: '+str(exc));return
             self._preview_pass_finished()

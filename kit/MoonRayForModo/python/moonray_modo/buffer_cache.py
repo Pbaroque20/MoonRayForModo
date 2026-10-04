@@ -49,6 +49,8 @@ class BufferCache(QtCore.QObject):
         self.worker=None
         self.worker_poll=QtCore.QTimer(self);self.worker_poll.setSingleShot(True)
         self.worker_poll.setInterval(10);self.worker_poll.timeout.connect(self._memory_finished)
+        from .cached_denoise import CachedDenoise
+        self.denoiser=CachedDenoise(self)
         self.key='beauty';self.display={};self.serial=0;self.closed=False;self.log=''
 
     def select(self,key,display):
@@ -103,8 +105,8 @@ class BufferCache(QtCore.QObject):
     def _start(self):
         frame=self.progressive_frames.get(self.key,self.frame)
         if frame is None or (self.key not in frame['files'] and self.key not in frame.get('linear',{})):
-            self.notice.emit('Denoised Beauty requires a completed pass with Beauty denoiser enabled and Denoise beauty preview checked.' if self.key=='denoised_beauty' else 'Selected output will be available after a preview with these outputs completes.');return
-        signature=hashlib.sha256(json.dumps([self.key,self.display],sort_keys=True).encode('utf-8')).hexdigest()
+            self.notice.emit('Enable a Beauty denoiser and Denoise beauty preview to process the completed pass.' if self.key=='denoised_beauty' else 'Selected output will be available after a preview with these outputs completes.');return
+        signature=hashlib.sha256(json.dumps([self.key,self.display,frame.get('denoise_engine') if self.key=='denoised_beauty' else None],sort_keys=True).encode('utf-8')).hexdigest()
         destination=frame['folder']/(signature+'.png')
         self.job=dict(frame=frame,key=self.key,serial=self.serial,destination=destination)
         if destination.is_file():self._show();self.job=None;self._prune();return
@@ -215,7 +217,7 @@ class BufferCache(QtCore.QObject):
 
     def close(self):
         if self.closed:return
-        self.closed=True;self.worker_poll.stop()
+        self.closed=True;self.worker_poll.stop();self.denoiser.close()
         retired=False
         if self.worker is not None:
             worker=self.worker;self.worker=None

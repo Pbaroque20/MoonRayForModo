@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.38** retains both Beauty and Denoised Beauty in the preview buffer selector without rerendering. Enable a Beauty denoiser and Denoise beauty preview before rendering to generate both. Also includes the streamlined override-layer properties workflow and black graph property labels. Tests skipped as requested.
+Development version **0.3.39** retains preview denoising guides even when the denoiser is off. Enable or change the denoiser after a pass to process cached beauty without restarting MoonRay; switch between Beauty and Denoised Beauty. Applies to previews generated with this version. Tests skipped as requested.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native
