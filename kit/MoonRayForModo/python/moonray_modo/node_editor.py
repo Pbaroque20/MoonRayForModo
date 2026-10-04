@@ -459,7 +459,9 @@ class Editor(QtWidgets.QDialog):
                 if spec['type']=='SceneObject*':
                     if spec.get('interface') in ('INTERFACE_CAMERA','INTERFACE_NODE'):
                         import modo
-                        row=self.table.rowCount();self.table.insertRow(row);self.table.setItem(row,0,QtWidgets.QTableWidgetItem(key))
+                        row=self.table.rowCount();self.table.insertRow(row)
+                        label=QtWidgets.QTableWidgetItem(key);label.setFlags(label.flags() & ~QtCore.Qt.ItemIsEditable)
+                        label.setForeground(QtGui.QBrush(QtGui.QColor('#000000')));self.table.setItem(row,0,label)
                         pick=QtWidgets.QComboBox();pick.addItem('None',None)
                         for item in sorted(modo.Scene().items('camera' if spec.get('interface')=='INTERFACE_CAMERA' else 'locator'),key=lambda i:i.name.casefold()):pick.addItem(item.name,item.id)
                         chosen=node.get('parameters',{}).get(key) or {};pick.setCurrentIndex(max(0,pick.findData(chosen.get('item'))));self.table.setCellWidget(row,1,pick)
@@ -467,6 +469,7 @@ class Editor(QtWidgets.QDialog):
                     continue
                 row=self.table.rowCount();self.table.insertRow(row)
                 label=QtWidgets.QTableWidgetItem(key);label.setFlags(label.flags() & ~QtCore.Qt.ItemIsEditable)
+                label.setForeground(QtGui.QBrush(QtGui.QColor('#000000')))
                 inherited=key not in node.get('parameters',{})
                 value=node.get('parameters',{}).get(key,node_defaults.value(spec))
                 cell=QtWidgets.QTableWidgetItem('' if value is None else json.dumps(value))

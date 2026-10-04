@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.35** defers preview capture while a mouse drag is held, gates inactive object-override controls, and simplifies the preview toolbar. Override edits retain the Apply to selected geometry workflow. Settings start collapsed for new layouts; existing workspace preferences are preserved. Tests skipped as requested.
+Development version **0.3.36** makes property names in the graph editor's right-hand inspector black for clearer contrast, including camera and locator references. Tests skipped as requested.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native
