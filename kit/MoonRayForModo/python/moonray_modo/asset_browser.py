@@ -16,7 +16,7 @@ class Browser(QtWidgets.QDialog):
   actions=QtWidgets.QHBoxLayout();layout.addLayout(actions)
   self.apply=QtWidgets.QPushButton('Assign material to selected meshes');self.apply.clicked.connect(self.assign);actions.addWidget(self.apply)
   self.reveal=QtWidgets.QPushButton('Open folder / source');self.reveal.clicked.connect(self.open_source);actions.addWidget(self.reveal)
-  self.import_model=QtWidgets.QPushButton('Import model');self.import_model.clicked.connect(self.import_asset);actions.addWidget(self.import_model)
+  self.import_model=QtWidgets.QPushButton('Import asset');self.import_model.clicked.connect(self.import_asset);actions.addWidget(self.import_model)
   copy=QtWidgets.QPushButton('Copy path');copy.clicked.connect(self.copy_path);actions.addWidget(copy)
   row=QtWidgets.QHBoxLayout();layout.addLayout(row)
   for title,callback in [('Add asset folder…',self.add_folder),('Remove folder...',self.remove_folder),('Refresh',self.refresh),('Save selected material…',self.save_material),('Save graph bundle...',self.save_bundle)]:
@@ -36,7 +36,7 @@ class Browser(QtWidgets.QDialog):
   self.list.setSortingEnabled(True);self.filter()
  def scan_next(self):
   try:self.add_rows(next(self.iterator))
-  except StopIteration:self.timer.stop();self.status.setText('%d assets · Native RDLA and USD examples are not automatically converted into Modo scenes.'%len(self.rows))
+  except StopIteration:self.timer.stop();self.status.setText('%d assets. Import actions depend on format; scene formats use installed Modo readers.'%len(self.rows))
   except (OSError,ValueError) as exc:self.timer.stop();self.status.setText(str(exc))
  def filter(self,*args):
   query=self.search.text().casefold();category=self.category.currentText()
@@ -47,7 +47,8 @@ class Browser(QtWidgets.QDialog):
   items=self.list.selectedItems();return items[0].data(0,QtCore.Qt.UserRole) if items else {}
  def selection(self):
   row=self.selected();self.details.setPlainText('\n'.join([row.get('name',''),row.get('description',''),'License: '+row.get('license',''),'Source: '+row.get('source','')]))
-  self.import_model.setEnabled(Path(row.get('path','')).suffix.lower() in ('.obj','.fbx','.rdla','.rdlb'))
+  from .asset_import import action
+  label=action(row.get('path',''));self.import_model.setText(label or 'Import asset');self.import_model.setEnabled(bool(label))
   self.apply.setEnabled(bool(row.get('shader') or row.get('category')=='Saved materials'));self.reveal.setEnabled(bool(row.get('path') or row.get('url')))
  def add_folder(self):
   folder=QtWidgets.QFileDialog.getExistingDirectory(self,'Add an asset folder')
@@ -63,14 +64,21 @@ class Browser(QtWidgets.QDialog):
  def import_asset(self):
   try:
    import lx
-   path=self.selected().get('path','')
-   if Path(path).suffix.lower() in ('.rdla','.rdlb'):
+   from . import properties,asset_import
+   path=self.selected().get('path','');suffix=Path(path).suffix.lower()
+   if str(path).lower().endswith('.moonmat.json'):self.assign();return
+   if suffix in ('.rdla','.rdlb'):
     from .rdl_import_dialog import show
     show(path);return
-   if Path(path).suffix.lower() not in ('.obj','.fbx') or not Path(path).is_file():raise ValueError('Select an existing OBJ or FBX model')
-   if any(c in path for c in '{}\r\n'):raise ValueError('Rename the file to remove command delimiters before importing')
-   lx.eval('scene.open {'+path+'} import')
-   self.status.setText('Model imported into the current Modo scene.')
+   material_name=None
+   if suffix=='.mtlx':
+    from .materialx_document import load
+    document,_=load(path);names=[e.get('name') for e in document.findall('surfacematerial')]
+    if len(names)>1:
+     material_name,ok=QtWidgets.QInputDialog.getItem(self,'MaterialX material','Choose material',names,0,False)
+     if not ok:return
+   lx.eval('moonray.library.importAsset '+properties.encode({'path':path,'material_name':material_name}))
+   self.status.setText(asset_import.action(path)+' completed. Review imported settings before rendering.')
   except Exception as exc:self.status.setText(str(exc))
  def copy_path(self):QtWidgets.QApplication.clipboard().setText(self.selected().get('path',self.selected().get('url','')))
  def assign(self):

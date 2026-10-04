@@ -16,7 +16,7 @@ MAPS={
  'divide':{'in1':('Rgb',[1,1,1]),'in2':('Rgb',[1,1,1])},
  'mix':{'bg':('Rgb',[0,0,0]),'fg':('Rgb',[1,1,1]),'mix':('Float',.5)},
  'checker':{'color1':('Rgb',[0,0,0]),'color2':('Rgb',[1,1,1]),'scale':('Vec2f',[8,8])},
- 'normalmap':{'in':('Rgb',[.5,.5,1]),'scale':('Float',1)},
+ 'normalmap':{'in':('Rgb',[.5,.5,1]),'scale':('Float',1),'basis_mode':('Int',0),'uv_map':('String',''),'basis_scale':('Vec2f',[1,1]),'basis_rotation':('Float',0),'basis_offset':('Vec2f',[0,0])},
 }
 
 from .math_nodes import SCHEMAS as MATH_SCHEMAS
@@ -26,8 +26,12 @@ def specs(kind):
     if kind in shader_library.catalog(): return shader_library.catalog()[kind]['attributes']
     if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
-    return {key:{'name':key,'type':value[0],'default_value':value[1],
-                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype') else ''} for key,value in MAPS[kind].items()}
+    result={key:{'name':key,'type':value[0],'default_value':value[1],
+                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype','basis_mode','basis_scale','basis_rotation','basis_offset') else ''} for key,value in MAPS[kind].items()}
+    if kind=='normalmap':
+        result['basis_mode']['enum']={'Connected image UVs':0,'Explicit UV basis':1,'Primary shading basis':2}
+        result['basis_rotation']['comment']='UV basis rotation in degrees; used only with Explicit UV basis.'
+    return result
 
 
 def category(kind):
@@ -116,7 +120,35 @@ def image_descriptor(node):
 
 def descriptors(graph):
     g=validate(graph)
-    return [image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
+    result=[image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
+    for node in g['nodes'].values():
+        if node['type']=='normalmap':
+            descriptor=normal_descriptor(node,g)
+            if descriptor:result.append(descriptor)
+    return result
+
+
+def normal_descriptor(node,graph):
+    """Per-node tangent bases; never replace another normal node's UV set."""
+    import math
+    p=node.get('parameters',{});mode=p.get('basis_mode',0)
+    if mode not in (0,1,2):raise ValueError('Normal basis mode must be 0 (image), 1 (explicit UV), or 2 (primary)')
+    if mode==2:return None
+    if mode==1:
+        offset=p.get('basis_offset',[0,0])
+        layer={'projection':'uv','uv_map':p.get('uv_map',''),'scale':p.get('basis_scale',[1,1]),
+               'rotation':math.radians(p.get('basis_rotation',0)),
+               'uv_matrix':[1,0,offset[0],0,1,offset[1]]}
+        layer['coordinate_key']=coordinates.key(layer)
+        return layer
+    source=graph['nodes'].get(node.get('inputs',{}).get('in'),{})
+    if source.get('type')!='image':return None
+    coord=source.get('inputs',{}).get('texcoord')
+    if coord:
+        uv=graph['nodes'][coord]
+        return image_descriptor(uv) if uv['type']=='texcoord' else None
+    if 'texcoord' in source.get('parameters',{}):return None
+    return image_descriptor(source)
 
 
 def emit(material,name,index,lines,library,output="root"):
@@ -215,8 +247,9 @@ def emit(material,name,index,lines,library,output="root"):
             elif kind=='normalmap':
                 normal=values['in']
                 source=g['nodes'].get(item.get('inputs',{}).get('in'),{})
-                if source.get('type')=='image' and not source.get('inputs',{}).get('texcoord') and 'texcoord' not in source.get('parameters',{}):
-                    descriptor=image_descriptor(source);p=source.get('parameters',{});address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
+                descriptor=normal_descriptor(item,g)
+                if descriptor:
+                    p=source.get('parameters',{});address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
                     corrected=definition('ModoTextureMap',path+'/uv_basis',{'mode':'13','foreground':normal,'uv_name':string(descriptor['coordinate_key']),'tile_u':str(address[p.get('uaddressmode','periodic')]),'tile_v':str(address[p.get('vaddressmode','periodic')])})
                     normal=binding(corrected,'Rgb')
                 mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':normal,'normal_strength':values['scale']})

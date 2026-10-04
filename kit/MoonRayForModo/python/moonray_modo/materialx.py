@@ -242,3 +242,21 @@ def write(graph,path):
     if graph.get('displacement'):ET.SubElement(output,'input',name='displacementshader',type='displacementshader',nodename=graph['displacement'])
     ET.indent(document)
     ET.ElementTree(document).write(str(path),encoding='utf-8',xml_declaration=True)
+
+
+def inspect_document(path):
+    """Compile each named material independently and report actual bridge limits."""
+    from .materialx_document import load
+    document,dependencies=load(path)
+    result={'path':str(Path(path).resolve()),'dependencies':dependencies,'materials':[],
+            'external_implementations':[{'name':e.get('name',''),'target':e.get('target',''),'file':e.get('file','')}
+                                       for e in document.findall('implementation') if e.get('file')]}
+    for element in document.findall('surfacematerial'):
+        name=element.get('name','')
+        try:
+            graph=read(path,name)
+            result['materials'].append({'name':name,'status':'translatable','nodes':len(graph['nodes'])})
+        except (ValueError,KeyError,TypeError,OSError) as exc:
+            result['materials'].append({'name':name,'status':'unsupported','reason':str(exc)})
+    result['complete']=bool(result['materials']) and all(v['status']=='translatable' for v in result['materials'])
+    return result

@@ -92,5 +92,13 @@ if b'MOONRAY_MODO_SESSION' in executable.read_bytes():
     capability=destination/'modo-session.json'
     capability.write_text(json.dumps({'protocol':1,'scene_memory':True,'command_memory':True,'executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest()},indent=2),encoding='utf-8')
     manifest['modo-session.json']={'source':str(capability),'sha256':hashlib.sha256(capability.read_bytes()).hexdigest()}
+# Pair-array support is tied to both the instancer DSO and geometry library.
+instancer=destination/'RdlInstancerGeometry.dll'
+if instancer.is_file() and b'xform_list_close' in instancer.read_bytes():
+    capability=destination/'modo-instance-motion.json'
+    hashes={name:hashlib.sha256((destination/name).read_bytes()).hexdigest()
+            for name in ('RdlInstancerGeometry.dll','librendering_geom.dll')}
+    capability.write_text(json.dumps({'version':1,'sha256':hashes},indent=2),encoding='utf-8')
+    manifest[capability.name]={'source':str(capability),'sha256':hashlib.sha256(capability.read_bytes()).hexdigest()}
 (destination / 'build-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
 print('Staged', len(manifest), 'native binaries in', destination)

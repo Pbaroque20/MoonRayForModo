@@ -402,3 +402,14 @@ class ApplyRdl(lxu.command.BasicCommand):
 
 lx.bless(ImportRdl,'moonray.rdl.import')
 lx.bless(ApplyRdl,'moonray.rdl.apply')
+
+
+class ImportLibraryAsset(lxu.command.BasicCommand):
+    def __init__(self):
+        super().__init__();self.dyna_Add('settings',lx.symbol.sTYPE_STRING)
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import properties,asset_import
+        values=properties.decode(self.dyna_String(0))
+        asset_import.execute(values['path'],values.get('material_name'))
+lx.bless(ImportLibraryAsset,'moonray.library.importAsset')

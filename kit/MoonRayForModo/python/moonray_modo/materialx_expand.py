@@ -6,10 +6,22 @@ CONNECTION=('value','nodename','nodegraph','output','interfacename','channels')
 def expand(document):
     definitions={e.get('name'):e for e in document.findall('nodedef')}
     graphs={e.get('name'):e for e in document.findall('nodegraph')}
-    implementations={e.get('nodedef'):e for e in graphs.values() if e.get('nodedef')}
+    candidates={}
+    for graph in graphs.values():
+        if graph.get('nodedef') and graph.get('target','') in ('','moonray'):
+            candidates.setdefault(graph.get('nodedef'),[]).append((graph.get('target',''),graph))
     for implementation in document.findall('implementation'):
-        if implementation.get('nodegraph') in graphs:
-            implementations[implementation.get('nodedef')]=graphs[implementation.get('nodegraph')]
+        if implementation.get('target','') not in ('','moonray'):continue
+        reference=implementation.get('nodegraph')
+        if reference:
+            if reference not in graphs:raise ValueError('Missing MaterialX implementation graph: '+reference)
+            candidates.setdefault(implementation.get('nodedef'),[]).append((implementation.get('target',''),graphs[reference]))
+    implementations={}
+    for name,entries in candidates.items():
+        preferred=[graph for target,graph in entries if target=='moonray'] or [graph for target,graph in entries if not target]
+        unique={id(graph):graph for graph in preferred}
+        if len(unique)>1:raise ValueError('Ambiguous MaterialX graph implementation: '+str(name))
+        if unique:implementations[name]=next(iter(unique.values()))
     templates={id(e) for e in implementations.values()}
     queue=[(document,'',())]+[(g,name,()) for name,g in graphs.items() if id(g) not in templates]
     count=0

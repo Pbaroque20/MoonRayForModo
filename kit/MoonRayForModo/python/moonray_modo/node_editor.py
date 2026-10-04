@@ -70,7 +70,7 @@ class Editor(QtWidgets.QDialog):
                 if label is None:menu.addSeparator()
                 else:menu.addAction(label,callback)
             button.setMenu(menu);toolbar.addWidget(button);return menu
-        menu_button('Graph', [('Check asset files...',self.check_assets),('Import MaterialX…',self.import_file),('Export definitions…',self.export_file),
+        menu_button('Graph', [('Inspect MaterialX support...',self.inspect_materialx),('Check asset files...',self.check_assets),('Import MaterialX…',self.import_file),('Export definitions…',self.export_file),
                     (None,None),('Add override layer…',self.add_override),('Toggle override layer',self.toggle_override)])
         menu_button('Node', [('Set material output',self.output),('Set / clear displacement output',self.displacement_output),
                     (None,None),('Connect input…',self.connect_selected),('Disconnect input…',self.disconnect),
@@ -475,6 +475,17 @@ class Editor(QtWidgets.QDialog):
             before=copy.deepcopy(self.graph);layer=self.graph['overrides'][index];layer['enabled']=not layer.get('enabled',True)
             try:nodes.validate(self.graph);self.remember(before);self.rebuild()
             except ValueError as exc:self.graph=before;self.error(exc)
+    def inspect_materialx(self):
+        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Inspect MaterialX','','MaterialX (*.mtlx)')
+        if not path:return
+        try:
+            result=materialx.inspect_document(path)
+            dialog=QtWidgets.QMessageBox(self);dialog.setWindowTitle('MaterialX compatibility')
+            supported=sum(v['status']=='translatable' for v in result['materials'])
+            dialog.setText(str(supported)+' of '+str(len(result['materials']))+' surface materials translate with the current bridge.')
+            dialog.setInformativeText('This checks translation, not rendered equivalence. External shader-source implementations are not executed.')
+            dialog.setDetailedText(json.dumps(result,indent=2));dialog.exec_()
+        except (ValueError,OSError) as exc:self.error(exc)
     def import_file(self):
         path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Import MaterialX','','MaterialX (*.mtlx)')
         if path:

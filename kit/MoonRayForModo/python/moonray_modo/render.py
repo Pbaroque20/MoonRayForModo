@@ -171,6 +171,7 @@ class Renderer(QtCore.QObject):
         self.buffer_key = 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
+        snapshot['_paired_instance_motion']=native.supports_paired_instance_motion(request['runtime'])
         if not request['output'] and not request.get('linear_preview'):
             self.preview_files={key:self.current_base.with_suffix('.'+key+'.exr') for key in outputs.preview(snapshot)}
             self.buffer_path=self.preview_files['beauty']

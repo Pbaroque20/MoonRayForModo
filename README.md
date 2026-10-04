@@ -1,6 +1,14 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.20** adds multi-file browsing for filename lists,
+Development version **0.3.21** adds paired shutter transforms to the shared native
+instancer, independent normal-map UV basis controls, format-specific asset import,
+and MaterialX implementation-target selection and compatibility reports. It also
+puts MoonShine Material Override directly in Add Layer, fixes creation order above
+the source material, and keeps the layer pane to Enable Override and Edit Material
+Graph. Runtime: `runtime/xpu-compatibility-0321`. Compiled, not render-validated.
+See [scope and remaining gaps](docs/COMPATIBILITY_0321.md).
+
+Version **0.3.20** adds multi-file browsing for filename lists,
 right-click property reset, and **Graph > Check asset files** with missing-path
 details and UDIM checks. Portable bundles now preserve the override enable state
 and include filename-described assets whose catalog flags are incomplete.

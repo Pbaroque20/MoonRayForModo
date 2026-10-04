@@ -91,3 +91,27 @@ def execution_status(log):
         if 'gpu: setup complete' in line: result='XPU active (NVIDIA GPU + CPU)'
         if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
     return result
+
+
+def supports_paired_instance_motion(directory):
+    """Trust only the exact geometry binaries recorded by runtime staging."""
+    root=Path(directory).resolve()
+    try:
+        signature=tuple((p.stat().st_size,p.stat().st_mtime_ns) for p in
+                        (root/'modo-instance-motion.json',root/'RdlInstancerGeometry.dll',root/'librendering_geom.dll'))
+    except OSError:return False
+    return _paired_instance_capability(str(root),signature)
+
+
+from functools import lru_cache
+@lru_cache(maxsize=8)
+def _paired_instance_capability(directory,signature):
+    import hashlib
+    root=Path(directory)
+    try:
+        data=json.loads((root/'modo-instance-motion.json').read_text(encoding='utf-8'))
+        if data.get('version')!=1:return False
+        for name in ('RdlInstancerGeometry.dll','librendering_geom.dll'):
+            if hashlib.sha256((root/name).read_bytes()).hexdigest()!=data['sha256'][name]:return False
+        return True
+    except (OSError,ValueError,KeyError,TypeError):return False

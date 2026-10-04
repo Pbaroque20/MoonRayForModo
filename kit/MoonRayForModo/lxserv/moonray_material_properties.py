@@ -218,6 +218,8 @@ class AddMoonShineOverride(OpenNodes):
     def basic_Execute(self,msg,flags):
         import modo
         from moonray_modo import nodes
+        if len(selected())==1 and selected()[0].type=='advancedMaterial':
+            AddOverrideAbove().basic_Execute(msg,flags);return
         lx.eval('shader.create material.moonrayMoonShine')
         items=[item for item in modo.Scene().selected if item.type=='material.moonrayMoonShine']
         if len(items)!=1:raise ValueError('Could not identify the new MoonShine Material Override layer')
@@ -251,8 +253,8 @@ class AddOverrideAbove(OpenNodes):
         graph=copy.deepcopy(settings.get('node_graph')) if material_override.enabled(settings) and settings.get('node_graph') else nodes.from_material(source)
         settings=material_override.synchronize({},graph)
         scene=modo.Scene()
-        item=scene.addItem('material.moonrayMoonShine',name='MoonShine Override - '+source.name)
-        item.setParent(parent,index)
+        item=scene.addItem('material.moonrayMoonShine',name='MoonShine Material Override - '+source.name)
+        item.setParent(parent,index+1)
         properties.write(item,settings)
         scene.select(item)
 
