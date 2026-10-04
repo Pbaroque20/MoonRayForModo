@@ -1,0 +1,590 @@
+{
+  "date": "2026-10-04",
+  "candidate": "runtime/xpu-compatibility-0326-candidate",
+  "installed": false,
+  "runtime_sha256": {
+    "libscene_rdl2.dll": "cccd0a3c8538a40c01b6305fd45e40b91b8a9fbdf6c824a371366b7ed945fa66",
+    "librendering_rndr.dll": "9058fbf484073bbe1df8126653cef41641b49967eb3e1a8b201ed9e681215c13",
+    "moonray.exe": "b892ca272fa0158e4ef0d05def5cb526ad07bd83fb21ccb7a0ecbfe212b24b35"
+  },
+  "promotion_status": "held_for_broader_regressions_and_host_validation",
+  "fixes": [
+    "Request Cryptomatte ID attributes at shading intersections",
+    "Export required weight, beauty auxiliary and alpha auxiliary checkpoint buffers",
+    "Guard null cache in synchronous native checkpoint writing",
+    "Give checkpoint EXR primary parts explicit names to avoid rejected resume and fresh-render fallback"
+  ],
+  "category_checks": {
+    "opaque_final": {
+      "passed": true,
+      "checks": [
+        {
+          "mode": "scalar",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        }
+      ],
+      "local_report": "test-results/crypto-0326-final/coverage-report.json"
+    },
+    "presence": {
+      "passed": true,
+      "checks": [
+        {
+          "mode": "scalar",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 1.341104507446289e-07,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "object",
+          "single_render_max_coverage_difference": 8.940696716308594e-08,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "material",
+          "single_render_max_coverage_difference": 8.940696716308594e-08,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "asset",
+          "single_render_max_coverage_difference": 1.7881393432617188e-07,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 3.2782554626464844e-07,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "object",
+          "single_render_max_coverage_difference": 8.940696716308594e-08,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "material",
+          "single_render_max_coverage_difference": 8.940696716308594e-08,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "asset",
+          "single_render_max_coverage_difference": 1.1920928955078125e-07,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 3.2782554626464844e-07,
+          "passed": true
+        }
+      ],
+      "local_report": "test-results/crypto-0326-presence/coverage-report.json"
+    },
+    "shared_instances": {
+      "passed": true,
+      "checks": [
+        {
+          "mode": "scalar",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        }
+      ],
+      "local_report": "test-results/crypto-0326-instances/coverage-report.json"
+    },
+    "rotating_scaling_instances": {
+      "passed": true,
+      "checks": [
+        {
+          "mode": "scalar",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "scalar",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "vector",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "object",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 3,
+          "manifest_entries": 3,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "material",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 2,
+          "manifest_entries": 2,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "asset",
+          "single_render_max_coverage_difference": 0.0,
+          "visible_ids": 1,
+          "manifest_entries": 1,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "material",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        },
+        {
+          "mode": "xpu",
+          "category": "asset",
+          "object_aggregation_max_coverage_difference": 0.0,
+          "passed": true
+        }
+      ],
+      "local_report": "test-results/crypto-0326-motion/coverage-report.json"
+    }
+  },
+  "preview_qt": {
+    "environment": "Modo 16.1v9 bundled Python 3.9 / Qt 5.15.2; offscreen, standalone",
+    "passed": 2,
+    "host_crash_resolution_confirmed": false
+  },
+  "focused_exporter_tests": {
+    "passed": 6
+  },
+  "limits": [
+    "No Modo UI sessions launched",
+    "No clean-machine test",
+    "No power-loss or interrupted checkpoint-write test",
+    "No volume Cryptomatte support",
+    "No production-scale or downstream compositor certification"
+  ],
+  "checkpoint_resume": {
+    "passed": true,
+    "saved_samples_restored_confirmed": true,
+    "controlled_stop_spp": 4,
+    "final_spp": 16,
+    "checks": [
+      {
+        "mode": "scalar",
+        "category": "object",
+        "max_coverage_difference": 5.960464477539063e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 3,
+        "passed": true
+      },
+      {
+        "mode": "scalar",
+        "category": "material",
+        "max_coverage_difference": 5.960464477539063e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 2,
+        "passed": true
+      },
+      {
+        "mode": "scalar",
+        "category": "asset",
+        "max_coverage_difference": 5.960464477539063e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 1,
+        "passed": true
+      },
+      {
+        "mode": "vector",
+        "category": "object",
+        "max_coverage_difference": 8.940696716308594e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 3,
+        "passed": true
+      },
+      {
+        "mode": "vector",
+        "category": "material",
+        "max_coverage_difference": 8.940696716308594e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 2,
+        "passed": true
+      },
+      {
+        "mode": "vector",
+        "category": "asset",
+        "max_coverage_difference": 1.1920928955078125e-07,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 1,
+        "passed": true
+      },
+      {
+        "mode": "xpu",
+        "category": "object",
+        "max_coverage_difference": 8.940696716308594e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 3,
+        "passed": true
+      },
+      {
+        "mode": "xpu",
+        "category": "material",
+        "max_coverage_difference": 8.940696716308594e-08,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 2,
+        "passed": true
+      },
+      {
+        "mode": "xpu",
+        "category": "asset",
+        "max_coverage_difference": 1.1920928955078125e-07,
+        "partial_to_final_difference": 0.14999999105930328,
+        "visible_ids": 1,
+        "passed": true
+      }
+    ],
+    "local_report": "test-results/crypto-0326-resume5/report.json"
+  },
+  "broad_python_suite": {
+    "total": 150,
+    "passed": 123,
+    "failed": 10,
+    "skipped": 17,
+    "failures": [
+      "test_materialx_named_outputs_and_fileprefix (test_compatibility_035.Compatibility035.test_materialx_named_outputs_and_fileprefix)",
+      "test_tile_order_all_render_modes (test_compatibility_036.Compatibility036.test_tile_order_all_render_modes)",
+      "test_default_material_for_unknown_tag (test_core.CoreTests.test_default_material_for_unknown_tag)",
+      "test_glass_separates_transmission_and_presence (test_core.CoreTests.test_glass_separates_transmission_and_presence)",
+      "test_material_parts_preserve_one_mesh (test_core.CoreTests.test_material_parts_preserve_one_mesh)",
+      "test_transmission_texture_selects_glass_even_at_zero_base_amount (test_core.CoreTests.test_transmission_texture_selects_glass_even_at_zero_base_amount)",
+      "test_incompatible_active_interiors_rejected_but_hidden_layer_ignored (test_cpu_features.Materials.test_incompatible_active_interiors_rejected_but_hidden_layer_ignored)",
+      "test_layered_common_absorption_is_only_applied_in_volume (test_cpu_features.Materials.test_layered_common_absorption_is_only_applied_in_volume)",
+      "test_material_order_and_opacity (test_cpu_features.Materials.test_material_order_and_opacity)",
+      "test_motion_matches_reordered_instances_without_truncation (test_cpu_features.Rendering.test_motion_matches_reordered_instances_without_truncation)"
+    ],
+    "local_log": "test-results/candidate-0326-unittest-final.log"
+  }
+}

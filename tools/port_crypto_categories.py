@@ -126,6 +126,29 @@ edit(Q,'''            pbr::CryptomatteBuffer* cryptomatteBuf = film.getCryptomat
             cryptomatteBuf->init(reader.getWidth(), reader.getHeight(), 1, cryptomatteBuf->getMultiPresenceOn());''','''            pbr::CryptomatteBuffer* cryptomatteBuf = film.getCryptomatteBuffer()->categoryBuffer(ro->getCryptomatteIdChannel());
             // Reset only this category: other EXR parts may already be restored.
             cryptomatteBuf->resetCategory(reader.getWidth(), reader.getHeight(), cryptomatteBuf->getMultiPresenceOn());''')
+D='moonray/lib/rendering/rndr/RenderOutputDriver.cc'
+edit(D,'#include <scene_rdl2/render/util/Files.h>', '#include <scene_rdl2/render/util/Files.h>\n#include <scene_rdl2/scene/rdl2/SceneContext.h>\n#include <scene_rdl2/scene/rdl2/SceneVariables.h>')
+edit(D,'''        roAovSchemaId = pbr::AOV_SCHEMA_ID_ALPHA;
+    }
+    return roAovSchemaId;''','''        roAovSchemaId = pbr::AOV_SCHEMA_ID_ALPHA;
+    } else if (ro->getResult() == scene_rdl2::rdl2::RenderOutput::RESULT_CRYPTOMATTE) {
+        // Crypto IDs must reach intersections even without a primitive-attribute AOV.
+        const auto& vars = ro->getSceneClass().getSceneContext()->getSceneVariables();
+        for (const auto& name : vars.get(scene_rdl2::rdl2::SceneVariables::sDeepIDAttributeNames)) {
+            mPrimAttrs.insert(shading::TypedAttributeKey<float>(name));
+        }
+        if (ro->getCryptomatteIdChannel() != 0) {
+            mPrimAttrs.insert(shading::TypedAttributeKey<float>("modo_material_id"));
+            mPrimAttrs.insert(shading::TypedAttributeKey<float>("modo_asset_id"));
+        }
+    }
+    return roAovSchemaId;''')
+W='moonray/lib/rendering/rndr/RenderOutputDriverImplWrite.cc'
+edit(W,'''                float sec = mRenderContext->getResumeHistoryMetaData()->getTimeSaveSecBySignalCheckpoint();
+                cache->setTimeSaveSecBySignalCheckpoint(sec);''','''                if (cache) {
+                    float sec = mRenderContext->getResumeHistoryMetaData()->getTimeSaveSecBySignalCheckpoint();
+                    cache->setTimeSaveSecBySignalCheckpoint(sec);
+                }''')
 changed=0
 for p,s in pending.items():
  if p.read_text(encoding='utf-8')!=s:p.write_text(s,encoding='utf-8');changed+=1

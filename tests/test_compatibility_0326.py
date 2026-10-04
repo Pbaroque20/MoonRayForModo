@@ -34,6 +34,18 @@ class Compatibility0326(unittest.TestCase):
         with self.assertRaises(ValueError):outputs.values(entries+[dict(entries[0],name='Again')])
         entries[0]['part']=entries[1]['part']='same'
         with self.assertRaises(ValueError):outputs.values(entries)
+    def test_checkpoint_includes_required_resume_buffers(self):
+        scene=self.scene();scene['_recovery']={'file':'checkpoint.exr','guides':{},'minutes':.1,'resume':False}
+        text=rdla.scene_text(scene,16,16,4,.1,'test.exr')
+        for name,result in (('weight',11),('beauty_aux',12),('alpha_aux',14)):
+            self.assertIn('RenderOutput("/modo/aov/__recovery_'+name+'")',text)
+            self.assertIn('["result"] = '+str(result),text)
+        self.assertIn('["file_part"] = "__modo_main"',text)
+        self.assertIn('["file_part"] = "crypto_material"',text)
+        scene['aovs']=['sample_count']
+        text=rdla.scene_text(scene,16,16,4,.1,'test.exr')
+        self.assertNotIn('RenderOutput("/modo/aov/__recovery_weight")',text)
+
     def test_materialx_geometric_graph(self):
         source="""<materialx version="1.39"><position name="p" type="vector3"><input name="space" type="string" value="world"/></position>
         <geompropvalue name="mask" type="float"><input name="geomprop" type="string" value="weight"/><input name="default" type="float" value="0.5"/></geompropvalue>

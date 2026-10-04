@@ -2041,10 +2041,19 @@ index 6f7b815..ca85aae 100644
      if (fs.mSamplingMode == SamplingMode::UNIFORM || pass.isCoarsePass()) {
          //
 diff --git a/lib/rendering/rndr/RenderOutputDriver.cc b/lib/rendering/rndr/RenderOutputDriver.cc
-index 4db394f..c657a9e 100644
+index 4db394f..056cf15 100644
 --- a/lib/rendering/rndr/RenderOutputDriver.cc
 +++ b/lib/rendering/rndr/RenderOutputDriver.cc
-@@ -28,6 +28,7 @@
+@@ -20,6 +20,8 @@
+ #include <scene_rdl2/common/math/Vec3.h>
+ #include <scene_rdl2/common/math/Viewport.h>
+ #include <scene_rdl2/render/util/Files.h>
++#include <scene_rdl2/scene/rdl2/SceneContext.h>
++#include <scene_rdl2/scene/rdl2/SceneVariables.h>
+ #include <scene_rdl2/render/logging/logging.h>
+ #include <scene_rdl2/render/util/Strings.h>
+ #include <scene_rdl2/render/util/StrUtil.h>
+@@ -28,6 +30,7 @@
  #include <tbb/parallel_for.h>
  
  #include <exception>
@@ -2052,7 +2061,7 @@ index 4db394f..c657a9e 100644
  #include <stdlib.h>
  #include <unordered_map>
  #include <vector>
-@@ -54,6 +55,11 @@ auto freeChar = [](char *c) { free(c); };
+@@ -54,6 +57,11 @@ auto freeChar = [](char *c) { free(c); };
  std::string
  realfile(const std::string &filename)
  {
@@ -2064,7 +2073,7 @@ index 4db394f..c657a9e 100644
      std::unique_ptr<char, decltype(freeChar)>
          rp(realpath(filename.c_str(), nullptr), freeChar);
  
-@@ -62,6 +68,7 @@ realfile(const std::string &filename)
+@@ -62,6 +70,7 @@ realfile(const std::string &filename)
      }
  
      return filename;
@@ -2072,6 +2081,23 @@ index 4db394f..c657a9e 100644
  }
  
  } // namespace
+@@ -151,6 +160,16 @@ RenderOutputDriver::Impl::getAovSchemaID(const scene_rdl2::rdl2::RenderOutput* r
+         roAovSchemaId = pbr::AOV_SCHEMA_ID_BEAUTY;
+     } else if (ro->getResult() == scene_rdl2::rdl2::RenderOutput::RESULT_ALPHA) {
+         roAovSchemaId = pbr::AOV_SCHEMA_ID_ALPHA;
++    } else if (ro->getResult() == scene_rdl2::rdl2::RenderOutput::RESULT_CRYPTOMATTE) {
++        // Crypto IDs must reach intersections even without a primitive-attribute AOV.
++        const auto& vars = ro->getSceneClass().getSceneContext()->getSceneVariables();
++        for (const auto& name : vars.get(scene_rdl2::rdl2::SceneVariables::sDeepIDAttributeNames)) {
++            mPrimAttrs.insert(shading::TypedAttributeKey<float>(name));
++        }
++        if (ro->getCryptomatteIdChannel() != 0) {
++            mPrimAttrs.insert(shading::TypedAttributeKey<float>("modo_material_id"));
++            mPrimAttrs.insert(shading::TypedAttributeKey<float>("modo_asset_id"));
++        }
+     }
+     return roAovSchemaId;
+ }
 diff --git a/lib/rendering/rndr/RenderOutputDriverImplRead.cc b/lib/rendering/rndr/RenderOutputDriverImplRead.cc
 index adf52c6..8739ab2 100644
 --- a/lib/rendering/rndr/RenderOutputDriverImplRead.cc
@@ -2089,6 +2115,23 @@ index adf52c6..8739ab2 100644
  
              scene_rdl2::fb_util::Tiler tiler(reader.getWidth(), reader.getHeight());
              reader.crawlAllTiledScanline
+diff --git a/lib/rendering/rndr/RenderOutputDriverImplWrite.cc b/lib/rendering/rndr/RenderOutputDriverImplWrite.cc
+index 0db9d7d..dc0d1e0 100644
+--- a/lib/rendering/rndr/RenderOutputDriverImplWrite.cc
++++ b/lib/rendering/rndr/RenderOutputDriverImplWrite.cc
+@@ -162,8 +162,10 @@ RenderOutputDriver::Impl::write(const bool checkpointOutput,
+                 attrTbl = writeCheckpointResumeMetadata(currCheckpointTileSampleTotals);
+ 
+                 // save timeSaveSecBySignalCheckpoint value into cache for statistical info dump
+-                float sec = mRenderContext->getResumeHistoryMetaData()->getTimeSaveSecBySignalCheckpoint();
+-                cache->setTimeSaveSecBySignalCheckpoint(sec);
++                if (cache) {
++                    float sec = mRenderContext->getResumeHistoryMetaData()->getTimeSaveSecBySignalCheckpoint();
++                    cache->setTimeSaveSecBySignalCheckpoint(sec);
++                }
+             }
+             return attrTbl;
+         };
 diff --git a/lib/rendering/rndr/RenderStatistics.cc b/lib/rendering/rndr/RenderStatistics.cc
 index 706473e..d3597e9 100644
 --- a/lib/rendering/rndr/RenderStatistics.cc

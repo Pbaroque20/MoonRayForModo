@@ -397,6 +397,20 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         render_outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
         if crypto:render_outputs.append(('object_id',{'result':4,'primitive_attribute':'modo_object_id','primitive_attribute_type':0},'modo_object_id'))
         render_outputs += [(v['name'],outputs.attributes(v,multi_crypto),v['name']) for v in outputs.values(scene.get('custom_aovs',[]))]
+        if recovery:
+            # MoonRay needs sample weights and odd-sample beauty/alpha to resume.
+            # Keep these in the primary EXR part alongside the regular beauty AOV.
+            present={attrs.get('result') for _,attrs,_ in render_outputs}
+            for name,result in (('weight',11),('beauty_aux',12),('alpha_aux',14)):
+                if result not in present:
+                    render_outputs.append(('__recovery_'+name,{'result':result},'__recovery_'+name))
+            # OIIO invents names for unnamed multipart EXRs. MoonRay's resume
+            # reader requires exact part names, so name the primary part explicitly.
+            used_parts={attrs.get('file_part','') for _,attrs,_ in render_outputs}
+            primary_part='__modo_main'
+            while primary_part in used_parts:primary_part+='_'
+            render_outputs=[(name,dict(attrs,file_part=attrs.get('file_part') or primary_part),channel)
+                            for name,attrs,channel in render_outputs]
         from .recovery import attributes as recovery_attributes
         for key, attributes, channel in render_outputs:
             crypto_category=next((v.get('category','object') for v in scene.get('custom_aovs',[]) if v.get('name')==key and v.get('kind')=='cryptomatte'),None)

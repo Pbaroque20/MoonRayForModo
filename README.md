@@ -840,6 +840,8 @@ RGB/HSV conversions, vector2 images and supported default geometric inputs.
 
 A separately compiled native candidate adds simultaneous **surface** object/material/asset
 Cryptomatte accumulation, EXR parts, manifests and preview selection. It is not the
-installed default runtime and has not been render-validated. Volume coverage, arbitrary
-MaterialX execution and full Modo parity remain incomplete. See
-[implementation status and deferred checks](docs/COMPATIBILITY_0326.md).
+installed default runtime. Scoped CPU/XPU category, opacity, instance-motion and checkpoint-resume
+checks now pass, along with two standalone Qt lifetime checks. The wider suite still has
+10 failures; host crash resolution and production validation remain open. Volume coverage,
+arbitrary MaterialX execution and full Modo parity remain incomplete. See
+[implementation status and validation results](docs/COMPATIBILITY_0326.md).
