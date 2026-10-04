@@ -15,6 +15,9 @@ parser.add_argument('--wait',action='store_true')
 parser.add_argument('--without-native',action='store_true')
 parser.add_argument('--without-controller',action='store_true')
 parser.add_argument('--native-binary',type=pathlib.Path)
+parser.add_argument('--kit-source',type=pathlib.Path)
+parser.add_argument('--user-settings',action='store_true',help='Copy user UI preferences into the disposable profile')
+parser.add_argument('--user-kits',action='store_true',help='Read other installed kit definitions without copying or modifying them')
 args=parser.parse_args()
 if not args.profile.replace('-','').replace('_','').isalnum():
     raise SystemExit('Profile must be a simple directory name.')
@@ -37,7 +40,7 @@ if saved_frame.is_file():
         backup.mkdir(parents=True,exist_ok=True)
         shutil.copy2(saved_frame,backup/'Frame.before-repair.cfg')
         tree.write(str(saved_frame),encoding='utf-8',xml_declaration=True)
-shutil.copytree(root / 'kit/MoonRayForModo', profile / 'Configs/MoonRayForModo', dirs_exist_ok=True,
+shutil.copytree(args.kit_source.resolve() if args.kit_source else root / 'kit/MoonRayForModo', profile / 'Configs/MoonRayForModo', dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns('bin') if args.without_native else None)
 if args.native_binary:
     binary=args.native_binary.resolve()
@@ -69,8 +72,22 @@ if args.without_controller:
 imports = ET.Element('configuration')
 for location in ('resource:', 'module:Scripts', 'user:Configs', 'user:Scripts'):
     ET.SubElement(imports, 'import').text = location
+if args.user_kits:
+    user_kits=pathlib.Path.home()/'AppData/Roaming/Luxology/Kits'
+    for directory in sorted(user_kits.iterdir()):
+        if not directory.is_dir() or directory.name=='MoonRayForModo':continue
+        for path in directory.glob('*.cfg'):
+            try:definition=ET.parse(str(path)).getroot()
+            except ET.ParseError:continue
+            if definition.get('kit'):ET.SubElement(imports,'import').text=path.as_posix()
 config = profile / 'MODO16.1.CFG'
 config.mkdir(exist_ok=True)
+if args.user_settings:
+    saved=pathlib.Path.home()/'AppData/Roaming/Luxology/MODO16.1.CFG'
+    for path in saved.glob('*.cfg'):
+        if path.name.lower() not in ('imports.cfg','extensions64.cfg'):
+            shutil.copy2(path,config/path.name)
+
 ET.ElementTree(imports).write(str(config / 'Imports.cfg'), encoding='utf-8', xml_declaration=True)
 log = (root / 'test-results/gui-console.log').open('w', encoding='utf-8')
 probe=root/'tools'/args.probe

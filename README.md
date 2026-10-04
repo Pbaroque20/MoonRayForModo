@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.28** includes [graph-editor and preview lifetime safeguards](docs/COMPATIBILITY_0328.md). All 156 bounded host checks passed in Modo 16.1v9, including a 30-edit active-preview stress scenario. The intermittent user crash remains unconfirmed as resolved.
+Development version **0.3.29** adds [persistent numeric graph fields and deferred preview capture](docs/COMPATIBILITY_0329.md). All 161 host checks passed in Modo 16.1v9. Typing Metallic 0.5 and clicking preview rendered successfully in isolated tests, including copied user UI settings. The intermittent user crash remains unconfirmed as resolved.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native

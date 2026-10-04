@@ -1,0 +1,62 @@
+{
+  "version": "0.3.29",
+  "runtime": "runtime/xpu-compatibility-0327",
+  "crash_reproduced": false,
+  "resolution_confirmed": false,
+  "host_suite": {
+    "pid": 5816,
+    "runtime": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\runtime\\xpu-compatibility-0327",
+    "tests": 161,
+    "passed": true,
+    "failures": [],
+    "errors": [],
+    "skipped": []
+  },
+  "host_exit": {
+    "pid": 5816,
+    "exit_code": 1,
+    "clean_shutdown": true
+  },
+  "baseline_mouse": {
+    "pid": 19812,
+    "frames": 0,
+    "cycles": 60,
+    "passed": true,
+    "finished": true
+  },
+  "baseline_sphere": {
+    "pid": 9096,
+    "frames": 0,
+    "cycles": 60,
+    "passed": true,
+    "finished": true
+  },
+  "baseline_kits": {
+    "pid": 23544,
+    "frames": 0,
+    "cycles": 60,
+    "passed": true,
+    "finished": true
+  },
+  "baseline_click": {
+    "pid": 8020,
+    "frames": 14,
+    "cycles": 1,
+    "passed": true,
+    "finished": true
+  },
+  "candidate_click": {
+    "pid": 15924,
+    "frames": 13,
+    "cycles": 1,
+    "passed": true,
+    "finished": true
+  },
+  "candidate_user_settings": {
+    "pid": 20564,
+    "frames": 12,
+    "cycles": 1,
+    "passed": true,
+    "finished": true
+  }
+}

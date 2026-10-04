@@ -5,7 +5,7 @@ import os
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes,materialx,properties,shader_library,node_defaults
-from .node_widgets import GraphView,ParameterDelegate,COLORS,curve,file_parameter
+from .node_widgets import GraphView,ParameterDelegate,NumericField,COLORS,curve,file_parameter
 
 
 class Socket(QtWidgets.QGraphicsEllipseItem):
@@ -56,6 +56,9 @@ class Editor(QtWidgets.QDialog):
     def __init__(self,item,materialx_override=False):
         super().__init__()
         self.setMinimumSize(900,560)
+        from .preview_diagnostics import record
+        record('Graph editor opened')
+        self.numeric_fields=[]
         self.item=item;self.materialx_override=materialx_override;self.graph_key="materialx_graph" if materialx_override else "node_graph";settings=properties.read(item)
         self.graph=copy.deepcopy(settings.get(self.graph_key) or nodes.from_material(item))
         self.pending=None;self.items={};self.links=[];self.busy=False
@@ -113,7 +116,7 @@ class Editor(QtWidgets.QDialog):
         self.rebuild();self.frame()
     def keyPressEvent(self,event):
         if event.key() in (QtCore.Qt.Key_Return,QtCore.Qt.Key_Enter):
-            self.table.itemDelegateForColumn(1).commit_pending()
+            self.commit_inputs()
             event.accept();return
         super().keyPressEvent(event)
     def build_node_browser(self,splitter):
@@ -158,7 +161,7 @@ class Editor(QtWidgets.QDialog):
         if not kind:return
         self.kinds.setCurrentText(kind);self.add()
     def choose_node_color(self,identity,key):
-        self.table.itemDelegateForColumn(1).commit_pending()
+        self.commit_inputs()
         node=nodes.effective(self.graph)['nodes'][identity];spec=nodes.specs(node['type'])[key]
         current=node.get('parameters',{}).get(key,node_defaults.value(spec))
         color=QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[max(0,min(1,v)) for v in current[:3]]),self,'Choose '+key)
@@ -169,7 +172,7 @@ class Editor(QtWidgets.QDialog):
             target.setdefault('inputs',{}).pop(key,None);self.validate_draft();self.remember(before);self.rebuild()
         except ValueError as exc:self.graph=before;self.error(exc)
     def choose_node_file(self,identity,key):
-        self.table.itemDelegateForColumn(1).commit_pending()
+        self.commit_inputs()
         node=nodes.effective(self.graph)['nodes'][identity];spec=nodes.specs(node['type'])[key]
         current=node.get('parameters',{}).get(key,node_defaults.value(spec)) or ''
         multiple=spec['type']=='StringVector'
@@ -188,8 +191,44 @@ class Editor(QtWidgets.QDialog):
             target.setdefault('inputs',{}).pop(key,None)
             self.validate_draft();self.remember(before);self.rebuild()
         except (ValueError,TypeError) as exc:self.graph=before;self.error(exc)
-    def preview_draft(self):
+    def commit_inputs(self):
+        from shiboken2 import isValid
+        for field in list(self.numeric_fields):
+            if isValid(field):field.interpretText()
         self.table.itemDelegateForColumn(1).commit_pending()
+
+    @QtCore.Slot(str,str)
+    def numeric_focus(self,identity,key):
+        if self.selected()!=identity:return
+        for row in range(self.table.rowCount()):
+            if self.table.item(row,0).text()==key:self.table.setCurrentCell(row,1);return
+
+    @QtCore.Slot(str,str,int,float)
+    def numeric_changed(self,identity,key,layer,value):
+        if self.busy:return
+        before=copy.deepcopy(self.graph)
+        try:
+            node=self.graph['nodes'][identity];spec=nodes.specs(node['type'])[key]
+            value=shader_library.typed(value,spec)
+            target=node if layer<0 else self.graph['overrides'][layer]
+            if layer>=0 and target['node']!=identity:raise ValueError('Override targets another node')
+            target.setdefault('parameters',{})[key]=value;target.setdefault('inputs',{}).pop(key,None)
+            self.validate_draft();self.remember(before)
+            # Update backing text without invoking the transient delegate path.
+            if self.selected()==identity:
+                blocker=QtCore.QSignalBlocker(self.table)
+                for row in range(self.table.rowCount()):
+                    if self.table.item(row,0).text()==key:
+                        cell=self.table.item(row,1);cell.setText(json.dumps(value))
+                        font=cell.font();font.setItalic(False);cell.setFont(font)
+                        cell.setBackground(QtGui.QBrush());break
+                del blocker
+            self.edges()
+        except (ValueError,TypeError,KeyError,IndexError) as exc:
+            self.graph=before;self.info.setText(str(exc))
+
+    def preview_draft(self):
+        self.commit_inputs()
         material=copy.deepcopy(properties.read(self.item))
         material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
         return material
@@ -259,7 +298,7 @@ class Editor(QtWidgets.QDialog):
             self.validate_draft();self.remember(before);self.rebuild()
         except ValueError as exc:self.graph=before;self.error(exc)
     def add(self):
-        self.table.itemDelegateForColumn(1).commit_pending()
+        self.commit_inputs()
         kind=self.kinds.currentText()
         if kind not in nodes.kinds():self.error('Choose a supported node from the search results');return
         try:defaults=node_defaults.parameters(kind)
@@ -322,7 +361,7 @@ class Editor(QtWidgets.QDialog):
         if browse is not None and action==browse:self.choose_node_file(identity,key)
         elif action==reset:self.reset_input()
     def check_assets(self):
-        self.table.itemDelegateForColumn(1).commit_pending()
+        self.commit_inputs()
         from .textures import source_tiles
         missing=[];checked=0
         graph=nodes.effective(self.graph)
@@ -344,7 +383,7 @@ class Editor(QtWidgets.QDialog):
         if missing:dialog.setDetailedText('\n'.join(missing))
         dialog.exec_()
     def reset_input(self):
-        self.table.itemDelegateForColumn(1).commit_pending()
+        self.commit_inputs()
         identity=self.selected();row=self.table.currentRow()
         if not identity or row<0:return
         key=self.table.item(row,0).text();before=copy.deepcopy(self.graph)
@@ -367,7 +406,7 @@ class Editor(QtWidgets.QDialog):
         for layer in self.graph['overrides']: layer['inputs']={k:v for k,v in layer.get('inputs',{}).items() if v!=identity}
         self.remember(before);self.rebuild()
     def output(self,identity=None):
-        self.table.itemDelegateForColumn(1).commit_pending()
+        self.commit_inputs()
         if not isinstance(identity,str):identity=self.selected()
         if identity and nodes.category(self.graph['nodes'][identity]['type'])=='material':
             before=copy.deepcopy(self.graph);self.graph['root']=identity;self.remember(before);self.rebuild()
@@ -412,7 +451,7 @@ class Editor(QtWidgets.QDialog):
         if ok:self.unlink(identity,key)
     def inspect(self,*args):
         if self.busy: return
-        self.busy=True;self.table.setRowCount(0);identity=self.selected()
+        self.busy=True;self.numeric_fields=[];self.table.setRowCount(0);identity=self.selected()
         self.property_title.setText(self.graph['nodes'][identity].get('label',self.graph['nodes'][identity]['type']) if identity else 'Select a node')
         if identity:
             node=nodes.effective(self.graph)['nodes'][identity]
@@ -440,6 +479,11 @@ class Editor(QtWidgets.QDialog):
                     cell.setToolTip(cell.toolTip()+' Allowed range: '+str(spec.get('min','unbounded'))+' to '+str(spec.get('max','unbounded')))
                 if file_parameter(spec):cell.setToolTip(cell.toolTip()+' Click to browse for a file. Press F2 to type or paste a path, including <UDIM> patterns.')
                 self.table.setItem(row,0,label);self.table.setItem(row,1,cell)
+                if spec['type'] in ('Float','Double') and not spec.get('enum'):
+                    field=NumericField(identity,key,self.layers.currentData() if self.layers.currentData() is not None else -1,spec,value,self.table)
+                    field.setToolTip(cell.toolTip());field.changed.connect(self.numeric_changed);field.focused.connect(self.numeric_focus)
+                    cell.setFlags(cell.flags() & ~QtCore.Qt.ItemIsEditable)
+                    self.table.setCellWidget(row,1,field);self.numeric_fields.append(field)
         self.busy=False;self.filter_properties()
     def scene_reference(self,identity,key,value):
         before=copy.deepcopy(self.graph)
@@ -510,7 +554,7 @@ class Editor(QtWidgets.QDialog):
             try: materialx.write(self.graph,path if path.lower().endswith('.mtlx') else path+'.mtlx')
             except (ValueError,OSError) as exc: self.error(exc)
     def save(self,close=True):
-        self.table.itemDelegateForColumn(1).commit_pending()
+        self.commit_inputs()
         try:
             graph=nodes.validate(self.graph);root=graph['nodes'][graph['root']]
             settings=properties.read(self.item)

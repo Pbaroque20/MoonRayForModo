@@ -123,6 +123,25 @@ class VectorEdit(QtWidgets.QWidget):
 
 from .node_defaults import value as default_value
 
+class NumericField(QtWidgets.QDoubleSpinBox):
+    """A persistent property control; entering a value never destroys its widget."""
+    changed=QtCore.Signal(str,str,int,float)
+    focused=QtCore.Signal(str,str)
+    def __init__(self,identity,key,layer,spec,value,parent=None):
+        super().__init__(parent)
+        self.identity,self.key,self.layer=identity,key,layer
+        self.setDecimals(6);self.setSingleStep(.1);self.setKeyboardTracking(False)
+        self.setRange(float(str(spec.get('min',-1e12)).rstrip('f')),
+                      float(str(spec.get('max',1e12)).rstrip('f')))
+        self.setValue(float(value or 0));self.setFrame(False)
+        self.setAccessibleName(key)
+        self.valueChanged.connect(self.publish)
+    def focusInEvent(self,event):
+        super().focusInEvent(event);self.focused.emit(self.identity,self.key)
+    @QtCore.Slot(float)
+    def publish(self,value):self.changed.emit(self.identity,self.key,self.layer,value)
+
+
 class ParameterDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self,editor):
         super().__init__(editor.table);self.editor=editor;self.active_editor=None

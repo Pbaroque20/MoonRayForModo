@@ -82,8 +82,8 @@ class Panel(QtWidgets.QWidget):
         self.timer=QtCore.QTimer(self);self.timer.setSingleShot(True);self.timer.setInterval(650);self.timer.timeout.connect(self.refresh)
         self.live.toggled.connect(self.live_changed)
         self.parts.toggled.connect(lambda *_:self.schedule())
-        refresh.clicked.connect(self.refresh);stop.clicked.connect(self.stop)
-        self.viewer.start_requested.connect(self.refresh)
+        refresh.clicked.connect(self.refresh,QtCore.Qt.QueuedConnection);stop.clicked.connect(self.stop)
+        self.viewer.start_requested.connect(self.refresh,QtCore.Qt.QueuedConnection)
     def preview_failed(self,message):
         if not self.closed:self.status.setText('Preview failed: '+message)
     def live_changed(self,enabled):
@@ -111,6 +111,7 @@ class Panel(QtWidgets.QWidget):
         draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
         return snapshot(draft,library,self.parts.isChecked())
 
+    @QtCore.Slot()
     def refresh(self):
         if self.closed or self.refreshing:return
         self.refreshing=True
