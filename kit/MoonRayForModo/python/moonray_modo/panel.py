@@ -75,8 +75,10 @@ class Panel(QtWidgets.QWidget):
         self.environment.setValue(0)
         self.environment.setToolTip('Additional uniform environment light; zero preserves scene lighting.')
         self.threads = QtWidgets.QSpinBox()
-        self.threads.setRange(1, 256)
-        self.threads.setValue(4)
+        self.threads.setRange(0, 4096)
+        self.threads.setSpecialValueText('Automatic (all CPU threads)')
+        self.threads.setToolTip('Automatic uses all CPU threads available to MoonRay. Choose a positive number to limit CPU usage. Saved scene limits remain respected.')
+        self.threads.setValue(0)
         controls.addRow('Preview size', self.size)
         controls.addRow('Pixel sample grid', self.samples)
         self.ipr_width=QtWidgets.QComboBox()
@@ -469,7 +471,7 @@ class Panel(QtWidgets.QWidget):
         for key, control in self.aov_controls.items():
             control.setChecked(key in values.get('aovs', ['alpha']))
         for key, control, default in [('samples', self.samples, 4), ('environment', self.environment, 0),
-                             ('threads', self.threads, 4), ('subdivision_level', self.subdivision_level, 3),
+                             ('threads', self.threads, 0), ('subdivision_level', self.subdivision_level, 3),
                              ('light_multiplier', self.light_multiplier, 1)]:
             control.setValue(values.get(key, default))
         self.surface.setCurrentIndex(int(values.get('surface', 0)))

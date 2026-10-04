@@ -152,7 +152,7 @@ class Controller(QtCore.QObject):
                     self.errors.pop(identity,None)
                     width=min(640,scene['width']); height=max(16,round(width*scene['height']/scene['width']))
                     session['renderer'].submit(scene,runtime,width,height,values.get('samples',4),
-                        values.get('environment',0),values.get('threads',4),linear_preview=True)
+                        values.get('environment',0),values.get('threads',0),linear_preview=True)
                     session.update(digest=digest,running=True)
             except Exception as exc: self.failure(identity,str(exc))
 

@@ -1,6 +1,7 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.9** connects the selected tile order to native batch
+Development version **0.3.10** defaults CPU threads to **Automatic (all CPU threads)**.
+Saved scene thread limits remain respected. The 0.3.9 update connects the selected tile order to native batch
 rendering, distinguishes unsampled progressive pixels with a checkerboard, and
 adds named-UV derivatives for normal and bump maps. Includes the 0.3.8 updates.
 Compilation and syntax checks are performed; render and host tests are deferred.
@@ -21,7 +22,7 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.9 uses a separate
+to the runtime recorded in its `runtime.json`. Version 0.3.10 uses a separate
 `runtime/xpu-compatibility-039` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.
