@@ -37,12 +37,11 @@ def attributes(entry):
 def preview(scene):
     result={key:dict(value[1]) for key,value in options.AOVS.items()};result['beauty']={'result':0}
     for entry in values(scene.get('custom_aovs',[])):
-        if entry['kind']=='cryptomatte':continue # Identification channels need a compositor, not a color preview.
         attrs=attributes(entry);attrs.pop('file_part',None);attrs.pop('channel_name',None);attrs['channel_format']=0
         result[entry['name']]=attrs
     return result
 
 def display_kind(scene,key):
     for entry in values(scene.get('custom_aovs',[])):
-        if entry['name']==key:return entry['kind'] if entry['kind'] in ('depth','normal','position','alpha','motion') else 'beauty'
+        if entry['name']==key:return entry['kind'] if entry['kind'] in ('depth','normal','position','alpha','motion','cryptomatte') else 'beauty'
     return key

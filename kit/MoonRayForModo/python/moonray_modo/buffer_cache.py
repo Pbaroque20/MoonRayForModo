@@ -92,6 +92,8 @@ class BufferCache(QtCore.QObject):
             if display['working_space']=='acescg' and display.get('view')=='ocio' and display.get('source')=='Linear Rec.709 (sRGB)':display['source']='ACEScg'
             kind=outputs.display_kind(frame['snapshot'],self.key)
             from .display_stream import available
+            if kind=='cryptomatte' and not available(frame['runtime']):
+                raise ValueError('Cryptomatte ID display requires the updated native display processor')
             if available(frame['runtime']):
                 from .memory_display import Worker
                 width,height,pixels=frame.get('linear',{}).get(self.key,(0,0,None))

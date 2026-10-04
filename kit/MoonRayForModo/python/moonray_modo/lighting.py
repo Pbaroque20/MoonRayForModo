@@ -13,7 +13,7 @@ def emit(scene,meshes,environment,lines):
     refs={};environment_refs=[]
     if environment>0:
         ref='EnvLight("/modo/environment")';environment_refs.append(ref)
-        lines.append('table.insert(lights, %s { ["intensity"] = %s })'%(ref,number(environment)))
+        lines.append('table.insert(lights, %s { ["intensity"] = %s, ["label"] = "modo_environment" })'%(ref,number(environment)))
     from .environments import emit as emit_environments
     emit_environments(scene.get('environments',[]),lines)
     environment_refs += ['EnvLight(%s)'%string('/modo/environment/scene/%d'%i) for i in range(len(scene.get('environments',[])))]

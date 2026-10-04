@@ -1,10 +1,15 @@
 """Reusable isolated display processor; binary pipes, no temporary image encoding."""
 import atexit,struct,subprocess,threading
+from functools import lru_cache
 from pathlib import Path
 from . import display,native,working_space
 _lock=threading.Lock()
 _process=None
 _signature=None
+
+@lru_cache(maxsize=4)
+def _crypto_capability(path,mtime,size):
+ return b'No Cryptomatte ID/coverage channel pairs found' in Path(path).read_bytes()
 
 def available(runtime):return (Path(runtime)/'modo_display_stream.exe').is_file()
 
@@ -32,7 +37,11 @@ def _read(stream,size):
 
 def convert(pixels,width,height,kind,settings,runtime,source=None):
  global _process,_signature
- v=display.values(settings)
+ if kind=='cryptomatte':
+  helper=Path(runtime)/'modo_display_stream.exe';stat=helper.stat()
+  if not _crypto_capability(str(helper),stat.st_mtime_ns,stat.st_size):raise ValueError('Selected runtime needs the updated Cryptomatte display processor')
+  if source is None:raise ValueError('Cryptomatte preview requires a completed multichannel buffer')
+ v=display.values({'view':'raw'}) if kind=='cryptomatte' else display.values(settings)
  for key in ('lut','config'):
   if v[key] and not Path(v[key]).is_file():raise ValueError('Missing '+key+' file: '+v[key])
  if v['view']=='ocio' and not all(v[k] for k in ('source','display','ocio_view')):raise ValueError('OCIO source, display and view are required')

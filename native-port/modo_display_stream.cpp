@@ -8,6 +8,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <fcntl.h>
 #include <io.h>
 using namespace OIIO;
@@ -32,12 +33,35 @@ int main(int argc,char** argv){
     ImageBuf input(path);if(!input.init_spec(path,0,0))throw std::runtime_error(input.geterror());
     const auto spec=input.spec();w=spec.width;h=spec.height;
     if(!w || !h || uint64_t(w)*h>512*1024*1024/12 || spec.deep)throw std::runtime_error("Display image exceeds memory limit or is deep");
-    if(!input.read(0,0,0,std::min(3,spec.nchannels),true,TypeDesc::FLOAT))throw std::runtime_error(input.geterror());
+    if(uint64_t(w)*h*(kind=="cryptomatte"?spec.nchannels:std::min(3,spec.nchannels))>512*1024*1024/4)throw std::runtime_error("Display channels exceed memory limit");
+    if(!input.read(0,0,0,(kind=="cryptomatte"?spec.nchannels:std::min(3,spec.nchannels)),true,TypeDesc::FLOAT))throw std::runtime_error(input.geterror());
+    if(uint64_t(w)*h*input.nchannels()>512*1024*1024/4)throw std::runtime_error("Display channels exceed memory limit");
     std::vector<float> raw(size_t(w)*h*input.nchannels());
     if(!input.get_pixels(input.roi(),TypeDesc::FLOAT,raw.data()))throw std::runtime_error(input.geterror());
     rgb.resize(size_t(w)*h*3);
-    for(size_t i=0;i<size_t(w)*h;++i)for(int c=0;c<3;++c)
-      rgb[i*3+c]=raw[i*input.nchannels()+std::min(c,input.nchannels()-1)];
+    if(kind=="cryptomatte") {
+      std::vector<std::pair<int,int>> pairs;
+      const auto& names=input.spec().channelnames;
+      for(int c=0;c<input.nchannels();++c) {
+        const auto& name=names[c];
+        if(name.size()!=15 || name.compare(0,11,"Cryptomatte")!=0 || name[13]!='.')continue;
+        if(name[14]!='R' && name[14]!='B')continue;
+        std::string coverage=name;coverage[14]=name[14]=='R'?'G':'A';
+        auto found=std::find(names.begin(),names.end(),coverage);
+        if(found!=names.end())pairs.emplace_back(c,int(found-names.begin()));
+      }
+      if(pairs.empty())throw std::runtime_error("No Cryptomatte ID/coverage channel pairs found");
+      for(size_t i=0;i<size_t(w)*h;++i)for(const auto& pair:pairs) {
+        float id=raw[i*input.nchannels()+pair.first],coverage=raw[i*input.nchannels()+pair.second];
+        if(id==0 || !std::isfinite(coverage) || coverage<=0)continue;
+        uint32_t bits;std::memcpy(&bits,&id,sizeof(bits));
+        bits^=bits>>16;bits*=0x7feb352du;bits^=bits>>15;bits*=0x846ca68bu;bits^=bits>>16;
+        for(int c=0;c<3;++c)rgb[i*3+c]+=std::clamp(coverage,0.f,1.f)*(.2f+.8f*((bits>>(8*c))&255)/255.f);
+      }
+    } else {
+      for(size_t i=0;i<size_t(w)*h;++i)for(int c=0;c<3;++c)
+        rgb[i*3+c]=raw[i*input.nchannels()+std::min(c,input.nchannels()-1)];
+    }
    }else{
     if(!w || !h || uint64_t(w)*h>64*1024*1024/12)throw std::runtime_error("Invalid pixel dimensions");
     rgb.resize(size_t(w)*h*3);std::vector<float> row(size_t(w)*3);
@@ -45,7 +69,7 @@ int main(int argc,char** argv){
      std::copy(row.begin(),row.end(),rgb.begin()+size_t(h-1-y)*w*3);}
    }
    for(float& v:rgb)if(!std::isfinite(v))v=0;
-   const bool color=!(kind=="normal" || kind=="geometric_normal" || kind=="alpha" || kind=="wireframe" || kind=="depth" || kind=="sample_count" || kind=="uv" || kind=="motion" || kind=="position");
+   const bool color=!(kind=="cryptomatte" || kind=="normal" || kind=="geometric_normal" || kind=="alpha" || kind=="wireframe" || kind=="depth" || kind=="sample_count" || kind=="uv" || kind=="motion" || kind=="position");
    for(size_t i=0;i<rgb.size();i+=3){
     float* v=rgb.data()+i;
     if(kind=="alpha" || kind=="wireframe" || kind=="depth" || kind=="sample_count")v[1]=v[2]=v[0];

@@ -92,6 +92,19 @@ def read(path, material_name=None):
         if target.tag=='output' and target.get('nodegraph') and port.get('output'):
             alias=copy.deepcopy(target);alias.set('output',port.get('output'))
             return resolve(alias,scope,trail+((key,port.get('output')),))
+        definition=select(target,definitions)
+        category=definition.get('node',target.tag) if definition is not None else target.tag
+        if category in ('separate2','separate3'):
+            source_port=target.find("input[@name='in']")
+            if source_port is None and definition is not None:source_port=definition.find("input[@name='in']")
+            output=port.get('output','')
+            names=('outx','outy') if category=='separate2' else (('outr','outg','outb') if source_port is not None and source_port.get('type')=='color3' else ('outx','outy','outz'))
+            if output not in names:raise ValueError('Choose a valid '+category+' output: '+', '.join(names))
+            signature=(key,output)
+            if signature in trail:raise ValueError('MaterialX channel output cycle')
+            if source_port is None:source_port=ET.Element('input',type='vector3',value='0,0,0')
+            target_scope=key.rsplit('/',1)[0] if '/' in key else ''
+            return swizzle(resolve(source_port,target_scope,trail+(signature,)), 'rgb'[names.index(output)])
         return translate(key)
     def swizzle(source,channels):
         if len(channels) not in (1,2,3) or any(c not in 'rgbxyz01' for c in channels):

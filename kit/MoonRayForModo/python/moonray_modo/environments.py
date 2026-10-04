@@ -147,7 +147,7 @@ def emit(environments, lines):
     from .rdla import string,number,vector,matrix
     from .working_space import color as working_color,texture as working_texture
     for index,environment in enumerate(environments):
-        attributes={'intensity':number(environment['intensity']),
+        attributes={'intensity':number(environment['intensity']),'label':string('modo_environment'),
                     'visible_in_camera':'1' if environment.get('camera',True) else '0'}
         for lobe,visible in [('diffuse_reflection','indirect'),('diffuse_transmission','indirect'),
                              ('glossy_reflection','reflection'),('mirror_reflection','reflection'),

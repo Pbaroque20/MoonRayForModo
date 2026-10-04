@@ -26,7 +26,7 @@ class Renderer(QtCore.QObject):
         self.buffers.image_object.connect(self.image_object.emit)
         self.buffers.notice.connect(self.status.emit)
         self.session=Session(self)
-        self.buffers.selected.connect(self.session.select_view)
+        self.buffers.selected.connect(self._select_view)
         self.session.output.connect(self._consume_log)
         self.session.ready.connect(self._persistent_ready)
         self.session.image.connect(self._persistent_image)
@@ -255,6 +255,13 @@ class Renderer(QtCore.QObject):
             for path in base.parent.glob(base.name+'*'):
                 try:path.unlink()
                 except OSError:pass
+
+    def _select_view(self,key):
+        snapshot=self.active['snapshot'] if getattr(self,'active',None) else {}
+        if outputs.display_kind(snapshot,key)=='cryptomatte':
+            self.status.emit('Cryptomatte ID colors become available when the current pass completes.')
+            return # Cryptomatte requires every ID/coverage channel, not a 3-float snapshot.
+        self.session.select_view(key)
 
     def _persistent_memory(self,packet):
         serial,key,width,height,pixels=packet

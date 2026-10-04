@@ -1,9 +1,9 @@
 """Deferred checks for limits, link groups and affine graph bases; not run on install."""
-import sys,types,unittest
+import sys,types,unittest,tempfile
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'kit/MoonRayForModo/python'))
-from moonray_modo import shader_library,native_light_links,graph_coordinates,nodes
+from moonray_modo import shader_library,native_light_links,graph_coordinates,nodes,materialx
 
 class Compatibility0323(unittest.TestCase):
     def test_metal_color_rejected_but_hdr_map_allowed(self):
@@ -33,6 +33,12 @@ class Compatibility0323(unittest.TestCase):
         self.assertEqual(a['uv_map'],'UV A');self.assertEqual(b['uv_map'],'UV B')
         self.assertAlmostEqual(a['uv_matrix'][1],-3);self.assertAlmostEqual(a['uv_matrix'][3],2)
         self.assertNotEqual(a['coordinate_key'],b['coordinate_key'])
+    def test_materialx_named_channel_outputs(self):
+        xml='''<materialx version="1.38"><separate3 name="split" type="multioutput"><input name="in" type="color3" value="0.1,0.6,0.9"/></separate3><standard_surface name="shader" type="surfaceshader"><input name="base_color" type="color3" nodename="split" output="outg"/></standard_surface><surfacematerial name="mat" type="material"><input name="surfaceshader" type="surfaceshader" nodename="shader"/></surfacematerial></materialx>'''
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'channels.mtlx';path.write_text(xml,encoding='utf-8')
+            graph=materialx.read(path)
+        self.assertTrue(any(n['type']=='swizzle' and n['parameters']['channels']=='g' for n in graph['nodes'].values()))
     def test_nonlinear_basis_not_misrepresented_as_affine(self):
         g={'nodes':{'uv':{'type':'texcoord'},'square':{'type':'multiply','inputs':{'in1':'uv','in2':'uv'}}}}
         self.assertIsNone(graph_coordinates.descriptor('square',g))

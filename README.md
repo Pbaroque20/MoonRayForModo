@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.23** includes the [latest compatibility and input-safety updates](docs/COMPATIBILITY_0323.md).
+Development version **0.3.24** includes the [latest compatibility and input-safety updates](docs/COMPATIBILITY_0323.md).
 The 0.3.21 update added paired shutter transforms to the shared native
 instancer, independent normal-map UV basis controls, format-specific asset import,
 and MaterialX implementation-target selection and compatibility reports. It also
@@ -811,3 +811,22 @@ Missing-DSO errors now identify the required plugin. Arbitrary geometry DSOs,
 exact analytic shading/box UVs, and animated editable import remain unsupported.
 Native compilation completed; runtime/Modo tests remain deferred. Regression
 checks are provided in tests/test_rdl_primitives.py and are not run automatically.
+
+### 0.3.24 buffer previews and MaterialX continuation
+
+Custom Cryptomatte outputs are selectable as ID colors after the current preview
+pass completes. The display combines regular ID/coverage ranks into stable colors
+and bypasses exposure, OCIO and LUT changes; the original EXR remains untouched.
+This is a visual ID/coverage guide, not a matte picker or compositing extraction.
+Only the currently supported single Cryptomatte category can be rendered; volume
+coverage and simultaneous categories are still incomplete.
+
+Environment background and Environment lighting buffers separate camera-visible
+EnvLight radiance from its scattered illumination. Separate sun/direct lights are
+not included in those environment-only buffers. Switching cached completed buffers
+does not rerender. These views need one new pass after installing this version.
+
+MaterialX separate2/separate3 named outputs, tangent, arcsine and atan2 translations
+extend the existing subset; four-component and arbitrary source graphs remain
+unsupported. Native display compilation and syntax parsing completed. Render,
+visual and host tests remain deferred; tests/test_compatibility_0324.py is unrun.

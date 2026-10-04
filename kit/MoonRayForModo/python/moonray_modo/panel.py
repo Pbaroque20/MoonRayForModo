@@ -507,7 +507,7 @@ class Panel(QtWidgets.QWidget):
         key=self.buffer.currentData();self.buffer.blockSignals(True)
         while self.buffer.count()>1+len(options.AOVS):self.buffer.removeItem(self.buffer.count()-1)
         for v in self.custom_aovs:
-            if v['kind']!='cryptomatte':self.buffer.addItem(v['name'],v['name'])
+            self.buffer.addItem(v['name']+(' (ID colors)' if v['kind']=='cryptomatte' else ''),v['name'])
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));self.buffer.blockSignals(False)
 
     def _edit_outputs(self):

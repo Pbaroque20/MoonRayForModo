@@ -15,6 +15,7 @@ SCHEMAS.update({
  'rotate3d':{'in':rgb(0),'amount':('Float',0),'axis':('Rgb',[0,1,0])},
  'saturate':{'in':rgb(0),'amount':('Float',1),'lumacoeffs':('Rgb',[.2722287,.6740818,.0536895])},
  'distance':{'in1':rgb(0),'in2':rgb(0)},
+ 'tan':{'in':rgb(0)},'asin':{'in':rgb(0)},'atan2':{'iny':rgb(0),'inx':rgb(1)},
 })
 for name in ('ifgreater','ifgreatereq','ifequal'):
  SCHEMAS[name]={'value1':('Float',1),'value2':('Float',0),'in1':rgb(0),'in2':rgb(0)}
@@ -38,6 +39,15 @@ def emit(kind,path,parameters,inputs,definition):
   gray=op(8,value('in'),value('lumacoeffs'))
   out=op(0,gray,op(2,op(1,value('in'),gray),value('amount')))
  elif kind=='distance':out=op(20,op(1,value('in1'),value('in2')))
+ elif kind=='tan':out=op(3,op(21,value('in')),op(22,value('in')))
+ elif kind=='asin':out=op(1,vector([math.pi/2]*3,'Rgb'),op(24,value('in')))
+ elif kind=='atan2':
+  x,y=value('inx'),value('iny')
+  length=op(6,op(0,op(2,x,x),op(2,y,y)),'Rgb(.5,.5,.5)')
+  cosine=clamp(op(3,x,op(4,length,'Rgb(1e-30,1e-30,1e-30)')),'Rgb(-1,-1,-1)')
+  angle=op(24,cosine)
+  sign=op(1,one,op(2,'Rgb(2,2,2)',op(25,y)))
+  out=op(2,op(2,angle,sign),op(27,length))
  elif kind in ('rotate2d','rotate3d'):
   angle=op(2,value('amount'),vector([math.pi/180]*3,'Rgb'))
   co,si=op(22,angle),op(21,angle)

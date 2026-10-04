@@ -35,6 +35,8 @@ OBJECT = {
     'adaptive_error': (0.0, 'Subdivision screen error (pixels; 0 = uniform)'),
 }
 AOVS = {
+    'environment_background': ('Environment background', {'result':8,'lpe':"C<L.'modo_environment'>"}, 'environment_background'),
+    'environment_lighting': ('Environment lighting', {'result':8,'lpe':"C.+<L.'modo_environment'>"}, 'environment_lighting'),
     'sample_count': ('Sample count', {'result': 11}, 'sample_count'),
     'alpha': ('Alpha', {'result': 1}, 'alpha'),
     'depth': ('Camera depth', {'result': 2}, 'depth'),

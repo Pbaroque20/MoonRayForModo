@@ -107,7 +107,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
     from . import geometry, lighting
     from . import cryptomatte
-    crypto=bool(output_file and cryptomatte.enabled(scene))
+    crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
     render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('mesh_light')}))
     if output_file:cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,crypto,scene)
     lighting.emit(scene,render_meshes,float(environment),lines)
@@ -413,7 +413,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["channel_format"] = 0,', '  ["compression"] = 1,']
             attributes={k:v for k,v in available[key].items() if k!='channel_format'}
             for attr,value in attributes.items():
-                lines.append('  [%s] = %s,'%(string(attr),string(value) if isinstance(value,str) else number(value)))
+                lines.append('  [%s] = %s,'%(string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
             lines.append('}')
     for key,path in scene.get('_denoise_guides',{}).items():
         attributes={'result':7,'material_aov':'albedo'} if key=='albedo' else {'result':3,'state_variable':2}
@@ -422,6 +422,6 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             attributes.update(recovery_attributes(recovery,key))
         lines += ['RenderOutput(%s) {' % string('/modo/denoise/'+key),
                   '  ["file_name"] = %s,' % string(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
-        for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else number(value)))
+        for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
     return '\n'.join(lines) + '\n'

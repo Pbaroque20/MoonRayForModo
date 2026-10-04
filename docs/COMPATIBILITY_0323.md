@@ -12,7 +12,8 @@ Implemented in this update:
   scalar fields. Connected metallic colors are bounded after working-space
   conversion. Generic map values and emission remain HDR. This is input hardening,
   not a confirmed diagnosis of the reported crash; no crash reproduction was run.
-- MaterialX rotate2d, rotate3d, saturation and distance translate to native map
+- MaterialX named separate2/separate3 outputs, tan, asin and atan2 are translated.
+  rotate2d, rotate3d, saturation and distance translate to native map
   operations. Literal angles tagged as radians convert to degrees. Neutral image
   layer/sequence defaults no longer prevent imported standard image definitions.
   Non-default image layer/sequence controls still raise an explicit limitation.
