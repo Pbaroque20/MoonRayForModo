@@ -1,6 +1,10 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.12** fixes the widget preview missing-color error, labels
+Development version **0.3.13** adds a node-search clear button, places new nodes
+within the visible canvas, and explicitly commits color-picker edits before
+preview/save. Render verification remains deferred.
+
+Version **0.3.12** fixes the widget preview missing-color error, labels
 native material overrides, and adds a grouped, searchable node library on the
 left. Click a node to add it. See [update notes](docs/COMPATIBILITY_0312.md).
 
@@ -30,7 +34,7 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.12 uses the existing
+to the runtime recorded in its `runtime.json`. Version 0.3.13 uses the existing
 `runtime/xpu-compatibility-0311` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.

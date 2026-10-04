@@ -83,15 +83,22 @@ class Editor(QtWidgets.QDialog):
         self.table=QtWidgets.QTableWidget(0,2);self.table.setHorizontalHeaderLabels(['Input','Value']);self.table.horizontalHeader().setStretchLastSection(True);right.addWidget(self.table)
         self.table.setItemDelegateForColumn(1,ParameterDelegate(self))
         self.property_search=QtWidgets.QLineEdit();self.property_search.setPlaceholderText('Filter properties…');right.insertWidget(1,self.property_search);self.property_search.textChanged.connect(self.filter_properties)
-        self.info=QtWidgets.QLabel('Drag output → input to connect. Green wire = compatible. Right-click a socket or wire to disconnect. Wheel: zoom · middle drag: pan · F: frame. Select an input to auto-connect a new node. Double-click values to edit.');self.info.setWordWrap(True);right.addWidget(self.info)
+        self.info=QtWidgets.QLabel('Drag output → input to connect. Green wire = compatible. Right-click a socket or wire to disconnect. Wheel: zoom · middle drag: pan · F: frame. Select an input to auto-connect a new node. Double-click values to edit. Enter commits a field; Save applies the graph.');self.info.setWordWrap(True);right.addWidget(self.info)
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save|QtWidgets.QDialogButtonBox.Cancel);layout.addWidget(buttons)
         buttons.accepted.connect(self.save);buttons.rejected.connect(self.reject)
         self.canvas.selectionChanged.connect(self.inspect);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
+        for button in self.findChildren(QtWidgets.QPushButton):
+            button.setAutoDefault(False);button.setDefault(False)
         self.rebuild();self.frame()
+    def keyPressEvent(self,event):
+        if event.key() in (QtCore.Qt.Key_Return,QtCore.Qt.Key_Enter):
+            self.table.itemDelegateForColumn(1).commit_pending()
+            event.accept();return
+        super().keyPressEvent(event)
     def build_node_browser(self,splitter):
         pane=QtWidgets.QWidget();layout=QtWidgets.QVBoxLayout(pane)
         layout.addWidget(QtWidgets.QLabel('Node library'))
-        self.node_search=QtWidgets.QLineEdit();self.node_search.setPlaceholderText('Search nodes or groups…');layout.addWidget(self.node_search)
+        self.node_search=QtWidgets.QLineEdit();self.node_search.setClearButtonEnabled(True);self.node_search.setPlaceholderText('Search nodes or groups…');layout.addWidget(self.node_search)
         self.node_tree=QtWidgets.QTreeWidget();self.node_tree.setHeaderHidden(True);self.node_tree.setIndentation(12);layout.addWidget(self.node_tree,1)
         hint=QtWidgets.QLabel('Click a node to add it to the graph. Group headings expand or collapse.');hint.setWordWrap(True);layout.addWidget(hint)
         groups={}
@@ -131,6 +138,7 @@ class Editor(QtWidgets.QDialog):
     def preview_widget(self):
         from .material_preview import show
         def draft():
+            self.table.itemDelegateForColumn(1).commit_pending()
             material=copy.deepcopy(properties.read(self.item))
             material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
             return material
@@ -198,16 +206,32 @@ class Editor(QtWidgets.QDialog):
             self.validate_draft();self.remember(before);self.rebuild()
         except ValueError as exc:self.graph=before;self.error(exc)
     def add(self):
+        self.table.itemDelegateForColumn(1).commit_pending()
         kind=self.kinds.currentText()
         if kind not in nodes.kinds():self.error('Choose a supported node from the search results');return
         before=copy.deepcopy(self.graph);identity='node_'+uuid.uuid4().hex[:12]
-        point=self.add_at or self.view.mapToScene(self.view.viewport().rect().center());self.add_at=None
-        origin=QtCore.QPointF(point.x()-110,point.y()-30)
-        # Repeated library clicks should not bury new nodes beneath earlier nodes.
-        for slot in range(1001):
-            position=origin+QtCore.QPointF((slot%8)*265,(slot//8)*370)
-            bounds=QtCore.QRectF(position,QtCore.QSizeF(245,350))
-            if not any(bounds.intersects(item.sceneBoundingRect()) for item in self.items.values()):break
+        visible=self.view.mapToScene(self.view.viewport().rect()).boundingRect()
+        ports=sum(1 for key in nodes.specs(kind) if nodes.connectable(kind,key))
+        shown=ports if self.show_all.isChecked() else min(ports,12)
+        width=225; height=max(70,48+shown*21+(22 if shown<ports else 0))
+        point=self.add_at or visible.center();self.add_at=None
+        def clamp(x,y):
+            return QtCore.QPointF(max(visible.left(),min(x,visible.right()-width)) if visible.width()>=width else visible.center().x()-width/2,
+                                 max(visible.top(),min(y,visible.bottom()-height)) if visible.height()>=height else visible.center().y()-height/2)
+        position=clamp(point.x()-width/2,point.y()-height/2)
+        candidates=[position]
+        for row in range(5):
+            for column in range(5):
+                candidates.append(clamp(visible.left()+column*max(0,visible.width()-width)/4,
+                                        visible.top()+row*max(0,visible.height()-height)/4))
+        def overlap(pos):
+            bounds=QtCore.QRectF(pos,QtCore.QSizeF(width,height));total=0
+            for item in self.items.values():
+                intersection=bounds.intersected(item.sceneBoundingRect().adjusted(-12,-12,12,12))
+                total+=max(0,intersection.width())*max(0,intersection.height())
+            return total
+        # Search only the visible area. Crowded views may overlap, never jump offscreen.
+        position=min(candidates,key=overlap)
         self.graph['nodes'][identity]={'type':kind,'parameters':{},'inputs':{},'position':[position.x(),position.y()]}
         unconnected=copy.deepcopy(self.graph)
         if self.auto_connect.isChecked() and self.selected_input:
@@ -217,7 +241,7 @@ class Editor(QtWidgets.QDialog):
                     self.target(target).setdefault('inputs',{})[key]=identity;self.validate_draft()
                 except (ValueError,KeyError) as exc:
                     self.graph=unconnected;self.info.setText('Node added without a connection: '+str(exc))
-        self.remember(before);self.rebuild();self.canvas.clearSelection();self.items[identity].setSelected(True);self.view.ensureVisible(self.items[identity],40,40)
+        self.remember(before);self.rebuild();self.canvas.clearSelection();self.items[identity].setSelected(True)
     def browse_image(self):
         identity=self.selected()
         if not identity:self.error('Select a texture node first');return
@@ -369,6 +393,7 @@ class Editor(QtWidgets.QDialog):
             try: materialx.write(self.graph,path if path.lower().endswith('.mtlx') else path+'.mtlx')
             except (ValueError,OSError) as exc: self.error(exc)
     def save(self):
+        self.table.itemDelegateForColumn(1).commit_pending()
         try:
             graph=nodes.validate(self.graph);root=graph['nodes'][graph['root']]
             settings=properties.read(self.item)

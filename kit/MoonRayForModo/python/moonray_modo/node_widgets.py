@@ -86,17 +86,21 @@ class GraphView(QtWidgets.QGraphicsView):
         elif chosen==frame:self.editor.frame()
 
 class VectorEdit(QtWidgets.QWidget):
+    color_accepted=QtCore.Signal()
     def __init__(self,count,color,parent):
-        super().__init__(parent);layout=QtWidgets.QHBoxLayout(self);layout.setContentsMargins(0,0,0,0);self.spins=[]
+        super().__init__(parent);layout=QtWidgets.QHBoxLayout(self);layout.setContentsMargins(0,0,0,0);self.spins=[];self.choosing_color=False
         for _ in range(count):
             spin=QtWidgets.QDoubleSpinBox();spin.setRange(-1e12,1e12);spin.setDecimals(6);spin.setSingleStep(.1);layout.addWidget(spin);self.spins.append(spin)
         if color:
-            button=QtWidgets.QPushButton('Color');layout.addWidget(button);button.clicked.connect(self.choose)
+            button=QtWidgets.QPushButton('Color');button.setAutoDefault(False);button.setDefault(False);layout.addWidget(button);button.clicked.connect(self.choose)
     def choose(self):
         initial=QtGui.QColor.fromRgbF(*[max(0,min(1,s.value())) for s in self.spins[:3]])
-        color=QtWidgets.QColorDialog.getColor(initial,self)
+        self.choosing_color=True
+        try:color=QtWidgets.QColorDialog.getColor(initial,self)
+        finally:self.choosing_color=False
         if color.isValid():
             for spin,value in zip(self.spins,(color.redF(),color.greenF(),color.blueF())):spin.setValue(value)
+            self.color_accepted.emit()
 
 def default_value(spec):
     if 'default_value' in spec:return spec['default_value']
@@ -116,7 +120,7 @@ def default_value(spec):
     return None
 
 class ParameterDelegate(QtWidgets.QStyledItemDelegate):
-    def __init__(self,editor):super().__init__(editor.table);self.editor=editor
+    def __init__(self,editor):super().__init__(editor.table);self.editor=editor;self.active_editor=None
     def schema(self,index):
         identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
         return nodes.specs(self.editor.graph['nodes'][identity]['type'])[key]
@@ -132,7 +136,48 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
             widget=QtWidgets.QDoubleSpinBox(parent);widget.setRange(-1e12,1e12);widget.setDecimals(6);widget.setSingleStep(.1)
         elif kind in ('Rgb','Vec2f','Vec3f','Vec2d','Vec3d'):widget=VectorEdit(2 if kind in ('Vec2f','Vec2d') else 3,kind=='Rgb',parent)
         else:widget=QtWidgets.QLineEdit(parent)
+        self.active_editor=widget
+        widget.installEventFilter(self)
+        for child in widget.findChildren(QtWidgets.QWidget):child.installEventFilter(self)
+        widget.destroyed.connect(lambda *_:self.forget(widget))
+        if isinstance(widget,VectorEdit):widget.color_accepted.connect(self.commit_pending)
         return widget
+    def eventFilter(self,watched,event):
+        widget=self.active_editor
+        belongs=widget is not None and (watched is widget or widget.isAncestorOf(watched))
+        if belongs:
+            if event.type()==QtCore.QEvent.KeyPress:
+                if event.key() in (QtCore.Qt.Key_Return,QtCore.Qt.Key_Enter):
+                    self.commit_pending();event.accept();return True
+                if event.key()==QtCore.Qt.Key_Escape:
+                    self.active_editor=None
+                    self.closeEditor.emit(widget,QtWidgets.QAbstractItemDelegate.RevertModelCache)
+                    event.accept();return True
+            if event.type()==QtCore.QEvent.FocusOut:
+                # Moving between RGB components or into the color picker is not
+                # leaving this composite editor. Check once focus has settled.
+                QtCore.QTimer.singleShot(0,lambda:self.commit_if_left(widget))
+                return False
+            if watched is not widget:return False
+        return super().eventFilter(watched,event)
+    def commit_if_left(self,widget):
+        if self.active_editor is not widget or getattr(widget,'choosing_color',False):return
+        focus=QtWidgets.QApplication.focusWidget()
+        if focus is widget or (focus is not None and widget.isAncestorOf(focus)):return
+        self.commit_pending()
+    def forget(self,widget):
+        if self.active_editor is widget:self.active_editor=None
+    def commit_pending(self):
+        widget=self.active_editor
+        if widget is None:return
+        self.active_editor=None
+        try:
+            if isinstance(widget,QtWidgets.QAbstractSpinBox):widget.interpretText()
+            if isinstance(widget,VectorEdit):
+                for spin in widget.spins:spin.interpretText()
+            self.commitData.emit(widget)
+            self.closeEditor.emit(widget,QtWidgets.QAbstractItemDelegate.NoHint)
+        except RuntimeError:pass  # Qt may have already destroyed a closed cell editor.
     def setEditorData(self,widget,index):
         spec=self.schema(index);raw=index.data();value=json.loads(raw) if raw else default_value(spec)
         if isinstance(widget,QtWidgets.QComboBox):widget.setCurrentIndex(max(0,widget.findData(value)))
