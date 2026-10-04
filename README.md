@@ -1,6 +1,6 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.33** defaults to Spiral square traversal, adaptive sampling at 4–12 samples/pixel, 4 total bounces, 4 mirror/refraction bounces, and adaptive lights. Material-widget previews use the same sampling and bounce defaults. Explicit saved scene settings still take precedence. Includes [automatic bucket sizing](docs/COMPATIBILITY_0332.md). No tests were run for this defaults-only update, as requested.
+Development version **0.3.34** adds Materials / Clay — Terracotta / Clay — Gray selectors to the main preview and material widget. Clay overrides surface shading only during previews, retaining displacement and scene lighting; final renders and authored materials are unaffected. Includes 0.3.33 rendering defaults (Spiral square, 4–12 SPP, 4 total and mirror/refraction bounces, adaptive lights). Tests skipped as requested.
 Runtime: `runtime/xpu-compatibility-0327`, with [256px bucket scheduling and checkpoint fixes](docs/COMPATIBILITY_0327.md).
 
 The 0.3.21 update added paired shutter transforms to the shared native

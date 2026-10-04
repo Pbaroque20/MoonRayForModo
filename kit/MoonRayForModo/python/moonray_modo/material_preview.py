@@ -94,6 +94,12 @@ class Panel(QtWidgets.QWidget):
         stop=QtWidgets.QPushButton('Stop');bar.addWidget(stop)
         for button in (refresh,stop):button.setAutoDefault(False);button.setDefault(False)
         self.parts=QtWidgets.QCheckBox('Apply material to base and stand');layout.addWidget(self.parts)
+        from .clay import CHOICES
+        self.clay_mode=QtWidgets.QComboBox()
+        for label,key in CHOICES:self.clay_mode.addItem(label,key)
+        self.clay_mode.setToolTip('Preview only: show the material graph, terracotta clay or gray clay.')
+        layout.addWidget(self.clay_mode)
+
         self.viewer=WidgetPreview(self);layout.addWidget(self.viewer,1)
         self.status=QtWidgets.QLabel('Live preview is off. Enable it or click Refresh.');self.status.setWordWrap(True);layout.addWidget(self.status)
         self.setToolTip('Previews the current draft with widget UVs and studio lighting. Scene masks, projectors and hair geometry are not recreated. Live preview updates committed graph edits after a short pause.')
@@ -105,6 +111,7 @@ class Panel(QtWidgets.QWidget):
         self.timer=QtCore.QTimer(self);self.timer.setSingleShot(True);self.timer.setInterval(650);self.timer.timeout.connect(self.refresh)
         self.live.toggled.connect(self.live_changed)
         self.parts.toggled.connect(lambda *_:self.schedule())
+        self.clay_mode.currentIndexChanged.connect(self.refresh,QtCore.Qt.QueuedConnection)
         refresh.clicked.connect(self.refresh,QtCore.Qt.QueuedConnection);stop.clicked.connect(self.stop)
         self.viewer.start_requested.connect(self.refresh,QtCore.Qt.QueuedConnection)
     def preview_failed(self,message):
@@ -132,7 +139,7 @@ class Panel(QtWidgets.QWidget):
         from .host import material_values
         library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=True)}
         draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
-        return snapshot(draft,library,self.parts.isChecked())
+        return dict(snapshot(draft,library,self.parts.isChecked()),_clay_preview=self.clay_mode.currentData())
 
     @QtCore.Slot()
     def refresh(self):

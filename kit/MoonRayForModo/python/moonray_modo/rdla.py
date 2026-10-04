@@ -125,9 +125,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     materials = dict(scene.get('materials', {}))
     materials.setdefault('', {'color': [0.5, 0.5, 0.5], 'roughness': 0.4, 'metallic': 0})
     from . import absorption
-    media = {tag:absorption.medium(material) for tag,material in materials.items()}
+    from .clay import material as clay_material
+    clay=clay_material(scene.get('_clay_preview'))
+    media = {tag:None if clay else absorption.medium(material) for tag,material in materials.items()}
     native_index = [1000000000]
     for index, (tag, material) in enumerate(sorted(materials.items())):
+        if clay:material=dict(clay)
         if material.get('material_stack'):
             from .moonshine import emit_stack
             emit_stack([absorption.surface(child) for child in material['material_stack']],tag,index,lines,scene.get('native_materials',{}),native_index)

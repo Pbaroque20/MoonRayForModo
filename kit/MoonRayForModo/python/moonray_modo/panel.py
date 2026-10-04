@@ -292,6 +292,12 @@ class Panel(QtWidgets.QWidget):
         self.buffer.setToolTip('Switch buffers from the last completed preview without restarting rendering. Available after the first pass. Saved EXR values are unchanged.')
         buffer_row.addWidget(self.buffer,1)
         layout.addLayout(buffer_row)
+        from .clay import CHOICES
+        self.clay_mode=QtWidgets.QComboBox()
+        for label,key in CHOICES:self.clay_mode.addItem(label,key)
+        self.clay_mode.setToolTip('Preview surface override. Keeps scene lighting and displacement; final renders use authored materials.')
+        clay_row=QtWidgets.QHBoxLayout();clay_row.addWidget(QtWidgets.QLabel('Preview material'));clay_row.addWidget(self.clay_mode,1);layout.addLayout(clay_row)
+
         self.preview = Preview()
         self.renderer.buckets.connect(self.preview.set_buckets)
         self.show_buckets=QtWidgets.QCheckBox('Active tiles')
@@ -348,6 +354,7 @@ class Panel(QtWidgets.QWidget):
         self._object_signature = None
         self._load_settings()
         self.buffer.currentIndexChanged.connect(self._buffer_changed)
+        self.clay_mode.currentIndexChanged.connect(self._preview_changed)
         self.execution_mode.currentIndexChanged.connect(self._preview_changed)
         self.display_timer=QtCore.QTimer(self)
         self.display_timer.setSingleShot(True);self.display_timer.setInterval(200)
@@ -697,6 +704,7 @@ class Panel(QtWidgets.QWidget):
     def _submit(self, scene, output=None):
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
+        if not output:scene=dict(scene,_clay_preview=self.clay_mode.currentData())
         if self.ipr_mode.isChecked() and not output:
             from .ipr import prepare
             scene,width,height=prepare(scene,width,height,self.samples.value(),
@@ -709,7 +717,7 @@ class Panel(QtWidgets.QWidget):
 
     def _digest(self, scene):
         render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision')}
-        values = [render_scene, self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value()]
+        values = [render_scene, self.clay_mode.currentData(), self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value()]
         digest = hashlib.sha256()
         for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':')).iterencode(values):
             digest.update(chunk.encode('utf-8'))
