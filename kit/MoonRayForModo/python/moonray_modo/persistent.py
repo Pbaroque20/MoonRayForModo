@@ -45,9 +45,9 @@ class Session(QtCore.QObject):
 
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
 
-    def submit(self,text,runtime,threads,mode,generation):
-        request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation)
-        signature=(str(runtime),threads,mode)
+    def submit(self,text,runtime,threads,mode,generation,bucket_size=0):
+        request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size)
+        signature=(str(runtime),threads,mode,bucket_size)
         self.latest=request
         if self.running() and signature!=self.signature:
             self.stopping=True;self.process.kill();return
@@ -82,13 +82,14 @@ class Session(QtCore.QObject):
             if path.is_file():path.unlink()
         self.select_view(self.view)
         self.partial='';self.applied=None;self.sent=request
-        self.signature=(str(request['runtime']),request['threads'],request['mode'])
+        self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'])
         metadata=json.loads((request['runtime']/'modo-session.json').read_text(encoding='utf-8'))
         self.scene_memory=metadata.get('scene_memory',False)
         scene=self._write_scene(request,'full',request['text'])
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(request['runtime']).items():env.insert(key,value)
         env.insert('MOONRAY_MODO_BUCKETS','1')
+        env.insert('MOONRAY_MODO_BUCKET_SIZE',str(request['bucket_size']))
         env.insert('MOONRAY_MODO_SHARED','1')
         if metadata.get('command_memory'):
             from .session_channel import Channel

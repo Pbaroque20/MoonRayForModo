@@ -202,6 +202,8 @@ class Renderer(QtCore.QObject):
             for key, value in native.environment(request['runtime']).items():
                 env.insert(key, value)
             env.insert('MOONRAY_MODO_BUCKETS','1')
+            bucket_size=options.render_values(snapshot.get('render_settings',{}))['bucket_size']
+            env.insert('MOONRAY_MODO_BUCKET_SIZE',str(bucket_size))
             self.process.setProcessEnvironment(env)
             self.process.setWorkingDirectory(self.directory.name)
             self.process.setProgram(str(request['runtime'] / 'moonray.exe'))
@@ -216,7 +218,7 @@ class Renderer(QtCore.QObject):
                 self.session_serial+=1
                 self.session_files[self.session_serial]=self.current_base
                 self._started()
-                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial)
+                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size)
             else:
                 self.process.start()
         except Exception as exc:

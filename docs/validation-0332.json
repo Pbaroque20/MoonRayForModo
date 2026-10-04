@@ -1,0 +1,15 @@
+{
+  "version": "0.3.32",
+  "runtime": "runtime/xpu-adaptive-buckets-0332",
+  "native_scheduler": "360 scheduler/region cases passed; auto/manual groups contiguous; pixels covered exactly once",
+  "host": {
+    "pid": 11228,
+    "runtime": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\runtime\\xpu-adaptive-buckets-0332",
+    "tests": 166,
+    "passed": true,
+    "failures": [],
+    "errors": [],
+    "skipped": []
+  },
+  "preview_telemetry": "Stopped at user request; not validated"
+}

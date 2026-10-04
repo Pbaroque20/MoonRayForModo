@@ -68,3 +68,9 @@ if 'Modo 256px scheduling buckets' not in s:
     for (unsigned rank = 0; rank < numTiles; ++rank) mTileIndices[orderedTiles[rank]] = rank;
 """,1)
     p.write_bytes(s.encode('utf-8'))
+
+# Upgrade both existing 256px patches and clean builds to resolution-aware sizing.
+s=p.read_text(encoding='utf-8')
+if '#include "modo_bucket_size.h"' not in s:s='#include "modo_bucket_size.h"\n'+s
+s=s.replace('const unsigned bucketTiles = 32;', 'const unsigned bucketTiles = modoBucketSize(width,height) / 8;')
+p.write_bytes(s.encode('utf-8'))
