@@ -17,12 +17,12 @@ def expand(document):
         parent,scope,trail=queue.pop(0)
         for node in list(parent):
             if node.tag in ('input','output','nodedef','nodegraph','implementation','surfacematerial'):continue
-            name=node.get('nodedef');definition=definitions.get(name)
-            # Infer a local definition only when category and output type identify it uniquely.
-            if definition is None:
-                matches=[d for d in definitions.values() if d.get('node')==node.tag and d.get('name') in implementations
-                    and (node.get('type')=='multioutput' or any(o.get('type')==node.get('type') for o in d.findall('output')))]
-                if len(matches)==1:definition=matches[0];name=definition.get('name')
+            from .materialx_definitions import select
+            definition=select(node,definitions)
+            name=definition.get('name') if definition is not None else None
+            # Preserve the native Standard Surface lowering rather than expand it
+            # into closure nodes that this runtime does not implement.
+            if node.tag=='standard_surface' or (definition is not None and definition.get('node')=='standard_surface'):continue
             template=implementations.get(name)
             if template is None:continue
             if name in trail or len(trail)>=32:raise ValueError('Recursive MaterialX NodeDef graph: '+str(name))

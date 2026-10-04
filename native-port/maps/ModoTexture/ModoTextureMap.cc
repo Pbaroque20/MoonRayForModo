@@ -76,7 +76,11 @@ public:
             T=normalize(T);U=normalize(U);Vec3f B=cross(N,T),V=cross(N,U);
             const Vec3f derivativeV=(-state.getdPds()*a.y+state.getdPdt()*a.x)/det;
             if(dot(V,derivativeV)<0)V=-V;
-            const Color encoded=evalColor(me,attrForeground,tls,state);
+            Color encoded=evalColor(me,attrForeground,tls,state);
+            const auto offset=me->get(attrUvOffset);const auto st=state.getSt();
+            const float u=a.x*st.x+a.y*st.y+offset.x,v=a.z*st.x+a.w*st.y+offset.y;
+            if(me->get(attrTileU)==2 && u-2*std::floor(u/2)>1)encoded.r=1-encoded.r;
+            if(me->get(attrTileV)==2 && v-2*std::floor(v/2)>1)encoded.g=1-encoded.g;
             const Vec3f normal=U*(encoded.r*2-1)+V*(encoded.g*2-1)+N*(encoded.b*2-1);
             *out=Color(dot(normal,T)*.5f+.5f,dot(normal,B)*.5f+.5f,dot(normal,N)*.5f+.5f);return;
         }

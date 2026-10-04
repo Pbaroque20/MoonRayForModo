@@ -60,6 +60,10 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         Vec3f derivativeV=(state.mdPds*(-a.y)+state.mdPdt*a.x)/det;
         if(dot(V,derivativeV)<0)V=V*(-1.f);
         Color encoded=evalAttrForeground(me,tls,state);
+        Vec2f offset=getAttrUvOffset(me);
+        float u=a.x*state.mSt.x+a.y*state.mSt.y+offset.x,v=a.z*state.mSt.x+a.w*state.mSt.y+offset.y;
+        if(getAttrTileU(me)==2 && u-2*floor(u/2)>1)encoded.r=1-encoded.r;
+        if(getAttrTileV(me)==2 && v-2*floor(v/2)>1)encoded.g=1-encoded.g;
         Vec3f normal=U*(encoded.r*2-1)+V*(encoded.g*2-1)+N*(encoded.b*2-1);
         return Color_ctor(dot(normal,T)*.5f+.5f,dot(normal,B)*.5f+.5f,dot(normal,N)*.5f+.5f);
     }

@@ -88,10 +88,13 @@ def apply_motion(scene, start, end, endpoints):
                         instance_ids=list(cm),instance_velocities=[[(bm[key][i]-am[key][i])*fps/span for i in (12,13,14)] for key in cm],
                         instance_evaluation_frame=endpoints[0],matrix=list(IDENTITY))
                     node.pop('matrix_close',None);outputs.append(node);continue
-                for key in cm:
-                    value=dict(node,source_item=str(key).split('|')[0],identity=str(identity)+'|'+str(key),name=node['name']+' / '+str(key),matrix=am[key],matrix_close=bm[key])
-                    value.pop('instances');value.pop('instance_ids',None)
-                    outputs.append(value)
+                # One small instancer per moving transform shares the same mesh
+                # prototype; parent node_xform supplies full affine shutter samples.
+                node.update(instances=[am[key] for key in cm],instances_close=[bm[key] for key in cm],
+                    instance_ids=list(cm),instance_transform_motion=True,matrix=list(IDENTITY))
+                node.pop('matrix_close',None);node.pop('instance_velocities',None)
+                outputs.append(node)
+
             else:
                 outputs.append(node)
         if category=='meshes': expanded=outputs

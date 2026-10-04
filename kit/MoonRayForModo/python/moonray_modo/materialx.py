@@ -30,6 +30,8 @@ def read(path, material_name=None):
     path=Path(path).resolve()
     from .materialx_document import load
     document,dependencies=load(path)
+    from .materialx_definitions import normalize,select
+    document=normalize(document)
     from .materialx_expand import expand
     document=expand(document)
     definitions={e.get('name'):e for e in document.findall('nodedef')}
@@ -97,7 +99,7 @@ def read(path, material_name=None):
         visiting.add(key);element=elements[key];category=element.tag;scope=key.rsplit('/',1)[0] if '/' in key else ''
         if category=='output':
             result=resolve(element,scope);visiting.remove(key);cache[key]=result;return result
-        definition=definitions.get(element.get('nodedef'))
+        definition=select(element,definitions)
         if definition is not None: category=definition.get('node',category)
         extra={}
         operations={'power':6,'min':5,'max':4,'absval':15,'ceil':16,'floor':17,'modulo':18,'fract':19,'magnitude':20,'sin':21,'cos':22,'round':23,'acos':24,'normalize':10,'dotproduct':8,'crossproduct':7}
@@ -128,7 +130,8 @@ def read(path, material_name=None):
                 clearcoat_refractive_index=1.5,transmission=0,emission=[1,1,1])
         ports={name:interface(port,scope) for name,port in ports.items()}
         for name,port in ports.items():
-            if name in ('base','emission') and category=='standard_surface': continue
+            from .materialx_standard import SPECIAL
+            if category=='standard_surface' and name in SPECIAL|{'base','emission'}:continue
             if not any(attr in port.attrib for attr in ('value','nodename','nodegraph','interfacename')): continue
             if name not in mapping: raise ValueError('Unsupported MaterialX input '+category+'.'+str(name))
             target=mapping[name]
@@ -145,7 +148,7 @@ def read(path, material_name=None):
                 if kind=='constant' and isinstance(value,list) and len(value)==2:value=value+[0]
                 if (kind=='image' and name=='file') or 'FLAGS_FILENAME' in nodes.specs(kind)[target].get('flags',''):
                     prefix=element.get('fileprefix',document.get('fileprefix',''))
-                    value=str((path.parent/prefix/value).resolve())
+                    value=str((path.parent/prefix/value).resolve()) if value else ''
                 if nodes.specs(kind)[target]['type'] in ('Rgb','Vec3f') and isinstance(value,(int,float)): value=[value]*3
                 if nodes.specs(kind)[target]['type'] in ('Rgb','Vec3f') and isinstance(value,list) and len(value)==2:value=value+[0]
                 item['parameters'][target]=value
@@ -180,6 +183,10 @@ def read(path, material_name=None):
                 graph['nodes'][multiply]=mult
                 if connected: mult['inputs']['in2']=resolve(port,scope)
                 item['inputs'][target]=multiply
+        if category=='standard_surface':
+            from .materialx_standard import apply
+            identity=apply(item,ports,graph,lambda port:resolve(port,scope),parse_value,identity)
+            cache[key]=identity
         visiting.remove(key)
         return identity
     surface=materials[0].find("input[@name='surfaceshader']")

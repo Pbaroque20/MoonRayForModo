@@ -315,7 +315,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                              (string('part%d' % part_index), string(face_tag),string(lighting.owner(mesh))))
         else:
             lines.append('  assign(geometry, "", %s, %s)' % (string(tag),string(lighting.owner(mesh))))
-        if 'instances' in mesh:
+        if mesh.get('instance_transform_motion') and mesh.get('instances'):
+            from .instance_motion import emit as emit_instance_motion
+            emit_instance_motion(mesh,index,tag,scene,crypto,lines)
+        elif 'instances' in mesh:
             if mesh['instances']:
                 instance_crypto=cryptomatte.userdata(mesh,lines,cryptomatte.category(scene),scene,instances=True) if crypto and cryptomatte.category(scene)!='material' else None
                 lines += ['  local instances = RdlInstancerGeometry("/modo/instances/%s") {' % index,

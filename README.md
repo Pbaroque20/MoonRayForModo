@@ -1,11 +1,11 @@
 # MoonRayForModo — native Windows AVX preview
 
-Development version **0.3.7** adds shared-memory progressive preview delivery,
-background display conversion, portable material graph bundles with texture assets,
-affine normal/bump UV transforms, MaterialX image addressing and explicit simulation
-IDs for shutter samples. Native compilation completed; render and UI tests remain
-deferred at the user's request. This is not full Modo parity or a production-ready
-certification. See [scope, remaining gaps and deferred checks](docs/COMPATIBILITY_037.md).
+Development version **0.3.8** adds inherited/versioned MaterialX definitions,
+Standard Surface rotation/opacity/refraction controls, mirrored normal-map tangent
+correction, alpha-aware environment compositing, individual environment light links,
+and shared mesh prototypes for rotating/scaling instance motion. Compilation and
+syntax checks passed; rendering and host tests remain deferred. Full Modo parity
+is still incomplete. See [scope and outstanding work](docs/COMPATIBILITY_038.md).
 
 Target: **Modo 16.1v9, Windows x64, Python 3.9**.
 
@@ -22,8 +22,8 @@ with no WSL, remote service, emulation or substitute renderer.
 ## Using the installed kit
 
 The kit is installed under `%APPDATA%\Luxology\Kits\MoonRayForModo` and connects
-to the runtime recorded in its `runtime.json`. Version 0.3.7 uses a separate
-`runtime/xpu-streaming-20261003` build; previous runtimes are preserved.
+to the runtime recorded in its `runtime.json`. Version 0.3.8 uses a separate
+`runtime/xpu-compatibility-038` build; previous runtimes are preserved.
 
 Open **MoonRay > Render Setup**, or run `moonray.open` in Modo's command entry.
 The menu also opens Live Preview, Object Properties, Shading and Lighting,

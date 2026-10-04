@@ -77,7 +77,7 @@ def render_meshes(meshes, expand_instances=False):
             for index,(identity,transform) in enumerate(zip(ids,transforms)):
                 value=dict(mesh,source_item=str(identity).split('|')[0],matrix=transform,name=mesh['name']+' / '+str(identity),identity=str(mesh.get('identity',mesh['name']))+'|'+str(identity))
                 if 'instances_close' in mesh:value['matrix_close']=mesh['instances_close'][index]
-                for key in ('instances','instance_ids','instances_close','instance_velocities','instance_evaluation_frame'):value.pop(key,None)
+                for key in ('instances','instance_ids','instances_close','instance_velocities','instance_evaluation_frame','instance_transform_motion'):value.pop(key,None)
                 yield prepare(value)
         else:
             yield prepare(mesh)

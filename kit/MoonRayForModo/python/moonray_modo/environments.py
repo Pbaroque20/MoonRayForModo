@@ -25,7 +25,7 @@ def collect(scene, warnings):
                 'indirect':bool(channel(environment,'visInd',1)),
                 'reflection':bool(channel(environment,'visRefl',1)),
                 'refraction':bool(channel(environment,'visRefr',1))}
-        children = [i for i in environment.children()
+        children = [i for i in reversed(list(environment.children()))
                     if channel(i,'enable',1) and channel(i,'render',1) and channel(i,'opacity',1)>0]
         stack = []
         for index, layer in enumerate(children):
@@ -74,7 +74,6 @@ def collect(scene, warnings):
                     from .texture_controls import capture
                     entry['corrections']=capture(layer,channel)
                     entry['image_channel']=channel(layer,'rgba','use') if channel(layer,'swizzling',0) else channel(layer,'alpha','use')
-                    if entry['image_channel']=='only':raise ValueError('Environment alpha-only images require a dedicated RGB mask image')
                     entry['flips']=[bool(channel(layer,c+'Inv',0)) for c in ('red','green','blue')]
                     if channel(locator,'randOffset','none')!='none':
                         raise ValueError('environment random offsets are unsupported')
@@ -95,12 +94,12 @@ def collect(scene, warnings):
                 else:
                     raise ValueError('unsupported environment layer type '+layer.type)
                 stack.append(entry)
-                if opacity==1 and mode=='normal':
+                if opacity==1 and mode=='normal' and not (entry['kind']=='image' and entry.get('image_channel')=='use'):
                     break
             except (ValueError, LookupError, OSError) as exc:
                 warnings.append('Environment %s: %s.' % (layer.name,exc))
         if stack:
-            if len(stack)==1 and stack[0]['kind']!='physical' and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections'):
+            if len(stack)==1 and stack[0]['kind']!='physical' and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections') and stack[0].get('image_channel','ignore') not in ('use','only'):
                 result.append(stack[0])
             else:
                 result.append(dict(item,kind='stack',layers=stack))

@@ -34,7 +34,7 @@ class Controls(QtWidgets.QDialog):
                 field('link_enabled','Restrict illumination to checked lights','bool',False)
                 for key,label in [('lights','Illuminating lights'),('shadow_exclude','Do not cast shadows for these lights')]:
                     w=QtWidgets.QListWidget();w.setMaximumHeight(120);self.lists[key]=w
-                    for name,identity in [('Environments','__environment__')]+[(i.name,i.id) for i in lights]+[(i.name+' (mesh emitter)',i.id) for i in objects if i.type=='mesh']:
+                    for name,identity in [('All environments','__environment__')]+[(i.name+' (environment)',i.id) for i in scene.items('environment',superType=False)]+[(i.name,i.id) for i in lights]+[(i.name+' (mesh emitter)',i.id) for i in objects if i.type=='mesh']:
                         row=QtWidgets.QListWidgetItem(name,w);row.setData(QtCore.Qt.UserRole,identity);row.setFlags(row.flags()|QtCore.Qt.ItemIsUserCheckable);row.setCheckState(QtCore.Qt.Unchecked)
                     form.addRow(label,w)
                 field('motion_topology','Changing topology during shutter','choice','strict',choices=[('Require stable topology','strict'),('Frame-time geometry; no deformation blur','freeze'),('Frame-time points / strands with velocities','velocity')])

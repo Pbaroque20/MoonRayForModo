@@ -141,7 +141,7 @@ def bindings(material, index, lines, glass=False, absorption=False):
         if layer.get('invert'):
             foreground = node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
         if effect=='normal' and normal_basis is not None:
-            foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_affine':vector(normal_basis,'Vec4')})
+            foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_affine':vector(normal_basis,'Vec4'),'uv_offset':vector(offset,'Vec2'),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
         blend = layer.get('blend','normal')
         if blend not in BLENDS:
             raise ValueError('Unsupported blend: '+blend)

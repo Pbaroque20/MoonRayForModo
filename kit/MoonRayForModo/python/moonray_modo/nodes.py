@@ -134,7 +134,7 @@ def emit(material,name,index,lines,library,output="root"):
         if isinstance(value,list): return vector(value,{'Rgb':'Rgb','Vec2f':'Vec2','Vec3f':'Vec3'}.get(kind,'Rgb'))
         return number(value)
     def binding(ref,kind):
-        unit='Rgb(1,1,1)' if kind=='Rgb' else 'Vec3(1,1,1)' if kind=='Vec3f' else '1'
+        unit='Rgb(1,1,1)' if kind=='Rgb' else 'Vec3(1,1,1)' if kind=='Vec3f' else 'Vec2(1,1)' if kind=='Vec2f' else '1'
         return 'bind(%s, %s)'%(ref,unit)
     def node(identity):
         if identity in cache: return cache[identity]

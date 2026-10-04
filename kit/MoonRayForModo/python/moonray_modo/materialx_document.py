@@ -17,12 +17,14 @@ def load(path):
         root=ET.fromstring(raw)
         if root.tag!='materialx':raise ValueError('Expected a MaterialX document: '+str(filename))
         dependencies.append(str(filename))
-        def asset_prefix(element,inherited):
+        def asset_prefix(element,inherited,colorspace=None):
             prefix=inherited/element.get('fileprefix','')
+            colorspace=element.get('colorspace',colorspace)
+            if colorspace and element.tag not in ('materialx','include'):element.set('colorspace',colorspace)
             for port in element:
                 if port.tag in ('input','parameter') and port.get('type')=='filename' and port.get('value'):
                     port.set('value',str((prefix/port.get('value')).resolve()))
-                asset_prefix(port,prefix)
+                asset_prefix(port,prefix,colorspace)
             element.attrib.pop('fileprefix',None)
         asset_prefix(root,filename.parent)
         for child in list(root):

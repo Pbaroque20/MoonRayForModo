@@ -76,6 +76,8 @@ def emit(scene,meshes,refs,environment_refs,lines):
     lines.append('local nativeLightSets = {}')
     if not any(links.values()):return
     light_ids=set(refs)-{'__environment__'}
+    owned={ref for identity in light_ids for ref in refs[identity]}
+    ambient=[ref for ref in environment_refs if ref not in owned]
     pairs=set()
     for mesh in list(meshes)+scene.get('extra_geometry',[]):
         for tag in set(mesh.get('face_materials',[]) or [mesh.get('material','')]):pairs.add((owner(mesh),tag))
@@ -84,7 +86,7 @@ def emit(scene,meshes,refs,environment_refs,lines):
         selected=tuple(allowed(links,identity,tag,light_ids))
         if selected not in shared:
             name='/modo/nativeLinks/'+str(len(shared));shared[selected]='LightSet('+string(name)+')'
-            members=[ref for light in selected for ref in refs[light]]+environment_refs
+            members=[ref for light in selected for ref in refs[light]]+ambient
             lines.append(shared[selected]+'('+array(members)+')')
         lines.append('nativeLightSets[%s] = nativeLightSets[%s] or {}'%(string(identity),string(identity)))
         lines.append('nativeLightSets[%s][%s] = %s'%(string(identity),string(tag),shared[selected]))

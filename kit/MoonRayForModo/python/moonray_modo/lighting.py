@@ -19,6 +19,8 @@ def emit(scene,meshes,environment,lines):
     environment_refs += ['EnvLight(%s)'%string('/modo/environment/scene/%d'%i) for i in range(len(scene.get('environments',[])))]
     portal_refs=([environment_refs[0]] if environment>0 else [])+['EnvLight(%s)'%string('/modo/environment/scene/%d'%i) for i,e in enumerate(scene.get('environments',[])) if e.get('indirect',True)]
     refs['__environment__']=environment_refs
+    for i,environment_item in enumerate(scene.get('environments',[])):
+        if environment_item.get('identity'):refs[environment_item['identity']]=['EnvLight(%s)'%string('/modo/environment/scene/%d'%i)]
     for index,light in enumerate(scene.get('lights',[])):
         identity=light.get('identity',str(index));settings=light_controls.get(identity,{});kind=settings.get('kind') or light['kind']
         if kind not in LIGHT_KINDS:raise ValueError('Unsupported light: '+kind)
@@ -66,7 +68,7 @@ def emit(scene,meshes,environment,lines):
         def selected(key):
             keys=settings.get(key,[]);missing=[k for k in keys if k not in refs]
             if missing:raise ValueError('Linked light is missing or disabled: '+', '.join(missing))
-            return [ref for k in keys for ref in refs[k]]
+            return list(dict.fromkeys(ref for k in keys for ref in refs[k]))
         if settings.get('link_enabled'):
             lines.append('objectLightSets[%s] = LightSet(%s)(%s)'%(string(identity),string('/modo/links/'+identity),array(selected('lights'))))
         if settings.get('shadow_exclude'):

@@ -35,41 +35,62 @@ def blend(background, foreground, mode, opacity):
     return [a+(component(a,b)-a)*opacity for a,b in zip(background,foreground)]
 
 
+def alpha_index(xml):
+    import xml.etree.ElementTree as ET
+    start=xml.find('<ImageSpec');end=xml.find('</ImageSpec>',start)
+    if start<0 or end<0:raise ValueError('Cannot read environment image metadata')
+    spec=ET.fromstring(xml[start:end+len('</ImageSpec>')])
+    value=spec.findtext('alpha_channel')
+    if value is None:raise ValueError('Environment metadata omits alpha-channel information')
+    return int(value)
+
+
 def image_pixels(layer, folder, width, height):
-    runtime = Path(native.default_runtime())
-    converter = runtime/'oiiotool.exe'
-    if not converter.is_file():
-        raise ValueError('Layered environments require oiiotool.exe in the MoonRay runtime')
-    # prepare performs the same explicit color conversion as material maps.
-    source = textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''))
-    target = folder/(uuid.uuid4().hex+'.pfm')
-    try:
-        command = [str(converter),source,'--ch','R,G,B']
-        controls=layer.get('corrections',{})
-        if controls.get('gamma',1)!=1:command += ['--maxc','0','--powc',str(1/controls['gamma'])]
-        if controls.get('contrast',1)!=1:command += ['--subc','.5','--mulc',str(controls['contrast']),'--addc','.5']
-        if controls.get('brightness',1)!=1:command += ['--mulc',str(controls['brightness'])]
-        flips=layer.get('flips',[False]*3)
-        if any(flips):command += ['--mulc',','.join('-1' if v else '1' for v in flips),'--addc',','.join('1' if v else '0' for v in flips)]
-        channel=layer.get('image_channel','use')
-        if channel in ('red','green','blue'):command += ['--ch',','.join([{'red':'R','green':'G','blue':'B'}[channel]]*3)]
-        elif channel=='only':raise ValueError('Environment alpha-only processing requires an RGB environment image')
-        command += ['--resize','%dx%d!'%(width,height),'-o',str(target)]
-        result = subprocess.run(command,env=native.environment(runtime),stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT,timeout=120,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-        if result.returncode:
-            raise ValueError('Environment conversion failed: '+result.stdout.decode(errors='replace')[-1000:])
-        with target.open('rb') as stream:
-            if stream.readline().strip()!=b'PF': raise ValueError('Expected RGB PFM')
-            w,h = map(int,stream.readline().split())
-            scale = float(stream.readline())
-            if (w,h)!=(width,height): raise ValueError('Unexpected environment dimensions')
-            data = stream.read()
-            if len(data)!=w*h*12: raise ValueError('Invalid environment pixel data')
-            pixels = struct.unpack(('<' if scale<0 else '>')+'%df'%(w*h*3),data)
-        return pixels
-    finally:
-        if target.exists(): target.unlink()
+    runtime=Path(native.default_runtime());converter=runtime/'oiiotool.exe'
+    if not converter.is_file():raise ValueError('Layered environments require oiiotool.exe')
+    source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''))
+    def run(args):
+        result=subprocess.run([str(converter)]+args,env=native.environment(runtime),stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,timeout=120,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if result.returncode:raise ValueError('Environment conversion failed: '+result.stdout.decode(errors='replace')[-1000:])
+        return result.stdout.decode(errors='replace')
+    def read(args):
+        target=folder/(uuid.uuid4().hex+'.pfm')
+        try:
+            run(args+['-o',str(target)])
+            with target.open('rb') as stream:
+                if stream.readline().strip()!=b'PF':raise ValueError('Expected RGB PFM')
+                w,h=map(int,stream.readline().split());scale=float(stream.readline());data=stream.read()
+                if (w,h)!=(width,height) or len(data)!=w*h*12:raise ValueError('Invalid environment pixel dimensions')
+                return struct.unpack(('<' if scale<0 else '>')+'%df'%(w*h*3),data)
+        finally:
+            if target.exists():target.unlink()
+    channel=layer.get('image_channel','use')
+    if channel not in ('use','ignore','only','red','green','blue'):raise ValueError('Unsupported environment image channel')
+    alpha=None
+    if channel in ('use','only'):
+        index=alpha_index(run(['--info:format=xml','-v',source]))
+        if index>=0:
+            alpha=read([source,'--ch',','.join([str(index)]*3),'--resize','%dx%d!'%(width,height)])[::3]
+    args=[source,'--resize','%dx%d!'%(width,height),'--unpremult','--ch','R,G,B']
+    if channel=='only':
+        if alpha is None:alpha=(1.0,)*(width*height)
+        # Alpha is linear data; never apply an input color transform to it.
+        controls=layer.get('corrections',{});flips=layer.get('flips',[False]*3)
+        def corrected(a):
+            value=max(0,a)**(1/controls.get('gamma',1))
+            value=((value-.5)*controls.get('contrast',1)+.5)*controls.get('brightness',1)
+            return [1-value if flip else value for flip in flips]
+        pixels=tuple(v for a in alpha for v in corrected(a))
+        return pixels,None
+    controls=layer.get('corrections',{})
+    if controls.get('gamma',1)!=1:args+=['--maxc','0','--powc',str(1/controls['gamma'])]
+    if controls.get('contrast',1)!=1:args+=['--subc','.5','--mulc',str(controls['contrast']),'--addc','.5']
+    if controls.get('brightness',1)!=1:args+=['--mulc',str(controls['brightness'])]
+    flips=layer.get('flips',[False]*3)
+    if any(flips):args+=['--mulc',','.join('-1' if v else '1' for v in flips),'--addc',','.join('1' if v else '0' for v in flips)]
+    if channel in ('red','green','blue'):args+=['--ch',','.join([{'red':'R','green':'G','blue':'B'}[channel]]*3)]
+    return read(args),alpha
 
 
 def texture(environment, width=512, height=256):
@@ -77,16 +98,16 @@ def texture(environment, width=512, height=256):
     from .daylight import color as daylight_color
     if any(layer['kind']=='physical' for layer in environment['layers']):
         width,height = 256,128
-    digest = hashlib.sha256(('stack-v3|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
+    digest = hashlib.sha256(('stack-v4-alpha|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
     folder = Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')
     if not target.exists():
         layers = []
         for layer in reversed(environment['layers']):
-            pixels = image_pixels(layer,folder,width,height) if layer['kind']=='image' else None
+            pixels,alpha = image_pixels(layer,folder,width,height) if layer['kind']=='image' else (None,None)
             inv = coordinates.inverse(layer['matrix']) if 'matrix' in layer else None
-            layers.append((layer,pixels,inv))
+            layers.append((layer,pixels,alpha,inv))
         staged = folder/(digest+'-'+uuid.uuid4().hex+'.pfm')
         try:
             with staged.open('wb') as out:
@@ -97,7 +118,8 @@ def texture(environment, width=512, height=256):
                         longitude = ((x+.5)/width-.5)*2*math.pi
                         direction = (math.sin(longitude)*math.cos(latitude), math.sin(latitude), math.cos(longitude)*math.cos(latitude))
                         color = [0,0,0]
-                        for layer,pixels,inv in layers:
+                        for layer,pixels,alpha,inv in layers:
+                            coverage=1.0
                             if pixels is None:
                                 foreground = daylight_color(direction,layer) if layer['kind']=='physical' else gradient_color(layer,direction[1])
                             else:
@@ -109,14 +131,17 @@ def texture(environment, width=512, height=256):
                                 u,v=u*width-.5,v*height-.5
                                 ix,iy = math.floor(u),math.floor(v)
                                 tx,ty = u-ix,v-iy
-                                foreground = [0,0,0]
+                                foreground = [0,0,0];coverage=0.0 if alpha is not None else 1.0
                                 for dx,dy,weight in ((0,0,(1-tx)*(1-ty)),(1,0,tx*(1-ty)),(0,1,(1-tx)*ty),(1,1,tx*ty)):
                                     index = (max(0,min(height-1,iy+dy))*width+(ix+dx)%width)*3
-                                    foreground = [c+pixels[index+k]*weight for k,c in enumerate(foreground)]
+                                    a=max(0,min(1,alpha[index//3])) if alpha is not None else 1.0
+                                    if alpha is not None:coverage+=a*weight
+                                    foreground = [c+pixels[index+k]*weight*a for k,c in enumerate(foreground)]
+                                if alpha is not None:foreground=[c/max(1e-12,coverage) for c in foreground]
                             if layer['kind']=='physical' and layer.get('normalize'):
                                 foreground=[min(1,max(0,c))**(1/layer.get('sky_gamma',1)) for c in foreground]
                             if layer.get('invert'): foreground = [1-c for c in foreground]
-                            color = blend(color,foreground,layer.get('blend','normal'),layer.get('opacity',1))
+                            color = blend(color,foreground,layer.get('blend','normal'),layer.get('opacity',1)*coverage)
                         out.write(struct.pack('<3f',*color))
             staged.replace(target)
         finally:
