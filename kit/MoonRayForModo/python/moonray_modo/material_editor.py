@@ -92,7 +92,7 @@ def edit(item, scene):
         try:
             params=values()
             library={candidate.id:properties.read(candidate) for candidate in scene.items('advancedMaterial',superType=False)}
-            native=dict(settings,native_shader=current[0],native_parameters=params,shader='DwaBaseMaterial')
+            native=dict(settings,moonshine_override=True,native_shader=current[0],native_parameters=params,shader='DwaBaseMaterial')
             graph=native.get('node_graph')
             if graph:
                 if graph['nodes'][graph['root']]['type']!=current[0]: native.pop('node_graph',None)

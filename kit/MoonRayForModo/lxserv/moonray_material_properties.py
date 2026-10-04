@@ -6,7 +6,7 @@ package_root=os.path.join(os.path.dirname(os.path.dirname(__file__)),"python")
 if package_root not in sys.path: sys.path.insert(0,package_root)
 import lx
 import lxu.command
-from moonray_modo import properties,shader_library
+from moonray_modo import properties,shader_library,material_override
 from moonray_modo.materials import selected
 
 TYPES=['']+sorted(shader_library.catalog())
@@ -25,11 +25,11 @@ class MaterialType(Observed):
         self.dyna_SetHint(0,tuple((i,(name+' (override)') if name else 'Modo controls (no native override)') for i,name in enumerate(TYPES)))
         self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
     def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-    def basic_Enable(self,msg): return bool(selected())
+    def basic_Enable(self,msg): return bool(selected()) and all(material_override.enabled(properties.read(i)) for i in selected())
     def cmd_Query(self,index,query):
         values=lx.object.ValueArray(query)
         for item in selected():
-            shader=properties.read(item).get('native_shader','')
+            shader=material_override.effective(properties.read(item)).get('native_shader','')
             values.AddInt(TYPES.index(shader) if shader in TYPES else 0)
     def basic_Execute(self,msg,flags):
         index=self.dyna_Int(0)
@@ -42,6 +42,8 @@ class MaterialType(Observed):
             presets=settings.setdefault('native_type_presets',{})
             if old: presets[old]=settings.get('native_parameters',{})
             settings.pop('node_graph',None)
+            settings['moonshine_override']=bool(shader)
+            settings['node_override']=False
             settings['native_shader']=shader
             settings['native_parameters']=shader_library.validate(shader,presets.get(shader,{})) if shader else {}
             if shader: settings['shader']='DwaBaseMaterial'
@@ -53,7 +55,7 @@ def filter_command(shader):
         def cmd_Flags(self): return lx.symbol.fCMD_UI
         def basic_Enable(self,msg):
             items=selected()
-            return bool(items) and all(properties.read(item).get('native_shader','')==shader for item in items)
+            return bool(items) and all(material_override.effective(properties.read(item)).get('native_shader','')==shader for item in items)
         def basic_Execute(self,msg,flags): pass
     return Filter
 
@@ -71,7 +73,7 @@ def parameter_command(shader,key,spec):
         def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
         def basic_Enable(self,msg):
             items=selected()
-            return bool(items) and all(properties.read(item).get('native_shader')==shader for item in items)
+            return bool(items) and all(material_override.enabled(properties.read(item)) and material_override.effective(properties.read(item)).get('native_shader')==shader for item in items)
         def cmd_Query(self,index,query):
             values=lx.object.ValueArray(query)
             for item in selected():
@@ -113,14 +115,38 @@ for i,shader in enumerate(TYPES):
         lx.bless(parameter_command(shader,key,spec),'moonray.material.param%d_%d'%(i,j))
 
 
+class MoonShineOverride(Observed):
+    def __init__(self):
+        super().__init__();self.dyna_Add('enabled',lx.symbol.sTYPE_BOOLEAN)
+        self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+    def basic_Enable(self,msg):return bool(selected()) and all(i.type=='advancedMaterial' for i in selected())
+    def cmd_Query(self,index,query):
+        values=lx.object.ValueArray(query)
+        for item in selected():values.AddInt(int(material_override.enabled(properties.read(item))))
+    def basic_Execute(self,msg,flags):
+        if not self.basic_Enable(msg):raise ValueError('Select a MoonShine material')
+        from moonray_modo import nodes
+        updates=[]
+        for item in selected():
+            settings=properties.read(item)
+            if self.dyna_Int(0):
+                settings=material_override.synchronize(settings,settings.get('node_graph') or nodes.from_material(item))
+            else:settings['moonshine_override']=False
+            updates.append((item,settings))
+        for item,settings in updates:properties.write(item,settings)
+
+lx.bless(MoonShineOverride,'moonray.material.moonshineOverride')
+
 class OpenNodes(Observed):
     def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-    def basic_Enable(self,msg): return len(selected())==1
+    def basic_Enable(self,msg):
+        items=selected()
+        return len(items)==1 and items[0].type=='advancedMaterial' and material_override.enabled(properties.read(items[0]))
     def basic_Execute(self,msg,flags):
         from moonray_modo.node_editor import Editor
-        items=selected()
-        if len(items)!=1: raise ValueError('Select one Shader Tree material')
-        Editor(items[0]).exec_()
+        if not self.basic_Enable(msg):raise ValueError('Enable MoonShine Material Override to open its node editor')
+        Editor(selected()[0]).exec_()
 
 
 class NodeOverride(OpenNodes):

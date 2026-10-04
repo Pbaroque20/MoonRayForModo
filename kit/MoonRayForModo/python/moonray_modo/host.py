@@ -80,6 +80,9 @@ def material_values(material):
         graph=settings.get('materialx_graph')
         resolved=validate_graph(graph);root=resolved['nodes'][resolved['root']]
         settings.update(node_graph=graph,native_shader=root['type'],native_parameters=root.get('parameters',{}))
+    if material.type!='material.moonrayMaterialX':
+        from .material_override import effective
+        settings=effective(settings)
     controls = material_settings(settings)
     diffuse = color(material, 'diffCol', (.5, .5, .5))
     diffuse_amount = float(channel(material, 'diffAmt', 1))

@@ -81,6 +81,7 @@ class Editor(QtWidgets.QDialog):
         self.show_all.setToolTip('Connected inputs are always visible.');self.show_all.toggled.connect(self.rebuild)
         for label,callback in [('Undo',self.undo),('Redo',self.redo),('Frame all',self.frame)]:
             button=QtWidgets.QPushButton(label);button.clicked.connect(callback);toolbar.addWidget(button)
+        self.output_label=QtWidgets.QLabel();self.output_label.setToolTip('The Output material is rendered. Apply or Save updates the scene override.');toolbar.addWidget(self.output_label)
         toolbar.addStretch(1)
         preview=QtWidgets.QPushButton('Widget preview');preview.clicked.connect(self.preview_widget);toolbar.addWidget(preview)
         self.finished.connect(lambda *_:getattr(self,'_widget_preview',None) and self._widget_preview.close())
@@ -98,8 +99,9 @@ class Editor(QtWidgets.QDialog):
         self.info.setWordWrap(True)
         self.info.setToolTip('Green wire: compatible input. Right-click a socket or wire to disconnect. Wheel: zoom. Middle drag: pan. F: frame all. Double-click a property to edit. Node and Graph menus contain additional actions.')
         layout.addWidget(self.info)
-        buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save|QtWidgets.QDialogButtonBox.Cancel);layout.addWidget(buttons)
+        buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save|QtWidgets.QDialogButtonBox.Apply|QtWidgets.QDialogButtonBox.Cancel);layout.addWidget(buttons)
         buttons.accepted.connect(self.save);buttons.rejected.connect(self.reject)
+        buttons.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(lambda:self.save(False))
         self.canvas.selectionChanged.connect(self.inspect);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
         for button in self.findChildren(QtWidgets.QPushButton):
             button.setAutoDefault(False);button.setDefault(False)
@@ -164,6 +166,7 @@ class Editor(QtWidgets.QDialog):
         if hasattr(self,'view'):self.view.cancel_wire()
         self.busy=True;self.pending=None;self.items={};self.links=[];self.canvas.clear()
         graph=nodes.effective(self.graph)
+        self.output_label.setText('Output: '+graph['nodes'][graph['root']]['type'])
         for identity,value in graph['nodes'].items():
             item=Node(self,identity,value);self.items[identity]=item;self.canvas.addItem(item)
         self.edges();old=self.layers.currentIndex();self.layers.clear();self.layers.addItem('Base graph',-1)
@@ -412,7 +415,7 @@ class Editor(QtWidgets.QDialog):
         if path:
             try: materialx.write(self.graph,path if path.lower().endswith('.mtlx') else path+'.mtlx')
             except (ValueError,OSError) as exc: self.error(exc)
-    def save(self):
+    def save(self,close=True):
         self.table.itemDelegateForColumn(1).commit_pending()
         try:
             graph=nodes.validate(self.graph);root=graph['nodes'][graph['root']]
@@ -421,6 +424,9 @@ class Editor(QtWidgets.QDialog):
             if self.materialx_override:
                 settings['materialx_override']=True
             else:
-                settings.update(native_shader=root['type'],native_parameters=root.get('parameters',{}),shader='DwaBaseMaterial')
-            properties.write(self.item,settings);self.accept()
+                from .material_override import synchronize
+                settings=synchronize(settings,self.graph)
+            properties.write(self.item,settings)
+            self.info.setText('Applied output material: '+root['type'])
+            if close:self.accept()
         except ValueError as exc: self.error(exc)

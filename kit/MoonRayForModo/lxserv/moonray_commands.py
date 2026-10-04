@@ -206,6 +206,7 @@ def material_option(key):
             for item in selected():
                 values=properties.read(item)
                 if key=='shader':
+                    values['moonshine_override']=False
                     values.pop('native_shader',None)
                     values.pop('native_parameters',None)
                 values[key]=('DwaBaseMaterial' if self.dyna_Int(0) else '') if key=='shader' else bool(self.dyna_Int(0))
