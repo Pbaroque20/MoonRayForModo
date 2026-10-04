@@ -476,7 +476,7 @@ class Editor(QtWidgets.QDialog):
                 if key in node.get('inputs',{}):cell.setBackground(QtGui.QColor('#294757'));label.setToolTip('Connected from '+node['inputs'][key]+'; editing this value replaces the connection')
                 if inherited:
                     font=cell.font();font.setItalic(True);cell.setFont(font)
-                cell.setToolTip(('Renderer default; edit to override. ' if inherited else '')+str(spec.get('comment',''))+' Default: '+str(spec.get('default',spec.get('default_value',''))))
+                cell.setToolTip(str(spec.get('comment',''))+' Default: '+str(spec.get('default',spec.get('default_value',''))))
                 limits=[str(spec[k]) for k in ('min','max') if k in spec]
                 if limits:
                     cell.setToolTip(cell.toolTip()+' Allowed range: '+str(spec.get('min','unbounded'))+' to '+str(spec.get('max','unbounded')))
