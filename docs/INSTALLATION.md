@@ -7,7 +7,6 @@ These instructions are for **0.3.48**, **Modo 16.1v9**, and **Windows x64**. Thi
 - An installed copy of Modo 16.1v9. The supported executable is `C:\Program Files\Modo16.1v9\modo\modo.exe`.
 - An AVX-capable x64 CPU for the bundled CPU runtime.
 - Optional: a compatible NVIDIA GPU and installed NVIDIA driver for XPU/OptiX. The runtime includes CUDA runtime libraries; a CUDA development toolkit is not required. XPU has been exercised on an RTX 3090; compatibility with every GPU/driver combination is not established.
-- Access to this private GitHub repository to download release assets.
 
 ## Download and install
 
