@@ -27,4 +27,11 @@ inline void modoBucketOutput(const std::string& generation,unsigned width,unsign
         line << " " << (r&65535) << "," << ((r>>16)&65535) << "," << ((r>>32)&65535) << "," << ((r>>48)&65535);
     }
     std::cout << line.str() << std::endl;
+    std::ostringstream workers;
+    workers << "\n@@MODO_WORKERS " << generation << " " << width << " " << height;
+    for(unsigned i=0;i<count;++i){
+        auto r=rectangles[i];
+        workers << " " << (r&65535) << "," << ((r>>16)&65535) << "," << ((r>>32)&65535) << "," << ((r>>48)&65535);
+    }
+    std::cout << workers.str() << std::endl;
 }

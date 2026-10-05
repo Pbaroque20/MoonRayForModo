@@ -314,6 +314,7 @@ class Panel(QtWidgets.QWidget):
 
         self.preview = Preview()
         self.renderer.buckets.connect(self.preview.set_buckets)
+        self.renderer.workers.connect(self.preview.set_workers)
         self.show_buckets=QtWidgets.QCheckBox('Buckets')
         self.show_buckets.setChecked(str(self.settings.value('show_buckets','true')).lower()!='false')
         self.preview.set_show_buckets(self.show_buckets.isChecked())
@@ -321,6 +322,14 @@ class Panel(QtWidgets.QWidget):
         self.show_buckets.toggled.connect(self.preview.set_show_buckets)
         self.show_buckets.toggled.connect(lambda value:self.settings.setValue('show_buckets',value) if not self.ipr_mode.isChecked() else None)
         buffer_row.addWidget(self.show_buckets)
+        self.overlay_style=QtWidgets.QComboBox()
+        self.overlay_style.addItem('Worker tiles',True);self.overlay_style.addItem('Buckets',False)
+        self.overlay_style.setCurrentIndex(0 if str(self.settings.value('worker_tiles','true')).lower()!='false' else 1)
+        self.preview.set_worker_overlay(self.overlay_style.currentData())
+        self.overlay_style.setToolTip('Worker tiles show active small render tiles. Multiple workers can share a large bucket. Older runtimes show only buckets.')
+        self.overlay_style.currentIndexChanged.connect(lambda index:self.preview.set_worker_overlay(self.overlay_style.currentData()))
+        self.overlay_style.currentIndexChanged.connect(lambda index:self.settings.setValue('worker_tiles',self.overlay_style.currentData()))
+        buffer_row.addWidget(self.overlay_style)
         self.preview.start_requested.connect(self.render_once)
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.splitter=split

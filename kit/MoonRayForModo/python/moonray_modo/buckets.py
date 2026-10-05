@@ -1,7 +1,7 @@
 """Bounded active tile protocol decoder, independent of Qt and Modo."""
 def parse(line):
     parts=line.strip().split()
-    if not parts or parts[0]!='@@MODO_TILES':return None
+    if not parts or parts[0] not in ('@@MODO_TILES','@@MODO_WORKERS'):return None
     if not 4<=len(parts)<=516:return None
     try:
         generation,width,height=map(int,parts[1:4])

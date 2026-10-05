@@ -30,7 +30,7 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
         context.reset(new rndr::RenderContext(mOptions, &mInitMessages));
         context->initialize(mInitMessages, rndr::RenderContext::LoggingConfiguration::ATHENA_DISABLED);
         context->setRenderMode(rndr::RenderMode::PROGRESSIVE);
-        std::cout << "Modo native progressive preview" << std::endl;
+        std::cout << "Modo native progressive preview / worker tiles" << std::endl;
         context->setRenderPrepCallBack({}, waiting);
     };
     load();
@@ -100,17 +100,13 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         rgb[0]=pixel[0];rgb[1]=pixel[1];rgb[2]=pixel[2];
                         if(channels){const float* value=reinterpret_cast<const float*>(aov.getData())+i*channels;
                             rgb[0]=value[0];rgb[1]=channels>1?value[1]:value[0];rgb[2]=channels>2?value[2]:(channels==1?value[0]:0);}
-                        if(!(sampleWeights.getRow(y)[x]>0.f)) {
-                            // Display-only placeholder; never write this into render output.
-                            // A checker distinguishes unfinished adaptive pixels from black shading.
-                            const float shade=((x/4+y/4)&1)?0.08f:0.16f;
-                            rgb[0]=rgb[1]=rgb[2]=shade;
-                            ++missingSamples;
-                        }
+                        // Preserve MoonRay's coarse-pass reconstruction; do not replace
+                        // it using a weight snapshot captured at a different instant.
+                        if(!(sampleWeights.getRow(y)[x]>0.f))++missingSamples;
                     };
                     auto reportMissing=[&]() {
                         if(missingSamples && !reportedMissingSamples){
-                            std::cerr << "MoonRay preview: checkerboard marks pixels without samples; worker outlines are activity, not completion." << std::endl;
+                            std::cerr << "MoonRay preview: coarse pixels use native reconstruction; worker outlines indicate sampled tile activity." << std::endl;
                             reportedMissingSamples=true;
                         }
                     };

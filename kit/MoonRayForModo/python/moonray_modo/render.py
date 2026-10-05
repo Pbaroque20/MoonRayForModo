@@ -12,6 +12,7 @@ from .persistent import Session, supported as persistent_supported
 
 class Renderer(QtCore.QObject):
     buckets = QtCore.Signal(object)
+    workers = QtCore.Signal(object)
     image_ready = QtCore.Signal(str)
     image_object = QtCore.Signal(object)
     status = QtCore.Signal(str)
@@ -239,7 +240,8 @@ class Renderer(QtCore.QObject):
             packet=parse(line)
             if packet and not self.closed and not self.canceled and self.phase=='render':
                 expected=self.session_serial if self.using_session else 0
-                if packet[0]==expected:self.buckets.emit(packet)
+                if packet[0]==expected:
+                    (self.workers if line.startswith('@@MODO_WORKERS ') else self.buckets).emit(packet)
         self.bucket_partial=self.bucket_partial[-65536:]
 
         self.log = (self.log + text)[-65536:]

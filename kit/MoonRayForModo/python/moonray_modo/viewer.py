@@ -7,6 +7,8 @@ class _PreviewBody:
         super().__init__(parent)
         self.image = QtGui.QImage()
         self.buckets=None
+        self.workers=None
+        self.show_workers=True
         self.show_buckets=True
         self.bucket_timeout=QtCore.QTimer(self)
         self.bucket_timeout.setSingleShot(True)
@@ -48,8 +50,17 @@ class _PreviewBody:
     @QtCore.Slot(object)
     def set_buckets(self,packet):
         self.buckets=packet
+        if packet is None:self.workers=None
         if packet:self.bucket_timeout.start(1500)
         else:self.bucket_timeout.stop()
+        self.update()
+
+    def set_workers(self,packet):
+        self.workers=packet
+        self.update()
+
+    def set_worker_overlay(self,enabled):
+        self.show_workers=enabled
         self.update()
 
     def set_show_buckets(self,enabled):
@@ -76,9 +87,10 @@ class _PreviewBody:
             else:
                 painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
                 painter.drawImage(self.image_rect(), self.image)
-            if (self.show_buckets and self.buckets and
-                    (self.image.isNull() or (self.image.width(),self.image.height())==self.buckets[1:3])):
-                _,width,height,rectangles=self.buckets
+            overlay=self.workers if self.show_workers and self.workers is not None else self.buckets
+            if (self.show_buckets and overlay and
+                    (self.image.isNull() or (self.image.width(),self.image.height())==overlay[1:3])):
+                _,width,height,rectangles=overlay
                 scale=min(self.width()/width,self.height()/height)*self.zoom
                 left=(self.width()-width*scale)/2+self.pan.x()
                 top=(self.height()-height*scale)/2+self.pan.y()
