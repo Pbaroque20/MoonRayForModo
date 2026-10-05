@@ -117,20 +117,36 @@ def emit_stack(stack, tag, index, lines, library=None, native_index=None):
         return ref
     default='/modo/stackDefault/'+str(index)
     emit({'color':[.5]*3},default,'stack-default-'+str(index),{},lines)
-    scopes=Groups({'surface':'materials[%s]'%string(default),'groupMask':None},mix)
+    pending_masks={}
+    def bare(value):
+        return value.rsplit(', ',1)[0]+')' if value else None
+    def scalar(value):
+        return value[:-1]+', 1)' if value else None
+    def scoped_mix(background,foreground,group,mask,effect):
+        external=pending_masks.get(group['id'])
+        if external:
+            if mask:
+                name='/modo/layers/%s/mask/%s'%(index,serial[0]);serial[0]+=1
+                lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = %s, ["blend"] = 1 }'%(
+                    string(name),bare(mask)[:-1]+', Rgb(1, 1, 1))',external[:-1]+', Rgb(1, 1, 1))'))
+                mask='bind(ModoTextureMap(%s), 1)'%string(name)
+            else:mask=scalar(external)
+        return mix(background,foreground,group.get('opacity',1),mask)
+    scopes=Groups({'surface':'materials[%s]'%string(default),'groupMask':None},mix,scoped_mix)
     for i,material in enumerate(stack):
         if i>=1000:raise ValueError('Material stack exceeds 1000 layers')
         scopes.select(material.get('material_groups',[]))
         key='/modo/internal/%s/%s'%(index,i)
         identity=1000000+index*1000+i
-        maps=bindings(dict(material,shader='DwaBaseMaterial'),identity,lines,separate_masks=True)
+        maps=bindings(dict(material,shader='DwaBaseMaterial'),identity,lines,separate_masks=True,
+                      mask_state=pending_masks,group_mask=bare(scopes.current['groupMask']))
         row_mask=maps.pop('_rowMask',None)
         group_mask=maps.pop('layerMask',None)
         if group_mask:
             scopes.current['groupMask']=group_mask;scopes.used.add('groupMask')
         if material.get('native_shader'):
             from .shader_library import emit as native_emit,compatible
-            layered=len(stack)>1 or row_mask or group_mask or material.get('layer_opacity',1)!=1 or any(g.get('opacity',1)!=1 for g in material.get('material_groups',[]))
+            layered=len(stack)>1 or row_mask or group_mask or pending_masks or material.get('layer_opacity',1)!=1 or any(g.get('opacity',1)!=1 for g in material.get('material_groups',[]))
             if layered and not compatible(material['native_shader'],'INTERFACE_DWABASELAYERABLE'):
                 raise ValueError(material['native_shader']+' cannot be mixed in a Dwa Shader Tree stack; assign it separately')
             if material.get('node_graph'):

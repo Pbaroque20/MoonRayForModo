@@ -101,7 +101,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     common += 1
                 groups = groups[common:]
             mask_target=layer_mask_target(layer,channel)
-            if base in positions and positions[layer.id] > positions[base] and mask_target!=base:
+            base_scope_ids={group['id'] for group in (texture_groups(by_id[base],channel) or [])} if base in by_id else set()
+            if base in positions and positions[layer.id] > positions[base] and mask_target!=base and mask_target not in base_scope_ids:
                 # An upper material replaces this layer's channels.
                 warnings.append('Layer %s is below its material and is overridden. Move it above the material in the same Shader Tree group.' % layer.name)
                 continue
@@ -220,6 +221,7 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
     positions = {item.id:i for i,item in enumerate(ordered)}
     candidates = sorted(candidates, key=lambda item:positions[item.id])
     result = []
+    captured_group_masks=set()
     for index, base in reversed(list(enumerate(candidates))):
         value = material_values(base)
         value['shader'] = 'DwaBaseMaterial'
@@ -234,14 +236,20 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
                     allowed.add(layer.id)
             except ValueError:
                 continue
+        scope_ids={group['id'] for group in value['material_groups']}
         for layer in ordered:
-            if layer_mask_target(layer,channel)==base.id and (membership is None or layer.id in membership):
-                allowed.add(layer.id)
+            target=layer_mask_target(layer,channel)
+            if membership is not None and layer.id not in membership:continue
+            if target==base.id:allowed.add(layer.id)
+            elif target in scope_ids and layer.id not in captured_group_masks:
+                allowed.add(layer.id);captured_group_masks.add(layer.id)
+            elif layer.id in captured_group_masks:allowed.discard(layer.id)
         collect(scene, {tag:value}, warnings, layer_filter=allowed, material_key=tag)
         if value.get("node_override") and (value.get("node_graph") or value.get("native_shader")):
             masked=any(layer.get('effect') in ('groupMask','layerMask') for layer in value.get('layers',[]))
             groups_opaque=all(g.get('opacity',1)==1 and g.get('blend','normal')=='normal' and not g.get('invert') for g in value['material_groups'])
-            if value.get('layer_opacity',1)==1 and not masked and groups_opaque:
+            inherited_masks=any(layer.get('effect') in ('groupMask','layerMask') for row in result for layer in row.get('layers',[]))
+            if value.get('layer_opacity',1)==1 and not masked and not inherited_masks and groups_opaque and not value['material_groups']:
                 result=[] # An opaque override can discard the hidden lower stack.
             elif not result:
                 result.append({'color':[.5]*3,'shader':'DwaBaseMaterial','name':'Default surface'})

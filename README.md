@@ -4,7 +4,7 @@ MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Mo
 
 The plugin includes CPU and XPU rendering, a dockable live preview, MoonShine material graphs, Shader Tree translation, AOVs, and denoising. Add a **MoonShine Material Override** layer to author native materials in the graph editor.
 
-**Current version: 0.3.43 — experimental development build.**
+**Current version: 0.3.44 — experimental development build.**
 
 [Download the packaged 0.3.40 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.40) · [Installation instructions](docs/INSTALLATION.md)
 

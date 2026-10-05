@@ -2,7 +2,7 @@
 from . import textures
 from .layers import BLENDS
 
-def bindings(material, index, lines, glass=False, absorption=False, separate_masks=False):
+def bindings(material, index, lines, glass=False, absorption=False, separate_masks=False, mask_state=None, group_mask=None):
     from .rdla import string, number, vector
     count = [0]
     def node(kind, attributes):
@@ -27,7 +27,9 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
         if mask is not None:
             attributes['mask'] = mask
         return node('ModoTextureMap', attributes)
-    pending_masks={}
+    # Native material partitions share target masks and the enclosing mask value.
+    pending_masks={} if mask_state is None else mask_state
+    if group_mask is not None:current['groupMask']=group_mask
     def scoped_blend(background,foreground,group,mask,effect):
         if group.get('invert') and effect in textures.COLOR_EFFECTS:
             foreground=node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
