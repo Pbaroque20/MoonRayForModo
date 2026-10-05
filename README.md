@@ -6,7 +6,7 @@ The plugin includes CPU and XPU rendering, a dockable live preview, MoonShine ma
 
 **Current version: 0.3.48 — experimental development build.**
 
-[Download the packaged 0.3.40 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.40) · [Installation instructions](docs/INSTALLATION.md)
+[Download the packaged 0.3.48 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.48) · [Installation instructions](docs/INSTALLATION.md)
 
 ## Current limitations
 
