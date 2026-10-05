@@ -35,6 +35,17 @@ class IprTests(unittest.TestCase):
         self.assertTrue(denoising.enabled(regular))
         self.assertTrue(denoising.guides_required({'denoising':{'engine':'off'}}))
 
+    def test_idle_refinement_preserves_quick_pass(self):
+        from moonray_modo.ipr import refine
+        scene={'width':640}
+        quick,_,_=prepare(scene,640,360,4)
+        refined=refine(quick)
+        self.assertEqual(quick['render_settings']['max_adaptive_samples'],1)
+        self.assertEqual(refined['render_settings']['max_adaptive_samples'],16)
+        self.assertEqual(refined['render_settings']['sampling_mode'],0)
+        self.assertTrue(refined['_ipr_refined'])
+        self.assertTrue(refined['_ipr'])
+
     def test_never_raises_existing_cap_or_resolution(self):
         scene={'width':128,'height':256,'render_settings':{'sampling_mode':0}}
         preview,w,h=prepare(scene,320,640,1)

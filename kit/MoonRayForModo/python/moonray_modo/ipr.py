@@ -22,3 +22,10 @@ def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, erro
     # Cap both scene and normal preview width, so IPR never enlarges either.
     scale=min(1.0,float(width_cap)/max(1,width),float(scene['width'])/max(1,width))
     return result,max(16,round(width*scale)),max(16,round(height*scale))
+
+
+def refine(scene):
+    """Optional idle quality pass; keep scene-owned settings and dimensions intact."""
+    if not scene.get('_ipr'):raise ValueError('Idle refinement requires an IPR snapshot')
+    settings=dict(scene['render_settings'],sampling_mode=0,min_adaptive_samples=1,max_adaptive_samples=16)
+    return dict(scene,render_settings=settings,_ipr_refined=True)

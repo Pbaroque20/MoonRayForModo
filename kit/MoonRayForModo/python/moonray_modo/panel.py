@@ -30,7 +30,11 @@ class Panel(QtWidgets.QWidget):
         self.disposed = False
         self.sequence = None
         self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(1200)
+        self.timer.setInterval(150)
+        self._asset_check_time=0
+        self._ipr_refine_scene=None
+        self.refine_timer=QtCore.QTimer(self);self.refine_timer.setSingleShot(True);self.refine_timer.setInterval(750)
+        self.refine_timer.timeout.connect(self._refine_ipr)
         self.timer.timeout.connect(self._live_tick)
         layout = QtWidgets.QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(4)
         self.tabs = QtWidgets.QTabWidget()
@@ -99,6 +103,10 @@ class Panel(QtWidgets.QWidget):
         controls.addRow('IPR width cap',self.ipr_width)
         controls.addRow('IPR sample cap',self.ipr_samples)
         controls.addRow('IPR adaptive error',self.ipr_error)
+        self.ipr_refine=QtWidgets.QCheckBox('Refine when idle (16 SPP)')
+        self.ipr_refine.setChecked(str(self.settings.value('ipr/refine','false')).lower()=='true')
+        self.ipr_refine.setToolTip('After the quick IPR pass, render 16 uniform samples at the same resolution. Reuses the captured scene, but starts a new accumulation. Denoising stays off.')
+        controls.addRow(self.ipr_refine)
         ipr_note=QtWidgets.QLabel('IPR uses uniform sampling at 1 SPP, adaptive sampling for higher caps, and one light/material/subsurface sample per grid side. Final renders and stored scene settings keep their regular quality.');ipr_note.setWordWrap(True);controls.addRow(ipr_note)
 
         self.region_enabled = QtWidgets.QCheckBox('Render region')
@@ -368,7 +376,7 @@ class Panel(QtWidgets.QWidget):
         self.display_timer.setSingleShot(True);self.display_timer.setInterval(200)
         self.display_timer.timeout.connect(lambda:self._buffer_changed(0))
         self.preview_timer=QtCore.QTimer(self)
-        self.preview_timer.setSingleShot(True);self.preview_timer.setInterval(400)
+        self.preview_timer.setSingleShot(True);self.preview_timer.setInterval(150)
         self.preview_timer.timeout.connect(lambda:self._preview_changed(0))
         for controls,timer in ((self.display_controls,self.display_timer),(self.background_controls,self.preview_timer)):
             for control in controls.values():
@@ -394,9 +402,11 @@ class Panel(QtWidgets.QWidget):
         self.ipr_width.currentIndexChanged.connect(self._ipr_quality_changed)
         self.ipr_samples.currentIndexChanged.connect(self._ipr_quality_changed)
         self.ipr_error.valueChanged.connect(self._ipr_quality_changed)
+        self.ipr_refine.toggled.connect(self._ipr_quality_changed)
 
 
     def _ipr_changed(self,enabled):
+        self.refine_timer.stop()
         self.preview_timer.stop();self.timer.stop()
         self._pending_preview=False;self.release_timer.stop()
         if not enabled:
@@ -417,6 +427,8 @@ class Panel(QtWidgets.QWidget):
         self.settings.setValue('ipr/width',self.ipr_width.currentData())
         self.settings.setValue('ipr/samples',self.ipr_samples.currentData())
         self.settings.setValue('ipr/error',self.ipr_error.value())
+        self.settings.setValue('ipr/refine',self.ipr_refine.isChecked())
+        self.refine_timer.stop()
         if self.ipr_mode.isChecked():self.preview_timer.start()
 
     def _store_workspace(self,*args):
@@ -732,7 +744,9 @@ class Panel(QtWidgets.QWidget):
         self._set_notices(scene['warnings'])
         return scene
 
-    def _submit(self, scene, output=None):
+    def _submit(self, scene, output=None, refining=False):
+        self.refine_timer.stop()
+        self._ipr_refine_scene=scene if not output else None
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self.clay_mode.currentData())
@@ -740,8 +754,11 @@ class Panel(QtWidgets.QWidget):
             from .ipr import prepare
             scene,width,height=prepare(scene,width,height,self.samples.value(),
                                        self.ipr_width.currentData(),self.ipr_samples.currentData(),self.ipr_error.value())
+        if refining:
+            from .ipr import refine
+            scene=refine(scene)
         self.renderer.timeout_seconds = self.timeout.value()*60
-        self.renderer.submit(scene, self.runtime.text(), width, height, 1 if scene.get('_ipr') and not output else self.samples.value(),
+        self.renderer.submit(scene, self.runtime.text(), width, height, (4 if refining else 1) if scene.get('_ipr') and not output else self.samples.value(),
                              self.environment.value(), self.threads.value(), output, persistent_preview=self.persistent_preview.isChecked())
         self.settings.setValue('runtime', self.runtime.text())
         self.last_digest = original_digest
@@ -817,7 +834,11 @@ class Panel(QtWidgets.QWidget):
             from .assets import signature
             # Periodic reconciliation covers host notifications omitted by some
             # procedural mesh providers. Normal idle ticks do not capture geometry.
-            full=full or (self.capture_safety.isChecked() and clock.monotonic()-self._last_full_capture>15) or signature(self._asset_scene)!=self._asset_signature
+            now=clock.monotonic()
+            asset_changed=False
+            if now-self._asset_check_time>=1:
+                self._asset_check_time=now;asset_changed=signature(self._asset_scene)!=self._asset_signature
+            full=full or (self.capture_safety.isChecked() and now-self._last_full_capture>15) or asset_changed
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             if not (full or items or changed):return
@@ -832,6 +853,7 @@ class Panel(QtWidgets.QWidget):
             self.changes.invalidate();self._failed(str(exc))
 
     def stop(self):
+        self.refine_timer.stop()
         self._pending_preview=False;self.release_timer.stop()
         self.preview_timer.stop()
         if self.sequence is not None:
@@ -840,6 +862,7 @@ class Panel(QtWidgets.QWidget):
         self.renderer.stop()
 
     def _failed(self, message):
+        self.refine_timer.stop()
         self.ipr_mode.setChecked(False)
         self.renderer.stop()
         self.status.setText('Render unavailable: ' + message)
@@ -874,6 +897,20 @@ class Panel(QtWidgets.QWidget):
         if not output:
             engine=self.denoiser.currentData() if self.denoise_preview.isChecked() and not self.ipr_mode.isChecked() else 'off'
             self.renderer.buffers.denoiser.request(engine)
+            snapshot=(self.renderer.active or {}).get('snapshot',{})
+            if self.ipr_mode.isChecked() and self.ipr_refine.isChecked() and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:
+                self.refine_timer.start()
+
+    def _refine_ipr(self):
+        if self.disposed or not self.ipr_mode.isChecked() or not self.ipr_refine.isChecked() or self.preview_lock.isChecked() or self._output_busy():return
+        from .interaction import dragging
+        if dragging() or self.preview_timer.isActive():self.refine_timer.start();return
+        generation=self.renderer.generation
+        self._live_tick()  # A pending edit takes priority over quality refinement.
+        if self.renderer.generation!=generation or not self.ipr_mode.isChecked():return
+        if self._ipr_refine_scene is not None:
+            try:self._submit(self._ipr_refine_scene,refining=True)
+            except Exception as exc:self._failed(str(exc))
 
     def _save_path(self,title,key,suffix,name_filter):
         dialog=QtWidgets.QFileDialog(self,title,str(self.settings.value('output/'+key,'')))
@@ -950,6 +987,7 @@ class Panel(QtWidgets.QWidget):
         if not self.disposed:
             self._store_workspace()
             self.disposed = True
+            self.refine_timer.stop()
             self.changes.close()
             self.release_timer.stop()
             self.display_timer.stop()

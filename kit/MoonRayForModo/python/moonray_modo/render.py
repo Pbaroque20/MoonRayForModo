@@ -144,7 +144,7 @@ class Renderer(QtCore.QObject):
         self.progress_timer.start()
         target = int(self.active['samples'])
         adaptive=options.render_values(self.active['snapshot'].get('render_settings',{}))['sampling_mode']==2
-        self.passes = [target] if self.active['output'] or adaptive else sorted(set([1, min(2, target), target]))
+        self.passes = [target] if self.active['output'] or adaptive or self.active['snapshot'].get('_ipr_refined') else sorted(set([1, min(2, target), target]))
         self.log = ''
         self.bucket_partial = ''
         self._begin_pass(self.active['generation'])
