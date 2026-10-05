@@ -46,7 +46,9 @@ def prepare(source,srgb=False,mipmaps=True,color_space=""):
 
 from . import native
 
-EFFECTS = {'diffCol': 'diffuseColor', 'specCol': 'specularColor',
+INTERNAL_EFFECTS = {'driverA','driverB','driverC','driverD'}
+
+EFFECTS = {**{key:key for key in INTERNAL_EFFECTS}, 'diffCol': 'diffuseColor', 'specCol': 'specularColor',
            'rough': 'roughness', 'metallic': 'metallic', 'lumiCol': 'emissiveColor',
            'coatAmt': 'clearcoat', 'coatRough': 'clearcoatRoughness',
            'tranAmt': 'transmission', 'tranCol': 'transmissionColor', 'tranRough': 'refractionRoughness',

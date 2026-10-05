@@ -16,6 +16,8 @@ class CachedDenoise(QtCore.QObject):
         self.process.errorOccurred.connect(self.error)
 
     def request(self, engine):
+        frame=self.cache.frame
+        if frame is not None and frame.get('snapshot',{}).get('_ipr'):engine='off'
         self.requested=engine
         if self.job is not None:return
         frame=self.cache.frame
@@ -72,6 +74,7 @@ class CachedDenoise(QtCore.QObject):
 
     def close(self):
         self.requested='off'
+        self.job=None  # Ignore completion callbacks from intentional cancellation.
         if self.process.state()!=QtCore.QProcess.NotRunning:
             self.process.kill();self.process.waitForFinished(2000)
         self.cleanup()

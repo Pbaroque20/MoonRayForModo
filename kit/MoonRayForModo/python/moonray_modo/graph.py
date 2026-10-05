@@ -2,7 +2,7 @@
 from . import textures
 from .layers import BLENDS
 
-def bindings(material, index, lines, glass=False, absorption=False):
+def bindings(material, index, lines, glass=False, absorption=False, separate_masks=False):
     from .rdla import string, number, vector
     count = [0]
     def node(kind, attributes):
@@ -10,7 +10,7 @@ def bindings(material, index, lines, glass=False, absorption=False):
         lines.append('%s(%s) {' % (kind,string(name)))
         for key, value in attributes.items():
             if value.startswith('bind('):
-                unit = '1' if key in ('height','opacity','mask') else ('Vec3(1, 1, 1)' if key=='input_texture_coordinates' else 'Rgb(1, 1, 1)')
+                unit = '1' if key in ('height','opacity','mask') or (kind=='RampMap' and key=='input') else ('Vec3(1, 1, 1)' if key=='input_texture_coordinates' else 'Rgb(1, 1, 1)')
                 value = value[:-1] + ', ' + unit + ')'
             lines.append('  [%s] = %s,' % (string(key),value))
         lines.append('}')
@@ -55,7 +55,7 @@ def bindings(material, index, lines, glass=False, absorption=False):
             base_values=defaults_for(source)
             if absorption:base_values.update(absorption_values(source))
             for target,foreground in base_values.items():
-                if target in ('groupMask','layerMask'):continue
+                if target in {'groupMask','layerMask'}|textures.INTERNAL_EFFECTS:continue
                 if layer.get('invert') and target in textures.COLOR_EFFECTS:
                     foreground=[1-v for v in foreground] if isinstance(foreground,list) else 1-foreground
                 current[target]=node('ModoTextureMap',{'background':current[target],'foreground':rgb(foreground),'blend':str(BLENDS[layer.get('blend','normal')]),'opacity':number(layer.get('opacity',1)),**({'mask':row_mask} if row_mask else {})})
@@ -81,7 +81,12 @@ def bindings(material, index, lines, glass=False, absorption=False):
             matrix,offset=affine(layer)
             normal_basis=matrix
             coordinates=node('ModoTextureMap',{'mode':'12','uv_affine':vector(matrix,'Vec4'),'uv_offset':vector(offset,'Vec2')})
-        if kind=='constant':
+        if kind=='gradient':
+            from .gradients import emit as emit_gradient
+            foreground=emit_gradient(layer['gradient'],current,node,rgb)
+            if 'alpha' in layer['gradient']:
+                mask=emit_gradient(dict(layer['gradient'],colors=[[v]*3 for v in layer['gradient']['alpha']]),current,node,rgb)
+        elif kind=='constant':
             foreground = rgb(layer['value'])
         elif kind in ('checker','noise'):
             foreground = node('ModoTextureMap', {'mode':str(2 if kind=='checker' else 3),
@@ -190,6 +195,12 @@ def bindings(material, index, lines, glass=False, absorption=False):
         current[effect] = node('ModoTextureMap',attributes)
         used.add(effect)
     current, used = groups.finish()
+    # Native material rows are emitted outside this channel graph. Preserve the
+    # target mask for their BSDF compositor instead of leaving it pending.
+    material_mask=pending_masks.pop(material.get('base_layer_id'),None)
+    if material_mask and not separate_masks:
+        current['groupMask']=node('ModoTextureMap',{'background':current['groupMask'],'foreground':material_mask,'blend':'1'}) if 'groupMask' in used else material_mask
+        used.add('groupMask')
     if absorption:
         from .working_space import expression
         value=current['tranCol']
@@ -199,11 +210,12 @@ def bindings(material, index, lines, glass=False, absorption=False):
         attenuation=node('ModoTextureMap',{'mode':'11','foreground':value,'background':current['absorptionDensity']})
         return {'transmissionColor':attenuation[:-1]+', Rgb(1,1,1))'}
     result = {}
+    if material_mask and separate_masks:result['_rowMask']=material_mask[:-1]+', 1)'
     amounts = {'diffCol':'diffAmt', 'specCol':'specAmt', 'lumiCol':'lumiAmt'}
     for color_effect, amount_effect in amounts.items():
         if amount_effect in used:
             used.add(color_effect)
-    for effect in sorted(used-{'normal','normalCoat','coatBump','bump','diffAmt','specAmt','lumiAmt','dissolve'}):
+    for effect in sorted(used-textures.INTERNAL_EFFECTS-{'normal','normalCoat','coatBump','bump','diffAmt','specAmt','lumiAmt','dissolve'}):
         value = current[effect]
         if effect in amounts:
             amount_effect = amounts[effect]
@@ -225,7 +237,7 @@ def bindings(material, index, lines, glass=False, absorption=False):
 
 
 def defaults_for(material):
-    defaults = {'diffCol':material.get('color',[.5,.5,.5]), 'rough':material.get('roughness',.4),
+    defaults = {**{key:0 for key in textures.INTERNAL_EFFECTS}, 'diffCol':material.get('color',[.5,.5,.5]), 'rough':material.get('roughness',.4),
         'metallic':material.get('metallic',0),'specCol':material.get('specular',[.04]*3),
         'lumiCol':material.get('emission',[0]*3),'coatAmt':material.get('clearcoat',0),
         'coatRough':material.get('clearcoat_roughness',.01),'tranAmt':material.get('transmission',0),

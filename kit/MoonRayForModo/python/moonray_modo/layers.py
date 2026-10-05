@@ -14,6 +14,13 @@ def ordered_items(parent):
         yield item
         yield from ordered_items(item)
 
+def layer_mask_target(layer,channel):
+    if channel(layer,'effect','')!='layerMask' or not layer.parent:return ''
+    siblings=list(reversed(list(layer.parent.children())))
+    index=next((i for i,item in enumerate(siblings) if item.id==layer.id),-1)
+    return siblings[index-1].id if index>0 else ''
+
+
 def material_tag(item, texture=False):
     from .host import channel
     tag = None
@@ -61,7 +68,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             continue
         if channel(layer,'effect','') in baked_effects:
             continue
-        if layer.type not in ('imageMap','constant','checker','noise','grid','dots'):
+        if layer.type not in ('imageMap','constant','checker','noise','grid','dots','gradient'):
             if layer.type not in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','defaultShader','mask','envMaterial') and channel(layer,'effect',None) is not None:
                 try:
                     scope=material_key if layer_filter is not None else material_tag(layer,texture=True)
@@ -93,7 +100,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 while common < min(len(groups), len(base_groups)) and groups[common]['id'] == base_groups[common]['id']:
                     common += 1
                 groups = groups[common:]
-            if base in positions and positions[layer.id] > positions[base]:
+            mask_target=layer_mask_target(layer,channel)
+            if base in positions and positions[layer.id] > positions[base] and mask_target!=base:
                 # An upper material replaces this layer's channels.
                 warnings.append('Layer %s is below its material and is overridden. Move it above the material in the same Shader Tree group.' % layer.name)
                 continue
@@ -107,13 +115,15 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             node = {'identity':layer.id,'kind':layer.type, 'effect':effect, 'opacity':float(channel(layer,'opacity',1)),
                     'blend':blend, 'uv_map':'', 'invert':bool(channel(layer,'invert',0)), 'groups':groups, 'absolute_groups':texture_groups(layer,channel) or []}
             if effect=='layerMask':
-                siblings=list(reversed(list(layer.parent.children())))
-                above=next(i for i,v in enumerate(siblings) if v.id==layer.id)-1
-                node['mask_target']=siblings[above].id if above>=0 else ''
+                node['mask_target']=mask_target
             if effect in ('normal','normalCoat') and (blend not in ('normal','normalblend') or layer.type != 'imageMap'):
                 raise ValueError('normal maps require an image and Normal or Normal Map Blend blending')
             is_color = effect in textures.COLOR_EFFECTS or effect in ('normal','normalCoat')
-            if layer.type == 'constant':
+            if layer.type == 'gradient':
+                from .gradients import capture
+                node['gradient']=capture(layer,channel,is_color)
+                warnings.append('Gradient '+layer.name+': evaluated at 257 samples over input 0..1; outside values clamp. Exact curve and discontinuity parity is unverified.')
+            elif layer.type == 'constant':
                 node['value'] = color(layer,'color',(0,0,0)) if is_color else [float(channel(layer,'value',1))]*3
             else:
                 connected = layer.itemGraph('shadeLoc').forward()
@@ -138,6 +148,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     node['locator_matrix'] = world_matrix(locator)
                     node['axis'] = channel(locator,'projAxis','z')
                     warnings.append('Locator projection is baked at polygon corners; curved projections require sufficient mesh detail: '+layer.name)
+                from .group_scale import texture as scale_texture
+                scale_texture(layer,node,channel)
                 from .coordinates import key
                 node['coordinate_key'] = key(node)
                 if layer.type == 'imageMap':
@@ -222,9 +234,16 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
                     allowed.add(layer.id)
             except ValueError:
                 continue
+        for layer in ordered:
+            if layer_mask_target(layer,channel)==base.id and (membership is None or layer.id in membership):
+                allowed.add(layer.id)
         collect(scene, {tag:value}, warnings, layer_filter=allowed, material_key=tag)
         if value.get("node_override") and (value.get("node_graph") or value.get("native_shader")):
-            if value.get("layer_opacity",1)!=1: raise ValueError("Node override layers currently require 100% opacity")
-            result=[]
+            masked=any(layer.get('effect') in ('groupMask','layerMask') for layer in value.get('layers',[]))
+            groups_opaque=all(g.get('opacity',1)==1 and g.get('blend','normal')=='normal' and not g.get('invert') for g in value['material_groups'])
+            if value.get('layer_opacity',1)==1 and not masked and groups_opaque:
+                result=[] # An opaque override can discard the hidden lower stack.
+            elif not result:
+                result.append({'color':[.5]*3,'shader':'DwaBaseMaterial','name':'Default surface'})
         result.append(value)
     return result

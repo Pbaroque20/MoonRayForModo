@@ -17,6 +17,8 @@ def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, erro
                     target_adaptive_error=max(float(error),settings['target_adaptive_error']),
                     light_samples=1,bsdf_samples=1,bssrdf_samples=1)
     result=dict(scene,render_settings=settings,_ipr=True)
+    result.pop('_denoise_guides',None)
+    if result.get('preview_buffer')=='denoised_beauty':result['preview_buffer']='beauty'
     # Cap both scene and normal preview width, so IPR never enlarges either.
     scale=min(1.0,float(width_cap)/max(1,width),float(scene['width'])/max(1,width))
     return result,max(16,round(width*scale)),max(16,round(height*scale))

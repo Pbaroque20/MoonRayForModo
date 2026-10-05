@@ -181,9 +181,11 @@ class Renderer(QtCore.QObject):
         else:
             snapshot.pop('preview_buffer_file',None)
             snapshot.pop('preview_buffer_files',None)
+        self.denoise_guides={}
+        snapshot.pop('_denoise_guides',None)
         try:
             use_denoise=denoising.enabled(snapshot,bool(request['output']),request.get('linear_preview',False))
-            if use_denoise or (not request['output'] and not request.get('linear_preview')):
+            if denoising.guides_required(snapshot,bool(request['output']),request.get('linear_preview',False)):
                 snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')}
                 self.denoise_guides=snapshot['_denoise_guides']
             if use_denoise:

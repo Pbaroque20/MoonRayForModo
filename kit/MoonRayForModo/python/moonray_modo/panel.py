@@ -405,6 +405,9 @@ class Panel(QtWidgets.QWidget):
         if self._output_busy():
             blocker=QtCore.QSignalBlocker(self.ipr_mode);self.ipr_mode.setChecked(False)
             self.status.setText('Output render continues. Enable IPR after it finishes.');return
+        self.renderer.buffers.denoiser.close()
+        if self.buffer.currentData()=='denoised_beauty':
+            self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if self.preview_lock.isChecked():
             self.status.setText('IPR enabled. Automatic updates will resume when unlocked.');return
         self.render_once()
@@ -753,13 +756,15 @@ class Panel(QtWidgets.QWidget):
 
     def _denoising_changed(self,*args):
         if self.disposed:return
-        engine=self.denoiser.currentData() if self.denoise_preview.isChecked() else 'off'
+        engine=self.denoiser.currentData() if self.denoise_preview.isChecked() and not self.ipr_mode.isChecked() else 'off'
         self.renderer.buffers.denoiser.request(engine)
         key='beauty' if engine=='off' else 'denoised_beauty'
         self.buffer.setCurrentIndex(self.buffer.findData(key))
 
     def _buffer_changed(self,index):
         if self.disposed:return
+        if self.ipr_mode.isChecked() and self.buffer.currentData()=='denoised_beauty':
+            self.buffer.setCurrentIndex(self.buffer.findData('beauty'));return
         try:
             from .display import values
             display=values(self._settings_values()['display'])
@@ -867,7 +872,7 @@ class Panel(QtWidgets.QWidget):
         if not output and self.renderer.session.running():message+=' · MoonRay session retained'
         self.status.setText(message+' · '+self.renderer.backend_status)
         if not output:
-            engine=self.denoiser.currentData() if self.denoise_preview.isChecked() else 'off'
+            engine=self.denoiser.currentData() if self.denoise_preview.isChecked() and not self.ipr_mode.isChecked() else 'off'
             self.renderer.buffers.denoiser.request(engine)
 
     def _save_path(self,title,key,suffix,name_filter):

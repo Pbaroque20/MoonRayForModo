@@ -98,29 +98,51 @@ def emit_stack(stack, tag, index, lines, library=None, native_index=None):
         maps=bindings(material,index,lines)
         emit(material,tag,index,maps,lines)
         return
-    if any(any(g.get('opacity',1)!=1 or g.get('blend','normal')!='normal' or g.get('invert') for g in m.get('material_groups',[])) for m in stack):
-        raise ValueError('Native shader graph groups require explicit material-mix nodes for group processing')
-    for i, material in enumerate(stack):
-        key = '/modo/internal/%s/%s' % (index,i)
-        identity = 1000000 + index*1000+i
-        if i >= 1000:
-            raise ValueError('Material stack exceeds 1000 layers')
-        maps = bindings(dict(material,shader='DwaBaseMaterial'),identity,lines)
-        mask = maps.pop('layerMask',None)
+    from .compositing import Groups
+    scopes_list=[g for material in stack for g in material.get('material_groups',[])]
+    if any(g.get('blend','normal')!='normal' or g.get('invert') for g in scopes_list):
+        raise ValueError('Native BSDF groups support Normal blending without inversion; arithmetic material groups require explicit graph nodes')
+    if any(m.get('layer_blend','normal')!='normal' or m.get('layer_invert') for m in stack):
+        raise ValueError('Native BSDF material layers require Normal blending without inversion')
+    serial=[0]
+    def mix(background,foreground,opacity,mask):
+        opacity=float(opacity)
+        if not math.isfinite(opacity) or not 0<=opacity<=1:raise ValueError('Material opacity must be between zero and one')
+        if opacity==0:return background
+        if opacity==1 and mask is None:return foreground
+        name='/modo/layers/%s/%s'%(index,serial[0]);serial[0]+=1
+        weight=mask.rsplit(', ',1)[0]+', '+number(opacity)+')' if mask else number(opacity)
+        ref='DwaLayerMaterial(%s)'%string(name)
+        lines.append('%s { ["material_A"] = %s, ["material_B"] = %s, ["mask"] = %s }'%(ref,foreground,background,weight))
+        return ref
+    default='/modo/stackDefault/'+str(index)
+    emit({'color':[.5]*3},default,'stack-default-'+str(index),{},lines)
+    scopes=Groups({'surface':'materials[%s]'%string(default),'groupMask':None},mix)
+    for i,material in enumerate(stack):
+        if i>=1000:raise ValueError('Material stack exceeds 1000 layers')
+        scopes.select(material.get('material_groups',[]))
+        key='/modo/internal/%s/%s'%(index,i)
+        identity=1000000+index*1000+i
+        maps=bindings(dict(material,shader='DwaBaseMaterial'),identity,lines,separate_masks=True)
+        row_mask=maps.pop('_rowMask',None)
+        group_mask=maps.pop('layerMask',None)
+        if group_mask:
+            scopes.current['groupMask']=group_mask;scopes.used.add('groupMask')
         if material.get('native_shader'):
-            from .shader_library import emit as native_emit, compatible
-            if len(stack)>1 and not compatible(material['native_shader'],'INTERFACE_DWABASELAYERABLE'):
-                raise ValueError(material['native_shader']+' cannot be used in a Dwa Shader Tree stack; assign it separately')
+            from .shader_library import emit as native_emit,compatible
+            layered=len(stack)>1 or row_mask or group_mask or material.get('layer_opacity',1)!=1 or any(g.get('opacity',1)!=1 for g in material.get('material_groups',[]))
+            if layered and not compatible(material['native_shader'],'INTERFACE_DWABASELAYERABLE'):
+                raise ValueError(material['native_shader']+' cannot be mixed in a Dwa Shader Tree stack; assign it separately')
             if material.get('node_graph'):
                 from .nodes import emit as native_emit
-            ref = native_emit(material,'/modo/native/stack/%s'%identity,native_index or [1000000000+identity],lines,library or {})
+            ref=native_emit(material,'/modo/native/stack/%s'%identity,native_index or [1000000000+identity],lines,library or {})
             lines.append('materials[%s] = %s'%(string(key),ref))
         else:
-            emit(material, key, identity, maps, lines)
-        if i == 0:
-            lines.append('materials[%s] = materials[%s]' % (string(tag),string(key)))
-        else:
-            weight = material.get('layer_opacity',1)
-            weight_expression = mask.rsplit(', ',1)[0]+', '+number(weight)+')' if mask else number(weight)
-            lines.append('materials[%s] = DwaLayerMaterial(%s) { ["material_A"] = materials[%s], ["material_B"] = materials[%s], ["mask"] = %s }' %
-                         (string(tag),string('/modo/layers/%s/%s'%(index,i)),string(key),string(tag),weight_expression))
+            emit(material,key,identity,maps,lines)
+        scopes.current['surface']=mix(scopes.current['surface'],'materials[%s]'%string(key),material.get('layer_opacity',1),row_mask)
+        scopes.used.add('surface')
+    value,used=scopes.finish()
+    # Ungrouped masks control the complete root stack.
+    if 'groupMask' in used:
+        value['surface']=mix('materials[%s]'%string(default),value['surface'],1,value['groupMask'])
+    lines.append('materials[%s] = %s'%(string(tag),value['surface']))

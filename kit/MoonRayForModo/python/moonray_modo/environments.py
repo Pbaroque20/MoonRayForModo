@@ -32,7 +32,7 @@ def collect(scene, warnings):
         for index, layer in enumerate(children):
             try:
                 effect=channel(layer,'effect','envColor')
-                if effect not in ('envColor','groupMask','layerMask'):
+                if effect not in {'envColor','groupMask','layerMask'}|textures.INTERNAL_EFFECTS:
                     raise ValueError('unsupported environment effect '+str(effect))
                 scopes=texture_groups(layer,channel,stop_type='environment')
                 if scopes is None:continue
@@ -76,6 +76,12 @@ def collect(scene, warnings):
                         warnings.append('Physical daylight uses a single-scattering approximation; sun angles, linked Sun Light, haze, ground albedo and sky clamp/gamma are translated; ozone and solar-disc parity remain unverified: '+layer.name)
                     if channel(layer,'fogType','none') != 'none':
                         warnings.append('Environment fog is not translated: '+layer.name)
+                elif layer.type=='gradient':
+                    from .gradients import capture
+                    data=capture(layer,channel,effect=='envColor')
+                    if data['input'] not in textures.INTERNAL_EFFECTS|{'groupMask'}:raise ValueError('Environment gradient requires a Driver or Group Mask input')
+                    entry.update(kind='gradient',gradient=data)
+                    warnings.append('Environment gradient '+layer.name+': sampled over 0..1; outside values clamp.')
                 elif layer.type=='constant':
                     entry.update(kind='color',color=color(layer,'color',(0,0,0)) if effect=='envColor' else [float(channel(layer,'value',1))]*3)
                 elif layer.type in ('grid','dots'):
@@ -120,7 +126,7 @@ def collect(scene, warnings):
             except (ValueError, LookupError, OSError) as exc:
                 warnings.append('Environment %s: %s.' % (layer.name,exc))
         if stack:
-            if len(stack)==1 and not stack[0].get('groups') and stack[0].get('effect')=='envColor' and stack[0]['kind'] not in ('physical','color','procedural') and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections') and stack[0].get('image_channel','ignore') not in ('use','only'):
+            if len(stack)==1 and not stack[0].get('groups') and stack[0].get('effect')=='envColor' and stack[0]['kind'] not in ('physical','color','procedural','gradient') and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections') and stack[0].get('image_channel','ignore') not in ('use','only'):
                 result.append(stack[0])
             else:
                 result.append(dict(item,kind='stack',layers=stack))

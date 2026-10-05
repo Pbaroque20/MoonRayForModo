@@ -5,7 +5,7 @@ import os
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes,materialx,properties,shader_library,node_defaults
-from .node_widgets import GraphView,ParameterDelegate,NumericField,COLORS,curve,file_parameter
+from .node_widgets import GraphView,ParameterDelegate,NumericField,COLORS,curve,file_parameter,tint_value
 
 
 class Socket(QtWidgets.QGraphicsEllipseItem):
@@ -221,7 +221,11 @@ class Editor(QtWidgets.QDialog):
                     if self.table.item(row,0).text()==key:
                         cell=self.table.item(row,1);cell.setText(json.dumps(value))
                         font=cell.font();font.setItalic(False);cell.setFont(font)
-                        cell.setBackground(QtGui.QBrush());break
+                        cell.setBackground(QtGui.QBrush())
+                        self.table.itemDelegateForColumn(1).decorate(cell,spec,value)
+                        field=self.table.cellWidget(row,1)
+                        if field is not None:tint_value(field,value,spec,node['type'],key)
+                        break
                 del blocker
             self.edges()
         except (ValueError,TypeError,KeyError,IndexError) as exc:
@@ -465,6 +469,7 @@ class Editor(QtWidgets.QDialog):
                         pick=QtWidgets.QComboBox();pick.addItem('None',None)
                         for item in sorted(modo.Scene().items('camera' if spec.get('interface')=='INTERFACE_CAMERA' else 'locator'),key=lambda i:i.name.casefold()):pick.addItem(item.name,item.id)
                         chosen=node.get('parameters',{}).get(key) or {};pick.setCurrentIndex(max(0,pick.findData(chosen.get('item'))));self.table.setCellWidget(row,1,pick)
+                        tint_value(pick,chosen or None,spec,node['type'],key)
                         pick.currentIndexChanged.connect(lambda _index,n=identity,k=key,w=pick:self.scene_reference(n,k,w.currentData()))
                     continue
                 row=self.table.rowCount();self.table.insertRow(row)
@@ -484,7 +489,7 @@ class Editor(QtWidgets.QDialog):
                 self.table.setItem(row,0,label);self.table.setItem(row,1,cell)
                 self.table.itemDelegateForColumn(1).decorate(cell,spec,value)
                 if spec['type'] in ('Float','Double') and not spec.get('enum'):
-                    field=NumericField(identity,key,self.layers.currentData() if self.layers.currentData() is not None else -1,spec,value,self.table)
+                    field=NumericField(identity,key,self.layers.currentData() if self.layers.currentData() is not None else -1,spec,value,self.table,kind=node['type'],connected=key in node.get('inputs',{}))
                     field.setToolTip(cell.toolTip());field.changed.connect(self.numeric_changed);field.focused.connect(self.numeric_focus)
                     cell.setFlags(cell.flags() & ~QtCore.Qt.ItemIsEditable)
                     self.table.setCellWidget(row,1,field);self.numeric_fields.append(field)
@@ -494,6 +499,12 @@ class Editor(QtWidgets.QDialog):
         try:
             self.target(identity).setdefault('parameters',{})[key]={'item':value} if value else None
             self.validate_draft();self.remember(before)
+            for row in range(self.table.rowCount()):
+                if self.table.item(row,0).text()==key:
+                    widget=self.table.cellWidget(row,1)
+                    spec=nodes.specs(self.graph['nodes'][identity]['type'])[key]
+                    tint_value(widget,{'item':value} if value else None,spec,self.graph['nodes'][identity]['type'],key)
+                    break
         except (ValueError,TypeError) as exc:self.graph=before;self.error(exc)
 
     def edited(self,cell):

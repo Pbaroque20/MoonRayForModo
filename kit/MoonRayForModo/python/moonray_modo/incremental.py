@@ -1,6 +1,6 @@
 """Conservative edit classification; unknown dependencies force a full capture."""
 LIGHTS={'camera','sunLight','pointLight','areaLight','spotLight','lightMaterial','environment','envMaterial'}
-MATERIALS={'advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','imageMap','constant','checker','noise','grid','dots','videoStill'}
+MATERIALS={'advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','imageMap','constant','checker','noise','grid','dots','gradient','videoStill'}
 
 def classify(scene, identities, cache):
     types={scene.item(identity).type for identity in identities}

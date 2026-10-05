@@ -86,7 +86,7 @@ def material_values(material):
     controls = material_settings(settings)
     diffuse = color(material, 'diffCol', (.5, .5, .5))
     diffuse_amount = float(channel(material, 'diffAmt', 1))
-    return {'name':material.name,'color': [c * diffuse_amount for c in diffuse],
+    value = {'name':material.name,'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
                                 'node_graph': settings.get('node_graph'),
                                 'node_override': settings.get('node_override',False) or material.type in ('material.moonrayMaterialX','material.moonrayMoonShine'),
@@ -127,6 +127,8 @@ def material_values(material):
                                 'opacity': 1.0 - float(channel(material, 'dissAmt', 0)),
                                 'clearcoat': float(channel(material, 'coatAmt', 0)),
                                 'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
+    from .group_scale import material as scale_material
+    return scale_material(material,value,channel)
 
 
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):
@@ -139,7 +141,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     from .mask_types import needs_cache
     for mask in scene.items('mask',superType=False):
         targets = mask.itemGraph('shadeLoc').forward()
-        if needs_cache(channel(mask,'ptyp',''),channel(mask,'ptag',''),any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets)):
+        if needs_cache(channel(mask,'ptyp',''),channel(mask,'ptag',''),any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets)) or channel(mask,'submask',False):
             evaluated_geometry = True
     camera = scene.renderCamera
     if camera is None:

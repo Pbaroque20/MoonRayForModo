@@ -98,9 +98,10 @@ def texture(environment, width=512, height=256):
     from .daylight import color as daylight_color
     from .compositing import Groups
     from .procedurals import sample
+    from .gradients import sample as gradient_sample
     if any(layer['kind']=='physical' for layer in environment['layers']):
         width,height = 256,128
-    digest = hashlib.sha256(('stack-v5-scopes|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
+    digest = hashlib.sha256(('stack-v6-gradients|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
     folder = Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')
@@ -126,12 +127,17 @@ def texture(environment, width=512, height=256):
                             if group['id'] in pending_masks:weight*=sum(pending_masks[group['id']])/3
                             if group.get('invert') and effect=='envColor':b=[1-c for c in b]
                             return blend(a,b,group.get('blend','normal'),weight)
-                        scopes=Groups({'envColor':[0,0,0],'groupMask':[1,1,1]},None,composite)
+                        scopes=Groups({'envColor':[0,0,0],'groupMask':[1,1,1],**{key:[0,0,0] for key in textures.INTERNAL_EFFECTS}},None,composite)
                         for layer,pixels,alpha,inv in layers:
                             scopes.select(layer.get('groups',[]))
                             effect=layer.get('effect','envColor')
                             coverage=1.0
-                            if layer['kind']=='color':
+                            if layer['kind']=='gradient':
+                                values=scopes.current[layer['gradient']['input']]
+                                foreground=gradient_sample(layer['gradient'],sum(values)/3)
+                                if 'alpha' in layer['gradient']:
+                                    coverage=gradient_sample(dict(layer['gradient'],colors=[[v]*3 for v in layer['gradient']['alpha']]),sum(values)/3)[0]
+                            elif layer['kind']=='color':
                                 foreground=layer['color']
                             elif layer['kind']=='procedural':
                                 d=direction if inv is None else [sum(direction[j]*inv[j*4+i] for j in range(3)) for i in range(3)]

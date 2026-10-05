@@ -8,8 +8,13 @@ def settings(value):
     return result
 
 def enabled(snapshot,final=False,linear=False):
+    if snapshot.get('_ipr') and not final:return False
     value=settings(snapshot.get('denoising',{}))
     return value['engine']!='off' and value['final' if final else 'preview'] and not linear and (final or snapshot.get('preview_buffer','beauty')=='beauty')
+
+def guides_required(snapshot,final=False,linear=False):
+    if snapshot.get('_ipr') and not final:return False
+    return enabled(snapshot,final,linear) or (not final and not linear)
 
 def sidecar(path):
     path=Path(path);return path.with_name(path.stem+'.denoised.exr')

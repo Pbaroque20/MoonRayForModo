@@ -43,8 +43,9 @@ def assign_materials(data, scene, warnings):
                     # reach this function; never widen membership to all layers.
                     targets=parent.itemGraph('shadeLoc').forward()
                     targets=[i for i in targets if i.type in ('mesh','meshInst','replicator','groupLocator')]
+                    applicable_ids=source_ids if channel(parent,'instApply',False) else {surface['source_item']}
                     def contains(target):
-                        return target.id in source_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
+                        return target.id in applicable_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
                     if targets and not any(contains(i) for i in targets): return False
                 parent=parent.parent
             return True

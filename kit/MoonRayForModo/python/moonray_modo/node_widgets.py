@@ -3,11 +3,20 @@ import copy,json,re,weakref
 from pathlib import Path
 from PySide2 import QtCore,QtGui,QtWidgets
 from shiboken2 import isValid
-from . import nodes
+from . import nodes,parameter_state
 
 from .file_inputs import file_parameter
 
 COLORS={'map':'#77bce8','material':'#89ce94','normal':'#c6a0e9','displacement':'#e4b367'}
+
+def tint_value(widget,value,spec,kind=None,key=None,connected=False):
+    """Use native palette roles; do not add Python paint/style callbacks."""
+    color=QtGui.QColor(parameter_state.color(value,spec,kind,key,connected))
+    palette=widget.palette()
+    for role in (QtGui.QPalette.Text,QtGui.QPalette.ButtonText,QtGui.QPalette.WindowText):
+        palette.setColor(role,color)
+    widget.setPalette(palette)
+
 
 def curve(a,b):
     distance=max(65,abs(b.x()-a.x())*.5)
@@ -128,19 +137,23 @@ class NumericField(QtWidgets.QDoubleSpinBox):
     """A persistent property control; entering a value never destroys its widget."""
     changed=QtCore.Signal(str,str,int,float)
     focused=QtCore.Signal(str,str)
-    def __init__(self,identity,key,layer,spec,value,parent=None):
+    def __init__(self,identity,key,layer,spec,value,parent=None,kind=None,connected=False):
         super().__init__(parent)
         self.identity,self.key,self.layer=identity,key,layer
+        self.spec,self.kind=spec,kind
         self.setDecimals(6);self.setSingleStep(.1);self.setKeyboardTracking(False)
         self.setRange(float(str(spec.get('min',-1e12)).rstrip('f')),
                       float(str(spec.get('max',1e12)).rstrip('f')))
         self.setValue(float(value or 0));self.setFrame(False)
         self.setAccessibleName(key)
+        tint_value(self,value,spec,kind,key,connected)
         self.valueChanged.connect(self.publish)
     def focusInEvent(self,event):
         super().focusInEvent(event);self.focused.emit(self.identity,self.key)
     @QtCore.Slot(float)
-    def publish(self,value):self.changed.emit(self.identity,self.key,self.layer,value)
+    def publish(self,value):
+        tint_value(self,value,self.spec,self.kind,self.key)
+        self.changed.emit(self.identity,self.key,self.layer,value)
 
 
 class ParameterDelegate(QtWidgets.QStyledItemDelegate):
@@ -170,6 +183,11 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
         return nodes.specs(self.editor.graph['nodes'][identity]['type'])[key]
     def decorate(self,cell,spec,value):
+        identity=self.editor.selected()
+        node=nodes.effective(self.editor.graph)['nodes'].get(identity,{})
+        label=self.editor.table.item(cell.row(),0)
+        key=label.text() if label else None
+        cell.setForeground(QtGui.QBrush(QtGui.QColor(parameter_state.color(value,spec,node.get('type'),key,key in node.get('inputs',{})))))
         # Use Qt's native delegate painting. Borrowed QPainter/style-option
         # wrappers must not cross a Python paint callback in the Modo host.
         decoration=None
@@ -211,10 +229,31 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
                     limit=float(str(spec[key]).rstrip('f'))
                     setter(int(limit) if isinstance(spin,QtWidgets.QSpinBox) else limit)
         self.active_editor=widget
+        identity=self.editor.selected();key=self.editor.table.item(index.row(),0).text()
+        widget.parameter_tint=(spec,self.editor.graph['nodes'][identity]['type'],key)
+        if isinstance(widget,VectorEdit):
+            for spin in widget.spins:spin.valueChanged.connect(self.refresh_tint)
+        elif isinstance(widget,QtWidgets.QComboBox):widget.currentIndexChanged.connect(self.refresh_tint)
+        elif isinstance(widget,QtWidgets.QAbstractSpinBox):widget.valueChanged.connect(self.refresh_tint)
+        elif isinstance(widget,QtWidgets.QLineEdit):widget.textChanged.connect(self.refresh_tint)
         widget.installEventFilter(self)
         for child in widget.findChildren(QtWidgets.QWidget):child.installEventFilter(self)
         if isinstance(widget,VectorEdit):widget.color_accepted.connect(self.commit_pending)
         return widget
+    def refresh_tint(self,*args):
+        widget=self.active_editor
+        if widget is None or not isValid(widget):return
+        spec,kind,key=widget.parameter_tint
+        if isinstance(widget,VectorEdit):value=[spin.value() for spin in widget.spins]
+        elif isinstance(widget,QtWidgets.QComboBox):value=widget.currentData()
+        elif isinstance(widget,QtWidgets.QAbstractSpinBox):value=widget.value()
+        else:
+            try:value=widget.text() if spec['type']=='String' else json.loads(widget.text())
+            except (TypeError,ValueError):return
+        tint_value(widget,value,spec,kind,key)
+        if isinstance(widget,VectorEdit):
+            for spin in widget.spins:tint_value(spin,value,spec,kind,key)
+
     def eventFilter(self,watched,event):
         widget=self.active_editor
         if widget is not None and not isValid(widget):
@@ -261,6 +300,7 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         elif isinstance(widget,VectorEdit):
             for spin,v in zip(widget.spins,value if isinstance(value,list) else [0]*len(widget.spins)):spin.setValue(v)
         else:widget.setText(str(value or '') if spec['type']=='String' else (raw or ''))
+        self.refresh_tint()
     def setModelData(self,widget,model,index):
         if isinstance(widget,QtWidgets.QComboBox):value=widget.currentData()
         elif isinstance(widget,(QtWidgets.QSpinBox,QtWidgets.QDoubleSpinBox)):value=widget.value()

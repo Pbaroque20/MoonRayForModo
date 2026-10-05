@@ -20,6 +20,21 @@ class IprTests(unittest.TestCase):
         self.assertIsNot(preview['render_settings'],scene['render_settings'])
         self.assertEqual(preview['denoising'],scene['denoising'])
 
+    def test_ipr_bypasses_denoiser_and_guides(self):
+        from moonray_modo import denoising
+        scene={'width':640,'denoising':{'engine':'optix','preview':True,'final':True},
+               '_denoise_guides':{'albedo':'old.exr'},'preview_buffer':'denoised_beauty'}
+        preview,_,_=prepare(scene,640,360,4)
+        self.assertFalse(denoising.enabled(preview))
+        self.assertFalse(denoising.guides_required(preview))
+        self.assertNotIn('_denoise_guides',preview)
+        self.assertEqual(preview['preview_buffer'],'beauty')
+        self.assertIn('_denoise_guides',scene)
+        self.assertTrue(denoising.enabled(preview,final=True))
+        regular=dict(scene,preview_buffer='beauty')
+        self.assertTrue(denoising.enabled(regular))
+        self.assertTrue(denoising.guides_required({'denoising':{'engine':'off'}}))
+
     def test_never_raises_existing_cap_or_resolution(self):
         scene={'width':128,'height':256,'render_settings':{'sampling_mode':0}}
         preview,w,h=prepare(scene,320,640,1)
