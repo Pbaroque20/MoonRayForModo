@@ -1,17 +1,16 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.3.48**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
+These instructions are for **0.3.49**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
 
 ## Requirements
 
 - An installed copy of Modo 16.1v9. The supported executable is `C:\Program Files\Modo16.1v9\modo\modo.exe`.
 - An AVX-capable x64 CPU for the bundled CPU runtime.
 - Optional: a compatible NVIDIA GPU and installed NVIDIA driver for XPU/OptiX. The runtime includes CUDA runtime libraries; a CUDA development toolkit is not required. XPU has been exercised on an RTX 3090; compatibility with every GPU/driver combination is not established.
-- Access to this private GitHub repository to download release assets.
 
 ## Download and install
 
-1. Open the [0.3.48 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.48). Download **MoonRayForModo-0.3.48-kit.zip** and **MoonRayForModo-0.3.48-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
+1. Open the [0.3.49 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.49). Download **MoonRayForModo-0.3.49-kit.zip** and **MoonRayForModo-0.3.49-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
 2. Save your scene and close all Modo instances.
 3. Extract both ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders. The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, and `runtime/moonray.exe`.
 4. In Windows Explorer, enter `%APPDATA%\Luxology\Kits`. Create the `Kits` folder if needed. If a `MoonRayForModo` folder already exists, move it to a backup location **outside Kits**; do not merge a new release into the old installation.
@@ -36,3 +35,15 @@ If the MoonRay menu is missing, check the folder nesting and restart Modo. If th
 To roll back, close Modo, move the new kit outside `Kits`, and restore your backed-up kit. If you changed the runtime path, restore that path too. Only one MoonRay kit should remain under `Kits`.
 
 See the [README](../README.md) for current limitations. This release was packaged with file-integrity checks; no new render, Modo UI, or clean-machine tests were run.
+
+## Standalone command-line rendering
+
+Version 0.3.49 defaults to the folder containing `moonray.exe` when locating `shaders/OptixGPUPrograms.ptx` and shader libraries. Keep the complete runtime folder together. No environment setup is required for the bundled layout. Existing `REZ_MOONRAY_ROOT`, `RDL2_DSO_PATH`, and `TMPDIR` settings take precedence; clear stale values if they point to another installation.
+
+In PowerShell, adjust these paths:
+
+```powershell
+& 'C:\path\MoonRayForModo\runtime\moonray.exe' -in 'C:\scenes\scene.rdla' -out 'C:\renders\beauty.exr' -exec_mode xpu 2>&1 | Tee-Object "$env:USERPROFILE\Desktop\moonray-log.txt"
+```
+
+If OptiX still fails, report the complete log and NVIDIA driver version. Automatic file discovery does not resolve an incompatible driver or invalid PTX program.

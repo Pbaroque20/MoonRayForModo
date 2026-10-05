@@ -34,6 +34,7 @@ def main():
         hashes={}
         with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED,compresslevel=6,allowZip64=True) as archive:
             for name,path in sorted(entries.items()):
+                if name in generated:continue
                 archive.write(path,name);hashes[name]={'sha256':digest(path),'bytes':path.stat().st_size}
             for name,data in sorted(generated.items()):
                 archive.writestr(name,data);hashes[name]={'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
