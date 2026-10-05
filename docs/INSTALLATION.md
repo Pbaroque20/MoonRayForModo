@@ -1,6 +1,6 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.3.40**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
+These instructions are for **0.3.48**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ These instructions are for **0.3.40**, **Modo 16.1v9**, and **Windows x64**. Thi
 
 ## Download and install
 
-1. Open the [0.3.40 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.40). Download **MoonRayForModo-0.3.40-kit.zip** and **MoonRayForModo-0.3.40-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
+1. Open the [0.3.48 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.48). Download **MoonRayForModo-0.3.48-kit.zip** and **MoonRayForModo-0.3.48-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
 2. Save your scene and close all Modo instances.
 3. Extract both ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders. The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, and `runtime/moonray.exe`.
 4. In Windows Explorer, enter `%APPDATA%\Luxology\Kits`. Create the `Kits` folder if needed. If a `MoonRayForModo` folder already exists, move it to a backup location **outside Kits**; do not merge a new release into the old installation.
@@ -23,7 +23,7 @@ Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration 
 
 ## Using the plugin
 
-- **Render** starts a preview; **Live** updates it after scene changes. The preview can dock as a Modo custom viewport; it does not populate Modo's built-in Render View slots.
+- **Render** starts a preview; **IPR** updates it after scene changes. The preview can dock as a Modo custom viewport; it does not populate Modo's built-in Render View slots.
 - In the Shader Tree, add **MoonShine Material Override** above a Modo material. Enable the override and choose **Edit Material Graph**.
 - After a preview pass completes, enable **Beauty denoiser** with **Denoise beauty preview** checked to denoise cached pixels without rerendering. Select **Beauty** or **Denoised Beauty** in the render-buffer dropdown.
 
