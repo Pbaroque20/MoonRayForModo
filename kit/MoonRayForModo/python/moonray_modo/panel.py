@@ -319,7 +319,7 @@ class Panel(QtWidgets.QWidget):
         self.preview.set_show_buckets(self.show_buckets.isChecked())
         self.show_buckets.setToolTip('Show active render buckets. Adaptive passes may revisit a bucket; boxes do not indicate completed pixels.')
         self.show_buckets.toggled.connect(self.preview.set_show_buckets)
-        self.show_buckets.toggled.connect(lambda value:self.settings.setValue('show_buckets',value))
+        self.show_buckets.toggled.connect(lambda value:self.settings.setValue('show_buckets',value) if not self.ipr_mode.isChecked() else None)
         buffer_row.addWidget(self.show_buckets)
         self.preview.start_requested.connect(self.render_once)
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
@@ -410,11 +410,13 @@ class Panel(QtWidgets.QWidget):
         self.preview_timer.stop();self.timer.stop()
         self._pending_preview=False;self.release_timer.stop()
         if not enabled:
+            self.show_buckets.setChecked(str(self.settings.value('show_buckets','true')).lower()!='false')
             self.status.setText('IPR off. Use Render to update the preview; the current pass may finish.')
             return
         if self._output_busy():
             blocker=QtCore.QSignalBlocker(self.ipr_mode);self.ipr_mode.setChecked(False)
             self.status.setText('Output render continues. Enable IPR after it finishes.');return
+        self.show_buckets.setChecked(False)
         self.renderer.buffers.denoiser.close()
         if self.buffer.currentData()=='denoised_beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
