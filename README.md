@@ -8,13 +8,22 @@ The plugin includes CPU and XPU rendering, a dockable live preview, MoonShine ma
 
 [Download the packaged 0.3.49 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.49) · [Installation instructions](docs/INSTALLATION.md)
 
-## Current limitations
+**Currently implemented**
+- Native Windows rendering: CPU/AVX and NVIDIA XPU, with XPU → Vector → Scalar fallback.
+- Interactive preview: dockable window, low-resolution IPR, progressive updates, persistent renderer sessions, and worker-tile/bucket overlays.
+- Materials: MoonShine Material Override layers, visual node editor, integrated material preview, and native MoonRay material choices.
+- Modo scene translation: support for common materials, image textures, normal/bump maps, lights, environments, subdivisions, instances, and replicators—with compatibility limits.
+- Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, and cached beauty denoising.
+- Workflow tools: color/LUT controls, animation output and recovery controls, asset library, and partial editable RDL scene import.
 
-- **Modo compatibility:** Full scene parity is unfinished. Some procedural textures, layer effects, masks, light links, and environment behaviors are unsupported or approximate.
-- **MaterialX:** Supports a translated subset, not arbitrary MaterialX graphs or custom shader implementations.
-- **Geometry and import:** Some motion, instancing, projection, and subdivision behavior differs from Modo. Editable RDL import supports selected objects and materials; it cannot preserve every procedural, shader, or animation.
-- **Cryptomatte:** Simultaneous surface categories are supported, but volume coverage remains incomplete. Preview ID colors are not a matte-selection tool.
-- **Preview:** Uses a custom dockable viewport, not Modo’s built-in Render View or render slots. Some edits require full scene capture, and some output paths still use temporary files. Post-render preview denoising requires a pass generated with 0.3.39 or later.
+**Missing or incomplete**
+- Full Modo parity: remaining Shader Tree effects, procedurals, masks, light linking, and environment behavior.
+- Arbitrary MaterialX: currently a supported subset.
+- Exact geometry behavior: some instancing, motion, subdivision, UV/projection, and normal-map cases differ from Modo.
+- Complete Cryptomatte: volume coverage is unfinished; ID previews aren’t an interactive matte-selection tool.
+- Fully incremental preview: some edits still require full scene capture; some image/output paths use temporary files.
+- Complete RDL import: not every shader, procedural, or animation converts into editable Modo content.
+- Production validation: broader large-scene, recovery, color, hardware, and clean-install checks remain.
 - **Production readiness:** Large-scene performance, cancellation and recovery under load, color matching, and clean-machine installation still need broader validation. Recent updates have not been tested; this is not a production-certified release.
 
 Detailed implementation notes and recorded checks are in [docs](docs/). Plugin licensing is in [LICENSE](LICENSE); MoonRay and bundled assets retain their respective licenses.
