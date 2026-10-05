@@ -94,7 +94,7 @@ if args.xpu:
 executable=destination/'moonray.exe'
 if b'MOONRAY_MODO_SESSION' in executable.read_bytes():
     capability=destination/'modo-session.json'
-    capability.write_text(json.dumps({'protocol':1,'scene_memory':True,'command_memory':True,'executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest()},indent=2),encoding='utf-8')
+    capability.write_text(json.dumps({'protocol':1,'scene_memory':True,'command_memory':True,'progressive_preview':b'Modo native progressive preview' in executable.read_bytes(),'executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest()},indent=2),encoding='utf-8')
     manifest['modo-session.json']={'source':str(capability),'sha256':hashlib.sha256(capability.read_bytes()).hexdigest()}
 # Pair-array support is tied to both the instancer DSO and geometry library.
 instancer=destination/'RdlInstancerGeometry.dll'

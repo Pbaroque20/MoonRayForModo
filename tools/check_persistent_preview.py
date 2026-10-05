@@ -10,6 +10,7 @@ from moonray_modo.scene_delta import difference
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('runtime',type=Path)
+    parser.add_argument('--require-progressive-frame',action='store_true',help='Require a streamed preview before DONE for each generation')
     args=parser.parse_args();runtime=native.find_runtime(args.runtime)
     out=root/'test-results'/('persistent-'+time.strftime('%Y%m%d-%H%M%S'))
     out.mkdir(parents=True,exist_ok=False)
@@ -38,10 +39,14 @@ def main():
     thread=threading.Thread(target=reader,daemon=True);thread.start()
     def wait_done(generation):
         deadline=time.monotonic()+180
+        frame_seen=False
         while time.monotonic()<deadline:
             try:line=messages.get(timeout=1)
             except queue.Empty:continue
-            if line=='@@MODO_SESSION DONE %d'%generation:break
+            if line=='@@MODO_SESSION FRAME_beauty %d'%generation:frame_seen=True
+            if line=='@@MODO_SESSION DONE %d'%generation:
+                if args.require_progressive_frame:assert frame_seen,'No progressive frame before completion'
+                break
             if line=='EXIT':raise RuntimeError('Renderer exited; inspect '+str(out/'session.log'))
         else:raise TimeoutError('Session did not complete frame %d'%generation)
         assert process.pid==pid and process.poll() is None

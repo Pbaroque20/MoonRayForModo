@@ -10,6 +10,7 @@
 #include <moonray/rendering/rndr/RenderOutputDriver.h>
 #include <cctype>
 #include <cmath>
+#include "modo_bucket_output.h"
 #include "modo_shared_image.h"
 #include "modo_scene_memory.h"
 
@@ -28,7 +29,8 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
         context.reset();
         context.reset(new rndr::RenderContext(mOptions, &mInitMessages));
         context->initialize(mInitMessages, rndr::RenderContext::LoggingConfiguration::ATHENA_DISABLED);
-        context->setRenderMode(rndr::RenderMode::BATCH);
+        context->setRenderMode(rndr::RenderMode::PROGRESSIVE);
+        std::cout << "Modo native progressive preview" << std::endl;
         context->setRenderPrepCallBack({}, waiting);
     };
     load();
@@ -47,24 +49,29 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                 std::cout << "MoonRay tile dispatch order: " << (tileOrder<9?tileNames[tileOrder]:"Unknown")
                           << "; adaptive skipping and parallel completion can appear scattered." << std::endl;
                 auto lastSnapshot = std::chrono::steady_clock::now();
+                unsigned lastFilmActivity=0;
+                bool published=false;
+                std::string lastView;
+                auto selectedView=[&]() {
+                    std::string key="beauty",selected;
+                    std::ifstream view(fs::u8path(directory)/"view.txt");
+                    if(std::getline(view,selected) && !selected.empty() && selected.size()<=64 &&
+                       std::all_of(selected.begin(),selected.end(),[](unsigned char c){return std::isalnum(c)||c=='_';}))key=selected;
+                    return key;
+                };
                 bool reportedMissingSamples=false;
 
-                auto snapshot = [&]() {
-                    if(useShared && !sharedImage.ready())return;
-                    // The selector changes independently of scene commands: never restart a frame.
-                    std::string key="beauty";
-                    { std::ifstream view(fs::u8path(directory)/"view.txt"); std::string selected;
-                      if (std::getline(view,selected) && !selected.empty() && selected.size()<=64 &&
-                          std::all_of(selected.begin(),selected.end(),[](unsigned char c){return std::isalnum(c)||c=='_';})) key=selected; }
+                auto snapshot = [&](const std::string& key) -> bool {
+                    if(useShared && !sharedImage.ready())return false;
                     const auto preview=fs::u8path(directory)/("preview_"+id+"_"+key+".pfm");
-                    if (fs::exists(preview) || !context->isFrameReadyForDisplay()) return;
+                    if (fs::exists(preview) || !context->isFrameReadyForDisplay()) return false;
                     // Snapshot sample coverage BEFORE color. Coverage alpha is unrelated:
                     // the environment can have zero alpha and valid, sampled RGB.
                     scene_rdl2::fb_util::FloatBuffer sampleWeights;
                     driver->snapshotWeightBuffer(&sampleWeights, true, false);
                     scene_rdl2::fb_util::RenderBuffer pixels;
                     context->snapshotRenderBuffer(&pixels, true, false, false);
-                    if (!pixels.getWidth() || !pixels.getHeight()) return;
+                    if (!pixels.getWidth() || !pixels.getHeight()) return false;
                     scene_rdl2::fb_util::VariablePixelBuffer aov;
                     unsigned channels=0;
                     if (key!="beauty") {
@@ -83,9 +90,9 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                                 outputs->requiresRenderBufferOdd(i)?&odd:nullptr,true,false);
                             channels=outputs->getNumberOfChannels(i);break;
                         }
-                        if (!channels || channels>3 || aov.getWidth()!=pixels.getWidth() || aov.getHeight()!=pixels.getHeight()) return;
+                        if (!channels || channels>3 || aov.getWidth()!=pixels.getWidth() || aov.getHeight()!=pixels.getHeight()) return false;
                     }
-                    if(sampleWeights.getWidth()!=pixels.getWidth() || sampleWeights.getHeight()!=pixels.getHeight())return;
+                    if(sampleWeights.getWidth()!=pixels.getWidth() || sampleWeights.getHeight()!=pixels.getHeight())return false;
                     size_t missingSamples=0;
                     auto readPixel=[&](size_t i,float* rgb) {
                         const unsigned x=i%pixels.getWidth(),y=i/pixels.getWidth();
@@ -107,7 +114,7 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                             reportedMissingSamples=true;
                         }
                     };
-                    if(useShared && sharedImage.publish(id,key,pixels.getWidth(),pixels.getHeight(),readPixel)){reportMissing();return;}
+                    if(useShared && sharedImage.publish(id,key,pixels.getWidth(),pixels.getHeight(),readPixel)){reportMissing();return true;}
                     const auto temporary = fs::u8path(directory) / ("preview_" + id + ".tmp");
                     std::ofstream file(temporary, std::ios::binary);
                     file << "PF\n" << pixels.getWidth() << " " << pixels.getHeight() << "\n-1.0\n";
@@ -117,22 +124,35 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                     }
                     reportMissing();
                     file.close();
-                    if (!file) { fs::remove(temporary); return; }
+                    if (!file) { fs::remove(temporary); return false; }
                     fs::rename(temporary, preview);
                     event(("FRAME_"+key).c_str(), id);
+                    return true;
                 };
                 while (!context->isFrameComplete() && !waiting()) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    printStatusLine(*context, driver->getLastFrameMcrtStartTime(), false);
-                    modoBucketOutput(id,driver->getWidth(),driver->getHeight());
-                    if (std::chrono::steady_clock::now()-lastSnapshot >= std::chrono::milliseconds(250)) {
-                        try { snapshot(); } catch (const std::exception& e) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                    if(waiting())break;
+                    const auto now=std::chrono::steady_clock::now();
+                    const auto filmActivity=context->getFilmActivity();
+                    const auto key=selectedView();
+                    if ((!published || now-lastSnapshot >= std::chrono::milliseconds(100)) &&
+                        (filmActivity!=lastFilmActivity || key!=lastView || !published) && context->isFrameReadyForDisplay()) {
+                        printStatusLine(*context, driver->getLastFrameMcrtStartTime(), false);
+                        modoBucketOutput(id,driver->getWidth(),driver->getHeight());
+                        try {
+                            if(snapshot(key)){published=true;lastFilmActivity=filmActivity;lastView=key;}
+                        } catch (const std::exception& e) {
                             std::cerr << "Modo progressive snapshot: " << e.what() << std::endl;
                         }
                         lastSnapshot=std::chrono::steady_clock::now();
                     }
                 }
                 complete = context->isFrameComplete() && !waiting();
+                // Show a finished short pass before the output writer performs disk I/O.
+                if(complete) {
+                    try { snapshot(selectedView()); }
+                    catch(const std::exception& e){std::cerr << "Modo final snapshot: " << e.what() << std::endl;}
+                }
                 context->stopFrame();
             } else {
                 // Render preparation can leave partial geometry. Recover from the full snapshot.
