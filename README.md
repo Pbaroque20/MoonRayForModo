@@ -1,5 +1,7 @@
 # MoonRay for Modo
 
+<img width="1326" height="1009" alt="Capture" src="https://github.com/user-attachments/assets/d3a600ad-e34a-4498-b1a5-014b97dbed75" />
+
 MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Modo 16.1v9 on Windows**, running natively without WSL. Developed by Raphael Tobar w/ AI-Assistance.
 
 The plugin includes CPU and XPU rendering, a dockable live preview, MoonShine material graphs, Shader Tree translation, AOVs, and denoising. Add a **MoonShine Material Override** layer to author native materials in the graph editor.
