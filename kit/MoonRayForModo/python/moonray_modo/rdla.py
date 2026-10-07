@@ -327,6 +327,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '    ["part_face_count_list"] = %s,' % array(str(len(v)) for v in parts.values()),
                       '    ["part_face_indices"] = %s,' % array(str(f) for v in parts.values() for f in v)]
         lines += ['  }']
+        if scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{}).get('mesh_light'):
+            # MoonRay refuses a MeshLight whose geometry is also in the layer, so the light gets its own copy.
+            opening=len(lines)-1-lines[::-1].index('  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index)
+            lines += ['  RdlMeshGeometry("/modo/meshLight/geometry/%s") {' % index]+lines[opening+1:]
         if parts:
             for part_index, face_tag in enumerate(parts):
                 lines.append('  assign(geometry, %s, %s, %s)' %

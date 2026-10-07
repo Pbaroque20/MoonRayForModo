@@ -83,6 +83,42 @@ Three more scenes cover textures and the two ways a material reaches MoonRay:
 | Nine sphere and rect lights of different power | 0.998 | 98% |
 | A masked material row, a half-opaque group and a bump map | 0.968 | 54% |
 
+A third set, added October 7, 2026, covers what was translated last (MoonLightIPR 2048
+samples, MoonRay 36):
+
+| Scene | MoonLightIPR / MoonRay | Tiles within 10% |
+|---|---|---|
+| Cylinder light | 1.005 | 95% |
+| Portal light in front of a uniform environment | 1.004 | 97% |
+| Mesh light (a lit panel) | 1.014 | 85% |
+| Depth of field, disc lens | 1.010 | 96% |
+| Depth of field, five-blade lens | 1.010 | 97% |
+| Layered environment (a gradient with a colour multiplied over it) | 1.006 | 97% |
+| Physical sky | 1.006 | 93% |
+| Subsurface scattering, full on a ball and half on a cube | 0.965 | 94% |
+| Anisotropy, along and across texture u | 0.987 | 95% |
+| Absorption inside glass | 1.006 | 89% |
+| Dispersion (Abbe number 4) | 1.056 | 83% |
+| Checker, noise, a gradient and layer curves | 0.971 | 56% |
+
+In the last scene the checker, the noise and the gradient agree by eye; the stripes where
+the curves push roughness to about 0.9 are paler in MoonRay. Roughness above 0.6 on
+material stacks has not been compared in isolation. Motion blur has no comparison yet:
+it was checked only for running and for returning to the still image afterwards.
+
+Four things MoonRay itself got wrong came to light here, in the plugin's translation
+rather than in MoonLightIPR. Three are fixed on this branch:
+
+- Mesh lights lit nothing. MoonRay refuses a `MeshLight` whose geometry is also in the
+  render layer; `rdla.py` now gives the light its own copy of the geometry.
+- Gradient layers rendered blank. MoonRay's `RampMap` holds at most 20 points and the
+  plugin sent 257; `gradients.py` now resamples to 20, and MoonLightIPR shows the same 20.
+- Dispersion was never switched on. `DwaBaseMaterial` ignores the Abbe number unless
+  `use_dispersion` is set; `moonshine.py` now sets it.
+- UDIM tiles did not load in the comparison: MoonRay reported every tile missing although
+  the files were there, and drew its error colour. This looks like the Windows port's
+  tile search and was not pursued, so UDIM in MoonLightIPR is unverified against MoonRay.
+
 Texture orientation, sRGB decoding, blending and normal mapping agree with MoonRay to
 about 1% region by region on the plain-material path.
 
@@ -116,8 +152,9 @@ anything else the packer reports as approximated.
 ## Using it in Modo
 
 `python tools/install_moonlight.py` adds a built MoonLightIPR to the installed kit: the
-session into the kit's `runtime/moonlight`, plus the five Python modules that route
-previews to it. It backs up what it replaces under `backups/`, leaves the rest of
+session into the kit's `runtime/moonlight`, plus the Python modules that route
+previews to it and the four MoonRay translation modules fixed alongside (`rdla.py`,
+`lighting.py`, `moonshine.py`, `gradients.py`). It backs up what it replaces under `backups/`, leaves the rest of
 the kit alone, and refuses to run while Modo is open.
 
 The plugin looks for MoonLightIPR in a `moonlight` folder inside the selected MoonRay
@@ -145,26 +182,34 @@ running session leaves out the data of meshes it already holds.
 | `transmission`, `transmission_color`, `refraction_roughness`, `ior`, `thin_geometry` | Refraction through the surface in place of diffuse, tinted on entry, bent at both faces of a solid or passed straight through a thin sheet. Glass casts an opaque shadow to light sampling; light reaches what is behind it through bounce rays, as in MoonRay |
 | `clearcoat`, `clearcoat_roughness` | A second GGX lobe on top. For material stacks it takes its reflection out of the layers beneath, as `DwaBaseMaterial`'s outer specular does; for plain materials it is added, as in `UsdPreviewSurface` |
 | `presence` (and dissolve layers) | Each camera, bounce and shadow ray passes through with that probability, in an any-hit test that only scenes with such a material pay for |
-| Material stacks and their layers on colour, colour amount, roughness, metallic, emission, emission amount, normal, transmission amount, colour and roughness, coat amount and roughness, and dissolve | A layer stack per material: material rows, constants, images and baked grid and dots procedurals, with the plugin's 15 blend modes, opacity, invert, channel flips, single-channel picks, alpha as mask, contrast and brightness, and the four tiling modes. Groups blend their rows as one, with their own opacity, blend mode and group mask, up to 4 deep; layer masks scale the row, material row or group they target |
+| Material stacks and their layers on colour, colour amount, roughness, metallic, emission, emission amount, normal, transmission amount, colour and roughness, coat amount and roughness, dissolve, anisotropy, subsurface amount and colour, and the four driver channels | A layer stack per material: material rows, constants, images, gradients, checker and noise patterns and baked grid and dots procedurals, with the plugin's 15 blend modes and normal map blending, opacity, invert, channel flips, single-channel picks, alpha as mask, gamma, contrast, brightness, bias and gain, and the four tiling modes. Groups blend their rows as one, with their own opacity, blend mode and group mask, up to 4 deep; layer masks scale the row, material row or group they target. Constant rows are worked out by the packer until a channel gets a row that varies, so a material without images costs the GPU no layers |
+| `subsurface_amount`, `subsurface_distance`, `subsurface_color` | Burley's normalized diffusion, MoonRay's default model: the diffuse light of that share of the paths enters, travels a distance drawn from the profile, and is gathered where a probe ray finds the same object again. The dipole and random walk models are shown the same way |
+| `anisotropy` and the anisotropy angle | The Beckmann lobe narrowed along or across a tangent measured from texture u of the primary coordinates, with `DwaBaseMaterial`'s roughness rule |
+| `absorption_distance` | The surface stops tinting; light crossing the solid keeps its transmission colour per that depth |
+| `dispersion_abbe` | Each refraction picks red, green or blue with MoonRay's weights and bends by that colour's index |
+| UDIM image sets | One texture per tile, looked up by the unit square the coordinates fall in |
+| OCIO texture and environment colour spaces, input colour rules, the ACEScg working space | Images go through the configured OCIO config to linear, as the plugin's `maketx` step does; material colours are computed in Rec.709 and taken to the working space on the GPU, environment images by `oiiotool`. Not tested: no OCIO config was at hand |
 | Bump layers and `bump_strength` | The height's slope tilts the shading normal, with the plugin's own formula and step; normal and bump maps combine |
 | Image files | Converted once by the runtime's `oiiotool` to an uncompressed Targa (or a PFM for `.exr`, `.hdr`, `.tx`), cached under `%LOCALAPPDATA%/MoonRayForModo/MoonLight`, capped at 4096 pixels a side, and read by the session; sRGB images are decoded on the GPU |
 | Texture coordinates | Up to 8 coordinate sets per scene, taken from the per-projection sets the capture already bakes, stored per triangle corner |
-| An environment image (latitude-longitude, untransformed UVs) | Converted once to a 1024 x 512 linear float image and importance sampled, with MoonRay's `EnvLight` orientation and the locator's rotation; one image per scene |
+| An environment image (latitude-longitude, untransformed UVs) | Converted once to a 1024 x 512 linear float image and importance sampled, with MoonRay's `EnvLight` orientation and the locator's rotation; one image for lighting and one behind the scene |
+| Layered environments and physical skies | Composed by the plugin's own `environment_layers.texture`, at 256 x 128, then treated as an image |
 | Preview environment intensity; constant and gradient environments | One summed lighting map, and a separate camera background that honours each environment's camera and lighting visibility (MoonRay hides the preview environment light from the camera) |
 | Distant lights | Uniform disc with MoonRay's normalization (`1 / sin^2` of the angular radius) and its direction convention, both read from `DistantLight.cc` |
 | Sphere, rect, disk and spot lights | The same shapes, one-sided where MoonRay's are, with its default normalization (`color * intensity / (pi * area)`) and the spot's focal-plane falloff with the ease-in-out curve. They light the scene and show in reflections but not to the camera |
+| Cylinder lights | The side of a cylinder along local Y, sampled evenly, with the same normalization |
+| Portal lights | A rectangle that shows the lighting environment times its own colour and intensity (MoonRay does not normalize a portal); the environment then lights the scene only through portals. All lighting environments pass through; MoonRay wants one chosen |
+| Mesh lights (Object controls) | The object's triangles emit from both faces, chosen by area, normalized by the total area; the object stays visible with its material. Up to 50,000 triangles, not instanced |
+| Depth of field, f-stop, focus distance, iris blades and rotation | MoonRay's lens: radius from the focal length and f-stop, a disc or a polygon |
+| A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. The panel captures such a snapshot for Render Preview when **System > Motion blur in MoonLightIPR previews** is on; IPR updates stay sharp |
 | Working colour space | The same conversion `rdla.py` applies to colours |
 
 Everything else is reported in the packer's warnings rather than dropped silently:
-gradient, checker and noise layers, the alpha of procedural layers, UDIM tiles, OCIO
-texture colour spaces, texture gamma, bias and gain, normal map blending, layers on
-channels the shader lacks (specular colour, subsurface, coat normals), native shaders
-and node graphs (shown with their base values), subsurface (shown as plain diffuse),
-anisotropy,
-dispersion, absorption inside glass, layered and physical-sky environments and any second
-environment image (shown as uniform grey), cylinder, portal and mesh lights, light
-filters, subdivision (the control cage is shown), curves and volumes, depth of
-field, film offset and the render region. Orthographic cameras are refused.
+the alpha of baked procedural layers, layers on channels the shader lacks (specular
+colour, coat normals, diffuse roughness), native shaders and node graphs (shown with
+their base values), a third environment image (shown as uniform grey), light filters,
+moving lights during the shutter, subdivision (the control cage is shown), curves and
+volumes, film offset and the render region. Orthographic cameras are refused.
 
 ## Build
 
@@ -252,8 +297,8 @@ recapture, which waits for release. Why it was classified so was not established
 ## Not done yet
 
 - Staging MoonLightIPR as part of the installed runtime and the release package.
-- The layer features listed above as reported.
-- Subsurface, anisotropy, dispersion and absorption inside glass.
-- Layered and physical-sky environments; cylinder, portal and mesh lights; light
-  filters.
-- Comparison against MoonRay on scenes captured from Modo.
+- The layer features listed above as reported; light filters.
+- Motion blur during IPR updates, moving lights, and a comparison of motion blur with MoonRay.
+- A test of OCIO colour spaces, and of UDIM against a MoonRay that loads the tiles.
+- Comparison against MoonRay on scenes captured from Modo. Nothing added on October 7
+  has run inside Modo.

@@ -35,6 +35,20 @@ struct Material {
     bool beckmann = false;          // Beckmann specular lobe (DwaBaseMaterial as the plugin sets it up) rather than GGX
     float baseColorAmount = 1.0f;   // multiplies the colour after its layers
     float emissionAmount = 1.0f;
+    // Stretches the Beckmann lobe, as DwaBaseMaterial's anisotropy: -1 to 1, along a tangent
+    // given as (cos, sin) of its angle from texture u in the coordinates of tangentSlot.
+    float anisotropy = 0.0f;
+    float tangent[2] = {1.0f, 0.0f};
+    uint32_t tangentSlot = 8;       // UV_SLOT_COUNT for none
+    // The share of the diffuse light that scatters beneath the surface, and how far it goes:
+    // a distance, scaled per channel by a colour.
+    float subsurface = 0.0f;
+    float subsurfaceColor[3] = {1.0f, 1.0f, 1.0f};
+    float subsurfaceRadius = 0.0f;
+    // A solid whose inside absorbs light: at this depth what is left is the transmission
+    // colour, and the surface itself no longer tints. 0 for none.
+    float absorptionDistance = 0.0f;
+    float abbe = 0.0f;              // Abbe number of a dispersive solid; 0 for none
     uint32_t layerStart = 0;        // this material's run in the layer list given to setMaterials
     uint32_t layerCount = 0;
 };
@@ -63,6 +77,19 @@ struct Layer {
     float opacity = 1.0f;
     float gain = 1.0f;              // applied to the value as value * gain + offset
     float offset = 0.0f;
+    float scale[2] = {1.0f, 1.0f};  // multiplies the texture coordinates
+    float gamma = 1.0f;             // MoonRay's ColorCorrectGammaMap, before gain and offset
+    float bias = 0.5f;              // MoonRay's RemapMap bias, after them
+    float gainCurve = 0.5f;         // the plugin's gain curve, after bias
+    // For the checker and noise flags: the second colour (value is the first), how much of the
+    // row each colour covers, and the noise's shape.
+    float color2[3] = {1, 1, 1};
+    float alpha1 = 1.0f, alpha2 = 1.0f;
+    float octaves = 4.0f, lacunarity = 2.0f, persistence = 0.5f;
+    // With the gradient flag, texture is a 257 x 1 image of the gradient from 0 to 1 and uvSlot
+    // the channel whose value looks it up. With the UDIM flag, texture is instead where this
+    // row's run starts in the tile list given to setMaterials: a count, then that many textures
+    // for tiles 1001 onwards, -1 where a tile is missing.
 };
 
 // Buffers are copied; they need not outlive the call.
@@ -76,6 +103,9 @@ struct MeshDesc {
     // Sets of texture coordinates, each 2 floats per triangle corner (6 per triangle).
     const float* const* uvSets = nullptr;
     size_t uvSetCount = 0;
+    // Where the vertices are when the shutter closes, for a mesh that changes shape; null if it
+    // does not. Shading normals stay as given.
+    const float* closePositions = nullptr;
 };
 
 const uint32_t UV_SLOT_COUNT = 8;
@@ -85,6 +115,10 @@ struct Instance {
     uint32_t material = 0;
     // Row-major 3x4 object-to-world transform.
     float transform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+    int32_t light = -1;     // the mesh light whose triangles are this instance's surface
+    // Where the instance is when the shutter closes, if it moves.
+    bool moves = false;
+    float closeTransform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
 };
 
 // Latitude-longitude map, +Y up, first row at the zenith, with the centre column facing -Z.
@@ -107,20 +141,26 @@ struct DistantLight {
     float angularExtentDegrees = 0.5f;  // full angle of the disc
 };
 
-// A sphere, rectangle, disc or spot light, as MoonRay's lights of the same names. The flat
-// kinds emit from one side, along direction. Sizes are in world units, after any scale.
+// A sphere, rectangle, disc, spot, cylinder, portal or mesh light, as MoonRay's lights of the
+// same names. The flat kinds emit from one side, along direction. A cylinder stands along axisY
+// and emits from its side. A portal is a rectangle that shows the lighting environment, which
+// then reaches the scene only through portals; its radiance multiplies the environment's. A
+// mesh light emits from both faces of its triangles, which must also be an instance in the
+// scene that names this light. Sizes are in world units, after any scale.
 struct Light {
-    enum Kind : uint32_t { Sphere = 0, Rect = 1, Disk = 2, Spot = 3 };
+    enum Kind : uint32_t { Sphere = 0, Rect = 1, Disk = 2, Spot = 3, Cylinder = 4, Portal = 5, Mesh = 6 };
     Kind kind = Sphere;
     float position[3] = {0, 0, 0};
     float axisX[3] = {1, 0, 0};         // in-plane direction of a rect's width
     float axisY[3] = {0, 1, 0};         // in-plane direction of a rect's height
     float direction[3] = {0, 0, -1};
-    float width = 1.0f, height = 1.0f;  // rect
-    float radius = 1.0f;                // sphere, disc, and a spot's lens
+    float width = 1.0f, height = 1.0f;  // rect and portal; height is also a cylinder's length
+    float radius = 1.0f;                // sphere, disc, cylinder, and a spot's lens
     float radiance[3] = {1, 1, 1};      // of the surface, after any normalization
     float outerConeDegrees = 60.0f;     // spot: full angle where the light ends
     float innerConeDegrees = 30.0f;     // spot: full angle where the falloff begins
+    const float* triangles = nullptr;   // mesh: three world-space corners, 9 floats per triangle
+    size_t triangleCount = 0;
 };
 
 struct Camera {
@@ -128,6 +168,13 @@ struct Camera {
     float target[3] = {0, 0, 0};
     float up[3] = {0, 1, 0};
     float verticalFovDegrees = 40.0f;
+    // Depth of field, as MoonRay's: rays leave a lens of this radius and meet on the plane at
+    // focusDistance in front of the camera. 0 is a pinhole. The lens is a disc, or a polygon of
+    // three or more blades turned by bladeAngle radians.
+    float lensRadius = 0.0f;
+    float focusDistance = 1.0f;
+    uint32_t blades = 0;
+    float bladeAngle = 0.0f;
 };
 
 // Every setter restarts accumulation. Errors are reported as std::runtime_error.
@@ -150,13 +197,22 @@ public:
     uint32_t addTexture(const TextureDesc& texture);
     // Frees a texture no current material layer uses; its index may be handed out again.
     void removeTexture(uint32_t texture);
-    void setMaterials(const Material* materials, size_t count, const Layer* layers = nullptr, size_t layerCount = 0);
+    void setMaterials(const Material* materials, size_t count, const Layer* layers = nullptr, size_t layerCount = 0,
+                      const int32_t* tiles = nullptr, size_t tileCount = 0);
     // Rewrites one entry in place.
     void setMaterial(uint32_t index, const Material& material);
     void setEnvironment(const Environment& environment);
     void setDistantLights(const DistantLight* lights, size_t count);
     void setLights(const Light* lights, size_t count);
     void setCamera(const Camera& camera);
+    // Motion blur: the camera as it is when the shutter closes, or null if it holds still.
+    // Each sample renders the whole scene at one moment between open and close, a different
+    // moment per sample, so the accumulated image is blurred; moving instances and meshes that
+    // change shape say so themselves. Lights hold still.
+    void setCameraMotion(const Camera* close);
+    // Nine numbers, the rows of the matrix that takes material colours from Rec.709 to the
+    // space the scene is lit in; null when they are the same.
+    void setWorkingSpace(const float* matrix);
     void resize(uint32_t width, uint32_t height);
     // Total bounces, and of those how many may leave a diffuse and a specular lobe, as
     // MoonRay's max_depth, max_diffuse_depth and max_glossy_depth.

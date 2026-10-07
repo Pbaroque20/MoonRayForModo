@@ -50,8 +50,21 @@ def capture(layer,channel,is_color):
         data['alpha']=[max(0,min(1,x)) for x in alpha]
     return data
 
+RAMP_POINTS=20
+
+def reduced(data):
+    """The gradient as MoonRay's RampMap can hold it: at most 20 points, evenly spaced."""
+    if len(data['positions'])<=RAMP_POINTS:return data
+    positions=[i/(RAMP_POINTS-1) for i in range(RAMP_POINTS)]
+    result=dict(data,positions=positions,colors=[sample(data,x) for x in positions])
+    if 'alpha' in data:
+        result['alpha']=[sample(dict(data,colors=[[a]*3 for a in data['alpha']]),x)[0] for x in positions]
+    return result
+
 def emit(data,current,node,rgb):
     from .rdla import array,number
+    # RampMap refuses more points than this and the layer would render blank.
+    data=reduced(data)
     source=data['input']
     if source not in current:raise ValueError('Missing gradient source '+source)
     signal=node('ModoTextureMap',{'mode':'7','component':'0','foreground':current[source]})

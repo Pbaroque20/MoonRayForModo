@@ -36,6 +36,11 @@ struct Frame {
         t = make_float3(1.0f + sign * n.x * n.x * a, sign * c, -sign * n.x);
         b = make_float3(c, sign + n.y * n.y * a, -n.y);
     }
+    // With a given tangent, which need not be exactly perpendicular to the normal.
+    __forceinline__ __device__ Frame(float3 normal, float3 tangent) : n(normal) {
+        t = normalize(tangent - n * dot(tangent, n));
+        b = cross(n, t);
+    }
     __forceinline__ __device__ float3 toLocal(float3 v) const { return make_float3(dot(v, t), dot(v, b), dot(v, n)); }
     __forceinline__ __device__ float3 toWorld(float3 v) const { return t * v.x + b * v.y + n * v.z; }
 };

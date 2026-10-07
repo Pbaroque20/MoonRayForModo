@@ -14,8 +14,14 @@ struct Hit {
     float3 albedo, emission, transmissionColor;
     float roughness, metallic, ior, underRoughness;
     float transmission, transmissionRoughness, transmissionIor, coat, coatRoughness;
+    float3 tangent;             // the direction a stretched lobe runs in, when anisotropy is not 0
+    float3 subsurfaceRadius;    // mean distance light travels beneath the surface, per channel
+    float3 absorption;          // what is left of light after absorptionDistance inside the solid
+    float anisotropy, subsurface, absorptionDistance, abbe;
     float t;
     unsigned flags;
+    unsigned instance;
+    int light;                  // the mesh light this surface belongs to, or -1
     int valid;
 };
 
@@ -23,11 +29,11 @@ ML_INLINE Hit* hitPayload() {
     return reinterpret_cast<Hit*>((static_cast<unsigned long long>(optixGetPayload_0()) << 32) | optixGetPayload_1());
 }
 
-ML_INLINE void traceRadiance(float3 origin, float3 direction, Hit& hit) {
+ML_INLINE void traceRadiance(float3 origin, float3 direction, Hit& hit, float distance = 1e16f) {
     const unsigned long long address = reinterpret_cast<unsigned long long>(&hit);
     unsigned p0 = unsigned(address >> 32), p1 = unsigned(address);
     hit.valid = 0;
-    optixTrace(params.traversable, origin, direction, 0.0f, 1e16f, 0.0f, OptixVisibilityMask(255),
+    optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(255),
                params.presence ? OPTIX_RAY_FLAG_NONE : OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0, p0, p1);
 }
 
@@ -145,8 +151,10 @@ ML_INLINE float3 sampleDistant(const DeviceDistantLight& light, float u1, float 
     return Frame(vec(light.direction)).toWorld(make_float3(sinTheta * cosf(phi), sinTheta * sinf(phi), 1.0f - versine));
 }
 
-// ---- Sphere, rectangle, disc and spot lights ---------------------------------------------------
+// ---- Sphere, rectangle, disc, spot, cylinder, portal and mesh lights ---------------------------
 // They light the scene and appear in reflections, but neither block rays nor show to the camera.
+// A portal is a rectangle that shows the lighting environment; a mesh light is the surface of
+// an object in the scene, so rays find it by hitting that object.
 
 // MoonRay measures a spot's falloff where the line from the lens point through the shaded
 // point meets the focal plane, with its default ease-in-out curve.
@@ -185,8 +193,46 @@ ML_INLINE bool sampleLight(const DeviceLight& light, float3 p, float u1, float u
         pdf = 1.0f / (2.0f * ML_PI * capVersine);
         return true;
     }
+    if (light.type == LIGHT_CYLINDER) {
+        // Uniform over the side, as MoonRay samples it; the ends do not emit.
+        const float phi = 2.0f * ML_PI * u1;
+        const float3 outward = vec(light.u) * cosf(phi) + vec(light.normal) * sinf(phi);
+        const float3 onSide = centre + outward * light.radius + vec(light.v) * ((2.0f * u2 - 1.0f) * light.halfHeight);
+        wi = onSide - p;
+        distance = length(wi);
+        if (distance <= 1e-6f) return false;
+        wi = wi * (1.0f / distance);
+        const float cosine = -dot(wi, outward);
+        if (cosine <= 1e-6f) return false;
+        pdf = distance * distance / (light.area * cosine);
+        return true;
+    }
+    if (light.type == LIGHT_MESH) {
+        // A triangle in proportion to its area, then a point on it.
+        const float* triangles = reinterpret_cast<const float*>(light.triangles);
+        unsigned low = 0, high = light.triangleCount - 1;
+        while (low < high) {
+            const unsigned middle = (low + high) / 2;
+            if (u1 < triangles[middle * 10 + 9]) high = middle; else low = middle + 1;
+        }
+        const float* triangle = triangles + low * 10;
+        const float before = low ? triangle[-1] : 0.0f, span = triangle[9] - before;
+        float a = span > 0.0f ? clamp((u1 - before) / span, 0.0f, 1.0f) : 0.5f, b = u2;
+        if (a + b > 1.0f) { a = 1.0f - a; b = 1.0f - b; }
+        const float3 e1 = vec(triangle + 3), e2 = vec(triangle + 6);
+        const float3 n = cross(e1, e2);
+        wi = vec(triangle) + e1 * a + e2 * b - p;
+        distance = length(wi);
+        const float normalLength = length(n);
+        if (distance <= 1e-6f || normalLength <= 0.0f) return false;
+        wi = wi * (1.0f / distance);
+        const float cosine = fabsf(dot(wi, n)) / normalLength;
+        if (cosine <= 1e-6f) return false;
+        pdf = distance * distance / (light.area * cosine);
+        return true;
+    }
     float3 onLight;
-    if (light.type == LIGHT_RECT) {
+    if (light.type == LIGHT_RECT || light.type == LIGHT_PORTAL) {
         onLight = centre + vec(light.u) * (2.0f * u1 - 1.0f) + vec(light.v) * (2.0f * u2 - 1.0f);
     } else {
         const float r = light.radius * sqrtf(u1), phi = 2.0f * ML_PI * u2;
@@ -199,6 +245,11 @@ ML_INLINE bool sampleLight(const DeviceLight& light, float3 p, float u1, float u
     if (cosine <= 1e-6f) return false;
     pdf = distance * distance / (light.area * cosine);
     if (light.type == LIGHT_SPOT) radiance = radiance * spotFalloff(light, p, onLight);
+    if (light.type == LIGHT_PORTAL) {
+        // The environment seen through the opening, which nothing beyond it may block.
+        radiance = radiance * envRadiance(wi);
+        distance = 1e16f;
+    }
     return true;
 }
 
@@ -217,18 +268,41 @@ ML_INLINE bool hitLight(const DeviceLight& light, float3 p, float3 direction, fl
         pdf = 1.0f / (2.0f * ML_PI * sphereVersine(radiusSquared, distanceSquared));
         return true;
     }
+    if (light.type == LIGHT_MESH) return false;     // found by hitting its object instead
+    if (light.type == LIGHT_CYLINDER) {
+        // MoonRay's test for a cylinder lit on the outside only.
+        const float3 axis = vec(light.v), toCentre = centre - p;
+        const float a = dot(toCentre, axis), b = dot(direction, axis);
+        if (a * (b < 0.0f ? -1.0f : 1.0f) <= -light.halfHeight) return false;
+        const float along = dot(toCentre, direction) - a * b;
+        const float outside = dot(toCentre, toCentre) - a * a - light.radius * light.radius;
+        if (outside <= 0.0f || along <= 0.0f) return false;
+        const float quadratic = 1.0f - b * b, discriminant = along * along - quadratic * outside;
+        if (quadratic <= 0.0f || discriminant <= 0.0f) return false;
+        const float distance = (along - sqrtf(discriminant)) / quadratic;
+        if (distance < 0.0f || distance >= maxDistance) return false;
+        const float y = distance * b - a;
+        if (fabsf(y) > light.halfHeight) return false;
+        const float3 outward = (direction * distance - toCentre - axis * y) * (1.0f / light.radius);
+        const float cosine = -dot(direction, outward);
+        if (cosine <= 1e-6f) return false;
+        pdf = distance * distance / (light.area * cosine);
+        return true;
+    }
     const float3 n = vec(light.normal);
     const float cosine = -dot(direction, n), height = dot(p - centre, n);
     if (cosine <= 1e-6f || height <= 0.0f) return false;
     const float distance = height / cosine;
-    if (distance >= maxDistance) return false;
+    // A portal only passes rays that go on to reach the environment.
+    if (light.type == LIGHT_PORTAL ? maxDistance < 1e29f : distance >= maxDistance) return false;
     const float3 onLight = p + direction * distance, offset = onLight - centre;
-    if (light.type == LIGHT_RECT) {
+    if (light.type == LIGHT_RECT || light.type == LIGHT_PORTAL) {
         const float3 u = vec(light.u), v = vec(light.v);
         if (fabsf(dot(offset, u)) > dot(u, u) || fabsf(dot(offset, v)) > dot(v, v)) return false;
     } else if (dot(offset, offset) > light.radius * light.radius) return false;
     pdf = distance * distance / (light.area * cosine);
     if (light.type == LIGHT_SPOT) radiance = radiance * spotFalloff(light, p, onLight);
+    if (light.type == LIGHT_PORTAL) radiance = radiance * envRadiance(direction);
     return true;
 }
 
@@ -262,7 +336,10 @@ struct Surface {
     bool coatDims;          // the coat takes its reflection out of what is beneath it
     bool thin;
     bool beckmann;          // the specular lobe's distribution; the coat is always GGX
+    bool matte;             // light coming out from beneath the surface: diffuse only
     float roughness;
+    float alphaX, alphaY;   // the Beckmann lobe's width along and across the surface tangent
+    float diffuseScale;     // 0 while the diffuse light is being gathered beneath the surface instead
 };
 
 ML_INLINE Surface surfaceFrom(const Hit& hit) {
@@ -282,7 +359,19 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.coatDims = (hit.flags & MATERIAL_COAT_DIMS) != 0;
     s.thin = (hit.flags & MATERIAL_THIN) != 0;
     s.beckmann = (hit.flags & MATERIAL_BECKMANN) != 0;
+    s.matte = (hit.flags & MATERIAL_MATTE) != 0;
     s.roughness = sqrtf(s.alpha);
+    s.alphaX = s.alphaY = s.alpha;
+    if (hit.anisotropy != 0.0f) {
+        // DwaBaseMaterial narrows the lobe along the tangent for a positive value, across it for
+        // a negative one.
+        const float along = hit.anisotropy > 0.0f ? hit.roughness * (1.0f - hit.anisotropy) : hit.roughness;
+        const float across = hit.anisotropy < 0.0f ? hit.roughness * (1.0f + hit.anisotropy) : hit.roughness;
+        s.alphaX = fmaxf(along * along, 0.001f);
+        s.alphaY = fmaxf(across * across, 0.001f);
+        s.roughness = sqrtf(sqrtf(s.alphaX * s.alphaY));
+    }
+    s.diffuseScale = 1.0f;
     return s;
 }
 
@@ -317,7 +406,7 @@ ML_INLINE float entering(const Surface& s, float3 wo) {
     return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo);
 }
 ML_INLINE float3 diffuseColor(const Surface& s, float3 wo) {
-    return s.albedo * (entering(s, wo) * (1.0f - s.transmission));
+    return s.albedo * (entering(s, wo) * (1.0f - s.transmission) * s.diffuseScale);
 }
 // The share of the light that is refracted through the surface rather than scattered at it.
 ML_INLINE float transmitted(const Surface& s, float3 wo) {
@@ -333,12 +422,15 @@ ML_INLINE float smithG1(float alpha, float nv) {
 }
 // The Beckmann distribution and its shadowing, as MoonRay's Cook-Torrance lobe evaluates them
 // (Walter et al. 2007, with the rational approximation of the shadowing term).
-ML_INLINE float beckmannD(float alpha, float nh) {
-    const float a2 = alpha * alpha, c2 = nh * nh;
-    return c2 > 0.0f ? expf((c2 - 1.0f) / (c2 * a2)) / (ML_PI * a2 * c2 * c2) : 0.0f;
+// Both take a width along each axis of the shading frame, which differ for a stretched lobe.
+ML_INLINE float beckmannD(float alphaX, float alphaY, float3 h) {
+    const float c2 = h.z * h.z;
+    if (c2 <= 0.0f) return 0.0f;
+    const float slope = (h.x * h.x / (alphaX * alphaX) + h.y * h.y / (alphaY * alphaY)) / c2;
+    return expf(-slope) / (ML_PI * alphaX * alphaY * c2 * c2);
 }
-ML_INLINE float beckmannG1(float alpha, float nv) {
-    const float a = nv / (alpha * sqrtf(fmaxf(1e-12f, 1.0f - nv * nv)));
+ML_INLINE float beckmannG1(float alphaX, float alphaY, float3 v) {
+    const float a = v.z / sqrtf(fmaxf(1e-12f, v.x * v.x * alphaX * alphaX + v.y * v.y * alphaY * alphaY));
     return a < 1.6f ? (3.535f * a + 2.181f * a * a) / (1.0f + 2.276f * a + 2.577f * a * a) : 1.0f;
 }
 
@@ -390,7 +482,7 @@ ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
     const float diffuse = luminance(diffuseColor(s, wo));
     Lobes lobes;
     lobes.coat = coat + specular > 0.0f ? coat / (coat + specular) : 0.0f;
-    lobes.specular = diffuse <= 0.0f ? 1.0f : clamp((coat + specular) / (coat + specular + diffuse), 0.1f, 0.9f);
+    lobes.specular = s.matte ? 0.0f : diffuse <= 0.0f ? 1.0f : clamp((coat + specular) / (coat + specular + diffuse), 0.1f, 0.9f);
     return lobes;
 }
 
@@ -409,8 +501,9 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     const float cosine = dot(wo, h);
     if (s.beckmann) {
         // Sampled from the distribution of facets itself, so its density follows the half vector.
-        const float d = beckmannD(s.alpha, h.z);
-        e.specular = specularFresnel(s, cosine) * (underCoat(s, wo) * d * beckmannG1(s.alpha, wo.z) * beckmannG1(s.alpha, wi.z) / (4.0f * wo.z));
+        const float d = beckmannD(s.alphaX, s.alphaY, h);
+        e.specular = specularFresnel(s, cosine) * (underCoat(s, wo) * d * beckmannG1(s.alphaX, s.alphaY, wo)
+                                                   * beckmannG1(s.alphaX, s.alphaY, wi) / (4.0f * wo.z));
         e.specularPdf = (1.0f - lobes.coat) * d * h.z / (4.0f * fmaxf(cosine, 1e-6f));
     } else {
         const float d = ggxD(s.alpha, h.z), g1o = smithG1(s.alpha, wo.z), g1i = smithG1(s.alpha, wi.z);
@@ -448,11 +541,22 @@ ML_INLINE float3 sampleFacet(float alpha, float3 wo, float u1, float u2) {
     const float3 nh = t1 * a + t2 * b + vh * sqrtf(fmaxf(0.0f, 1.0f - a * a - b * b));
     return normalize(make_float3(alpha * nh.x, alpha * nh.y, fmaxf(0.0f, nh.z)));
 }
-// A facet drawn from the Beckmann distribution.
-ML_INLINE float3 sampleBeckmann(float alpha, float u1, float u2) {
-    const float tanSquared = -alpha * alpha * logf(fmaxf(1e-12f, 1.0f - u1)), phi = 2.0f * ML_PI * u2;
-    const float cosTheta = 1.0f / sqrtf(1.0f + tanSquared), sinTheta = cosTheta * sqrtf(tanSquared);
-    return make_float3(sinTheta * cosf(phi), sinTheta * sinf(phi), cosTheta);
+// A facet drawn from the Beckmann distribution: a slope of unit width, stretched along each axis.
+ML_INLINE float3 sampleBeckmann(float alphaX, float alphaY, float u1, float u2) {
+    const float slope = sqrtf(-logf(fmaxf(1e-12f, 1.0f - u1))), phi = 2.0f * ML_PI * u2;
+    return normalize(make_float3(alphaX * slope * cosf(phi), alphaY * slope * sinf(phi), 1.0f));
+}
+
+// MoonRay's dispersion: each refraction picks red, green or blue, bends by that colour's index
+// and carries only that colour. The Abbe number spreads the indices around the green one.
+ML_INLINE float spectralIor(float ior, float abbe, float u, float3& tint) {
+    tint = vec(1.0f);
+    if (abbe <= 0.0f) return ior;
+    const float blue = (ior - 1.0f) / (2.0f * abbe) + ior, red = 2.0f * ior - blue;
+    if (u < 0.35f) { tint = make_float3(1.0f / 0.35f, 0.0f, 0.0f); return fmaxf(red, 1.0001f); }
+    if (u < 0.7f) { tint = make_float3(0.0f, 1.0f / 0.35f, 0.0f); return ior; }
+    tint = make_float3(0.0f, 0.0f, 1.0f / 0.3f);
+    return fmaxf(blue, 1.0001f);
 }
 ML_INLINE float3 reflectAbout(float3 wo, float3 h) { return h * (2.0f * dot(wo, h)) - wo; }
 
@@ -479,6 +583,62 @@ ML_INLINE float3 clampSample(float3 contribution, bool scattered) {
 
 // ---- Programs ----------------------------------------------------------------------------------
 
+// Next event estimation at one surface point: the environment, the distant lights, then the
+// local lights. weight is the path's weight on arriving at the surface.
+ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
+                             float3 p, float3 ng, float3 weight, bool lit, unsigned& seed) {
+    const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
+    const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
+    float3 radiance = vec(0.0f);
+    // With a portal in the scene the environment is sampled through it, as one of the lights.
+    if (!params.envPortal) {
+        float lightPdf;
+        const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
+        if (lightPdf > 0.0f && dot(ng, toLight) > 0.0f) {
+            const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLight));
+            const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
+            if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(p, ng, toLight), toLight, seed))
+                radiance += clampSample(weight * (e.diffuse + e.specular) * envRadiance(toLight)
+                                        * (powerHeuristic(lightPdf, pdf) / lightPdf), lit);
+        }
+    }
+    for (unsigned i = 0; i < params.distantLightCount; ++i) {
+        const DeviceDistantLight& light = distantLights[i];
+        const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
+        if (dot(ng, toSun) <= 0.0f) continue;
+        const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toSun));
+        const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
+        if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(p, ng, toSun), toSun, seed))
+            radiance += clampSample(weight * (e.diffuse + e.specular) * vec(light.radiance)
+                                    * (powerHeuristic(distantPdf(light), pdf) / distantPdf(light)), lit);
+    }
+    const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
+    const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
+    for (unsigned i = firstLight; i < lastLight; ++i) {
+        float3 toLamp, emitted;
+        float distance, lampPdf;
+        if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
+        if (dot(ng, toLamp) <= 0.0f) continue;
+        if (params.lightPick) lampPdf *= lights[i].pick;
+        const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLamp));
+        const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
+        if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f))
+            radiance += clampSample(weight * (e.diffuse + e.specular) * emitted
+                                    * (powerHeuristic(lampPdf, pdf) / lampPdf), lit);
+    }
+    return radiance;
+}
+
+// Burley's normalized diffusion, MoonRay's default subsurface model: how wide the profile of a
+// channel is for its albedo and mean free path, and the profile's shape at a distance.
+ML_INLINE float profileWidth(float albedo, float radius) {
+    const float offset = albedo - 0.33f, squared = offset * offset;
+    return fmaxf(radius, 0.001f) / (3.5f + 100.0f * squared * squared);
+}
+ML_INLINE float profileShape(float r, float width) {
+    return (expf(-r / width) + expf(-r / (3.0f * width))) / width;
+}
+
 extern "C" __global__ void __raygen__moonlight() {
     const uint3 index = optixGetLaunchIndex();
     const unsigned pixel = index.y * params.width + index.x;
@@ -488,6 +648,29 @@ extern "C" __global__ void __raygen__moonlight() {
     const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
     float3 origin = vec(params.cameraOrigin);
     float3 direction = normalize(vec(params.cameraU) * sx + vec(params.cameraV) * sy + vec(params.cameraW));
+    if (params.lensRadius > 0.0f) {
+        // Depth of field: the ray leaves a point on the lens and still passes through where the
+        // pinhole ray meets the plane in focus.
+        float lensX, lensY;
+        const float u = rnd(seed), v = rnd(seed);
+        if (params.lensBlades) {
+            // A polygon, as MoonRay's: one of its triangles, then a point spread evenly over it.
+            const float scaled = u * params.lensBlades;
+            const unsigned blade = min(unsigned(scaled), params.lensBlades - 1);
+            const float along = scaled - blade, out = sqrtf(v), step = 2.0f * ML_PI / params.lensBlades;
+            const float a0 = params.lensAngle + step * blade, a1 = a0 + step;
+            lensX = out * (cosf(a0) + (cosf(a1) - cosf(a0)) * along);
+            lensY = out * (sinf(a0) + (sinf(a1) - sinf(a0)) * along);
+        } else {
+            const float r = sqrtf(u), phi = 2.0f * ML_PI * v;
+            lensX = r * cosf(phi);
+            lensY = r * sinf(phi);
+        }
+        const float3 forward = normalize(vec(params.cameraW));
+        const float3 focus = origin + direction * (params.focusDistance / dot(direction, forward));
+        origin = origin + (normalize(vec(params.cameraU)) * lensX + normalize(vec(params.cameraV)) * lensY) * params.lensRadius;
+        direction = normalize(focus - origin);
+    }
 
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
@@ -501,12 +684,42 @@ extern "C" __global__ void __raygen__moonlight() {
     bool bounces = true;
     bool sharp = true;          // the ray left a mirror-like event, which light sampling cannot find
     bool clampFound = false;    // whether light found along the ray is subject to the sample clamp
+    // Light that scatters beneath a surface: the next ray only looks for where it comes out,
+    // within reach of where it went in, and that point is then shaded as plain diffuse.
+    bool probing = false;
+    float reach = 1e16f;
+    unsigned entryInstance = 0;
 
     for (unsigned depth = 0;; ++depth) {
         Hit hit;
-        traceRadiance(origin, direction, hit);
-        const bool camera = depth == 0;
-        for (unsigned i = 0; !camera && i < params.lightCount; ++i) {
+        traceRadiance(origin, direction, hit, reach);
+        const bool emerged = probing;
+        if (emerged) {
+            // The probe looked straight down the normal of where the light went in. Failing to find
+            // the same object, the light comes out level with that point.
+            const bool found = hit.valid && hit.instance == entryInstance;
+            const float3 ng = found ? (dot(hit.ng, direction) > 0.0f ? -hit.ng : hit.ng) : -direction;
+            const float3 ns = found ? (dot(hit.ns, ng) < 0.0f ? -hit.ns : hit.ns) : -direction;
+            hit.p = found ? hit.p : origin + direction * (0.5f * reach);
+            hit.ng = ng;
+            hit.ns = ns;
+            hit.albedo = vec(1.0f);     // its colour is already in the path's weight
+            hit.emission = hit.tangent = hit.subsurfaceRadius = vec(0.0f);
+            hit.transmissionColor = hit.absorption = vec(1.0f);
+            hit.roughness = 0.5f;
+            hit.ior = 1.0001f;      // nothing is reflected on the way out
+            hit.metallic = hit.underRoughness = hit.transmission = hit.transmissionRoughness = hit.coat = hit.coatRoughness = 0.0f;
+            hit.transmissionIor = 1.5f;
+            hit.anisotropy = hit.subsurface = hit.absorptionDistance = hit.abbe = 0.0f;
+            hit.flags = MATERIAL_MATTE;
+            hit.light = -1;
+            hit.valid = 1;
+            direction = -ns;        // seen from straight above, as far as the diffuse lobe cares
+            probing = false;
+            reach = 1e16f;
+        }
+        const bool camera = depth == 0 && !emerged;
+        for (unsigned i = 0; !camera && !emerged && i < params.lightCount; ++i) {
             float pdf;
             float3 emitted;
             if (hitLight(lights[i], origin, direction, hit.valid ? hit.t : 1e30f, pdf, emitted))
@@ -517,7 +730,7 @@ extern "C" __global__ void __raygen__moonlight() {
             // Camera rays see the background, which may differ from what lights the scene;
             // later bounces share the lighting environment with light sampling.
             const float3 sky = camera ? envLookup(reinterpret_cast<const float4*>(params.envBackground), params.envBackgroundRotation, direction)
-                                      : envRadiance(direction);
+                             : params.envPortal ? vec(0.0f) : envRadiance(direction);
             radiance += clampSample(throughput * lightWeight * sky * (sharp ? 1.0f : powerHeuristic(bsdfPdf, envPdf(direction))), clampFound);
             if (camera) guideAlbedo = make_float3(fminf(sky.x, 1.0f), fminf(sky.y, 1.0f), fminf(sky.z, 1.0f));
             // Distant lights are found by scattered rays only; the camera does not see their discs.
@@ -529,14 +742,27 @@ extern "C" __global__ void __raygen__moonlight() {
             }
             break;
         }
+        // A mesh light is the surface just hit; it emits from both faces.
+        if (!camera && !emerged && hit.light >= 0) {
+            const DeviceLight& light = lights[hit.light];
+            const float cosine = fabsf(dot(direction, hit.ng));
+            if (cosine > 1e-6f) {
+                const float pdf = hit.t * hit.t / (light.area * cosine);
+                radiance += clampSample(throughput * lightWeight * vec(light.radiance)
+                                        * (sharp ? 1.0f : powerHeuristic(bsdfPdf, params.lightPick ? pdf * light.pick : pdf)), clampFound);
+            }
+        }
 
-        const Surface surface = surfaceFrom(hit);
-        radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
-        if (!bounces) break;
-        throughput *= bounceWeight;
+        Surface surface = surfaceFrom(hit);
+        if (!emerged) {
+            radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
+            if (!bounces) break;
+            throughput *= bounceWeight;
+            if (maxComponent(throughput) <= 0.0f) break;
+        }
 
         // Russian roulette, once the path has had a chance to gather the main bounces.
-        if (depth >= 3) {
+        if (depth >= 3 && !emerged) {
             const float survive = clamp(maxComponent(throughput), 0.05f, 0.95f);
             if (rnd(seed) >= survive) break;
             throughput *= vec(1.0f / survive);
@@ -548,7 +774,12 @@ extern "C" __global__ void __raygen__moonlight() {
         const float3 ng = inside ? -hit.ng : hit.ng;
         float3 ns = dot(hit.ns, ng) < 0.0f ? -hit.ns : hit.ns;
         if (dot(ns, toViewer) <= 0.0f) ns = ng;
-        const Frame frame(ns);
+        Frame frame(ns);
+        if (hit.anisotropy != 0.0f) {
+            // A stretched lobe needs its axes: the tangent, then across it.
+            const float3 across = hit.tangent - ns * dot(hit.tangent, ns);
+            if (dot(across, across) > 1e-8f) frame = Frame(ns, hit.tangent);
+        }
         const float3 wo = frame.toLocal(toViewer);
 
         if (camera) {
@@ -559,15 +790,26 @@ extern "C" __global__ void __raygen__moonlight() {
         const bool mayBounce = depth < params.maxDepth;
 
         if (inside && surface.transmission > 0.0f && !surface.thin) {
+            // The solid absorbs along the stretch just crossed: its transmission colour is what
+            // is left after absorptionDistance.
+            if (hit.absorptionDistance > 0.0f) {
+                const float depths = hit.t / hit.absorptionDistance;
+                throughput *= make_float3(powf(clamp(hit.absorption.x, 1e-6f, 1.0f), depths),
+                                          powf(clamp(hit.absorption.y, 1e-6f, 1.0f), depths),
+                                          powf(clamp(hit.absorption.z, 1e-6f, 1.0f), depths));
+            }
             // Leaving a solid the light entered: a plain interface, mirrored back or bent out.
             if (!mayBounce) break;
+            float3 tint;
+            const float ior = spectralIor(surface.transmissionIor, hit.abbe, rnd(seed), tint);
             const float3 h = surface.transmissionAlpha > 0.0f ? sampleFacet(surface.transmissionAlpha, wo, rnd(seed), rnd(seed))
                                                               : make_float3(0.0f, 0.0f, 1.0f);
             float3 wi;
-            const float reflected = fresnel(dot(wo, h), surface.transmissionIor, 1.0f);
-            if (rnd(seed) < reflected || !refractThrough(wo, h, surface.transmissionIor, 1.0f, wi)) wi = reflectAbout(wo, h);
+            const bool mirrored = rnd(seed) < fresnel(dot(wo, h), surface.transmissionIor, 1.0f);
+            if (mirrored) tint = vec(1.0f);
+            if (mirrored || !refractThrough(wo, h, ior, 1.0f, wi)) wi = reflectAbout(wo, h);
             direction = frame.toWorld(wi);
-            lightWeight = bounceWeight = vec(1.0f);
+            lightWeight = bounceWeight = tint;
             sharp = true;
             clampFound = roughDepth >= 1;
             origin = offsetOrigin(hit.p, ng, direction);
@@ -577,63 +819,68 @@ extern "C" __global__ void __raygen__moonlight() {
         // Which lobes may send the path on. MoonRay counts diffuse and glossy bounces apart.
         const bool diffuseBounces = mayBounce && diffuseDepth < params.maxDiffuseDepth;
         const bool glossyBounces = mayBounce && glossyDepth < params.maxGlossyDepth;
-        // Sample only what may bounce on; with nothing left, the ray still looks for lights.
         Lobes lobes = lobeWeights(surface, wo);
-        if (diffuseBounces != glossyBounces) lobes.specular = glossyBounces ? 1.0f : 0.0f;
+        // Light that scatters beneath the surface is gathered where it comes out again, so at
+        // this point only the mirror-like lobes are lit. The share that scatters is chosen by
+        // chance, as is whether this path follows it.
+        const bool scatters = !inside && hit.subsurface > 0.0f && maxComponent(hit.subsurfaceRadius) > 0.0f
+                              && lobes.specular < 1.0f && rnd(seed) < hit.subsurface;
+        const float beneath = scatters ? 1.0f - lobes.specular : 0.0f;
+        if (scatters) {
+            surface.diffuseScale = 0.0f;
+            lobes = lobeWeights(surface, wo);
+        } else if (diffuseBounces != glossyBounces && !surface.matte) {
+            // Sample only what may bounce on; with nothing left, the ray still looks for lights.
+            lobes.specular = glossyBounces ? 1.0f : 0.0f;
+        }
         const bool lit = roughDepth >= 1;   // this surface was reached by scattering off something rough
-
-        // Next event estimation: the environment, then every light.
-        float lightPdf;
-        const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
-        if (lightPdf > 0.0f && dot(ng, toLight) > 0.0f) {
-            const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLight));
-            const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-            if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(hit.p, ng, toLight), toLight, seed))
-                radiance += clampSample(throughput * (e.diffuse + e.specular) * envRadiance(toLight)
-                                        * (powerHeuristic(lightPdf, pdf) / lightPdf), lit);
-        }
-        for (unsigned i = 0; i < params.distantLightCount; ++i) {
-            const DeviceDistantLight& light = distantLights[i];
-            const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
-            if (dot(ng, toSun) <= 0.0f) continue;
-            const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toSun));
-            const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-            if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(hit.p, ng, toSun), toSun, seed))
-                radiance += clampSample(throughput * (e.diffuse + e.specular) * vec(light.radiance)
-                                        * (powerHeuristic(distantPdf(light), pdf) / distantPdf(light)), lit);
-        }
-        const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
-        const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
-        for (unsigned i = firstLight; i < lastLight; ++i) {
-            float3 toLamp, emitted;
-            float distance, lampPdf;
-            if (!sampleLight(lights[i], hit.p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
-            if (dot(ng, toLamp) <= 0.0f) continue;
-            if (params.lightPick) lampPdf *= lights[i].pick;
-            const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLamp));
-            const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-            if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(hit.p, ng, toLamp), toLamp, seed, distance * 0.999f))
-                radiance += clampSample(throughput * (e.diffuse + e.specular) * emitted
-                                        * (powerHeuristic(lampPdf, pdf) / lampPdf), lit);
-        }
+        radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed);
 
         // The light that enters a transmissive surface goes through it rather than scattering.
         const float through = mayBounce ? transmitted(surface, wo) : 0.0f;
         const float u1 = rnd(seed), u2 = rnd(seed);
         if (rnd(seed) < through) {
             float3 wi = -wo;    // thin sheets and missing facets pass the light straight on
+            float3 tint = vec(1.0f);
             if (!surface.thin) {
+                const float ior = spectralIor(surface.transmissionIor, hit.abbe, rnd(seed), tint);
                 const float3 h = surface.transmissionAlpha > 0.0f ? sampleFacet(surface.transmissionAlpha, wo, u1, u2)
                                                                   : make_float3(0.0f, 0.0f, 1.0f);
-                if (!refractThrough(wo, h, 1.0f, surface.transmissionIor, wi)) wi = reflectAbout(wo, h);
+                if (!refractThrough(wo, h, 1.0f, ior, wi)) wi = reflectAbout(wo, h);
             }
             direction = frame.toWorld(wi);
             // Chosen in proportion to its share of the light, so only the tint remains.
-            lightWeight = bounceWeight = surface.transmissionColor;
+            lightWeight = bounceWeight = surface.transmissionColor * tint;
             sharp = true;
             clampFound = roughDepth >= 1;
             bounces = true;
             origin = offsetOrigin(hit.p, ng, direction);
+            continue;
+        }
+
+        if (scatters && rnd(seed) < beneath) {
+            // Pick a colour channel by its albedo and a distance from that channel's profile; the
+            // other channels are weighted by how likely they were to give the same distance.
+            const float3 albedo = make_float3(fmaxf(surface.albedo.x, 0.001f), fmaxf(surface.albedo.y, 0.001f),
+                                              fmaxf(surface.albedo.z, 0.001f));
+            const float3 width = make_float3(profileWidth(albedo.x, hit.subsurfaceRadius.x), profileWidth(albedo.y, hit.subsurfaceRadius.y),
+                                             profileWidth(albedo.z, hit.subsurfaceRadius.z));
+            const float total = albedo.x + albedo.y + albedo.z, pick = rnd(seed) * total;
+            const float chosen = pick < albedo.x ? width.x : pick < albedo.x + albedo.y ? width.y : width.z;
+            const float r = (rnd(seed) < 0.25f ? chosen : 3.0f * chosen) * -logf(fmaxf(1e-6f, 1.0f - rnd(seed)));
+            const float3 shape = make_float3(profileShape(r, width.x), profileShape(r, width.y), profileShape(r, width.z));
+            const float mixture = (albedo.x * shape.x + albedo.y * shape.y + albedo.z * shape.z) / total;
+            // What comes out is diffuse light, already dimmed by what the surface reflected.
+            throughput *= surface.albedo * (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath))
+                        * (mixture > 0.0f ? shape * (1.0f / mixture) : vec(1.0f));
+            // Look down onto the surface from that far to one side.
+            const float phi = 2.0f * ML_PI * rnd(seed);
+            entryInstance = hit.instance;
+            origin = hit.p + (frame.t * cosf(phi) + frame.b * sinf(phi)) * r + ns * r;
+            direction = -ns;
+            reach = 2.0f * r;
+            probing = true;
+            --depth;    // coming out again is not a bounce
             continue;
         }
 
@@ -642,13 +889,14 @@ extern "C" __global__ void __raygen__moonlight() {
         if (!glossy) wi = sampleDiffuse(u1, u2);
         else if (rnd(seed) < lobes.coat) wi = reflectAbout(wo, sampleFacet(surface.coatAlpha, wo, u1, u2));
         else if (rnd(seed) < broadShare(surface)) wi = sampleDiffuse(u1, u2);
-        else wi = reflectAbout(wo, surface.beckmann ? sampleBeckmann(surface.alpha, u1, u2) : sampleFacet(surface.alpha, wo, u1, u2));
+        else wi = reflectAbout(wo, surface.beckmann ? sampleBeckmann(surface.alphaX, surface.alphaY, u1, u2) : sampleFacet(surface.alpha, wo, u1, u2));
         const BsdfEval e = evalBsdf(surface, lobes, wo, wi);
         bsdfPdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         direction = frame.toWorld(wi);
         if (bsdfPdf <= 0.0f || dot(ng, direction) <= 0.0f) break;
-        // The reflective lobes were reached by not taking the transmission branch.
-        const float scale = 1.0f / (bsdfPdf * (1.0f - through));
+        // The reflective lobes were reached by taking neither the transmission branch nor the
+        // one beneath the surface.
+        const float scale = 1.0f / (bsdfPdf * (1.0f - through) * (1.0f - beneath));
         lightWeight = (e.diffuse + e.specular) * scale;
         bounceWeight = ((diffuseBounces ? e.diffuse : vec(0.0f)) + (glossyBounces ? e.specular : vec(0.0f))) * scale;
         bounces = diffuseBounces || glossyBounces;
@@ -703,11 +951,70 @@ ML_INLINE float blendValue(float a, float b, unsigned mode) {
     }
 }
 ML_INLINE float3 blendColor(float3 below, float3 value, unsigned mode, float alpha) {
-    const float3 mixed = make_float3(blendValue(below.x, value.x, mode), blendValue(below.y, value.y, mode),
-                                     blendValue(below.z, value.z, mode));
+    float3 mixed = make_float3(blendValue(below.x, value.x, mode), blendValue(below.y, value.y, mode),
+                               blendValue(below.z, value.z, mode));
+    if (mode == 15) {
+        // Two normal maps combined so that each keeps its own tilt (reoriented normal mapping).
+        const float3 t = below * 2.0f + make_float3(-1.0f, -1.0f, 0.0f);
+        const float3 u = value * make_float3(-2.0f, -2.0f, 2.0f) + make_float3(1.0f, 1.0f, -1.0f);
+        const float3 n = t * (dot(t, u) / fmaxf(1e-6f, t.z)) - u;
+        mixed = dot(n, n) > 1e-12f ? normalize(n) * 0.5f + vec(0.5f) : below;
+    }
     return lerp(below, mixed, clamp(alpha, 0.0f, 1.0f));
 }
 ML_INLINE float average(float3 c) { return (c.x + c.y + c.z) * (1.0f / 3.0f); }
+
+// The curves the plugin puts on a layer's value. Gamma is MoonRay's ColorCorrectGammaMap, bias its
+// RemapMap (which also clamps), and gain the plugin's own ModoTextureMap curve.
+ML_INLINE float gammaCurve(float value, float gamma) {
+    return value > 0.0f ? powf(value, 1.0f / fmaxf(gamma, 1e-6f)) : value;
+}
+ML_INLINE float biasCurve(float value, float bias) {
+    if (bias != 0.5f && value > 0.0f && value < 1.0f) value = bias <= 0.0f ? 0.0f : powf(value, logf(bias) / logf(0.5f));
+    return clamp(value, 0.0f, 1.0f);
+}
+ML_INLINE float gainCurve(float value, float gain) {
+    const float x = clamp(value, 0.0f, 1.0f), g = clamp(gain, 0.00001f, 0.99999f);
+    const float y = x < 0.5f ? 2.0f * x : 2.0f - 2.0f * x;
+    const float b = y / ((1.0f / (1.0f - g) - 2.0f) * (1.0f - y) + 1.0f);
+    return x < 0.5f ? 0.5f * b : 1.0f - 0.5f * b;
+}
+ML_INLINE float3 applyCurves(const DeviceLayer& layer, float3 value) {
+    if (layer.bias != 0.5f) value = make_float3(biasCurve(value.x, layer.bias), biasCurve(value.y, layer.bias), biasCurve(value.z, layer.bias));
+    if (layer.gainCurve != 0.5f)
+        value = make_float3(gainCurve(value.x, layer.gainCurve), gainCurve(value.y, layer.gainCurve), gainCurve(value.z, layer.gainCurve));
+    return value;
+}
+
+// The plugin's checker and value noise, as its ModoTextureMap computes them.
+ML_INLINE float latticeValue(int x, int y) {
+    unsigned h = unsigned(x) * 73856093u ^ unsigned(y) * 19349663u;
+    h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15; h *= 0x846ca68bu; h ^= h >> 16;
+    return float(h & 0xffffffu) / 16777215.0f;
+}
+ML_INLINE float valueNoise(float x, float y) {
+    const float fx = floorf(x), fy = floorf(y);
+    const int ix = int(fx), iy = int(fy);
+    float u = x - fx, v = y - fy;
+    u = u * u * (3.0f - 2.0f * u);
+    v = v * v * (3.0f - 2.0f * v);
+    return (1.0f - v) * ((1.0f - u) * latticeValue(ix, iy) + u * latticeValue(ix + 1, iy))
+         + v * ((1.0f - u) * latticeValue(ix, iy + 1) + u * latticeValue(ix + 1, iy + 1));
+}
+ML_INLINE float pattern(const DeviceLayer& layer, float u, float v) {
+    if (layer.flags & LAYER_CHECKER) return float((int(floorf(u * 2.0f)) + int(floorf(v * 2.0f))) & 1);
+    const int octaves = min(12, max(1, int(layer.octaves)));
+    const float lacunarity = fmaxf(0.01f, layer.lacunarity), persistence = clamp(layer.persistence, 0.0f, 1.0f);
+    float value = 0.0f, amplitude = 1.0f, total = 0.0f;
+    for (int i = 0; i < octaves; ++i) {
+        value += amplitude * valueNoise(u, v);
+        total += amplitude;
+        u *= lacunarity;
+        v *= lacunarity;
+        amplitude *= persistence;
+    }
+    return value / total;
+}
 
 struct Corners {
     float2 a, b, c;
@@ -723,7 +1030,7 @@ ML_INLINE bool triangleUvs(const DeviceMesh& mesh, unsigned slot, unsigned primi
     return true;
 }
 
-// Which coordinate slots the last normal map and the last bump image used; UV_SLOTS for none.
+// Which coordinate slots the last normal map and the last bump row used; UV_SLOTS for none.
 struct MappedSlots {
     unsigned normal, bump;
 };
@@ -731,7 +1038,7 @@ struct MappedSlots {
 // Runs a material's layer stack at a point, bottom row first, as the plugin's texture graph does:
 // rows blend over the rows beneath them, a group blends what its rows produced over what was
 // there before it, and a mask row scales how strongly its target is applied. shift moves every
-// image lookup, which is how a bump map's slope is measured.
+// coordinate lookup, which is how a bump map's slope is measured.
 ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMesh& mesh, unsigned primitive,
                                  float2 barycentrics, float3* channel, float2 shift) {
     channel[CHANNEL_COLOR] = vec(material.color);
@@ -749,6 +1056,10 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     channel[CHANNEL_DISSOLVE] = vec(material.dissolve);
     channel[CHANNEL_BUMP] = vec(0.0f);
     channel[CHANNEL_GROUP_MASK] = vec(1.0f);
+    channel[CHANNEL_ANISOTROPY] = vec(material.anisotropy);
+    channel[CHANNEL_SUBSURFACE] = vec(material.subsurface);
+    channel[CHANNEL_SUBSURFACE_COLOR] = vec(material.subsurfaceColor);
+    for (unsigned c = CHANNEL_DRIVER; c < CHANNEL_COUNT; ++c) channel[c] = vec(0.0f);
     MappedSlots slots;
     slots.normal = slots.bump = UV_SLOTS;
 
@@ -756,7 +1067,8 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     unsigned savedUsed[GROUP_DEPTH];
     unsigned level = 0, used = 0;
     float masks[MASK_REGISTERS] = {1.0f, 1.0f, 1.0f, 1.0f};
-    const unsigned colours = (1u << CHANNEL_COLOR) | (1u << CHANNEL_EMISSION) | (1u << CHANNEL_TRANSMISSION_COLOR);
+    const unsigned colours = (1u << CHANNEL_COLOR) | (1u << CHANNEL_EMISSION) | (1u << CHANNEL_TRANSMISSION_COLOR)
+                           | (1u << CHANNEL_SUBSURFACE_COLOR);
 
     const DeviceLayer* layers = reinterpret_cast<const DeviceLayer*>(params.layers) + material.layerStart;
     for (unsigned i = 0; i < material.layerCount; ++i) {
@@ -791,27 +1103,57 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
 
         float3 value = vec(layer.value);
         float mask = masked;
-        if (layer.flags & LAYER_IMAGE) {
+        const bool patterned = (layer.flags & (LAYER_CHECKER | LAYER_NOISE)) != 0;
+        if (layer.flags & (LAYER_IMAGE | LAYER_UDIM | LAYER_CHECKER | LAYER_NOISE)) {
             Corners uv;
-            if (!triangleUvs(mesh, layer.uvSlot, primitive, uv)) continue;     // nothing to look the image up with
+            if (!triangleUvs(mesh, layer.uvSlot, primitive, uv)) continue;     // nothing to look the row up with
             const float w = 1.0f - barycentrics.x - barycentrics.y;
-            const float u = uv.a.x * w + uv.b.x * barycentrics.x + uv.c.x * barycentrics.y + shift.x;
-            const float v = uv.a.y * w + uv.b.y * barycentrics.x + uv.c.y * barycentrics.y + shift.y;
-            // Images are stored top row first; texture v runs upwards.
-            const float4 texel = tex2D<float4>(layer.texture, u, 1.0f - v);
-            value = (layer.flags & LAYER_ALPHA_ONLY) ? vec(texel.w) : make_float3(texel.x, texel.y, texel.z);
-            if (layer.flags & LAYER_ALPHA_MASK) mask *= texel.w;
-            if (((layer.flags & LAYER_COVERAGE_U) && (u < 0.0f || u > 1.0f)) || ((layer.flags & LAYER_COVERAGE_V) && (v < 0.0f || v > 1.0f)))
-                mask = 0.0f;
+            const float u = (uv.a.x * w + uv.b.x * barycentrics.x + uv.c.x * barycentrics.y + shift.x) * layer.scale[0];
+            const float v = (uv.a.y * w + uv.b.y * barycentrics.x + uv.c.y * barycentrics.y + shift.y) * layer.scale[1];
+            if (patterned) {
+                // The pattern mixes the row's two colours, and how much of the row each covers.
+                const float t = applyCurves(layer, vec(pattern(layer, u, v))).x;
+                value = lerp(value, vec(layer.color2), t);
+                mask *= layer.alpha1 + (layer.alpha2 - layer.alpha1) * t;
+            } else {
+                unsigned long long texture = layer.texture;
+                float tu = u, tv = v;
+                if (layer.flags & LAYER_UDIM) {
+                    // One image per unit square of the coordinates, ten squares to a row.
+                    const unsigned long long* tiles = reinterpret_cast<const unsigned long long*>(layer.texture);
+                    const float column = floorf(u), row = floorf(v);
+                    if (column < 0.0f || column >= 10.0f || row < 0.0f) continue;
+                    const unsigned long long tile = (unsigned long long)(column) + 10ull * (unsigned long long)(row);
+                    if (tile >= tiles[0] || !tiles[1 + tile]) continue;
+                    texture = tiles[1 + tile];
+                    tu = u - column;
+                    tv = v - row;
+                }
+                // Images are stored top row first; texture v runs upwards.
+                const float4 texel = tex2D<float4>(texture, tu, 1.0f - tv);
+                value = (layer.flags & LAYER_ALPHA_ONLY) ? vec(texel.w) : make_float3(texel.x, texel.y, texel.z);
+                if (layer.flags & LAYER_ALPHA_MASK) mask *= texel.w;
+                if (((layer.flags & LAYER_COVERAGE_U) && (u < 0.0f || u > 1.0f)) || ((layer.flags & LAYER_COVERAGE_V) && (v < 0.0f || v > 1.0f)))
+                    mask = 0.0f;
+            }
             if (layer.channel == CHANNEL_NORMAL) slots.normal = layer.uvSlot;
             if (layer.channel == CHANNEL_BUMP) slots.bump = layer.uvSlot;
+        } else if (layer.flags & LAYER_RAMP) {
+            // A gradient: 257 colours from 0 to 1, looked up by the first component of another channel.
+            if (layer.uvSlot >= CHANNEL_COUNT) continue;
+            const float4 texel = tex2D<float4>(layer.texture, (clamp(channel[layer.uvSlot].x, 0.0f, 1.0f) * 256.0f + 0.5f) / 257.0f, 0.5f);
+            value = make_float3(texel.x, texel.y, texel.z);
+            mask *= texel.w;
         }
         if (layer.flags & LAYER_FLIP_RED) value.x = 1.0f - value.x;
         if (layer.flags & LAYER_FLIP_GREEN) value.y = 1.0f - value.y;
         if (layer.flags & LAYER_FLIP_BLUE) value.z = 1.0f - value.z;
         const unsigned pick = (layer.flags >> LAYER_PICK_SHIFT) & 3;
         if (pick) value = vec(pick == 1 ? value.x : pick == 2 ? value.y : value.z);
+        if ((layer.flags & LAYER_CURVES) && layer.gamma != 1.0f)
+            value = make_float3(gammaCurve(value.x, layer.gamma), gammaCurve(value.y, layer.gamma), gammaCurve(value.z, layer.gamma));
         value = value * layer.gain + vec(layer.offset);
+        if ((layer.flags & LAYER_CURVES) && !patterned) value = applyCurves(layer, value);
         if (layer.flags & LAYER_INVERT) value = vec(1.0f) - value;
         if (writesMask) {
             // A mask starts fully open and is blended like any other row.
@@ -834,11 +1176,34 @@ extern "C" __global__ void __anyhit__presence() {
     const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
     if (!(material.flags & MATERIAL_HAS_PRESENCE)) return;
     float3 channel[CHANNEL_COUNT];
-    evalLayers(material, mesh, primitive, optixGetTriangleBarycentrics(), channel, make_float2(0.0f, 0.0f));
+    channel[CHANNEL_DISSOLVE] = vec(material.dissolve);
+    if (material.layerCount) evalLayers(material, mesh, primitive, optixGetTriangleBarycentrics(), channel, make_float2(0.0f, 0.0f));
     // The payload differs from ray to ray and the sample index from pass to pass.
     unsigned state = tea(optixGetPayload_1() ^ (primitive * 0x9e3779b9u) ^ (optixGetInstanceId() * 0x85ebca6bu),
                          optixGetPayload_0() ^ params.sample);
     if (rnd(state) < clamp(average(channel[CHANNEL_DISSOLVE]), 0.0f, 1.0f)) optixIgnoreIntersection();
+}
+
+// How the surface runs along texture u and v in one coordinate slot, in world space; false
+// without usable coordinates.
+ML_INLINE bool surfaceAxes(const DeviceMesh& mesh, unsigned slot, unsigned primitive, float3 e1, float3 e2,
+                           float3& alongU, float3& alongV) {
+    Corners corners;
+    if (slot >= UV_SLOTS || !triangleUvs(mesh, slot, primitive, corners)) return false;
+    const float2 d1 = make_float2(corners.b.x - corners.a.x, corners.b.y - corners.a.y);
+    const float2 d2 = make_float2(corners.c.x - corners.a.x, corners.c.y - corners.a.y);
+    const float determinant = d1.x * d2.y - d1.y * d2.x;
+    if (fabsf(determinant) <= 1e-20f) return false;
+    alongU = (e1 * d2.y - e2 * d1.y) * (1.0f / determinant);
+    alongV = (e2 * d1.x - e1 * d2.x) * (1.0f / determinant);
+    return true;
+}
+
+// Material colours are worked out in Rec.709 and shaded in the working space.
+ML_INLINE float3 working(float3 c) {
+    if (!params.working) return c;
+    const float* m = params.workingMatrix;
+    return make_float3(dot(vec(m), c), dot(vec(m + 3), c), dot(vec(m + 6), c));
 }
 
 extern "C" __global__ void __closesthit__radiance() {
@@ -862,67 +1227,113 @@ extern "C" __global__ void __closesthit__radiance() {
     hit->ng = normalize(optixTransformNormalFromObjectToWorldSpace(ng));
     hit->ns = normalize(optixTransformNormalFromObjectToWorldSpace(ns));
     hit->t = optixGetRayTmax();
+    hit->instance = optixGetInstanceId();
+    hit->light = instance.light;
     hit->valid = 1;
 
     const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[primitive] : instance.material;
     const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
-    float3 channel[CHANNEL_COUNT];
-    const MappedSlots slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f));
-    // Scalars take the mean of a colour, as MoonRay does for a map bound to a float attribute.
-    hit->albedo = channel[CHANNEL_COLOR] * channel[CHANNEL_COLOR_AMOUNT];
-    hit->emission = channel[CHANNEL_EMISSION] * channel[CHANNEL_EMISSION_AMOUNT];
-    hit->roughness = clamp(average(channel[CHANNEL_ROUGHNESS]), 0.0f, 1.0f);
-    hit->metallic = clamp(average(channel[CHANNEL_METALLIC]), 0.0f, 1.0f);
     hit->ior = material.ior;
-    hit->transmission = clamp(average(channel[CHANNEL_TRANSMISSION]), 0.0f, 1.0f);
-    hit->transmissionColor = channel[CHANNEL_TRANSMISSION_COLOR];
-    hit->transmissionRoughness = clamp(average(channel[CHANNEL_TRANSMISSION_ROUGHNESS]), 0.0f, 1.0f);
     hit->transmissionIor = material.transmissionIor;
-    hit->coat = clamp(average(channel[CHANNEL_COAT]), 0.0f, 1.0f);
-    hit->coatRoughness = clamp(average(channel[CHANNEL_COAT_ROUGHNESS]), 0.0f, 1.0f);
     hit->flags = material.flags;
+    hit->abbe = material.abbe;
+    hit->absorptionDistance = material.absorptionDistance;
+    float3 channel[CHANNEL_COUNT];
+    MappedSlots slots;
+    slots.normal = slots.bump = UV_SLOTS;
+    float3 reach;
+    float subsurface, anisotropy;
+    if (material.layerCount) {
+        slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f));
+        // Scalars take the mean of a colour, as MoonRay does for a map bound to a float attribute.
+        hit->albedo = channel[CHANNEL_COLOR] * channel[CHANNEL_COLOR_AMOUNT];
+        hit->emission = channel[CHANNEL_EMISSION] * channel[CHANNEL_EMISSION_AMOUNT];
+        hit->roughness = clamp(average(channel[CHANNEL_ROUGHNESS]), 0.0f, 1.0f);
+        hit->metallic = clamp(average(channel[CHANNEL_METALLIC]), 0.0f, 1.0f);
+        hit->transmission = clamp(average(channel[CHANNEL_TRANSMISSION]), 0.0f, 1.0f);
+        hit->transmissionColor = channel[CHANNEL_TRANSMISSION_COLOR];
+        hit->transmissionRoughness = clamp(average(channel[CHANNEL_TRANSMISSION_ROUGHNESS]), 0.0f, 1.0f);
+        hit->coat = clamp(average(channel[CHANNEL_COAT]), 0.0f, 1.0f);
+        hit->coatRoughness = clamp(average(channel[CHANNEL_COAT_ROUGHNESS]), 0.0f, 1.0f);
+        subsurface = clamp(average(channel[CHANNEL_SUBSURFACE]), 0.0f, 1.0f);
+        reach = channel[CHANNEL_SUBSURFACE_COLOR];
+        anisotropy = clamp(average(channel[CHANNEL_ANISOTROPY]), -1.0f, 1.0f);
+    } else {
+        // Most materials have no layers left once the packer has folded their constant rows.
+        hit->albedo = vec(material.color) * material.colorAmount;
+        hit->emission = vec(material.emission) * material.emissionAmount;
+        hit->roughness = material.roughness;
+        hit->metallic = material.metallic;
+        hit->transmission = material.transmission;
+        hit->transmissionColor = vec(material.transmissionColor);
+        hit->transmissionRoughness = material.transmissionRoughness;
+        hit->coat = material.coat;
+        hit->coatRoughness = material.coatRoughness;
+        subsurface = material.subsurface;
+        reach = vec(material.subsurfaceColor);
+        anisotropy = material.anisotropy;
+    }
+    hit->albedo = working(hit->albedo);
+    hit->emission = working(hit->emission);
+    hit->transmissionColor = working(hit->transmissionColor);
     hit->underRoughness = material.underRoughness < 0.0f ? hit->roughness : material.underRoughness;
+    // A solid that absorbs takes its colour from the distance crossed, not from the surface.
+    hit->absorption = hit->transmissionColor;
+    if (material.absorptionDistance > 0.0f) hit->transmissionColor = vec(1.0f);
+    hit->subsurface = material.subsurfaceRadius > 0.0f ? subsurface : 0.0f;
+    reach = working(reach);
+    hit->subsurfaceRadius = make_float3(clamp(reach.x, 0.0f, 1.0f), clamp(reach.y, 0.0f, 1.0f), clamp(reach.z, 0.0f, 1.0f))
+                          * material.subsurfaceRadius;
+    hit->anisotropy = 0.0f;
+    hit->tangent = vec(0.0f);
+
+    const float3 e1 = optixTransformVectorFromObjectToWorldSpace(p1 - p0), e2 = optixTransformVectorFromObjectToWorldSpace(p2 - p0);
+    float3 alongU, alongV;
 
     // Normal and bump maps tilt the shading normal in the frame the plugin's ModoTextureMap and
     // ModoNormalMap use: the direction texture u runs across the surface, the normal, and their
     // cross product.
     const bool bumped = (material.flags & MATERIAL_HAS_BUMP) && slots.bump < UV_SLOTS;
-    const unsigned slot = bumped ? slots.bump : slots.normal;
-    Corners corners;
-    if (slot >= UV_SLOTS || !triangleUvs(mesh, slot, primitive, corners)) return;
-    const float2 d1 = make_float2(corners.b.x - corners.a.x, corners.b.y - corners.a.y);
-    const float2 d2 = make_float2(corners.c.x - corners.a.x, corners.c.y - corners.a.y);
-    const float determinant = d1.x * d2.y - d1.y * d2.x;
-    if (fabsf(determinant) <= 1e-20f) return;
-    const float3 e1 = optixTransformVectorFromObjectToWorldSpace(p1 - p0), e2 = optixTransformVectorFromObjectToWorldSpace(p2 - p0);
-    const float3 alongU = (e1 * d2.y - e2 * d1.y) * (1.0f / determinant);
-    const float3 alongV = (e2 * d1.x - e1 * d2.x) * (1.0f / determinant);
-    const float3 n = hit->ns;
-    const float3 tangent = alongU - n * dot(alongU, n);
-    const float lengthT = length(tangent);
-    if (lengthT <= 1e-9f) return;
-    const float3 t = tangent * (1.0f / lengthT), b = cross(n, t);
-
-    // Slopes of the mapped normal, then of the height field on top of them.
-    const float3 encoded = channel[CHANNEL_NORMAL] * 2.0f - vec(1.0f);
-    const float nz = fmaxf(0.001f, encoded.z);
-    float sx = encoded.x / nz, sy = encoded.y / nz;
-    if (bumped) {
-        const float step = 0.001f;
-        float3 other[CHANNEL_COUNT];
-        evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f));
-        const float right = average(other[CHANNEL_BUMP]);
-        evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f));
-        const float left = average(other[CHANNEL_BUMP]);
-        evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step));
-        const float up = average(other[CHANNEL_BUMP]);
-        evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step));
-        const float down = average(other[CHANNEL_BUMP]);
-        const float dx = (right - left) / (2.0f * step * lengthT), dy = (up - down) / (2.0f * step);
-        const float crossT = dot(alongV, t), crossB = dot(alongV, b);
-        sx -= material.bumpStrength * dx;
-        if (fabsf(crossB) > 1e-9f) sy -= material.bumpStrength * (dy - dx * crossT) / crossB;
+    if ((bumped || slots.normal < UV_SLOTS) && surfaceAxes(mesh, bumped ? slots.bump : slots.normal, primitive, e1, e2, alongU, alongV)) {
+        const float3 n = hit->ns;
+        const float3 tangent = alongU - n * dot(alongU, n);
+        const float lengthT = length(tangent);
+        if (lengthT > 1e-9f) {
+            const float3 t = tangent * (1.0f / lengthT), b = cross(n, t);
+            // Slopes of the mapped normal, then of the height field on top of them.
+            const float3 encoded = channel[CHANNEL_NORMAL] * 2.0f - vec(1.0f);
+            const float nz = fmaxf(0.001f, encoded.z);
+            float sx = encoded.x / nz, sy = encoded.y / nz;
+            if (bumped) {
+                const float step = 0.001f;
+                float3 other[CHANNEL_COUNT];
+                evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f));
+                const float right = average(other[CHANNEL_BUMP]);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f));
+                const float left = average(other[CHANNEL_BUMP]);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step));
+                const float up = average(other[CHANNEL_BUMP]);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step));
+                const float down = average(other[CHANNEL_BUMP]);
+                const float dx = (right - left) / (2.0f * step * lengthT), dy = (up - down) / (2.0f * step);
+                const float crossT = dot(alongV, t), crossB = dot(alongV, b);
+                sx -= material.bumpStrength * dx;
+                if (fabsf(crossB) > 1e-9f) sy -= material.bumpStrength * (dy - dx * crossT) / crossB;
+            }
+            const float3 bent = t * sx + b * sy + n;
+            if (dot(bent, bent) > 1e-12f) hit->ns = normalize(bent);
+        }
     }
-    const float3 bent = t * sx + b * sy + n;
-    if (dot(bent, bent) > 1e-12f) hit->ns = normalize(bent);
+
+    // A stretched specular lobe runs along the material's tangent, an angle from texture u.
+    if (anisotropy != 0.0f && surfaceAxes(mesh, material.tangentSlot, primitive, e1, e2, alongU, alongV)) {
+        const float3 n = hit->ns;
+        const float3 tangent = alongU - n * dot(alongU, n);
+        const float lengthT = length(tangent);
+        if (lengthT > 1e-9f) {
+            const float3 t = tangent * (1.0f / lengthT);
+            hit->tangent = t * material.tangent[0] + cross(n, t) * material.tangent[1];
+            hit->anisotropy = anisotropy;
+        }
+    }
 }

@@ -25,8 +25,8 @@ def scene(eye):
     result = snapshot()
     result['camera'] = dict(result['camera'], matrix=look_at(eye, [0, .9, 0]))
     result.update(warnings=[], display=display_values({}), preview_buffer='normal')
-    # An unsupported light must surface as a notice, not vanish.
-    result['lights'].append({'kind': 'CylinderLight', 'identity': 'tube', 'name': 'Tube', 'color': [1, 1, 1], 'intensity': 1.0})
+    # What MoonLightIPR leaves out must surface as a notice, not vanish: here, a material's specular colour layer.
+    result['materials'] = dict(result['materials'], gold=dict(result['materials']['gold'], textures={'specCol': {'kind': 'constant', 'value': [1, 1, 1]}}))
     return result
 
 
@@ -86,6 +86,6 @@ if any((width, height) != (640, 360) for _, width, height, _ in state['images'])
 final = state['images'][-1][3]
 if not any(QtGui.QColor(final.pixel(x, y)).lightness() > 16 for x in range(0, 640, 40) for y in range(0, 360, 40)):
     raise SystemExit('Displayed image is black')
-if not any('CylinderLight' in notice for notice in state['notices']):
-    raise SystemExit('The unsupported light was not reported')
+if not any('specularColor' in notice for notice in state['notices']):
+    raise SystemExit('The layer MoonLightIPR leaves out was not reported')
 print('MoonLightIPR renderer check passed')

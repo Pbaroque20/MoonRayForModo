@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import sys
 
-MODULES = ('__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py',
+MODULES = ('__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
            'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py')
 
 root = Path(__file__).resolve().parents[1]

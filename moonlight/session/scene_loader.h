@@ -36,9 +36,10 @@ private:
     // The environment is rebuilt only when its part of the scene changes; its image is kept
     // decoded because an intensity or rotation edit reuses it.
     uint64_t environmentHash = 0;
-    uint64_t environmentImageKey = 0;
-    uint32_t environmentImageWidth = 0, environmentImageHeight = 0;
-    std::vector<float> environmentImage;    // RGB, top row first, centre column facing -Z
+    // One image for what lights the scene and one for what the camera sees behind it.
+    uint64_t environmentImageKey[2] = {0, 0};
+    uint32_t environmentImageWidth[2] = {0, 0}, environmentImageHeight[2] = {0, 0};
+    std::vector<float> environmentImage[2];     // RGB, top row first, centre column facing -Z
     uint64_t generation = 0;
 };
 

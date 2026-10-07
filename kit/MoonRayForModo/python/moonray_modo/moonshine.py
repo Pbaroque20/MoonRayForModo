@@ -26,6 +26,8 @@ def emit(material, tag, index, bindings, lines):
         'refractive_index':number(reflection_ior),
         'use_independent_transmission_refractive_index':'true',
         'independent_transmission_refractive_index':number(material.get('ior',1.5)),
+        # DwaBaseMaterial ignores the Abbe number unless dispersion is switched on.
+        'use_dispersion':'true' if material.get('dispersion_abbe',0)>0 else 'false',
         'dispersion_abbe_number':number(material.get('dispersion_abbe',0)),
         'transmission':number(material.get('transmission',0)),
         'transmission_color':vector(material.get('transmission_color',[1,1,1]),'Rgb'),

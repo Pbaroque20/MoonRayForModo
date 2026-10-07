@@ -116,8 +116,40 @@ def textured(folder):
                                     row('over', [.1, .3, .85], .25, [layer('m1', 'layerMask', 'roughness', False, mask_target='over')])]},
         'cube': {'material_stack': [row('cube', [.8, .8, .8], .5, [layer('c1', 'diffCol', 'colour', True, groups=group, absolute_groups=group)])]},
         'gold': {'material_stack': [row('gold', [1, .77, .34], .2, metallic=1.0)]}})
+    # Light that scatters beneath the surface, fully on the ball and half on the cube.
+    skin = lobes(row('ball', [.85, .6, .5], .45, subsurface_amount=1.0, subsurface_distance=.35, subsurface_color=[1, .45, .3]),
+                 row('cube', [.5, .8, .6], .5, subsurface_amount=.5, subsurface_distance=.2, subsurface_color=[.6, 1, .7]))
+    # A specular lobe stretched along texture u on the ball and across it on the cube.
+    brushed = lobes(row('ball', [.9, .9, .9], .4, metallic=1.0, anisotropy=.8), row('cube', [.9, .6, .3], .4, metallic=1.0, anisotropy=-.8))
+    # Glass that takes its colour from the depth crossed, and glass that splits colours.
+    deep = lobes(row('ball', [.8, .8, .8], .02, transmission=1.0, transmission_color=[.25, .7, .45], absorption_distance=.6),
+                 row('cube', [.8, .8, .8], .02, transmission=1.0, transmission_color=[.8, .3, .2], absorption_distance=1.5))
+    prism = lobes(row('ball', [.8, .8, .8], .02, transmission=1.0, dispersion_abbe=4.0),
+                  row('cube', [.8, .8, .8], .02, transmission=1.0, dispersion_abbe=4.0))
+    # Patterns the plugin computes rather than reads: a checker, noise, a gradient looked up by
+    # a driver image, and the curves a layer can put on its value.
+    def made(identity, effect, kind, **extra):
+        return dict(layer(identity, effect, 'colour', False), kind=kind, **extra)
+    ramp = {'input': 'driverA', 'positions': [i / 256 for i in range(257)],
+            'colors': [[i / 256, .2 + .6 * abs(math.sin(i / 256 * 9)), 1 - i / 256] for i in range(257)]}
+    patterns = dict(stacked, meshes=[dict(mesh, uv_sets={'modo_uv_test': [[u * 6, v * 6] for u, v in mesh['uvs']]}) if mesh['name'] == 'Ball' else mesh
+                                     for mesh in stacked['meshes']], materials={
+        '': {'material_stack': [row('ground', [.5, .5, .5], .6, [made('g1', 'diffCol', 'checker', color1=[.1, .1, .1], color2=[.9, .8, .6])])]},
+        'ball': {'material_stack': [row('ball', [.8, .8, .8], .4, [
+            made('b1', 'diffCol', 'noise', color1=[.9, .2, .1], color2=[.1, .3, .9], octaves=4, lacunarity=2.0, persistence=.5, bias=.35, gain=.7)])]},
+        'cube': {'material_stack': [row('cube', [.8, .8, .8], .5, [
+            layer('c1', 'driverA', 'roughness', False), made('c2', 'diffCol', 'gradient', gradient=ramp),
+            layer('c3', 'rough', 'roughness', False, bias=.3, gain=.65, corrections={'gamma': 1.8, 'brightness': .9, 'contrast': 1.2})])]},
+        'gold': {'material_stack': [row('gold', [1, .77, .34], .2, metallic=1.0)]}})
+    # One image per unit square of the ground's coordinates.
+    for number, tint in ((1001, (.9, .2, .2)), (1002, (.2, .9, .2)), (1011, (.2, .3, .9)), (1012, (.9, .8, .2))):
+        write_ppm_file(folder / ('tile.%d.ppm' % number), 64, 64, lambda u, v, tint=tint: [c * (.35 + .65 * ((int(u * 4) + int(v * 4)) % 2)) for c in tint])
+    tiled = dict(simple, meshes=[dict(mesh, uvs=[[0, 0], [0, 2], [2, 2], [2, 0]]) if mesh['name'] == 'Ground' else mesh for mesh in simple['meshes']],
+                 materials=dict(simple['materials'], **{'': {'color': [.5, .5, .5], 'roughness': .6, 'textures': {
+                     'diffCol': {'path': str(folder / 'tile.<UDIM>.ppm'), 'srgb': True}}}}))
     return {'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
-            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks}
+            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
+            'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
 
 def sky_image(folder):
@@ -149,7 +181,30 @@ def scenes(folder):
     many = [dict(lamp, identity='lamp%d' % i, kind='SphereLight' if i % 2 else 'RectLight', color=[1, .5 + .1 * (i % 4), .3 + .1 * (i % 5)],
                  intensity=6.0 + 9.0 * (i % 3), radius=.25, width=.8, height=.5,
                  matrix=aimed([-4.5 + 1.2 * i, 4.0 + .4 * (i % 3), 2.0 + (i % 2)], [-3 + .8 * i, .5, 0])) for i in range(9)]
-    return {'image_environment': dict(base, environments=[sky]), 'many_lights': dict(base, lights=many), **textured(folder), 
+    # A layered environment: a gradient with a colour multiplied over it; and a physical sky.
+    seen = {'camera': True, 'indirect': True, 'reflection': True, 'refraction': True}
+    row = {'effect': 'envColor', 'groups': [], 'opacity': 1.0, 'blend': 'normal', 'invert': False}
+    gradient = dict(row, kind='grad4', zenith=[.2, .4, .9], sky=[.6, .75, 1], ground=[.3, .25, .2], nadir=[.1, .1, .1],
+                    sky_exponent=4, ground_exponent=4, layer_identity='e1')
+    layered = dict(seen, kind='stack', name='Layered', intensity=1.0, identity='env', layers=[
+        gradient, dict(row, kind='color', color=[1, .7, .5], blend='multiply', opacity=.6, layer_identity='e2')])
+    daylight = dict(seen, kind='stack', name='Daylight', intensity=1.0, identity='env', layers=[
+        dict(gradient, kind='physical', sun_direction=[.4, .6, .5], normalize=False, sky_gamma=1.0, haze=1.0, ground_albedo=[.2, .2, .2])])
+    # A lit panel, which is an object in the scene.
+    panel = {'name': 'Panel', 'identity': 'panel', 'vertices': [[-.8, 0, -.5], [.8, 0, -.5], [.8, 0, .5], [-.8, 0, .5]],
+             'faces': [[0, 1, 2, 3]], 'material': '', 'smooth': False, 'matrix': aimed([-1, 4, 2.5], [0, .5, 0])}
+    emitting = dict(base, meshes=base['meshes'] + [panel],
+                    production={'objects': {'panel': {'mesh_light': True, 'light_intensity': 60.0, 'light_color': [1, .85, .7]}}})
+    return {'image_environment': dict(base, environments=[sky]), 'many_lights': dict(base, lights=many), **textured(folder),
+        'layered_environment': dict(base, environments=[layered]),
+        'physical_sky': dict(base, environments=[daylight]),
+        'cylinder_light': dict(base, lights=[dict(lamp, kind='CylinderLight', intensity=60.0, radius=.15, height=2.5, matrix=aimed([-1, 4, 2], [0, .5, 0]))]),
+        'portal_light': dict(base, _environment=1.0, lights=[dict(lamp, kind='PortalLight', intensity=12.0, width=3.0, height=2.0, matrix=aimed([1, 5, 3], [0, .5, 0]))]),
+        'mesh_light': emitting,
+        'depth_of_field': dict(base, lights=fixture.snapshot()['lights'], _environment=.3,
+                               camera=dict(base['camera'], dof=True, f_stop=.3, focus_distance=6.5)),
+        'bokeh_blades': dict(base, lights=fixture.snapshot()['lights'], _environment=.3,
+                             camera=dict(base['camera'], dof=True, f_stop=.3, focus_distance=11.0, iris_blades=5, iris_rotation=.3)),
         'sun': dict(base, lights=fixture.snapshot()['lights']),
         'uniform_sky': dict(base, _environment=1.0),
         'gradient_sky': dict(base, environments=fixture.snapshot()['environments']),
@@ -231,9 +286,9 @@ def main():
             if not all(math.isfinite(v) for v in reference) or not all(math.isfinite(v) for v in preview):
                 raise RuntimeError('Non-finite pixels in ' + name)
             a, b = blocks(reference), blocks(preview)
-            lit = [(x, y) for x, y in zip(a, b) if x > 1e-3]
+            lit = [(x, y) for x, y in zip(a, b) if x > 1e-3] or [(1.0, 0.0)]
             ratios = sorted(y / x for x, y in lit)
-            entry = {'mean_ratio': sum(b) / sum(a), 'median_tile_ratio': ratios[len(ratios) // 2],
+            entry = {'mean_ratio': sum(b) / max(sum(a), 1e-12), 'median_tile_ratio': ratios[len(ratios) // 2],
                      'tiles_within_10_percent': sum(1 for r in ratios if .9 <= r <= 1.1) / len(ratios),
                      'moonray_mean': sum(a) / len(a), 'moonlight_mean': sum(b) / len(b), 'warnings': warnings}
             report[name] = entry

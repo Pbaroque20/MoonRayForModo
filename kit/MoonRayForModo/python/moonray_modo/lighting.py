@@ -62,7 +62,7 @@ def emit(scene,meshes,environment,lines):
         ref='MeshLight(%s)'%string('/modo/meshLight/'+str(index));refs.setdefault(identity,[]).append(ref)
         label=settings.get('light_label','')
         if label and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Invalid mesh light group label')
-        lines.append('table.insert(lights, %s { ["geometry"] = RdlMeshGeometry("/modo/mesh/%d"), ["color"] = %s, ["intensity"] = %s, ["label"] = %s })'%(ref,index,vector(working_color(settings.get('light_color',[1,1,1])),'Rgb'),number(settings.get('light_intensity',1)),string(label)))
+        lines.append('table.insert(lights, %s { ["geometry"] = RdlMeshGeometry("/modo/meshLight/geometry/%d"), ["color"] = %s, ["intensity"] = %s, ["label"] = %s })'%(ref,index,vector(working_color(settings.get('light_color',[1,1,1])),'Rgb'),number(settings.get('light_intensity',1)),string(label)))
     lines += ['local lightSet = LightSet("/modo/lightSet")(lights)','local objectLightSets = {}','local objectShadowSets = {}']
     for identity,settings in sorted(objects.items()):
         def selected(key):

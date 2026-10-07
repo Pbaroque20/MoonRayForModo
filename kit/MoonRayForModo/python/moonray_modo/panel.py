@@ -132,6 +132,11 @@ class Panel(QtWidgets.QWidget):
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(str(self.settings.value('preview_engine','moonray')))))
         self.preview_engine.setToolTip('MoonLightIPR is a fast NVIDIA GPU preview that approximates materials and lighting; Scene notices list what it leaves out. Output renders always use MoonRay.')
         self.pages['system'].addRow('Preview engine', self.preview_engine)
+        self.preview_motion=QtWidgets.QCheckBox('Motion blur in MoonLightIPR previews')
+        self.preview_motion.setChecked(str(self.settings.value('preview_motion','false')).lower() in ('true','1'))
+        self.preview_motion.setToolTip('Render Preview reads the scene again where the shutter opens and closes, using the camera\'s blur length and offset. IPR updates stay sharp so that edits keep following quickly.')
+        self.preview_motion.toggled.connect(lambda on:self.settings.setValue('preview_motion','true' if on else 'false'))
+        self.pages['system'].addRow('', self.preview_motion)
         self.pages['system'].addRow('CPU threads', self.threads)
         self.timeout = QtWidgets.QSpinBox()
         self.timeout.setRange(0,10080)
@@ -849,9 +854,17 @@ class Panel(QtWidgets.QWidget):
         if self._output_busy():
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
         try:
-            self._submit(self._capture())
+            self._submit(self._capture_preview())
         except Exception as exc:
             self._failed(str(exc))
+
+    def _capture_preview(self):
+        if self.preview_engine.currentData()!='moonlight' or not self.preview_motion.isChecked():return self._capture()
+        from .animation import capture_current
+        scene=self._configure_snapshot(capture_current(self.surface.currentIndex()==2))
+        # Stepping through the shutter is not an edit for IPR to follow.
+        self.changes.consume()
+        return scene
 
     def _live_tick(self):
         if self.disposed or not self.ipr_mode.isChecked():return

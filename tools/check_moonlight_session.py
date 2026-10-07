@@ -172,6 +172,24 @@ def main():
         recovered = session.submit(scene)
         report('After rejected scene', recovered)
 
+        # Motion blur and depth of field: the camera slides, one ball rises and the cube shears
+        # between the shutter opening and closing, seen through a wide lens.
+        cube = scene['meshes'][2]
+        blurred = dict(scene, motion_steps=[-.25, .25],
+                       camera=dict(scene['camera'], matrix_close=look_at([4.4, 2.5, 7.5], [0, .9, 0]), dof=True, f_stop=.5, focus_distance=8.5),
+                       meshes=[scene['meshes'][0],
+                               dict(scene['meshes'][1], instances_close=[placed(0, 2.4, 0), placed(-2.3, 1, 0)]),
+                               dict(cube, vertices_close=[[x + .6 * y, y, z] for x, y, z in cube['vertices']])])
+        motion = session.submit(blurred)
+        report('Motion blur and lens', motion)
+        write_images(folder / 'moonlight_scene_motion', motion['pixels'])
+        if motion['pixels'] == recovered['pixels'] or mean(motion['pixels']) <= 0:
+            raise RuntimeError('Motion blur and depth of field did not change the image')
+        still = session.submit(scene)
+        report('Still again', still)
+        if abs(mean(still['pixels']) - mean(recovered['pixels'])) > .02 * mean(recovered['pixels']):
+            raise RuntimeError('The scene did not return to rest after motion blur')
+
         session.process.stdin.write(b'quit\n')
         session.process.stdin.flush()
         if session.process.wait(timeout=10) != 0:

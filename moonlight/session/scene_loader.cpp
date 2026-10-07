@@ -11,8 +11,9 @@ namespace moonlight {
 namespace {
 
 // Layout flags; keep in step with moonlight_scene.py.
-const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 4, MESH_SMOOTH = 8, MESH_HAS_UVS = 16;
-const uint32_t SCENE_DENOISE = 1;
+const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 4, MESH_SMOOTH = 8, MESH_HAS_UVS = 16, MESH_MOVES = 32;
+const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4;
+const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
 // Meshes unused for this many scenes are freed, so hiding and showing an item stays cheap.
 const uint64_t MESH_RETENTION = 8;
@@ -58,6 +59,7 @@ private:
 
 // The packer converts every image to one of two simple files with the runtime's oiiotool:
 // an uncompressed 32-bit Targa for ordinary images, or a PFM for high dynamic range ones.
+// Gradients it writes itself, as "MLF1", a width and a height, then RGBA floats, top row first.
 struct Image {
     uint32_t width = 0, height = 0;
     bool floatData = false;
@@ -70,6 +72,16 @@ Image readImage(const std::string& path) {
     const std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     if (data.size() < 18) throw std::runtime_error("Cannot read MoonLightIPR texture: " + path);
     Image image;
+    if (std::memcmp(data.data(), "MLF1", 4) == 0) {
+        std::memcpy(&image.width, data.data() + 4, 4);
+        std::memcpy(&image.height, data.data() + 8, 4);
+        const size_t count = size_t(image.width) * image.height;
+        if (!count || count > (data.size() - 12) / 16) throw std::runtime_error("Unsupported MoonLightIPR texture file: " + path);
+        image.floatData = true;
+        image.floats.resize(count * 4);
+        std::memcpy(image.floats.data(), data.data() + 12, count * 16);
+        return image;
+    }
     if (data[0] == 'P' && data[1] == 'F') {
         // "PF", width and height, then a scale whose sign gives the byte order; rows run bottom up.
         size_t offset = 0;
@@ -145,20 +157,35 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
-    if (in.value<uint32_t>() != 0x36534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLS6"
+    if (in.value<uint32_t>() != 0x37534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLS7"
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
     settings.height = in.value<uint32_t>();
     const uint32_t maxDepth = in.value<uint32_t>(), maxDiffuseDepth = in.value<uint32_t>(), maxGlossyDepth = in.value<uint32_t>();
     settings.targetSamples = in.value<uint32_t>();
-    settings.denoise = (in.value<uint32_t>() & SCENE_DENOISE) != 0;
+    const uint32_t sceneFlags = in.value<uint32_t>();
+    settings.denoise = (sceneFlags & SCENE_DENOISE) != 0;
+    float workingSpace[9];
+    in.floats(workingSpace, 9);
 
     Camera camera;
     in.floats(camera.eye, 3);
     in.floats(camera.target, 3);
     in.floats(camera.up, 3);
     camera.verticalFovDegrees = in.value<float>();
+    camera.lensRadius = in.value<float>();
+    camera.focusDistance = in.value<float>();
+    camera.blades = in.value<uint32_t>();
+    camera.bladeAngle = in.value<float>();
+    // With motion blur, the camera again as it is when the shutter closes.
+    Camera cameraClose = camera;
+    if (sceneFlags & SCENE_MOTION) {
+        in.floats(cameraClose.eye, 3);
+        in.floats(cameraClose.target, 3);
+        in.floats(cameraClose.up, 3);
+        cameraClose.verticalFovDegrees = in.value<float>();
+    }
 
     // Read new images before the materials whose layers will refer to them.
     std::vector<uint32_t> textureIndices(in.value<uint32_t>());
@@ -201,12 +228,20 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         material.clearcoatRoughness = in.value<float>();
         material.dissolve = in.value<float>();
         material.bumpStrength = in.value<float>();
+        material.anisotropy = in.value<float>();
+        in.floats(material.tangent, 2);
+        material.subsurface = in.value<float>();
+        in.floats(material.subsurfaceColor, 3);
+        material.subsurfaceRadius = in.value<float>();
+        material.absorptionDistance = in.value<float>();
+        material.abbe = in.value<float>();
         const uint32_t materialFlags = in.value<uint32_t>();
         material.thin = (materialFlags & 1) != 0;
         material.clearcoatDims = (materialFlags & 2) != 0;
         material.beckmann = (materialFlags & 16) != 0;
         material.layerStart = in.value<uint32_t>();
         material.layerCount = in.value<uint32_t>();
+        material.tangentSlot = in.value<uint32_t>();
     }
     std::vector<Layer> layers(in.value<uint32_t>());
     for (Layer& layer : layers) {
@@ -214,13 +249,37 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         layer.blend = in.value<uint32_t>();
         layer.flags = in.value<uint32_t>();
         const int32_t texture = in.value<int32_t>();
-        if (texture >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLightIPR scene layer refers to a missing texture");
-        layer.texture = texture < 0 ? -1 : int32_t(textureIndices[texture]);
+        // A UDIM row names its run in the tile list instead of one image.
+        if (layer.flags & LAYER_UDIM) layer.texture = texture;
+        else if (texture >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLightIPR scene layer refers to a missing texture");
+        else layer.texture = texture < 0 ? -1 : int32_t(textureIndices[texture]);
         layer.uvSlot = in.value<uint32_t>();
         in.floats(layer.value, 3);
         layer.opacity = in.value<float>();
         layer.gain = in.value<float>();
         layer.offset = in.value<float>();
+        in.floats(layer.scale, 2);
+        layer.gamma = in.value<float>();
+        layer.bias = in.value<float>();
+        layer.gainCurve = in.value<float>();
+        in.floats(layer.color2, 3);
+        layer.alpha1 = in.value<float>();
+        layer.alpha2 = in.value<float>();
+        layer.octaves = in.value<float>();
+        layer.lacunarity = in.value<float>();
+        layer.persistence = in.value<float>();
+    }
+    // Runs of a count and that many images, one per UDIM tile from 1001 on; -1 where one is missing.
+    std::vector<int32_t> tiles = in.array<int32_t>(in.value<uint32_t>());
+    for (size_t i = 0; i < tiles.size();) {
+        const size_t run = tiles[i] < 0 ? tiles.size() : size_t(tiles[i]);
+        if (run >= tiles.size() - i) throw std::runtime_error("MoonLightIPR scene tile list is malformed");
+        for (size_t t = 1; t <= run; ++t) {
+            int32_t& tile = tiles[i + t];
+            if (tile >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLightIPR scene tile refers to a missing texture");
+            tile = tile < 0 ? -1 : int32_t(textureIndices[tile]);
+        }
+        i += run + 1;
     }
 
     // The environment: a column of rows from zenith to nadir for what lights the scene and one
@@ -255,9 +314,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     }
 
     std::vector<Light> localLights(in.value<uint32_t>());
-    for (Light& light : localLights) {
+    std::vector<std::vector<float>> lightTriangles(localLights.size());
+    for (size_t l = 0; l < localLights.size(); ++l) {
+        Light& light = localLights[l];
         const uint32_t kind = in.value<uint32_t>();
-        if (kind > Light::Spot) throw std::runtime_error("MoonLightIPR scene has an unknown light kind");
+        if (kind > Light::Mesh) throw std::runtime_error("MoonLightIPR scene has an unknown light kind");
         light.kind = Light::Kind(kind);
         in.floats(light.position, 3);
         in.floats(light.axisX, 3);
@@ -269,6 +330,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         in.floats(light.radiance, 3);
         light.outerConeDegrees = in.value<float>();
         light.innerConeDegrees = in.value<float>();
+        if (light.kind == Light::Mesh) {
+            lightTriangles[l] = in.array<float>(size_t(in.value<uint32_t>()) * 9);
+            light.triangles = lightTriangles[l].data();
+            light.triangleCount = lightTriangles[l].size() / 9;
+        }
     }
 
     // Load new meshes before replacing the instances that will refer to them.
@@ -289,6 +355,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             std::vector<std::vector<float>> uvSets(flags & MESH_HAS_UVS ? in.value<uint32_t>() : 0);
             if (uvSets.size() > UV_SLOT_COUNT) throw std::runtime_error("MoonLightIPR scene mesh has too many coordinate sets");
             for (std::vector<float>& set : uvSets) set = in.array<float>(size_t(triangleCount) * 6);
+            const std::vector<float> closePositions = in.array<float>(flags & MESH_MOVES ? size_t(vertexCount) * 3 : 0);
             if (cached == meshes.end()) {
                 std::vector<const float*> uvPointers;
                 for (const std::vector<float>& set : uvSets) uvPointers.push_back(set.data());
@@ -304,6 +371,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 desc.triangleCount = triangleCount;
                 desc.uvSets = uvPointers.data();
                 desc.uvSetCount = uvPointers.size();
+                desc.closePositions = closePositions.empty() ? nullptr : closePositions.data();
                 cached = meshes.emplace(key, CachedMesh{renderer.addMesh(desc), 0}).first;
             }
         }
@@ -318,11 +386,18 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         if (mesh >= meshIndices.size()) throw std::runtime_error("MoonLightIPR scene instance refers to a missing mesh");
         instance.mesh = meshIndices[mesh];
         instance.material = in.value<uint32_t>();
+        instance.light = in.value<int32_t>();
+        if (instance.light >= int32_t(localLights.size())) throw std::runtime_error("MoonLightIPR scene instance refers to a missing light");
         in.floats(instance.transform, 12);
+        if (sceneFlags & SCENE_MOTION) {
+            in.floats(instance.closeTransform, 12);
+            instance.moves = !std::equal(instance.transform, instance.transform + 12, instance.closeTransform);
+        }
     }
     if (!in.finished()) throw std::runtime_error("MoonLightIPR scene has trailing data");
 
-    renderer.setMaterials(materials.data(), materials.size(), layers.data(), layers.size());
+    renderer.setMaterials(materials.data(), materials.size(), layers.data(), layers.size(), tiles.data(), tiles.size());
+    renderer.setWorkingSpace(sceneFlags & SCENE_WORKING_SPACE ? workingSpace : nullptr);
     for (auto entry = textures.begin(); entry != textures.end();) {
         if (generation - entry->second.lastUsed >= MESH_RETENTION) {
             renderer.removeTexture(entry->second.index);
@@ -330,6 +405,9 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         } else ++entry;
     }
     for (size_t m = 0; m < meshIndices.size(); ++m) renderer.setMeshUvSlots(meshIndices[m], meshSlots[m].data());
+    // Lights before the instances that may be the surface of one.
+    renderer.setDistantLights(lights.data(), lights.size());
+    renderer.setLights(localLights.data(), localLights.size());
     renderer.setInstances(instances.data(), instances.size());
     for (auto entry = meshes.begin(); entry != meshes.end();) {
         if (generation - entry->second.lastUsed >= MESH_RETENTION) {
@@ -338,26 +416,32 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         } else ++entry;
     }
     if (environmentNow != environmentHash) {
-        const EnvironmentPart* pictured = parts[0].hasImage ? &parts[0] : parts[1].hasImage ? &parts[1] : nullptr;
-        if (pictured && parts[0].hasImage && parts[1].hasImage && parts[0].key != parts[1].key)
-            throw std::runtime_error("MoonLightIPR scene uses different environment images for lighting and background");
-        if (pictured && pictured->key != environmentImageKey) {
-            const Image image = readImage(pictured->file);
-            if (!image.floatData || image.width < 2) throw std::runtime_error("MoonLightIPR environment image is not a float image");
-            environmentImage.resize(size_t(image.width) * image.height * 3);
-            // MoonRay puts the middle of the image behind the map's forward axis, so turn it half way round.
-            for (uint32_t y = 0; y < image.height; ++y)
-                for (uint32_t x = 0; x < image.width; ++x) {
-                    const float* from = &image.floats[(size_t(y) * image.width + (x + image.width / 2) % image.width) * 4];
-                    std::memcpy(&environmentImage[(size_t(y) * image.width + x) * 3], from, 3 * sizeof(float));
-                }
-            environmentImageWidth = image.width;
-            environmentImageHeight = image.height;
-            environmentImageKey = pictured->key;
+        const EnvironmentPart* pictured = nullptr;
+        for (int p = 0; p < 2; ++p) {
+            if (!parts[p].hasImage) continue;
+            if (parts[p].key != environmentImageKey[p]) {
+                const Image image = readImage(parts[p].file);
+                if (!image.floatData || image.width < 2) throw std::runtime_error("MoonLightIPR environment image is not a float image");
+                environmentImage[p].resize(size_t(image.width) * image.height * 3);
+                // MoonRay puts the middle of the image behind the map's forward axis, so turn it half way round.
+                for (uint32_t y = 0; y < image.height; ++y)
+                    for (uint32_t x = 0; x < image.width; ++x) {
+                        const float* from = &image.floats[(size_t(y) * image.width + (x + image.width / 2) % image.width) * 4];
+                        std::memcpy(&environmentImage[p][(size_t(y) * image.width + x) * 3], from, 3 * sizeof(float));
+                    }
+                environmentImageWidth[p] = image.width;
+                environmentImageHeight[p] = image.height;
+                environmentImageKey[p] = parts[p].key;
+            }
+            // The packer makes every environment image the same size.
+            if (pictured && (environmentImageWidth[0] != environmentImageWidth[1] || environmentImageHeight[0] != environmentImageHeight[1]))
+                throw std::runtime_error("MoonLightIPR scene uses environment images of different sizes");
+            pictured = &parts[p];
         }
+        const int sized = parts[0].hasImage ? 0 : 1;
         Environment environment;
-        environment.width = pictured ? environmentImageWidth : 1;
-        environment.height = pictured ? environmentImageHeight : rowCount;
+        environment.width = pictured ? environmentImageWidth[sized] : 1;
+        environment.height = pictured ? environmentImageHeight[sized] : rowCount;
         std::vector<float> pixels[2];
         for (int p = 0; p < 2; ++p) {
             pixels[p].resize(size_t(environment.width) * environment.height * 3);
@@ -366,7 +450,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 for (uint32_t x = 0; x < environment.width; ++x) {
                     const size_t i = (size_t(y) * environment.width + x) * 3;
                     for (int c = 0; c < 3; ++c)
-                        pixels[p][i + c] = row[c] + (parts[p].hasImage ? environmentImage[i + c] * parts[p].scale : 0.0f);
+                        pixels[p][i + c] = row[c] + (parts[p].hasImage ? environmentImage[p][i + c] * parts[p].scale : 0.0f);
                 }
             }
         }
@@ -377,11 +461,10 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         renderer.setEnvironment(environment);
         environmentHash = environmentNow;
     }
-    renderer.setDistantLights(lights.data(), lights.size());
-    renderer.setLights(localLights.data(), localLights.size());
     renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth);
     if (settings.width != renderer.width() || settings.height != renderer.height()) renderer.resize(settings.width, settings.height);
     renderer.setCamera(camera);
+    renderer.setCameraMotion(sceneFlags & SCENE_MOTION ? &cameraClose : nullptr);
     return settings;
 }
 

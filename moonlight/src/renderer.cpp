@@ -67,6 +67,10 @@ struct Mesh {
     OptixTraversableHandle handle = 0;
     uint32_t triangleCount = 0;
     uint32_t uvSetCount = 0;
+    // For a mesh that changes shape during the shutter: its vertices at both ends, kept here to
+    // be blended for each sample, and what refitting its acceleration structure needs.
+    std::vector<float> open, close;
+    size_t vertexCount = 0, updateBytes = 0, accelBytes = 0;
     int32_t uvSlots[UV_SLOTS] = {-1, -1, -1, -1, -1, -1, -1, -1};
     bool ownsMaterials = false;
     uint32_t maxMaterial = 0;
@@ -164,6 +168,14 @@ DeviceMaterial toDevice(const Material& m) {
     d.coatRoughness = std::clamp(m.clearcoatRoughness, 0.0f, 1.0f);
     d.dissolve = std::clamp(m.dissolve, 0.0f, 1.0f);
     d.bumpStrength = m.bumpStrength;
+    d.anisotropy = std::clamp(m.anisotropy, -1.0f, 1.0f);
+    std::copy(m.tangent, m.tangent + 2, d.tangent);
+    d.tangentSlot = std::min<uint32_t>(m.tangentSlot, UV_SLOTS);
+    d.subsurface = std::clamp(m.subsurface, 0.0f, 1.0f);
+    std::copy(m.subsurfaceColor, m.subsurfaceColor + 3, d.subsurfaceColor);
+    d.subsurfaceRadius = std::max(m.subsurfaceRadius, 0.0f);
+    d.absorptionDistance = m.thin ? 0.0f : std::max(m.absorptionDistance, 0.0f);
+    d.abbe = std::max(m.abbe, 0.0f);
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
             | (m.beckmann ? MATERIAL_BECKMANN : 0);
     d.layerStart = m.layerStart;
@@ -183,11 +195,11 @@ struct Renderer::Impl {
 
     std::vector<std::unique_ptr<Mesh>> meshes;
     std::vector<std::unique_ptr<Texture>> textures;
-    std::vector<int32_t> layerTextures;     // the texture each current layer uses, or -1
+    std::vector<int32_t> layerTextures;     // every texture the current layers use
     std::vector<Instance> instances;
-    size_t materialCount = 0;
-    Buffer meshTable, instanceTable, materialTable, layerTable, albedoTables, instanceInput, instanceAccel, accelTemp;
-    Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights;
+    size_t materialCount = 0, layerCount = 0, lightCount = 0;
+    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, albedoTables, instanceInput, instanceAccel, accelTemp;
+    Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles;
     Buffer beauty, albedo, normal, denoised, paramsBuffer;
 
     OptixDenoiser denoiser = nullptr;
@@ -196,7 +208,8 @@ struct Renderer::Impl {
     Buffer denoiserState, denoiserScratch, denoiserIntensity;
 
     LaunchParams params = {};
-    Camera camera;
+    Camera camera, cameraClose;
+    bool cameraMoves = false, instancesMove = false, meshesMove = false;
     uint32_t samples = 0;
     bool validated = false;
 
@@ -277,7 +290,8 @@ struct Renderer::Impl {
         sbt.hitgroupRecordCount = 1;
     }
 
-    void buildMesh(Mesh& mesh, size_t vertexCount, size_t triangleCount) {
+    // refit moves an existing structure to the vertices now in the mesh's buffer.
+    void buildMesh(Mesh& mesh, size_t vertexCount, size_t triangleCount, bool refit = false) {
         // Rays switch the any-hit test off themselves unless the scene has a partly absent material.
         const unsigned flags = OPTIX_GEOMETRY_FLAG_NONE;
         OptixBuildInput input = {};
@@ -294,6 +308,26 @@ struct Renderer::Impl {
         input.triangleArray.numSbtRecords = 1;
 
         OptixAccelBuildOptions options = {};
+        if (!mesh.close.empty()) {
+            // A mesh that changes shape is refitted for every sample, so it is not compacted.
+            options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_UPDATE | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+            options.operation = refit ? OPTIX_BUILD_OPERATION_UPDATE : OPTIX_BUILD_OPERATION_BUILD;
+            if (refit) {
+                accelTemp.reserve(mesh.updateBytes);
+                ML_CHECK(optixAccelBuild(context, nullptr, &options, &input, 1, accelTemp.ptr, mesh.updateBytes,
+                    mesh.accel.ptr, mesh.accelBytes, &mesh.handle, nullptr, 0));
+                return;
+            }
+            OptixAccelBufferSizes sizes = {};
+            ML_CHECK(optixAccelComputeMemoryUsage(context, &options, &input, 1, &sizes));
+            accelTemp.reserve(sizes.tempSizeInBytes);
+            mesh.accel.reserve(sizes.outputSizeInBytes);
+            mesh.updateBytes = sizes.tempUpdateSizeInBytes;
+            mesh.accelBytes = sizes.outputSizeInBytes;
+            ML_CHECK(optixAccelBuild(context, nullptr, &options, &input, 1, accelTemp.ptr, sizes.tempSizeInBytes,
+                mesh.accel.ptr, sizes.outputSizeInBytes, &mesh.handle, nullptr, 0));
+            return;
+        }
         options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
         options.operation = OPTIX_BUILD_OPERATION_BUILD;
         OptixAccelBufferSizes sizes = {};
@@ -340,17 +374,20 @@ struct Renderer::Impl {
         params.meshes = meshTable.ptr;
     }
 
-    void buildInstances() {
+    // time runs from 0, the shutter opening, to 1, its closing.
+    void buildInstances(float time = 0.0f) {
         std::vector<OptixInstance> input(instances.size());
         std::vector<DeviceInstance> table(instances.size());
         for (size_t i = 0; i < instances.size(); ++i) {
-            std::copy(instances[i].transform, instances[i].transform + 12, input[i].transform);
+            for (int k = 0; k < 12; ++k)
+                input[i].transform[k] = instances[i].moves ? instances[i].transform[k] + (instances[i].closeTransform[k] - instances[i].transform[k]) * time
+                                                           : instances[i].transform[k];
             input[i].instanceId = unsigned(i);
             input[i].sbtOffset = 0;
             input[i].visibilityMask = 255;
             input[i].flags = OPTIX_INSTANCE_FLAG_NONE;
             input[i].traversableHandle = meshes[instances[i].mesh]->handle;
-            table[i] = {instances[i].mesh, instances[i].material};
+            table[i] = {instances[i].mesh, instances[i].material, instances[i].light, 0};
         }
         instanceTable.upload(table);
         params.instances = instanceTable.ptr;
@@ -375,6 +412,33 @@ struct Renderer::Impl {
         params.traversable = handle;
     }
 
+    // Puts the scene where it is at one moment of the shutter: the camera, the meshes that change
+    // shape, and then the instance layer, which holds what moves and bounds what changed.
+    void setTime(float time) {
+        if (cameraMoves) {
+            const Camera held = camera;
+            for (int i = 0; i < 3; ++i) {
+                camera.eye[i] += (cameraClose.eye[i] - camera.eye[i]) * time;
+                camera.target[i] += (cameraClose.target[i] - camera.target[i]) * time;
+                camera.up[i] += (cameraClose.up[i] - camera.up[i]) * time;
+            }
+            camera.verticalFovDegrees += (cameraClose.verticalFovDegrees - camera.verticalFovDegrees) * time;
+            updateCamera();
+            camera = held;
+        }
+        if (meshesMove) {
+            std::vector<float> blended;
+            for (const auto& mesh : meshes) {
+                if (!mesh || mesh->close.empty()) continue;
+                blended.resize(mesh->open.size());
+                for (size_t i = 0; i < blended.size(); ++i) blended[i] = mesh->open[i] + (mesh->close[i] - mesh->open[i]) * time;
+                mesh->positions.upload(blended);
+                buildMesh(*mesh, mesh->vertexCount, mesh->triangleCount, true);
+            }
+        }
+        if (instancesMove || meshesMove) buildInstances(time);
+    }
+
     void updateCamera() {
         if (!params.width || !params.height) return;
         float w[3], u[3], v[3];
@@ -389,6 +453,10 @@ struct Renderer::Impl {
         std::copy(u, u + 3, params.cameraU);
         std::copy(v, v + 3, params.cameraV);
         std::copy(w, w + 3, params.cameraW);
+        params.lensRadius = std::max(camera.lensRadius, 0.0f);
+        params.focusDistance = std::max(camera.focusDistance, 1e-6f);
+        params.lensBlades = camera.blades >= 3 ? std::min<uint32_t>(camera.blades, 64) : 0;
+        params.lensAngle = camera.bladeAngle;
     }
 
     // Material indices are followed on the GPU without bounds checks, so reject bad ones here.
@@ -399,6 +467,8 @@ struct Renderer::Impl {
             const Mesh& mesh = *meshes[instance.mesh];
             const uint32_t highest = mesh.ownsMaterials ? mesh.maxMaterial : instance.material;
             if (highest >= materialCount) throw std::runtime_error("MoonLightIPR instance refers to a missing material");
+            if (instance.light >= 0 && size_t(instance.light) >= lightCount)
+                throw std::runtime_error("MoonLightIPR instance refers to a missing light");
         }
         validated = true;
     }
@@ -497,6 +567,11 @@ uint32_t Renderer::addMesh(const MeshDesc& desc) {
         mesh->maxMaterial = *std::max_element(desc.materialIds, desc.materialIds + desc.triangleCount);
     }
     mesh->triangleCount = uint32_t(desc.triangleCount);
+    mesh->vertexCount = desc.vertexCount;
+    if (desc.closePositions) {
+        mesh->open.assign(desc.positions, desc.positions + desc.vertexCount * 3);
+        mesh->close.assign(desc.closePositions, desc.closePositions + desc.vertexCount * 3);
+    }
     if (desc.uvSetCount) {
         const size_t perSet = desc.triangleCount * 6;
         std::vector<float> all(perSet * desc.uvSetCount);
@@ -528,6 +603,11 @@ void Renderer::setInstances(const Instance* instances, size_t count) {
         if (instances[i].mesh >= impl->meshes.size() || !impl->meshes[instances[i].mesh])
             throw std::runtime_error("MoonLightIPR instance refers to a missing mesh");
     impl->instances.assign(instances, instances + count);
+    impl->instancesMove = impl->meshesMove = false;
+    for (const Instance& instance : impl->instances) {
+        impl->instancesMove = impl->instancesMove || instance.moves;
+        impl->meshesMove = impl->meshesMove || !impl->meshes[instance.mesh]->close.empty();
+    }
     impl->buildInstances();
     impl->restart();
 }
@@ -575,31 +655,69 @@ void Renderer::removeTexture(uint32_t texture) {
     impl->textures[texture].reset();
 }
 
-void Renderer::setMaterials(const Material* materials, size_t count, const Layer* layers, size_t layerCount) {
+void Renderer::setMaterials(const Material* materials, size_t count, const Layer* layers, size_t layerCount,
+                            const int32_t* tiles, size_t tileCount) {
     std::vector<DeviceMaterial> table(count);
     std::transform(materials, materials + count, table.begin(), toDevice);
     // Layers and textures are followed on the GPU without checks, so settle them here.
     for (const DeviceMaterial& material : table)
         if (size_t(material.layerStart) + material.layerCount > layerCount) throw std::runtime_error("MoonLightIPR material refers to missing layers");
     std::vector<DeviceLayer> layerTable(layerCount);
-    std::vector<int32_t> used(layerCount, -1);
+    std::vector<int32_t> used;
+    const auto object = [&](int32_t texture) {
+        if (texture < 0 || size_t(texture) >= impl->textures.size() || !impl->textures[texture])
+            throw std::runtime_error("MoonLightIPR layer refers to a missing texture");
+        used.push_back(texture);
+        return static_cast<unsigned long long>(impl->textures[texture]->object);
+    };
+    // The tile list as the kernel reads it: texture objects in place of indices, 0 for none.
+    std::vector<unsigned long long> tileTable(tileCount);
+    for (size_t i = 0; i < tileCount;) {
+        const size_t run = tiles[i] < 0 ? tileCount : size_t(tiles[i]);
+        if (run >= tileCount - i) throw std::runtime_error("MoonLightIPR tile list is malformed");
+        tileTable[i] = run;
+        for (size_t t = 1; t <= run; ++t) tileTable[i + t] = tiles[i + t] < 0 ? 0 : object(tiles[i + t]);
+        i += run + 1;
+    }
+    impl->tileTable.upload(tileTable);
     for (size_t i = 0; i < layerCount; ++i) {
         const Layer& layer = layers[i];
         DeviceLayer& out = layerTable[i];
         out.channel = layer.channel;
         out.blend = layer.blend;
-        out.flags = layer.flags & ~LAYER_IMAGE;
+        out.flags = layer.flags & ~(LAYER_IMAGE | LAYER_CURVES);
         out.uvSlot = layer.uvSlot;
         std::copy(layer.value, layer.value + 3, out.value);
         out.opacity = layer.opacity;
         out.gain = layer.gain;
         out.offset = layer.offset;
-        if (layer.texture >= 0) {
-            if (size_t(layer.texture) >= impl->textures.size() || !impl->textures[layer.texture] || layer.uvSlot >= UV_SLOTS)
-                throw std::runtime_error("MoonLightIPR layer refers to a missing texture or coordinate slot");
-            out.texture = impl->textures[layer.texture]->object;
+        std::copy(layer.scale, layer.scale + 2, out.scale);
+        out.gamma = layer.gamma;
+        out.bias = layer.bias;
+        out.gainCurve = layer.gainCurve;
+        std::copy(layer.color2, layer.color2 + 3, out.color2);
+        out.alpha1 = layer.alpha1;
+        out.alpha2 = layer.alpha2;
+        out.octaves = layer.octaves;
+        out.lacunarity = layer.lacunarity;
+        out.persistence = layer.persistence;
+        if (layer.gamma != 1.0f || layer.bias != 0.5f || layer.gainCurve != 0.5f) out.flags |= LAYER_CURVES;
+        // Coordinates and channels are followed on the GPU without checks.
+        const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM);
+        if (sources & (sources - 1)) throw std::runtime_error("MoonLightIPR layer has more than one source");
+        if (out.flags & LAYER_RAMP) {
+            if (layer.uvSlot >= CHANNEL_COUNT) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
+            out.texture = object(layer.texture);
+        } else if (out.flags & LAYER_UDIM) {
+            if (layer.texture < 0 || size_t(layer.texture) >= tileCount || layer.uvSlot >= UV_SLOTS)
+                throw std::runtime_error("MoonLightIPR layer refers to missing tiles or a missing coordinate slot");
+            out.texture = impl->tileTable.ptr + size_t(layer.texture) * sizeof(unsigned long long);
+        } else if (out.flags & (LAYER_CHECKER | LAYER_NOISE)) {
+            if (layer.uvSlot >= UV_SLOTS) throw std::runtime_error("MoonLightIPR layer refers to a missing coordinate slot");
+        } else if (layer.texture >= 0) {
+            if (layer.uvSlot >= UV_SLOTS) throw std::runtime_error("MoonLightIPR layer refers to a missing coordinate slot");
+            out.texture = object(layer.texture);
             out.flags |= LAYER_IMAGE;
-            used[i] = layer.texture;
         }
     }
     // A material can be partly absent through its own value or a layer on that channel; only then
@@ -614,6 +732,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
     impl->layerTable.upload(layerTable);
     impl->params.layers = impl->layerTable.ptr;
     impl->layerTextures = std::move(used);
+    impl->layerCount = layerCount;
     impl->materialTable.upload(table);
     impl->params.materials = impl->materialTable.ptr;
     impl->materialCount = count;
@@ -622,7 +741,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
 
 void Renderer::setMaterial(uint32_t index, const Material& material) {
     if (index >= impl->materialCount) throw std::runtime_error("MoonLightIPR material index is out of range");
-    if (size_t(material.layerStart) + material.layerCount > impl->layerTextures.size())
+    if (size_t(material.layerStart) + material.layerCount > impl->layerCount)
         throw std::runtime_error("MoonLightIPR material refers to missing layers");
     const DeviceMaterial value = toDevice(material);
     ML_CHECK(cudaMemcpy(reinterpret_cast<void*>(impl->materialTable.ptr + index * sizeof(DeviceMaterial)), &value,
@@ -701,20 +820,63 @@ void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
 }
 
 void Renderer::setLights(const Light* lights, size_t count) {
+    const float pi = 3.14159265358979323846f;
     std::vector<DeviceLight> table(count);
+    std::vector<float> triangles;       // of every mesh light, 10 floats each
+    std::vector<size_t> triangleStart(count, 0);
+    impl->params.envPortal = 0;
     for (size_t i = 0; i < count; ++i) {
         const Light& light = lights[i];
         DeviceLight& out = table[i];
+        out = DeviceLight{};
+        out.type = light.kind;
+        std::copy(light.radiance, light.radiance + 3, out.radiance);
+        if (light.kind == Light::Mesh) {
+            // A corner, two edges and the running share of the area, which picks a triangle.
+            if (!light.triangles || !light.triangleCount || light.triangleCount > 0xffffffffu)
+                throw std::runtime_error("MoonLightIPR mesh light has no triangles");
+            triangleStart[i] = triangles.size();
+            double total = 0.0;
+            for (size_t t = 0; t < light.triangleCount; ++t) {
+                const float* p = light.triangles + t * 9;
+                float e1[3], e2[3], n[3];
+                subtract(p + 3, p, e1);
+                subtract(p + 6, p, e2);
+                cross(e1, e2, n);
+                total += 0.5 * std::sqrt(double(n[0]) * n[0] + double(n[1]) * n[1] + double(n[2]) * n[2]);
+                triangles.insert(triangles.end(), p, p + 3);
+                triangles.insert(triangles.end(), e1, e1 + 3);
+                triangles.insert(triangles.end(), e2, e2 + 3);
+                triangles.push_back(float(total));
+            }
+            if (!(total > 0.0) || !std::isfinite(total)) throw std::runtime_error("MoonLightIPR mesh light has no area");
+            for (size_t t = 0; t < light.triangleCount; ++t) triangles[triangleStart[i] + t * 10 + 9] /= float(total);
+            triangles.back() = 1.0f;
+            out.area = float(total);
+            out.triangleCount = uint32_t(light.triangleCount);
+            continue;
+        }
         if (!(light.radius > 0.0f) || !(light.width > 0.0f) || !(light.height > 0.0f))
             throw std::runtime_error("MoonLightIPR light has no size");
-        out.type = light.kind;
+        if (light.kind == Light::Cylinder) {
+            // Its axis, and the two directions across it.
+            out.radius = light.radius;
+            out.halfHeight = 0.5f * light.height;
+            std::copy(light.position, light.position + 3, out.position);
+            std::copy(light.axisX, light.axisX + 3, out.u);
+            std::copy(light.axisY, light.axisY + 3, out.v);
+            std::copy(light.direction, light.direction + 3, out.normal);
+            for (float* axis : {out.u, out.v, out.normal}) scaleTo(axis, 1.0f);
+            out.area = 2.0f * pi * light.radius * light.height;
+            continue;
+        }
+        if (light.kind == Light::Portal) impl->params.envPortal = 1;
         out.radius = light.radius;
         std::copy(light.position, light.position + 3, out.position);
-        std::copy(light.radiance, light.radiance + 3, out.radiance);
         std::copy(light.axisX, light.axisX + 3, out.u);
         std::copy(light.axisY, light.axisY + 3, out.v);
         std::copy(light.direction, light.direction + 3, out.normal);
-        const bool rect = light.kind == Light::Rect;
+        const bool rect = light.kind == Light::Rect || light.kind == Light::Portal;
         scaleTo(out.u, rect ? 0.5f * light.width : 1.0f);
         scaleTo(out.v, rect ? 0.5f * light.height : 1.0f);
         scaleTo(out.normal, 1.0f);
@@ -746,9 +908,26 @@ void Renderer::setLights(const Light* lights, size_t count) {
     }
     if (!table.empty()) table.back().cumulative = 1.0f;
     impl->params.lightPick = count > 4;
+    impl->lightTriangles.upload(triangles);
+    for (size_t i = 0; i < count; ++i)
+        if (table[i].type == LIGHT_MESH) table[i].triangles = impl->lightTriangles.ptr + triangleStart[i] * sizeof(float);
     impl->lights.upload(table);
     impl->params.lights = impl->lights.ptr;
     impl->params.lightCount = unsigned(count);
+    impl->lightCount = count;
+    impl->restart();
+}
+
+void Renderer::setCameraMotion(const Camera* close) {
+    impl->cameraMoves = close != nullptr;
+    if (close) impl->cameraClose = *close;
+    impl->updateCamera();
+    impl->restart();
+}
+
+void Renderer::setWorkingSpace(const float* matrix) {
+    impl->params.working = matrix != nullptr;
+    if (matrix) std::copy(matrix, matrix + 9, impl->params.workingMatrix);
     impl->restart();
 }
 
@@ -783,6 +962,13 @@ void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t g
 
 void Renderer::render() {
     impl->validate();
+    if (impl->cameraMoves || impl->instancesMove || impl->meshesMove) {
+        // One moment per sample: the bits of the sample index reversed, which spreads any number
+        // of samples evenly over the shutter.
+        uint32_t bits = impl->samples, reversed = 0;
+        for (int i = 0; i < 16; ++i, bits >>= 1) reversed = (reversed << 1) | (bits & 1);
+        impl->setTime((reversed + 0.5f) / 65536.0f);
+    }
     impl->params.sample = impl->samples;
     impl->paramsBuffer.upload(&impl->params, sizeof(LaunchParams));
     ML_CHECK(optixLaunch(impl->pipeline, nullptr, impl->paramsBuffer.ptr, sizeof(LaunchParams), &impl->sbt,
