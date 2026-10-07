@@ -1,6 +1,7 @@
 # Dreamworks' MoonRay for Modo
 
 <img width="1326" height="1009" alt="Capture" src="https://github.com/user-attachments/assets/d3a600ad-e34a-4498-b1a5-014b97dbed75" />
+<p align="right">Stanford Dragon 3D Model (created by Brian Curless & Marc Levoy)</p><br><br>
 
 MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Modo 16.1v9 on Windows**, running natively without WSL. Developed by Raphael Tobar w/ AI-Assistance.
 
