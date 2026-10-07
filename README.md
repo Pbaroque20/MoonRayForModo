@@ -1,4 +1,4 @@
-# MoonRay for Modo
+# Dreamworks' MoonRay for Modo
 
 <img width="1326" height="1009" alt="Capture" src="https://github.com/user-attachments/assets/d3a600ad-e34a-4498-b1a5-014b97dbed75" />
 
