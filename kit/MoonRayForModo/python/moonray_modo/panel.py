@@ -126,6 +126,12 @@ class Panel(QtWidgets.QWidget):
         self.execution_mode.addItem('Vector (CPU / AVX)', 'vectorized')
         self.execution_mode.addItem('Scalar (CPU)', 'scalar')
         self.pages['system'].addRow('Rendering mode', self.execution_mode)
+        self.preview_engine=QtWidgets.QComboBox()
+        self.preview_engine.addItem('MoonRay', 'moonray')
+        self.preview_engine.addItem('MoonLight (GPU preview, approximate)', 'moonlight')
+        self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(str(self.settings.value('preview_engine','moonray')))))
+        self.preview_engine.setToolTip('MoonLight is a fast NVIDIA GPU preview that approximates materials and lighting; Scene notices list what it leaves out. Output renders always use MoonRay.')
+        self.pages['system'].addRow('Preview engine', self.preview_engine)
         self.pages['system'].addRow('CPU threads', self.threads)
         self.timeout = QtWidgets.QSpinBox()
         self.timeout.setRange(0,10080)
@@ -381,6 +387,10 @@ class Panel(QtWidgets.QWidget):
         self.buffer.currentIndexChanged.connect(self._buffer_changed)
         self.clay_mode.currentIndexChanged.connect(self._preview_changed)
         self.execution_mode.currentIndexChanged.connect(self._preview_changed)
+        self.preview_engine.currentIndexChanged.connect(self._engine_changed)
+        self._engine_changed(self.preview_engine.currentIndex())
+        self.preview_engine.currentIndexChanged.connect(self._preview_changed)
+        self.renderer.notices.connect(self._engine_notices)
         self.display_timer=QtCore.QTimer(self)
         self.display_timer.setSingleShot(True);self.display_timer.setInterval(200)
         self.display_timer.timeout.connect(lambda:self._buffer_changed(0))
@@ -450,6 +460,16 @@ class Panel(QtWidgets.QWidget):
     def _toggle_notices(self,visible):
         self.warnings.setVisible(visible)
         self.notice_toggle.setArrowType(QtCore.Qt.DownArrow if visible else QtCore.Qt.RightArrow)
+
+    def _engine_changed(self,index):
+        self.settings.setValue('preview_engine',self.preview_engine.currentData())
+        # MoonLight follows edits as they happen, so look for them more often.
+        self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlight' else 150)
+
+    def _engine_notices(self,messages):
+        """Add what the preview engine left out to the notices of the scene it is showing."""
+        snapshot=(self.renderer.active or {}).get('snapshot',{})
+        self._set_notices(list(snapshot.get('warnings',[]))+list(messages))
 
     def _set_notices(self,messages):
         unique=list(dict.fromkeys(str(message) for message in messages if message))
@@ -761,7 +781,9 @@ class Panel(QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self.clay_mode.currentData())
-        if self.ipr_mode.isChecked() and not output:
+        engine='moonray' if output else self.preview_engine.currentData()
+        # MoonLight accumulates at full preview size; the IPR quality limits are for MoonRay.
+        if self.ipr_mode.isChecked() and not output and engine=='moonray':
             from .ipr import prepare
             scene,width,height=prepare(scene,width,height,self.samples.value(),
                                        self.ipr_width.currentData(),self.ipr_samples.currentData(),self.ipr_error.value())
@@ -770,17 +792,16 @@ class Panel(QtWidgets.QWidget):
             scene=refine(scene)
         self.renderer.timeout_seconds = self.timeout.value()*60
         self.renderer.submit(scene, self.runtime.text(), width, height, (4 if refining else 1) if scene.get('_ipr') and not output else self.samples.value(),
-                             self.environment.value(), self.threads.value(), output, persistent_preview=self.persistent_preview.isChecked())
+                             self.environment.value(), self.threads.value(), output, persistent_preview=self.persistent_preview.isChecked(), engine=engine)
         self.settings.setValue('runtime', self.runtime.text())
         self.last_digest = original_digest
 
     def _digest(self, scene):
         render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising')}
-        values = [render_scene, self.clay_mode.currentData(), self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value()]
-        digest = hashlib.sha256()
-        for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':')).iterencode(values):
-            digest.update(chunk.encode('utf-8'))
-        return digest.hexdigest()
+        values = [render_scene, self.clay_mode.currentData(), self.runtime.text(), self.size.currentIndex(), self.samples.value(), self.environment.value(), self.threads.value(), self.persistent_preview.isChecked(), self.ipr_mode.isChecked(), self.ipr_width.currentData(), self.ipr_samples.currentData(), self.ipr_error.value(), self.preview_engine.currentData()]
+        # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
+        from .scene_digest import digest
+        return digest(*values)
 
     def _denoising_changed(self,*args):
         if self.disposed:return
@@ -835,7 +856,9 @@ class Panel(QtWidgets.QWidget):
     def _live_tick(self):
         if self.disposed or not self.ipr_mode.isChecked():return
         from .interaction import dragging
-        if dragging():self.release_timer.start();return
+        held=dragging()
+        # MoonLight is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
+        if held and self.preview_engine.currentData()!='moonlight':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         try:
@@ -847,9 +870,11 @@ class Panel(QtWidgets.QWidget):
             # procedural mesh providers. Normal idle ticks do not capture geometry.
             now=clock.monotonic()
             asset_changed=False
-            if now-self._asset_check_time>=1:
+            # The periodic checks wait for the button too; they would turn a drag that can be
+            # followed into a full capture.
+            if not held and now-self._asset_check_time>=1:
                 self._asset_check_time=now;asset_changed=signature(self._asset_scene)!=self._asset_signature
-            full=full or (self.capture_safety.isChecked() and now-self._last_full_capture>15) or asset_changed
+            full=full or (not held and self.capture_safety.isChecked() and now-self._last_full_capture>15) or asset_changed
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             if not (full or items or changed):return
@@ -857,6 +882,13 @@ class Panel(QtWidgets.QWidget):
             if reuse:
                 from .incremental import classify
                 reuse=classify(modo.Scene(),items,self._geometry_cache)
+            if held and reuse not in (True,'transforms','materials'):
+                # Modo reports some drags as they happen (the transform tool) and others only on
+                # release (viewport navigation). Of those it reports, only light, transform and
+                # material edits are followed live; reading meshes or the whole scene in the
+                # middle of a tool waits for the release.
+                self.changes.full=self.changes.full or full;self.changes.items.update(items)
+                self.release_timer.start();return
             scene = self._capture(reuse)
             self._last_time=time;self._live_settings=settings
             if self._digest(scene) != self.last_digest:self._submit(scene)

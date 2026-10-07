@@ -20,7 +20,7 @@ def paths(value):
     def visit(node):
         if isinstance(node,dict):
             for key,child in node.items():
-                if key not in ('warnings','production','preview_buffer_files','_recovery','vertices','vertices_close','faces','uvs','uv_sets','normals','radii','velocities','counts','instances','matrix','matrix_close','position'):visit(child)
+                if key not in ('warnings','production','preview_buffer_files','_recovery','vertices','vertices_close','faces','face_materials','uvs','uv_sets','normals','radii','velocities','counts','instances','matrix','matrix_close','position'):visit(child)
         elif isinstance(node,(list,tuple)):
             for child in node:visit(child)
         elif isinstance(node,str) and (re.match(r'^[A-Za-z]:[/\\]',node) or node.startswith('//')) and Path(node).suffix:found.add(node)

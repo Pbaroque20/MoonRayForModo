@@ -6,6 +6,8 @@ The plugin includes CPU and XPU rendering, a dockable live preview, MoonShine ma
 
 **Current version: 0.3.49 — experimental development build.**
 
+**In development: 0.3.49.1 (unreleased).** Adds MoonLight, an approximate NVIDIA GPU preview engine chosen under **System > Preview engine**; output renders still use MoonRay. See [moonlight/README.md](moonlight/README.md) for what it shows, how closely it matches MoonRay, and how to build it.
+
 [Download the packaged 0.3.49 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.49) · [Installation instructions](docs/INSTALLATION.md)
 
 **Currently implemented**

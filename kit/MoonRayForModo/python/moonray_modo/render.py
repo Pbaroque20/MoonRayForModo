@@ -8,9 +8,14 @@ from . import native, rdla, options, denoising, outputs
 from .progress import Progress, duration
 from .buffer_cache import BufferCache
 from .persistent import Session, supported as persistent_supported
+from .moonlight_session import Session as MoonLightSession, supported as moonlight_supported, directory as moonlight_directory
+
+MOONLIGHT_STATUS = 'MoonLight (GPU preview, approximate)'
+MOONLIGHT_SAMPLES = 256
 
 
 class Renderer(QtCore.QObject):
+    notices = QtCore.Signal(object)
     buckets = QtCore.Signal(object)
     workers = QtCore.Signal(object)
     image_ready = QtCore.Signal(str)
@@ -38,6 +43,19 @@ class Renderer(QtCore.QObject):
         self.session.status.connect(self.status.emit)
         self.session_serial=0
         self.using_session=False
+        # Approximate GPU preview; final frames never use it.
+        self.moonlight=MoonLightSession(self)
+        self.moonlight.output.connect(self._consume_log)
+        self.moonlight.ready.connect(self._moonlight_ready)
+        self.moonlight.memory_image.connect(self._moonlight_memory)
+        self.moonlight.warnings.connect(self.notices.emit)
+        self.moonlight.failed.connect(self.failed.emit)
+        self.moonlight.status.connect(self.status.emit)
+        self.moonlight_serial=0
+        self.using_moonlight=False
+        self.moonlight_frame=None
+        for signal in (self.buffers.image_ready,self.buffers.image_object,self.buffers.notice):
+            signal.connect(self._moonlight_flush)
         self.process = QtCore.QProcess(self)
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
@@ -89,10 +107,15 @@ class Renderer(QtCore.QObject):
         self.stop()
         self.failed.emit('Render exceeded the configured time limit; it was stopped. Completed outputs were preserved.')
 
-    def submit(self, snapshot, runtime, width, height, samples, environment, threads, output=None, linear_preview=False, persistent_preview=True):
+    def submit(self, snapshot, runtime, width, height, samples, environment, threads, output=None, linear_preview=False, persistent_preview=True, engine='moonray'):
         if self.closed:
             raise ValueError('Renderer is closed')
+        if engine not in ('moonray','moonlight'):
+            raise ValueError('Unknown preview engine')
         runtime = native.find_runtime(runtime)
+        moonlight = engine=='moonlight' and not output and not linear_preview
+        # MoonLight produces beauty only.
+        if moonlight:snapshot=dict(snapshot,preview_buffer='beauty')
         if not output and not linear_preview:
             self.buffers.select(snapshot.get('preview_buffer','beauty'),snapshot.get('display',{}))
         self.buckets.emit(None)
@@ -100,11 +123,13 @@ class Renderer(QtCore.QObject):
         self.generation += 1
         request = dict(snapshot=snapshot, runtime=runtime, width=width, height=height, generation=self.generation,
                        samples=samples, environment=environment, threads=threads, output=output,
-                       linear_preview=linear_preview,
-                       persistent=bool(persistent_preview and not output and not linear_preview and persistent_supported(runtime)))
+                       linear_preview=linear_preview, moonlight=moonlight,
+                       persistent=bool(persistent_preview and not moonlight and not output and not linear_preview and persistent_supported(runtime)))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         if not request['persistent']:self.session.stop()
+        # One renderer at a time holds the GPU and the scene.
+        if not moonlight:self.moonlight.release()
         if self.process.state() != QtCore.QProcess.NotRunning:
             self.canceled = True
             self.process.kill()
@@ -128,6 +153,7 @@ class Renderer(QtCore.QObject):
         self.watchdog.stop()
         self.pending = None
         self.session.stop()
+        self.moonlight.stop()
         self.canceled = True
         if self.process.state() != QtCore.QProcess.NotRunning:
             self.process.kill()
@@ -143,12 +169,49 @@ class Renderer(QtCore.QObject):
         self.canceled = False
         self.progress_state=Progress()
         self.progress_timer.start()
+        self.using_moonlight=self.active['moonlight']
+        if self.using_moonlight:
+            self._begin_moonlight();return
         target = int(self.active['samples'])
         adaptive=options.render_values(self.active['snapshot'].get('render_settings',{}))['sampling_mode']==2
         self.passes = [target] if self.active['output'] or adaptive or self.active['snapshot'].get('_ipr_refined') else sorted(set([1, min(2, target), target]))
         self.log = ''
         self.bucket_partial = ''
         self._begin_pass(self.active['generation'])
+
+    def _begin_moonlight(self):
+        """Hand the snapshot to the GPU preview; it accumulates and publishes frames itself."""
+        request=self.active
+        self.passes=[];self.log='';self.bucket_partial='';self.backend_log=''
+        self.phase='render';self.using_session=False;self.gpu_error=False
+        self.original_published=False;self.post_jobs=[];self.denoise_result=None
+        self.backend_status=MOONLIGHT_STATUS;self.moonlight_frame=None
+        self._progress_tick()
+        directory=moonlight_directory(request['runtime'])
+        if not moonlight_supported(directory):
+            self.failed.emit('This runtime has no MoonLight GPU preview (expected in '+str(directory)+'). Choose MoonRay as the preview engine.');return
+        self.status.emit('Rendering · '+self.backend_status)
+        self.moonlight_serial+=1
+        self.moonlight.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlight_serial,MOONLIGHT_SAMPLES,runtime=request['runtime'])
+
+    def _moonlight_memory(self,packet):
+        if self.closed or self.canceled or not self.using_moonlight or packet[0]!=self.moonlight_serial:return
+        self.moonlight_frame=packet
+        self._moonlight_flush()
+
+    def _moonlight_flush(self,*args):
+        """Show the newest frame once the display is free, so the final one is never dropped."""
+        packet=self.moonlight_frame
+        if packet is None or self.closed or self.canceled or not self.using_moonlight or packet[0]!=self.moonlight_serial:return
+        if self.buffers.busy():return # retried when the conversion in flight reports back
+        self.moonlight_frame=None
+        serial,key,width,height,pixels=packet
+        try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
+        except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
+
+    def _moonlight_ready(self,serial):
+        if self.closed or self.canceled or not self.using_moonlight or serial!=self.moonlight_serial:return
+        self.finished.emit('')
 
     def _begin_pass(self, generation):
         if self.closed or self.canceled or self.active['generation'] != generation:
@@ -393,6 +456,7 @@ class Renderer(QtCore.QObject):
         self.closed = True
         self.stop()
         self.session.close()
+        self.moonlight.close()
         self.buffers.close()
         if self.process.state() != QtCore.QProcess.NotRunning:
             self.process.waitForFinished(2000)
