@@ -1,4 +1,4 @@
-"""Exercise the plugin's MoonLight session class under Qt, outside Modo.
+"""Exercise the plugin's MoonLightIPR session class under Qt, outside Modo.
 
 Run with a Python that has PySide2, such as Modo's bundled interpreter, after
 tools/stage_moonlight.py. Submits a snapshot, then edits faster than they can be applied.
@@ -14,7 +14,7 @@ from check_moonlight_session import snapshot, look_at
 
 stage = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'build/moonlight/stage'
 if not supported(stage):
-    raise SystemExit('No staged MoonLight in ' + str(stage))
+    raise SystemExit('No staged MoonLightIPR in ' + str(stage))
 app = QtCore.QCoreApplication(sys.argv)
 session = Session()
 scene = snapshot()
@@ -50,11 +50,11 @@ session.close()
 
 print('applied', state['applied'], 'done', state['done'], 'frames', {k: len(v) for k, v in state['frames'].items()})
 if state['failures']:
-    raise SystemExit('MoonLight Qt session failed: ' + '; '.join(state['failures']) + '\n' + state['log'][-2000:])
+    raise SystemExit('MoonLightIPR Qt session failed: ' + '; '.join(state['failures']) + '\n' + state['log'][-2000:])
 if state['done'] != [1, state['generation']] or state['applied'][0] != 1 or state['applied'][-1] != state['generation']:
     raise SystemExit('Unexpected event order')
 if len(state['applied']) >= state['generation']:
     raise SystemExit('Queued edits were not coalesced')
 if not state['frames'].get(1) or not state['frames'].get(state['generation']) or any(size != 640 * 360 * 12 for v in state['frames'].values() for size in v):
     raise SystemExit('Frames are missing or the wrong size')
-print('MoonLight Qt session check passed')
+print('MoonLightIPR Qt session check passed')

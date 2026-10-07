@@ -1,4 +1,4 @@
-// MoonLight preview session: a long-lived process the plugin feeds packed scenes.
+// MoonLightIPR preview session: a long-lived process the plugin feeds packed scenes.
 // Usage: moonlight_session <kernel.ptx>
 //
 // Commands arrive on standard input, one per line:
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     try {
         moonlight::Renderer renderer(argv[1]);
         moonlight::SceneLoader loader(renderer);
-        std::cout << "MoonLight GPU preview on " << renderer.deviceName() << std::endl;
+        std::cout << "MoonLightIPR GPU preview on " << renderer.deviceName() << std::endl;
         Commands commands;
         ModoSharedImage sharedImage;
         std::vector<float> pixels;
@@ -85,14 +85,14 @@ int main(int argc, char** argv) {
             if (verb == "quit") return 0;
             if (verb == "pause") continue;      // stop sampling; the loaded scene stays for the next one
             if (verb != "scene" || generation.empty() || path.empty()) {
-                std::cerr << "MoonLight ignored an unknown command" << std::endl;
+                std::cerr << "MoonLightIPR ignored an unknown command" << std::endl;
                 continue;
             }
             moonlight::SceneSettings settings;
             try {
                 settings = loader.apply(path);
             } catch (const std::exception& error) {
-                std::cerr << "MoonLight scene rejected: " << error.what() << std::endl;
+                std::cerr << "MoonLightIPR scene rejected: " << error.what() << std::endl;
                 event("FAILED", generation);
                 continue;
             }
@@ -125,7 +125,7 @@ int main(int argc, char** argv) {
             if (!commands.waiting()) event("DONE", generation);
         }
     } catch (const std::exception& error) {
-        std::cerr << "MoonLight session failed: " << error.what() << std::endl;
+        std::cerr << "MoonLightIPR session failed: " << error.what() << std::endl;
         return 1;
     }
 }

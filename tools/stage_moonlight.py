@@ -1,4 +1,4 @@
-"""Copy the built MoonLight session, its device program and the CUDA runtime into one folder."""
+"""Copy the built MoonLightIPR session, its device program and the CUDA runtime into one folder."""
 import argparse
 import pathlib
 import shutil
@@ -18,9 +18,9 @@ for library in (xpu / 'cuda_cudart-windows-x86_64-12.8.90-archive/bin').glob('cu
     assets[library.name] = library
 missing = [str(source) for source in assets.values() if not source.is_file()]
 if missing or not any(name.startswith('cudart64_') for name in assets):
-    raise SystemExit('Build MoonLight first (tools/build_moonlight.py); missing: ' + ', '.join(missing or ['cudart64_*.dll']))
+    raise SystemExit('Build MoonLightIPR first (tools/build_moonlight.py); missing: ' + ', '.join(missing or ['cudart64_*.dll']))
 for name, source in assets.items():
     target = destination / name
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, target)
-print('Staged MoonLight:', destination)
+print('Staged MoonLightIPR:', destination)

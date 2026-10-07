@@ -1,4 +1,4 @@
-"""Render the same snapshots in MoonRay and MoonLight and report how far apart they are.
+"""Render the same snapshots in MoonRay and MoonLightIPR and report how far apart they are.
 
 Usage: compare_moonlight.py <moonray-runtime> [scene ...]
 Run outside Modo after tools/build_moonlight.py. Each scene isolates one kind of light over
@@ -145,7 +145,7 @@ def scenes(folder):
            'camera': True, 'indirect': True, 'reflection': True, 'refraction': True,
            'matrix': [math.cos(turn), 0, -math.sin(turn), 0, 0, 1, 0, 0, math.sin(turn), 0, math.cos(turn), 0, 0, 0, 0, 1]}
     lamp = dict(identity='lamp', name='Lamp', color=[1, .95, .85])
-    # Enough lights that MoonLight samples one per bounce instead of all of them.
+    # Enough lights that MoonLightIPR samples one per bounce instead of all of them.
     many = [dict(lamp, identity='lamp%d' % i, kind='SphereLight' if i % 2 else 'RectLight', color=[1, .5 + .1 * (i % 4), .3 + .1 * (i % 5)],
                  intensity=6.0 + 9.0 * (i % 3), radius=.25, width=.8, height=.5,
                  matrix=aimed([-4.5 + 1.2 * i, 4.0 + .4 * (i % 3), 2.0 + (i % 2)], [-3 + .8 * i, .5, 0])) for i in range(9)]
@@ -187,7 +187,7 @@ def moonlight(scene, session, name):
     session.send(payload)
     result = session.wait()
     if result['event'] != 'DONE':
-        raise RuntimeError('MoonLight rejected the scene')
+        raise RuntimeError('MoonLightIPR rejected the scene')
     session.known = keys
     (session.folder / (name + '_moonlight.pfm')).write_bytes(('PF\n%d %d\n-1.0\n' % (WIDTH, HEIGHT)).encode() + result['pixels'])
     return struct.unpack('<%df' % (WIDTH * HEIGHT * 3), result['pixels']), warnings
@@ -205,7 +205,7 @@ def blocks(values):
 
 
 def write_ppm(path, left, right):
-    """MoonRay on the left, MoonLight on the right, under the same exposure."""
+    """MoonRay on the left, MoonLightIPR on the right, under the same exposure."""
     encode = lambda v: round(255 * (12.92 * v if v <= .0031308 else 1.055 * v ** (1 / 2.4) - .055))
     rows = []
     for y in reversed(range(HEIGHT)):
@@ -238,7 +238,7 @@ def main():
                      'moonray_mean': sum(a) / len(a), 'moonlight_mean': sum(b) / len(b), 'warnings': warnings}
             report[name] = entry
             write_ppm(folder / (name + '_moonray_left_moonlight_right.ppm'), reference, preview)
-            print('%-13s MoonLight/MoonRay brightness %.3f (median tile %.3f), %3.0f%% of tiles within 10%%'
+            print('%-13s MoonLightIPR/MoonRay brightness %.3f (median tile %.3f), %3.0f%% of tiles within 10%%'
                   % (name, entry['mean_ratio'], entry['median_tile_ratio'], 100 * entry['tiles_within_10_percent']), flush=True)
         session.process.stdin.write(b'quit\n')
         session.process.stdin.flush()

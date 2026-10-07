@@ -1,4 +1,4 @@
-// Host side of MoonLight: CUDA buffers, OptiX acceleration structures, pipeline and denoiser.
+// Host side of MoonLightIPR: CUDA buffers, OptiX acceleration structures, pipeline and denoiser.
 #include "moonlight/moonlight.h"
 #include "device/shared.h"
 
@@ -77,7 +77,7 @@ struct SbtRecord {
 };
 
 void logCallback(unsigned level, const char* tag, const char* message, void*) {
-    if (level <= 2) std::cerr << "[MoonLight OptiX] " << tag << ": " << message << std::endl;
+    if (level <= 2) std::cerr << "[MoonLightIPR OptiX] " << tag << ": " << message << std::endl;
 }
 
 void subtract(const float* a, const float* b, float* out) { for (int i = 0; i < 3; ++i) out[i] = a[i] - b[i]; }
@@ -88,7 +88,7 @@ void cross(const float* a, const float* b, float* out) {
 }
 void scaleTo(float* v, float length) {
     const float current = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-    if (!(current > 0.0f)) throw std::runtime_error("MoonLight was given a zero-length camera or light direction");
+    if (!(current > 0.0f)) throw std::runtime_error("MoonLightIPR was given a zero-length camera or light direction");
     for (int i = 0; i < 3; ++i) v[i] *= length / current;
 }
 
@@ -100,6 +100,51 @@ struct Texture {
         if (array) cudaFreeArray(array);
     }
 };
+
+// The albedo of a specular lobe with a Fresnel term of one, by sampling its facets: for each
+// roughness and view cosine, and then its cosine-weighted average per roughness.
+std::vector<float> albedoTable(bool beckmann) {
+    const float pi = 3.14159265358979323846f;
+    const int steps = int(ALBEDO_STEPS), strata = 48;
+    std::vector<float> table(ALBEDO_TABLE);
+    for (int ri = 0; ri < steps; ++ri) {
+        const float roughness = float(ri) / (steps - 1), alpha = std::max(roughness * roughness, 0.002f), a2 = alpha * alpha;
+        const auto shadowing = [&](float nv) {
+            if (nv <= 0.0f) return 0.0f;
+            if (!beckmann) return 2.0f * nv / (nv + std::sqrt(a2 + (1.0f - a2) * nv * nv));
+            const float a = nv / (alpha * std::sqrt(std::max(1e-12f, 1.0f - nv * nv)));
+            return a < 1.6f ? (3.535f * a + 2.181f * a * a) / (1.0f + 2.276f * a + 2.577f * a * a) : 1.0f;
+        };
+        for (int ci = 0; ci < steps; ++ci) {
+            const float cosine = std::max(float(ci) / (steps - 1), 0.02f), sine = std::sqrt(1.0f - cosine * cosine);
+            double sum = 0.0;
+            for (int i = 0; i < strata; ++i)
+                for (int j = 0; j < strata; ++j) {
+                    // A facet drawn from the distribution; the reflected light is weighted by what
+                    // the density of that draw leaves of the lobe.
+                    const float u = (i + 0.5f) / strata, phi = 2.0f * pi * (j + 0.5f) / strata;
+                    const float tan2 = beckmann ? -a2 * std::log(1.0f - u) : a2 * u / (1.0f - u);
+                    const float hz = 1.0f / std::sqrt(1.0f + tan2), hs = hz * std::sqrt(tan2);
+                    const float hx = hs * std::cos(phi), hy = hs * std::sin(phi);
+                    const float along = sine * hx + cosine * hz;
+                    if (along <= 0.0f) continue;
+                    const float wiz = 2.0f * along * hz - cosine;
+                    if (wiz <= 0.0f) continue;
+                    (void)hy;
+                    sum += shadowing(cosine) * shadowing(wiz) * along / (cosine * hz);
+                }
+            table[ri * steps + ci] = std::min(1.0f, float(sum / (strata * strata)));
+        }
+        // Average over the hemisphere: 2 * integral of E(mu) mu dmu, by the trapezium rule.
+        double average = 0.0;
+        for (int ci = 0; ci + 1 < steps; ++ci) {
+            const float m0 = float(ci) / (steps - 1), m1 = float(ci + 1) / (steps - 1);
+            average += (table[ri * steps + ci] * m0 + table[ri * steps + ci + 1] * m1) * 0.5f * (m1 - m0);
+        }
+        table[steps * steps + ri] = std::min(1.0f, float(2.0 * average));
+    }
+    return table;
+}
 
 DeviceMaterial toDevice(const Material& m) {
     DeviceMaterial d{};
@@ -119,7 +164,8 @@ DeviceMaterial toDevice(const Material& m) {
     d.coatRoughness = std::clamp(m.clearcoatRoughness, 0.0f, 1.0f);
     d.dissolve = std::clamp(m.dissolve, 0.0f, 1.0f);
     d.bumpStrength = m.bumpStrength;
-    d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0);
+    d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
+            | (m.beckmann ? MATERIAL_BECKMANN : 0);
     d.layerStart = m.layerStart;
     d.layerCount = m.layerCount;
     return d;
@@ -140,7 +186,7 @@ struct Renderer::Impl {
     std::vector<int32_t> layerTextures;     // the texture each current layer uses, or -1
     std::vector<Instance> instances;
     size_t materialCount = 0;
-    Buffer meshTable, instanceTable, materialTable, layerTable, instanceInput, instanceAccel, accelTemp;
+    Buffer meshTable, instanceTable, materialTable, layerTable, albedoTables, instanceInput, instanceAccel, accelTemp;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights;
     Buffer beauty, albedo, normal, denoised, paramsBuffer;
 
@@ -165,7 +211,7 @@ struct Renderer::Impl {
     void createPipeline(const std::string& ptxPath) {
         std::ifstream file(ptxPath, std::ios::binary);
         const std::string ptx((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        if (ptx.empty()) throw std::runtime_error("Cannot read MoonLight device program: " + ptxPath);
+        if (ptx.empty()) throw std::runtime_error("Cannot read MoonLightIPR device program: " + ptxPath);
 
         OptixModuleCompileOptions moduleOptions = {};
         moduleOptions.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
@@ -181,7 +227,7 @@ struct Renderer::Impl {
         size_t logSize = sizeof(log);
         const OptixResult compiled = optixModuleCreateFromPTX(context, &moduleOptions, &pipelineOptions,
             ptx.data(), ptx.size(), log, &logSize, &module);
-        if (compiled != OPTIX_SUCCESS) throw std::runtime_error(std::string("MoonLight device program rejected: ") + log);
+        if (compiled != OPTIX_SUCCESS) throw std::runtime_error(std::string("MoonLightIPR device program rejected: ") + log);
 
         OptixProgramGroupDesc descriptions[4] = {};
         descriptions[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
@@ -348,11 +394,11 @@ struct Renderer::Impl {
     // Material indices are followed on the GPU without bounds checks, so reject bad ones here.
     void validate() {
         if (validated) return;
-        if (!params.width || !params.height) throw std::runtime_error("MoonLight has no image size; call resize first");
+        if (!params.width || !params.height) throw std::runtime_error("MoonLightIPR has no image size; call resize first");
         for (const Instance& instance : instances) {
             const Mesh& mesh = *meshes[instance.mesh];
             const uint32_t highest = mesh.ownsMaterials ? mesh.maxMaterial : instance.material;
-            if (highest >= materialCount) throw std::runtime_error("MoonLight instance refers to a missing material");
+            if (highest >= materialCount) throw std::runtime_error("MoonLightIPR instance refers to a missing material");
         }
         validated = true;
     }
@@ -413,7 +459,7 @@ struct Renderer::Impl {
 Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     ML_CHECK(cudaFree(nullptr));    // creates the CUDA context OptiX attaches to
     if (optixInit() != OPTIX_SUCCESS)
-        throw std::runtime_error("OptiX is unavailable; MoonLight needs an NVIDIA RTX driver");
+        throw std::runtime_error("OptiX is unavailable; MoonLightIPR needs an NVIDIA RTX driver");
     OptixDeviceContextOptions options = {};
     options.logCallbackFunction = &logCallback;
     options.logCallbackLevel = 2;
@@ -423,6 +469,11 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     impl->params.maxDepth = 4;
     impl->params.maxDiffuseDepth = impl->params.maxGlossyDepth = 2;
     impl->params.sampleClamp = 10.0f;
+    std::vector<float> albedo = albedoTable(false);
+    const std::vector<float> beckmann = albedoTable(true);
+    albedo.insert(albedo.end(), beckmann.begin(), beckmann.end());
+    impl->albedoTables.upload(albedo);
+    impl->params.albedo2 = impl->albedoTables.ptr;
     setEnvironment(Environment());
 }
 
@@ -430,11 +481,11 @@ Renderer::~Renderer() = default;
 
 uint32_t Renderer::addMesh(const MeshDesc& desc) {
     if (!desc.positions || !desc.indices || !desc.vertexCount || !desc.triangleCount)
-        throw std::runtime_error("MoonLight mesh needs positions and triangle indices");
+        throw std::runtime_error("MoonLightIPR mesh needs positions and triangle indices");
     if (desc.vertexCount > 0xffffffffu || desc.triangleCount > 0xffffffffu)
-        throw std::runtime_error("MoonLight mesh is too large");
+        throw std::runtime_error("MoonLightIPR mesh is too large");
     for (size_t i = 0; i < desc.triangleCount * 3; ++i)
-        if (desc.indices[i] >= desc.vertexCount) throw std::runtime_error("MoonLight mesh index is out of range");
+        if (desc.indices[i] >= desc.vertexCount) throw std::runtime_error("MoonLightIPR mesh index is out of range");
 
     auto mesh = std::make_unique<Mesh>();
     mesh->positions.upload(desc.positions, desc.vertexCount * 3 * sizeof(float));
@@ -464,9 +515,9 @@ uint32_t Renderer::addMesh(const MeshDesc& desc) {
 }
 
 void Renderer::removeMesh(uint32_t mesh) {
-    if (mesh >= impl->meshes.size() || !impl->meshes[mesh]) throw std::runtime_error("MoonLight mesh does not exist");
+    if (mesh >= impl->meshes.size() || !impl->meshes[mesh]) throw std::runtime_error("MoonLightIPR mesh does not exist");
     for (const Instance& instance : impl->instances)
-        if (instance.mesh == mesh) throw std::runtime_error("MoonLight mesh is still instanced");
+        if (instance.mesh == mesh) throw std::runtime_error("MoonLightIPR mesh is still instanced");
     ML_CHECK(cudaDeviceSynchronize());  // a queued launch may still read its buffers
     impl->meshes[mesh].reset();
     impl->uploadMeshTable();
@@ -475,14 +526,14 @@ void Renderer::removeMesh(uint32_t mesh) {
 void Renderer::setInstances(const Instance* instances, size_t count) {
     for (size_t i = 0; i < count; ++i)
         if (instances[i].mesh >= impl->meshes.size() || !impl->meshes[instances[i].mesh])
-            throw std::runtime_error("MoonLight instance refers to a missing mesh");
+            throw std::runtime_error("MoonLightIPR instance refers to a missing mesh");
     impl->instances.assign(instances, instances + count);
     impl->buildInstances();
     impl->restart();
 }
 
 void Renderer::setMeshUvSlots(uint32_t mesh, const int32_t slots[UV_SLOT_COUNT]) {
-    if (mesh >= impl->meshes.size() || !impl->meshes[mesh]) throw std::runtime_error("MoonLight mesh does not exist");
+    if (mesh >= impl->meshes.size() || !impl->meshes[mesh]) throw std::runtime_error("MoonLightIPR mesh does not exist");
     if (std::equal(slots, slots + UV_SLOTS, impl->meshes[mesh]->uvSlots)) return;
     std::copy(slots, slots + UV_SLOTS, impl->meshes[mesh]->uvSlots);
     impl->uploadMeshTable();
@@ -491,7 +542,7 @@ void Renderer::setMeshUvSlots(uint32_t mesh, const int32_t slots[UV_SLOT_COUNT])
 
 uint32_t Renderer::addTexture(const TextureDesc& desc) {
     if (!desc.pixels || !desc.width || !desc.height || desc.width > 16384 || desc.height > 16384)
-        throw std::runtime_error("MoonLight texture has no pixels or is too large");
+        throw std::runtime_error("MoonLightIPR texture has no pixels or is too large");
     auto texture = std::make_unique<Texture>();
     const cudaChannelFormatDesc format = desc.floatData ? cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat)
                                                         : cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
@@ -517,9 +568,9 @@ uint32_t Renderer::addTexture(const TextureDesc& desc) {
 }
 
 void Renderer::removeTexture(uint32_t texture) {
-    if (texture >= impl->textures.size() || !impl->textures[texture]) throw std::runtime_error("MoonLight texture does not exist");
+    if (texture >= impl->textures.size() || !impl->textures[texture]) throw std::runtime_error("MoonLightIPR texture does not exist");
     if (std::find(impl->layerTextures.begin(), impl->layerTextures.end(), int32_t(texture)) != impl->layerTextures.end())
-        throw std::runtime_error("MoonLight texture is still used by a material");
+        throw std::runtime_error("MoonLightIPR texture is still used by a material");
     ML_CHECK(cudaDeviceSynchronize());  // a queued launch may still sample it
     impl->textures[texture].reset();
 }
@@ -529,7 +580,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
     std::transform(materials, materials + count, table.begin(), toDevice);
     // Layers and textures are followed on the GPU without checks, so settle them here.
     for (const DeviceMaterial& material : table)
-        if (size_t(material.layerStart) + material.layerCount > layerCount) throw std::runtime_error("MoonLight material refers to missing layers");
+        if (size_t(material.layerStart) + material.layerCount > layerCount) throw std::runtime_error("MoonLightIPR material refers to missing layers");
     std::vector<DeviceLayer> layerTable(layerCount);
     std::vector<int32_t> used(layerCount, -1);
     for (size_t i = 0; i < layerCount; ++i) {
@@ -545,7 +596,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         out.offset = layer.offset;
         if (layer.texture >= 0) {
             if (size_t(layer.texture) >= impl->textures.size() || !impl->textures[layer.texture] || layer.uvSlot >= UV_SLOTS)
-                throw std::runtime_error("MoonLight layer refers to a missing texture or coordinate slot");
+                throw std::runtime_error("MoonLightIPR layer refers to a missing texture or coordinate slot");
             out.texture = impl->textures[layer.texture]->object;
             out.flags |= LAYER_IMAGE;
             used[i] = layer.texture;
@@ -570,9 +621,9 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
 }
 
 void Renderer::setMaterial(uint32_t index, const Material& material) {
-    if (index >= impl->materialCount) throw std::runtime_error("MoonLight material index is out of range");
+    if (index >= impl->materialCount) throw std::runtime_error("MoonLightIPR material index is out of range");
     if (size_t(material.layerStart) + material.layerCount > impl->layerTextures.size())
-        throw std::runtime_error("MoonLight material refers to missing layers");
+        throw std::runtime_error("MoonLightIPR material refers to missing layers");
     const DeviceMaterial value = toDevice(material);
     ML_CHECK(cudaMemcpy(reinterpret_cast<void*>(impl->materialTable.ptr + index * sizeof(DeviceMaterial)), &value,
         sizeof(value), cudaMemcpyHostToDevice));
@@ -583,7 +634,7 @@ void Renderer::setEnvironment(const Environment& environment) {
     // A constant colour still gets a small map, so one sampling path serves both cases.
     const bool mapped = environment.pixels != nullptr;
     const uint32_t width = mapped ? environment.width : 16, height = mapped ? environment.height : 8;
-    if (!width || !height || width > 16384 || height > 16384) throw std::runtime_error("MoonLight environment size is invalid");
+    if (!width || !height || width > 16384 || height > 16384) throw std::runtime_error("MoonLightIPR environment size is invalid");
 
     std::vector<float> pixels(size_t(width) * height * 4), marginal(height + 1), conditional(size_t(height) * (width + 1));
     for (uint32_t y = 0; y < height; ++y) {
@@ -655,7 +706,7 @@ void Renderer::setLights(const Light* lights, size_t count) {
         const Light& light = lights[i];
         DeviceLight& out = table[i];
         if (!(light.radius > 0.0f) || !(light.width > 0.0f) || !(light.height > 0.0f))
-            throw std::runtime_error("MoonLight light has no size");
+            throw std::runtime_error("MoonLightIPR light has no size");
         out.type = light.kind;
         out.radius = light.radius;
         std::copy(light.position, light.position + 3, out.position);
@@ -708,7 +759,7 @@ void Renderer::setCamera(const Camera& camera) {
 }
 
 void Renderer::resize(uint32_t width, uint32_t height) {
-    if (!width || !height || width > 16384 || height > 16384) throw std::runtime_error("MoonLight image size is invalid");
+    if (!width || !height || width > 16384 || height > 16384) throw std::runtime_error("MoonLightIPR image size is invalid");
     const size_t bytes = size_t(width) * height * 4 * sizeof(float);
     for (Buffer* buffer : {&impl->beauty, &impl->albedo, &impl->normal, &impl->denoised}) buffer->reserve(bytes);
     impl->params.beauty = impl->beauty.ptr;
@@ -744,12 +795,12 @@ uint32_t Renderer::width() const { return impl->params.width; }
 uint32_t Renderer::height() const { return impl->params.height; }
 
 void Renderer::readBeauty(float* rgb) {
-    if (!impl->samples) throw std::runtime_error("MoonLight has no samples to read");
+    if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
     impl->download(impl->beauty, rgb);
 }
 
 void Renderer::readDenoised(float* rgb) {
-    if (!impl->samples) throw std::runtime_error("MoonLight has no samples to read");
+    if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
     impl->denoise();
     impl->download(impl->denoised, rgb);
 }

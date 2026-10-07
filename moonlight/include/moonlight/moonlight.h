@@ -1,5 +1,5 @@
 #pragma once
-// MoonLight: an approximate GPU preview path tracer for interactive rendering.
+// MoonLightIPR: an approximate GPU preview path tracer for interactive rendering.
 // It reads the scene MoonRay renders, flattened to triangle buffers, and shades it with one
 // fixed uber-shader. Final frames always come from MoonRay.
 #include <cstddef>
@@ -32,6 +32,7 @@ struct Material {
     bool clearcoatDims = false;     // the coat takes its reflection out of the layers beneath
     float dissolve = 0.0f;          // 1 - presence: how much of the surface is absent
     float bumpStrength = 0.0f;      // height of a bump layer's full range, in scene units
+    bool beckmann = false;          // Beckmann specular lobe (DwaBaseMaterial as the plugin sets it up) rather than GGX
     float baseColorAmount = 1.0f;   // multiplies the colour after its layers
     float emissionAmount = 1.0f;
     uint32_t layerStart = 0;        // this material's run in the layer list given to setMaterials

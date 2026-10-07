@@ -22,7 +22,7 @@ public:
     explicit Reader(const std::string& path) {
         std::ifstream file(path, std::ios::binary);
         data.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-        if (data.empty()) throw std::runtime_error("Cannot read MoonLight scene: " + path);
+        if (data.empty()) throw std::runtime_error("Cannot read MoonLightIPR scene: " + path);
     }
     template <class T> T value() {
         T result;
@@ -30,7 +30,7 @@ public:
         return result;
     }
     template <class T> std::vector<T> array(size_t count) {
-        if (count > data.size() / sizeof(T)) throw std::runtime_error("MoonLight scene is truncated");
+        if (count > data.size() / sizeof(T)) throw std::runtime_error("MoonLightIPR scene is truncated");
         std::vector<T> result(count);
         if (count) std::memcpy(result.data(), bytes(count * sizeof(T)), count * sizeof(T));
         return result;
@@ -48,7 +48,7 @@ public:
 
 private:
     const char* bytes(size_t count) {
-        if (count > data.size() - offset) throw std::runtime_error("MoonLight scene is truncated");
+        if (count > data.size() - offset) throw std::runtime_error("MoonLightIPR scene is truncated");
         offset += count;
         return data.data() + offset - count;
     }
@@ -68,7 +68,7 @@ struct Image {
 Image readImage(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     const std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (data.size() < 18) throw std::runtime_error("Cannot read MoonLight texture: " + path);
+    if (data.size() < 18) throw std::runtime_error("Cannot read MoonLightIPR texture: " + path);
     Image image;
     if (data[0] == 'P' && data[1] == 'F') {
         // "PF", width and height, then a scale whose sign gives the byte order; rows run bottom up.
@@ -84,7 +84,7 @@ Image readImage(const std::string& path) {
         image.height = uint32_t(std::stoul(fields[1]));
         const size_t count = size_t(image.width) * image.height;
         if (std::stof(fields[2]) >= 0.0f || !count || count > (data.size() - offset) / 12)
-            throw std::runtime_error("Unsupported MoonLight texture file: " + path);
+            throw std::runtime_error("Unsupported MoonLightIPR texture file: " + path);
         image.floatData = true;
         image.floats.resize(count * 4);
         for (uint32_t y = 0; y < image.height; ++y) {
@@ -103,7 +103,7 @@ Image readImage(const std::string& path) {
     image.height = byte(14) | (byte(15) << 8);
     const size_t count = size_t(image.width) * image.height, pixel = depth / 8;
     if (byte(1) != 0 || byte(2) != 2 || (depth != 24 && depth != 32) || !count || data.size() < start || count > (data.size() - start) / pixel)
-        throw std::runtime_error("Unsupported MoonLight texture file: " + path);
+        throw std::runtime_error("Unsupported MoonLightIPR texture file: " + path);
     const bool topFirst = (byte(17) & 0x20) != 0;
     image.bytes.resize(count * 4);
     for (uint32_t y = 0; y < image.height; ++y) {
@@ -145,7 +145,7 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
-    if (in.value<uint32_t>() != 0x36534c4d) throw std::runtime_error("Not a MoonLight scene: " + path);   // "MLS6"
+    if (in.value<uint32_t>() != 0x36534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLS6"
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -204,6 +204,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         const uint32_t materialFlags = in.value<uint32_t>();
         material.thin = (materialFlags & 1) != 0;
         material.clearcoatDims = (materialFlags & 2) != 0;
+        material.beckmann = (materialFlags & 16) != 0;
         material.layerStart = in.value<uint32_t>();
         material.layerCount = in.value<uint32_t>();
     }
@@ -213,7 +214,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         layer.blend = in.value<uint32_t>();
         layer.flags = in.value<uint32_t>();
         const int32_t texture = in.value<int32_t>();
-        if (texture >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLight scene layer refers to a missing texture");
+        if (texture >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLightIPR scene layer refers to a missing texture");
         layer.texture = texture < 0 ? -1 : int32_t(textureIndices[texture]);
         layer.uvSlot = in.value<uint32_t>();
         in.floats(layer.value, 3);
@@ -234,7 +235,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     } parts[2];
     const size_t environmentStart = in.position();
     const uint32_t rowCount = in.value<uint32_t>();
-    if (!rowCount || rowCount > 4096) throw std::runtime_error("MoonLight scene environment is invalid");
+    if (!rowCount || rowCount > 4096) throw std::runtime_error("MoonLightIPR scene environment is invalid");
     for (EnvironmentPart& part : parts) part.rows = in.array<float>(size_t(rowCount) * 3);
     for (EnvironmentPart& part : parts) {
         part.hasImage = in.value<uint32_t>() != 0;
@@ -256,7 +257,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     std::vector<Light> localLights(in.value<uint32_t>());
     for (Light& light : localLights) {
         const uint32_t kind = in.value<uint32_t>();
-        if (kind > Light::Spot) throw std::runtime_error("MoonLight scene has an unknown light kind");
+        if (kind > Light::Spot) throw std::runtime_error("MoonLightIPR scene has an unknown light kind");
         light.kind = Light::Kind(kind);
         in.floats(light.position, 3);
         in.floats(light.axisX, 3);
@@ -286,13 +287,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             const std::vector<uint32_t> indices = in.array<uint32_t>(size_t(triangleCount) * 3);
             const std::vector<uint32_t> materialIds = in.array<uint32_t>(flags & MESH_HAS_MATERIAL_IDS ? triangleCount : 0);
             std::vector<std::vector<float>> uvSets(flags & MESH_HAS_UVS ? in.value<uint32_t>() : 0);
-            if (uvSets.size() > UV_SLOT_COUNT) throw std::runtime_error("MoonLight scene mesh has too many coordinate sets");
+            if (uvSets.size() > UV_SLOT_COUNT) throw std::runtime_error("MoonLightIPR scene mesh has too many coordinate sets");
             for (std::vector<float>& set : uvSets) set = in.array<float>(size_t(triangleCount) * 6);
             if (cached == meshes.end()) {
                 std::vector<const float*> uvPointers;
                 for (const std::vector<float>& set : uvSets) uvPointers.push_back(set.data());
                 for (uint32_t index : indices)
-                    if (index >= vertexCount) throw std::runtime_error("MoonLight scene mesh index is out of range");
+                    if (index >= vertexCount) throw std::runtime_error("MoonLightIPR scene mesh index is out of range");
                 if (normals.empty() && (flags & MESH_SMOOTH)) normals = smoothNormals(positions, indices);
                 MeshDesc desc;
                 desc.positions = positions.data();
@@ -306,7 +307,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 cached = meshes.emplace(key, CachedMesh{renderer.addMesh(desc), 0}).first;
             }
         }
-        if (cached == meshes.end()) throw std::runtime_error("MoonLight scene omits a mesh this session has not loaded");
+        if (cached == meshes.end()) throw std::runtime_error("MoonLightIPR scene omits a mesh this session has not loaded");
         cached->second.lastUsed = generation;
         meshIndex = cached->second.index;
     }
@@ -314,12 +315,12 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     std::vector<Instance> instances(in.value<uint32_t>());
     for (Instance& instance : instances) {
         const uint32_t mesh = in.value<uint32_t>();
-        if (mesh >= meshIndices.size()) throw std::runtime_error("MoonLight scene instance refers to a missing mesh");
+        if (mesh >= meshIndices.size()) throw std::runtime_error("MoonLightIPR scene instance refers to a missing mesh");
         instance.mesh = meshIndices[mesh];
         instance.material = in.value<uint32_t>();
         in.floats(instance.transform, 12);
     }
-    if (!in.finished()) throw std::runtime_error("MoonLight scene has trailing data");
+    if (!in.finished()) throw std::runtime_error("MoonLightIPR scene has trailing data");
 
     renderer.setMaterials(materials.data(), materials.size(), layers.data(), layers.size());
     for (auto entry = textures.begin(); entry != textures.end();) {
@@ -339,10 +340,10 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     if (environmentNow != environmentHash) {
         const EnvironmentPart* pictured = parts[0].hasImage ? &parts[0] : parts[1].hasImage ? &parts[1] : nullptr;
         if (pictured && parts[0].hasImage && parts[1].hasImage && parts[0].key != parts[1].key)
-            throw std::runtime_error("MoonLight scene uses different environment images for lighting and background");
+            throw std::runtime_error("MoonLightIPR scene uses different environment images for lighting and background");
         if (pictured && pictured->key != environmentImageKey) {
             const Image image = readImage(pictured->file);
-            if (!image.floatData || image.width < 2) throw std::runtime_error("MoonLight environment image is not a float image");
+            if (!image.floatData || image.width < 2) throw std::runtime_error("MoonLightIPR environment image is not a float image");
             environmentImage.resize(size_t(image.width) * image.height * 3);
             // MoonRay puts the middle of the image behind the map's forward axis, so turn it half way round.
             for (uint32_t y = 0; y < image.height; ++y)

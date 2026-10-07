@@ -128,9 +128,9 @@ class Panel(QtWidgets.QWidget):
         self.pages['system'].addRow('Rendering mode', self.execution_mode)
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
-        self.preview_engine.addItem('MoonLight (GPU preview, approximate)', 'moonlight')
+        self.preview_engine.addItem('MoonLightIPR (GPU preview, approximate)', 'moonlight')
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(str(self.settings.value('preview_engine','moonray')))))
-        self.preview_engine.setToolTip('MoonLight is a fast NVIDIA GPU preview that approximates materials and lighting; Scene notices list what it leaves out. Output renders always use MoonRay.')
+        self.preview_engine.setToolTip('MoonLightIPR is a fast NVIDIA GPU preview that approximates materials and lighting; Scene notices list what it leaves out. Output renders always use MoonRay.')
         self.pages['system'].addRow('Preview engine', self.preview_engine)
         self.pages['system'].addRow('CPU threads', self.threads)
         self.timeout = QtWidgets.QSpinBox()
@@ -463,7 +463,7 @@ class Panel(QtWidgets.QWidget):
 
     def _engine_changed(self,index):
         self.settings.setValue('preview_engine',self.preview_engine.currentData())
-        # MoonLight follows edits as they happen, so look for them more often.
+        # MoonLightIPR follows edits as they happen, so look for them more often.
         self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlight' else 150)
 
     def _engine_notices(self,messages):
@@ -782,7 +782,7 @@ class Panel(QtWidgets.QWidget):
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self.clay_mode.currentData())
         engine='moonray' if output else self.preview_engine.currentData()
-        # MoonLight accumulates at full preview size; the IPR quality limits are for MoonRay.
+        # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
         if self.ipr_mode.isChecked() and not output and engine=='moonray':
             from .ipr import prepare
             scene,width,height=prepare(scene,width,height,self.samples.value(),
@@ -857,7 +857,7 @@ class Panel(QtWidgets.QWidget):
         if self.disposed or not self.ipr_mode.isChecked():return
         from .interaction import dragging
         held=dragging()
-        # MoonLight is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
+        # MoonLightIPR is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
         if held and self.preview_engine.currentData()!='moonlight':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return

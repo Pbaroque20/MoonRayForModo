@@ -10,7 +10,7 @@ from .buffer_cache import BufferCache
 from .persistent import Session, supported as persistent_supported
 from .moonlight_session import Session as MoonLightSession, supported as moonlight_supported, directory as moonlight_directory
 
-MOONLIGHT_STATUS = 'MoonLight (GPU preview, approximate)'
+MOONLIGHT_STATUS = 'MoonLightIPR (GPU preview, approximate)'
 MOONLIGHT_SAMPLES = 256
 
 
@@ -114,7 +114,7 @@ class Renderer(QtCore.QObject):
             raise ValueError('Unknown preview engine')
         runtime = native.find_runtime(runtime)
         moonlight = engine=='moonlight' and not output and not linear_preview
-        # MoonLight produces beauty only.
+        # MoonLightIPR produces beauty only.
         if moonlight:snapshot=dict(snapshot,preview_buffer='beauty')
         if not output and not linear_preview:
             self.buffers.select(snapshot.get('preview_buffer','beauty'),snapshot.get('display',{}))
@@ -189,7 +189,7 @@ class Renderer(QtCore.QObject):
         self._progress_tick()
         directory=moonlight_directory(request['runtime'])
         if not moonlight_supported(directory):
-            self.failed.emit('This runtime has no MoonLight GPU preview (expected in '+str(directory)+'). Choose MoonRay as the preview engine.');return
+            self.failed.emit('This runtime has no MoonLightIPR GPU preview (expected in '+str(directory)+'). Choose MoonRay as the preview engine.');return
         self.status.emit('Rendering · '+self.backend_status)
         self.moonlight_serial+=1
         self.moonlight.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlight_serial,MOONLIGHT_SAMPLES,runtime=request['runtime'])

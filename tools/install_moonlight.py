@@ -1,6 +1,6 @@
-"""Add the built MoonLight GPU preview to the installed kit, with a backup of what it replaces.
+"""Add the built MoonLightIPR GPU preview to the installed kit, with a backup of what it replaces.
 
-Copies only MoonLight's own files: the session, its device program and the CUDA runtime into
+Copies only MoonLightIPR's own files: the session, its device program and the CUDA runtime into
 the kit's runtime/moonlight folder, and the Python modules that route previews to it. The rest
 of the installed kit is left as it is. Close Modo first; a running Modo keeps the old modules
 loaded and the old session open.
@@ -26,7 +26,7 @@ if not target.is_dir():
 processes = subprocess.check_output(['tasklist', '/FI', 'IMAGENAME eq modo.exe', '/FO', 'CSV', '/NH'],
                                     text=True, creationflags=subprocess.CREATE_NO_WINDOW)
 if any(row and row[0].lower() == 'modo.exe' for row in csv.reader(io.StringIO(processes))):
-    raise SystemExit('Close Modo before installing MoonLight; nothing was changed')
+    raise SystemExit('Close Modo before installing MoonLightIPR; nothing was changed')
 
 backup = root / 'backups' / ('before-moonlight-' + datetime.now().strftime('%Y%m%d-%H%M%S'))
 for name in MODULES:
@@ -38,5 +38,5 @@ if (kit / 'runtime/moonlight').is_dir():
 subprocess.run([sys.executable, str(root / 'tools/stage_moonlight.py'), '--destination', str(kit / 'runtime/moonlight')], check=True)
 for name in MODULES:
     shutil.copyfile(source / name, target / name)
-print('Installed MoonLight into', kit)
+print('Installed MoonLightIPR into', kit)
 print('Backup:', backup)

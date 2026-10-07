@@ -1,4 +1,4 @@
-// Standalone MoonLight check: renders a built-in scene, times samples and edits, writes images.
+// Standalone MoonLightIPR check: renders a built-in scene, times samples and edits, writes images.
 // Usage: moonlight_probe <kernel.ptx> <output-directory> [samples] [width] [height]
 #include "moonlight/moonlight.h"
 
@@ -213,10 +213,10 @@ int main(int argc, char** argv) {
         std::cout << "Mean luminance: beauty " << beautyMean << ", denoised " << denoisedMean << ", edited " << editedMean << std::endl;
         if (beautyMean <= 0.0 || denoisedMean <= 0.0 || editedMean <= 0.0)
             throw std::runtime_error("An image is black or contains non-finite pixels");
-        std::cout << "MoonLight probe passed" << std::endl;
+        std::cout << "MoonLightIPR probe passed" << std::endl;
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "MoonLight probe failed: " << error.what() << std::endl;
+        std::cerr << "MoonLightIPR probe failed: " << error.what() << std::endl;
         return 1;
     }
 }

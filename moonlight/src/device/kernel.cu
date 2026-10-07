@@ -1,4 +1,4 @@
-// MoonLight device programs: a progressive megakernel path tracer.
+// MoonLightIPR device programs: a progressive megakernel path tracer.
 // One launch adds one sample per pixel to the running means in LaunchParams.
 #include <optix.h>
 #include "shared.h"
@@ -261,6 +261,8 @@ struct Surface {
     float coatAlpha;
     bool coatDims;          // the coat takes its reflection out of what is beneath it
     bool thin;
+    bool beckmann;          // the specular lobe's distribution; the coat is always GGX
+    float roughness;
 };
 
 ML_INLINE Surface surfaceFrom(const Hit& hit) {
@@ -279,6 +281,8 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.coatAlpha = fmaxf(hit.coatRoughness * hit.coatRoughness, 0.002f);
     s.coatDims = (hit.flags & MATERIAL_COAT_DIMS) != 0;
     s.thin = (hit.flags & MATERIAL_THIN) != 0;
+    s.beckmann = (hit.flags & MATERIAL_BECKMANN) != 0;
+    s.roughness = sqrtf(s.alpha);
     return s;
 }
 
@@ -327,6 +331,52 @@ ML_INLINE float smithG1(float alpha, float nv) {
     const float a2 = alpha * alpha;
     return 2.0f * nv / (nv + sqrtf(a2 + (1.0f - a2) * nv * nv));
 }
+// The Beckmann distribution and its shadowing, as MoonRay's Cook-Torrance lobe evaluates them
+// (Walter et al. 2007, with the rational approximation of the shadowing term).
+ML_INLINE float beckmannD(float alpha, float nh) {
+    const float a2 = alpha * alpha, c2 = nh * nh;
+    return c2 > 0.0f ? expf((c2 - 1.0f) / (c2 * a2)) / (ML_PI * a2 * c2 * c2) : 0.0f;
+}
+ML_INLINE float beckmannG1(float alpha, float nv) {
+    const float a = nv / (alpha * sqrtf(fmaxf(1e-12f, 1.0f - nv * nv)));
+    return a < 1.6f ? (3.535f * a + 2.181f * a * a) / (1.0f + 2.276f * a + 2.577f * a * a) : 1.0f;
+}
+
+// Light that bounces between facets before leaving is missing from a single-scattering lobe.
+// MoonRay adds it back as a broad lobe (Kelemen 2001, as in Kulla and Conty 2017), using the
+// lobe's tabulated albedo.
+ML_INLINE float lobeAlbedo(const Surface& s, float cosine) {
+    const float* table = reinterpret_cast<const float*>(params.albedo2) + (s.beckmann ? ALBEDO_TABLE : 0);
+    const float x = clamp(s.roughness, 0.0f, 1.0f) * (ALBEDO_STEPS - 1), y = clamp(cosine, 0.0f, 1.0f) * (ALBEDO_STEPS - 1);
+    const unsigned x0 = min(unsigned(x), ALBEDO_STEPS - 2), y0 = min(unsigned(y), ALBEDO_STEPS - 2);
+    const float fx = x - x0, fy = y - y0;
+    const float* row0 = table + x0 * ALBEDO_STEPS;
+    const float* row1 = row0 + ALBEDO_STEPS;
+    return (row0[y0] * (1.0f - fy) + row0[y0 + 1] * fy) * (1.0f - fx) + (row1[y0] * (1.0f - fy) + row1[y0 + 1] * fy) * fx;
+}
+ML_INLINE float lobeAverageAlbedo(const Surface& s) {
+    const float* table = reinterpret_cast<const float*>(params.albedo2) + (s.beckmann ? ALBEDO_TABLE : 0) + ALBEDO_STEPS * ALBEDO_STEPS;
+    const float x = clamp(s.roughness, 0.0f, 1.0f) * (ALBEDO_STEPS - 1);
+    const unsigned x0 = min(unsigned(x), ALBEDO_STEPS - 2);
+    return table[x0] + (table[x0 + 1] - table[x0]) * (x - x0);
+}
+// bsdf * cosine of that extra lobe.
+ML_INLINE float3 multipleScattering(const Surface& s, float3 wo, float3 wi) {
+    // MoonRay only adds it where it also samples it, which is above a roughness of one half.
+    if (s.roughness <= 0.5f) return vec(0.0f);
+    const float average = lobeAverageAlbedo(s);
+    if (average >= 0.9999f) return vec(0.0f);
+    // The mean Fresnel reflectance over all angles, for the dielectric and for the metal.
+    const float r = (s.ior - 1.0f) / (s.ior + 1.0f);
+    const float3 f0 = lerp(vec(r * r), s.albedo, s.metallic);
+    const float3 mean = f0 + (vec(1.0f) - f0) * (1.0f / 21.0f);
+    const float3 tint = make_float3(mean.x * mean.x * average / (1.0f - mean.x * (1.0f - average)),
+                                    mean.y * mean.y * average / (1.0f - mean.y * (1.0f - average)),
+                                    mean.z * mean.z * average / (1.0f - mean.z * (1.0f - average)));
+    return tint * ((1.0f - lobeAlbedo(s, wo.z)) * (1.0f - lobeAlbedo(s, wi.z)) / (ML_PI * (1.0f - average)) * wi.z);
+}
+// MoonRay gives that lobe a share of the specular samples once the surface is rough.
+ML_INLINE float broadShare(const Surface& s) { return fminf(fmaxf(0.0f, s.roughness - 0.5f), 0.5f); }
 
 // How the reflective lobes share the samples: specular against diffuse, and the coat's part
 // of the specular samples.
@@ -357,9 +407,19 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     if (wo.z <= 0.0f || wi.z <= 0.0f) return e;
     const float3 h = normalize(wo + wi);
     const float cosine = dot(wo, h);
-    const float d = ggxD(s.alpha, h.z), g1o = smithG1(s.alpha, wo.z), g1i = smithG1(s.alpha, wi.z);
-    e.specular = specularFresnel(s, cosine) * (underCoat(s, wo) * d * g1o * g1i / (4.0f * wo.z));
-    e.specularPdf = (1.0f - lobes.coat) * g1o * d / (4.0f * wo.z);
+    if (s.beckmann) {
+        // Sampled from the distribution of facets itself, so its density follows the half vector.
+        const float d = beckmannD(s.alpha, h.z);
+        e.specular = specularFresnel(s, cosine) * (underCoat(s, wo) * d * beckmannG1(s.alpha, wo.z) * beckmannG1(s.alpha, wi.z) / (4.0f * wo.z));
+        e.specularPdf = (1.0f - lobes.coat) * d * h.z / (4.0f * fmaxf(cosine, 1e-6f));
+    } else {
+        const float d = ggxD(s.alpha, h.z), g1o = smithG1(s.alpha, wo.z), g1i = smithG1(s.alpha, wi.z);
+        e.specular = specularFresnel(s, cosine) * (underCoat(s, wo) * d * g1o * g1i / (4.0f * wo.z));
+        e.specularPdf = (1.0f - lobes.coat) * g1o * d / (4.0f * wo.z);
+    }
+    const float broad = broadShare(s);
+    e.specular += multipleScattering(s, wo, wi) * underCoat(s, wo);
+    e.specularPdf = e.specularPdf * (1.0f - broad) + (1.0f - lobes.coat) * broad * wi.z / ML_PI;
     if (s.coat > 0.0f) {
         const float cd = ggxD(s.coatAlpha, h.z), cg1o = smithG1(s.coatAlpha, wo.z), cg1i = smithG1(s.coatAlpha, wi.z);
         e.specular += vec(s.coat * dielectricFresnel(cosine, s.ior) * cd * cg1o * cg1i / (4.0f * wo.z));
@@ -387,6 +447,12 @@ ML_INLINE float3 sampleFacet(float alpha, float3 wo, float u1, float u2) {
     const float b = (1.0f - blend) * sqrtf(fmaxf(0.0f, 1.0f - a * a)) + blend * r * sinf(phi);
     const float3 nh = t1 * a + t2 * b + vh * sqrtf(fmaxf(0.0f, 1.0f - a * a - b * b));
     return normalize(make_float3(alpha * nh.x, alpha * nh.y, fmaxf(0.0f, nh.z)));
+}
+// A facet drawn from the Beckmann distribution.
+ML_INLINE float3 sampleBeckmann(float alpha, float u1, float u2) {
+    const float tanSquared = -alpha * alpha * logf(fmaxf(1e-12f, 1.0f - u1)), phi = 2.0f * ML_PI * u2;
+    const float cosTheta = 1.0f / sqrtf(1.0f + tanSquared), sinTheta = cosTheta * sqrtf(tanSquared);
+    return make_float3(sinTheta * cosf(phi), sinTheta * sinf(phi), cosTheta);
 }
 ML_INLINE float3 reflectAbout(float3 wo, float3 h) { return h * (2.0f * dot(wo, h)) - wo; }
 
@@ -574,7 +640,9 @@ extern "C" __global__ void __raygen__moonlight() {
         const bool glossy = rnd(seed) < lobes.specular;
         float3 wi;
         if (!glossy) wi = sampleDiffuse(u1, u2);
-        else wi = reflectAbout(wo, sampleFacet(rnd(seed) < lobes.coat ? surface.coatAlpha : surface.alpha, wo, u1, u2));
+        else if (rnd(seed) < lobes.coat) wi = reflectAbout(wo, sampleFacet(surface.coatAlpha, wo, u1, u2));
+        else if (rnd(seed) < broadShare(surface)) wi = sampleDiffuse(u1, u2);
+        else wi = reflectAbout(wo, surface.beckmann ? sampleBeckmann(surface.alpha, u1, u2) : sampleFacet(surface.alpha, wo, u1, u2));
         const BsdfEval e = evalBsdf(surface, lobes, wo, wi);
         bsdfPdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         direction = frame.toWorld(wi);

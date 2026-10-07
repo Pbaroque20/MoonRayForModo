@@ -1,4 +1,4 @@
-"""Build the MoonLight GPU preview module and, with --probe, run its standalone check."""
+"""Build the MoonLightIPR GPU preview module and, with --probe, run its standalone check."""
 import os
 import pathlib
 import subprocess

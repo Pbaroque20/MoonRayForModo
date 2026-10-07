@@ -1,4 +1,4 @@
-"""A private MoonLight GPU preview process, fed acknowledged and coalesced scene snapshots."""
+"""A private MoonLightIPR GPU preview process, fed acknowledged and coalesced scene snapshots."""
 import os
 import tempfile
 from pathlib import Path
@@ -10,11 +10,11 @@ PROGRAM = 'MoonLightKernel.ptx'
 
 
 def directory(runtime):
-    """MoonLight ships in the runtime's moonlight folder; a development build can be named instead."""
+    """MoonLightIPR ships in the runtime's moonlight folder; a development build can be named instead."""
     supplied = os.environ.get('MOONRAY_MODO_MOONLIGHT', '')
     if supplied:
         return Path(supplied)
-    # MoonLight does not depend on the MoonRay build, so the copy bundled with the kit
+    # MoonLightIPR does not depend on the MoonRay build, so the copy bundled with the kit
     # serves any other runtime the user selects.
     bundled = Path(__file__).resolve().parents[2] / 'runtime' / 'moonlight'
     selected = Path(runtime) / 'moonlight'
@@ -22,7 +22,7 @@ def directory(runtime):
 
 
 def supported(directory):
-    """MoonLight needs its executable, its device program and the CUDA runtime side by side."""
+    """MoonLightIPR needs its executable, its device program and the CUDA runtime side by side."""
     directory = Path(directory)
     return (directory / EXECUTABLE).is_file() and (directory / PROGRAM).is_file() and any(directory.glob('cudart64_*.dll'))
 
@@ -74,7 +74,7 @@ class Session(QtCore.QObject):
         self.process.setProcessEnvironment(env); self.process.setWorkingDirectory(str(self.root))
         self.process.setProgram(str(self.directory / EXECUTABLE))
         self.process.setArguments([str(self.directory / PROGRAM)])
-        self.status.emit('Starting MoonLight GPU preview')
+        self.status.emit('Starting MoonLightIPR GPU preview')
         self.process.start()
         self._dispatch()
 
@@ -88,7 +88,7 @@ class Session(QtCore.QObject):
             path.write_bytes(payload)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             self.latest = None
-            self.failed.emit('MoonLight cannot preview this scene: ' + str(exc)); return
+            self.failed.emit('MoonLightIPR cannot preview this scene: ' + str(exc)); return
         self.warnings.emit(warnings)
         self.process.write(('scene %d %s\n' % (request['id'], path)).encode('utf-8'))
         self.sent = dict(request, keys=keys, path=path)
@@ -107,7 +107,7 @@ class Session(QtCore.QObject):
                     packet = receive(line, self.process.processId())
                     # A frame of a scene that has since been replaced is acknowledged but not shown.
                     if not self.stopping and not self.closed and not self.latest and packet[0] == self.current: self.memory_image.emit(packet)
-                except (ValueError, OSError) as exc: self.status.emit('MoonLight frame skipped: ' + str(exc))
+                except (ValueError, OSError) as exc: self.status.emit('MoonLightIPR frame skipped: ' + str(exc))
                 continue
             if not line.startswith('@@MODO_SESSION '): continue
             parts = line.strip().split()
@@ -121,7 +121,7 @@ class Session(QtCore.QObject):
                 except OSError: pass
                 if parts[1] == 'APPLIED':
                     self.known = sent['keys']; self.acknowledged.emit(generation)
-                else: self.failed.emit('MoonLight rejected the scene. Open Render Log for details.')
+                else: self.failed.emit('MoonLightIPR rejected the scene. Open Render Log for details.')
                 self._dispatch()
             elif parts[1] == 'DONE' and not self.latest and generation == self.current:
                 self.ready.emit(generation)
@@ -130,7 +130,7 @@ class Session(QtCore.QObject):
     def _error(self, error):
         if error == QtCore.QProcess.FailedToStart and not self.stopping and not self.closed:
             self.sent = None
-            self.failed.emit('Cannot start MoonLight: ' + self.process.errorString())
+            self.failed.emit('Cannot start MoonLightIPR: ' + self.process.errorString())
 
     def _exit(self, code, status):
         self._read()
@@ -139,7 +139,7 @@ class Session(QtCore.QObject):
             self.stopping = False
             if self.latest and not self.closed: self._launch()
         elif not self.closed:
-            self.failed.emit('MoonLight exited (0x%08X). Refresh to start a new session; see Render Log.' % (code & 0xffffffff))
+            self.failed.emit('MoonLightIPR exited (0x%08X). Refresh to start a new session; see Render Log.' % (code & 0xffffffff))
 
     def stop(self):
         """Stop sampling but keep the process and its loaded meshes, so the next preview starts at once."""

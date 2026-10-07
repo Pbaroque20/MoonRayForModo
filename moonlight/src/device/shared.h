@@ -16,7 +16,8 @@ const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 
 const unsigned LAYER_GROUP_BEGIN = 32, LAYER_GROUP_END = 33, LAYER_MASK_BASE = 40, MASK_REGISTERS = 4, GROUP_DEPTH = 4;
 // Thin sheets pass light straight through; the coat of a material stack takes its reflection
 // out of the layers beneath; and only materials that can be partly absent need the any-hit test.
-const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE = 4, MATERIAL_HAS_BUMP = 8;
+const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE = 4, MATERIAL_HAS_BUMP = 8,
+               MATERIAL_BECKMANN = 16;  // the specular lobe is Beckmann, as for material stacks, not GGX
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
                LAYER_PICK_SHIFT = 9,    // two bits: 0 keeps RGB, 1 to 3 spread red, green or blue
@@ -105,6 +106,12 @@ struct DeviceLight {
     float pad;
 };
 
+// How much of the light a specular lobe reflects when its Fresnel term is one, tabulated over
+// roughness and the cosine of the view angle for GGX and then Beckmann, each followed by its
+// average over all angles per roughness. What is missing is light that bounced between facets.
+const unsigned ALBEDO_STEPS = 16;
+const unsigned ALBEDO_TABLE = ALBEDO_STEPS * ALBEDO_STEPS + ALBEDO_STEPS;
+
 struct LaunchParams {
     // Running means over the accumulated samples, float[4] per pixel.
     DevicePtr beauty;
@@ -115,6 +122,7 @@ struct LaunchParams {
     DevicePtr instances;    // DeviceInstance, indexed by the OptiX instance id
     DevicePtr materials;    // DeviceMaterial
     DevicePtr layers;       // DeviceLayer, indexed from DeviceMaterial::layerStart
+    DevicePtr albedo2;      // float, two ALBEDO_TABLE runs: GGX, then Beckmann
 
     // Latitude-longitude environment with a piecewise-constant sampling distribution.
     DevicePtr envPixels;        // float[4], envWidth * envHeight; what lights the scene

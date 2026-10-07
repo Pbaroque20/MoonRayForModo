@@ -1,8 +1,8 @@
-"""Reduce translated materials to the MoonLight uber-shader and its layer stacks.
+"""Reduce translated materials to the MoonLightIPR uber-shader and its layer stacks.
 
 A material becomes starting values for each channel plus an ordered list of layers, each a
 constant or an image blended over the rows below it, as graph.py builds for MoonRay. What has
-no counterpart yet (masks, groups, procedurals, lobes MoonLight lacks) is collected by name
+no counterpart yet (masks, groups, procedurals, lobes MoonLightIPR lacks) is collected by name
 so the caller can report it.
 """
 import hashlib
@@ -22,7 +22,7 @@ CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4,
 LAYER_GROUP_BEGIN, LAYER_GROUP_END, LAYER_MASK_BASE, MASK_REGISTERS, GROUP_DEPTH = 32, 33, 40, 4, 4
 LAYER_MASKED, LAYER_MASK_SHIFT = 1 << 11, 12
 COLORS = ('diffCol', 'lumiCol', 'tranCol')
-MATERIAL_THIN, MATERIAL_COAT_DIMS = 1, 2
+MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN = 1, 2, 16
 LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
@@ -59,7 +59,7 @@ class Compiler:
             self.missing[what].append(name)
 
     def warnings(self):
-        return ['MoonLight leaves out %s (%s).' % (what, ', '.join(names[:6]) + (' ...' if len(names) > 6 else ''))
+        return ['MoonLightIPR leaves out %s (%s).' % (what, ', '.join(names[:6]) + (' ...' if len(names) > 6 else ''))
                 for what, names in sorted(self.missing.items())]
 
     def slot(self, key):
@@ -304,6 +304,10 @@ class Compiler:
                   + [float(source.get('bump_strength', .005)) if bumped else 0.0])
         # A stack's coat is DwaBaseMaterial's outer specular, which shades what is beneath it.
         flags = (MATERIAL_THIN if source.get('thin_geometry') else 0) | (MATERIAL_COAT_DIMS if stack else 0)
+        # A stack binds every channel, anisotropy included, and the plugin selects DwaBaseMaterial's
+        # Beckmann lobe whenever anisotropy is bound or set. Everything else gets GGX.
+        if (stack and supported(stack)) or source.get('anisotropy', 0):
+            flags |= MATERIAL_BECKMANN
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Material %s contains a non-finite number' % name)
         return struct.pack('<22f3I', *values, flags, start, len(self.layers) - start)

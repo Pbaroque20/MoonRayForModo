@@ -1,6 +1,9 @@
-# MoonLight GPU preview (experimental)
+# MoonLightIPR GPU preview (experimental)
 
-MoonLight is a small standalone OptiX path tracer intended as an interactive preview
+MoonLightIPR is the name of the preview engine. Files, folders, the C++ namespace and the
+session executable use the shorter `moonlight`.
+
+MoonLightIPR is a small standalone OptiX path tracer intended as an interactive preview
 engine beside MoonRay. It does not touch MoonRay's renderer. It is an approximation:
 one fixed uber-shader replaces MoonRay's materials, and final frames always come from
 MoonRay. It is not yet connected to Modo or installed in the kit.
@@ -28,7 +31,7 @@ MoonRay. It is not yet connected to Modo or installed in the kit.
 - `kit/.../moonray_modo/moonlight_session.py`: the Qt class that owns the process,
   with the signals of `persistent.Session`.
 - `render.py` and `panel.py`: a **Preview engine** choice on the System tab, saved as
-  a user preference. With MoonLight selected, preview requests go to the session and
+  a user preference. With MoonLightIPR selected, preview requests go to the session and
   its frames reach the preview through the normal buffer and display path, at full
   preview size (the IPR size and sample limits apply to MoonRay only). Its warnings
   are added to Scene notices. Output renders always use MoonRay. Clay preview modes
@@ -54,10 +57,10 @@ The shading and path rules are taken from MoonRay's sources rather than tuned by
 renderers, each isolating one kind of light over plain materials, and reports the
 brightness ratio overall and per 20-pixel tile. MoonRay's images are kept while a
 scene's text is unchanged, since each takes a minute or more on the CPU. Results on
-October 6, 2026 against `xpu-paths-0349-candidate` (MoonLight 2048 samples, MoonRay
+October 6, 2026 against `xpu-paths-0349-candidate` (MoonLightIPR 2048 samples, MoonRay
 36):
 
-| Scene | MoonLight / MoonRay | Tiles within 10% |
+| Scene | MoonLightIPR / MoonRay | Tiles within 10% |
 |---|---|---|
 | Sun | 1.007 | 93% |
 | Uniform sky | 1.011 | 96% |
@@ -69,37 +72,41 @@ October 6, 2026 against `xpu-paths-0349-candidate` (MoonLight 2048 samples, Moon
 
 Three more scenes cover textures and the two ways a material reaches MoonRay:
 
-| Scene | MoonLight / MoonRay | Tiles within 10% |
+| Scene | MoonLightIPR / MoonRay | Tiles within 10% |
 |---|---|---|
-| An environment image, turned 40 degrees | 0.981 | 99% |
-| Textures on plain materials (`UsdPreviewSurface`): colour, roughness and normal maps | 0.997 | 98% |
-| Material stacks without textures (`DwaBaseMaterial`) | 0.988 | 54% |
-| Material stacks with layers (`DwaBaseMaterial`): multiply blend, a half-opaque material row | 0.995 | 35% |
-| A glass ball and a clearcoated cube under a sun and sky | 1.069 | 70% |
-| A thin tinted ball and a half-present cube | 1.065 | 70% |
-| Nine sphere and rect lights of different power | 0.996 | 98% |
-| A masked material row, a half-opaque group and a bump map | 0.978 | 35% |
+| An environment image, turned 40 degrees | 0.983 | 100% |
+| Textures on plain materials (`UsdPreviewSurface`): colour, roughness and normal maps | 1.000 | 98% |
+| Material stacks without textures (`DwaBaseMaterial`) | 0.973 | 64% |
+| Material stacks with layers (`DwaBaseMaterial`): multiply blend, a half-opaque material row | 0.982 | 61% |
+| A glass ball and a clearcoated cube under a sun and sky | 1.090 | 69% |
+| A thin tinted ball and a half-present cube | 1.076 | 78% |
+| Nine sphere and rect lights of different power | 0.998 | 98% |
+| A masked material row, a half-opaque group and a bump map | 0.968 | 54% |
 
 Texture orientation, sRGB decoding, blending and normal mapping agree with MoonRay to
-about 1% region by region on the plain-material path. Material stacks are what the
-Shader Tree produces, and there MoonLight is right on average but off by 5 to 20% in
-places: diffuse seen at grazing angles is too bright, direct diffuse is slightly dark,
-dielectric highlights are about 15% dim, and a rough metal picks up a sun highlight
-MoonRay does not show. `DwaBaseMaterial` dims diffuse by the full Fresnel term where
-`UsdPreviewSurface` softens it with roughness, and MoonLight now does the same for
-stacks, which took the scene from 17% too bright to these figures.
+about 1% region by region on the plain-material path.
 
-A bare ground plane under the sun separates the lobes. Diffuse now agrees with
-`DwaBaseMaterial` to 1 to 4% at roughness 0.3 and to 0 to 12% at roughness 0.6, the
-excess growing towards the horizon. Specular does not: on a black plastic at
-roughness 0.3 MoonRay's `DwaBaseMaterial` gives about half of MoonLight's
-reflection near the horizon and three quarters closer in, a metal at roughness 0.6
-behaves the same way, and a blue metal at roughness 0.35 shows none where MoonLight
-shows a faint sun glint. `UsdPreviewSurface` with the same values matches MoonLight
-to within 0.1% for the plastic and 3% for the metal at 0.35, so the lobe itself is
-right and `DwaBaseMaterial` does something further to it that was not found in its
-source. A rough metal through `UsdPreviewSurface` (roughness 0.6) is 16% brighter
-in MoonRay, consistent with its energy compensation, which MoonLight lacks.
+Material stacks are what the Shader Tree produces, and they render through
+`DwaBaseMaterial`, which differs from `UsdPreviewSurface` in two ways MoonLightIPR now
+follows. It dims diffuse under the specular lobe by the full Fresnel term rather than
+softening it with roughness. And its specular lobe is Beckmann, not GGX: a stack binds
+every channel, anisotropy included, and the plugin selects the Beckmann model whenever
+anisotropy is bound. Both shaders also add back the light lost between facets
+(Kelemen 2001, as in Kulla and Conty 2017) once roughness passes one half;
+MoonLightIPR computes the same albedo tables at start-up, and they agree with MoonRay's
+to a few percent.
+
+A bare ground plane under the sun isolates these. Through `DwaBaseMaterial` it now
+matches MoonRay to three decimal places at roughness 0.3 and 0.6, a black plastic
+matches to four, a blue metal at roughness 0.35 shows no sun glint in either, and a
+grey metal at roughness 0.6 is within 1 to 4%. Through `UsdPreviewSurface` the plastic
+matches to four decimal places and the metals to 1 to 3%. Before these three rules
+the stack scene without textures was 17% too bright, and the layered one had 35% of
+its tiles within 10% where it now has 61%.
+
+What is left in the full scenes is mostly near shadow edges and in glass, where the
+two renderers resolve noise and clamped bounce light differently, and has not been
+broken down further.
 
 Before these rules were matched the sun scene was 9% too bright, with shadows near
 the metal balls twice as bright. The test scenes use only plain and metallic
@@ -108,18 +115,18 @@ anything else the packer reports as approximated.
 
 ## Using it in Modo
 
-`python tools/install_moonlight.py` adds a built MoonLight to the installed kit: the
+`python tools/install_moonlight.py` adds a built MoonLightIPR to the installed kit: the
 session into the kit's `runtime/moonlight`, plus the five Python modules that route
 previews to it. It backs up what it replaces under `backups/`, leaves the rest of
 the kit alone, and refuses to run while Modo is open.
 
-The plugin looks for MoonLight in a `moonlight` folder inside the selected MoonRay
+The plugin looks for MoonLightIPR in a `moonlight` folder inside the selected MoonRay
 runtime, and falls back to the copy in the kit's own runtime:
 
     python tools/stage_moonlight.py --destination runtime/<name>/moonlight
 
 For development, the `MOONRAY_MODO_MOONLIGHT` environment variable names a staged
-folder instead. Then choose **System > Preview engine > MoonLight** and render a
+folder instead. Then choose **System > Preview engine > MoonLightIPR** and render a
 preview or turn on IPR.
 
 Edits cost what the design intends: a camera or material change only restarts
@@ -130,7 +137,7 @@ running session leaves out the data of meshes it already holds.
 
 ## What the packer translates
 
-| Snapshot | MoonLight |
+| Snapshot | MoonLightIPR |
 |---|---|
 | Perspective camera matrix, focal length, film width | Pinhole camera with the same horizontal field of view |
 | Meshes, instances, per-polygon material tags | Triangle fans; authored normals on smooth unsubdivided meshes, otherwise area-weighted or faceted |
@@ -161,7 +168,7 @@ field, film offset and the render region. Orthographic cameras are refused.
 
 ## Build
 
-MoonLight uses the pinned CUDA 12.8 and OptiX 7.6 components that `tools/setup_xpu.py`
+MoonLightIPR uses the pinned CUDA 12.8 and OptiX 7.6 components that `tools/setup_xpu.py`
 fetches for the XPU renderer, and the project's MinGW toolchain. NVRTC compiles the
 device program, so no host CUDA compiler is needed. An NVIDIA RTX GPU is required.
 
@@ -204,7 +211,7 @@ displayed (the rest arrived while a conversion was running), the finished frame 
 always shown, and an unsupported light reached the notices.
 
 None of this has run inside Modo or on a snapshot captured from a real scene, and
-no MoonLight image has been compared with a MoonRay render. The panel edits were
+no MoonLightIPR image has been compared with a MoonRay render. The panel edits were
 checked for syntax only, since `panel.py` needs Modo to import.
 
 ## Update latency
@@ -228,7 +235,7 @@ only switching the preview engine to MoonRay, or closing the panel, ends it.
 
 Capturing the scene from Modo happens before any of this and has not been timed.
 
-With MoonLight selected the panel looks for changes every 60 ms and no longer waits
+With MoonLightIPR selected the panel looks for changes every 60 ms and no longer waits
 for the mouse button to come up when Modo reports a light, transform or material
 edit during a drag. In practice that seldom helps. A trace taken inside Modo showed
 that viewport navigation sends no notification until release, and that neither the
@@ -239,16 +246,14 @@ recapture, which waits for release. Why it was classified so was not established
 
 ## Known gaps in the hookup
 
-- A finished MoonLight frame is still labelled "Rendering" in the image info line.
-- The preview buffer menu has no effect; MoonLight produces beauty only.
+- A finished MoonLightIPR frame is still labelled "Rendering" in the image info line.
+- The preview buffer menu has no effect; MoonLightIPR produces beauty only.
 
 ## Not done yet
 
-- Staging MoonLight as part of the installed runtime and the release package.
+- Staging MoonLightIPR as part of the installed runtime and the release package.
 - The layer features listed above as reported.
 - Subsurface, anisotropy, dispersion and absorption inside glass.
-- The specular difference from `DwaBaseMaterial` described above, and energy
-  compensation for rough metals.
 - Layered and physical-sky environments; cylinder, portal and mesh lights; light
   filters.
 - Comparison against MoonRay on scenes captured from Modo.
