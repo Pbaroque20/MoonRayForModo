@@ -89,22 +89,35 @@ for i, name in enumerate(sorted(catalog)):
         group = spec.get('group', 'Parameters')
         if group not in groups:
             groups[group] = nested(form, 'MoonRayEntity_%s_%d:sheet' % (name, len(groups)), group, collapsed=1 if groups else 0)
-        how = ''
-        if kind == 'string':
-            if spec['type'] == 'SceneObject*':
-                how = 'Type the name of another MoonRay item; blank for none.'
-            elif spec['type'].startswith('SceneObject'):
-                how = 'Type the names of other MoonRay items, separated by commas; blank for none.'
-            elif spec['type'] != 'String':
-                how = 'Type a list as [a, b, c]; blank keeps the MoonRay default.'
-            elif spec.get('filename'):
-                how = 'The full path of a file.'
-        elif 'default' not in spec:
-            how = 'The MoonRay default applies until this is changed.'
-        # A value with named choices gets its popup from a command; everything else is the channel itself.
-        command = 'moonray.entity.choice%d_%d ?' % (i, j) if choices else 'item.channel %s$%s ?' % (entities.item_type(name), channel)
-        control(groups[group], command, spec.get('label', key.replace('_', ' ')),
-                ' '.join(part for part in (str(spec.get('comment', '')), how) if part))
+        label = spec.get('label', key.replace('_', ' '))
+        tip = str(spec.get('comment', ''))
+        channel_control = 'item.channel %s$%s ?' % (entities.item_type(name), channel)
+        category = entities.reference_category(spec)
+        if choices:
+            # Named values: a popup drawn by a command.
+            control(groups[group], 'moonray.entity.choice%d_%d ?' % (i, j), label, tip)
+        elif category and spec['type'] == 'SceneObject*':
+            # One other MoonRay item: a popup of those in the scene.
+            control(groups[group], 'moonray.entity.pick%d_%d ?' % (i, j), label, tip)
+        elif category:
+            # Several: the list as text, and a popup that adds to it.
+            control(groups[group], channel_control, label, (tip + ' The names of MoonRay items, separated by commas.').strip())
+            control(groups[group], 'moonray.entity.append%d_%d ?' % (i, j), 'add to ' + label, 'Adds one of the MoonRay items in the scene to the list above.')
+        elif spec.get('filename'):
+            control(groups[group], channel_control, label, tip)
+            control(groups[group], 'moonray.entity.browse%d_%d' % (i, j), 'Browse for ' + label + '...', 'Choose the file from a dialog.')
+        else:
+            how = ''
+            if kind == 'string' and spec['type'].startswith('SceneObject'):
+                how = 'Type the name of the object this refers to; blank for none.'
+            elif kind == 'string' and spec['type'] != 'String':
+                element = spec['type'][:-6]
+                how = ('Type the entries separated by semicolons, each as its numbers: 1 0 0; 0 1 0.' if element in ('Rgb', 'Vec2f', 'Vec3f')
+                       else 'Type the entries separated by commas.' if element == 'String' else 'Type the numbers separated by spaces: 0 0.5 1.')
+                how += ' Blank keeps the MoonRay default.'
+            elif kind != 'string' and 'default' not in spec:
+                how = 'The MoonRay default applies until this is changed.'
+            control(groups[group], channel_control, label, ' '.join(part for part in (tip, how) if part))
 ET.indent(config)
 ET.ElementTree(config).write(str(kit / 'entities.cfg'), encoding='utf-8', xml_declaration=True)
 print('Generated the menu and forms for', len(catalog), 'MoonRay classes')

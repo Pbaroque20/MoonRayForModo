@@ -25,6 +25,14 @@ PREVIEW_LIGHTS = {'DistantLight': {'angular_extent': 'angle'}, 'SphereLight': {'
                   'CylinderLight': {'radius': 'radius', 'height': 'height'}, 'PortalLight': {'width': 'width', 'height': 'height'}}
 
 
+# What a newly added item starts with where MoonRay's own defaults show nothing. MoonRay divides a
+# light's intensity by its area, so its default of 1 is close to black, and its default sphere
+# of radius 1 swallows whatever stands near it.
+STARTING = {'SphereLight': {'intensity': 50.0, 'radius': .1}, 'RectLight': {'intensity': 50.0},
+            'DiskLight': {'intensity': 50.0, 'radius': .5}, 'SpotLight': {'intensity': 50.0, 'lens_radius': .05},
+            'CylinderLight': {'intensity': 50.0, 'radius': .05}, 'MeshLight': {'intensity': 50.0}}
+
+
 @lru_cache(maxsize=1)
 def catalog():
     return json.loads(Path(__file__).with_name('entity_catalog.json').read_text(encoding='utf-8'))
@@ -68,9 +76,6 @@ def typed(value, spec):
         raise ValueError('Expected a whole number')
     if 'enum' in spec and int(value) not in spec['enum'].values():
         raise ValueError('Unknown choice')
-    for bound, wrong in (('min', lambda a, b: a < b), ('max', lambda a, b: a > b)):
-        if bound in spec and wrong(value, spec[bound]):
-            raise ValueError('Value is beyond the %s of %s' % (bound, spec[bound]))
     return int(value) if kind in ('Int', 'Long') else float(value)
 
 
@@ -134,6 +139,69 @@ def channels(name):
     return result
 
 
+INTERFACES = {'LIGHT': 'light', 'LIGHTFILTER': 'lightfilter', 'CAMERA': 'camera', 'GEOMETRY': 'geometry', 'VOLUME': 'volume'}
+# Lengths, angles and sizes cannot be negative; MoonRay's schema seldom says so itself.
+NEVER_NEGATIVE = ('radius', 'width', 'height', 'distance', 'angular_extent', 'cone_angle', 'near', 'far', 'focal', 'spread')
+
+
+def choice_labels(name, key):
+    """(value, popup name, label) for an attribute with named values, in value order."""
+    spec = catalog()[name]['attributes'][key]
+    internal = dict(next(choices for k, _, _, _, choices in channels(name) if k == key))
+    return [(number, internal[number], ' '.join(word.capitalize() for word in label.replace('_', ' ').split()))
+            for label, number in sorted(spec['enum'].items(), key=lambda entry: entry[1])]
+
+
+def reference_category(spec):
+    """The kind of MoonRay item an attribute names, if it names one at all."""
+    if not spec['type'].startswith('SceneObject'):
+        return None
+    key = spec['name']
+    # Some attributes do not declare what they point at; their names do.
+    named = ('lightfilter' if key == 'light_filters' else 'camera' if key.endswith('camera') or key == 'projector'
+             else 'volume' if key.endswith('volume') else None)
+    return INTERFACES.get(spec.get('interface')) or named
+
+
+def limits(name, key):
+    """The lowest a number may be, or None. The ranges in MoonRay's schema are slider ranges, not
+    limits, so only a floor of zero is taken from them or from what the attribute measures."""
+    spec = catalog()[name]['attributes'][key]
+    if spec['type'] not in ('Float', 'Double') or key == 'offset_radius':
+        return None
+    measured = any(key == word or key.endswith('_' + word) for word in NEVER_NEGATIVE)
+    return 0.0 if measured or spec.get('min') == 0 else None
+
+
+def parse_list(text, kind):
+    """A list typed into a text field: [1, 2, 3] as before, or just 1 2 3; colours and vectors
+    as 1 0 0; 0 1 0 or as numbers in a row."""
+    import re
+    text = text.strip()
+    if text.startswith('['):
+        return json.loads(text)
+    element = kind[:-6]
+    if element == 'String':
+        return [part.strip() for part in text.split(',') if part.strip()]
+    if element == 'Bool':
+        words = [w.lower() for w in re.split(r'[\s,;]+', text) if w]
+        if not all(w in ('true', 'false', '1', '0', 'on', 'off') for w in words):
+            raise ValueError('expected on or off values')
+        return [w in ('true', '1', 'on') for w in words]
+    def numbers(part):
+        return [float(w) for w in re.split(r'[\s,]+', part.strip()) if w]
+    if element in SIZES:
+        size = SIZES[element]
+        if ';' in text:
+            return [numbers(part) for part in text.split(';') if part.strip()]
+        flat = numbers(text)
+        if len(flat) % size:
+            raise ValueError('expected %d numbers for each entry' % size)
+        return [flat[i:i + size] for i in range(0, len(flat), size)]
+    values = numbers(text.replace(';', ' '))
+    return [int(v) for v in values] if element in ('Int', 'Long') and all(v == int(v) for v in values) else values
+
+
 def from_channels(name, read):
     """The attributes the user has changed, from read(channel name) for each of the item's channels."""
     attributes = catalog()[name]['attributes']
@@ -154,11 +222,15 @@ def from_channels(name, read):
                 value = [part.strip() for part in text.split(',') if part.strip()]
             else:
                 try:
-                    value = json.loads(text)
-                except ValueError:
-                    raise ValueError('%s must be a list such as [1, 2, 3]' % key)
+                    value = parse_list(text, spec['type'])
+                except ValueError as exc:
+                    raise ValueError('%s must be a list such as 1 2 3 (%s)' % (key, exc))
         else:
             value = read(channel)
+            floor = limits(name, key)
+            if floor is not None:
+                # The form keeps such numbers from going negative; one set some other way is brought back.
+                value = max(float(value), floor)
             if choices and isinstance(value, str):
                 # Modo hands a popup back by name.
                 value = {internal: number for number, internal in choices}.get(value, default)
