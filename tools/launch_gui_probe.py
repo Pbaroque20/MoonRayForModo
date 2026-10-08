@@ -12,6 +12,7 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('probe',nargs='?',default='probe_gui.py')
 parser.add_argument('--profile',default='gui-profile')
 parser.add_argument('--wait',action='store_true')
+parser.add_argument('--timeout',type=int,default=180)
 parser.add_argument('--without-native',action='store_true')
 parser.add_argument('--without-controller',action='store_true')
 parser.add_argument('--kit-source',type=pathlib.Path)
@@ -94,7 +95,7 @@ process = subprocess.Popen([r'C:\Program Files\Modo16.1v9\modo\modo.exe',
 print('Started isolated Modo GUI test, PID', process.pid)
 if args.wait:
     try:
-        exit_code=process.wait(timeout=180)
+        exit_code=process.wait(timeout=args.timeout)
         print('Modo exit:', exit_code)
         # Modo's GUI also returns 1 for a normal scripted quit in the no-plugin
         # control profile. Windows exception codes are never accepted.

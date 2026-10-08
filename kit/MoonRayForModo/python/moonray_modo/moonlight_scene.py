@@ -553,7 +553,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     objects = scene.get('production', {}).get('objects', {})
 
     used, meshes, instances, order = set(), [], [], {}
-    for mesh in geometry.render_meshes(scene.get('meshes', [])):
+    from .curve_tubes import meshes as curve_meshes
+    # Curves are drawn as tubes of polygons; MoonLight has no curve primitive.
+    for mesh in list(geometry.render_meshes(scene.get('meshes', []))) + curve_meshes(scene.get('extra_geometry', [])):
         if not mesh['faces']:
             continue
         if mesh.get('subdivision'):
@@ -585,8 +587,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         for placement, later in zip(opening, ending):
             instances.append(struct.pack('<2Ii12f', order[key], material, light, *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
-    if scene.get('extra_geometry'):
-        warnings.append('MoonLight does not show curves, volumes or other non-mesh geometry.')
+    if any(entry.get('kind') != 'curves' for entry in scene.get('extra_geometry', [])):
+        warnings.append('MoonLight does not show points or volumes.')
     parts.append(struct.pack('<I', len(distant)))
     parts += [struct.pack('<7f', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local

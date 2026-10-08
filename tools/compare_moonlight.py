@@ -311,6 +311,16 @@ def scenes(folder):
         'bokeh_blades': dict(base, lights=fixture.snapshot()['lights'], _environment=.3,
                              camera=dict(base['camera'], dof=True, f_stop=.3, focus_distance=11.0, iris_blades=5, iris_rotation=.3)),
         'sun': dict(base, lights=fixture.snapshot()['lights']),
+        # Curves: MoonRay's own curve geometry against MoonLight's tubes. Thick tapered strands on the ground and a few leaning ones.
+        'curves': dict(base, lights=fixture.snapshot()['lights'], _environment=.3, meshes=[base['meshes'][0]], extra_geometry=[
+            {'kind': 'curves', 'identity': 'strands|curves|gold', 'source_item': 'strands', 'name': 'Strands', 'material': 'gold', 'curve_type': 0,
+             'matrix': fixture.placed(0, 0, 0),
+             'vertices': [[-3 + .5 * i + .05 * j * j * math.sin(i), .25 * j, .3 * math.cos(i * 1.7) + .04 * j * j * math.cos(i)]
+                          for i in range(13) for j in range(9)],
+             'counts': [9] * 13, 'radii': [.12 * (1 - j / 8.0) ** .7 for i in range(13) for j in range(9)]},
+            {'kind': 'curves', 'identity': 'rods|curves|red', 'source_item': 'rods', 'name': 'Rods', 'material': 'red', 'curve_type': 0,
+             'matrix': fixture.placed(0, 0, 1.6), 'radius': .08,
+             'vertices': [[-2.5 + i, .08 + .6 * j, .3 * j] for i in range(6) for j in range(3)], 'counts': [3] * 6}]),
         'uniform_sky': dict(base, _environment=1.0),
         'gradient_sky': dict(base, environments=fixture.snapshot()['environments']),
         'sphere_light': dict(base, lights=[dict(lamp, kind='SphereLight', intensity=60.0, radius=.4, matrix=fixture.placed(-1, 5, 3))]),
