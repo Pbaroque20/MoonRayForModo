@@ -397,6 +397,7 @@ struct Surface {
     float roughness;
     float alphaX, alphaY;   // the Beckmann lobe's width along and across the surface tangent
     float diffuseScale;     // 0 while the diffuse light is being gathered beneath the surface instead
+    float3 diffuseNormal;   // the normal diffuse light falls on, in the shading frame
 };
 
 ML_INLINE Surface surfaceFrom(const Hit& hit) {
@@ -575,7 +576,8 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
         e.specular += vec(s.coat * dielectricFresnel(cosine, s.ior) * cd * cg1o * cg1i / (4.0f * wo.z));
         e.specularPdf += lobes.coat * cg1o * cd / (4.0f * wo.z);
     }
-    e.diffuse = diffuseColor(s, wo) * (wi.z / ML_PI);
+    // Diffuse light falls on the surface's own smoothed normal; only reflections use the bent one.
+    e.diffuse = diffuseColor(s, wo) * (fmaxf(0.0f, dot(s.diffuseNormal, wi)) / ML_PI);
     e.diffusePdf = wi.z / ML_PI;
     return e;
 }
@@ -830,7 +832,17 @@ extern "C" __global__ void __raygen__moonlight() {
         const bool inside = dot(hit.ng, toViewer) < 0.0f;
         const float3 ng = inside ? -hit.ng : hit.ng;
         float3 ns = dot(hit.ns, ng) < 0.0f ? -hit.ns : hit.ns;
-        if (dot(ns, toViewer) <= 0.0f) ns = ng;
+        const float3 smoothed = ns;
+        {
+            // A smoothed normal can face so far from the surface that the mirror direction of
+            // the view dips below it. MoonRay bends such a normal back just far enough for its
+            // reflections (the local shading normal adaption of the Iray light transport
+            // paper); switching to the face normal instead drew a hard curve across smoothed faces.
+            const float3 mirrored = ns * (2.0f * dot(ns, toViewer)) - toViewer;
+            const float above = dot(mirrored, ng);
+            const float margin = 0.001f;
+            if (above < margin) ns = normalize(toViewer + normalize(mirrored + ng * (margin - above)));
+        }
         Frame frame(ns);
         if (hit.anisotropy != 0.0f) {
             // A stretched lobe needs its axes: the tangent, then across it.
@@ -838,6 +850,7 @@ extern "C" __global__ void __raygen__moonlight() {
             if (dot(across, across) > 1e-8f) frame = Frame(ns, hit.tangent);
         }
         const float3 wo = frame.toLocal(toViewer);
+        surface.diffuseNormal = frame.toLocal(smoothed);
 
         if (camera) {
             guideAlbedo = lerp(surface.albedo, vec(1.0f), surface.transmission * (1.0f - surface.metallic));
