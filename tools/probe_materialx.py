@@ -130,6 +130,25 @@ def step4():
         editor.frame(True)
         QtWidgets.QApplication.processEvents()
         editor.grab().save(str(out / 'editor.png'))
+        # With no node chosen the properties are the material's own controls, as the file named them.
+        editor.canvas.clearSelection()
+        editor.inspect()
+        QtWidgets.QApplication.processEvents()
+        rows = []
+        for row in range(editor.table.rowCount()):
+            if not editor.table.isRowHidden(row):
+                rows.append([editor.table.item(row, 0).text(), type(editor.table.cellWidget(row, 1)).__name__])
+        result['controls'] = [editor.property_title.text(), rows]
+        editor.grab().save(str(out / 'controls.png'))
+        scale = next((c for c in editor.graph.get('controls', []) if c['label'] == 'UVScale Flakes'), None)
+        if scale:
+            editor.set_value(scale['node'], scale['key'], -1, [40.0, 40.0, 40.0])
+            result['scale_set'] = editor.graph['nodes'][scale['node']]['parameters']['value']
+        picture = next((c for c in editor.graph.get('controls', []) if c['label'] == 'Metallic image'), None)
+        if picture:
+            before = editor.graph['nodes'][picture['node']]['parameters']['file']
+            editor.set_value(picture['node'], 'file', -1, before.replace('metallic', 'roughness'))
+            result['picture_followed'] = [editor.graph['nodes'][n]['parameters']['file'][-22:] for n in [picture['node']] + picture.get('also', [])]
         result['editor'] = [len(editor.graph['nodes']), editor.info.text()]
         editor.close()
     except Exception:

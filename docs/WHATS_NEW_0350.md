@@ -143,6 +143,9 @@ PView was removed: Modo cannot host an external renderer there.
   mean the default.
 - An imported graph is set out in columns from its output back, and the graph editor's View
   menu can arrange any graph the same way.
+- An imported material has controls of its own: the numbers and colours its file names (a
+  paint colour, a UV scale, a roughness range) and its images, each chosen once however many
+  nodes read it. They are the graph editor's properties while no node is selected.
 - MoonLight shows such materials as their nodes say: UVs that nodes move, turn or scale, and
   arithmetic between images (one blended into another through a third, an image brought into
   a range, masks taken away) at the images' own sharpness. A wood, a marble, two wallpapers

@@ -14,6 +14,11 @@ STANDARD={'base_color':'albedo','metalness':'metallic','diffuse_roughness':'diff
 TYPES={'float':'Float','integer':'Int','boolean':'Bool','color3':'Rgb','vector2':'Vec2f','vector3':'Vec3f','filename':'String','string':'String'}
 
 
+def json_text(value):
+    import json
+    return json.dumps(value,sort_keys=True)
+
+
 def parse_value(element):
     kind=element.get('type');text=element.get('value','')
     if kind in ('string','filename'): return text
@@ -62,7 +67,12 @@ def read(path, material_name=None):
         materials=[e for e in materials if e.get('name')==material_name]
     if len(materials)!=1: raise ValueError('Choose a document with exactly one surface material (or specify its name)')
     graph={'version':1,'nodes':{},'overrides':[],'materialx_source':str(path),'materialx_version':document.get('version',''),'materialx_dependencies':dependencies}
-    visiting=set();cache={}
+    visiting=set();cache={};controls=[]
+    def spoken(name):
+        """UVScale_Flakes -> UV Scale Flakes; baseColor -> Base Color."""
+        import re
+        words=re.sub(r'(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|_',' ',str(name)).split()
+        return ' '.join(word if word.isupper() else word[:1].upper()+word[1:] for word in words)
     def interface(port,scope,trail=()):
         name=port.get('interfacename')
         if not name:return port
@@ -172,6 +182,13 @@ def read(path, material_name=None):
         else: raise ValueError('Unsupported MaterialX node: '+category+' ('+key+')')
         identity='n'+str(len(graph['nodes']));cache[key]=identity
         item={'type':kind,'parameters':dict(extra),'inputs':{},'position':[len(graph['nodes'])*240,0]};graph['nodes'][identity]=item
+        # The file's own name for the node, and for what it offers to be adjusted: its named numbers and colours, and its images.
+        named=key.rsplit('/',1)[-1]
+        if category not in ('standard_surface',) and not named.startswith(('node_','onthefly_','__modo_')):item['label']=named
+        if category=='constant' and 'label' in item:
+            controls.append({'node':identity,'key':'value','label':spoken(named),'kind':'number' if element.get('type')=='float' else 'color' if element.get('type')=='color3' else 'vector'})
+        elif kind=='image' and category=='image':
+            controls.append({'node':identity,'key':'file','label':spoken(element.get('GLSLFX_usage') or named)+' image','kind':'file'})
         ports={p.get('name'):p for p in definition.findall('input')} if definition is not None else {}
         ports.update({p.get('name'):p for p in element.findall('input')})
         if category=='standard_surface':
@@ -259,6 +276,17 @@ def read(path, material_name=None):
     graph['root']=resolve(surface,'')
     displacement=materials[0].find("input[@name='displacementshader']")
     if displacement is not None:graph['displacement']=resolve(displacement,'')
+    # Numbers and colours first, then the images, each kind in the file's order; one row for each image file.
+    seen={};listed=[]
+    for control in sorted(controls,key=lambda c:c['kind']=='file'):
+        if control['node'] not in graph['nodes']:continue
+        mark=(control['label'],json_text(graph['nodes'][control['node']].get('parameters',{}).get(control['key']))) if control['kind']=='file' else control['node']
+        if mark in seen:
+            # The same picture read at several places is one thing to choose; the others follow it.
+            if control['node']!=seen[mark]['node']:seen[mark].setdefault('also',[]).append(control['node'])
+            continue
+        seen[mark]=control;listed.append(control)
+    graph['controls']=listed
     nodes.validate(graph)
     # A file says what is wired to what, not where; set the nodes out so the graph can be read.
     return nodes.arrange(graph)

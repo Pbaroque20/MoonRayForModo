@@ -471,6 +471,12 @@ class Editor(QtWidgets.QDialog):
             target=node if layer<0 else self.graph['overrides'][layer]
             if layer>=0 and target['node']!=identity:raise ValueError('Override targets another node')
             target.setdefault('parameters',{})[key]=value;target.setdefault('inputs',{}).pop(key,None)
+            if layer<0:
+                # One of the material's controls may stand for several nodes, such as one picture read at three scales.
+                for control in self.graph.get('controls',[]):
+                    if control.get('node')==identity and control.get('key')==key:
+                        for other in control.get('also',[]):
+                            if other in self.graph['nodes']:self.graph['nodes'][other].setdefault('parameters',{})[key]=copy.deepcopy(value)
             self.validate_draft();self.remember(before)
             # Update backing text without invoking the transient delegate path.
             if self.selected()==identity:
@@ -849,15 +855,21 @@ class Editor(QtWidgets.QDialog):
     def inspect(self,*args):
         if self.busy: return
         self.busy=True;self.numeric_fields=[];self.table.setRowCount(0);identity=self.selected()
-        self.property_title.setText(self.graph['nodes'][identity].get('label',self.graph['nodes'][identity]['type']) if identity else 'Properties')
-        for widget,shown in ((self.table,bool(identity)),(self.property_search,bool(identity)),(self.property_help,bool(identity)),(self.property_hint,not identity)):widget.setVisible(shown)
+        # With no node chosen, the material's own controls: what its MaterialX file named for adjusting.
+        controls=[] if identity else [c for c in self.graph.get('controls',[]) if c.get('node') in self.graph['nodes'] and c.get('key') in nodes.specs(self.graph['nodes'][c['node']]['type'])]
+        self.property_title.setText(self.graph['nodes'][identity].get('label',self.graph['nodes'][identity]['type']) if identity else 'Material Controls' if controls else 'Properties')
+        listed=bool(identity or controls)
+        for widget,shown in ((self.table,listed),(self.property_search,listed),(self.property_help,listed),(self.property_hint,not listed)):widget.setVisible(shown)
         self.property_help.setText('')
         self.hidden_rows=set()
-        if identity:
-            node=nodes.effective(self.graph)['nodes'][identity]
-            ramps=ramp_groups(nodes.specs(node['type']))
-            members={member:group for group in ramps.values() for member in group[1:]}
-            for key,spec in nodes.specs(node['type']).items():
+        if listed:
+            effective=nodes.effective(self.graph)['nodes']
+            rows=[(identity,key,None,False) for key in nodes.specs(effective[identity]['type'])] if identity else [(c['node'],c['key'],c.get('label'),c.get('kind')=='number') for c in controls]
+            for identity,key,title,single in rows:
+                node=effective[identity];spec=nodes.specs(node['type'])[key]
+                # A control is a row of its own, never one of a ramp's three lists.
+                ramps=ramp_groups(nodes.specs(node['type'])) if title is None else {}
+                members={member:group for group in ramps.values() for member in group[1:]}
                 if spec['type']=='SceneObject*':
                     if spec.get('interface') in ('INTERFACE_CAMERA','INTERFACE_NODE'):
                         import modo
@@ -873,6 +885,7 @@ class Editor(QtWidgets.QDialog):
                 row=self.table.rowCount();self.table.insertRow(row)
                 label=QtWidgets.QTableWidgetItem(key.replace('_',' '));label.setData(QtCore.Qt.UserRole,key);label.setFlags(label.flags() & ~QtCore.Qt.ItemIsEditable)
                 label.setForeground(QtGui.QBrush(QtGui.QColor('#000000')))
+                if title:label.setText(title)
                 inherited=key not in node.get('parameters',{})
                 value=node.get('parameters',{}).get(key,node_defaults.value(spec))
                 cell=QtWidgets.QTableWidgetItem('' if value is None else json.dumps(value))
@@ -898,7 +911,13 @@ class Editor(QtWidgets.QDialog):
                     field=RampField(identity,key,held[0],held[1],self.table)
                     field.edit.connect(self.edit_ramp);self.place_field(row,cell,field)
                     continue
-                if spec['type'] in ('Float','Double') and not spec.get('enum'):
+                if single and isinstance(value,list) and value:
+                    # One number that the graph holds as three alike: shown and set as the one it is.
+                    cell.setText('');cell.setData(QtCore.Qt.DecorationRole,None)
+                    field=NumericField(identity,key,layer,{'type':'Float'},value[0],self.table,kind=node['type'],connected=connected)
+                    field.changed.connect(lambda i,k,l,v:self.set_value(i,k,l,[v,v,v]));field.focused.connect(self.numeric_focus)
+                    self.place_field(row,cell,field);self.numeric_fields.append(field)
+                elif spec['type'] in ('Float','Double') and not spec.get('enum'):
                     field=NumericField(identity,key,layer,spec,value,self.table,kind=node['type'],connected=connected)
                     field.changed.connect(self.numeric_changed);field.focused.connect(self.numeric_focus)
                     self.place_field(row,cell,field);self.numeric_fields.append(field)
