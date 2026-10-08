@@ -92,7 +92,8 @@ def material_values(material):
         settings=effective(settings)
     controls = material_settings(settings)
     diffuse = color(material, 'diffCol', (.5, .5, .5))
-    diffuse_amount = float(channel(material, 'diffAmt', 1))
+    # Modo's Principled model shows the diffuse colour in full, whatever the diffuse amount is set to.
+    diffuse_amount = 1.0 if channel(material, 'brdfType', '') == 'principled' else float(channel(material, 'diffAmt', 1))
     value = {'name':material.name,'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
                                 'node_graph': arranged(settings.get('node_graph')),
@@ -125,6 +126,7 @@ def material_values(material):
                                 # Modo's material is a metal only under its Principled shading model; the others ignore the setting.
                                 'metallic': float(channel(material, 'metallic', 0)) if channel(material, 'brdfType', '') == 'principled' else 0.0,
                                 'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
+                                'principled': channel(material, 'brdfType', '') == 'principled',
                                 'emission': [c * float(channel(material, 'radiance', 0)) for c in color(material, 'lumiCol')],
                                 'ior': max(1.0, float(channel(material, 'refIndex', 1.5))),
                                 'dispersion_abbe': settings.get('dispersion_abbe',max(0,float(channel(material,'refIndex',1.5))-1)/float(channel(material,'disperse',0)) if float(channel(material,'disperse',0))>0 else 0),

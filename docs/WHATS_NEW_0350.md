@@ -118,7 +118,12 @@ PView was removed: Modo cannot host an external renderer there.
   dim, an area light wrong by its size, and a spot light faced away and gave no light.
 - A Modo material's specular amount now reaches MoonRay: none means no highlight. Before, every
   standard material reflected 4% whatever it was set to.
-- A Modo material is a metal only under its Principled shading model, as in Modo.
+- A Modo material is a metal only under its Principled shading model, as in Modo. Under that
+  model its specular amount is a share of 8% and its diffuse colour shows in full, as Modo
+  renders it.
+- A standard material's highlight has the shape of Modo's own (GGX) unless it is stretched by
+  anisotropy. Roughness then means the same in both: highlights agree to about 1% from
+  roughness 0.15 up.
 
 ## Outputs
 
@@ -128,8 +133,6 @@ PView was removed: Modo cannot host an external renderer there.
 
 - A ground colour other than mid-grey tints the physical sky only approximately.
 - A spot light matches Modo on its axis and dims off it by the cosine of the angle.
-- Modo's highlights are broader than MoonRay's at the same roughness; roughness is not yet
-  converted.
 - Curves in MoonLight are tubes of four or eight sides, not true curves.
 
 - Rendering a material added from Add Layer, and rendering a material with a wired graph, were

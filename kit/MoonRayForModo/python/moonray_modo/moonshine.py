@@ -21,10 +21,15 @@ def specular_ceiling(material):
 
 def metal_mapped(material):
     """Whether an image varies how metallic a material is."""
+    return mapped(material,'metallic')
+
+
+def mapped(material,effect):
+    """Whether an image varies one of a material's settings."""
     from . import textures
     layers=material.get('layers')
     effects=[layer.get('effect') for layer in layers if layer.get('kind')!='materialBase'] if layers is not None else list(material.get('textures',{}))
-    return any(textures.EFFECT_ALIASES.get(e,e)=='metallic' for e in effects)
+    return any(textures.EFFECT_ALIASES.get(e,e)==effect for e in effects)
 
 
 def emit(material, tag, index, bindings, lines):
@@ -75,7 +80,8 @@ def emit(material, tag, index, bindings, lines):
     for key,value in bindings.items():
         if key in ('layerMask','subsurfaceAmount'):
             continue
-        if key=='anisotropy':
+        if key=='anisotropy' and (not material.get('standard_material') or any(m.get('anisotropy',0) for m in sources(material)) or mapped(material,'aniso')):
+            # Only the Beckmann highlight stretches; a standard material that does not stretch keeps GGX, the shape of Modo's own.
             attributes['specular_model']='0'
         if key in ('normal','coatNormal'):
             name='/modo/normal/%s/%s' % (index,key)
@@ -105,7 +111,8 @@ def emit(material, tag, index, bindings, lines):
         elif most<=0:
             attributes.update(specular='0',show_specular='false')
         else:
-            root=math.sqrt(most)
+            # Under Modo's Principled model the specular amount is a share of 8% seen straight on, as measured against Modo.
+            root=math.sqrt(most*(.08 if any(m.get('principled') for m in sources(material)) else 1.0))
             path='/modo/fresnel/'+str(index)
             lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most),)*3))
             attributes.update(refractive_index=number((1+root)/(1-root)),specular='bind(ModoTextureMap(%s), 1)'%string(path),show_specular='true')
