@@ -19,7 +19,7 @@ def scene():
 class PackTests(unittest.TestCase):
     def test_known_meshes_are_sent_once(self):
         first,keys,warnings=moonlight_scene.pack(scene(),320,180,.2)
-        self.assertEqual(first[:4],b'MLS7')
+        self.assertEqual(first[:4],b'MLS8')
         self.assertEqual(struct.unpack_from('<2I',first,4),(320,180))
         self.assertEqual(len(keys),1)
         self.assertFalse(any('CylinderLight' in w for w in warnings))
@@ -114,8 +114,10 @@ class EntityTests(unittest.TestCase):
         with_items=scene();with_items['entities']=self.items()
         packed,_,warnings=moonlight_scene.pack(with_items,320,180)
         self.assertGreater(len(packed),len(moonlight_scene.pack(scene(),320,180)[0]))
-        for expected in ('does not apply RodLightFilter (Rod on Key)','does not show volumes (Box)','BaseVolume (Fog)','not Eye'):
+        for expected in ('does not apply RodLightFilter (Rod on Key)','does not show volumes (Box)','BaseVolume (Fog)'):
             self.assertTrue(any(expected in w for w in warnings),expected)
+        # The fisheye camera set to render is what MoonLight looks through, so nothing is said of it.
+        self.assertFalse(any('Eye' in w for w in warnings))
 
     def test_filters_a_light_picture_and_mesh_lights_reach_moonlight(self):
         at=lambda x,y,z:[1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1]
