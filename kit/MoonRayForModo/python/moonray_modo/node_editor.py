@@ -641,6 +641,10 @@ class Editor(QtWidgets.QDialog):
         if kind not in nodes.kinds():self.error('Choose a supported node from the search results');return
         try:defaults=node_defaults.parameters(kind)
         except ValueError as exc:self.error('Cannot initialize node defaults: '+str(exc));return
+        if kind in ('RampMap','GradientMap'):
+            # MoonRay's own default lays these out in the camera's space, where they slide over
+            # the surface as the camera moves; a new one starts fixed to the object instead.
+            defaults=dict(defaults,space=nodes.SPACE_OBJECT)
         before=copy.deepcopy(self.graph);identity='node_'+uuid.uuid4().hex[:12]
         visible=self.view.mapToScene(self.view.viewport().rect()).boundingRect()
         ports=sum(1 for key in nodes.specs(kind) if nodes.connectable(kind,key))

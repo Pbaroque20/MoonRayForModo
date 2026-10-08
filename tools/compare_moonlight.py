@@ -173,13 +173,48 @@ def textured(folder):
                 for node in row_['node_graph']['nodes'].values() if node['type'] == 'image'}
         if mesh.get('uvs'):
             mesh['uv_sets'] = {key: list(mesh['uvs']) for key in keys}
+    # Nodes that are not images, which MoonLight has MoonRay bake: a ramp over the ball, and on
+    # the cube a checker put through a colour correction.
+    def node_graph(identity, extra, wires):
+        graph = graph_nodes.new('DwaBaseMaterial', {'roughness': .5})
+        graph['nodes'].update(extra)
+        graph['nodes']['surface']['inputs'].update(wires)
+        return dict(native(identity, 'DwaBaseMaterial', roughness=.5), node_graph=graph, node_override=True)
+    ramp = {'ramp': {'type': 'RampMap', 'inputs': {}, 'parameters': {
+        'space': 2, 'ramp_type': 0, 'positions': [0.0, .5, 1.0], 'colors': [[.9, .1, .1], [.1, .8, .2], [.1, .2, .9]], 'interpolations': [1, 1, 1]}}}
+    tinted = {'check': {'type': 'checker', 'inputs': {}, 'parameters': {'color1': [.1, .1, .1], 'color2': [.9, .9, .9], 'scale': [4, 4]}},
+              'tint': {'type': 'multiply', 'inputs': {'in1': 'check'}, 'parameters': {'in2': [1.0, .6, .2]}}}
+    fade = {'fade': {'type': 'GradientMap', 'inputs': {}, 'parameters': {
+        'space': 4, 'start': [0.0, -1.0, 0.0], 'end': [0.0, 1.0, 0.0], 'color_A': [.9, .5, .1], 'color_B': [.1, .3, .9], 'falloff_type': 2}}}
+
+    def projected(scene):
+        """Give the meshes the coordinates of nodes laid out in space, as the plugin does when it
+        reads a scene from Modo: one set per mesh, and a mesh placed several times once per place."""
+        from moonray_modo import coordinates
+        found = coordinates.descriptors(scene['materials'])
+        spatial = {key: layer for key, layer in found.items() if layer.get('projection', 'uv') != 'uv'}
+        meshes = []
+        for mesh in scene['meshes']:
+            places = mesh.get('instances') or [mesh.get('matrix', fixture.placed(0, 0, 0))]
+            for index, place in enumerate(places):
+                copy_ = {k: v for k, v in mesh.items() if k not in ('instances', 'instance_ids')}
+                copy_.update(matrix=place, identity='%s|%d' % (mesh['identity'], index), uv_sets=dict(mesh.get('uv_sets') or {}))
+                for key, layer in spatial.items():
+                    copy_['uv_sets'][key] = [uv for face in mesh['faces'] for uv in coordinates.face(layer, [mesh['vertices'][v] for v in face], [], place)]
+                meshes.append(copy_)
+        return dict(scene, meshes=meshes)
+    # A ramp laid out in the world on the ball and a gradient in its own space on the cube;
+    # then a checker put through a multiply, which reads the UVs.
+    baked = projected(lobes(node_graph('ball', ramp, {'albedo': 'ramp'}), node_graph('cube', fade, {'albedo': 'fade'})))
+    baked_uv = lobes(node_graph('ball', dict(ramp, ramp=dict(ramp['ramp'], parameters=dict(ramp['ramp']['parameters'], space=6))), {'albedo': 'ramp'}),
+                     node_graph('cube', tinted, {'albedo': 'tint'}))
     # The same images as Shader Tree layers, to set the wired ones against.
     layered_maps = lobes(row('ball', [1, 1, 1], .5, [layer('lb', 'diffCol', 'colour', True)]),
                          row('cube', [1, 1, 1], .5, [layer('lc', 'diffCol', 'colour', True), layer('lr', 'rough', 'roughness', False)]))
     # And as Shader Tree layers over the same native material, which leaves only the route the image takes.
     native_layer_maps = lobes(dict(native('ball', 'DwaBaseMaterial', roughness=.5), layers=[layer('nb', 'diffCol', 'colour', True)]),
                               dict(native('cube', 'DwaBaseMaterial', roughness=.5), layers=[layer('nc', 'diffCol', 'colour', True), layer('nr', 'rough', 'roughness', False)]))
-    return {'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    return {'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 

@@ -171,8 +171,9 @@ def graph_image(node):
     return '%s nodes' % node['type']
 
 
-def graph_layers(source, note):
-    """The images wired into a native material's graph, as texture layers over its own values."""
+def graph_layers(source, note, runtime=None):
+    """What is wired into a native material's graph, as texture layers over its own values: an
+    image node as it is, and any other node that depends on the UVs alone as MoonRay bakes it."""
     from . import nodes
     try:
         graph = nodes.effective(source['node_graph'])
@@ -198,8 +199,29 @@ def graph_layers(source, note):
                 continue
         layer = graph_image(node)
         if isinstance(layer, str):
-            note('%s wired to %s' % (layer, key.replace('_', ' ')))
-            continue
+            # Not an image: have MoonRay make one of it.
+            from . import graph_bake
+            target = graph['nodes'].get(identity) if effect != 'normal' else node
+            why = 'a normal map that is not an image' if effect == 'normal' else graph_bake.reason(graph, identity)
+            if why is None and not runtime:
+                why = '%s nodes' % target['type']
+            if why is not None:
+                note('%s wired to %s' % (why, key.replace('_', ' ')))
+                continue
+            try:
+                baked = graph_bake.bake(graph, identity, runtime)
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+                note('a node wired to %s that could not be baked (%s)' % (key.replace('_', ' '), exc))
+                continue
+            # The bake is linear and covers one unit of UV, repeating beyond it.
+            layer = {'kind': 'imageMap', 'path': str(baked), 'srgb': False, 'color_space': 'linear', 'tile_u': 'repeat', 'tile_v': 'repeat'}
+            spatial = graph_bake.plan(graph, identity)[1]
+            if spatial is not None:
+                # Laid out in space: the plugin has projected that space onto the meshes under this name.
+                placed = graph['nodes'][spatial]
+                layer['coordinate_key'] = nodes.space_descriptor(placed)['coordinate_key']
+                held = placed['type'] == 'GradientMap' or int(placed.get('parameters', {}).get('wrap_type', 0)) == 1
+                layer['tile_u'] = layer['tile_v'] = 'edge' if held else 'repeat'
         layer.update(effect=effect, blend='normal', opacity=1.0, identity=identity)
         if effect == 'dissolve':
             layer['invert'] = True
@@ -394,7 +416,8 @@ class Compiler:
                 self.note('%s, shown with the values of the Modo material' % native, name)
             else:
                 if source.get('node_graph'):
-                    wired = graph_layers(source, lambda what: self.note(what, name))
+                    from . import native
+                    wired = graph_layers(source, lambda what: self.note(what, name), self.runtime or native.default_runtime())
                 source = dict(source, **surface)
         defaults = graph.defaults_for(source)
         layers = source.get('layers')

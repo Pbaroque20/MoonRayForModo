@@ -7,6 +7,9 @@ import math
 def key(layer):
     fields = {name: layer.get(name) for name in
               ('uv_map', 'projection', 'locator_matrix', 'axis', 'uv_matrix', 'rotation', 'scale')}
+    if layer.get('object_space'):
+        # Laid out in each mesh's own space rather than the world's.
+        fields['object_space'] = True
     return 'modo_uv_' + hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -53,7 +56,11 @@ def face(layer, positions, uv, world_matrix):
         values = uv
     else:
         inv = inverse(layer['locator_matrix'])
-        points = [transform(transform(p, world_matrix), inv) for p in positions]
+        if layer.get('object_space'):
+            # The mesh's own space: where it stands in the world does not come into it.
+            points = [transform(p, inv) for p in positions]
+        else:
+            points = [transform(transform(p, world_matrix), inv) for p in positions]
         axis = layer.get('axis', 'z')
         points = [(p[1],p[2],p[0]) if axis in ('x',0) else
                   (p[0],p[2],p[1]) if axis in ('y',1) else p for p in points]

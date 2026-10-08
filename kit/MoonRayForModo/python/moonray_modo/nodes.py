@@ -118,9 +118,48 @@ def image_descriptor(node):
     return layer
 
 
+# MoonRay's numbering of the spaces a RampMap or GradientMap can be laid out in.
+SPACE_RENDER,SPACE_WORLD,SPACE_OBJECT,SPACE_TEXTURE=0,2,4,6
+
+
+def space_descriptor(node):
+    """Where a RampMap or GradientMap laid out in space puts each point of a surface, as a
+    planar projection whose coordinates the plugin bakes onto the meshes. A RampMap reads the x
+    and y of the position; a GradientMap reads how far along the line from its start to its end
+    the position is. None for a node that is laid out over the UVs or in a space MoonLight cannot
+    follow, which includes MoonRay's default: its render space is the camera's own, so a node
+    laid out there moves over the surface with the camera.
+    """
+    values=node.get('parameters',{})
+    if node['type'] not in ('RampMap','GradientMap'):return None
+    space=int(values.get('space',0))
+    if space not in (SPACE_WORLD,SPACE_OBJECT):return None
+    if node['type']=='RampMap':
+        # A planar projection gives x + .5 and y + .5 about its locator, so the locator sits at .5, .5.
+        matrix=[1,0,0,0, 0,1,0,0, 0,0,1,0, .5,.5,0,1]
+    else:
+        start=[float(v) for v in values.get('start',[0,0,0])];end=[float(v) for v in values.get('end',[0,1,0])]
+        along=[e-s for s,e in zip(start,end)]
+        length=math.sqrt(sum(v*v for v in along))
+        if length<1e-9:return None
+        unit=[v/length for v in along]
+        helper=[1.0,0,0] if abs(unit[0])<.9 else [0,1.0,0]
+        side=[unit[1]*helper[2]-unit[2]*helper[1],unit[2]*helper[0]-unit[0]*helper[2],unit[0]*helper[1]-unit[1]*helper[0]]
+        scale=math.sqrt(sum(v*v for v in side));side=[v/scale for v in side]
+        up=[unit[1]*side[2]-unit[2]*side[1],unit[2]*side[0]-unit[0]*side[2],unit[0]*side[1]-unit[1]*side[0]]
+        middle=[s+.5*a for s,a in zip(start,along)]
+        # The locator's first axis is the whole line, so one unit along it is start to end.
+        matrix=along+[0]+side+[0]+up+[0]+middle+[1]
+    layer={'projection':'planar','axis':'z','locator_matrix':matrix,'uv_map':'','scale':[1,1]}
+    if space==SPACE_OBJECT:layer['object_space']=True
+    layer['coordinate_key']=coordinates.key(layer)
+    return layer
+
+
 def descriptors(graph):
     g=validate(graph)
     result=[image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
+    result+=[layer for layer in (space_descriptor(node) for node in g['nodes'].values()) if layer]
     for node in g['nodes'].values():
         if node['type']=='normalmap':
             descriptor=normal_descriptor(node,g)
