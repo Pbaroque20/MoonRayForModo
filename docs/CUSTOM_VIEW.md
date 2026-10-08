@@ -1,5 +1,7 @@
 # MoonRay CustomView
 
+> **Updated in 0.3.50.** The viewport is named MoonRay Preview, and the experimental PView adapter mentioned below has been removed; see [What's new in 0.3.50.1](WHATS_NEW_0350.md).
+
 The MoonRay viewport uses Modo's `CustomView` interface through its Python
 binding (`lxifc.CustomView`), with a QWidget panel and QOpenGLWidget viewer.
 The supplied SDK explicitly supports populating CustomView through Python.

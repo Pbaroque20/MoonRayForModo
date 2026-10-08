@@ -1,12 +1,14 @@
-# MoonLightIPR GPU preview (experimental)
+# MoonLight GPU preview (experimental)
 
-MoonLightIPR is the name of the preview engine. Files, folders, the C++ namespace and the
-session executable use the shorter `moonlight`.
+MoonLight is the name of the preview engine, as the plugin shows it. It was called MoonLightIPR
+until 0.3.50, and the git branch still is. Files, folders, the C++ namespace and the session
+executable use `moonlight`.
 
-MoonLightIPR is a small standalone OptiX path tracer intended as an interactive preview
+MoonLight is a small standalone OptiX path tracer intended as an interactive preview
 engine beside MoonRay. It does not touch MoonRay's renderer. It is an approximation:
 one fixed uber-shader replaces MoonRay's materials, and final frames always come from
-MoonRay. It is not yet connected to Modo or installed in the kit.
+MoonRay. `tools/install_moonlight.py` adds it to an installed kit; it is not yet part of the
+release package.
 
 ## What exists
 
@@ -30,12 +32,12 @@ MoonRay. It is not yet connected to Modo or installed in the kit.
   from Modo.
 - `kit/.../moonray_modo/moonlight_session.py`: the Qt class that owns the process,
   with the signals of `persistent.Session`.
-- `render.py` and `panel.py`: a **Preview engine** choice on the System tab, saved as
-  a user preference. With MoonLightIPR selected, preview requests go to the session and
+- `render.py` and `panel.py`: an engine popup in the preview window's toolbar, saved as
+  a user preference. With MoonLight selected, preview requests go to the session and
   its frames reach the preview through the normal buffer and display path, at full
   preview size (the IPR size and sample limits apply to MoonRay only). Its warnings
-  are added to Scene notices. Output renders always use MoonRay. Clay preview modes
-  are honoured.
+  are added to the window's Notices. Output renders always use MoonRay. The preview
+  material choices in the Options menu are honoured.
 
 ## Matching MoonRay
 
@@ -57,10 +59,10 @@ The shading and path rules are taken from MoonRay's sources rather than tuned by
 renderers, each isolating one kind of light over plain materials, and reports the
 brightness ratio overall and per 20-pixel tile. MoonRay's images are kept while a
 scene's text is unchanged, since each takes a minute or more on the CPU. Results on
-October 6, 2026 against `xpu-paths-0349-candidate` (MoonLightIPR 2048 samples, MoonRay
+October 6, 2026 against `xpu-paths-0349-candidate` (MoonLight 2048 samples, MoonRay
 36):
 
-| Scene | MoonLightIPR / MoonRay | Tiles within 10% |
+| Scene | MoonLight / MoonRay | Tiles within 10% |
 |---|---|---|
 | Sun | 1.007 | 93% |
 | Uniform sky | 1.011 | 96% |
@@ -72,7 +74,7 @@ October 6, 2026 against `xpu-paths-0349-candidate` (MoonLightIPR 2048 samples, M
 
 Three more scenes cover textures and the two ways a material reaches MoonRay:
 
-| Scene | MoonLightIPR / MoonRay | Tiles within 10% |
+| Scene | MoonLight / MoonRay | Tiles within 10% |
 |---|---|---|
 | An environment image, turned 40 degrees | 0.983 | 100% |
 | Textures on plain materials (`UsdPreviewSurface`): colour, roughness and normal maps | 1.000 | 98% |
@@ -83,10 +85,10 @@ Three more scenes cover textures and the two ways a material reaches MoonRay:
 | Nine sphere and rect lights of different power | 0.998 | 98% |
 | A masked material row, a half-opaque group and a bump map | 0.968 | 54% |
 
-A third set, added October 7, 2026, covers what was translated last (MoonLightIPR 2048
+A third set, added October 7, 2026, covers what was translated last (MoonLight 2048
 samples, MoonRay 36):
 
-| Scene | MoonLightIPR / MoonRay | Tiles within 10% |
+| Scene | MoonLight / MoonRay | Tiles within 10% |
 |---|---|---|
 | Cylinder light | 1.005 | 95% |
 | Portal light in front of a uniform environment | 1.004 | 97% |
@@ -107,29 +109,29 @@ material stacks has not been compared in isolation. Motion blur has no compariso
 it was checked only for running and for returning to the still image afterwards.
 
 Four things MoonRay itself got wrong came to light here, in the plugin's translation
-rather than in MoonLightIPR. Three are fixed on this branch:
+rather than in MoonLight. Three are fixed on this branch:
 
 - Mesh lights lit nothing. MoonRay refuses a `MeshLight` whose geometry is also in the
   render layer; `rdla.py` now gives the light its own copy of the geometry.
 - Gradient layers rendered blank. MoonRay's `RampMap` holds at most 20 points and the
-  plugin sent 257; `gradients.py` now resamples to 20, and MoonLightIPR shows the same 20.
+  plugin sent 257; `gradients.py` now resamples to 20, and MoonLight shows the same 20.
 - Dispersion was never switched on. `DwaBaseMaterial` ignores the Abbe number unless
   `use_dispersion` is set; `moonshine.py` now sets it.
 - UDIM tiles did not load in the comparison: MoonRay reported every tile missing although
   the files were there, and drew its error colour. This looks like the Windows port's
-  tile search and was not pursued, so UDIM in MoonLightIPR is unverified against MoonRay.
+  tile search and was not pursued, so UDIM in MoonLight is unverified against MoonRay.
 
 Texture orientation, sRGB decoding, blending and normal mapping agree with MoonRay to
 about 1% region by region on the plain-material path.
 
 Material stacks are what the Shader Tree produces, and they render through
-`DwaBaseMaterial`, which differs from `UsdPreviewSurface` in two ways MoonLightIPR now
+`DwaBaseMaterial`, which differs from `UsdPreviewSurface` in two ways MoonLight now
 follows. It dims diffuse under the specular lobe by the full Fresnel term rather than
 softening it with roughness. And its specular lobe is Beckmann, not GGX: a stack binds
 every channel, anisotropy included, and the plugin selects the Beckmann model whenever
 anisotropy is bound. Both shaders also add back the light lost between facets
 (Kelemen 2001, as in Kulla and Conty 2017) once roughness passes one half;
-MoonLightIPR computes the same albedo tables at start-up, and they agree with MoonRay's
+MoonLight computes the same albedo tables at start-up, and they agree with MoonRay's
 to a few percent.
 
 A bare ground plane under the sun isolates these. Through `DwaBaseMaterial` it now
@@ -151,20 +153,21 @@ anything else the packer reports as approximated.
 
 ## Using it in Modo
 
-`python tools/install_moonlight.py` adds a built MoonLightIPR to the installed kit: the
+`python tools/install_moonlight.py` adds a built MoonLight to the installed kit: the
 session into the kit's `runtime/moonlight`, plus the Python modules that route
 previews to it and the four MoonRay translation modules fixed alongside (`rdla.py`,
 `lighting.py`, `moonshine.py`, `gradients.py`). It backs up what it replaces under `backups/`, leaves the rest of
 the kit alone, and refuses to run while Modo is open.
 
-The plugin looks for MoonLightIPR in a `moonlight` folder inside the selected MoonRay
+The plugin looks for MoonLight in a `moonlight` folder inside the selected MoonRay
 runtime, and falls back to the copy in the kit's own runtime:
 
     python tools/stage_moonlight.py --destination runtime/<name>/moonlight
 
 For development, the `MOONRAY_MODO_MOONLIGHT` environment variable names a staged
-folder instead. Then choose **System > Preview engine > MoonLightIPR** and render a
-preview or turn on IPR.
+folder instead. Then choose **MoonLight** in the preview window's engine popup and press
+Render; with IPR ticked, Render keeps following the scene until Stop. Motion blur in
+MoonLight renders is a preference (Options > Preferences).
 
 Edits cost what the design intends: a camera or material change only restarts
 accumulation, a transform change rebuilds the instance layer, and only a new mesh
@@ -174,7 +177,7 @@ running session leaves out the data of meshes it already holds.
 
 ## What the packer translates
 
-| Snapshot | MoonLightIPR |
+| Snapshot | MoonLight |
 |---|---|
 | Perspective camera matrix, focal length, film width | Pinhole camera with the same horizontal field of view |
 | Meshes, instances, per-polygon material tags | Triangle fans; authored normals on smooth unsubdivided meshes, otherwise area-weighted or faceted |
@@ -203,7 +206,7 @@ running session leaves out the data of meshes it already holds.
 | Portal lights | A rectangle that shows the lighting environment times its own colour and intensity (MoonRay does not normalize a portal); the environment then lights the scene only through portals. All lighting environments pass through; MoonRay wants one chosen |
 | Mesh lights (Object controls) | The object's triangles emit from both faces, chosen by area, normalized by the total area; the object stays visible with its material. Up to 50,000 triangles, not instanced |
 | Depth of field, f-stop, focus distance, iris blades and rotation | MoonRay's lens: radius from the focal length and f-stop, a disc or a polygon |
-| A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. The panel captures such a snapshot for Render Preview when **System > Motion blur in MoonLightIPR previews** is on; IPR updates stay sharp |
+| A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. The panel captures such a snapshot for Render Preview when **System > Motion blur in MoonLight previews** is on; IPR updates stay sharp |
 | Working colour space | The same conversion `rdla.py` applies to colours |
 | MoonRay items (`entities`, from **MoonRay > Add MoonRay Item**) | `dwEnvLight` becomes a constant or image environment, and can replace Modo's own; distant, sphere, rect, disk, spot, cylinder and portal lights become the lights above; a rect light's texture is shown across it; `dwBoxGeometry` and `dwSphereGeometry` become meshes; a `dwMeshLight` makes the Modo mesh it names emit. Intensity, decay and colour ramp light filters are applied (also those set in Lighting controls). Rod, barn door, cookie, VDB and combine filters, textures on other lights, volumes, VDB shapes and camera items are named in the notices. Compared with MoonRay: an environment, a sphere light, a box and a ball 1.014 (96% of tiles within 10%); decay, tint and ramp filters 1.009 (97%); a textured rect light 1.014 (93%); a mesh light item 1.014 (85%) |
 
@@ -215,7 +218,7 @@ volumes, film offset and the render region. Orthographic cameras are refused.
 
 ## Build
 
-MoonLightIPR uses the pinned CUDA 12.8 and OptiX 7.6 components that `tools/setup_xpu.py`
+MoonLight uses the pinned CUDA 12.8 and OptiX 7.6 components that `tools/setup_xpu.py`
 fetches for the XPU renderer, and the project's MinGW toolchain. NVRTC compiles the
 device program, so no host CUDA compiler is needed. An NVIDIA RTX GPU is required.
 
@@ -258,7 +261,7 @@ displayed (the rest arrived while a conversion was running), the finished frame 
 always shown, and an unsupported light reached the notices.
 
 None of this has run inside Modo or on a snapshot captured from a real scene, and
-no MoonLightIPR image has been compared with a MoonRay render. The panel edits were
+no MoonLight image has been compared with a MoonRay render. The panel edits were
 checked for syntax only, since `panel.py` needs Modo to import.
 
 ## Update latency
@@ -282,7 +285,7 @@ only switching the preview engine to MoonRay, or closing the panel, ends it.
 
 Capturing the scene from Modo happens before any of this and has not been timed.
 
-With MoonLightIPR selected the panel looks for changes every 60 ms and no longer waits
+With MoonLight selected the panel looks for changes every 60 ms and no longer waits
 for the mouse button to come up when Modo reports a light, transform or material
 edit during a drag. In practice that seldom helps. A trace taken inside Modo showed
 that viewport navigation sends no notification until release, and that neither the
@@ -293,14 +296,17 @@ recapture, which waits for release. Why it was classified so was not established
 
 ## Known gaps in the hookup
 
-- A finished MoonLightIPR frame is still labelled "Rendering" in the image info line.
-- The preview buffer menu has no effect; MoonLightIPR produces beauty only.
+- The preview buffer menu has no effect; MoonLight produces beauty only. Choosing a
+  Cryptomatte buffer says that it needs the MoonRay engine.
+- Following the scene in IPR with MoonLight has not been exercised in the redesigned preview
+  window.
 
 ## Not done yet
 
-- Staging MoonLightIPR as part of the installed runtime and the release package.
-- The layer features listed above as reported; light filters.
+- Staging MoonLight as part of the installed runtime and the release package.
+- The layer features listed above as reported; rod, barn door, cookie, VDB and combined
+  light filters; volumes.
 - Motion blur during IPR updates, moving lights, and a comparison of motion blur with MoonRay.
 - A test of OCIO colour spaces, and of UDIM against a MoonRay that loads the tiles.
-- Comparison against MoonRay on scenes captured from Modo. Nothing added on October 7
-  has run inside Modo.
+- Comparison against MoonRay on scenes captured from Modo. The comparisons above use
+  scenes built by `tools/compare_moonlight.py`.

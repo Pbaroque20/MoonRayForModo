@@ -1,5 +1,7 @@
 # Preview controls development update
 
+> **Superseded in part by 0.3.50.** The preview window was rebuilt as a viewer and its settings moved to the Render item's MoonRay properties; see [What's new in 0.3.50.1](WHATS_NEW_0350.md). The notes below describe the earlier tabbed window.
+
 ## Render buffers
 
 The dropdown above the preview offers Beauty and every supported AOV. Selecting an entry starts a new preview, including when Live updates is off. Older queued results are canceled. Data buffers have display-only visualization: normals map -1..1 to 0..1, depth uses logarithmic range compression, world position uses signed logarithmic compression, UV shows U/V in red/green, and alpha is grayscale. EXR AOV checkboxes still control final saved channels independently.
