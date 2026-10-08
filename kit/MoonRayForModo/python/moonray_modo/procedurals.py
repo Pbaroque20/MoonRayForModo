@@ -40,7 +40,11 @@ def sample(data,u,v):
     t=(1.0 if distance<=radius else 0.0) if transition<=1e-9 else max(0,min(1,(radius+transition-distance)/(2*transition)))
     t=t*t*(3-2*t);t=_bias(t,data['bias'])
     g=data['gain'];t=.5*_bias(2*t,1-g) if t<.5 else 1-.5*_bias(2-2*t,1-g)
-    return ([b+(a-b)*t for a,b in zip(data['color1'],data['color2'])], max(0,min(1,data['alpha2']+(data['alpha1']-data['alpha2'])*t)))
+    # Blended as shares of each end, so that the ends come out as they were given: written as one end plus a
+    # step toward the other, 0.8 + (0.2 - 0.8) is a hair under 0.2, outside the range the pattern was asked for.
+    low,high=sorted((data['alpha1'],data['alpha2']))
+    alpha=min(high,max(low,data['alpha1']*t+data['alpha2']*(1-t)))
+    return ([a*t+b*(1-t) for a,b in zip(data['color1'],data['color2'])], max(0,min(1,alpha)))
 
 def bake(data,resolution=512):
     key=hashlib.sha256(json.dumps(['procedural-v1',resolution,data],sort_keys=True).encode()).hexdigest()
