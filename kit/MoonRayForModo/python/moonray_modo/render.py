@@ -283,6 +283,8 @@ class Renderer(QtCore.QObject):
             self.status.emit(label+' · '+self.backend_status)
             if self.using_session:
                 self.session_serial+=1
+                # Only this render's own progress lines count towards its estimate.
+                if self.progress_state:self.progress_state.generation=self.session_serial
                 self.session_files[self.session_serial]=self.current_base
                 self._started()
                 self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size)
