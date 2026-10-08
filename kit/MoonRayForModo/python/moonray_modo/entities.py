@@ -28,7 +28,7 @@ PREVIEW_LIGHTS = {'DistantLight': {'angular_extent': 'angle'}, 'SphereLight': {'
 # What a newly added item starts with where MoonRay's own defaults show nothing. MoonRay divides a
 # light's intensity by its area, so its default of 1 is close to black, and its default sphere
 # of radius 1 swallows whatever stands near it.
-STARTING = {'EnvLight': {'modo_replace_environment': True},
+STARTING = {'EnvLight': {'modo_replace_environment': True, 'visible_in_camera': 1},   # 1 is force on: seen behind the scene
             'SphereLight': {'intensity': 50.0, 'radius': .1}, 'RectLight': {'intensity': 50.0},
             'DiskLight': {'intensity': 50.0, 'radius': .5}, 'SpotLight': {'intensity': 50.0, 'lens_radius': .05},
             'CylinderLight': {'intensity': 50.0, 'radius': .05}, 'MeshLight': {'intensity': 50.0}}
