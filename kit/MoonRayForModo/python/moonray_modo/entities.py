@@ -299,6 +299,95 @@ def checked(scene):
     return result
 
 
+# ---- Viewport proxies --------------------------------------------------------------------------
+
+def proxy(name, number):
+    """The wireframe that stands for an item in the viewport, in the item's own space.
+
+    number(attribute) gives the current value of one of the class's numeric attributes. Returns
+    a list of ('circles', [(centre, normal scaled to the radius), ...]), ('boxes', [(corner,
+    opposite corner), ...]), ('lines', [point, point, ...]) in pairs, and ('strip', [points]).
+    MoonRay's flat lights and its cameras face down their local -Z axis; a cylinder light
+    stands along Y.
+    """
+    category = catalog()[name]['category']
+    def rectangle(width, height, z=0.0):
+        x, y = width / 2, height / 2
+        return [(-x, -y, z), (x, -y, z), (x, y, z), (-x, y, z), (-x, -y, z)]
+    def arrow(length, x=0.0, y=0.0):
+        head = length * .2
+        return [(x, y, 0), (x, y, -length), (x, y, -length), (x + head * .4, y, -length + head),
+                (x, y, -length), (x - head * .4, y, -length + head)]
+    def arc(radius, plane, steps=16):
+        """Half a circle over the top: in the XY plane, or the ZY plane."""
+        points = [(math.cos(math.pi * i / steps) * radius, math.sin(math.pi * i / steps) * radius) for i in range(steps + 1)]
+        return [(a, b, 0.0) if plane == 'xy' else (0.0, b, a) for a, b in points]
+    if name == 'SphereLight':
+        r = max(number('radius'), 1e-4)
+        return [('circles', [((0, 0, 0), (r, 0, 0)), ((0, 0, 0), (0, r, 0)), ((0, 0, 0), (0, 0, r))])]
+    if name == 'EnvLight':
+        # A dome: the horizon, two arcs over the top, and a mark for up.
+        return [('circles', [((0, 0, 0), (0, 1, 0))]), ('strip', arc(1.0, 'xy')), ('strip', arc(1.0, 'zy')),
+                ('lines', [(0, 1, 0), (0, 1.25, 0)])]
+    if name == 'DistantLight':
+        return [('circles', [((0, 0, 0), (0, 0, .25))]),
+                ('lines', arrow(1.0) + arrow(.8, .18, 0) + arrow(.8, -.18, 0) + arrow(.8, 0, .18) + arrow(.8, 0, -.18))]
+    if name in ('RectLight', 'PortalLight'):
+        w, h = max(number('width'), 1e-4), max(number('height'), 1e-4)
+        shapes = [('strip', rectangle(w, h)), ('lines', arrow(min(w, h) * .5))]
+        if name == 'PortalLight':
+            # An opening rather than a surface: crossed corner to corner.
+            shapes.append(('lines', [(-w / 2, -h / 2, 0), (w / 2, h / 2, 0), (-w / 2, h / 2, 0), (w / 2, -h / 2, 0)]))
+        return shapes
+    if name == 'DiskLight':
+        r = max(number('radius'), 1e-4)
+        return [('circles', [((0, 0, 0), (0, 0, r))]), ('lines', arrow(r))]
+    if name == 'SpotLight':
+        lens = max(number('lens_radius'), 1e-4)
+        reach = 1.0
+        wide = lens + reach * math.tan(math.radians(min(max(number('outer_cone_angle'), 0.0), 170.0)) / 2)
+        return [('circles', [((0, 0, 0), (0, 0, lens)), ((0, 0, -reach), (0, 0, wide))]),
+                ('lines', [(lens, 0, 0), (wide, 0, -reach), (-lens, 0, 0), (-wide, 0, -reach),
+                           (0, lens, 0), (0, wide, -reach), (0, -lens, 0), (0, -wide, -reach)])]
+    if name == 'CylinderLight':
+        r, half = max(number('radius'), 1e-4), max(number('height'), 1e-4) / 2
+        return [('circles', [((0, half, 0), (0, r, 0)), ((0, -half, 0), (0, r, 0))]),
+                ('lines', [(r, -half, 0), (r, half, 0), (-r, -half, 0), (-r, half, 0), (0, -half, r), (0, half, r), (0, -half, -r), (0, half, -r)])]
+    if name == 'BoxGeometry':
+        x, y, z = (max(number('size.' + axis), 1e-4) / 2 for axis in 'XYZ')
+        return [('boxes', [((-x, -y, -z), (x, y, z))])]
+    if name == 'SphereGeometry':
+        r = max(number('radius'), 1e-4)
+        return [('circles', [((0, 0, 0), (0, r, 0)), ((0, 0, 0), (0, 0, r))])]
+    if name == 'RodLightFilter':
+        x, y, z = (max(number(key), 1e-4) / 2 for key in ('width', 'height', 'depth'))
+        return [('boxes', [((-x, -y, -z), (x, y, z))])]
+    if name == 'BarnDoorLightFilter':
+        return [('strip', rectangle(max(number('projector_width'), 1e-4), max(number('projector_height'), 1e-4))), ('lines', arrow(.5))]
+    if category == 'camera':
+        # A viewing pyramid down -Z, with a mark for which way is up.
+        w, h, d = .5, .28, .8
+        far = rectangle(w * 2, h * 2, -d)
+        return [('strip', far), ('lines', [point for corner in far[:4] for point in ((0, 0, 0), corner)]
+                                 + [(-w * .3, h, -d), (0, h * 1.5, -d), (0, h * 1.5, -d), (w * .3, h, -d)])]
+    if category == 'geometry':
+        return [('boxes', [((-.5, -.5, -.5), (.5, .5, .5))])]
+    # Filters and volumes with no shape of their own: a small diamond.
+    s = .2
+    return [('strip', [(s, 0, 0), (0, s, 0), (-s, 0, 0), (0, -s, 0), (s, 0, 0)]), ('strip', [(0, s, 0), (0, 0, s), (0, -s, 0), (0, 0, -s), (0, s, 0)])]
+
+
+def proxy_inputs(name):
+    """The numeric attributes proxy() asks for, as (asked name, channel name)."""
+    wanted = {'SphereLight': ['radius'], 'RectLight': ['width', 'height'], 'PortalLight': ['width', 'height'], 'DiskLight': ['radius'],
+              'SpotLight': ['lens_radius', 'outer_cone_angle'], 'CylinderLight': ['radius', 'height'], 'SphereGeometry': ['radius'],
+              'RodLightFilter': ['width', 'height', 'depth'], 'BarnDoorLightFilter': ['projector_width', 'projector_height']}.get(name, [])
+    inputs = [(key, CHANNEL_PREFIX + key) for key in wanted]
+    if name == 'BoxGeometry':
+        inputs = [('size.' + axis, CHANNEL_PREFIX + 'size.' + axis) for axis in 'XYZ']
+    return inputs
+
+
 # ---- RDLA --------------------------------------------------------------------------------------
 
 def reference(entities, name, interface, owner):

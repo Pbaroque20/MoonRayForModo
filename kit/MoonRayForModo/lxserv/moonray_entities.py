@@ -38,11 +38,48 @@ def register():
                 add.SetDefaultVec(values)
             except Exception:pass
 
+    def instance(name):
+        """The item in the viewport: a wireframe that follows the attributes giving its size."""
+        inputs=entities.proxy_inputs(name)
+        def point3(values):
+            # The form Modo's own drawing example hands to Vertex.
+            import modo
+            return modo.Vector3(float(values[0]),float(values[1]),float(values[2]))
+        defaults={key:(value if not isinstance(value,list) else None) for key,_,_,value,_ in entities.channels(name)}
+        class Drawn(lxu.package.BasicPackageInstance, lxifc.ViewItem3D):
+            def vitm_Draw(self,chanRead,strokeDraw,selectionFlags,itemColor):
+                # Nothing here may raise: a fault while drawing would repeat on every redraw.
+                try:
+                    read=lx.object.ChannelRead(chanRead);stroke=lx.object.StrokeDraw(strokeDraw)
+                    values={}
+                    for key,channel in inputs:
+                        try:values[key]=float(read.Double(self.item,self.item.ChannelLookup(channel)))
+                        except Exception:values[key]=float(defaults.get(key.split('.')[0]) or 1.0)
+                    for kind,data in entities.proxy(name,lambda key:values.get(key,1.0)):
+                        if kind=='circles':
+                            stroke.Begin(lx.symbol.iSTROKE_CIRCLES,itemColor,1.0)
+                            for centre,normal in data:
+                                stroke.Vertex(point3(centre),lx.symbol.iSTROKE_ABSOLUTE)
+                                stroke.Vertex(point3(normal),lx.symbol.iSTROKE_ABSOLUTE)
+                        elif kind=='boxes':
+                            stroke.Begin(lx.symbol.iSTROKE_BOXES,itemColor,1.0)
+                            for low,high in data:
+                                stroke.Vertex(point3(low),lx.symbol.iSTROKE_ABSOLUTE)
+                                stroke.Vertex(point3(high),lx.symbol.iSTROKE_ABSOLUTE)
+                        else:
+                            stroke.Begin(lx.symbol.iSTROKE_LINES if kind=='lines' else lx.symbol.iSTROKE_LINE_STRIP,itemColor,1.0)
+                            for point in data:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
+                except Exception:pass
+        return Drawn
+
     def package(name):
         plan=entities.channels(name)
+        Drawn=instance(name)
         floors={channel:entities.limits(name,key) for key,channel,kind,default,choices in plan if entities.limits(name,key) is not None}
         class Typed(lxu.package.BasicPackage, lxu.package.BasicItemBehaviors, lxifc.ChannelUI):
             def test_parent(self,item,parent):return True
+            def pkg_Attach(self):return Drawn(self.acts)
+            def pkg_TestInterface(self,guid):return guid==lx.symbol.u_PACKAGEINSTANCE or guid==lx.symbol.u_VIEWITEM3D
             def pkg_SetupChannels(self,addChan):
                 add=lx.object.AddChannel(addChan)
                 for key,channel,kind,default,choices in plan:
