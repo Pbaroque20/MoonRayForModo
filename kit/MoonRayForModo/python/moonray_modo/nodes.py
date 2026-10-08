@@ -118,6 +118,84 @@ def image_descriptor(node):
     return layer
 
 
+class NotArithmetic(ValueError):
+    """A node whose value cannot be worked out from the UVs by arithmetic alone."""
+
+
+def worked_out(graph,identity,uv,maps,depth=0):
+    """A node's value at one point of the UVs, where it is made of the UVs and numbers by arithmetic: the
+    nodes that move, turn and scale texture coordinates. Notes which UV map is read in maps."""
+    node=graph['nodes'].get(identity)
+    if node is None or depth>200:raise NotArithmetic(identity)
+    kind=node['type'];values=node.get('parameters',{});inputs=node.get('inputs',{})
+    def three(value):
+        if isinstance(value,(int,float)):return [float(value)]*3
+        value=[float(v) for v in value]
+        return (value+[0.0,0.0,0.0])[:3]
+    def of(key):
+        if key in inputs:return worked_out(graph,inputs[key],uv,maps,depth+1)
+        if key in values:return three(values[key])
+        default=MAPS.get(kind,{}).get(key)
+        if default is None:raise NotArithmetic(kind+'.'+key)
+        return three(default[1])
+    if kind=='texcoord':
+        maps.add(image_descriptor(node)['uv_map']);return [uv[0],uv[1],0.0]
+    if kind=='constant':return of('value')
+    if kind in ('add','subtract','multiply','divide'):
+        a,b=of('in1'),of('in2')
+        if kind=='divide' and any(abs(v)<1e-12 for v in b):raise NotArithmetic('division by nothing')
+        return [{'add':x+y,'subtract':x-y,'multiply':x*y}[kind] if kind!='divide' else x/y for x,y in zip(a,b)]
+    if kind=='combine':return [of('in1')[0],of('in2')[0],of('in3')[0]]
+    if kind=='swizzle':
+        source=of('in');channels=str(values.get('channels','rgb'))
+        picked=[float(c) if c in '01' else source['rgbxyz'.index(c)%3] for c in channels]
+        # One channel fills all three, as a float does where a colour is wanted.
+        return picked*3 if len(picked)==1 else (picked+[0.0,0.0])[:3]
+    if kind=='OpMap':
+        operation=int(values.get('operation',0));a=of('op1')
+        single={21:math.sin,22:math.cos,15:abs,16:math.ceil,17:math.floor}
+        if operation in single:return [single[operation](v) for v in a]
+        raise NotArithmetic('OpMap %d'%operation)
+    if kind in ('rotate2d',):
+        angle=math.radians(of('amount')[0]);a=of('in');c,s=math.cos(angle),math.sin(angle)
+        return [c*a[0]+s*a[1],-s*a[0]+c*a[1],0.0]
+    raise NotArithmetic(kind)
+
+
+def uv_affine(graph,identity):
+    """How a node moves, turns and scales the UVs, if that is all it does: (UV map, [a,b,c,d,e,f]) with
+    u' = a u + b v + c and v' = d u + e v + f. None if it does anything else, or reads no UVs or two maps.
+
+    The node is worked out at a few points and the answer checked at others, so any arrangement of
+    arithmetic nodes that comes to such a move is recognised, whatever it is built from.
+    """
+    maps=set()
+    try:
+        origin=worked_out(graph,identity,(0.0,0.0),maps);along=worked_out(graph,identity,(1.0,0.0),maps);up=worked_out(graph,identity,(0.0,1.0),maps)
+        if len(maps)!=1:return None
+        matrix=[along[0]-origin[0],up[0]-origin[0],origin[0],along[1]-origin[1],up[1]-origin[1],origin[1]]
+        for u,v in ((1.0,1.0),(.37,-2.5),(-4.0,.61)):
+            got=worked_out(graph,identity,(u,v),maps)
+            want=(matrix[0]*u+matrix[1]*v+matrix[2],matrix[3]*u+matrix[4]*v+matrix[5])
+            if any(abs(g-w)>1e-6*(1+abs(w)) for g,w in zip(got,want)):return None
+    except (NotArithmetic,ValueError,TypeError,KeyError,IndexError,ZeroDivisionError,OverflowError):
+        return None
+    if not all(math.isfinite(v) for v in matrix) or abs(matrix[0]*matrix[4]-matrix[1]*matrix[3])<1e-12:return None
+    return next(iter(maps)),matrix
+
+
+def wired_descriptor(graph,node):
+    """The texture coordinates of an image whose UVs come through other nodes, where those nodes only move,
+    turn and scale them: the plugin then puts the result on the meshes, as it does an image's own UV map.
+    None if the nodes do more than that."""
+    source=node.get('inputs',{}).get('texcoord')
+    found=uv_affine(graph,source) if source else None
+    if found is None:return None
+    layer={'projection':'uv','uv_map':found[0],'uv_matrix':[round(v,9) for v in found[1]],'scale':[1,1]}
+    layer['coordinate_key']=coordinates.key(layer)
+    return layer
+
+
 # MoonRay's numbering of the spaces a RampMap or GradientMap can be laid out in.
 SPACE_RENDER,SPACE_WORLD,SPACE_OBJECT,SPACE_TEXTURE=0,2,4,6
 
@@ -160,6 +238,8 @@ def descriptors(graph):
     g=validate(graph)
     result=[image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
     result+=[layer for layer in (space_descriptor(node) for node in g['nodes'].values()) if layer]
+    # Images whose UVs are moved, turned or scaled by other nodes: MoonLight reads them from the meshes.
+    result+=[layer for layer in (wired_descriptor(g,node) for node in g['nodes'].values() if node['type']=='image' and 'texcoord' in node.get('inputs',{})) if layer]
     for node in g['nodes'].values():
         if node['type']=='normalmap':
             descriptor=normal_descriptor(node,g)

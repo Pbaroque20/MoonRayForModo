@@ -28,7 +28,7 @@ FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'm
           'coatRough': (0, 1), 'dissolve': (0, 1), 'aniso': (-1, 1), 'subsAmt': (0, 1), 'subsCol': None}
 LAYER_GROUP_BEGIN, LAYER_GROUP_END, LAYER_MASK_BASE, MASK_REGISTERS, GROUP_DEPTH = 32, 33, 40, 4, 4
 LAYER_MASKED, LAYER_MASK_SHIFT = 1 << 11, 12
-MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN = 1, 2, 16
+MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN, MATERIAL_CONDUCTOR = 1, 2, 16, 32
 LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
@@ -112,7 +112,8 @@ def native_surface(shader, parameters, note):
     emission = get('emission', white) if get('show_emission', False) else black
     radius = float(get('scattering_radius', 0.0))
     for switch, label in NATIVE_EXTRAS:
-        if get(switch, False):
+        # Switched on but with none of it, a lobe is nothing to leave out.
+        if get(switch, False) and float(get(label, 1.0) or 0.0) > 0:
             note(label)
     if float(get('iridescence', 0.0)) > 0:
         note('iridescence')
@@ -144,7 +145,7 @@ GRAPH_SWITCHES = {'emission': 'show_emission', 'clearcoat': 'show_clearcoat', 'c
 GRAPH_WRAP = {'periodic': 'repeat', 'repeat': 'repeat', 'clamp': 'edge', 'mirror': 'mirror', 'black': 'reset'}
 
 
-def graph_image(node):
+def graph_image(node, graph=None):
     """An image node of a material graph as a texture layer, or a word for why it cannot be one."""
     from . import nodes
     values = node.get('parameters', {})
@@ -157,6 +158,12 @@ def graph_image(node):
         if 'texcoord' not in node.get('inputs', {}):
             # Its UV map and scale are baked onto the meshes under this name.
             layer['coordinate_key'] = nodes.image_descriptor(node)['coordinate_key']
+        else:
+            # UVs that other nodes move, turn or scale are on the meshes too; anything else they do is not followed.
+            placed = nodes.wired_descriptor(graph, node) if graph is not None else None
+            if placed is None:
+                return 'an image whose texture coordinates are worked out by nodes'
+            layer['coordinate_key'] = placed['coordinate_key']
         return layer
     if node['type'] == 'ImageMap':
         if not values.get('texture'):
@@ -168,6 +175,171 @@ def graph_image(node):
             layer['srgb'] = bool(values.get('gamma'))
         return layer
     return '%s nodes' % node['type']
+
+
+def graph_expression(graph, identity, effect):
+    """What simple arithmetic between images comes to as a stack of texture layers, or None if it is more than that.
+
+    Material libraries build a value from a few images: one blended into another through a third, an image
+    brought into a range, images added or taken away. Each of those is something a layer does (a blend
+    mode, a mask, a gain and offset), so the nodes can be shown as they are, at the images' own sharpness,
+    where baking them to one picture would lose detail finer than the picture. The limits put on a value part
+    way through are not kept: only where the value is used.
+    """
+    from . import nodes
+    members = graph['nodes']
+    counter = [0]
+
+    def fresh():
+        counter[0] += 1
+        return '%s:%d' % (identity, counter[0])
+
+    def number(key):
+        """A node that is one number, whatever it is built from; None otherwise."""
+        try:
+            first = nodes.worked_out(graph, key, (0.0, 0.0), set())
+            second = nodes.worked_out(graph, key, (.37, .81), set())
+        except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError, OverflowError):
+            return None
+        return first if first == second else None
+
+    def source_of(node, key, default):
+        wired = node.get('inputs', {}).get(key)
+        if wired is not None:
+            return wired, None
+        value = node.get('parameters', {}).get(key, default)
+        return None, ([float(value)] * 3 if isinstance(value, (int, float)) else [float(v) for v in value])
+
+    def constant(node, key, default):
+        wired, value = source_of(node, key, default)
+        return number(wired) if wired is not None else value
+
+    def leaf(key):
+        """One image, perhaps one channel of it, scaled and shifted: (layer, gain, offset), or a constant: (None, value)."""
+        node = members.get(key)
+        if node is None:
+            return None
+        fixed = number(key)
+        if fixed is not None:
+            return (None, fixed)
+        kind = node['type']
+        if kind in ('image', 'ImageMap'):
+            layer = graph_image(node, graph)
+            return None if isinstance(layer, str) else (layer, 1.0, 0.0)
+        if kind in ('clamp', 'convert') and 'in' in node.get('inputs', {}):
+            return leaf(node['inputs']['in'])
+        if kind == 'swizzle' and 'in' in node.get('inputs', {}):
+            inner = leaf(node['inputs']['in'])
+            channels = str(node.get('parameters', {}).get('channels', 'rgb'))
+            if inner is None or inner[0] is None or len(channels) != 1 or channels not in 'rgbxyz' or inner[0].get('image_channel'):
+                return None
+            return (dict(inner[0], image_channel=('red', 'green', 'blue')['rgbxyz'.index(channels) % 3]), inner[1], inner[2])
+        if kind in ('multiply', 'add', 'subtract'):
+            for varying, steady, flipped in (('in1', 'in2', False), ('in2', 'in1', True)):
+                if varying not in node.get('inputs', {}):
+                    continue
+                amount = constant(node, steady, MATH_NEUTRAL[kind])
+                inner = leaf(node['inputs'][varying])
+                if amount is None or inner is None or inner[0] is None or len(set(amount)) != 1:
+                    continue
+                layer, gain, offset = inner
+                if kind == 'multiply':
+                    return (layer, gain * amount[0], offset * amount[0])
+                if kind == 'add':
+                    return (layer, gain, offset + amount[0])
+                return (layer, -gain, amount[0] - offset) if flipped else (layer, gain, offset - amount[0])
+            return None
+        if kind == 'lerp' and 'mix' in node.get('inputs', {}):
+            # Between two numbers by an image: the image brought into their range.
+            low, high = constant(node, 'bg', 0.0), constant(node, 'fg', 1.0)
+            inner = leaf(node['inputs']['mix'])
+            if low is None or high is None or inner is None or inner[0] is None or len(set(low)) != 1 or len(set(high)) != 1:
+                return None
+            layer, gain, offset = inner
+            return (layer, gain * (high[0] - low[0]), low[0] + offset * (high[0] - low[0]))
+        return None
+
+    def placed(found, blend='normal', opacity=1.0, as_effect=None):
+        """A leaf as a layer dictionary."""
+        if found[0] is None:
+            layer = {'kind': 'constant', 'value': list(found[1])}
+        else:
+            layer, gain, offset = found
+            layer = dict(layer)
+            if (gain, offset) != (1.0, 0.0):
+                # The layer's contrast and brightness are a gain and an offset in other words.
+                brightness = gain + 2 * offset
+                if abs(brightness) < 1e-9:
+                    return None
+                layer['corrections'] = {'contrast': gain / brightness, 'brightness': brightness, 'gamma': 1}
+        layer.update(effect=as_effect or effect, blend=blend, opacity=opacity, identity=fresh())
+        return layer
+
+    def terms(key, depth=0):
+        """The parts of a sum, through any limits put on it part way."""
+        node = members.get(key)
+        if node is not None and depth < 50 and leaf(key) is None:
+            if node['type'] == 'clamp' and 'in' in node.get('inputs', {}):
+                return terms(node['inputs']['in'], depth + 1)
+            if node['type'] == 'add' and {'in1', 'in2'} <= set(node.get('inputs', {})):
+                return terms(node['inputs']['in1'], depth + 1) + terms(node['inputs']['in2'], depth + 1)
+        return [key]
+
+    def chain(key, depth=0):
+        if depth > 50:
+            return None
+        found = leaf(key)
+        if found is not None:
+            layer = placed(found)
+            return None if layer is None else [layer]
+        node = members.get(key)
+        if node is None:
+            return None
+        kind, inputs = node['type'], node.get('inputs', {})
+        if kind in ('clamp', 'convert') and 'in' in inputs:
+            return chain(inputs['in'], depth + 1)
+        if kind in ('add', 'subtract', 'multiply') and {'in1', 'in2'} <= set(inputs):
+            orders = [('in1', 'in2')] + ([('in2', 'in1')] if kind != 'subtract' else [])
+            for under, over in orders:
+                parts = terms(inputs[over]) if kind != 'multiply' else [inputs[over]]
+                leaves = [leaf(part) for part in parts]
+                if any(found is None for found in leaves):
+                    continue
+                below = chain(inputs[under], depth + 1)
+                above = [placed(found, kind) for found in leaves]
+                if below is None or any(layer is None for layer in above):
+                    continue
+                return below + above
+            return None
+        if kind == 'lerp' and 'fg' in inputs:
+            over = leaf(inputs['fg'])
+            if over is None:
+                return None
+            wired, amount = source_of(node, 'mix', .5)
+            below = chain(inputs['bg'], depth + 1) if 'bg' in inputs else [placed((None, constant(node, 'bg', 0.0) or [0.0] * 3))]
+            if below is None:
+                return None
+            if wired is None or number(wired) is not None:
+                share = amount if wired is None else number(wired)
+                top = placed(over, opacity=min(1.0, max(0.0, share[0])))
+                return None if top is None else below + [top]
+            mask = leaf(wired)
+            top = placed(over)
+            if mask is None or mask[0] is None or top is None:
+                return None
+            cover = placed(mask, as_effect='layerMask')
+            if cover is None:
+                return None
+            # A mask comes before the layer it covers, and names it.
+            cover['mask_target'] = top['identity']
+            return below + [cover, top]
+        return None
+
+    return chain(identity)
+
+
+# What leaves a value alone, for the arithmetic nodes: the other input of an add is 0, of a multiply 1.
+MATH_NEUTRAL = {'multiply': 1.0, 'add': 0.0, 'subtract': 0.0}
 
 
 def graph_layers(source, note, runtime=None):
@@ -187,7 +359,12 @@ def graph_layers(source, note, runtime=None):
             continue
         effect = GRAPH_INPUTS.get(key)
         if effect is None:
-            note('a map wired to %s' % key.replace('_', ' '))
+            from . import graph_bake
+            # A metal is tinted by its base colour here; a metal colour that is the base colour, or what it is
+            # made from, is therefore already shown.
+            shared = key == 'metallic_color' and 'albedo' in root.get('inputs', {}) and identity in graph_bake.feeding(graph, root['inputs']['albedo'])
+            if not shared:
+                note('a map wired to %s' % key.replace('_', ' '))
             continue
         if key in GRAPH_SWITCHES and not switches.get(GRAPH_SWITCHES[key], False):
             continue
@@ -196,8 +373,16 @@ def graph_layers(source, note, runtime=None):
             node = graph['nodes'].get(node.get('inputs', {}).get('in'))
             if node is None:
                 continue
-        layer = graph_image(node)
+        layer = graph_image(node, graph)
         if isinstance(layer, str):
+            # Arithmetic between images is shown as layers, at the images' own sharpness.
+            stack = graph_expression(graph, identity if effect != 'normal' else root.get('inputs', {}).get(key) and next(
+                (k for k, v in graph['nodes'].items() if v is node), identity), effect)
+            if stack:
+                if effect == 'dissolve':
+                    stack[-1]['invert'] = True
+                layers += stack
+                continue
             # Not an image: have MoonRay make one of it.
             from . import graph_bake
             target = graph['nodes'].get(identity) if effect != 'normal' else node
@@ -644,6 +829,9 @@ class Compiler:
                 ior = 1.0
         # A stack's coat is DwaBaseMaterial's outer specular, which shades what is beneath it.
         flags = (MATERIAL_THIN if source.get('thin_geometry') else 0) | (MATERIAL_COAT_DIMS if stack else 0)
+        # A metal rendered through DwaBaseMaterial reflects by its own curve, with a white edge.
+        if dwa:
+            flags |= MATERIAL_CONDUCTOR
         # The plugin selects DwaBaseMaterial's Beckmann lobe only where anisotropy stretches it. Everything else gets GGX.
         stretched = bool(dwa and (source.get('anisotropy', 0) or 'aniso' in effects or any(m.get('anisotropy', 0) for m in stack or [])))
         if stretched or source.get('anisotropy', 0) or source.get('_beckmann'):

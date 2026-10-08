@@ -397,6 +397,7 @@ struct Surface {
     bool coatDims;          // the coat takes its reflection out of what is beneath it
     bool thin;
     bool beckmann;          // the specular lobe's distribution; the coat is always GGX
+    bool conductor;         // a metal's reflection follows DwaBaseMaterial's curve
     bool matte;             // light coming out from beneath the surface: diffuse only
     float roughness;
     float alphaX, alphaY;   // the Beckmann lobe's width along and across the surface tangent
@@ -422,6 +423,7 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.coatDims = (hit.flags & MATERIAL_COAT_DIMS) != 0;
     s.thin = (hit.flags & MATERIAL_THIN) != 0;
     s.beckmann = (hit.flags & MATERIAL_BECKMANN) != 0;
+    s.conductor = (hit.flags & MATERIAL_CONDUCTOR) != 0;
     s.matte = (hit.flags & MATERIAL_MATTE) != 0;
     s.roughness = sqrtf(s.alpha);
     s.alphaX = s.alphaY = s.alpha;
@@ -454,9 +456,30 @@ ML_INLINE float3 schlick(float3 f0, float cosine) {
     const float m = clamp(1.0f - cosine, 0.0f, 1.0f);
     return f0 + (vec(1.0f) - f0) * (m * m * m * m * m);
 }
+// How much a metal reflects at an angle, as MoonRay works it out for DwaBaseMaterial: the colour seen straight on
+// and a white edge are turned into a complex index of refraction (Gulbrandsen, "Artist Friendly Metallic
+// Fresnel"), which then reflects as a real conductor does. It lightens toward the edge sooner than Schlick's curve.
+ML_INLINE float conductorChannel(float reflectance, float cosine) {
+    const float r = clamp(reflectance, 0.0f, 0.999f), edge = 0.999f;
+    const float root = sqrtf(r);
+    const float n = edge * (1.0f - r) / (1.0f + r) + (1.0f - edge) * (1.0f + root) / (1.0f - root);
+    const float k2 = fmaxf(0.0f, r * (n + 1.0f) * (n + 1.0f) - (n - 1.0f) * (n - 1.0f)) / (1.0f - r);
+    const float c = clamp(cosine, 0.0f, 1.0f), cos2 = c * c, sin2 = 1.0f - cos2, n2 = n * n;
+    const float t0 = n2 - k2 - sin2;
+    const float both = sqrtf(t0 * t0 + 4.0f * n2 * k2);
+    const float t1 = both + cos2;
+    const float t2 = 2.0f * sqrtf(fmaxf(0.0f, 0.5f * (both + t0))) * c;
+    const float across = (t1 - t2) / fmaxf(t1 + t2, 1e-12f);
+    const float t3 = cos2 * both + sin2 * sin2, t4 = t2 * sin2;
+    return 0.5f * (across + across * (t3 - t4) / fmaxf(t3 + t4, 1e-12f));
+}
+ML_INLINE float3 conductorFresnel(float3 reflectance, float cosine) {
+    return make_float3(conductorChannel(reflectance.x, cosine), conductorChannel(reflectance.y, cosine), conductorChannel(reflectance.z, cosine));
+}
 // A conductor of the base colour weighted by metallic, over a dielectric.
 ML_INLINE float3 specularFresnel(const Surface& s, float cosine) {
-    return lerp(vec(s.specular * dielectricFresnel(cosine, s.ior)), schlick(s.albedo, cosine), s.metallic);
+    if (s.metallic <= 0.0f) return vec(s.specular * dielectricFresnel(cosine, s.ior));
+    return lerp(vec(s.specular * dielectricFresnel(cosine, s.ior)), s.conductor ? conductorFresnel(s.albedo, cosine) : schlick(s.albedo, cosine), s.metallic);
 }
 // What reaches the lobes under the coat.
 ML_INLINE float underCoat(const Surface& s, float3 wo) {
