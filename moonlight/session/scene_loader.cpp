@@ -315,6 +315,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
 
     std::vector<Light> localLights(in.value<uint32_t>());
     std::vector<std::vector<float>> lightTriangles(localLights.size());
+    std::vector<std::vector<LightFilter>> lightFilters(localLights.size());
+    const auto image = [&](int32_t texture) {
+        if (texture >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLightIPR scene light refers to a missing texture");
+        return texture < 0 ? -1 : int32_t(textureIndices[texture]);
+    };
     for (size_t l = 0; l < localLights.size(); ++l) {
         Light& light = localLights[l];
         const uint32_t kind = in.value<uint32_t>();
@@ -330,6 +335,19 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         in.floats(light.radiance, 3);
         light.outerConeDegrees = in.value<float>();
         light.innerConeDegrees = in.value<float>();
+        light.texture = image(in.value<int32_t>());
+        lightFilters[l].resize(in.value<uint32_t>());
+        for (LightFilter& filter : lightFilters[l]) {
+            const uint32_t filterKind = in.value<uint32_t>();
+            if (filterKind > LightFilter::Ramp) throw std::runtime_error("MoonLightIPR scene has an unknown light filter");
+            filter.kind = LightFilter::Kind(filterKind);
+            filter.flags = in.value<uint32_t>();
+            in.floats(filter.values, 4);
+            in.floats(filter.rows, 12);
+            filter.texture = image(in.value<int32_t>());
+        }
+        light.filters = lightFilters[l].data();
+        light.filterCount = lightFilters[l].size();
         if (light.kind == Light::Mesh) {
             lightTriangles[l] = in.array<float>(size_t(in.value<uint32_t>()) * 9);
             light.triangles = lightTriangles[l].data();

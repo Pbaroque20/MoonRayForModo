@@ -196,10 +196,11 @@ struct Renderer::Impl {
     std::vector<std::unique_ptr<Mesh>> meshes;
     std::vector<std::unique_ptr<Texture>> textures;
     std::vector<int32_t> layerTextures;     // every texture the current layers use
+    std::vector<int32_t> lightTextures;     // and those the lights and their filters use
     std::vector<Instance> instances;
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
     Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, albedoTables, instanceInput, instanceAccel, accelTemp;
-    Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles;
+    Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer beauty, albedo, normal, denoised, paramsBuffer;
 
     OptixDenoiser denoiser = nullptr;
@@ -649,8 +650,9 @@ uint32_t Renderer::addTexture(const TextureDesc& desc) {
 
 void Renderer::removeTexture(uint32_t texture) {
     if (texture >= impl->textures.size() || !impl->textures[texture]) throw std::runtime_error("MoonLightIPR texture does not exist");
-    if (std::find(impl->layerTextures.begin(), impl->layerTextures.end(), int32_t(texture)) != impl->layerTextures.end())
-        throw std::runtime_error("MoonLightIPR texture is still used by a material");
+    if (std::find(impl->layerTextures.begin(), impl->layerTextures.end(), int32_t(texture)) != impl->layerTextures.end()
+        || std::find(impl->lightTextures.begin(), impl->lightTextures.end(), int32_t(texture)) != impl->lightTextures.end())
+        throw std::runtime_error("MoonLightIPR texture is still used by a material or a light");
     ML_CHECK(cudaDeviceSynchronize());  // a queued launch may still sample it
     impl->textures[texture].reset();
 }
@@ -824,6 +826,14 @@ void Renderer::setLights(const Light* lights, size_t count) {
     std::vector<DeviceLight> table(count);
     std::vector<float> triangles;       // of every mesh light, 10 floats each
     std::vector<size_t> triangleStart(count, 0);
+    std::vector<DeviceFilter> filters;
+    std::vector<int32_t> used;
+    const auto object = [&](int32_t texture) {
+        if (texture < 0 || size_t(texture) >= impl->textures.size() || !impl->textures[texture])
+            throw std::runtime_error("MoonLightIPR light refers to a missing texture");
+        used.push_back(texture);
+        return static_cast<unsigned long long>(impl->textures[texture]->object);
+    };
     impl->params.envPortal = 0;
     for (size_t i = 0; i < count; ++i) {
         const Light& light = lights[i];
@@ -831,6 +841,22 @@ void Renderer::setLights(const Light* lights, size_t count) {
         out = DeviceLight{};
         out.type = light.kind;
         std::copy(light.radiance, light.radiance + 3, out.radiance);
+        if (light.texture >= 0 && light.kind == Light::Rect) out.texture = object(light.texture);
+        out.filterStart = unsigned(filters.size());
+        out.filterCount = unsigned(light.filterCount);
+        for (size_t f = 0; f < light.filterCount; ++f) {
+            const LightFilter& in = light.filters[f];
+            DeviceFilter filter = {};
+            filter.type = in.kind;
+            filter.flags = in.flags;
+            std::copy(in.values, in.values + 4, filter.a);
+            std::copy(in.rows, in.rows + 12, filter.rows);
+            if (in.kind == LightFilter::Ramp) {
+                if (!(in.values[1] > in.values[0])) throw std::runtime_error("MoonLightIPR ramp filter has no length");
+                filter.texture = object(in.texture);
+            }
+            filters.push_back(filter);
+        }
         if (light.kind == Light::Mesh) {
             // A corner, two edges and the running share of the area, which picks a triangle.
             if (!light.triangles || !light.triangleCount || light.triangleCount > 0xffffffffu)
@@ -915,6 +941,9 @@ void Renderer::setLights(const Light* lights, size_t count) {
     impl->params.lights = impl->lights.ptr;
     impl->params.lightCount = unsigned(count);
     impl->lightCount = count;
+    impl->lightFilters.upload(filters);
+    impl->params.lightFilters = impl->lightFilters.ptr;
+    impl->lightTextures = std::move(used);
     impl->restart();
 }
 

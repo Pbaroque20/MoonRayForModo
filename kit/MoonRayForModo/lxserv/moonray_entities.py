@@ -127,6 +127,9 @@ def register():
         """The names of the scene's MoonRay items of one kind, for a picker."""
         import modo
         scene=modo.Scene();names=[]
+        if category=='mesh':
+            # A mesh light emits from a real mesh, so these are the scene's Modo meshes.
+            return sorted({item.name for item in scene.items('mesh',superType=False)})
         for name in kinds(category):
             try:names+=[item.name for item in scene.items(entities.item_type(name),superType=False) if item.id not in excluding]
             except (LookupError,RuntimeError,TypeError):pass
@@ -183,9 +186,9 @@ def register():
         import modo
         scene=modo.Scene();name=kinds(category)[index]
         taken={item.name for item in scene.items()}
-        label,count=name,1
+        label,count=entities.display(name),1
         while label in taken:
-            count+=1;label='%s %d'%(name,count)
+            count+=1;label='%s %d'%(entities.display(name),count)
         item=scene.addItem(entities.item_type(name),name=label)
         for key,value in entities.STARTING.get(name,{}).items():
             try:item.channel(entities.CHANNEL_PREFIX+key).set(value)
@@ -195,7 +198,7 @@ def register():
     def offered(category,held=()):
         """What a picker lists: the scene's items of the kind, then one entry per class to make a new one."""
         existing=[n for n in candidates(category,{item.id for owner in entities.classes() for item in chosen(owner)}) if n not in held]
-        return existing,['New '+spaced(n) for n in kinds(category)]
+        return existing,([] if category=='mesh' else ['New '+entities.display(n) for n in kinds(category)])
 
     def pick_command(name,channel,category):
         """A popup of the MoonRay items an attribute can point at: none, those in the scene, or a new one."""
@@ -282,6 +285,27 @@ def register():
                 for item in items:item.channel(channel).set(str(path).replace('\\','/'))
         return Browse
 
+    def ramp_command(name,label,keys):
+        """Opens the ramp editor on the three lists that make one ramp."""
+        attributes=entities.catalog()[name]['attributes']
+        kinds=[attributes[key]['type'] for key in keys]
+        channels=[entities.CHANNEL_PREFIX+key for key in keys]
+        class Ramp(lxu.command.BasicCommand):
+            def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+            def basic_Enable(self,msg):return len(chosen(name))==1
+            def basic_Execute(self,msg,flags):
+                items=chosen(name)
+                if len(items)!=1:return
+                from moonray_modo import ramp_editor
+                texts=ramp_editor.edit(label,kinds,[text(items[0],channel) for channel in channels])
+                if texts is None:return
+                for channel,value in zip(channels,texts):items[0].channel(channel).set(value)
+        return Ramp
+
+    for i,name in enumerate(entities.classes()):
+        for k,(label,positions,values,interpolations) in enumerate(entities.RAMPS.get(name,[])):
+            lx.bless(ramp_command(name,label,(positions,values,interpolations)),'moonray.entity.ramp%d_%d'%(i,k))
+
     for i,name in enumerate(entities.classes()):
         attributes=entities.catalog()[name]['attributes']
         for j,(key,channel,kind,default,choices) in enumerate(entities.channels(name)):
@@ -290,6 +314,8 @@ def register():
             elif category and spec['type']=='SceneObject*':
                 # A portal shows an environment or a distant light, not any light.
                 if (name,key)==('PortalLight','light'):category=('EnvLight','DistantLight')
+                # And only a real mesh can be a mesh light's surface, or a bake camera's subject.
+                if key=='geometry':category="mesh"
                 lx.bless(pick_command(name,channel,category),'moonray.entity.pick%d_%d'%(i,j))
             elif category:
                 lx.bless(append_command(name,channel,category),'moonray.entity.append%d_%d'%(i,j))
@@ -297,7 +323,7 @@ def register():
             elif spec.get('filename'):lx.bless(browse_command(name,channel,spec.get('label',key.replace('_',' '))),'moonray.entity.browse%d_%d'%(i,j))
 
     for name in entities.classes():
-        lx.bless(package(name),entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'locator',lx.symbol.sSRV_USERNAME:'MoonRay '+name})
+        lx.bless(package(name),entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'locator',lx.symbol.sSRV_USERNAME:entities.display(name)})
 
     # The first, generic item kept its class and values in a tag. It stays registered so that
     # scenes holding one still load and render; new items use the types above.
@@ -317,7 +343,7 @@ def register():
             name=self.dyna_String(0)
             if name not in entities.catalog():raise ValueError('Unknown MoonRay class: '+name)
             scene=modo.Scene()
-            item=scene.addItem(entities.item_type(name),name=name)
+            item=scene.addItem(entities.item_type(name),name=entities.display(name))
             # MoonRay's own starting values make some items do nothing visible; begin with ones that show.
             for key,value in entities.STARTING.get(name,{}).items():
                 try:item.channel(entities.CHANNEL_PREFIX+key).set(value)

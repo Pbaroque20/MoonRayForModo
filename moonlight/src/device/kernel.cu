@@ -175,8 +175,8 @@ ML_INLINE float sphereVersine(float radiusSquared, float distanceSquared) {
 }
 
 // Picks a direction from p towards the light; false if the light cannot reach p.
-ML_INLINE bool sampleLight(const DeviceLight& light, float3 p, float u1, float u2,
-                           float3& wi, float& distance, float& pdf, float3& radiance) {
+ML_INLINE bool sampleLightShape(const DeviceLight& light, float3 p, float u1, float u2,
+                                float3& wi, float& distance, float& pdf, float3& radiance) {
     const float3 centre = vec(light.position);
     radiance = vec(light.radiance);
     if (light.type == LIGHT_SPHERE) {
@@ -254,8 +254,8 @@ ML_INLINE bool sampleLight(const DeviceLight& light, float3 p, float u1, float u
 }
 
 // For a scattered ray: does it reach the light before maxDistance, and with what sampling density?
-ML_INLINE bool hitLight(const DeviceLight& light, float3 p, float3 direction, float maxDistance,
-                        float& pdf, float3& radiance) {
+ML_INLINE bool hitLightShape(const DeviceLight& light, float3 p, float3 direction, float maxDistance,
+                             float& pdf, float3& radiance, float& reached) {
     const float3 centre = vec(light.position);
     radiance = vec(light.radiance);
     if (light.type == LIGHT_SPHERE) {
@@ -265,6 +265,7 @@ ML_INLINE bool hitLight(const DeviceLight& light, float3 p, float3 direction, fl
         if (distanceSquared <= radiusSquared || along <= 0.0f) return false;
         const float discriminant = radiusSquared - (distanceSquared - along * along);
         if (discriminant < 0.0f || along - sqrtf(discriminant) >= maxDistance) return false;
+        reached = along - sqrtf(discriminant);
         pdf = 1.0f / (2.0f * ML_PI * sphereVersine(radiusSquared, distanceSquared));
         return true;
     }
@@ -286,6 +287,7 @@ ML_INLINE bool hitLight(const DeviceLight& light, float3 p, float3 direction, fl
         const float3 outward = (direction * distance - toCentre - axis * y) * (1.0f / light.radius);
         const float cosine = -dot(direction, outward);
         if (cosine <= 1e-6f) return false;
+        reached = distance;
         pdf = distance * distance / (light.area * cosine);
         return true;
     }
@@ -300,9 +302,64 @@ ML_INLINE bool hitLight(const DeviceLight& light, float3 p, float3 direction, fl
         const float3 u = vec(light.u), v = vec(light.v);
         if (fabsf(dot(offset, u)) > dot(u, u) || fabsf(dot(offset, v)) > dot(v, v)) return false;
     } else if (dot(offset, offset) > light.radius * light.radius) return false;
+    reached = distance;
     pdf = distance * distance / (light.area * cosine);
     if (light.type == LIGHT_SPOT) radiance = radiance * spotFalloff(light, p, onLight);
     if (light.type == LIGHT_PORTAL) radiance = radiance * envRadiance(direction);
+    return true;
+}
+
+// What a light's picture and its filters make of the light travelling from it to p: the point
+// on the light is distance along wi.
+ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float distance) {
+    float3 tint = vec(1.0f);
+    if (light.texture) {
+        // MoonRay runs u and v against the light's own x and y.
+        const float3 offset = p + wi * distance - vec(light.position), u = vec(light.u), v = vec(light.v);
+        const float4 texel = tex2D<float4>(light.texture, 0.5f - 0.5f * dot(offset, u) / dot(u, u), 0.5f + 0.5f * dot(offset, v) / dot(v, v));
+        tint = make_float3(texel.x, texel.y, texel.z);
+    }
+    const DeviceFilter* filters = reinterpret_cast<const DeviceFilter*>(params.lightFilters) + light.filterStart;
+    for (unsigned i = 0; i < light.filterCount; ++i) {
+        const DeviceFilter& filter = filters[i];
+        if (filter.type == FILTER_DECAY) {
+            // Fades in from near start to near end, and out from far start to far end.
+            float value = 1.0f;
+            if (((filter.flags & FILTER_NEAR) && distance < filter.a[0]) || ((filter.flags & FILTER_FAR) && distance > filter.a[3])) value = 0.0f;
+            else if ((filter.flags & FILTER_NEAR) && distance < filter.a[1]) value = (distance - filter.a[0]) / (filter.a[1] - filter.a[0]);
+            else if ((filter.flags & FILTER_FAR) && distance > filter.a[2]) value = (filter.a[3] - distance) / (filter.a[3] - filter.a[2]);
+            tint = tint * value;
+            continue;
+        }
+        // A colour by distance: from the light or the filter, or along the way either faces.
+        float along = distance;
+        if (filter.flags & FILTER_PLACED) {
+            const float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
+                                             dot(vec(filter.rows + 8), p) + filter.rows[11]);
+            along = (filter.flags & FILTER_DIRECTIONAL) ? -local.z : length(local);
+        } else if (filter.flags & FILTER_DIRECTIONAL) {
+            along = dot(p - vec(light.position), vec(light.normal));
+        }
+        if (filter.flags & FILTER_DIRECTIONAL) along = (filter.flags & FILTER_MIRROR) ? fabsf(along) : fmaxf(along, 0.0f);
+        const float t = clamp((along - filter.a[0]) / (filter.a[1] - filter.a[0]), 0.0f, 1.0f);
+        const float4 texel = tex2D<float4>(filter.texture, (t * 256.0f + 0.5f) / 257.0f, 0.5f);
+        tint = tint * (vec(1.0f - filter.a[3]) + make_float3(texel.x, texel.y, texel.z) * (filter.a[2] * filter.a[3]));
+    }
+    return tint;
+}
+
+ML_INLINE bool sampleLight(const DeviceLight& light, float3 p, float u1, float u2,
+                           float3& wi, float& distance, float& pdf, float3& radiance) {
+    if (!sampleLightShape(light, p, u1, u2, wi, distance, pdf, radiance)) return false;
+    if (light.texture || light.filterCount) radiance = radiance * lightTint(light, p, wi, distance);
+    return true;
+}
+
+ML_INLINE bool hitLight(const DeviceLight& light, float3 p, float3 direction, float maxDistance,
+                        float& pdf, float3& radiance) {
+    float reached = 0.0f;
+    if (!hitLightShape(light, p, direction, maxDistance, pdf, radiance, reached)) return false;
+    if (light.texture || light.filterCount) radiance = radiance * lightTint(light, p, direction, reached);
     return true;
 }
 

@@ -141,6 +141,22 @@ struct DistantLight {
     float angularExtentDegrees = 0.5f;  // full angle of the disc
 };
 
+// What a light filter does to a light's radiance on its way to a point, as MoonRay's
+// DecayLightFilter and ColorRampLightFilter. Scale a light's radiance directly for a plain
+// intensity filter.
+struct LightFilter {
+    enum Kind : uint32_t { Decay = 0, Ramp = 1 };
+    Kind kind = Decay;
+    // Decay: 1 falls off near, 2 falls off far. Ramp: 1 measures along the light's direction
+    // rather than from it, 2 mirrors behind the light, 4 measures in the filter's own space.
+    uint32_t flags = 0;
+    // Decay: near start, near end, far start, far end. Ramp: begin and end distance, intensity, density.
+    float values[4] = {0, 0, 0, 0};
+    // Ramp with flag 4: world to the filter's space, three rows of (x, y, z, offset).
+    float rows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+    int32_t texture = -1;   // ramp: a 257 x 1 image of its colours from begin to end
+};
+
 // A sphere, rectangle, disc, spot, cylinder, portal or mesh light, as MoonRay's lights of the
 // same names. The flat kinds emit from one side, along direction. A cylinder stands along axisY
 // and emits from its side. A portal is a rectangle that shows the lighting environment, which
@@ -161,6 +177,9 @@ struct Light {
     float innerConeDegrees = 30.0f;     // spot: full angle where the falloff begins
     const float* triangles = nullptr;   // mesh: three world-space corners, 9 floats per triangle
     size_t triangleCount = 0;
+    int32_t texture = -1;               // rect: a picture across the light, from addTexture
+    const LightFilter* filters = nullptr;
+    size_t filterCount = 0;
 };
 
 struct Camera {

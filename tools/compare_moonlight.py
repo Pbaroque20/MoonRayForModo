@@ -196,6 +196,23 @@ def scenes(folder):
     emitting = dict(base, meshes=base['meshes'] + [panel],
                     production={'objects': {'panel': {'mesh_light': True, 'light_intensity': 60.0, 'light_color': [1, .85, .7]}}})
     return {'image_environment': dict(base, environments=[sky]), 'many_lights': dict(base, lights=many), **textured(folder),
+        # MoonRay light items with what MoonLightIPR applies to them: a decay and a tint on one
+        # light and a colour ramp on another; a picture on a rect light; a box that is a mesh light.
+        'entity_filters': dict(base, entities=[
+            {'identity': 'f_decay', 'name': 'Decay', 'class': 'DecayLightFilter', 'parameters': {'falloff_far': True, 'far_start': 4.5, 'far_end': 7.5}},
+            {'identity': 'f_tint', 'name': 'Tint', 'class': 'IntensityLightFilter', 'parameters': {'color': [1.0, .6, .3], 'intensity': 1.5}},
+            {'identity': 'f_ramp', 'name': 'Ramp', 'class': 'ColorRampLightFilter', 'matrix': fixture.placed(0, 0, 0), 'parameters': {
+                'begin_distance': 4.0, 'end_distance': 9.0, 'distances': [0.0, .5, 1.0], 'colors': [[1, .1, .1], [.1, 1, .1], [.1, .1, 1]],
+                'interpolation_types': [1, 4, 1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'SphereLight', 'matrix': fixture.placed(-3, 4, 2),
+             'parameters': {'intensity': 60.0, 'radius': .3, 'light_filters': ['Decay', 'Tint']}},
+            {'identity': 'l_fill', 'name': 'Fill', 'class': 'RectLight', 'matrix': aimed([3, 5, 3], [1, .5, 0]),
+             'parameters': {'intensity': 60.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Ramp']}}]),
+        'entity_textured_light': dict(base, entities=[
+            {'identity': 'l_panel', 'name': 'Panel', 'class': 'RectLight', 'matrix': aimed([0, 2.2, 3.5], [0, .8, 0]),
+             'parameters': {'intensity': 40.0, 'width': 3.0, 'height': 1.5, 'texture': test_images(folder)['colour']}}]),
+        'entity_mesh_light': dict(base, meshes=base['meshes'] + [panel], entities=[
+            {'identity': 'l_lamp', 'name': 'Glow', 'class': 'MeshLight', 'parameters': {'intensity': 60.0, 'color': [1.0, .85, .7], 'geometry': 'Panel'}}]),
         'layered_environment': dict(base, environments=[layered]),
         'physical_sky': dict(base, environments=[daylight]),
         'cylinder_light': dict(base, lights=[dict(lamp, kind='CylinderLight', intensity=60.0, radius=.15, height=2.5, matrix=aimed([-1, 4, 2], [0, .5, 0]))]),

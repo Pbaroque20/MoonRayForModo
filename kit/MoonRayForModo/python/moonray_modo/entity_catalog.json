@@ -2579,6 +2579,14 @@
         "name": "min_shadow_distance",
         "type": "Float"
       },
+      "modo_replace_environment": {
+        "comment": "Light the scene with this instead of the Modo environments and the preview environment light.",
+        "default": false,
+        "group": "Assignment",
+        "label": "replace Modo environment",
+        "name": "modo_replace_environment",
+        "type": "Bool"
+      },
       "offset": {
         "comment": "Per-channel offset used in tandem with a per-channel gain for color-correcting the light's texture, if one is present. This is achieved by applying the following formula for each channel: output = input * gain + offset",
         "default": [

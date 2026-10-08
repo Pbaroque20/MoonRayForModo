@@ -6,12 +6,15 @@ properties when an item of that class is selected. The item types and their chan
 lxserv/moonray_entities.py registers, both taken from entities.channels.
 """
 import json
+import sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
 kit = root / 'kit/MoonRayForModo'
 catalog = json.loads((kit / 'python/moonray_modo/entity_catalog.json').read_text(encoding='utf-8'))
+sys.path.insert(0, str(kit / 'python'))
+from moonray_modo import entities
 config = ET.Element('configuration')
 attributes = ET.SubElement(config, 'atom', type='Attributes')
 
@@ -83,17 +86,14 @@ for name in sorted(catalog, key=lambda name: (ORDER.index(catalog[name]['categor
     entry = catalog[name]
     if entry['category'] not in categories:
         categories[entry['category']] = nested(menu, 'MoonRayEntityMenu_%s:sheet' % entry['category'], entry['category_label'], menu=True)
-    control(categories[entry['category']], 'moonray.entity.add ' + name, spaced(name))
+    control(categories[entry['category']], 'moonray.entity.add ' + name, entities.display(name))
 
 # The forms, each shown only while an item of its type is selected and placed ahead of the
 # locator's own tabs, with a section per group of attributes; all but the first start closed.
 # Every control is the item's own channel, so Modo draws what suits it.
-import sys
-sys.path.insert(0, str(kit / 'python'))
-from moonray_modo import entities
 
 for i, name in enumerate(sorted(catalog)):
-    form = sheet('MoonRayEntity%d:sheet' % i, 'MoonRay ' + spaced(name))
+    form = sheet('MoonRayEntity%d:sheet' % i, entities.display(name))
     atom(form, 'FilterCommand', 'item.withTypeIsSelected {%s} testSupertypes:true' % entities.item_type(name))
     # Without this a form shown by a command never becomes the tab in front.
     atom(form, 'FilterCommandPriorityInfluencesTabChoice', 1)
@@ -109,6 +109,11 @@ for i, name in enumerate(sorted(catalog)):
         tip = brief(spec.get('comment', ''))
         channel_control = 'item.channel %s$%s ?' % (entities.item_type(name), channel)
         category = entities.reference_category(spec)
+        for k, (ramp_label, positions, _, _) in enumerate(entities.RAMPS.get(name, [])):
+            if key == positions:
+                # The three lists that follow make one ramp; this opens an editor on them together.
+                control(groups[group], 'moonray.entity.ramp%d_%d' % (i, k), 'Edit ' + ramp_label + '...',
+                        'Edit the stops, their values and how each blends into the next')
         if choices:
             # Named values: a popup drawn by a command.
             control(groups[group], 'moonray.entity.choice%d_%d ?' % (i, j), label, tip)

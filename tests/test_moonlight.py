@@ -74,7 +74,7 @@ class PackTests(unittest.TestCase):
         lit['production']={'objects':{'quad':{'mesh_light':True,'light_intensity':5.0}}}
         still=scene();still['meshes'][0].pop('instances');still['meshes'][0].pop('instance_ids')
         emitting,_,warnings=moonlight_scene.pack(lit,320,180)
-        self.assertEqual(len(emitting)-len(moonlight_scene.pack(still,320,180)[0]),4+80+4+2*36)
+        self.assertEqual(len(emitting)-len(moonlight_scene.pack(still,320,180)[0]),4+80+4+4+4+2*36)
         self.assertFalse(any('mesh light' in w for w in warnings))
 
 class EntityTests(unittest.TestCase):
@@ -114,8 +114,43 @@ class EntityTests(unittest.TestCase):
         with_items=scene();with_items['entities']=self.items()
         packed,_,warnings=moonlight_scene.pack(with_items,320,180)
         self.assertGreater(len(packed),len(moonlight_scene.pack(scene(),320,180)[0]))
-        for expected in ('light filters on Key','does not show volumes (Box)','RodLightFilter (Rod)','BaseVolume (Fog)','not Eye'):
+        for expected in ('does not apply RodLightFilter (Rod on Key)','does not show volumes (Box)','BaseVolume (Fog)','not Eye'):
             self.assertTrue(any(expected in w for w in warnings),expected)
+
+    def test_filters_a_light_picture_and_mesh_lights_reach_moonlight(self):
+        at=lambda x,y,z:[1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1]
+        plain=scene();plain['meshes'][0].pop('instances');plain['meshes'][0].pop('instance_ids')
+        light=lambda **more:{'identity':'key','name':'Key','class':'SphereLight','matrix':at(0,4,0),'parameters':dict({'intensity':5.0},**more)}
+        bare=dict(plain,entities=[light()])
+        base,_,_=moonlight_scene.pack(bare,320,180)
+        filters=[{'identity':'d','name':'Decay','class':'DecayLightFilter','parameters':{'falloff_far':True,'far_start':2.0,'far_end':5.0}},
+                 {'identity':'t','name':'Tint','class':'IntensityLightFilter','parameters':{'color':[1.0,.5,.25]}},
+                 {'identity':'r','name':'Ramp','class':'ColorRampLightFilter','matrix':at(0,0,0),'parameters':{}}]
+        packed,_,warnings=moonlight_scene.pack(dict(plain,entities=filters+[light(light_filters=['Decay','Tint','Ramp'])]),320,180)
+        self.assertFalse(any('filter' in w.lower() for w in warnings),warnings)
+        # Two filters of 80 bytes each for the renderer; the tint is folded into the light. The ramp adds an image.
+        self.assertGreater(len(packed)-len(base),160)
+        # A mesh light item makes the mesh it names emit, as Object controls would.
+        lit,_,warnings=moonlight_scene.pack(dict(plain,entities=[{'identity':'m','name':'Glow','class':'MeshLight','parameters':{'geometry':'Quad','intensity':3.0}}]),320,180)
+        by_controls,_,_=moonlight_scene.pack(dict(plain,production={'objects':{'quad':{'mesh_light':True,'light_color':[1.0,1.0,1.0],'light_intensity':3.0}}}),320,180)
+        self.assertEqual(lit,by_controls)
+        self.assertFalse(warnings,warnings)
+        _,_,warnings=moonlight_scene.pack(dict(plain,entities=[{'identity':'m','name':'Glow','class':'MeshLight','parameters':{'geometry':'Nothing'}}]),320,180)
+        self.assertTrue(any('needs the name of one Modo mesh' in w for w in warnings),warnings)
+
+    def test_a_moonray_environment_can_replace_modos(self):
+        from moonray_modo import rdla
+        sky={'kind':'constant','name':'Sky','intensity':1.0,'zenith':[.2,.3,.4],'nadir':[.2,.3,.4]}
+        env=lambda **more:{'identity':'e','name':'Env','class':'EnvLight','parameters':dict({'color':[1.0,.5,.25]},**more)}
+        base=scene();base['lights']=base['lights'][:1];base['environments']=[sky]
+        beside=rdla.scene_text(dict(base,entities=[env()]),320,180,1,.15)
+        instead=rdla.scene_text(dict(base,entities=[env(modo_replace_environment=True)]),320,180,1,.15)
+        self.assertIn('EnvLight("/modo/environment")',beside);self.assertIn('EnvLight("/modo/environment/scene/0")',beside)
+        self.assertNotIn('EnvLight("/modo/environment")',instead);self.assertNotIn('/modo/environment/scene/',instead)
+        self.assertIn('EnvLight("/modo/entity/e")',instead);self.assertNotIn('modo_replace_environment',instead)
+        a,_,_=moonlight_scene.pack(dict(base,entities=[env()]),320,180,.15)
+        b,_,_=moonlight_scene.pack(dict(base,entities=[env(modo_replace_environment=True)]),320,180,.15)
+        self.assertNotEqual(a,b)
 
 class DigestTests(unittest.TestCase):
     def test_follows_content_not_identity(self):

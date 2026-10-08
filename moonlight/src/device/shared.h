@@ -136,7 +136,23 @@ struct DeviceLight {
     float halfHeight;       // cylinder
     DevicePtr triangles;    // mesh: float[10] per triangle, a corner, two edges and the running share of the area
     unsigned triangleCount;
+    unsigned filterStart;   // this light's run in LaunchParams::lightFilters
+    unsigned long long texture;     // rect: a picture across the light, or 0
+    unsigned filterCount;
     unsigned pad;
+};
+
+// What a light filter does to the light arriving at a point, as MoonRay's DecayLightFilter and
+// ColorRampLightFilter. A plain intensity filter is folded into the light's radiance instead.
+const unsigned FILTER_DECAY = 0, FILTER_RAMP = 1;
+const unsigned FILTER_NEAR = 1, FILTER_FAR = 2;     // decay: which ends fall off
+const unsigned FILTER_DIRECTIONAL = 1, FILTER_MIRROR = 2, FILTER_PLACED = 4;    // ramp
+struct DeviceFilter {
+    unsigned type;
+    unsigned flags;
+    float a[4];             // decay: near start, near end, far start, far end. Ramp: begin, end, intensity, density
+    float rows[12];         // ramp with FILTER_PLACED: world to the filter's own space, three rows of (x, y, z, offset)
+    unsigned long long texture;     // ramp: its colours from begin to end, 257 across
 };
 
 // How much of the light a specular lobe reflects when its Fresnel term is one, tabulated over
@@ -177,6 +193,7 @@ struct LaunchParams {
 
     DevicePtr distantLights;    // DeviceDistantLight
     DevicePtr lights;           // DeviceLight
+    DevicePtr lightFilters;     // DeviceFilter, indexed from DeviceLight::filterStart
     unsigned distantLightCount;
     unsigned lightCount;
 

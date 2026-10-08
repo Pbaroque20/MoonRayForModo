@@ -136,8 +136,61 @@ def environment_section(scene, environment, warnings, runtime):
     return parts
 
 
-def lights(scene, warnings, environment=0.0):
+FILTER_DECAY, FILTER_RAMP = 0, 1
+FILTER_NEAR, FILTER_FAR = 1, 2
+FILTER_DIRECTIONAL, FILTER_MIRROR, FILTER_PLACED = 1, 2, 4
+RAMP_SAMPLES = 256
+
+
+def control_filters(settings, light, scene, warnings):
+    """The filters set on a Modo light in Lighting controls, in the form entities.filter_records gives."""
+    from .entities import inverse_rows
+    from .working_space import color as working_color
+    records, name = [], light.get('name', '')
+    if settings.get('filter_enabled'):
+        scale = float(settings.get('filter_intensity', 1)) * 2 ** float(settings.get('filter_exposure', 0))
+        records.append({'kind': 'intensity', 'scale': [c * scale for c in working_color(finite(settings.get('filter_color', [1, 1, 1])))]})
+    if settings.get('decay_enabled'):
+        distances = [float(settings.get(key, default)) for key, default in (('near_start', 0), ('near_end', 0), ('far_start', 10), ('far_end', 20))]
+        records.append({'kind': 'decay', 'near': distances[1] > distances[0], 'far': True, 'distances': distances})
+    if settings.get('ramp_enabled'):
+        begin, end = float(settings.get('ramp_start', 0)), float(settings.get('ramp_end', 10))
+        placed = scene.get('scene_references', {}).get(settings.get('filter_locator'), {}).get('matrix') if settings.get('filter_locator') else None
+        if end > begin:
+            records.append({'kind': 'ramp', 'directional': False, 'mirror': False, 'rows': inverse_rows(placed) if placed else None,
+                            'begin': begin, 'end': end, 'intensity': 1.0, 'density': 1.0, 'positions': [0.0, 1.0],
+                            'colors': [working_color(finite(settings.get('ramp_color0', [1, 1, 1]))),
+                                       working_color(finite(settings.get('ramp_color1', [0, 0, 0])))], 'interpolations': [1, 1]})
+    shaping = [label for key, label in (('rod_enabled', 'rod'), ('barn_enabled', 'barn door'), ('cookie_file', 'cookie'), ('filter_vdb', 'VDB')) if settings.get(key)]
+    if shaping:
+        warnings.append('MoonLightIPR does not apply the %s filter%s on %s.' % (' and '.join(shaping), 's' if len(shaping) > 1 else '', name))
+    return records
+
+
+def packed_filters(records, compiler):
+    """Decay and ramp filters as the session reads them; a ramp's colours go into a small image."""
+    from .entities import ramp_eval
+    parts = []
+    for record in records:
+        if record['kind'] == 'decay':
+            parts.append(struct.pack('<2I4f12fi', FILTER_DECAY, (FILTER_NEAR if record['near'] else 0) | (FILTER_FAR if record['far'] else 0),
+                                     *record['distances'], *([0.0] * 12), -1))
+        elif record['kind'] == 'ramp':
+            # The ramp over its own 0 to 1, which the session stretches from begin to end.
+            steps = [i / (RAMP_SAMPLES - 1) for i in range(RAMP_SAMPLES)]
+            colors = [ramp_eval(record['positions'], record['colors'], record['interpolations'], x) for x in steps]
+            texture = compiler.ramp({'positions': steps, 'colors': colors}, exact=True)
+            rows = record['rows'] or [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
+            flags = ((FILTER_DIRECTIONAL if record['directional'] else 0) | (FILTER_MIRROR if record['mirror'] else 0)
+                     | (FILTER_PLACED if record['rows'] else 0))
+            parts.append(struct.pack('<2I4f12fi', FILTER_RAMP, flags, record['begin'], record['end'], record['intensity'], record['density'],
+                                     *(v for row in rows for v in row), texture))
+    return struct.pack('<I', len(parts)) + b''.join(parts)
+
+
+def lights(scene, warnings, environment=0.0, compiler=None):
     """Return (distant, local) light records, with MoonRay's default normalization applied."""
+    import subprocess
     from .working_space import color as working_color
     controls = scene.get('production', {}).get('lights', {})
     distant, local = [], []
@@ -147,10 +200,16 @@ def lights(scene, warnings, environment=0.0):
         if kind not in LOCAL_LIGHTS and kind != 'DistantLight':
             warnings.append('MoonLightIPR does not show %s %s yet.' % (kind, light.get('name', '')))
             continue
-        if settings.get('filter_enabled') or settings.get('decay_enabled') or settings.get('filters'):
-            warnings.append('MoonLightIPR ignores light filters on %s.' % light.get('name', ''))
         matrix = finite(light.get('matrix', IDENTITY))
         color = [c * float(light['intensity']) for c in working_color(finite(light['color']))]
+        # Filters from Lighting controls, and those a MoonRay light item names.
+        filters = control_filters(settings, light, scene, warnings) + list(light.get('filters', []))
+        for record in [r for r in filters if r['kind'] == 'intensity']:
+            color = [c * s for c, s in zip(color, record['scale'])]
+        filters = [r for r in filters if r['kind'] != 'intensity']
+        if filters and (kind == 'DistantLight' or compiler is None):
+            warnings.append('MoonLightIPR applies only intensity filters to %s.' % light.get('name', ''))
+            filters = []
         if kind == 'DistantLight':
             angle = max(1e-3, float(light.get('angle', .5)))
             # A white Lambertian surface facing the light reflects color * intensity.
@@ -179,9 +238,17 @@ def lights(scene, warnings, environment=0.0):
         # Normalized with MoonRay's default apply_scene_scale: color * intensity is flux / pi at scene scale 1.
         # A portal is not normalized; its colour and intensity multiply what shows through it.
         normalization = 1.0 if kind == 'PortalLight' else 1 / (math.pi * area)
-        local.append(struct.pack('<I20f', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
+        # A picture on a rect light, read as MoonRay reads it: without a colour conversion.
+        texture = -1
+        if light.get('texture') and compiler is not None:
+            try:
+                texture = compiler.texture({'path': light['texture'], 'srgb': False, 'color_space': 'raw', 'repeat': False})
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                warnings.append('MoonLightIPR shows %s without its texture (%s).' % (light.get('name', ''), exc))
+        local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
-            + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))])))
+            + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture)
+            + (packed_filters(filters, compiler) if compiler is not None else struct.pack('<I', 0)))
     return distant, local
 
 
@@ -219,7 +286,8 @@ def emitter(mesh, settings, warnings):
             _emitters.clear()
         cached = _emitters[signature] = (struct.pack('<I', triangles) + corners.tobytes(), area)
     # MoonRay divides by the area, so the light gives the same power at any size.
-    return struct.pack('<I20f', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0])) + cached[0]
+    return (struct.pack('<I20fiI', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, 0)
+            + cached[0])
 
 
 def mesh_payload(mesh, material_index, slots):
@@ -340,7 +408,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         raise ValueError('MoonLightIPR needs at least one sample')
     warnings = []
     # MoonRay's own items arrive beside the Modo ones; draw those that have a counterpart here.
-    from .entities import preview as preview_entities
+    from .entities import preview as preview_entities, replaces_environment
+    if replaces_environment(scene):
+        environment = 0.0   # the preview environment light goes too
     scene = preview_entities(scene, warnings)
     camera = scene['camera']
     if camera.get('projection', 'persp') != 'persp':
@@ -395,7 +465,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     material_index = {tag: index for index, tag in enumerate(sorted(materials))}
     compiler = Compiler(runtime)
     records = [compiler.material(materials[tag], tag or 'base material') for tag in sorted(materials)]
-    # Images first: the session reads them before the layers that name them.
+    # Lights now, since a filter's ramp or a light's picture adds to the images.
+    distant, local = lights(scene, warnings, environment, compiler)
+    # Images first: the session reads them before the layers and lights that name them.
     parts += [struct.pack('<I', len(compiler.textures))] + list(compiler.textures)
     parts += [struct.pack('<I', len(records))] + records
     parts += [struct.pack('<I', len(compiler.layers))] + compiler.layers
@@ -403,7 +475,6 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     warnings += compiler.warnings()
 
     parts += environment_section(scene, environment, warnings, runtime)
-    distant, local = lights(scene, warnings, environment)
     objects = scene.get('production', {}).get('objects', {})
 
     used, meshes, instances, order = set(), [], [], {}
@@ -422,8 +493,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         material = material_index.get(mesh.get('material', ''), material_index[''])
         # A mesh light is its object's own surface, so the object says which light it is.
         light = -1
-        if objects.get(mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0], {}).get('mesh_light'):
-            record = emitter(mesh, objects[mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0]], warnings)
+        owner = objects.get(mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0], {})
+        if owner.get('mesh_light'):
+            # Set in Object controls, or by a MoonRay mesh light item that names this mesh.
+            record = emitter(mesh, owner, warnings)
             if record:
                 light = len(local)
                 local.append(record)

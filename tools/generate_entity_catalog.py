@@ -176,6 +176,10 @@ for category, (label, shared, classes) in CATEGORIES.items():
                                            'comment': 'The material tag of the Modo material this is rendered with; empty for the base material.'}
             attributes['modo_volume'] = {'name': 'modo_volume', 'type': 'SceneObject*', 'interface': 'VOLUME', 'group': 'Assignment', 'label': 'volume',
                                          'comment': 'The name of a MoonRay volume item that fills this shape.'}
+        if name == 'EnvLight':
+            attributes['modo_replace_environment'] = {
+                'name': 'modo_replace_environment', 'type': 'Bool', 'default': False, 'group': 'Assignment', 'label': 'replace Modo environment',
+                'comment': 'Light the scene with this instead of the Modo environments and the preview environment light.'}
         if category == 'camera':
             attributes['modo_render_camera'] = {'name': 'modo_render_camera', 'type': 'Bool', 'default': False, 'group': 'Assignment',
                                                 'label': 'render through this camera',

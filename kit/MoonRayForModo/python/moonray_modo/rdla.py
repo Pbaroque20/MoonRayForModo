@@ -70,6 +70,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         raise ValueError("Image dimensions must be between 16 and 16384")
     if not 1 <= int(samples) <= 64:
         raise ValueError("Pixel sample grid must be between 1 and 64")
+    from . import entities
+    # A MeshLight item makes the mesh it names emit, through the same settings as Object controls.
+    scene = entities.mesh_lights(scene)
+    if entities.replaces_environment(scene):
+        # A MoonRay environment light set to replace Modo's: neither the Modo environments nor
+        # the preview environment light are written.
+        scene = dict(scene, environments=[])
+        environment = 0
     camera = scene['camera']
     dof = bool(camera.get('dof', False))
     if dof and (camera.get('f_stop', 4) <= 0 or camera.get('focus_distance', 4) <= 0):
@@ -105,7 +113,6 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
              '  ["mb_shutter_close"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[-1]),
              '  ["near"] = 0.001,', '}',
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
-    from . import entities
     entity_camera=entities.render_camera(scene)
     if entity_camera:
         # A MoonRay camera item set to render takes the place of the Modo camera.

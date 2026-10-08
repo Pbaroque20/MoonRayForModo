@@ -28,7 +28,8 @@ PREVIEW_LIGHTS = {'DistantLight': {'angular_extent': 'angle'}, 'SphereLight': {'
 # What a newly added item starts with where MoonRay's own defaults show nothing. MoonRay divides a
 # light's intensity by its area, so its default of 1 is close to black, and its default sphere
 # of radius 1 swallows whatever stands near it.
-STARTING = {'SphereLight': {'intensity': 50.0, 'radius': .1}, 'RectLight': {'intensity': 50.0},
+STARTING = {'EnvLight': {'modo_replace_environment': True},
+            'SphereLight': {'intensity': 50.0, 'radius': .1}, 'RectLight': {'intensity': 50.0},
             'DiskLight': {'intensity': 50.0, 'radius': .5}, 'SpotLight': {'intensity': 50.0, 'lens_radius': .05},
             'CylinderLight': {'intensity': 50.0, 'radius': .05}, 'MeshLight': {'intensity': 50.0}}
 
@@ -95,6 +96,17 @@ def validate(name, parameters):
 
 def item_type(name):
     return TYPE_PREFIX + name
+
+
+def display(name):
+    """A class as the user sees it: dwEnvLight, for DreamWorks, as the kit names its other MoonRay things."""
+    return 'dw' + name
+
+
+def replaces_environment(scene):
+    """Whether a MoonRay environment light is set to stand in for Modo's own environments."""
+    return any(e['class'] == 'EnvLight' and e.get('parameters', {}).get('modo_replace_environment') and value(e, 'on')
+               for e in checked(scene))
 
 
 def hint_name(label):
@@ -299,6 +311,139 @@ def checked(scene):
     return result
 
 
+# ---- Ramps -------------------------------------------------------------------------------------
+
+# The attributes that together make one ramp, per class: (label, positions, values, interpolations).
+# MoonRay holds each ramp as three lists of equal length.
+RAMPS = {'ColorRampLightFilter': [('Colour ramp', 'distances', 'colors', 'interpolation_types')],
+         'RodLightFilter': [('Falloff ramp', 'ramp_in_distances', 'ramp_out_distances', 'ramp_interpolation_types')],
+         'VdbLightFilter': [('Density remap', 'density_remap_inputs', 'density_remap_outputs', 'density_remap_interpolation_types')],
+         'BaseVolume': [('Attenuation ramp', 'attenuation_distances', 'attenuation_colors', 'attenuation_interpolations'),
+                        ('Density ramp', 'density_distances', 'densities', 'density_interpolations')]}
+INTERPOLATIONS = ('None', 'Linear', 'Exponential Up', 'Exponential Down', 'Smooth', 'Catmull-Rom', 'Monotone Cubic')
+
+
+def ramp_eval(positions, values, interpolations, x):
+    """A ramp at x, by MoonRay's rules: the span's interpolation is that of its left stop, and
+    outside the stops the end values hold. Values are numbers or lists of them. The two cubic
+    modes are both drawn as a Catmull-Rom curve through the stops."""
+    order = sorted(range(len(positions)), key=lambda i: positions[i])
+    stops = [positions[i] for i in order]
+    listed = isinstance(values[0], (list, tuple))
+    held = [list(values[i]) if listed else [values[i]] for i in order]
+    modes = [interpolations[i] for i in order]
+    def out(value):
+        return value if listed else value[0]
+    if x <= stops[0]:
+        return out(held[0])
+    if x >= stops[-1]:
+        return out(held[-1])
+    left = max(i for i in range(len(stops)) if stops[i] <= x)
+    span = stops[left + 1] - stops[left]
+    if span <= 0:
+        return out(held[left])
+    u = (x - stops[left]) / span
+    mode = modes[left]
+    if mode >= 5:
+        before, after = held[max(left - 1, 0)], held[min(left + 2, len(held) - 1)]
+        a, b = held[left], held[left + 1]
+        return out([.5 * ((2 * b0) + (-a0 + c0) * u + (2 * a0 - 5 * b0 + 4 * c0 - d0) * u * u + (-a0 + 3 * b0 - 3 * c0 + d0) * u ** 3)
+                    for a0, b0, c0, d0 in zip(before, a, b, after)])
+    weight = (0.0 if mode == 0 else u if mode == 1 else u * u if mode == 2 else 1 - (1 - u) ** 2 if mode == 3
+              else math.sin(u * math.pi / 2))
+    return out([a + weight * (b - a) for a, b in zip(held[left], held[left + 1])])
+
+
+def ramp_lists(entity, positions, values, interpolations, fallback):
+    """One ramp's three lists as authored; MoonRay's fallback when they are missing or do not match."""
+    lists = [entity['parameters'].get(key) for key in (positions, values, interpolations)]
+    if not all(lists) or len({len(v) for v in lists}) != 1:
+        return fallback
+    return lists
+
+
+# ---- Light filters -----------------------------------------------------------------------------
+
+def inverse_rows(matrix):
+    """Rows that take a world point into an item's own space: three of (x, y, z, offset)."""
+    from .coordinates import inverse
+    inv = inverse(matrix)
+    return [[inv[0 * 4 + i], inv[1 * 4 + i], inv[2 * 4 + i], inv[12 + i]] for i in range(3)]
+
+
+def filter_records(entities, names, owner, warnings):
+    """The light filters named on a light, as MoonLightIPR applies them: an intensity scale, a
+    decay over distance, or a colour ramp. The kinds it cannot apply are named in warnings."""
+    from .working_space import color as working_color
+    records = []
+    for name in names or ():
+        found = [e for e in entities if name in (e['name'], e['identity']) and catalog()[e['class']]['category'] == 'lightfilter']
+        if len(found) != 1:
+            warnings.append('%s names light filter %s, which is %s.' % (owner, name, 'missing' if not found else 'the name of several items'))
+            continue
+        entity = found[0]
+        kind = entity['class']
+        if not value(entity, 'on'):
+            continue
+        if kind == 'IntensityLightFilter':
+            scale = [c * float(value(entity, 'intensity')) * 2 ** float(value(entity, 'exposure')) for c in working_color(value(entity, 'color'))]
+            if value(entity, 'invert'):
+                scale = [1 / c if c else c for c in scale]
+            if value(entity, 'light_path_selection'):
+                warnings.append('MoonLightIPR applies %s to every light path.' % entity['name'])
+            records.append({'kind': 'intensity', 'scale': scale})
+        elif kind == 'DecayLightFilter':
+            records.append({'kind': 'decay', 'near': bool(value(entity, 'falloff_near')), 'far': bool(value(entity, 'falloff_far')),
+                            'distances': [float(value(entity, key)) for key in ('near_start', 'near_end', 'far_start', 'far_end')]})
+        elif kind == 'ColorRampLightFilter':
+            begin, end = float(value(entity, 'begin_distance')), float(value(entity, 'end_distance'))
+            if begin >= end:
+                begin, end = 0.0, 1.0
+            stops, colors, modes = ramp_lists(entity, 'distances', 'colors', 'interpolation_types', [[0.0, 1.0], [[1, 1, 1], [0, 0, 0]], [1, 1]])
+            records.append({'kind': 'ramp', 'directional': value(entity, 'mode') == 1, 'mirror': value(entity, 'wrap_mode') == 1,
+                            'rows': inverse_rows(entity.get('matrix', IDENTITY)) if value(entity, 'use_xform') else None,
+                            'begin': begin, 'end': end, 'intensity': float(value(entity, 'intensity')),
+                            'density': min(1.0, max(0.0, float(value(entity, 'density')))),
+                            'positions': stops, 'colors': colors, 'interpolations': modes})
+        else:
+            warnings.append('MoonLightIPR does not apply %s (%s on %s).' % (kind, entity['name'], owner))
+    return records
+
+
+# ---- Mesh lights -------------------------------------------------------------------------------
+
+def mesh_lights(scene, warnings=None):
+    """Hand each MeshLight item to the mesh it names.
+
+    MoonRay's MeshLight emits only from a real mesh, so the item names a Modo mesh. The plugin
+    already knows how to make a mesh emit, from its Object controls; this fills those in from
+    the item's colour, intensity and exposure and takes the item out of the list, so the rest
+    of the export and MoonLightIPR treat it as any other emitting mesh.
+    """
+    lit = [e for e in scene.get('entities', []) if e['class'] == 'MeshLight']
+    if not lit:
+        return scene
+    warnings = [] if warnings is None else warnings
+    production = dict(scene.get('production', {}))
+    objects = dict(production.get('objects', {}))
+    for entity in checked({'entities': lit}):
+        label, target = entity['name'], entity['parameters'].get('geometry', '')
+        if not value(entity, 'on'):
+            continue
+        owners = {mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0] for mesh in scene.get('meshes', [])
+                  if target and target in (mesh.get('name'), mesh.get('source_item'), str(mesh.get('identity', '')).split('|')[0])}
+        if len(owners) != 1:
+            warnings.append('Mesh light %s needs the name of one Modo mesh as its geometry%s.' % (label, ', not %s' % target if target else ''))
+            continue
+        if entity['parameters'].get('light_filters') or entity['parameters'].get('map_shader'):
+            warnings.append('Mesh light %s is exported without its light filters and map shader.' % label)
+        owner = owners.pop()
+        objects[owner] = dict(objects.get(owner, {}), mesh_light=True, light_color=value(entity, 'color'),
+                              light_intensity=float(value(entity, 'intensity')) * 2 ** float(value(entity, 'exposure')))
+    production['objects'] = objects
+    return dict(scene, production=production, entities=[e for e in scene['entities'] if e['class'] != 'MeshLight'])
+
+
 # ---- Viewport proxies --------------------------------------------------------------------------
 
 def proxy(name, number):
@@ -345,8 +490,12 @@ def proxy(name, number):
     if name == 'SpotLight':
         lens = max(number('lens_radius'), 1e-4)
         reach = 1.0
-        wide = lens + reach * math.tan(math.radians(min(max(number('outer_cone_angle'), 0.0), 170.0)) / 2)
-        return [('circles', [((0, 0, 0), (0, 0, lens)), ((0, 0, -reach), (0, 0, wide))]),
+        def spread(angle):
+            return lens + reach * math.tan(math.radians(min(max(angle, 0.0), 170.0)) / 2)
+        wide = spread(number('outer_cone_angle'))
+        # The outer cone, and inside it the ring where the falloff begins.
+        full = spread(min(number('inner_cone_angle'), number('outer_cone_angle')))
+        return [('circles', [((0, 0, 0), (0, 0, lens)), ((0, 0, -reach), (0, 0, wide)), ((0, 0, -reach), (0, 0, max(full, 1e-4)))]),
                 ('lines', [(lens, 0, 0), (wide, 0, -reach), (-lens, 0, 0), (-wide, 0, -reach),
                            (0, lens, 0), (0, wide, -reach), (0, -lens, 0), (0, -wide, -reach)])]
     if name == 'CylinderLight':
@@ -380,7 +529,7 @@ def proxy(name, number):
 def proxy_inputs(name):
     """The numeric attributes proxy() asks for, as (asked name, channel name)."""
     wanted = {'SphereLight': ['radius'], 'RectLight': ['width', 'height'], 'PortalLight': ['width', 'height'], 'DiskLight': ['radius'],
-              'SpotLight': ['lens_radius', 'outer_cone_angle'], 'CylinderLight': ['radius', 'height'], 'SphereGeometry': ['radius'],
+              'SpotLight': ['lens_radius', 'outer_cone_angle', 'inner_cone_angle'], 'CylinderLight': ['radius', 'height'], 'SphereGeometry': ['radius'],
               'RodLightFilter': ['width', 'height', 'depth'], 'BarnDoorLightFilter': ['projector_width', 'projector_height']}.get(name, [])
     inputs = [(key, CHANNEL_PREFIX + key) for key in wanted]
     if name == 'BoxGeometry':
@@ -524,8 +673,13 @@ def preview(scene, warnings):
     if not entities:
         return scene
     lights, environments, meshes = list(scene.get('lights', [])), list(scene.get('environments', [])), list(scene.get('meshes', []))
+    scene = mesh_lights(scene, warnings)
     skipped = {}
-    for entity in checked(scene):
+    entities_checked = checked(scene)
+    if replaces_environment(scene):
+        # A MoonRay environment light set to replace Modo's leaves only itself and its kind.
+        environments = []
+    for entity in entities_checked:
         name, label, matrix = entity['class'], entity['name'], entity.get('matrix', IDENTITY)
         category = catalog()[name]['category']
         if category == 'light':
@@ -533,8 +687,11 @@ def preview(scene, warnings):
                 continue
             intensity = float(value(entity, 'intensity')) * 2 ** float(value(entity, 'exposure'))
             color = value(entity, 'color')
-            if entity['parameters'].get('light_filters'):
-                warnings.append('MoonLightIPR ignores light filters on %s.' % label)
+            filters = filter_records(entities_checked, entity['parameters'].get('light_filters'), label, warnings)
+            for record in [r for r in filters if r['kind'] == 'intensity']:
+                # A plain scale needs nothing from the renderer.
+                color = [c * s for c, s in zip(color, record['scale'])]
+            filters = [r for r in filters if r['kind'] != 'intensity']
             if name == 'EnvLight':
                 shown = {'camera': value(entity, 'visible_in_camera') == 1, 'indirect': True, 'reflection': True, 'refraction': True}
                 texture = value(entity, 'texture')
@@ -551,11 +708,16 @@ def preview(scene, warnings):
             if name not in PREVIEW_LIGHTS:
                 skipped.setdefault(name, []).append(label)
                 continue
-            if value(entity, 'texture'):
+            if value(entity, 'texture') and name != 'RectLight':
                 warnings.append('MoonLightIPR shows %s without its texture.' % label)
             if value(entity, 'normalized') != (name != 'PortalLight'):
                 warnings.append('MoonLightIPR shows %s with the usual normalization for its kind.' % label)
-            light = {'kind': name, 'identity': entity['identity'], 'name': label, 'color': color, 'intensity': intensity, 'matrix': matrix}
+            light = {'kind': name, 'identity': entity['identity'], 'name': label, 'color': color, 'intensity': intensity, 'matrix': matrix,
+                     'filters': filters}
+            if name == 'RectLight' and value(entity, 'texture'):
+                light['texture'] = value(entity, 'texture')
+            if filters and name == 'DistantLight':
+                warnings.append('MoonLightIPR applies only intensity filters to distant light %s.' % label)
             light.update({target: float(value(entity, key)) for key, target in PREVIEW_LIGHTS[name].items()})
             if name == 'SpotLight':
                 light['soft_edge'] = max(0.0, light['cone'] - float(value(entity, 'inner_cone_angle'))) / 2
@@ -565,8 +727,12 @@ def preview(scene, warnings):
                 skipped.setdefault('volumes', []).append(label)
                 continue
             vertices, faces = box(value(entity, 'size')) if name == 'BoxGeometry' else sphere(float(value(entity, 'radius')))
-            meshes.append({'name': label, 'identity': entity['identity'], 'vertices': vertices, 'faces': faces, 'matrix': matrix,
-                           'material': entity['parameters'].get('modo_material', ''), 'smooth': name == 'SphereGeometry'})
+            mesh = {'name': label, 'identity': entity['identity'], 'vertices': vertices, 'faces': faces, 'matrix': matrix,
+                    'material': entity['parameters'].get('modo_material', ''), 'smooth': name == 'SphereGeometry'}
+            meshes.append(mesh)
+        elif category == 'lightfilter':
+            # A filter shows through the lights that name it; what cannot be applied is said there.
+            continue
         elif category == 'camera':
             if entity['parameters'].get('modo_render_camera'):
                 warnings.append('MoonLightIPR looks through the Modo camera, not %s.' % label)
@@ -574,4 +740,4 @@ def preview(scene, warnings):
             skipped.setdefault(name, []).append(label)
     for name, labels in sorted(skipped.items()):
         warnings.append('MoonLightIPR does not show %s (%s).' % (name, ', '.join(labels[:6]) + (' ...' if len(labels) > 6 else '')))
-    return dict(scene, lights=lights, environments=environments, meshes=meshes)
+    return dict(scene, lights=lights, environments=environments, meshes=meshes, entities=[])

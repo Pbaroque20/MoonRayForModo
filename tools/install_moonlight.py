@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 MODULES = ('__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
-           'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json')
+           'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py')
 # Files outside the Python package, relative to the kit: the MoonRay items' commands and forms.
 KIT_FILES = ('lxserv/moonray_entities.py', 'entities.cfg')
 

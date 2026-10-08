@@ -180,11 +180,14 @@ class Compiler:
             if staged.exists():
                 staged.unlink()
 
-    def ramp(self, data):
-        """Write a gradient as a small float image the session reads as is; return its index."""
+    def ramp(self, data, exact=False):
+        """Write a gradient as a small float image the session reads as is; return its index.
+
+        exact keeps every point given, for ramps that do not go through MoonRay's RampMap.
+        """
         from .gradients import reduced, sample
         # MoonRay's RampMap holds 20 points, so that is the gradient the final render shows.
-        data = reduced(data)
+        data = data if exact else reduced(data)
         steps = [i / (RAMP_STEPS - 1) for i in range(RAMP_STEPS)]
         colors = data['colors'] if list(data['positions']) == steps else [sample(data, x) for x in steps]
         alpha = data.get('alpha')
