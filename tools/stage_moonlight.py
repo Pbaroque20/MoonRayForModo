@@ -12,6 +12,8 @@ xpu = root / 'toolchain/xpu'
 destination = pathlib.Path(args.destination).resolve()
 assets = {'moonlight_session.exe': build / 'bin/moonlight_session.exe',
           'MoonLightKernel.ptx': build / 'shaders/MoonLightKernel.ptx',
+          # MoonLight's own licence, and what it is and is not to MoonRay and DreamWorks.
+          'licenses/MoonLight.txt': root / 'moonlight/LICENSE', 'licenses/MoonLight-NOTICE.md': root / 'moonlight/NOTICE.md',
           'licenses/CUDA.txt': xpu / 'cuda_cudart-windows-x86_64-12.8.90-archive/LICENSE',
           'licenses/OptiX.txt': xpu / 'optix-dev/LICENSE.txt'}
 for library in (xpu / 'cuda_cudart-windows-x86_64-12.8.90-archive/bin').glob('cudart64_*.dll'):

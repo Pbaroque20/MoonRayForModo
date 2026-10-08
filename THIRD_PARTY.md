@@ -56,3 +56,9 @@ not relicense them. Bundled example assets retain their accompanying notices.
 
 Release checksums identify the packaged files. They do not certify production
 readiness or compatibility with a clean Windows installation.
+
+## MoonLight
+
+MoonLight, the GPU preview engine, is not third-party software: it was created by Raphael Tobar and is
+released under this project's MIT License. It is not a DreamWorks Animation product and is not affiliated
+with or endorsed by DreamWorks Animation. It runs on NVIDIA OptiX and CUDA, whose notices are above.
