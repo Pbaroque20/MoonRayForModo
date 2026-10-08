@@ -24,6 +24,7 @@ try:
     lx.eval('tool.set prim.cube on')
     lx.eval('tool.apply')
     lx.eval('tool.set prim.cube off')
+    lx.eval('vertMap.new {Second UV} txuv')
     lx.eval('moonray.library.assign %s' % properties.encode({'shader': 'DwaBaseMaterial', 'parameters': {}}))
     held['item'] = modo.Scene().selected[0]
 except Exception:
@@ -93,6 +94,22 @@ def step3():
         QtWidgets.QApplication.processEvents()
         result['selected_after_events'] = [editor.selected(), editor.table.rowCount(), editor.table.isVisible()]
         editor.grab().save(str(out / 'editor-properties.png'))
+        editor.canvas.clearSelection()
+        if 'image' in [editor.kinds.itemText(i) for i in range(editor.kinds.count())]:
+            editor.kinds.setCurrentText('image')
+            editor.add()
+            image_id = editor.selected()
+            for row in range(editor.table.rowCount()):
+                if editor.table.item(row, 0).data(QtCore.Qt.UserRole) == 'uv_map':
+                    widget = editor.table.cellWidget(row, 1)
+                    result['uv_widget'] = type(widget).__name__
+                    result['uv_entries'] = [widget.itemText(i) for i in range(widget.count())]
+                    if widget.count() > 1:
+                        widget.setCurrentIndex(1); widget.activated.emit(1)
+            result['uv_set'] = editor.graph['nodes'][image_id].get('parameters', {}).get('uv_map')
+            QtWidgets.QApplication.processEvents()
+            editor.grab().save(str(out / 'editor-uv.png'))
+            editor.remove()
         editor.canvas.clearSelection()
         other = next(key for key in editor.items if key != root_id)
         editor.items[other].setSelected(True)

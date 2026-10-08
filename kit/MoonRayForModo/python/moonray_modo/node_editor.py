@@ -10,7 +10,7 @@ import os
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes,materialx,properties,shader_library,node_defaults
-from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
+from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
                            TEXT,TEXT_PORT,TEXT_DIM,GRID,MENU_STYLE,curve,file_parameter,tint_value)
 import lx
 
@@ -131,6 +131,40 @@ def owner_name(item):
     # A mask made by Assign MoonShine Material is named for its mesh.
     name=mask.name
     return name[len('MoonShine - '):] if name.startswith('MoonShine - ') else name
+
+
+def material_meshes(item):
+    """The meshes a material is on: the item its mask is tied to, or those that use the mask's
+    material tag. With nothing to go on, every mesh in the scene."""
+    import modo
+    scene=modo.Scene();mask=item.parent
+    everything=list(scene.items('mesh'))
+    if mask is None or mask.type!='mask':return everything
+    try:
+        linked=[entry for entry in mask.itemGraph('shadeLoc').forward() if entry.type=='mesh']
+        if linked:return linked
+    except Exception:pass
+    try:tag=mask.channel('ptag').get()
+    except Exception:tag=''
+    if not tag:return everything
+    found=[]
+    for mesh in everything:
+        try:
+            inner=mesh.geometry.internalMesh
+            if tag in [inner.PTagByIndex(lx.symbol.i_PTAG_MATR,index) for index in range(inner.PTagCount(lx.symbol.i_PTAG_MATR))]:found.append(mesh)
+        except Exception:pass
+    return found or everything
+
+
+def uv_choices(item):
+    """The UV maps to choose from for a material, as (label, name): those of the meshes it is on."""
+    names=[]
+    try:
+        for mesh in material_meshes(item):
+            for uv in mesh.geometry.vmaps.uvMaps:
+                if uv.name not in names:names.append(uv.name)
+    except Exception:pass
+    return [('First UV map','')]+[(name,name) for name in sorted(names,key=str.casefold)]
 
 
 def graph_materials():
@@ -777,6 +811,10 @@ class Editor(QtWidgets.QDialog):
                         if isinstance(field,IntegerField):self.numeric_fields.append(field)
                 elif spec['type'] in ('Rgb','Vec2f','Vec3f','Vec2d','Vec3d'):
                     field=VectorField(identity,key,layer,spec,value,self.table,kind=node['type'],connected=connected)
+                    field.changed.connect(self.object_changed);self.place_field(row,cell,field)
+                elif spec['type']=='String' and key=='uv_map':
+                    # The UV maps of the meshes this material is on, rather than a name to type.
+                    field=NameField(identity,key,layer,spec,value,uv_choices(self.item),self.table,kind=node['type'],connected=connected)
                     field.changed.connect(self.object_changed);self.place_field(row,cell,field)
                 elif spec['type']=='String':
                     field=TextField(identity,key,layer,spec,value,hint(key,spec),self.table,kind=node['type'],connected=connected)

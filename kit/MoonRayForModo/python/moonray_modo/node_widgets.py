@@ -379,6 +379,31 @@ class TextField(QtWidgets.QWidget):
         self.changed.emit(self.identity,self.key,self.layer,self.held)
 
 
+class NameField(QtWidgets.QComboBox):
+    """A choice among names found in the scene, such as the UV maps of the meshes a material is
+    on, in place of typing one."""
+    changed=QtCore.Signal(str,str,int,object)
+    def __init__(self,identity,key,layer,spec,value,entries,parent=None,kind=None,connected=False):
+        super().__init__(parent)
+        self.identity,self.key,self.layer=identity,key,layer
+        self.spec,self.kind=spec,kind
+        for label,name in entries:self.addItem(label,name)
+        value=str(value or '')
+        if self.findData(value)<0:
+            # A name the scene no longer has is kept, and shown for what it is.
+            self.addItem(value+'  (not found)',value)
+        self.setCurrentIndex(self.findData(value))
+        self.setFrame(False);self.setAccessibleName(key);self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        tint_value(self,value,spec,kind,key,connected)
+        self.activated.connect(self.publish)
+    def wheelEvent(self,event):
+        if self.hasFocus():super().wheelEvent(event)
+        else:event.ignore()
+    @QtCore.Slot(int)
+    def publish(self,index):
+        self.changed.emit(self.identity,self.key,self.layer,str(self.itemData(index)))
+
+
 def key_of(table,row):
     """The attribute a row of the property list is for; the row shows its name in plain words."""
     item=table.item(row,0)
