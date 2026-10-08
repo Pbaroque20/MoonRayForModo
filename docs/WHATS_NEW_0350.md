@@ -129,6 +129,21 @@ PView was removed: Modo cannot host an external renderer there.
   anisotropy. Roughness then means the same in both: highlights agree to about 1% from
   roughness 0.15 up.
 
+## MaterialX
+
+- MoonRay > Import MaterialX Material... puts a MaterialX file's material on the selected meshes
+  as a MoonRay material with the file's graph. Files written by material libraries now read:
+  the nodes that only pass a value on, and the surface's own normal and tangent wired in to
+  mean the default.
+- An imported graph is set out in columns from its output back, and the graph editor's View
+  menu can arrange any graph the same way.
+- MoonLight shows such materials as their nodes say: UVs that nodes move, turn or scale, and
+  arithmetic between images (one blended into another through a third, an image brought into
+  a range, masks taken away) at the images' own sharpness. A wood, a marble, two wallpapers
+  and a car paint from a library agree with MoonRay on 72 to 100% of the picture.
+- A MoonRay material set to metal now renders as one. Its metallic setting never reached
+  MoonRay before.
+
 ## Outputs
 
 - A new scene outputs the object Cryptomatte, so the first render already holds the mattes.
