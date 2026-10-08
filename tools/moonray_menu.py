@@ -85,3 +85,27 @@ if __name__ == '__main__':
     if after != before:
         path.write_bytes(after.encode('utf-8'))
     print('Menu in order:', path)
+
+
+CURVE_ROWS = (
+    ('curves', 'Render Curves as Tubes', 'Requires object overrides. Curves, splines and line polygons of this mesh render as round tubes, '
+     'all of one material as a single curve geometry.'),
+    ('curve_root_width', 'Curve Width at Root (mm)', 'The width of each strand where it starts.'),
+    ('curve_tip_width', 'Curve Width at Tip (mm)', 'The width of each strand where it ends. Zero comes to a point.'),
+    ('curve_envelope', 'Curve Envelope', 'How the width goes from root to tip along the length: 1 is an even taper, higher keeps the root '
+     'width for longer, lower thins early.'),
+    ('curve_samples', 'Samples per Curve Bend', 'How finely a spline is followed. Line polygons are used as they are.'),
+    ('curve_uv', 'Curve UVs along Length', 'Gives each strand UVs for textures: V runs 0 at the root to 1 at the tip by length, U tells '
+     'the strands apart.'))
+
+
+def curve_controls(text):
+    """The mesh form's curve controls, after the last of its subdivision controls; unchanged if they are there."""
+    anchor = '<list type="Control" val="cmd moonray.object.adaptive_error ?">'
+    if 'cmd moonray.object.curves ?' in text or text.count(anchor) != 1:
+        return text
+    end = text.index('</list>', text.index(anchor)) + len('</list>')
+    eol = '\r\n' if '\r\n' in text else '\n'
+    rows = ''.join(eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % row
+                   for row in CURVE_ROWS)
+    return text[:end] + rows + text[end:]

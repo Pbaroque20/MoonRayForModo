@@ -7,6 +7,121 @@ def asset_frame(path,frame):
     # A run of # is a fixed-width frame field (e.g. smoke.####.vdb).
     return re.sub(r'#+',lambda m:('%0*d'%(len(m.group()),int(frame))),str(path))
 
+def curve_shape(item,settings):
+    """How a mesh's curves become tubes: its object overrides if it uses them, otherwise the
+    scene controls' one radius. None if the object asks for its curves not to be rendered."""
+    from . import options,properties
+    values=options.object_values(properties.read(item))
+    if not values['override']:
+        radius=float(settings.get('radius',.001))
+        return dict(root=radius,tip=radius,envelope=1.0,samples=int(settings.get('curve_samples',8)),uv=True)
+    if not values['curves']:return None
+    return dict(root=values['curve_root_width']/2000.0,tip=values['curve_tip_width']/2000.0,envelope=float(values['curve_envelope']),
+                samples=values['curve_samples'],uv=values['curve_uv'])
+
+
+def polylines(mesh,polygons,points,id_tag,item):
+    """Strands that are already lines: their points as they stand, with nothing to evaluate.
+    This is how hair guides and imported strands arrive, thousands at a time."""
+    import lx,lxu.utils
+    tags=lx.object.StringTag(polygons);positions={};found=[]
+    code=lxu.utils.lxID4(id_tag) if id_tag else None
+    for i in range(mesh.PolygonCount()):
+        polygons.SelectByIndex(i)
+        if lxu.utils.decodeID4(polygons.Type())!='LINE':continue
+        strand=[]
+        for v in range(polygons.VertexCount()):
+            point=polygons.VertexByIndex(v);place=positions.get(point)
+            if place is None:
+                points.Select(point);place=positions[point]=list(points.Pos())
+            strand.append(place)
+        if len(strand)<2:continue
+        found.append((strand,strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL),strand_id(tags,code,item)))
+    return found
+
+
+def sampled(mesh,polygons,samples,id_tag,item,lines):
+    """Strands drawn as splines, read off Modo's own evaluation of each curve. Modo lists the
+    line polygons among its curves too; those keep the points they have."""
+    import lx,lxu.utils
+    kinds=[]
+    for i in range(mesh.PolygonCount()):
+        polygons.SelectByIndex(i);kind=lxu.utils.decodeID4(polygons.Type())
+        if kind in ('CURV','BEZR','BSPL','LINE') and (kind!='LINE' or polygons.VertexCount()>1):kinds.append(kind)
+    group=lx.object.CurveGroup(lx.service.Mesh().CurveGroupFromMesh(mesh,((1.,0.,0.,0.),(0.,1.,0.,0.),(0.,0.,1.,0.),(0.,0.,0.,1.))))
+    code=lxu.utils.lxID4(id_tag) if id_tag else None;found=[]
+    # The curves come in the order of their polygons; if they do not match up, evaluate them all.
+    ordered=group.Count()==len(kinds);ready=iter(lines)
+    for i in range(group.Count()):
+        if ordered and kinds[i]=='LINE':
+            found.append(next(ready));continue
+        curve=lx.object.Curve(group.ByIndex(i));count=max(2,min(4096,int(samples)*max(1,curve.BendCount())))
+        strand=[]
+        for j in range(count+1):curve.SetParam(j/count);strand.append(list(curve.Position()))
+        tags=lx.object.StringTag(curve)
+        found.append((strand,strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL),strand_id(tags,code,item)))
+    return found
+
+
+def strand_tag(tags,code):
+    try:return tags.Get(code) or ''
+    except (LookupError,RuntimeError):return ''
+
+
+def strand_id(tags,code,item):
+    if code is None:return None
+    try:stable=tags.Get(code)
+    except (LookupError,RuntimeError):raise ValueError('Strand is missing its persistent ID tag: '+item.name)
+    if not stable:raise ValueError('Strand ID tag is empty: '+item.name)
+    return str(stable)
+
+
+def batches(identity,name,strands,shape,material,matrix):
+    """All of a mesh's strands of one material as a single curve geometry: one list of points,
+    one count per strand. MoonRay builds one acceleration structure for the lot, which is what
+    makes thousands of hairs cost little more than one mesh."""
+    groups={}
+    for strand,tag,stable in strands:groups.setdefault(material or tag,[]).append((strand,stable))
+    result=[];tapered=abs(shape['root']-shape['tip'])>1e-12
+    for tag,members in groups.items():
+        vertices=[];counts=[];radii=[];uvs=[];ids=[]
+        for index,(strand,stable) in enumerate(members):
+            vertices+=strand;counts.append(len(strand))
+            if stable is not None:ids.append(stable)
+            if not (tapered or shape['uv']):continue
+            # How far along the strand each point is, by length rather than by count.
+            lengths=[0.0]
+            for a,b in zip(strand,strand[1:]):lengths.append(lengths[-1]+math.sqrt((b[0]-a[0])**2+(b[1]-a[1])**2+(b[2]-a[2])**2))
+            total=lengths[-1] or 1.0;across=(index+.5)/len(members)
+            for length in lengths:
+                along=length/total
+                if tapered:radii.append(shape['root']+(shape['tip']-shape['root'])*along**shape['envelope'])
+                if shape['uv']:uvs.append([across,along])
+        entry=dict(kind='curves',identity=identity+'|curves|'+tag,source_item=identity,name=name,vertices=vertices,counts=counts,
+                   radius=shape['root'],curve_type=0,material=tag,matrix=matrix)
+        if tapered:entry['radii']=radii
+        if shape['uv']:entry['uvs']=uvs
+        if ids:entry['ids']=ids
+        result.append(entry)
+    return result
+
+
+# The text of the long lists of a curve geometry, kept by what is in them: thousands of strands
+# are slow to write out and are the same from one render to the next.
+WRITTEN={}
+
+
+def written(kind,values,write):
+    import hashlib,itertools
+    from array import array as packed
+    flat=values if not values or not isinstance(values[0],(list,tuple)) else itertools.chain.from_iterable(values)
+    key=(kind,len(values),hashlib.sha1(packed('d',flat).tobytes()).digest())
+    if key not in WRITTEN:
+        if len(WRITTEN)>=32:WRITTEN.pop(next(iter(WRITTEN)))
+        WRITTEN[key]=write()
+    return WRITTEN[key]
+
+
 def collect(scene,warnings,controls):
     import lx,modo,lxu.utils
     from .host import render_visible,world_matrix,first_map
@@ -16,31 +131,21 @@ def collect(scene,warnings,controls):
         settings=objects.get(item.id,{})
         mesh=modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item,'deformed')
         polygons=lx.object.Polygon(mesh.PolygonAccessor());points=lx.object.Point(mesh.PointAccessor())
-        has_curves=False;point_ids=set()
+        splines=lines=0;point_ids=set()
         for i in range(mesh.PolygonCount()):
             polygons.SelectByIndex(i);kind=lxu.utils.decodeID4(polygons.Type())
-            has_curves=has_curves or kind in ('CURV','BEZR','BSPL','LINE')
+            splines+=kind in ('CURV','BEZR','BSPL');lines+=kind=='LINE'
             if kind=='OPNT':point_ids.update(int(polygons.VertexByIndex(v)) for v in range(polygons.VertexCount()))
-        if has_curves:
+        shape=curve_shape(item,settings)
+        if (splines or lines) and shape is not None:
+            id_tag=settings.get('strand_id_tag','')
+            if id_tag and (len(id_tag)!=4 or not id_tag.isascii()):raise ValueError('Strand ID tag must contain four characters')
             try:
-                group=lx.object.CurveGroup(lx.service.Mesh().CurveGroupFromMesh(mesh,((1.,0.,0.,0.),(0.,1.,0.,0.),(0.,0.,1.,0.),(0.,0.,0.,1.))))
-                for i in range(group.Count()):
-                    curve=lx.object.Curve(group.ByIndex(i));count=max(2,min(4096,int(settings.get('curve_samples',32))*max(1,curve.BendCount())))
-                    vertices=[]
-                    for j in range(count+1):curve.SetParam(j/count);vertices.append(list(curve.Position()))
-                    try:tag=lx.object.StringTag(curve).Get(lx.symbol.i_POLYTAG_MATERIAL) or ''
-                    except (LookupError,RuntimeError):tag=''
-                    stable=None
-                    id_tag=settings.get('strand_id_tag','')
-                    if id_tag:
-                        if len(id_tag)!=4 or not id_tag.isascii():raise ValueError('Strand ID tag must contain four characters')
-                        try:stable=lx.object.StringTag(curve).Get(lxu.utils.lxID4(id_tag))
-                        except (LookupError,RuntimeError):raise ValueError('Strand is missing its persistent ID tag: '+item.name)
-                        if not stable:raise ValueError('Strand ID tag is empty: '+item.name)
-                    result.append(dict(kind='curves',identity=item.id+'|curve|'+(str(stable) if stable is not None else str(i)),source_item=item.id,name=item.name,vertices=vertices,counts=[len(vertices)],radius=float(settings.get('radius',.001)),curve_type=0,material=settings.get('material') or tag,matrix=world_matrix(item)))
-                    if stable is not None:result[-1]['ids']=[str(stable)]
+                strands=polylines(mesh,polygons,points,id_tag,item)
+                if splines:strands=sampled(mesh,polygons,shape['samples'],id_tag,item,strands)
             except (LookupError,RuntimeError,TypeError,AttributeError) as exc:
                 raise ValueError('Cannot read evaluated curves for '+item.name+': '+str(exc))
+            result+=batches(item.id,item.name,strands,shape,settings.get('material',''),world_matrix(item))
         if not mesh.PolygonCount() or point_ids or settings.get('points'):
             vertices=[];stable=[];id_name=settings.get('point_id_map','')
             id_map=first_map(mesh,lx.symbol.i_VMAP_WEIGHT,id_name) if id_name else None
@@ -112,7 +217,8 @@ def emit(scene,materials,lines,crypto=False):
             counts=entry.get('counts',[])
             allowed={1,len(vertices),len(counts)} if kind=='curves' else {len(vertices)}
             if len(radii) not in allowed:raise ValueError('Radius count does not match geometry')
-            attrs.update(vertex_list_0=array(vector(v) for v in vertices),radius_list=array(number(v) for v in radii))
+            attrs.update(vertex_list_0=written('points',vertices,lambda:array(vector(v) for v in vertices)),
+                         radius_list=written('radii',radii,lambda:array(number(v) for v in radii)))
             for key,target in (('vertices_close','vertex_list_1'),('velocities','velocity_list_0')):
                 if key in entry:
                     if len(entry[key])!=len(vertices):raise ValueError('Motion data does not match geometry vertices')
@@ -121,10 +227,10 @@ def emit(scene,materials,lines,crypto=False):
             if kind=='curves':
                 curve_type=int(entry.get('curve_type',0))
                 if curve_type not in (0,1,2) or sum(counts)!=len(vertices) or any(type(c)!=int or c<(2 if curve_type==0 else 4) or (curve_type==1 and (c-1)%3) for c in counts):raise ValueError('Invalid curve counts or interpolation')
-                constructor='RdlCurveGeometry';attrs.update(curves_vertex_count=array(str(c) for c in counts),curve_type=str(curve_type))
+                constructor='RdlCurveGeometry';attrs.update(curves_vertex_count=written('counts',counts,lambda:array(str(c) for c in counts)),curve_type=str(curve_type))
                 if entry.get('uvs'):
-                    if len(entry['uvs'])!=len(counts):raise ValueError('Curve UVs must have one entry per strand')
-                    attrs['uv_list']=array(vector(v,'Vec2') for v in entry['uvs'])
+                    if len(entry['uvs']) not in (len(counts),len(vertices)):raise ValueError('Curve UVs must have one entry per strand or per point')
+                    attrs['uv_list']=written('uvs',entry['uvs'],lambda:array(vector(v,'Vec2') for v in entry['uvs']))
         if 'visibility' in entry:
             camera,indirect,reflection,refraction,subsurface,shadow=entry['visibility']
             for key,value in [('visible_in_camera',camera),('visible_shadow',shadow),('visible_diffuse_reflection',indirect),('visible_diffuse_transmission',indirect),('visible_glossy_reflection',reflection),('visible_mirror_reflection',reflection),('visible_glossy_transmission',refraction),('visible_mirror_transmission',refraction)]:attrs[key]='true' if value else 'false'

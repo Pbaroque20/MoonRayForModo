@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 
-MODULES = ('__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
+MODULES = ('options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
            'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py', 'materials.py', 'material_editor.py', 'rdl_import.py', 'properties.py',
            'panel_tools.py', 'preferences.py', 'scene_settings.py', 'focus.py', 'progress.py', 'node_editor.py', 'node_widgets.py', 'incremental.py', 'graph_images.py', 'property_notifications.py', 'camera_choice.py', 'graph_bake.py', 'nodes.py', 'coordinates.py', 'animation.py', 'package_sequence.py')
 # Files outside the Python package, relative to the kit: the commands and forms of the MoonRay
@@ -57,7 +57,7 @@ sys.path.insert(0, str(root / 'tools'))
 import moonray_menu
 layout = kit / 'layout.cfg'
 text = layout.read_bytes().decode('utf-8')
-tidied = moonray_menu.tidy(text)
+tidied = moonray_menu.curve_controls(moonray_menu.tidy(text))
 if 'MoonRayEntityMenu' not in tidied:
     print('Could not find where to add "Add MoonRay Item" in', layout)
 if tidied != text:

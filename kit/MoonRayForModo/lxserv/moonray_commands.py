@@ -164,7 +164,8 @@ def object_command(key):
 lx.bless(PreviewPage, 'moonray.page')
 lx.bless(SaveSceneSettings, 'moonray.sceneSettings')
 lx.bless(SaveObjectSettings, 'moonray.objectSettings')
-for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error', 'share_instances', 'dynamic_tessellation'):
+for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error', 'share_instances', 'dynamic_tessellation',
+             'curves', 'curve_root_width', 'curve_tip_width', 'curve_envelope', 'curve_samples', 'curve_uv'):
     lx.bless(object_command(_key), 'moonray.object.' + _key)
 
 
