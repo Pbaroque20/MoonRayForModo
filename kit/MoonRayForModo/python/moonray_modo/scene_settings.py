@@ -13,7 +13,9 @@ DEFAULTS = {
     'samples': 4, 'environment': 0.0, 'threads': 0, 'timeout': 0, 'surface': 0, 'subdivision_level': 3,
     'light_multiplier': 1.0, 'modo_environment': True, 'environment_multiplier': 1.0,
     'region_enabled': False, 'region': [0.0, 0.0, 1.0, 1.0], 'final_motion': False,
-    'production': {}, 'asset_settings': {}, 'custom_aovs': [], 'aovs': ['alpha'],
+    'production': {}, 'asset_settings': {},
+    # A new scene outputs the object Cryptomatte, so the first render already has the mattes to look at.
+    'custom_aovs': [{'name': 'crypto_object', 'kind': 'cryptomatte', 'category': 'object', 'depth': 6, 'precision': 0, 'filter': 0, 'part': '', 'expression': ''}], 'aovs': ['alpha'],
     'recovery': {'enabled': False, 'resume': True, 'minutes': 1.0},
     'denoising': {'engine': 'off', 'preview': True, 'final': True},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
