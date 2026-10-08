@@ -281,9 +281,9 @@ class Panel(QtWidgets.QWidget):
         actions = QtWidgets.QHBoxLayout()
         self.start = QtWidgets.QPushButton('Render')
         self.start.setToolTip('Capture the current scene and start a fresh preview. The previous image stays visible until its replacement is ready.')
-        self.start.clicked.connect(self.render_once)
-        stop = QtWidgets.QPushButton('Stop')
-        stop.clicked.connect(self.stop)
+        # One button: it starts a preview, and while one runs or IPR is watching, it stops it.
+        self._rendering=False
+        self.start.clicked.connect(self._render_or_stop)
         self.preview_lock=QtWidgets.QCheckBox('Lock')
         self.preview_lock.setToolTip('Keep the current render running. Hold automatic scene changes until unlocked; cached buffers and display transforms remain available. Refresh preview still starts a new preview explicitly.')
         self.preview_lock.toggled.connect(self._lock_changed)
@@ -301,7 +301,7 @@ class Panel(QtWidgets.QWidget):
         output_menu.addAction('Export scene…',self.export)
         output_button=QtWidgets.QToolButton();output_button.setText('Output');output_button.setMenu(output_menu);output_button.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.final.hide();export.hide()
-        for widget in (self.start, stop, self.preview_lock, self.settings_toggle, output_button):
+        for widget in (self.start, self.preview_lock, self.settings_toggle, output_button):
             actions.addWidget(widget)
         layout.addLayout(actions)
         buffer_row = QtWidgets.QHBoxLayout()
@@ -423,6 +423,7 @@ class Panel(QtWidgets.QWidget):
         self.tabs.currentChanged.connect(self._store_workspace)
         self.settings_toggle.toggled.connect(self._store_workspace)
         self.ipr_mode.toggled.connect(self._ipr_changed)
+        self.ipr_mode.toggled.connect(lambda on:self._set_rendering(self._rendering))
         self.ipr_width.currentIndexChanged.connect(self._ipr_quality_changed)
         self.ipr_samples.currentIndexChanged.connect(self._ipr_quality_changed)
         self.ipr_error.valueChanged.connect(self._ipr_quality_changed)
@@ -780,8 +781,21 @@ class Panel(QtWidgets.QWidget):
         self._set_notices(scene['warnings'])
         return scene
 
+    def _render_or_stop(self):
+        if self._rendering or self.ipr_mode.isChecked():self.stop()
+        else:self.render_once()
+
+    def _set_rendering(self,rendering):
+        """Keep the Render button saying what pressing it will do."""
+        self._rendering=bool(rendering)
+        active=self._rendering or self.ipr_mode.isChecked()
+        self.start.setText('Stop' if active else 'Render')
+        self.start.setToolTip('Stop the render in progress and stop following scene changes.' if active else
+                              'Capture the current scene and start a fresh preview. The previous image stays visible until its replacement is ready.')
+
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
+        self._set_rendering(True)
         self._ipr_refine_scene=scene if not output else None
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
@@ -916,11 +930,13 @@ class Panel(QtWidgets.QWidget):
             self.sequence.stop()
         self.ipr_mode.setChecked(False)
         self.renderer.stop()
+        self._set_rendering(False)
 
     def _failed(self, message):
         self.refine_timer.stop()
         self.ipr_mode.setChecked(False)
         self.renderer.stop()
+        self._set_rendering(False)
         self.status.setText('Render unavailable: ' + message)
 
     def _image(self, path):
@@ -947,6 +963,7 @@ class Panel(QtWidgets.QWidget):
         self.render_timing.setText(label)
 
     def _finished(self, output):
+        self._set_rendering(False)
         message=('Saved ' + output) if output else ('Preview complete' + (' · Watching scene changes' if self.ipr_mode.isChecked() else ''))
         if not output and self.renderer.session.running():message+=' · MoonRay session retained'
         self.status.setText(message+' · '+self.renderer.backend_status)
