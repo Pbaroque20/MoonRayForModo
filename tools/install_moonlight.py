@@ -47,17 +47,25 @@ for name in MODULES:
     shutil.copyfile(source / name, target / name)
 for name in KIT_FILES:
     shutil.copyfile(root / 'kit/MoonRayForModo' / name, kit / name)
-# The MoonRay menu gains one entry. The installed layout.cfg is edited in place, not replaced,
-# so nothing else in it changes.
+# The MoonRay menu gains one entry, a submenu defined in entities.cfg. The installed layout.cfg is
+# edited in place, not replaced, so nothing else in it changes.
 layout = kit / 'layout.cfg'
 text = layout.read_bytes().decode('utf-8')
 anchor = '      <list type="Control" val="cmd moonray.about">'
-if 'MoonRayEntityMenu' not in text and text.count(anchor) == 1:
-    entry = '      <list type="Control" val="ref MoonRayEntityMenu:sheet"><atom type="Label">Add MoonRay Item</atom></list>'
-    backup.mkdir(parents=True, exist_ok=True)
-    (backup / 'layout.cfg').write_bytes(text.encode('utf-8'))
-    layout.write_bytes(text.replace(anchor, entry + ('\r\n' if '\r\n' in text else '\n') + anchor).encode('utf-8'))
-elif 'MoonRayEntityMenu' not in text:
-    print('Could not find where to add "Add MoonRay Item" in', layout)
+entry = ('      <list type="Control" val="sub MoonRayEntityMenu:sheet"><atom type="Label">Add MoonRay Item</atom>'
+         '<atom type="ShowLabel">1</atom><atom type="PopupFace">option</atom><atom type="Hash">MoonRayEntityMenu:sheet</atom></list>')
+earlier = [line for line in text.splitlines() if 'MoonRayEntityMenu' in line]
+if earlier != [entry]:
+    updated = text
+    for line in earlier:
+        updated = updated.replace(line, entry, 1)
+    if not earlier and text.count(anchor) == 1:
+        updated = text.replace(anchor, entry + ('\r\n' if '\r\n' in text else '\n') + anchor)
+    if updated == text:
+        print('Could not find where to add "Add MoonRay Item" in', layout)
+    else:
+        backup.mkdir(parents=True, exist_ok=True)
+        (backup / 'layout.cfg').write_bytes(text.encode('utf-8'))
+        layout.write_bytes(updated.encode('utf-8'))
 print('Installed MoonLightIPR into', kit)
 print('Backup:', backup)

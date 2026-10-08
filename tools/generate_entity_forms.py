@@ -40,47 +40,58 @@ def spaced(name):
     return ' '.join((' '.join(words + [current])).split())
 
 
-# The menu: a submenu per kind of object. layout.cfg names this sheet inside the kit's MoonRay menu.
-menu = ET.SubElement(attributes, 'hash', type='Sheet', key='MoonRayEntityMenu:sheet')
-atom(menu, 'Label', 'Add MoonRay Item')
+def sheet(key, label):
+    result = ET.SubElement(attributes, 'hash', type='Sheet', key=key)
+    atom(result, 'Label', label)
+    atom(result, 'Layout', 'properties')
+    return result
+
+
+def nested(parent, key, label, collapsed=0, menu=False):
+    """Modo defines a sub-sheet on its own and places it with a control that names it."""
+    place = ET.SubElement(parent, 'list', type='Control', val='sub ' + key)
+    atom(place, 'Label', label)
+    atom(place, 'ShowLabel', 1)
+    if menu:
+        atom(place, 'PopupFace', 'option')
+    atom(place, 'StartCollapsed', collapsed)
+    atom(place, 'Hash', key)
+    return sheet(key, label)
+
+
+# The menu: a submenu per kind of object. layout.cfg places this sheet in the kit's MoonRay menu.
+menu = sheet('MoonRayEntityMenu:sheet', 'Add MoonRay Item')
 categories = {}
-for name in sorted(catalog):
+ORDER = ('light', 'lightfilter', 'camera', 'geometry', 'volume')
+for name in sorted(catalog, key=lambda name: (ORDER.index(catalog[name]['category']), name)):
     entry = catalog[name]
     if entry['category'] not in categories:
-        section = ET.SubElement(menu, 'list', type='Control', val='sub MoonRayEntityMenu_%s:sheet' % entry['category'])
-        atom(section, 'Label', entry['category_label'])
-        categories[entry['category']] = section
+        categories[entry['category']] = nested(menu, 'MoonRayEntityMenu_%s:sheet' % entry['category'], entry['category_label'], menu=True)
     control(categories[entry['category']], 'moonray.entity.add ' + name, spaced(name))
 
-# The forms, each shown only while an item of its class is selected.
+# The forms, each shown only while an item of its class is selected, with a section per group
+# of attributes; all but the first start closed.
 for i, name in enumerate(sorted(catalog)):
-    sheet = ET.SubElement(attributes, 'hash', type='Sheet', key='MoonRayEntity%d:sheet' % i)
-    atom(sheet, 'Label', 'MoonRay ' + spaced(name))
-    atom(sheet, 'Layout', 'properties')
-    atom(sheet, 'FilterCommand', 'moonray.entity.filter%d' % i)
-    ET.SubElement(ET.SubElement(sheet, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '130'
+    form = sheet('MoonRayEntity%d:sheet' % i, 'MoonRay ' + spaced(name))
+    atom(form, 'FilterCommand', 'moonray.entity.filter%d' % i)
+    ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '130'
     groups = {}
     for j, (key, spec) in enumerate(sorted(catalog[name]['attributes'].items())):
         group = spec.get('group', 'Parameters')
         if group not in groups:
-            section = ET.SubElement(sheet, 'list', type='Control', val='sub MoonRayEntity_%s_%d:sheet' % (name, len(groups)))
-            atom(section, 'Label', group)
-            atom(section, 'ShowLabel', 1)
-            groups[group] = section
+            groups[group] = nested(form, 'MoonRayEntity_%s_%d:sheet' % (name, len(groups)), group, collapsed=1 if groups else 0)
         kind = spec['type']
         if kind == 'Bool' or 'enum' in spec:
             how = 'Default keeps MoonRay\'s value.'
         elif kind.startswith('SceneObject'):
             how = 'Type the name of another MoonRay item%s; blank for none.' % (' (several, separated by commas)' if kind != 'SceneObject*' else '')
-        elif kind == 'String':
-            how = 'Blank keeps MoonRay\'s value.'
-        elif kind in ('Float', 'Double', 'Int', 'Long'):
+        elif kind in ('String', 'Float', 'Double', 'Int', 'Long'):
             how = 'Blank keeps MoonRay\'s value.'
         else:
             how = 'Blank keeps MoonRay\'s value. Type colours, vectors and lists as [x, y, z].'
-        default = ' MoonRay\'s default: %s.' % json.dumps(spec['default']) if 'default' in spec else ''
+        default = 'MoonRay\'s default: %s.' % json.dumps(spec['default']) if 'default' in spec else ''
         control(groups[group], 'moonray.entity.param%d_%d ?' % (i, j), spec.get('label', key.replace('_', ' ')),
-                ' '.join(part for part in (str(spec.get('comment', '')), default.strip(), how) if part))
+                ' '.join(part for part in (str(spec.get('comment', '')), default, how) if part))
 ET.indent(config)
 ET.ElementTree(config).write(str(kit / 'entities.cfg'), encoding='utf-8', xml_declaration=True)
 print('Generated the menu and forms for', len(catalog), 'MoonRay classes')
