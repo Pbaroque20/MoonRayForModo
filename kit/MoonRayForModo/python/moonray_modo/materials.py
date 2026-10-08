@@ -6,10 +6,11 @@ from . import properties
 def selected():
     return [i for i in modo.Scene().selected if i.type in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX')]
 
-def above_base(scene):
+def above_base(scene,mask):
     """Where a new mask goes under the render item: over the Base Material and every other
     layer, just beneath the shaders. A layer lower down is covered by the Base Material."""
-    layers=scene.renderItem.children()
+    # Modo has already put the new mask among the layers; it is not counted.
+    layers=[layer for layer in scene.renderItem.children() if layer.id!=mask.id]
     for index,layer in enumerate(layers):
         if layer.type=='defaultShader':return index
     return len(layers)
@@ -27,7 +28,7 @@ def assign(shader=None):
             raise ValueError('Mesh has no polygons: '+mesh.name)
     tag='MoonShine_'+uuid.uuid4().hex[:12]
     mask=scene.addItem('mask',name='MoonShine - '+meshes[0].name)
-    mask.setParent(scene.renderItem,above_base(scene))
+    mask.setParent(scene.renderItem,above_base(scene,mask))
     mask.channel('ptyp').set('Material'); mask.channel('ptag').set(tag)
     material=scene.addItem('advancedMaterial',name='MoonShine Material')
     material.setParent(mask,0)

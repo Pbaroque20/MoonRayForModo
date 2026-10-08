@@ -15,12 +15,18 @@ if package_root not in sys.path: sys.path.insert(0,package_root)
 import lx
 import lxifc
 import lxu.command
+import lxu.package
 
 
-class Popup(lxifc.UIValueHints):
-    """A popup of (internal name, label) entries; the argument's value is the entry's index."""
-    def __init__(self,entries):self._entries=entries
-    def uiv_Flags(self):return lx.symbol.fVALHINT_POPUPS
+class Hints(lxifc.UIValueHints):
+    """What Modo needs to draw a control and keep it current: the events that mean its value
+    may have changed, and for a popup its (internal name, label) entries, the argument's value
+    being the entry's index. Modo only listens for events named here; a control with none kept
+    showing the value it was first drawn with."""
+    def __init__(self,notifiers,entries=()):self._notifiers,self._entries=notifiers,entries
+    def uiv_Flags(self):return lx.symbol.fVALHINT_POPUPS if self._entries else 0
+    def uiv_NotifierCount(self):return len(self._notifiers)
+    def uiv_NotifierByIndex(self,index):return self._notifiers[index]
     def uiv_PopCount(self):return len(self._entries)
     def uiv_PopUserName(self,index):return self._entries[index][1]
     def uiv_PopInternalName(self,index):return self._entries[index][0]
@@ -37,6 +43,8 @@ def register():
                          material_override.effective(properties.read(item)).get('native_shader')==shader for item in items):
             return items
         return []
+
+    WATCHED=(('select.event','item +v'),(property_notifications.NAME,''))
 
     def command(shader,key,spec):
         kind=spec['type']
@@ -62,15 +70,7 @@ def register():
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
             def basic_Enable(self,msg):return bool(matching(shader))
             def arg_UIValueHints(self,index):
-                if how=='choice':return Popup(labels)
-            def cmd_NotifyAddClient(self,argidx,client):
-                if not getattr(self,'_notifications',None):
-                    self._notifications=lxu.command.NotifierHost()
-                    self._notifications.add('select.event','item +v')
-                    self._notifications.add(property_notifications.NAME,'')
-                self._notifications.add_client(client)
-            def cmd_NotifyRemoveClient(self,client):
-                if getattr(self,'_notifications',None):self._notifications.rem_client(client)
+                return Hints(WATCHED,labels if how=='choice' else ())
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 for item in matching(shader):
@@ -120,8 +120,12 @@ def register():
                 for item,settings in updates:properties.write(item,settings)
         return Attribute
 
+    class Marker(lxu.package.BasicPackage):
+        """Carries nothing; a material holds the one named for its shader, which is what the
+        shader's form looks for."""
     for i,shader in enumerate(TYPES):
         if not shader:continue
+        lx.bless(type('Marker'+shader,(Marker,),{}),properties.SHADER_PACKAGE+shader)
         for j,(key,spec) in enumerate(sorted(shader_library.catalog()[shader]['attributes'].items())):
             # Connections to other materials keep the graph editor's named inputs.
             if spec['type']=='SceneObject*':continue

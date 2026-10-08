@@ -118,7 +118,7 @@ def apply(data):
  try:
   for name,graph in data['materials'].items():
    tag='RDL_'+uuid.uuid4().hex[:12];tags[name]=tag
-   mask=scene.addItem('mask',name='RDL '+name);created.append(mask);mask.setParent(scene.renderItem,materials.above_base(scene))
+   mask=scene.addItem('mask',name='RDL '+name);created.append(mask);mask.setParent(scene.renderItem,materials.above_base(scene,mask))
    mask.channel('ptyp').set('Material');mask.channel('ptag').set(tag)
    material=scene.addItem('advancedMaterial',name='MoonShine '+name);created.append(material);material.setParent(mask,0)
    properties.write(material,{'shader':'DwaBaseMaterial','native_shader':graph['nodes'][graph['root']]['type'],'node_graph':graph,'node_override':True})

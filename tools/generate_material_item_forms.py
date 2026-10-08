@@ -61,8 +61,9 @@ for i, shader in enumerate([''] + sorted(catalog)):
     if not shader:
         continue
     form = sheet('MoonRayShader%d:sheet' % i, shader)
-    atom(form, 'FilterCommand', 'moonray.material.filter%d' % i)
-    # Without this a form shown by a command never becomes the tab in front.
+    # Modo's own filter, which also tells it how well the form fits the selection; a filter
+    # written in Python cannot, and Modo's material form stayed in front of it.
+    atom(form, 'FilterCommand', 'item.withPackageIsSelected moonray.shader.%s' % shader)
     atom(form, 'FilterCommandPriorityInfluencesTabChoice', 1)
     atom(form, 'Group', 'itemprops')
     ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'

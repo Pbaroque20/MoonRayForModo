@@ -15,8 +15,31 @@ def read(item):
         return {}
 
 
+# A material carries a package named for its native shader. Modo brings a form to the front by
+# what its own selection filters report, and those can test for a package.
+SHADER_PACKAGE = 'moonray.shader.'
+
+
+def mark_shader(item, values):
+    """Keep the one package that names the material's native shader, and no other."""
+    try:
+        if item.type != 'advancedMaterial':
+            return
+        from . import material_override, shader_library
+        shader = material_override.effective(values).get('native_shader') or ''
+        for name in shader_library.catalog():
+            held = bool(item.PackageTest(SHADER_PACKAGE + name))
+            if held and name != shader:
+                item.PackageRemove(SHADER_PACKAGE + name)
+            elif not held and name == shader:
+                item.PackageAdd(SHADER_PACKAGE + name)
+    except Exception:
+        pass
+
+
 def write(item, values):
     item.setTag(TAG, json.dumps(values, sort_keys=True, separators=(',', ':')))
+    mark_shader(item, values)
     from .property_notifications import notify
     notify()
 
