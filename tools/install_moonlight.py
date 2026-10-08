@@ -20,7 +20,7 @@ MODULES = ('environment_layers.py', 'environments.py', 'modo_daylight.bin', 'mod
            'panel_tools.py', 'preferences.py', 'scene_settings.py', 'focus.py', 'progress.py', 'node_editor.py', 'node_widgets.py', 'incremental.py', 'graph_images.py', 'property_notifications.py', 'camera_choice.py', 'graph_bake.py', 'nodes.py', 'coordinates.py', 'animation.py', 'package_sequence.py')
 # Files outside the Python package, relative to the kit: the commands and forms of the MoonRay
 # items and of native materials.
-KIT_FILES = ('lxserv/moonray_entities.py', 'entities.cfg', 'lxserv/moonray_material_forms.py', 'material_forms.cfg',
+KIT_FILES = ('index.cfg', 'lxserv/moonray_entities.py', 'entities.cfg', 'lxserv/moonray_material_forms.py', 'material_forms.cfg',
              'lxserv/moonray_render_settings.py', 'render_settings.cfg', 'lxserv/moonray_commands.py',
              'lxserv/moonray_material_properties.py', 'lxserv/moonray_moonshine_layer.py', 'shader_layers.cfg', 'lxserv/moonray_camera.py')
 

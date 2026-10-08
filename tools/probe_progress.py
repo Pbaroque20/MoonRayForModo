@@ -50,6 +50,15 @@ def panel_widget():
 
 
 shots = []
+held_runtime = []
+
+
+def restore_runtime():
+    panel = panel_widget()
+    if held_runtime and held_runtime[0]:
+        panel.preferences.set('runtime', held_runtime[0])
+    elif held_runtime:
+        panel.preferences.store.remove('runtime')
 
 
 def step2():
@@ -57,6 +66,8 @@ def step2():
         panel = panel_widget()
         result['engine'] = panel.preview_engine.currentData()
         result['runtime'] = panel.preferences.get('runtime')
+        # The window's choices are shared with the user's own Modo: keep what was stored, to put it back.
+        held_runtime.append(panel.preferences.store.value('runtime', ''))
         import os
         panel.preferences.set('runtime', str(root / 'runtime' / os.environ.get('PROBE_RUNTIME', 'steady-0349-candidate')))
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonray'))
@@ -107,6 +118,7 @@ def grab():
     except Exception:
         result['grab_error'] = traceback.format_exc()
     save()
+    restore_runtime()
     QtCore.QTimer.singleShot(500, lambda: lx.eval('app.quit'))
 
 

@@ -86,7 +86,41 @@ PView was removed: Modo cannot host an external renderer there.
 - A list of the scene's graph materials, each named with what it belongs to, switches the
   editor between them.
 
+- A ramp is edited as a ramp: a RampMap's positions, colours and blends, and the same three
+  lists on the materials that carry a ramp, are one row showing the ramp, which opens the ramp
+  editor.
+
+## Curves and hair
+
+- A mesh's curves, splines and line polygons render as round tubes. All of a mesh's strands of
+  one material are a single curve geometry, line polygons are read as they stand, and the long
+  lists are written once and kept, so thousands of strands cost little more than one mesh.
+- The controls are on the mesh's MoonRay tab, under its object overrides: whether curves
+  render, the width at root and tip, the envelope between them, samples per bend for splines,
+  and UVs that run along each strand by length.
+- MoonLight draws the same curves, as tubes of polygons.
+
+## Daylight
+
+- Modo's physically based daylight is followed from a table of Modo's own renders of it, over
+  sun height and haze: the sky, its brightness clamp and gamma, the ground's colour and the
+  blend to it below the horizon. Half the sky is within 1% of Modo's and nine tenths of it
+  within 1 to 7%.
+- A sun placed by date and time takes the colour and strength Modo gives it, following its
+  clamp, gamma, thinning and haze.
+- A sun turned by hand now lights its sky from where it stands.
+
+## Outputs
+
+- A new scene outputs the object Cryptomatte, so the first render already holds the mattes.
+
 ## Known gaps
+
+- The solar disc is not drawn in the sky, and a ground colour other than mid-grey tints the
+  sky only approximately.
+- An ordinary Modo directional light is given to MoonRay at pi times Modo's strength; only the
+  physical sun is corrected for this so far.
+- Curves in MoonLight are tubes of four or eight sides, not true curves.
 
 - Rendering a material added from Add Layer, and rendering a material with a wired graph, were
   not exercised in this round.
