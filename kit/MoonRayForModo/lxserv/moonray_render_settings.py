@@ -77,7 +77,7 @@ def register():
         return Browse
 
     for entry in scene_settings.FIELDS:
-        if entry['kind']=='button':continue
+        if entry['kind'] in ('button','command'):continue
         lx.bless(command(entry),'moonray.render.'+entry['key'])
         if entry['kind']=='file':lx.bless(browse(entry),'moonray.render.browse_'+entry['key'])
 

@@ -116,6 +116,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_engine.setMinimumWidth(130)
         self.preview_engine.setToolTip('MoonLight is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
         row.addWidget(self.preview_engine)
+        # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
+        self.camera=QtWidgets.QComboBox();self.camera.setMinimumWidth(150)
+        self.camera.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.camera.setToolTip('The camera the scene is rendered through. MoonRay camera items are added from MoonRay > Add MoonRay Item.')
+        self.camera.activated.connect(self._camera_chosen)
+        row.addWidget(self.camera)
         self.buffer = QtWidgets.QComboBox()
         self.buffer.addItem('Beauty','beauty')
         self.buffer.addItem('Denoised Beauty','denoised_beauty')
@@ -265,6 +271,24 @@ class Panel(Tools, QtWidgets.QWidget):
         self._store(region_enabled=bool(enabled))
         if self._following:self.preview_timer.start()
 
+    def _camera_chosen(self,index):
+        try:lx.eval('moonray.camera %d'%index)
+        except Exception as exc:self.status.setText('Cannot change the camera: '+str(exc));return
+        self._sync_cameras()
+        if self._following:self.preview_timer.start()
+        else:self.status.setText('Applies to the next render.')
+
+    def _sync_cameras(self):
+        """List the cameras the scene can be rendered through, with the one in use chosen."""
+        from . import camera_choice
+        try:entries,current=camera_choice.choices(),camera_choice.current()
+        except Exception:return
+        if entries==getattr(self,'_cameras',None) and current==self.camera.currentData():return
+        self._cameras=entries;blocker=QtCore.QSignalBlocker(self.camera)
+        self.camera.clear()
+        for label,identity in entries:self.camera.addItem(label,identity)
+        self.camera.setCurrentIndex(max(0,self.camera.findData(current)));del blocker
+
     def _commit_exposure(self):
         if self.disposed:return
         display=self._settings_values()['display']
@@ -296,6 +320,7 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:return
         if scene_id!=self._scene_id:
             self._scene_id=scene_id;self._geometry_cache=None;self._shown=None
+        self._sync_cameras()
         watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'])
         if watched==self._shown:return
         previous,self._shown=self._shown,watched

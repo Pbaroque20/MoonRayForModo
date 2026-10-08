@@ -64,8 +64,12 @@ VIEWS = [('Highlight compression + sRGB', 'reinhard'), ('sRGB', 'srgb'), ('Raw l
 LUT_SPACES = [('After display transform', 'display'), ('Scene-linear, before view', 'linear')]
 MODES = [('Auto (XPU, Vector, Scalar)', 'auto'), ('XPU (NVIDIA GPU + CPU)', 'xpu'), ('Vector (CPU / AVX)', 'vectorized'), ('Scalar (CPU)', 'scalar')]
 
-# (group, starts collapsed, fields). A field of kind 'button' runs a command instead.
+# (group, starts collapsed, fields). A field of kind 'button' runs a command instead, and one of
+# kind 'command' shows a command of its own, named in its tip's place.
 GROUPS = [
+    ('Camera', False, [
+        field('camera', None, 'command', 'Render Camera', 'Render through the Modo render camera or one of the MoonRay cameras in the scene, such as a fisheye'),
+    ]),
     ('Sampling', False, [
         render_field('sampling_mode', 'Sampling', 'Adaptive stops sampling a pixel once it is clean enough'),
         field('samples', ('samples',), 'int', 'Pixel Samples', 'Uniform sampling: 4 means 4 x 4 = 16 samples per pixel', 1, 64),

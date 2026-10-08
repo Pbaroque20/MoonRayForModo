@@ -55,6 +55,10 @@ for index, (group, collapsed, entries) in enumerate(scene_settings.GROUPS):
     atom(place, 'Hash', key)
     section = sheet(key, group)
     for entry in entries:
+        if entry['kind'] == 'command':
+            # A command of its own, kept elsewhere: the camera chooser.
+            control(section, 'moonray.%s ?' % entry['key'], entry['label'], entry['tip'])
+            continue
         if entry['kind'] == 'button':
             control(section, 'moonray.page ' + entry['key'], entry['label'], entry['tip'])
             continue
