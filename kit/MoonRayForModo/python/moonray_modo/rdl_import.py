@@ -112,13 +112,13 @@ def plan(document,path):
 
 def apply(data):
  import modo,lx
- from . import properties
+ from . import materials,properties
  scene=modo.Scene();created=[];warnings=list(data['warnings']);tags={}
  previous_camera=scene.renderCamera;previous_selection=list(scene.selected)
  try:
   for name,graph in data['materials'].items():
    tag='RDL_'+uuid.uuid4().hex[:12];tags[name]=tag
-   mask=scene.addItem('mask',name='RDL '+name);created.append(mask);mask.setParent(scene.renderItem,0)
+   mask=scene.addItem('mask',name='RDL '+name);created.append(mask);mask.setParent(scene.renderItem,materials.above_base(scene))
    mask.channel('ptyp').set('Material');mask.channel('ptag').set(tag)
    material=scene.addItem('advancedMaterial',name='MoonShine '+name);created.append(material);material.setParent(mask,0)
    properties.write(material,{'shader':'DwaBaseMaterial','native_shader':graph['nodes'][graph['root']]['type'],'node_graph':graph,'node_override':True})

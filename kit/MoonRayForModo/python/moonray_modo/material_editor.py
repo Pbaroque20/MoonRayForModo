@@ -5,9 +5,9 @@ from . import shader_library, properties
 
 
 def choose():
-    names=['Modo controls (DwaBaseMaterial)']+sorted(shader_library.catalog())
-    value,ok=QtWidgets.QInputDialog.getItem(None,'MoonShine Material','Material type',names,0,False)
-    return (None if value==names[0] else value) if ok else False
+    names=sorted(shader_library.catalog())
+    value,ok=QtWidgets.QInputDialog.getItem(None,'MoonShine Material','Material type',names,names.index('DwaBaseMaterial'),False)
+    return value if ok else False
 
 
 def edit(item, scene):
