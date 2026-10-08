@@ -157,6 +157,11 @@ PView was removed: Modo cannot host an external renderer there.
 - MoonLight's denoiser keeps more of a texture. It is given the light without the surface
   colour, so a printed pattern is not its to smooth, and as samples gather a growing share of
   the picture's own detail is kept beside it. `tools/check_moonlight_denoise.py` measures it.
+- A scene with an imported MaterialX material is read in a fraction of the time. Its texture
+  coordinates were worked out again for every polygon, which stopped Modo for seconds on a small
+  mesh and for minutes on a dense one, each time the preview read the scene.
+- IPR no longer reads the whole scene again every 15 seconds unless asked to, in the preview's
+  preferences. It is for procedural items that do not announce their changes.
 - A MoonRay material set to metal now renders as one. Its metallic setting never reached
   MoonRay before.
 

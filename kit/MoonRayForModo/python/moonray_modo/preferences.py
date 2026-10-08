@@ -6,7 +6,7 @@ SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('Sce
 # key: (default, kind)
 KEYS = {
     'runtime': ('', str), 'preview_engine': ('moonray', str), 'preview_size': (640, int),
-    'persistent_preview': (True, bool), 'capture_safety': (True, bool), 'preview_motion': (False, bool),
+    'persistent_preview': (True, bool), 'capture_safety': (False, bool), 'preview_motion': (False, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'ipr/width': (160, int), 'ipr/samples': (1, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
 }
@@ -77,7 +77,7 @@ class Dialog(QtWidgets.QDialog):
         form.addRow(check('preview_motion', 'Motion blur in MoonLight renders',
                           'Render reads the scene at shutter open and close; IPR updates stay sharp'))
         form.addRow(check('capture_safety', 'Re-read the scene every 15 seconds while IPR runs',
-                          'Catches edits from procedural items that do not announce their changes'))
+                          'Catches edits from procedural items that do not announce their changes. Modo pauses while a large scene is read'))
         heading = QtWidgets.QLabel('MoonRay IPR quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)

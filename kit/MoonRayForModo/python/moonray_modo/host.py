@@ -332,6 +332,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 vertices.append(list(points.Pos()))
             groups = {}
             uv_maps = {}
+            # Worked out once for each material, not for each polygon: a node graph's is found by following its nodes.
+            tag_descriptors = {}
             normal_map = first_map(mesh, lx.symbol.i_VMAP_NORMAL)
             tags = lx.object.StringTag(polygons)
             transform = world_matrix(item)
@@ -353,16 +355,22 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 if uv_name not in uv_maps:
                     uv_maps[uv_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, uv_name)
                 face_uv = corner_values(polygons, uv_maps[uv_name], count, 2)
+                # A UV map several images read, each moved or scaled its own way, is read from the polygon once.
+                read = {uv_name: face_uv}
                 if uv_name and not face_uv:
                     raise ValueError('Mesh %s is missing UV values in map %s.' % (item.name, uv_name))
                 extra_uvs = {}
-                for key, descriptor in coordinates.descriptors({tag:result['materials'].get(tag,{})}).items():
+                if tag not in tag_descriptors:
+                    tag_descriptors[tag] = coordinates.descriptors({tag:result['materials'].get(tag,{})})
+                for key, descriptor in tag_descriptors[tag].items():
                     source_name = descriptor.get('uv_map','')
                     source_uv = []
                     if descriptor.get('projection','uv') == 'uv':
                         if source_name not in uv_maps:
                             uv_maps[source_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, source_name)
-                        source_uv = corner_values(polygons, uv_maps[source_name], count, 2)
+                        if source_name not in read:
+                            read[source_name] = corner_values(polygons, uv_maps[source_name], count, 2)
+                        source_uv = read[source_name]
                     extra_uvs[key] = coordinates.face(descriptor, [vertices[v] for v in face], source_uv, transform)
                 groups.setdefault((subdivision, uv_name), []).append((face, tag,
                     face_uv, corner_values(polygons, normal_map, count, 3), extra_uvs))
