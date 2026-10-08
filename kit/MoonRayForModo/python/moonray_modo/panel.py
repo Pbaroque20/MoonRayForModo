@@ -14,6 +14,13 @@ from .panel_tools import Tools
 
 RENDER_TIP = 'Render the current scene. The previous image stays until its replacement is ready.'
 STOP_TIP = 'Stop the render in progress and stop following scene changes.'
+# Always offered in the buffer list; choosing one adds the output to the scene if it lacks it.
+CRYPTOMATTES = (('object', 'Cryptomatte: Objects'), ('material', 'Cryptomatte: Materials'))
+
+
+def scene_display(stored):
+    from .display import values
+    return values(stored['display'])
 
 
 class Panel(Tools, QtWidgets.QWidget):
@@ -27,6 +34,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.last_digest = None
         self._pending_preview=False
         self._rendering=False
+        # IPR is a choice of how Render behaves; following is Render having been pressed with it on.
+        self._following=False
         self._scene_id=None
         self._shown=None
         self._asset_check_time=0
@@ -50,8 +59,9 @@ class Panel(Tools, QtWidgets.QWidget):
         layout.addLayout(self._toolbar())
         self.preview = Preview()
         self.preview.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.preview.customContextMenuRequested.connect(lambda point:self._image_menu().exec_(self.preview.mapToGlobal(point)))
-        self.preview.start_requested.connect(self.render_once)
+        self.preview.customContextMenuRequested.connect(lambda point:self._image_menu(point).exec_(self.preview.mapToGlobal(point)))
+        self.preview.installEventFilter(self)
+        self.preview.start_requested.connect(self.start_render)
         self.preview.set_worker_overlay(self.preferences.get('worker_tiles'))
         self.preview.set_show_buckets(self.preferences.get('show_buckets'))
         layout.addWidget(self.preview, 1)
@@ -80,7 +90,6 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_engine.currentIndexChanged.connect(self._engine_changed)
         self.preview_engine.currentIndexChanged.connect(self._preview_changed)
         self.ipr_mode.toggled.connect(self._ipr_changed)
-        self.ipr_mode.toggled.connect(lambda on:self._set_rendering(self._rendering))
         self.poll_timer.start()
 
     # The window's own controls
@@ -94,12 +103,15 @@ class Panel(Tools, QtWidgets.QWidget):
         self.start.clicked.connect(self._render_or_stop)
         row.addWidget(self.start)
         self.ipr_mode=QtWidgets.QCheckBox('IPR')
-        self.ipr_mode.setToolTip('Keep the preview following the scene as it is edited.')
+        self.ipr_mode.setToolTip('With IPR on, Render keeps following the scene as it is edited, until Stop.')
+        self.ipr_mode.setChecked(self.preferences.get('ipr'))
         row.addWidget(self.ipr_mode)
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
         self.preview_engine.addItem('MoonLight', 'moonlight')
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(self.preferences.get('preview_engine'))))
+        self.preview_engine.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.preview_engine.setMinimumWidth(130)
         self.preview_engine.setToolTip('MoonLight is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
         row.addWidget(self.preview_engine)
         self.buffer = QtWidgets.QComboBox()
@@ -118,30 +130,39 @@ class Panel(Tools, QtWidgets.QWidget):
         self.region_enabled.setToolTip('Render only the region set in the Render item\'s MoonRay properties.')
         self.region_enabled.toggled.connect(self._region_toggled)
         row.addWidget(self.region_enabled)
-        gear=QtWidgets.QToolButton();gear.setText('Options');gear.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.focus_pick=QtWidgets.QToolButton();self.focus_pick.setText('Focus');self.focus_pick.setCheckable(True)
+        self.focus_pick.setToolTip('Click, then click a point in the image: the camera focuses on that surface. Right-click the image for Focus Here.')
+        self.focus_pick.toggled.connect(self._focus_armed)
+        row.addWidget(self.focus_pick)
+        gear=self.options_button=QtWidgets.QToolButton();gear.setText('Options');gear.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         gear.setMenu(self._options_menu())
         row.addWidget(gear)
         return row
 
     def _options_menu(self):
-        menu=QtWidgets.QMenu(self)
+        menu=self.options_menu=QtWidgets.QMenu(self)
+        def checkable(target,label):
+            # Made here and then added: in Modo's Qt the action a menu makes for a label cannot
+            # be used afterwards (it reports as deleted), which stopped IPR from starting.
+            action=QtWidgets.QAction(label,self);action.setCheckable(True);target.addAction(action)
+            return action
         menu.addAction('Render Settings',self.open_settings)
         menu.addAction('Preferences...',self.edit_preferences)
         menu.addSeparator()
-        self.preview_lock=menu.addAction('Lock Preview');self.preview_lock.setCheckable(True)
+        self.preview_lock=checkable(menu,'Lock Preview')
         self.preview_lock.setToolTip('Hold automatic updates; the current render continues.')
         self.preview_lock.toggled.connect(self._lock_changed)
         from .clay import CHOICES
-        clay=menu.addMenu('Preview Material');self.clay_group=QtWidgets.QActionGroup(self)
+        clay=self.clay_menu=QtWidgets.QMenu('Preview Material',self);menu.addMenu(clay);self.clay_group=QtWidgets.QActionGroup(self)
         for label,key in CHOICES:
-            action=clay.addAction(label.replace(' — ',': '));action.setCheckable(True);action.setData(key)
+            action=checkable(clay,label.replace(' — ',': '));action.setData(key)
             action.setChecked(key==self.preferences.get('clay'));self.clay_group.addAction(action)
         if self.clay_group.checkedAction() is None:self.clay_group.actions()[0].setChecked(True)
         self.clay_group.triggered.connect(self._clay_changed)
-        self.show_buckets=menu.addAction('Show Buckets');self.show_buckets.setCheckable(True)
+        self.show_buckets=checkable(menu,'Show Buckets')
         self.show_buckets.setChecked(self.preferences.get('show_buckets'))
         self.show_buckets.toggled.connect(self._overlay_changed)
-        self.worker_tiles=menu.addAction('Show Worker Tiles');self.worker_tiles.setCheckable(True)
+        self.worker_tiles=checkable(menu,'Show Worker Tiles')
         self.worker_tiles.setChecked(self.preferences.get('worker_tiles'))
         self.worker_tiles.toggled.connect(self._overlay_changed)
         menu.addSeparator()
@@ -152,8 +173,11 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Render Log...',self.show_log)
         return menu
 
-    def _image_menu(self):
+    def _image_menu(self,point=None):
         menu=QtWidgets.QMenu(self)
+        if point is not None:
+            menu.addAction('Focus Here',lambda:self.focus_at(point))
+            menu.addSeparator()
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
         menu.addSeparator()
@@ -177,6 +201,43 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.notice_toggle)
         return row
 
+    def _focus_armed(self,armed):
+        if armed:
+            self.preview.setCursor(QtCore.Qt.CrossCursor)
+            self.status.setText('Click the point to focus on.')
+        else:self.preview.unsetCursor()
+
+    def eventFilter(self,watched,event):
+        # While Focus is armed, the next click in the image picks instead of panning.
+        if watched is self.preview and self.focus_pick.isChecked() and event.type()==QtCore.QEvent.MouseButtonPress and event.button()==QtCore.Qt.LeftButton:
+            point=event.pos()
+            self.focus_pick.setChecked(False)
+            self.focus_at(point)
+            return True
+        return super().eventFilter(watched,event)
+
+    def focus_at(self,point):
+        """Set the render camera's focus distance to the surface under a point of the image."""
+        try:
+            rect=self.preview.image_rect()
+            if rect.isEmpty() or not rect.contains(QtCore.QPointF(point)):
+                self.status.setText('Click inside the rendered image to set focus.');return
+            scene=self._asset_scene
+            if not scene or not scene.get('camera'):
+                self.status.setText('Render once, then pick the focus point.');return
+            from .focus import depth
+            distance=depth(scene,(point.x()-rect.left())/rect.width(),(point.y()-rect.top())/rect.height())
+            if distance is None:
+                self.status.setText('Nothing to focus on there.');return
+            camera=scene['camera']
+            lx.eval('channel.value %.6f channel:{%s:focusDist}'%(distance,camera['identity']))
+            message='Focus distance %.3f m.'%distance
+            if not camera.get('dof'):message+=' Depth of field is off on this camera.'
+            elif not self._following:message+=' Render to see it.'
+            self.status.setText(message)
+        except Exception as exc:
+            self.status.setText('Cannot set focus: '+str(exc))
+
     def _clay(self):
         action=self.clay_group.checkedAction()
         return action.data() if action is not None else 'materials'
@@ -188,17 +249,17 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preferences.set('show_buckets',self.show_buckets.isChecked())
         self.preferences.set('worker_tiles',self.worker_tiles.isChecked())
         self.preview.set_worker_overlay(self.worker_tiles.isChecked())
-        self.preview.set_show_buckets(self.show_buckets.isChecked() and not self.ipr_mode.isChecked())
+        self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
 
     def _preferences_changed(self):
         self.status.setText('Preferences saved.')
         self.refine_timer.stop()
-        if self.ipr_mode.isChecked():self.preview_timer.start()
+        if self._following:self.preview_timer.start()
 
     def _region_toggled(self,enabled):
         if enabled==self._settings_values()['region_enabled']:return
         self._store(region_enabled=bool(enabled))
-        if self.ipr_mode.isChecked():self.preview_timer.start()
+        if self._following:self.preview_timer.start()
 
     def _commit_exposure(self):
         if self.disposed:return
@@ -243,7 +304,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
 
     def _sync_output_menu(self,custom_aovs):
-        names=[(v['name']+(' (ID colors)' if v['kind']=='cryptomatte' else ''),v['name']) for v in custom_aovs]
+        names=[(v['name'],v['name']) for v in custom_aovs if v['kind']!='cryptomatte']
+        held={v.get('category','object'):v['name'] for v in custom_aovs if v['kind']=='cryptomatte'}
+        names+=[(label,held.get(category,'crypto_'+category)) for category,label in CRYPTOMATTES]
+        if 'asset' in held:names.append(('Cryptomatte: Assets',held['asset']))
         base=2+len(options.AOVS)
         if names==[(self.buffer.itemText(i),self.buffer.itemData(i)) for i in range(base,self.buffer.count())]:return
         key=self.buffer.currentData();blocker=QtCore.QSignalBlocker(self.buffer)
@@ -268,23 +332,30 @@ class Panel(Tools, QtWidgets.QWidget):
         self.notice_toggle.setText('Notices (%d)'%len(unique))
 
     def _ipr_changed(self,enabled):
-        self.refine_timer.stop()
-        self.preview_timer.stop();self.timer.stop()
+        self.preferences.set('ipr',bool(enabled))
+        if enabled:
+            if self._rendering and not self._output_busy():
+                # Turned on during a preview: carry on from it.
+                self._follow(True)
+                self.status.setText('Following the scene.')
+            else:self.status.setText('IPR on: Render will follow the scene until Stop.')
+        else:
+            was=self._following
+            self._follow(False)
+            self.status.setText('IPR off.' + (' The current pass may finish.' if was and self._rendering else ''))
+
+    def _follow(self,following):
+        """Start or stop following the scene's edits."""
+        self._following=bool(following)
+        self.refine_timer.stop();self.preview_timer.stop();self.timer.stop()
         self._pending_preview=False;self.release_timer.stop()
-        self.preview.set_show_buckets(self.show_buckets.isChecked() and not enabled)
-        if not enabled:
-            self.status.setText('IPR off.')
-            return
-        if self._output_busy():
-            blocker=QtCore.QSignalBlocker(self.ipr_mode);self.ipr_mode.setChecked(False)
-            self.status.setText('Output render continues. Enable IPR after it finishes.');return
-        self.renderer.buffers.denoiser.close()
-        if self.buffer.currentData()=='denoised_beauty':
-            self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
-        if self.preview_lock.isChecked():
-            self.status.setText('IPR on. Updates resume when the preview is unlocked.');return
-        self.render_once()
-        if self.ipr_mode.isChecked():self.timer.start()
+        self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
+        if self._following:
+            self.renderer.buffers.denoiser.close()
+            if self.buffer.currentData()=='denoised_beauty':
+                self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+            if not self.preview_lock.isChecked():self.timer.start()
+        self._set_rendering(self._rendering)
 
     def _output_busy(self):
         return (self.sequence is not None and self.sequence.running) or bool(self.renderer.pending and self.renderer.pending.get('output')) or bool(self.renderer.active and self.renderer.active.get('output') and self.renderer.process.state()!=QtCore.QProcess.NotRunning)
@@ -295,7 +366,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Preview locked.')
         else:
             self.status.setText('Preview unlocked.')
-            if self.ipr_mode.isChecked():self.timer.start();self._live_tick()
+            if self._following:self.timer.start();self._live_tick()
 
     # Capturing the scene
 
@@ -383,13 +454,20 @@ class Panel(Tools, QtWidgets.QWidget):
     # Rendering
 
     def _render_or_stop(self):
-        if self._rendering or self.ipr_mode.isChecked():self.stop()
-        else:self.render_once()
+        if self._rendering or self._following:self.stop()
+        else:self.start_render()
+
+    def start_render(self):
+        """What the Render button does: one render, or with IPR on, a render that keeps following."""
+        if self._output_busy():
+            self.status.setText('Output render is running. Press Stop before starting a preview.');return
+        if self.ipr_mode.isChecked():self._follow(True)
+        self.render_once()
 
     def _set_rendering(self,rendering):
         """Keep the Render button saying what pressing it will do."""
         self._rendering=bool(rendering)
-        active=self._rendering or self.ipr_mode.isChecked()
+        active=self._rendering or self._following
         self.start.setText('Stop' if active else 'Render')
         self.start.setToolTip(STOP_TIP if active else RENDER_TIP)
 
@@ -403,7 +481,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if not output:scene=dict(scene,_clay_preview=self._clay())
         engine='moonray' if output else self.preview_engine.currentData()
         # MoonLight accumulates at full preview size; the IPR quality limits are for MoonRay.
-        if self.ipr_mode.isChecked() and not output and engine=='moonray':
+        if self._following and not output and engine=='moonray':
             from .ipr import prepare
             scene,width,height=prepare(scene,width,height,values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'))
         if refining:
@@ -417,14 +495,14 @@ class Panel(Tools, QtWidgets.QWidget):
     def _digest(self, scene):
         render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising')}
         stored=self._settings_values();get=self.preferences.get
-        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self.ipr_mode.isChecked(), get('ipr/width'), get('ipr/samples'), get('ipr/error'), self.preview_engine.currentData()]
+        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), self.preview_engine.currentData()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
         from .scene_digest import digest
         return digest(*values)
 
     def _preview_denoiser(self):
         denoising=self._settings_values()['denoising']
-        return denoising['engine'] if denoising['preview'] and not self.ipr_mode.isChecked() else 'off'
+        return denoising['engine'] if denoising['preview'] and not self._following else 'off'
 
     def _denoising_changed(self,*args):
         if self.disposed:return
@@ -434,17 +512,39 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _buffer_changed(self,index):
         if self.disposed:return
-        if self.ipr_mode.isChecked() and self.buffer.currentData()=='denoised_beauty':
+        if self._following and self.buffer.currentData()=='denoised_beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('beauty'));return
         try:
             from .display import values
-            self.renderer.buffers.select(self.buffer.currentData(),values(self._settings_values()['display']))
+            stored=self._settings_values();key=self.buffer.currentData()
+            if self._add_cryptomatte(key,stored):return
+            self.renderer.buffers.select(key,values(stored['display']))
+            if not self._rendering and any(v['name']==key and v['kind']=='cryptomatte' for v in stored['custom_aovs']):
+                self.status.setText('Cryptomatte: each color is one ID. The EXR holds the mattes.')
         except Exception as exc:
             self.status.setText('Cannot update buffer display: '+str(exc))
 
+    def _add_cryptomatte(self,key,stored):
+        """Choosing a Cryptomatte the scene does not output yet adds it and renders; True if it did."""
+        category=next((c for c,_ in CRYPTOMATTES if key=='crypto_'+c),None)
+        entries=list(stored['custom_aovs'])
+        if category is None or any(v['name']==key for v in entries):return False
+        if self.preview_engine.currentData()!='moonray':
+            self.status.setText('Cryptomatte needs the MoonRay engine.');return True
+        from . import native,outputs
+        if not native.supports_crypto_categories(self.runtime_path()):
+            # This runtime writes one Cryptomatte at a time.
+            entries=[v for v in entries if v['kind']!='cryptomatte']
+        entries=outputs.values(entries+[{'name':key,'kind':'cryptomatte','category':category,'depth':6}])
+        if not self._store(custom_aovs=entries):return True
+        self.renderer.buffers.select(key,scene_display(stored))
+        self.status.setText('Cryptomatte added to the scene outputs. Rendering.')
+        self.render_once()
+        return True
+
     def _preview_changed(self, index):
         if self.disposed: return
-        if not self.ipr_mode.isChecked():
+        if not self._following:
             self.status.setText('Applies to the next render.');return
         if self.preview_lock.isChecked():
             self.status.setText('Preview locked. Applies when unlocked.');return
@@ -459,7 +559,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if dragging():self.release_timer.start();return
         if self._pending_preview:
             self._pending_preview=False;self.render_once()
-        elif self.ipr_mode.isChecked():self._live_tick()
+        elif self._following:self._live_tick()
 
     def render_once(self):
         from .interaction import dragging
@@ -473,7 +573,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self._failed(str(exc))
 
     def _live_tick(self):
-        if self.disposed or not self.ipr_mode.isChecked():return
+        if self.disposed or not self._following:return
         from .interaction import dragging
         held=dragging()
         # MoonLight is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
@@ -520,13 +620,15 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_timer.stop()
         if self.sequence is not None:
             self.sequence.stop()
-        self.ipr_mode.setChecked(False)
+        self._following=False;self.timer.stop()
+        self.preview.set_show_buckets(self.show_buckets.isChecked())
         self.renderer.stop()
         self._set_rendering(False)
+        self.status.setText('Stopped.')
 
     def _failed(self, message):
         self.refine_timer.stop()
-        self.ipr_mode.setChecked(False)
+        self._following=False;self.timer.stop()
         self.renderer.stop()
         self._set_rendering(False)
         self.status.setText('Render unavailable: ' + message)
@@ -557,20 +659,20 @@ class Panel(Tools, QtWidgets.QWidget):
     def _finished(self, output):
         self._set_rendering(False)
         self.status.setToolTip('')
-        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self.ipr_mode.isChecked() else 'Done'))
+        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Done'))
         if not output:
             self.renderer.buffers.denoiser.request(self._preview_denoiser())
             snapshot=(self.renderer.active or {}).get('snapshot',{})
-            if self.ipr_mode.isChecked() and self.preferences.get('ipr/refine') and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:
+            if self._following and self.preferences.get('ipr/refine') and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:
                 self.refine_timer.start()
 
     def _refine_ipr(self):
-        if self.disposed or not self.ipr_mode.isChecked() or not self.preferences.get('ipr/refine') or self.preview_lock.isChecked() or self._output_busy():return
+        if self.disposed or not self._following or not self.preferences.get('ipr/refine') or self.preview_lock.isChecked() or self._output_busy():return
         from .interaction import dragging
         if dragging() or self.preview_timer.isActive():self.refine_timer.start();return
         generation=self.renderer.generation
         self._live_tick()  # A pending edit takes priority over quality refinement.
-        if self.renderer.generation!=generation or not self.ipr_mode.isChecked():return
+        if self.renderer.generation!=generation or not self._following:return
         if self._ipr_refine_scene is not None:
             try:self._submit(self._ipr_refine_scene,refining=True)
             except Exception as exc:self._failed(str(exc))

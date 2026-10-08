@@ -7,7 +7,7 @@ SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('Sce
 KEYS = {
     'runtime': ('', str), 'preview_engine': ('moonray', str), 'preview_size': (640, int),
     'persistent_preview': (True, bool), 'capture_safety': (True, bool), 'preview_motion': (False, bool),
-    'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
+    'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'ipr/width': (160, int), 'ipr/samples': (1, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
 }
 
