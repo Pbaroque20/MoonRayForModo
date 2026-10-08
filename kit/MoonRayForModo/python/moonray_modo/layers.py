@@ -69,7 +69,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
         if channel(layer,'effect','') in baked_effects:
             continue
         if layer.type not in ('imageMap','constant','checker','noise','grid','dots','gradient'):
-            if layer.type not in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','defaultShader','mask','envMaterial') and channel(layer,'effect',None) is not None:
+            from . import properties
+            if not properties.is_material(layer) and layer.type not in ('defaultShader','mask','envMaterial') and channel(layer,'effect',None) is not None:
                 try:
                     scope=material_key if layer_filter is not None else material_tag(layer,texture=True)
                     if scope in materials and texture_groups(layer,channel) is not None:

@@ -127,7 +127,7 @@ class MoonShineOverride(Observed):
         super().__init__();self.dyna_Add('enabled',lx.symbol.sTYPE_BOOLEAN)
         self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
     def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-    def basic_Enable(self,msg):return bool(selected()) and all(i.type in ('advancedMaterial','material.moonrayMoonShine') or properties.layer_shader(i) for i in selected())
+    def basic_Enable(self,msg):return bool(selected()) and all(i.type in ('advancedMaterial','material.moonrayMoonShine',properties.MATERIALX_TYPE) or properties.layer_shader(i) for i in selected())
     def cmd_Query(self,index,query):
         values=lx.object.ValueArray(query)
         for item in selected():values.AddInt(int(material_override.enabled(properties.read(item))))
@@ -149,7 +149,7 @@ class OpenNodes(Observed):
     def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
     def basic_Enable(self,msg):
         items=selected()
-        return len(items)==1 and (items[0].type in ('advancedMaterial','material.moonrayMoonShine') or properties.layer_shader(items[0])) and material_override.enabled(properties.read(items[0]))
+        return len(items)==1 and (items[0].type in ('advancedMaterial','material.moonrayMoonShine',properties.MATERIALX_TYPE) or properties.layer_shader(items[0])) and material_override.enabled(properties.read(items[0]))
     def basic_Execute(self,msg,flags):
         from moonray_modo.node_editor import open_editor
         if not self.basic_Enable(msg):raise ValueError('Enable MoonShine Material Override to open its node editor')

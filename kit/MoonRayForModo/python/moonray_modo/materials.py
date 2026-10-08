@@ -4,7 +4,7 @@ import modo
 from . import properties
 
 def selected():
-    return [i for i in modo.Scene().selected if i.type in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX') or properties.layer_shader(i)]
+    return [i for i in modo.Scene().selected if properties.is_material(i)]
 
 def above_base(scene,mask):
     """Where a new mask goes under the render item: over the Base Material and every other
@@ -15,7 +15,7 @@ def above_base(scene,mask):
         if layer.type=='defaultShader':return index
     return len(layers)
 
-def assign(shader=None):
+def assign(shader=None, kind='advancedMaterial'):
     scene=modo.Scene()
     # Without a named shader it is a DwaBaseMaterial, edited through that material's own form.
     shader=shader or 'DwaBaseMaterial'
@@ -30,7 +30,7 @@ def assign(shader=None):
     mask=scene.addItem('mask',name='MoonShine - '+meshes[0].name)
     mask.setParent(scene.renderItem,above_base(scene,mask))
     mask.channel('ptyp').set('Material'); mask.channel('ptag').set(tag)
-    material=scene.addItem('advancedMaterial',name='MoonShine Material')
+    material=scene.addItem(kind,name='MoonShine Material')
     material.setParent(mask,0)
     properties.write(material,{'shader':'DwaBaseMaterial','thin_geometry':False,'moonshine_override':True,'native_shader':shader,'native_parameters':{}})
     material.channel('diffAmt').set(1)
@@ -57,9 +57,22 @@ def import_materialx(path):
     from .material_override import synchronize
     # Read first: a file that cannot be followed leaves the scene as it was.
     graph=materialx.read(path)
-    material=assign(graph['nodes'][graph['root']]['type'])
+    material=assign(graph['nodes'][graph['root']]['type'],properties.MATERIALX_TYPE)
+    load_materialx(material,path,graph)
+    # The group it sits in says what it is, as the material's own type does.
+    try:material.parent.name='MaterialX - '+material.name
+    except (AttributeError,LookupError,RuntimeError):pass
+    return material
+
+
+def load_materialx(material,path,graph=None):
+    """Give a MaterialX material the material of a file: its graph, its controls and its name."""
+    from pathlib import Path
+    from . import materialx
+    from .material_override import synchronize
+    graph=graph or materialx.read(path)
     settings=properties.read(material)
-    settings['node_graph']=graph
+    settings.update(shader='DwaBaseMaterial',moonshine_override=True,native_shader=graph['nodes'][graph['root']]['type'],node_graph=graph)
     properties.write(material,synchronize(settings,graph))
     material.name=Path(path).stem
     return material

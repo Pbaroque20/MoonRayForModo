@@ -8,6 +8,15 @@ TAG = 'MRAY'
 # A native MoonRay material added from the Shader Tree's Add Layer list is an item of a type
 # named for its shader; one assigned to a mesh is an advancedMaterial that records its shader.
 LAYER_PREFIX = 'material.dw.'
+# A material brought in from a MaterialX file: a type of its own in the Shader Tree, to tell it from the rest.
+MATERIALX_TYPE = 'material.mtlx'
+MATERIAL_TYPES = ('advancedMaterial', 'material.moonrayMoonShine', 'material.moonrayMaterialX')
+
+
+def is_material(item):
+    """Whether an item is a material the plugin renders: Modo's own, or one of the kinds the plugin adds to the Shader Tree."""
+    kind = item.type
+    return kind in MATERIAL_TYPES or kind.startswith(LAYER_PREFIX) or kind == MATERIALX_TYPE
 
 
 def layer_shader(item):
@@ -26,6 +35,14 @@ def read(item):
         shader = layer_shader(item)
     except (LookupError, RuntimeError, AttributeError):
         shader = ''
+    try:
+        imported = item.type == MATERIALX_TYPE
+    except (LookupError, RuntimeError, AttributeError):
+        imported = False
+    if imported and not data.get('native_shader') and not data.get('node_graph'):
+        # Until a file is loaded into it, it is the plain material a MaterialX surface becomes.
+        data.update(shader='DwaBaseMaterial', moonshine_override=True, native_shader='DwaBaseMaterial')
+        data.setdefault('native_parameters', {})
     if shader and not data.get('native_shader') and not data.get('node_graph'):
         # Its type says what it is, before anything has been written to it.
         data.update(shader='DwaBaseMaterial', moonshine_override=True, native_shader=shader)

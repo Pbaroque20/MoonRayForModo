@@ -30,6 +30,15 @@ def register():
             def synth_name(self,item):return shader
         return Layer
 
+    class MaterialXMaterial(lxu.package.BasicPackage, lxu.package.BasicItemBehaviors):
+        """A material brought in from a MaterialX file, under a type of its own so that it can be told from the rest."""
+        def test_parent(self,item,parent):return True
+        def synth_name(self,item):return 'MaterialX Material'
+    lx.bless(MaterialXMaterial,properties.MATERIALX_TYPE,{
+        lx.symbol.sPKG_SUPERTYPE:'advancedMaterial',
+        lx.symbol.sSRV_USERNAME:'MaterialX Material',
+        lx.symbol.sPKG_SHADER_NODE:'1'})
+
     for shader in sorted(shader_library.catalog()):
         lx.bless(layer(shader),properties.LAYER_PREFIX+shader,{
             lx.symbol.sPKG_SUPERTYPE:'advancedMaterial',

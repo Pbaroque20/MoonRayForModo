@@ -143,6 +143,10 @@ PView was removed: Modo cannot host an external renderer there.
   mean the default.
 - An imported graph is set out in columns from its output back, and the graph editor's View
   menu can arrange any graph the same way.
+- A material from a MaterialX file is a kind of its own in the Shader Tree, MaterialX Material,
+  with its own tab: load its file, or open its controls and graph. It is also in Add Layer,
+  under MoonRay Materials, to be given a file afterwards.
+- A MoonRay material added from Add Layer now renders. It was passed over before.
 - An imported material has controls of its own: the numbers and colours its file names (a
   paint colour, a UV scale, a roughness range) and its images, each chosen once however many
   nodes read it. They are the graph editor's properties while no node is selected.

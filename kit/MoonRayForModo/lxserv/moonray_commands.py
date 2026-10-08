@@ -339,6 +339,49 @@ class ImportMaterialX(lxu.command.BasicCommand):
 
 
 lx.bless(ImportMaterialX, 'moonray.material.importMaterialX')
+
+
+class LoadMaterialX(lxu.command.BasicCommand):
+    """Give the selected MaterialX material the material of a file. The file is asked for unless it is given."""
+    def __init__(self):
+        super().__init__()
+        self.dyna_Add('file', lx.symbol.sTYPE_STRING)
+        self.basic_SetFlags(0, lx.symbol.fCMDARG_OPTIONAL)
+
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+    def chosen(self):
+        from moonray_modo import properties
+        return [item for item in modo.Scene().selected if item.type == properties.MATERIALX_TYPE]
+
+    def basic_Enable(self, msg):
+        return len(self.chosen()) == 1
+
+    def basic_Execute(self, msg, flags):
+        from moonray_modo import materials
+        items = self.chosen()
+        if len(items) != 1:
+            return
+        path = self.dyna_String(0) if self.dyna_IsSet(0) else None
+        if not path:
+            try:
+                path = modo.dialogs.customFile('fileOpen', 'Load MaterialX File', ('mtlx', 'all'), ('MaterialX files', 'All files'), ('*.mtlx', '*.*'))
+            except RuntimeError:
+                return
+        if not path:
+            return
+        try:
+            materials.load_materialx(items[0], str(path))
+        except ValueError as exc:
+            modo.dialogs.alert('Load MaterialX File', 'This MaterialX file could not be loaded.' + chr(10) * 2 + str(exc), dtype='warning')
+
+    def basic_Notifier(self, index):
+        if index == 0:
+            return ('select.event', 'item +v')
+
+
+lx.bless(LoadMaterialX, 'moonray.material.loadMaterialX')
 lx.bless(material_option('shader'),'moonray.material.enable')
 lx.bless(material_option('thin_geometry'),'moonray.material.thin')
 

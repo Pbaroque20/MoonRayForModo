@@ -228,7 +228,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         material_candidates = {}
         for material in reversed(list(ordered_items(scene.renderItem))):
             from .materials import active as material_active
-            if material.type not in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX') or not material_active(material) or not channel(material, 'enable', 1):
+            if not properties.is_material(material) or not material_active(material) or not channel(material, 'enable', 1):
                 continue
             try:
                 tag = material_tag(material)

@@ -4,7 +4,7 @@ MATERIALS={'advancedMaterial','material.moonrayMoonShine','material.moonrayMater
 
 def classify(scene, identities, cache):
     # A native material added from Add Layer has a type of its own; it is a material like the rest.
-    types={'advancedMaterial' if kind.startswith('material.dw.') else kind for kind in (scene.item(identity).type for identity in identities)}
+    types={'advancedMaterial' if kind.startswith('material.dw.') or kind=='material.mtlx' else kind for kind in (scene.item(identity).type for identity in identities)}
     if 'mesh' in types and types<=LIGHTS|{'mesh'}:
         if cache.get('_evaluated_data') is None and not cache.get('extra_geometry'):
             try:
