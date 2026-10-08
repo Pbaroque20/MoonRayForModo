@@ -12,7 +12,9 @@ from itertools import chain
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # Layout flags; keep in step with moonlight/session/scene_loader.cpp.
-MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES = 1, 2, 4, 8, 16, 32
+MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE = 1, 2, 4, 8, 16, 32, 64
+# A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
+SUBDIVISION_QUADS = 3000000
 SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION = 1, 2, 4
 ENVIRONMENT_ROWS = 64
 ENVIRONMENT_IMAGE = (1024, 512)
@@ -290,6 +292,75 @@ def emitter(mesh, settings, warnings):
             + cached[0])
 
 
+def cage_payload(mesh, material_index, slots, warnings):
+    """A subdivision surface as its control cage, which the session refines.
+
+    MoonRay tessellates each edge into 2 ** level pieces; that many rounds of Catmull-Clark
+    give the same density. Returns what mesh_payload returns.
+    """
+    from .scene_digest import content
+    from .moonlight_materials import UV_SLOTS
+    vertices, faces = mesh['vertices'], mesh['faces']
+    face_materials = mesh.get('face_materials')
+    available = dict(mesh.get('uv_sets') or {})
+    if mesh.get('uvs'):
+        available[''] = mesh['uvs']
+    sets = sorted((slot, available[key]) for key, slot in slots.items() if available.get(key))
+    creases = mesh.get('creases') or []
+    corner_count = sum(map(len, faces))
+    level = max(0, min(6, int(mesh.get('subdivision_level', 3))))
+    wanted = level
+    while level > 0 and corner_count * 4 ** (level - 1) > SUBDIVISION_QUADS:
+        level -= 1
+    if level < wanted:
+        warnings.append('MoonLightIPR subdivides %s %d times rather than %d, to stay under %d quads.' % (mesh['name'], level, wanted, SUBDIVISION_QUADS))
+    signature = ('cage', content(vertices), content(faces), content(face_materials) if face_materials is not None else '', level,
+                 tuple(sorted(material_index.items())) if face_materials is not None else (),
+                 tuple((slot, content(values)) for slot, values in sets), content(creases) if creases else '')
+    cached = _packed.get(signature)
+    if cached:
+        return cached
+    if face_materials is not None and len(face_materials) != len(faces):
+        raise ValueError('Face materials must match the face count')
+    try:
+        corners = array('I', chain.from_iterable(faces))
+    except (TypeError, OverflowError):
+        raise ValueError('Invalid face in ' + mesh['name'])
+    if min(map(len, faces)) < 3 or max(corners) >= len(vertices):
+        raise ValueError('Invalid face in ' + mesh['name'])
+    positions = array('f', chain.from_iterable(vertices))
+    if not math.isfinite(sum(positions)):
+        raise ValueError('Mesh %s contains a non-finite number' % mesh['name'])
+    sizes = array('I', map(len, faces))
+    material_ids = array('I')
+    if face_materials is not None:
+        default = material_index['']
+        material_ids = array('I', [material_index.get(tag, default) for tag in face_materials])
+    uvs, slot_map = [], [-1] * UV_SLOTS
+    for slot, values in sets:
+        if len(values) != len(corners):
+            raise ValueError('Texture coordinates of %s must match its polygon corners' % mesh['name'])
+        slot_map[slot] = len(uvs)
+        uvs.append(array('f', chain.from_iterable(values)))
+        if len(uvs[-1]) != len(corners) * 2 or not math.isfinite(sum(uvs[-1])):
+            raise ValueError('Mesh %s has invalid texture coordinates' % mesh['name'])
+    edges, sharpness = array('I'), array('f')
+    for a, b, sharp in creases:
+        if type(a) is not int or type(b) is not int or a == b or min(a, b) < 0 or max(a, b) >= len(vertices) or sharp < 0:
+            raise ValueError('Invalid subdivision crease')
+        edges.extend((a, b))
+        sharpness.append(float(sharp))
+    flags = MESH_SUBDIVIDE | MESH_SMOOTH | (MESH_HAS_MATERIAL_IDS if face_materials is not None else 0) | (MESH_HAS_UVS if uvs else 0)
+    payload = (struct.pack('<5I', len(vertices), len(faces), len(corners), level, len(sharpness)) + positions.tobytes() + sizes.tobytes()
+               + corners.tobytes() + material_ids.tobytes())
+    if uvs:
+        payload += struct.pack('<I', len(uvs)) + b''.join(values.tobytes() for values in uvs)
+    payload += edges.tobytes() + sharpness.tobytes()
+    key = hashlib.blake2b(struct.pack('<I', flags) + payload, digest_size=8).digest()
+    _packed[signature] = (key, flags, payload, struct.pack('<%di' % UV_SLOTS, *slot_map))
+    return _packed[signature]
+
+
 def mesh_payload(mesh, material_index, slots):
     """Triangulate one mesh; return (key, flags, payload, slot map), cached by the content of its lists.
 
@@ -482,8 +553,11 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         if not mesh['faces']:
             continue
         if mesh.get('subdivision'):
-            warnings.append('MoonLightIPR shows subdivision meshes as their control cage.')
-        key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots)
+            if mesh.get('vertices_close') is not None and mesh['vertices_close'] != mesh['vertices']:
+                warnings.append('MoonLightIPR shows subdivision mesh %s without its change of shape during the shutter.' % mesh['name'])
+            key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
+        else:
+            key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots)
         if key not in order:
             order[key] = len(meshes)
             # Send the data once per session; later scenes refer to it by key.

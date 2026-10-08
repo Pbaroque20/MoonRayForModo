@@ -33,7 +33,7 @@ target_link_libraries(moonlight_probe PRIVATE moonlight)
 target_link_options(moonlight_probe PRIVATE -static-libgcc -static-libstdc++)
 
 # Publishes frames through the same shared-memory mailbox as the MoonRay session.
-add_executable(moonlight_session session/moonlight_session.cpp session/scene_loader.cpp)
+add_executable(moonlight_session session/moonlight_session.cpp session/scene_loader.cpp session/subdivide.cpp)
 target_include_directories(moonlight_session PRIVATE "${ROOT}/native-port")
 target_link_libraries(moonlight_session PRIVATE moonlight)
 target_link_options(moonlight_session PRIVATE -static -static-libgcc -static-libstdc++)

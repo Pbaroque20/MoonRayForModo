@@ -1,4 +1,5 @@
 #include "scene_loader.h"
+#include "subdivide.h"
 
 #include <cmath>
 #include <cstring>
@@ -11,7 +12,8 @@ namespace moonlight {
 namespace {
 
 // Layout flags; keep in step with moonlight_scene.py.
-const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 4, MESH_SMOOTH = 8, MESH_HAS_UVS = 16, MESH_MOVES = 32;
+const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 4, MESH_SMOOTH = 8, MESH_HAS_UVS = 16, MESH_MOVES = 32,
+               MESH_SUBDIVIDE = 64;     // the data is a control cage to be subdivided here
 const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4;
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
@@ -365,15 +367,47 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         meshSlots[m] = in.array<int32_t>(UV_SLOT_COUNT);
         auto cached = meshes.find(key);
         if (flags & MESH_HAS_DATA) {
-            const uint32_t vertexCount = in.value<uint32_t>(), triangleCount = in.value<uint32_t>();
-            const std::vector<float> positions = in.array<float>(size_t(vertexCount) * 3);
-            std::vector<float> normals = in.array<float>(flags & MESH_HAS_NORMALS ? size_t(vertexCount) * 3 : 0);
-            const std::vector<uint32_t> indices = in.array<uint32_t>(size_t(triangleCount) * 3);
-            const std::vector<uint32_t> materialIds = in.array<uint32_t>(flags & MESH_HAS_MATERIAL_IDS ? triangleCount : 0);
-            std::vector<std::vector<float>> uvSets(flags & MESH_HAS_UVS ? in.value<uint32_t>() : 0);
-            if (uvSets.size() > UV_SLOT_COUNT) throw std::runtime_error("MoonLightIPR scene mesh has too many coordinate sets");
-            for (std::vector<float>& set : uvSets) set = in.array<float>(size_t(triangleCount) * 6);
-            const std::vector<float> closePositions = in.array<float>(flags & MESH_MOVES ? size_t(vertexCount) * 3 : 0);
+            uint32_t vertexCount = 0, triangleCount = 0;
+            std::vector<float> positions, normals, closePositions;
+            std::vector<uint32_t> indices, materialIds;
+            std::vector<std::vector<float>> uvSets;
+            if (flags & MESH_SUBDIVIDE) {
+                // A control cage: polygons as they were modelled, subdivided here as MoonRay does
+                // for a subdivision surface.
+                Cage cage;
+                const uint32_t cageVertices = in.value<uint32_t>(), faceCount = in.value<uint32_t>(), cornerCount = in.value<uint32_t>();
+                const uint32_t levels = in.value<uint32_t>(), creaseCount = in.value<uint32_t>();
+                if (levels > 6) throw std::runtime_error("MoonLightIPR scene asks for too many subdivision levels");
+                cage.positions = in.array<float>(size_t(cageVertices) * 3);
+                cage.faceSizes = in.array<uint32_t>(faceCount);
+                cage.corners = in.array<uint32_t>(cornerCount);
+                cage.faceMaterials = in.array<uint32_t>(flags & MESH_HAS_MATERIAL_IDS ? faceCount : 0);
+                cage.uvSets.resize(flags & MESH_HAS_UVS ? in.value<uint32_t>() : 0);
+                if (cage.uvSets.size() > UV_SLOT_COUNT) throw std::runtime_error("MoonLightIPR scene mesh has too many coordinate sets");
+                for (std::vector<float>& set : cage.uvSets) set = in.array<float>(size_t(cornerCount) * 2);
+                cage.creaseEdges = in.array<uint32_t>(size_t(creaseCount) * 2);
+                cage.creaseSharpness = in.array<float>(creaseCount);
+                if (cached == meshes.end()) {
+                    Triangles fine = subdivide(std::move(cage), levels);
+                    positions = std::move(fine.positions);
+                    indices = std::move(fine.indices);
+                    materialIds = std::move(fine.materialIds);
+                    uvSets = std::move(fine.uvSets);
+                    vertexCount = uint32_t(positions.size() / 3);
+                    triangleCount = uint32_t(indices.size() / 3);
+                }
+            } else {
+                vertexCount = in.value<uint32_t>();
+                triangleCount = in.value<uint32_t>();
+                positions = in.array<float>(size_t(vertexCount) * 3);
+                normals = in.array<float>(flags & MESH_HAS_NORMALS ? size_t(vertexCount) * 3 : 0);
+                indices = in.array<uint32_t>(size_t(triangleCount) * 3);
+                materialIds = in.array<uint32_t>(flags & MESH_HAS_MATERIAL_IDS ? triangleCount : 0);
+                uvSets.resize(flags & MESH_HAS_UVS ? in.value<uint32_t>() : 0);
+                if (uvSets.size() > UV_SLOT_COUNT) throw std::runtime_error("MoonLightIPR scene mesh has too many coordinate sets");
+                for (std::vector<float>& set : uvSets) set = in.array<float>(size_t(triangleCount) * 6);
+                closePositions = in.array<float>(flags & MESH_MOVES ? size_t(vertexCount) * 3 : 0);
+            }
             if (cached == meshes.end()) {
                 std::vector<const float*> uvPointers;
                 for (const std::vector<float>& set : uvSets) uvPointers.push_back(set.data());

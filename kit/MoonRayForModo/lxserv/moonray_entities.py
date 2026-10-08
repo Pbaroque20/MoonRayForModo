@@ -280,7 +280,11 @@ def register():
                 import modo
                 items=chosen(name)
                 if not items:return
-                path=modo.dialogs.fileOpen(None,title='Choose '+label)
+                # Images or volume files by what the attribute is for, with every file as the other choice.
+                wanted=(('vdb','OpenVDB files','*.vdb') if 'vdb' in channel or channel.endswith('model') else
+                        ('images','Images','*.exr;*.hdr;*.tx;*.tif;*.tiff;*.png;*.jpg;*.jpeg;*.tga'))
+                try:path=modo.dialogs.customFile('fileOpen','Choose '+label,(wanted[0],'all'),(wanted[1],'All files'),(wanted[2],'*.*'))
+                except RuntimeError:return
                 if not path:return
                 for item in items:item.channel(channel).set(str(path).replace('\\','/'))
         return Browse

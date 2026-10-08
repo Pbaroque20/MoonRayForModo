@@ -31,6 +31,9 @@ def control(parent, command, label, tip=''):
 
 
 TIP_LENGTH = 90
+# Attributes whose MoonRay name says little on its own: what the form calls them, and where it puts them.
+REWORDED = {'label': {'label': 'AOV label', 'group': 'Advanced',
+                      'comment': 'Optional name for picking this out in render passes (AOVs). Leave blank if you do not use it'}}
 
 
 def brief(comment):
@@ -101,7 +104,7 @@ for i, name in enumerate(sorted(catalog)):
     ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'
     groups = {}
     for j, (key, channel, kind, default, choices) in enumerate(entities.channels(name)):
-        spec = catalog[name]['attributes'][key]
+        spec = dict(catalog[name]['attributes'][key], **REWORDED.get(key, {}))
         group = spec.get('group', 'Parameters')
         if group not in groups:
             groups[group] = nested(form, 'MoonRayEntity_%s_%d:sheet' % (name, len(groups)), group, collapsed=1 if groups else 0)

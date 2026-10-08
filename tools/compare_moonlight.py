@@ -213,6 +213,13 @@ def scenes(folder):
              'parameters': {'intensity': 40.0, 'width': 3.0, 'height': 1.5, 'texture': test_images(folder)['colour']}}]),
         'entity_mesh_light': dict(base, meshes=base['meshes'] + [panel], entities=[
             {'identity': 'l_lamp', 'name': 'Glow', 'class': 'MeshLight', 'parameters': {'intensity': 60.0, 'color': [1.0, .85, .7], 'geometry': 'Panel'}}]),
+        # Subdivision surfaces: the cube rounded off, and a second one with two creased edges and an open top.
+        'subdivision': dict(base, lights=fixture.snapshot()['lights'], _environment=.3, meshes=[
+            base['meshes'][0], base['meshes'][1],
+            dict(base['meshes'][2], subdivision=True, subdivision_level=3, smooth=True),
+            dict(base['meshes'][2], identity='cube2', name='Cube2', subdivision=True, subdivision_level=3, smooth=True,
+                 faces=base['meshes'][2]['faces'][:3] + base['meshes'][2]['faces'][4:], face_materials=['red'] * 5,
+                 creases=[[0, 1, 10.0], [1, 3, 2.0]], matrix=fixture.placed(-4.6, .8, 1.5, .8))]),
         'layered_environment': dict(base, environments=[layered]),
         'physical_sky': dict(base, environments=[daylight]),
         'cylinder_light': dict(base, lights=[dict(lamp, kind='CylinderLight', intensity=60.0, radius=.15, height=2.5, matrix=aimed([-1, 4, 2], [0, .5, 0]))]),
