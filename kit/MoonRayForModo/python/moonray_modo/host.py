@@ -73,7 +73,9 @@ def image_layers(scene, materials, warnings, baked_effects=()):
 
 def material_values(material):
     from .material_settings import values as material_settings
-    settings = properties.read(material)
+    # An open graph editor's working copy is shown in place of what the scene holds.
+    from . import drafts
+    settings = drafts.settings(material) or properties.read(material)
     settings=dict(settings)
     if settings.get('materialx_override'):
         from .nodes import validate as validate_graph
@@ -245,7 +247,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         from .layers import material_stack
         library = {}
         for item in scene.items('advancedMaterial', superType=True):
-            if properties.read(item).get('native_shader') or properties.read(item).get('materialx_override'):
+            from . import drafts
+            held=drafts.settings(item) or properties.read(item)
+            if held.get('native_shader') or held.get('materialx_override'):
                 try:
                     tag = material_tag(item)
                 except ValueError:

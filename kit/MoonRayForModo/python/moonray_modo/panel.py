@@ -587,6 +587,9 @@ class Panel(Tools, QtWidgets.QWidget):
         try:
             import modo
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
+            # An edit in an open graph editor counts as an edit to its material.
+            from . import drafts
+            items=set(items)|drafts.consume()
             import time as clock
             from .assets import signature
             # Periodic reconciliation covers host notifications omitted by some

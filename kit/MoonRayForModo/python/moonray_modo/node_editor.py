@@ -281,6 +281,8 @@ class Editor(QtWidgets.QDialog):
         from .material_preview import Panel
         self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([420,340])
         self.finished.connect(lambda *_:self.material_preview.shutdown())
+        # Closed, the preview goes back to the material as the scene has it.
+        self.finished.connect(lambda *_,identity=item.id:self.withdraw_draft(identity))
         footer=QtWidgets.QHBoxLayout();layout.addLayout(footer)
         self.info=QtWidgets.QLabel('Tab or double-click adds a node. Drag between sockets to connect.')
         # A long message is cut short rather than widening the window.
@@ -490,6 +492,9 @@ class Editor(QtWidgets.QDialog):
         material=copy.deepcopy(properties.read(self.item))
         material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
         return material
+    def withdraw_draft(self,identity):
+        from . import drafts
+        drafts.withdraw(identity)
     def error(self,exc): QtWidgets.QMessageBox.warning(self,'Node graph',str(exc))
     def selected(self): return next((item.identity for item in self.canvas.selectedItems() if isinstance(item,Node)),None)
     def selected_nodes(self): return [item.identity for item in self.canvas.selectedItems() if isinstance(item,Node)]
@@ -510,7 +515,7 @@ class Editor(QtWidgets.QDialog):
         if selected in self.items:self.items[selected].setSelected(True)
         # Room on every side, so the graph can be panned freely.
         self.canvas.setSceneRect(self.canvas.itemsBoundingRect().adjusted(-3000,-3000,3000,3000));self.inspect()
-        self.material_preview.graph_changed(self.graph)
+        self.material_preview.graph_changed(self.graph);self.publish_draft()
     def edges(self):
         if not hasattr(self,'canvas'): return
         for item in self.links:
@@ -529,7 +534,29 @@ class Editor(QtWidgets.QDialog):
                 edge=self.canvas.addPath(path,pen);edge.setZValue(-1);edge.connection=(identity,key);edge.setToolTip('Right-click to disconnect '+key);self.links.append(edge)
     def remember(self,before):
         if before!=self.graph:self.undo_states.append(before);self.undo_states=self.undo_states[-50:];self.redo_states=[]
-        self.material_preview.graph_changed(self.graph)
+        self.material_preview.graph_changed(self.graph);self.publish_draft()
+    def draft_settings(self):
+        """The material's settings as Save would write them now."""
+        settings=copy.deepcopy(properties.read(self.item))
+        settings[self.graph_key]=copy.deepcopy(self.graph)
+        if self.materialx_override:settings['materialx_override']=True
+        else:
+            from .material_override import synchronize
+            settings=synchronize(settings,settings[self.graph_key])
+        return settings
+    def publish_draft(self):
+        """Let the preview window show the graph as it stands, applied or not."""
+        from . import drafts
+        try:
+            # Where the nodes sit is not part of how the material looks.
+            shape=copy.deepcopy(self.graph)
+            for node in shape.get('nodes',{}).values():node.pop('position',None)
+            if shape==getattr(self,'published',None):return
+            nodes.validate(self.graph)
+            drafts.publish(self.item.id,self.draft_settings());self.published=shape
+        except (ValueError,KeyError,TypeError,RuntimeError,LookupError):
+            # A graph that is not yet valid is not shown; the last valid one stays.
+            pass
     def undo(self):
         if self.undo_states:self.redo_states.append(copy.deepcopy(self.graph));self.graph=self.undo_states.pop();self.rebuild()
     def redo(self):
@@ -859,7 +886,7 @@ class Editor(QtWidgets.QDialog):
             del blocker
             # Scalar edits do not change the node layout. Keep the active Qt
             # cell editor alive until its delegate has finished committing.
-            self.edges();self.material_preview.graph_changed(self.graph)
+            self.edges();self.material_preview.graph_changed(self.graph);self.publish_draft()
         except (ValueError,TypeError) as exc:
             self.graph=old
             # No modal dialog or table destruction inside setModelData: both
