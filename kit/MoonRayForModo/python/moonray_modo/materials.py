@@ -4,7 +4,7 @@ import modo
 from . import properties
 
 def selected():
-    return [i for i in modo.Scene().selected if i.type in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX')]
+    return [i for i in modo.Scene().selected if i.type in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX') or properties.layer_shader(i)]
 
 def above_base(scene,mask):
     """Where a new mask goes under the render item: over the Base Material and every other

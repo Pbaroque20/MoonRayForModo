@@ -51,7 +51,8 @@ def tidy(text):
             text = text.replace(line, ENTRY, 1)
     if not earlier and text.count(ABOUT) == 1:
         text = text.replace(ABOUT, ENTRY + eol + ABOUT)
-    lines = text.split(eol)
+    # The override layer is no longer offered; a material is added to a mesh or from Add Layer.
+    lines = [line for line in text.split(eol) if 'val="cmd moonray.material.addMoonShineOverride"' not in line]
     # Only within the menu's own sheet, which ends at its closing tag.
     start = next((i for i, line in enumerate(lines) if 'key="MoonRayForModoMenu:sheet"' in line), None)
     if start is None:

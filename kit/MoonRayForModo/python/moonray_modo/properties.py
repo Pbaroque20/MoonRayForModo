@@ -5,14 +5,32 @@ import modo
 from . import options
 
 TAG = 'MRAY'
+# A native MoonRay material added from the Shader Tree's Add Layer list is an item of a type
+# named for its shader; one assigned to a mesh is an advancedMaterial that records its shader.
+LAYER_PREFIX = 'material.dw.'
+
+
+def layer_shader(item):
+    """The shader an Add Layer material is, or '' for any other item."""
+    kind = item.type
+    return kind[len(LAYER_PREFIX):] if kind.startswith(LAYER_PREFIX) else ''
 
 
 def read(item):
     try:
         data = json.loads(item.readTag(TAG))
-        return data if isinstance(data, dict) else {}
+        data = data if isinstance(data, dict) else {}
     except (LookupError, RuntimeError, ValueError, TypeError):
-        return {}
+        data = {}
+    try:
+        shader = layer_shader(item)
+    except (LookupError, RuntimeError, AttributeError):
+        shader = ''
+    if shader and not data.get('native_shader') and not data.get('node_graph'):
+        # Its type says what it is, before anything has been written to it.
+        data.update(shader='DwaBaseMaterial', moonshine_override=True, native_shader=shader)
+        data.setdefault('native_parameters', {})
+    return data
 
 
 # A material carries a package named for its native shader. Modo brings a form to the front by

@@ -140,7 +140,7 @@ def graph_materials():
     found=[]
     try:
         scene=modo.Scene()
-        candidates=list(scene.items('advancedMaterial'))+list(scene.items('material.moonrayMoonShine'))
+        candidates=[item for item in scene.items('advancedMaterial',superType=True) if item.type!='material.moonrayMaterialX']
     except Exception:return found
     for item in candidates:
         try:
