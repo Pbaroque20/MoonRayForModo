@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLight is not affiliated with DreamWorks Animation; see moonlight/NOTICE.md.
 #include "scene_loader.h"
 #include "subdivide.h"
 
@@ -159,7 +161,7 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
-    if (in.value<uint32_t>() != 0x39534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLS9"
+    if (in.value<uint32_t>() != 0x41534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLSA"
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -239,6 +241,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         material.subsurfaceRadius = in.value<float>();
         material.absorptionDistance = in.value<float>();
         material.abbe = in.value<float>();
+        material.specularWeight = in.value<float>();
         const uint32_t materialFlags = in.value<uint32_t>();
         material.thin = (materialFlags & 1) != 0;
         material.clearcoatDims = (materialFlags & 2) != 0;

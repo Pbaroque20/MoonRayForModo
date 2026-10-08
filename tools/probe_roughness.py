@@ -48,11 +48,15 @@ try:
     sun.channel('radiance').set(3.0)
     # From up and to the left, in front of the ball.
     sun.rotation.set((-35.0, -40.0, 0.0), degrees=True)
-    for model in ('gtr', 'principled'):
+    import os
+    for model, stretch in [(m, 0.0) for m in os.environ.get('PROBE_MODELS', 'gtr principled').split()] + (
+            [('gtr', .7), ('gtr', -.7)] if os.environ.get('PROBE_STRETCH') else []):
         material.channel('brdfType').set(model)
-        for rough in ROUGHNESS:
-            name = '%s_%03d' % (model, round(rough * 100))
-            case = {'name': name, 'model': model, 'roughness': rough}
+        material.channel('aniso').set(stretch)
+        result.setdefault('models', {})[model] = material.channel('brdfType').get()
+        for rough in ROUGHNESS if not stretch else (.2, .3, .5):
+            name = '%s%s_%03d' % (model, '' if not stretch else '_stretch' if stretch > 0 else '_squash', round(rough * 100))
+            case = {'name': name, 'model': model, 'roughness': rough, 'stretch': stretch}
             try:
                 material.channel('rough').set(rough)
                 lx.eval('!render.animation {%s} openexr' % str(out / ('modo_' + name)))

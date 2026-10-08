@@ -1,5 +1,41 @@
 """MoonShine material and ordered BSDF-layer serialization."""
 import math
+def dielectric(cosine,straight):
+    """How much a smooth surface reflects at an angle, given how much it reflects seen straight on."""
+    root=math.sqrt(max(0.0,min(.9999,straight)))
+    index=(1+root)/(1-root)
+    sine=math.sqrt(max(0.0,1-cosine*cosine))/index
+    inner=math.sqrt(max(0.0,1-sine*sine))
+    across=(cosine-index*inner)/(cosine+index*inner)
+    along=(index*cosine-inner)/(index*cosine+inner)
+    return .5*(across*across+along*along)
+
+
+# How far Modo's Fresnel setting, at full, takes a surface toward a mirror at 65 and 75 degrees from straight on,
+# as its own renders show.
+MODO_RISE=((math.cos(math.radians(65)),.083),(math.cos(math.radians(75)),.289))
+
+
+def fresnel_match(straight,rise):
+    """The reflectance to give MoonRay's specular layer so that its rise toward the edge is nearest Modo's.
+
+    Modo reflects its specular amount seen straight on and, by its Fresnel setting, more toward the edge:
+    with the setting at none, the same at every angle. MoonRay's layer always rises as glass of its index
+    does. So the layer is given a higher reflectance, whose rise is flatter, and a weight that brings it
+    back down to the amount; this returns that reflectance, between the amount (the steepest rise there
+    is) and nearly a mirror (none).
+    """
+    if straight<=0:return 0.0
+    best,found=None,straight
+    for step in range(101):
+        lobe=straight+(.99-straight)*(step/100.0)**2
+        if lobe<=0:continue
+        weight=straight/lobe
+        error=sum((weight*dielectric(cosine,lobe)-(straight+(1-straight)*rise*share))**2 for cosine,share in MODO_RISE)
+        if best is None or error<best:best,found=error,lobe
+    return min(.99,found)
+
+
 def sources(material):
     """The Modo materials a surface is made of: the rows of its stack, or itself."""
     rows=[layer['material'] for layer in material.get('layers') or [] if layer.get('kind')=='materialBase' and layer.get('material')]
@@ -111,10 +147,16 @@ def emit(material, tag, index, bindings, lines):
         elif most<=0:
             attributes.update(specular='0',show_specular='false')
         else:
-            # Under Modo's Principled model the specular amount is a share of 8% seen straight on, as measured against Modo.
-            root=math.sqrt(most*(.08 if any(m.get('principled') for m in sources(material)) else 1.0))
+            stack=sources(material)
+            principled=any(m.get('principled') for m in stack)
+            # Under Modo's Principled model the specular amount is a share of 8% seen straight on, as measured
+            # against Modo, and it always rises toward the edge.
+            straight=most*(.08 if principled else 1.0)
+            rise=1.0 if principled else max(0.0,min(1.0,max(m.get('specular_fresnel',1.0) for m in stack)))
+            lobe=fresnel_match(straight,rise)
+            root=math.sqrt(lobe)
             path='/modo/fresnel/'+str(index)
-            lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most),)*3))
+            lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most*lobe/straight),)*3))
             attributes.update(refractive_index=number((1+root)/(1-root)),specular='bind(ModoTextureMap(%s), 1)'%string(path),show_specular='true')
     from .working_space import surface as working_surface
     attributes=working_surface(attributes,'/modo/material/'+str(index),lines,{'albedo','metallic_color','scattering_color','transmission_color','emission','clearcoat_attenuation_color'})

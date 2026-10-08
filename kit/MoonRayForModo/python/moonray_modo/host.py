@@ -240,13 +240,14 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 continue
             material_candidates.setdefault(tag,[]).append(material)
             result['materials'][tag] = material_values(material)
-            from .channel_values import fresnel_controls
-            unmatched = fresnel_controls(properties.read(material),
-                float(channel(material,'specAmt',0)),float(channel(material,'reflAmt',0)),
-                float(channel(material,'specFres',1)),float(channel(material,'reflFres',1)))
-            if unmatched:
-                warnings.append("%s: %s differs from MoonRay's IOR-based Fresnel response." %
-                                (material.name,', '.join(unmatched)))
+            if material.type=='advancedMaterial' and not properties.read(material).get('native_shader'):
+                # What of Modo's material MoonRay is not given as Modo renders it, as measured against Modo's renders.
+                model=channel(material,'brdfType','gtr')
+                if model in ('blinn','ashikhmin'):
+                    warnings.append("%s: Modo's %s shading model is rendered as GTR, and its highlights will differ; GTR and Principled are followed." %
+                                    (material.name,model.capitalize()))
+                if float(channel(material,'reflAmt',0))>0 and not channel(material,'reflSpec',1):
+                    warnings.append("%s: a reflection amount apart from the specular amount (Match Specular off) is not followed." % material.name)
             if channel(material,'subsAmt',0) or channel(material,'aniso',0):
                 result['materials'][tag]['shader'] = 'DwaBaseMaterial'
             if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':

@@ -1,4 +1,6 @@
 #pragma once
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLight is not affiliated with DreamWorks Animation; see moonlight/NOTICE.md.
 // MoonLightIPR: an approximate GPU preview path tracer for interactive rendering.
 // It reads the scene MoonRay renders, flattened to triangle buffers, and shades it with one
 // fixed uber-shader. Final frames always come from MoonRay.
@@ -51,6 +53,9 @@ struct Material {
     float abbe = 0.0f;              // Abbe number of a dispersive solid; 0 for none
     uint32_t layerStart = 0;        // this material's run in the layer list given to setMaterials
     uint32_t layerCount = 0;
+    // How much of the dielectric's reflection there is, as DwaBaseMaterial's specular: 1 is all of it.
+    // The coat and a metal are not weighted.
+    float specularWeight = 1.0f;
 };
 
 // An image on the GPU. Pixels are RGBA, top row first: bytes, or floats when floatData is set.

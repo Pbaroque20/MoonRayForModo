@@ -1,4 +1,6 @@
 #pragma once
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLight is not affiliated with DreamWorks Animation; see moonlight/NOTICE.md.
 // Applies packed scene files (written by moonray_modo/moonlight_scene.py) to a Renderer.
 #include "moonlight/moonlight.h"
 

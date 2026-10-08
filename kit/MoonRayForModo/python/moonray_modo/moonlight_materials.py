@@ -116,12 +116,11 @@ def native_surface(shader, parameters, note):
             note(label)
     if float(get('iridescence', 0.0)) > 0:
         note('iridescence')
-    if 0 < float(get('specular', 1.0)) < 1:
-        note('a specular weight between 0 and 1, shown at full strength')
     return {
         'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': color, 'raw_color': color, 'diffuse_amount': 1.0,
         'roughness': roughness, 'metallic': metallic, 'ior': ior,
         'specular_amount': float(get('specular', 1.0)) if get('show_specular', True) else 0.0,
+        '_specular_weight': min(1.0, max(0.0, float(get('specular', 1.0)))) if get('show_specular', True) else 0.0,
         'transmission': transmission, 'transmission_color': get('transmission_color', white),
         'refraction_roughness': float(get('independent_transmission_roughness', .5)) if get('use_independent_transmission_roughness', False) else roughness,
         'transmission_ior': float(get('independent_transmission_refractive_index', 1.5)) if get('use_independent_transmission_refractive_index', False) else ior,
@@ -624,7 +623,7 @@ class Compiler:
         dwa = bool(stack) or glass or source.get('dispersion_abbe', 0) > 0 or source.get('shader') == 'DwaBaseMaterial' or bool(
             {'aniso', 'subsCol', 'subsAmt', 'normalCoat', 'coatBump', 'diffRough'} & effects) or source.get(
             'subsurface_amount', 0) > 0 or source.get('diffuse_roughness', 0) > 0
-        ior, under = float(source.get('ior', 1.5)), -1.0
+        ior, under, weight = float(source.get('ior', 1.5)), -1.0, float(source.get('_specular_weight', 1.0))
         if stack:
             # DwaBaseMaterial dims diffuse by its transmission roughness, which the plugin sets apart
             # from the surface roughness.
@@ -632,15 +631,21 @@ class Compiler:
             # Stacks render through DwaBaseMaterial, where a standard material's specular amount is
             # its reflectance at normal incidence and no amount means no specular lobe.
             if source.get('standard_material') and not source.get('metallic', 0):
-                f0 = max(0.0, min(.99, sum(source.get('specular', [.04] * 3)) / 3))
-                ior = (1 + math.sqrt(f0)) / (1 - math.sqrt(f0))
+                # As rdla.py gives it to MoonRay: a reflectance whose rise toward the edge is Modo's, weighted back
+                # down to the specular amount.
+                from .moonshine import fresnel_match
+                principled = any(m.get('principled') for m in stack)
+                straight = max(0.0, min(.99, sum(source.get('specular', [.04] * 3)) / 3)) * (.08 if principled else 1.0)
+                rise = 1.0 if principled else max(0.0, min(1.0, max(m.get('specular_fresnel', 1.0) for m in stack)))
+                lobe = fresnel_match(straight, rise) if straight > 0 else 0.0
+                ior = (1 + math.sqrt(lobe)) / (1 - math.sqrt(lobe))
+                weight = straight / lobe if lobe > 0 else 0.0
             if source.get('specular_amount', .04) <= 0:
                 ior = 1.0
         # A stack's coat is DwaBaseMaterial's outer specular, which shades what is beneath it.
         flags = (MATERIAL_THIN if source.get('thin_geometry') else 0) | (MATERIAL_COAT_DIMS if stack else 0)
-        # A stack binds every channel, anisotropy included, and the plugin selects DwaBaseMaterial's
-        # Beckmann lobe whenever anisotropy is bound or set. Everything else gets GGX.
-        stretched = bool(stack and supported(stack)) or bool(dwa and (source.get('anisotropy', 0) or 'aniso' in effects))
+        # The plugin selects DwaBaseMaterial's Beckmann lobe only where anisotropy stretches it. Everything else gets GGX.
+        stretched = bool(dwa and (source.get('anisotropy', 0) or 'aniso' in effects or any(m.get('anisotropy', 0) for m in stack or [])))
         if stretched or source.get('anisotropy', 0) or source.get('_beckmann'):
             flags |= MATERIAL_BECKMANN
         controls = shader_controls(source)
@@ -675,7 +680,7 @@ class Compiler:
                   + [max(-1.0, min(1.0, float(defaults['aniso']))) if stretched else 0.0,
                      math.cos(controls['anisotropy_angle']), math.sin(controls['anisotropy_angle'])]
                   + [min(1.0, max(0.0, float(defaults['subsAmt']))) if radius > 0 else 0.0] + triple(defaults['subsCol'])
-                  + [radius, depth, max(0.0, float(source.get('dispersion_abbe', 0))) if dwa else 0.0])
+                  + [radius, depth, max(0.0, float(source.get('dispersion_abbe', 0))) if dwa else 0.0, min(1.0, max(0.0, weight))])
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Material %s contains a non-finite number' % name)
-        return struct.pack('<32f4I', *values, flags, start, len(self.layers) - start, UV_SLOTS if tangent_slot is None else tangent_slot)
+        return struct.pack('<33f4I', *values, flags, start, len(self.layers) - start, UV_SLOTS if tangent_slot is None else tangent_slot)

@@ -121,6 +121,10 @@ PView was removed: Modo cannot host an external renderer there.
 - A Modo material is a metal only under its Principled shading model, as in Modo. Under that
   model its specular amount is a share of 8% and its diffuse colour shows in full, as Modo
   renders it.
+- Modo's Fresnel setting is followed: at none, a material reflects the same at every angle, as
+  it does in Modo; at full it rises toward the edge as Modo's does.
+- MoonLight weights its specular layer as MoonRay does, so the two agree on Modo's materials
+  and on a MoonRay material whose specular is below 1 (scene format MLSA).
 - A standard material's highlight has the shape of Modo's own (GGX) unless it is stretched by
   anisotropy. Roughness then means the same in both: highlights agree to about 1% from
   roughness 0.15 up.
@@ -132,6 +136,12 @@ PView was removed: Modo cannot host an external renderer there.
 ## Known gaps
 
 - A ground colour other than mid-grey tints the physical sky only approximately.
+- MoonRay takes what a surface reflects out of its diffuse light; Modo adds the two. A surface
+  seen edge on, such as far ground, is therefore up to a fifth darker in MoonRay.
+- A rough surface reflects less of its surroundings in MoonRay than in Modo, down to a third at
+  full roughness, though its highlights from lights agree.
+- A reflective material (30% and up) with Fresnel at full rises less toward the edge in MoonRay.
+- Modo's separate reflection amount, with Match Specular off, is not followed.
 - A spot light matches Modo on its axis and dims off it by the cosine of the angle.
 - Curves in MoonLight are tubes of four or eight sides, not true curves.
 

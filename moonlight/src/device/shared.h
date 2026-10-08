@@ -1,4 +1,6 @@
 #pragma once
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLight is not affiliated with DreamWorks Animation; see moonlight/NOTICE.md.
 // Layouts shared by the host renderer and the OptiX device programs.
 // Device code is compiled by NVRTC without standard headers, so only builtin types appear here.
 namespace moonlight {
@@ -85,6 +87,7 @@ struct DeviceMaterial {
     float subsurfaceRadius;     // mean distance the light travels beneath the surface
     float absorptionDistance;   // depth of a solid at which light has its transmission colour; 0 for none
     float abbe;                 // Abbe number of a dispersive solid; 0 for none
+    float specular;             // weight of the dielectric's reflection
     unsigned pad;
 };
 

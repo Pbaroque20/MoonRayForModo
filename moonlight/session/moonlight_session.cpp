@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLight is not affiliated with DreamWorks Animation; see moonlight/NOTICE.md.
 // MoonLightIPR preview session: a long-lived process the plugin feeds packed scenes.
 // Usage: moonlight_session <kernel.ptx>
 //

@@ -1,4 +1,6 @@
 #pragma once
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLight is not affiliated with DreamWorks Animation; see moonlight/NOTICE.md.
 // Minimal float3 arithmetic for device code; NVRTC supplies the type but no operators.
 #define ML_INLINE static __forceinline__ __device__
 #define ML_PI 3.14159265358979323846f

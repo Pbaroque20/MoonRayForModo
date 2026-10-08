@@ -1,4 +1,6 @@
 #pragma once
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLight is not affiliated with DreamWorks Animation; see moonlight/NOTICE.md.
 // Catmull-Clark subdivision of a control cage, for meshes MoonRay renders as subdivision surfaces.
 #include <cstdint>
 #include <vector>

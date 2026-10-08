@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLight is not affiliated with DreamWorks Animation; see moonlight/NOTICE.md.
 // MoonLightIPR device programs: a progressive megakernel path tracer.
 // One launch adds one sample per pixel to the running means in LaunchParams.
 #include <optix.h>
@@ -18,6 +20,7 @@ struct Hit {
     float3 subsurfaceRadius;    // mean distance light travels beneath the surface, per channel
     float3 absorption;          // what is left of light after absorptionDistance inside the solid
     float anisotropy, subsurface, absorptionDistance, abbe;
+    float specular;             // weight of the dielectric's reflection
     float t;
     unsigned flags;
     unsigned instance;
@@ -383,6 +386,7 @@ struct Surface {
     float3 transmissionColor;
     float metallic;
     float ior;
+    float specular;         // weight of the dielectric's reflection; the coat's is its own
     float alpha;
     float underBlend;       // how far the diffuse attenuation moves to its normal-incidence value
     float transmission;
@@ -406,6 +410,7 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.transmissionColor = hit.transmissionColor;
     s.metallic = hit.metallic;
     s.ior = fmaxf(hit.ior, 1.0001f);
+    s.specular = hit.specular;
     s.alpha = fmaxf(hit.roughness * hit.roughness, 0.002f);
     const float smooth = 1.0f - hit.underRoughness * hit.underRoughness;
     s.underBlend = clamp(1.0f - smooth * smooth * smooth, 0.0f, 1.0f);
@@ -451,7 +456,7 @@ ML_INLINE float3 schlick(float3 f0, float cosine) {
 }
 // A conductor of the base colour weighted by metallic, over a dielectric.
 ML_INLINE float3 specularFresnel(const Surface& s, float cosine) {
-    return lerp(vec(dielectricFresnel(cosine, s.ior)), schlick(s.albedo, cosine), s.metallic);
+    return lerp(vec(s.specular * dielectricFresnel(cosine, s.ior)), schlick(s.albedo, cosine), s.metallic);
 }
 // What reaches the lobes under the coat.
 ML_INLINE float underCoat(const Surface& s, float3 wo) {
@@ -460,7 +465,7 @@ ML_INLINE float underCoat(const Surface& s, float3 wo) {
 // What the dielectric lets through to whatever is beneath it. MoonRay evaluates this on the
 // view direction and blends towards normal incidence as the lobe above gets rougher.
 ML_INLINE float entering(const Surface& s, float3 wo) {
-    const float grazing = 1.0f - dielectricFresnel(wo.z, s.ior), facing = 1.0f - dielectricFresnel(1.0f, s.ior);
+    const float grazing = 1.0f - s.specular * dielectricFresnel(wo.z, s.ior), facing = 1.0f - s.specular * dielectricFresnel(1.0f, s.ior);
     return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo);
 }
 ML_INLINE float3 diffuseColor(const Surface& s, float3 wo) {
@@ -518,7 +523,7 @@ ML_INLINE float3 multipleScattering(const Surface& s, float3 wo, float3 wi) {
     if (average >= 0.9999f) return vec(0.0f);
     // The mean Fresnel reflectance over all angles, for the dielectric and for the metal.
     const float r = (s.ior - 1.0f) / (s.ior + 1.0f);
-    const float3 f0 = lerp(vec(r * r), s.albedo, s.metallic);
+    const float3 f0 = lerp(vec(s.specular * r * r), s.albedo, s.metallic);
     const float3 mean = f0 + (vec(1.0f) - f0) * (1.0f / 21.0f);
     const float3 tint = make_float3(mean.x * mean.x * average / (1.0f - mean.x * (1.0f - average)),
                                     mean.y * mean.y * average / (1.0f - mean.y * (1.0f - average)),
@@ -813,6 +818,7 @@ extern "C" __global__ void __raygen__moonlight() {
             hit.transmissionColor = hit.absorption = vec(1.0f);
             hit.roughness = 0.5f;
             hit.ior = 1.0001f;      // nothing is reflected on the way out
+            hit.specular = 1.0f;
             hit.metallic = hit.underRoughness = hit.transmission = hit.transmissionRoughness = hit.coat = hit.coatRoughness = 0.0f;
             hit.transmissionIor = 1.5f;
             hit.anisotropy = hit.subsurface = hit.absorptionDistance = hit.abbe = 0.0f;
@@ -1351,6 +1357,7 @@ extern "C" __global__ void __closesthit__radiance() {
     const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[primitive] : instance.material;
     const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
     hit->ior = material.ior;
+    hit->specular = material.specular;
     hit->transmissionIor = material.transmissionIor;
     hit->flags = material.flags;
     hit->abbe = material.abbe;
