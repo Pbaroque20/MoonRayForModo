@@ -313,3 +313,37 @@ def from_material(item):
                 'thin_geometry':value['thin_geometry']}
     shader_library.validate('DwaBaseMaterial',parameters)
     return new('DwaBaseMaterial',parameters)
+
+
+def arrange(graph):
+    """Lay a graph out to be read: the output at the right, what feeds each node in the column to its left,
+    and each column in the order its nodes are reached, so that wires cross as little as a simple rule allows.
+    Nodes that feed nothing go in a row beneath. Changes the nodes' positions in place and returns the graph."""
+    members=graph.get('nodes',{})
+    roots=[key for key in (graph.get('root'),graph.get('displacement')) if key in members]
+    depth={}
+    order=[]
+    def reach(key,level,trail):
+        if key not in members or key in trail:return
+        if key not in depth:order.append(key)
+        if depth.get(key,-1)>=level:return
+        depth[key]=level
+        for name in sorted(members[key].get('inputs',{})):
+            reach(members[key]['inputs'][name],level+1,trail|{key})
+    for key in roots:reach(key,0,frozenset())
+    def height(key):
+        # A node shows a header and up to six of its inputs.
+        return 44+20*min(6,max(1,len(members[key].get('inputs',{}))+1))+24
+    columns={}
+    for key in order:columns.setdefault(depth[key],[]).append(key)
+    for level,keys in columns.items():
+        total=sum(height(key) for key in keys)
+        y=-total/2.0
+        for key in keys:
+            members[key]['position']=[-260.0*level,round(y)]
+            y+=height(key)
+    loose=[key for key in members if key not in depth]
+    lowest=max([members[key]['position'][1]+height(key) for key in order] or [0])
+    for index,key in enumerate(loose):
+        members[key]['position']=[-260.0*(index%8),lowest+80+180*(index//8)]
+    return graph

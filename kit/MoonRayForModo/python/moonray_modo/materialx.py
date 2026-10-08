@@ -41,6 +41,12 @@ def read(path, material_name=None):
     document=normalize(document)
     from .materialx_expand import expand
     document=expand(document)
+    # The surface's own normal and tangent, by name, before they are turned into the nodes that read them.
+    geometric={}
+    for parent in [document]+list(document.findall('nodegraph')):
+        for child in parent:
+            if child.tag in ('normal','tangent','bitangent') and child.get('name'):
+                geometric[(parent.get('name','')+'/' if parent is not document else '')+child.get('name')]=child.tag
     from .materialx_geometry import lower
     document=lower(document)
     definitions={e.get('name'):e for e in document.findall('nodedef')}
@@ -108,6 +114,24 @@ def read(path, material_name=None):
             target_scope=key.rsplit('/',1)[0] if '/' in key else ''
             return swizzle(resolve(source_port,target_scope,trail+(signature,)), 'rgb'[names.index(output)])
         return translate(key)
+    def source_tag(port,scope,depth=0):
+        """The kind of node a connection ends at, followed through graph outputs and dots; None if it is a value."""
+        if depth>100:return None
+        if port.get('nodegraph'):
+            name=port.get('nodegraph');group=graphs.get(name)
+            if group is None:return None
+            outputs=group.findall('output')
+            output=outputs[0] if len(outputs)==1 and not port.get('output') else next((o for o in outputs if o.get('name')==port.get('output','out')),None)
+            return source_tag(output,name,depth+1) if output is not None else None
+        name=port.get('nodename')
+        if not name:return None
+        key=scope+'/'+name if scope and scope+'/'+name in elements else name
+        target=elements.get(key)
+        if target is None:return None
+        if target.tag in ('dot','output'):
+            inner=target if target.tag=='output' else target.find("input[@name='in']")
+            return source_tag(inner,key.rsplit('/',1)[0] if '/' in key else '',depth+1) if inner is not None else None
+        return geometric.get(key,target.tag)
     def swizzle(source,channels):
         if len(channels) not in (1,2,3) or any(c not in 'rgbxyz01' for c in channels):
             raise ValueError('MaterialX swizzles support RGB/XYZ, constants and up to three components')
@@ -124,6 +148,11 @@ def read(path, material_name=None):
         definition=select(element,definitions)
         if definition is not None: category=definition.get('node',category)
         extra={}
+        if category=='dot':
+            # A dot passes its input on unchanged; files use it to name a value.
+            source=element.find("input[@name='in']")
+            if source is None:raise ValueError('MaterialX dot has nothing connected ('+key+')')
+            result=resolve(source,scope);visiting.remove(key);cache[key]=result;return result
         operations={'power':6,'min':5,'max':4,'absval':15,'ceil':16,'floor':17,'modulo':18,'fract':19,'magnitude':20,'sin':21,'cos':22,'round':23,'acos':24,'normalize':10,'dotproduct':8,'crossproduct':7}
         if category in operations:
             kind='OpMap';mapping={'in':'op1','in1':'op1','in2':'op2'};extra={'operation':operations[category]}
@@ -151,6 +180,12 @@ def read(path, material_name=None):
                 refractive_index=1.5,clearcoat=0,clearcoat_roughness=.1,
                 clearcoat_refractive_index=1.5,transmission=0,emission=[1,1,1])
         ports={name:interface(port,scope) for name,port in ports.items()}
+        if category=='standard_surface':
+            # Exporters wire the surface's own normal and tangent to these inputs to say "the default". That is
+            # what an unconnected input already means, so such a connection is left out.
+            for name,geometric in (('tangent','tangent'),('normal','normal'),('coat_normal','normal')):
+                if name in ports and source_tag(ports[name],scope)==geometric:del ports[name]
+            if 'coat_normal' not in ports:item['parameters']['use_independent_clearcoat_normal']=False
         for name,port in ports.items():
             from .materialx_standard import SPECIAL
             if category=='standard_surface' and name in SPECIAL|{'base','emission'}:continue
@@ -225,7 +260,8 @@ def read(path, material_name=None):
     displacement=materials[0].find("input[@name='displacementshader']")
     if displacement is not None:graph['displacement']=resolve(displacement,'')
     nodes.validate(graph)
-    return graph
+    # A file says what is wired to what, not where; set the nodes out so the graph can be read.
+    return nodes.arrange(graph)
 
 
 def write(graph,path):

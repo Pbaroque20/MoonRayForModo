@@ -251,7 +251,7 @@ class Editor(QtWidgets.QDialog):
                     (None,None),('Set as Material Output',self.output),('Set / Clear Displacement Output',self.displacement_output),
                     (None,None),('Connect Input...',self.connect_selected),('Disconnect Input...',self.disconnect),
                     ('Browse Image...',self.browse_image),('Reset Selected Input',self.reset_input)])
-        view_menu=menu_button('View',[('Frame Selected\tF',self.frame),('Frame All\tA',lambda:self.frame(everything=True)),(None,None)])
+        view_menu=menu_button('View',[('Frame Selected\tF',self.frame),('Frame All\tA',lambda:self.frame(everything=True)),('Arrange Nodes',self.arrange_nodes),(None,None)])
         self.snap=checkable(view_menu,'Snap to Grid',True)
         self.auto_connect=checkable(view_menu,'Connect New Nodes to the Selected Input',True)
         self.show_all=checkable(view_menu,'Show All Inputs on Every Node',False)
@@ -982,6 +982,10 @@ class Editor(QtWidgets.QDialog):
             before=copy.deepcopy(self.graph);layer=self.graph['overrides'][index];layer['enabled']=not layer.get('enabled',True)
             try:nodes.validate(self.graph);self.remember(before);self.rebuild()
             except ValueError as exc:self.graph=before;self.error(exc)
+    def arrange_nodes(self):
+        """Set the nodes out in columns from the output back, as an imported graph is."""
+        before=copy.deepcopy(self.graph)
+        nodes.arrange(self.graph);self.remember(before);self.rebuild();self.frame(everything=True)
     def inspect_materialx(self):
         path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Inspect MaterialX','','MaterialX (*.mtlx)')
         if not path:return

@@ -50,6 +50,21 @@ def assign(shader=None):
     return material
 
 
+def import_materialx(path):
+    """Put the material of a MaterialX file on the selected meshes, as a MoonRay material with the file's graph."""
+    from pathlib import Path
+    from . import materialx
+    from .material_override import synchronize
+    # Read first: a file that cannot be followed leaves the scene as it was.
+    graph=materialx.read(path)
+    material=assign(graph['nodes'][graph['root']]['type'])
+    settings=properties.read(material)
+    settings['node_graph']=graph
+    properties.write(material,synchronize(settings,graph))
+    material.name=Path(path).stem
+    return material
+
+
 def active(item):
     if item.type=='material.moonrayMoonShine':
         from .material_override import enabled

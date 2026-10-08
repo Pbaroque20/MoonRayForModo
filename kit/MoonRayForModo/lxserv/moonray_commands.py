@@ -224,6 +224,41 @@ def material_option(key):
     return MaterialOption
 
 lx.bless(AssignMaterial,'moonray.material.assign')
+
+
+class ImportMaterialX(lxu.command.BasicCommand):
+    """Put a MaterialX file's material on the selected meshes. The file is asked for unless it is given."""
+    def __init__(self):
+        super().__init__()
+        self.dyna_Add('file', lx.symbol.sTYPE_STRING)
+        self.basic_SetFlags(0, lx.symbol.fCMDARG_OPTIONAL)
+
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+    def basic_Enable(self, msg):
+        from moonray_modo import properties
+        return bool(properties.selected_meshes())
+
+    def basic_Execute(self, msg, flags):
+        import modo
+        from moonray_modo import materials
+        path = self.dyna_String(0) if self.dyna_IsSet(0) else None
+        if not path:
+            try:
+                path = modo.dialogs.customFile('fileOpen', 'Import MaterialX Material', ('mtlx', 'all'), ('MaterialX files', 'All files'), ('*.mtlx', '*.*'))
+            except RuntimeError:
+                return
+        if not path:
+            return
+        try:
+            materials.import_materialx(str(path))
+        except ValueError as exc:
+            # What the file uses that cannot be followed, in the importer's own words.
+            modo.dialogs.alert('Import MaterialX Material', 'This MaterialX file could not be imported.' + chr(10) * 2 + str(exc), dtype='warning')
+
+
+lx.bless(ImportMaterialX, 'moonray.material.importMaterialX')
 lx.bless(material_option('shader'),'moonray.material.enable')
 lx.bless(material_option('thin_geometry'),'moonray.material.thin')
 

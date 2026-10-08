@@ -53,6 +53,11 @@ def tidy(text):
         text = text.replace(ABOUT, ENTRY + eol + ABOUT)
     # The override layer is no longer offered; a material is added to a mesh or from Add Layer.
     lines = [line for line in text.split(eol) if 'val="cmd moonray.material.addMoonShineOverride"' not in line]
+    # A MaterialX file is imported onto a mesh as a material of its own, not through an override layer.
+    for index, line in enumerate(lines):
+        if 'val="cmd moonray.material.nodeOverride"' in line and index + 1 < len(lines) and 'Add MaterialX Override' in lines[index + 1]:
+            lines[index] = line.replace('moonray.material.nodeOverride', 'moonray.material.importMaterialX')
+            lines[index + 1] = lines[index + 1].replace('Add MaterialX Override', 'Import MaterialX Material...')
     # Only within the menu's own sheet, which ends at its closing tag.
     start = next((i for i, line in enumerate(lines) if 'key="MoonRayForModoMenu:sheet"' in line), None)
     if start is None:
