@@ -12,9 +12,7 @@ def physical(item):
     elevation=math.degrees(math.asin(max(-1.0,min(1.0,toward[1]/length))))
     tint,strength=sun_light(elevation,float(channel(item,'haze',2.0)),bool(channel(item,'thinning',True)),float(channel(item,'gamma',2.2)),
                             str(channel(item,'clamp','clamp')),float(channel(item,'radiance',3.0)))
-    # Modo's strength is what falls on a surface; a white surface under a MoonRay distant light of 1 shows 1,
-    # which is pi times that. The sky is in Modo's units, so the sun must be too.
-    return tint,strength/math.pi
+    return tint,strength
 
 
 def direction(item):

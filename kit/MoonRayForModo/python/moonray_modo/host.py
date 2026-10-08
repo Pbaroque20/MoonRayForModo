@@ -410,10 +410,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             light['matrix']=sun_matrix(item)
             # Modo works out this sun's colour and strength from its height and the haze.
             light['color'],light['intensity']=physical_sun(item)
-        if item.type == 'spotLight':
-            # Modo emits along local +Z; MoonRay's authored spot emits along -Z.
-            # Precompose a local X half-turn, keeping the world position intact.
-            light['matrix'][4:12] = [-v for v in light['matrix'][4:12]]
+        # Modo's radiance and MoonRay's intensity are different measures for every kind of light.
+        from .light_units import intensity as moonray_intensity
+        light['intensity']=moonray_intensity(item.type,light['intensity'],light,str(channel(item,'shape','rectangle')))
         result['lights'].append(light)
     for kind in (('textureLayer',) if evaluated_geometry else ('replicator', 'textureLayer')):
         if scene.items(kind, superType=False):
