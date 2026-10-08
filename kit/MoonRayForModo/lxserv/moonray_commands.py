@@ -161,11 +161,91 @@ def object_command(key):
     return ObjectSetting
 
 
+class ObjectPopup(lxifc.UIValueHints):
+    """The choices of an object setting that is one of a list."""
+    def __init__(self, labels):
+        self.labels = labels
+
+    def uiv_Flags(self):
+        return lx.symbol.fVALHINT_POPUPS
+
+    def uiv_PopCount(self):
+        return len(self.labels)
+
+    def uiv_PopUserName(self, index):
+        return self.labels[index]
+
+    def uiv_PopInternalName(self, index):
+        return 'choice%d' % index
+
+
+def object_choice(key, choices):
+    """A popup for an object setting. choices() gives (stored value, label) pairs, which may depend on the scene."""
+    class ObjectChoice(lxu.command.BasicCommand):
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('value', lx.symbol.sTYPE_INTEGER)
+            self.basic_SetFlags(0, lx.symbol.fCMDARG_QUERY)
+
+        def cmd_Flags(self):
+            return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+        def basic_Enable(self, msg):
+            from moonray_modo import properties
+            return bool(properties.selected_geometry())
+
+        def arg_UIValueHints(self, index):
+            return ObjectPopup([label for _, label in choices()])
+
+        def cmd_Query(self, index, query):
+            from moonray_modo import options, properties
+            held = lx.object.ValueArray(query)
+            stored = [value for value, _ in choices()]
+            for item in properties.selected_geometry():
+                value = options.object_values(properties.read(item))[key]
+                held.AddInt(stored.index(value) if value in stored else 0)
+
+        def basic_Execute(self, msg, flags):
+            from moonray_modo import options, properties
+            offered = choices()
+            index = self.dyna_Int(0)
+            if not 0 <= index < len(offered):
+                raise ValueError('That choice is no longer offered')
+            for item in properties.selected_geometry():
+                values = options.object_values(properties.read(item))
+                values[key] = offered[index][0]
+                properties.write(item, options.object_values(values))
+
+        def basic_Notifier(self, index):
+            if index == 0:
+                return ('select.event', 'item +v')
+            if index == 1:
+                return ('scene.edit', '')
+    return ObjectChoice
+
+
+def scalp_choices():
+    """The meshes hair can grow on: every mesh but the ones selected, which hold the guides."""
+    import modo
+    scene = modo.Scene()
+    chosen = {item.id for item in scene.selected}
+    return [('', '(none)')] + sorted(((item.id, item.name) for item in scene.items('mesh', superType=False) if item.id not in chosen),
+                                     key=lambda entry: entry[1].lower())
+
+
+def hair_modes():
+    from moonray_modo import options
+    return [(value, label) for label, value in options.HAIR_MODES]
+
+
+lx.bless(object_choice('hair_scalp', scalp_choices), 'moonray.object.hair_scalp')
+lx.bless(object_choice('hair_mode', hair_modes), 'moonray.object.hair_mode')
 lx.bless(PreviewPage, 'moonray.page')
 lx.bless(SaveSceneSettings, 'moonray.sceneSettings')
 lx.bless(SaveObjectSettings, 'moonray.objectSettings')
 for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error', 'share_instances', 'dynamic_tessellation',
-             'curves', 'curve_root_width', 'curve_tip_width', 'curve_envelope', 'curve_samples', 'curve_uv'):
+             'curves', 'curve_root_width', 'curve_tip_width', 'curve_envelope', 'curve_samples', 'curve_uv',
+             'hair', 'hair_count', 'hair_width', 'hair_clump', 'hair_length', 'hair_seed', 'hair_guides'):
     lx.bless(object_command(_key), 'moonray.object.' + _key)
 
 

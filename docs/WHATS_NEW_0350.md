@@ -99,6 +99,12 @@ PView was removed: Modo cannot host an external renderer there.
   render, the width at root and tip, the envelope between them, samples per bend for splines,
   and UVs that run along each strand by length.
 - MoonLight draws the same curves, as tubes of polygons.
+- Curves can be guides that hair is grown from. On the object overrides: the mesh the hair
+  grows on, strands per guide, the width of a cluster and how far it closes toward its tip,
+  variation in length, and a seed. Hair grows around each guide, as locks, or between guides,
+  as fur. Every root is held to the surface of the scalp mesh; a strand that finds no surface
+  within reach stays on its guide and is counted in a notice. The same seed grows the same
+  hair on every frame.
 
 ## Daylight
 

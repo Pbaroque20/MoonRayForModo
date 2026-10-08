@@ -104,13 +104,39 @@ CURVE_ROWS = (
      'the strands apart.'))
 
 
+HAIR_ROWS = (
+    ('hair', 'Grow Hair from Curves', 'Requires object overrides. The curves of this mesh become guides: many strands are grown from each when the scene '
+     'is rendered, and take the curve widths above.'),
+    ('hair_scalp', 'Hair Scalp', 'The mesh the hair grows on. Every root is held to its surface, so no strand floats above it or starts inside it.'),
+    ('hair_mode', 'Hair Grows', 'Around each guide: strands follow that guide and gather toward it, as locks. Between guides: each strand is '
+     'shaped by the guides nearest it and fills the space between them, as fur.'),
+    ('hair_count', 'Strands per Guide', 'How many strands are grown from each guide.'),
+    ('hair_width', 'Cluster Width at Root (mm)', 'How far from its guide a strand may start.'),
+    ('hair_clump', 'Cluster Closes toward Tip', 'Around each guide: 0 keeps the strands as far apart as at the root, 1 brings them to the guide at its tip.'),
+    ('hair_length', 'Length Variation', 'How much shorter than its guide a strand may be: 0 for none, 0.3 for up to 30%.'),
+    ('hair_seed', 'Hair Seed', 'Another number grows other hair from the same guides. The same number always grows the same hair.'),
+    ('hair_guides', 'Render Guides Too', 'Render the guide curves themselves along with the hair grown from them.'))
+
+
 def curve_controls(text):
     """The mesh form's curve controls, after the last of its subdivision controls; unchanged if they are there."""
     anchor = '<list type="Control" val="cmd moonray.object.adaptive_error ?">'
     if 'cmd moonray.object.curves ?' in text or text.count(anchor) != 1:
-        return text
+        return hair_controls(text)
     end = text.index('</list>', text.index(anchor)) + len('</list>')
     eol = '\r\n' if '\r\n' in text else '\n'
     rows = ''.join(eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % row
                    for row in CURVE_ROWS)
+    return hair_controls(text[:end] + rows + text[end:])
+
+
+def hair_controls(text):
+    """The mesh form's hair controls, after its curve controls; unchanged if they are there."""
+    anchor = '<list type="Control" val="cmd moonray.object.curve_uv ?">'
+    if 'cmd moonray.object.hair ?' in text or text.count(anchor) != 1:
+        return text
+    end = text.index('</list>', text.index(anchor)) + len('</list>')
+    eol = '\r\n' if '\r\n' in text else '\n'
+    rows = ''.join(eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % row
+                   for row in HAIR_ROWS)
     return text[:end] + rows + text[end:]

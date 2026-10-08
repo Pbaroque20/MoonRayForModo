@@ -16,8 +16,74 @@ def curve_shape(item,settings):
         radius=float(settings.get('radius',.001))
         return dict(root=radius,tip=radius,envelope=1.0,samples=int(settings.get('curve_samples',8)),uv=True)
     if not values['curves']:return None
-    return dict(root=values['curve_root_width']/2000.0,tip=values['curve_tip_width']/2000.0,envelope=float(values['curve_envelope']),
-                samples=values['curve_samples'],uv=values['curve_uv'])
+    shape=dict(root=values['curve_root_width']/2000.0,tip=values['curve_tip_width']/2000.0,envelope=float(values['curve_envelope']),
+               samples=values['curve_samples'],uv=values['curve_uv'])
+    if values['hair']:
+        shape['hair']={key[5:]:values[key] for key in values if key.startswith('hair_')}
+    return shape
+
+
+# Hair that has been grown, kept by what it was grown from: growing it takes seconds, and nothing about it
+# changes until its guides, its scalp or its settings do.
+GROWN={}
+
+
+def scalp_triangles(scene,identity):
+    """A mesh's surface as triangles in the world, as it stands deformed."""
+    import lx,modo
+    from .host import world_matrix
+    from .coordinates import transform
+    try:item=scene.item(identity)
+    except LookupError:return None
+    if item.type!='mesh':return None
+    mesh=modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item,'deformed')
+    points=lx.object.Point(mesh.PointAccessor());polygons=lx.object.Polygon(mesh.PolygonAccessor())
+    matrix=world_matrix(item);places={};triangles=[]
+    for i in range(mesh.PolygonCount()):
+        polygons.SelectByIndex(i)
+        count=polygons.VertexCount()
+        if count<3:continue
+        corners=[]
+        for v in range(count):
+            point=polygons.VertexByIndex(v);place=places.get(point)
+            if place is None:
+                points.Select(point);place=places[point]=tuple(transform(list(points.Pos()),matrix))
+            corners.append(place)
+        triangles+=[(corners[0],corners[k],corners[k+1]) for k in range(1,count-1)]
+    return triangles
+
+
+def grown(scene,item,strands,settings,warnings):
+    """The strands of a mesh whose curves are guides: the hair grown from them on its scalp."""
+    import hashlib,itertools
+    from array import array as packed
+    from . import hair
+    from .host import world_matrix
+    from .coordinates import transform,inverse
+    triangles=scalp_triangles(scene,settings['scalp']) if settings['scalp'] else None
+    if triangles is None:
+        warnings.append('Hair on %s: choose the mesh it grows on (Hair Scalp) and its roots will be held to that surface; until then they follow the guides alone.'%item.name)
+    matrix=world_matrix(item);back=inverse(matrix)
+    guides=[[transform(list(p),matrix) for p in strand] for strand,_,_ in strands]
+    held=hashlib.sha1()
+    for part in (packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(guides))),packed('q',[len(g) for g in guides]),
+                 packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles or []))),
+                 packed('d',[settings['mode'],settings['count'],settings['width'],settings['clump'],settings['length'],settings['seed']])):
+        held.update(part.tobytes());held.update(b'|')
+    key=held.digest()
+    if key not in GROWN:
+        if len(GROWN)>=8:GROWN.pop(next(iter(GROWN)))
+        GROWN[key]=hair.grow(guides,hair.Scalp(triangles) if triangles else None,settings['mode'],settings['count'],
+                             settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'])
+    children,adrift=GROWN[key]
+    if adrift:
+        warnings.append('Hair on %s: %d of %d strands found no scalp within reach and were left on their guides. Draw the guides from the surface, or widen the clusters less.'%(item.name,adrift,len(children)))
+    # Each strand keeps its guide's material, and goes back into the mesh's own space, where its curves are.
+    per=max(1,settings['count']);grown_strands=[]
+    for index,child in enumerate(children):
+        tag=strands[min(len(strands)-1,index//per)][1]
+        grown_strands.append(([transform(p,back) for p in child],tag,None))
+    return (list(strands) if settings['guides'] else [])+grown_strands
 
 
 def polylines(mesh,polygons,points,id_tag,item):
@@ -145,6 +211,7 @@ def collect(scene,warnings,controls):
                 if splines:strands=sampled(mesh,polygons,shape['samples'],id_tag,item,strands)
             except (LookupError,RuntimeError,TypeError,AttributeError) as exc:
                 raise ValueError('Cannot read evaluated curves for '+item.name+': '+str(exc))
+            if shape.get('hair'):strands=grown(scene,item,strands,shape['hair'],warnings)
             result+=batches(item.id,item.name,strands,shape,settings.get('material',''),world_matrix(item))
         if not mesh.PolygonCount() or point_ids or settings.get('points'):
             vertices=[];stable=[];id_name=settings.get('point_id_map','')
