@@ -33,7 +33,7 @@ class Hints(lxifc.UIValueHints):
 
 
 def register():
-    from moonray_modo import properties,shader_library,material_override,property_notifications,node_defaults
+    from moonray_modo import properties,shader_library,material_override,property_notifications,node_defaults,graph_images
     from moonray_modo.materials import selected
     TYPES=['']+sorted(shader_library.catalog())
 
@@ -120,13 +120,55 @@ def register():
                 for item,settings in updates:properties.write(item,settings)
         return Attribute
 
+    def image_command(shader,key):
+        """The image on one of a material's inputs: none, the one it has, or a new one to load.
+        The image is a node wired to the input in the material's graph, which is what the graph
+        editor shows too."""
+        class Image(lxu.command.BasicCommand):
+            def __init__(self):
+                super().__init__()
+                self.dyna_Add('value',lx.symbol.sTYPE_INTEGER)
+                self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+            def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+            def basic_Enable(self,msg):return bool(matching(shader))
+            def found(self):
+                items=matching(shader)
+                try:return graph_images.image(properties.read(items[0]),key) if items else None
+                except Exception:return None
+            def arg_UIValueHints(self,index):
+                entries=[('none','(none)'),('load','Load Image...')]
+                found=self.found()
+                if found is not None:entries.append(('current',graph_images.label(found)))
+                return Hints(WATCHED,entries)
+            def cmd_Query(self,index,query):
+                lx.object.ValueArray(query).AddInt(2 if self.found() is not None else 0)
+            def basic_Execute(self,msg,flags):
+                import modo
+                items=matching(shader);choice=self.dyna_Int(0)
+                if not items or choice==2:return
+                path=None
+                if choice==1:
+                    try:path=modo.dialogs.customFile('fileOpen','Choose an image for '+key.replace('_',' '),('images','all'),('Images','All files'),
+                                                     ('*.exr;*.hdr;*.tx;*.tif;*.tiff;*.png;*.jpg;*.jpeg;*.tga','*.*'))
+                    except RuntimeError:return
+                    if not path:return
+                updates=[]
+                for item in items:
+                    settings=properties.read(item)
+                    graph=graph_images.set_image(settings,key,path) if path else graph_images.clear_image(settings,key)
+                    updates.append((item,material_override.synchronize(settings,graph)))
+                for item,settings in updates:properties.write(item,settings)
+        return Image
+
     class Marker(lxu.package.BasicPackage):
         """Carries nothing; a material holds the one named for its shader, which is what the
         shader's form looks for."""
     for i,shader in enumerate(TYPES):
         if not shader:continue
         lx.bless(type('Marker'+shader,(Marker,),{}),properties.SHADER_PACKAGE+shader)
+        texturable=graph_images.offered(shader)
         for j,(key,spec) in enumerate(sorted(shader_library.catalog()[shader]['attributes'].items())):
+            if key in texturable:lx.bless(image_command(shader,key),'moonray.material.map%d_%d'%(i,j))
             # Connections to other materials keep the graph editor's named inputs.
             if spec['type']=='SceneObject*':continue
             lx.bless(command(shader,key,spec),'moonray.material.attr%d_%d'%(i,j))

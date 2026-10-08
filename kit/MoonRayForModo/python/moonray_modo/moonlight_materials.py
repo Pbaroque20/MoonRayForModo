@@ -135,6 +135,78 @@ def native_surface(shader, parameters, note):
         '_beckmann': get('specular_model', 1) == 0}
 
 
+# The inputs of a native material that an image can be wired to in the graph editor, and the
+# channel each one is. An input with a switch only counts while its lobe is switched on.
+GRAPH_INPUTS = {'albedo': 'diffCol', 'roughness': 'rough', 'metallic': 'metallic', 'emission': 'lumiCol',
+                'transmission': 'tranAmt', 'transmission_color': 'tranCol', 'clearcoat': 'coatAmt',
+                'clearcoat_roughness': 'coatRough', 'anisotropy': 'aniso', 'scattering_color': 'subsCol',
+                'input_normal': 'normal', 'presence': 'dissolve'}
+GRAPH_SWITCHES = {'emission': 'show_emission', 'clearcoat': 'show_clearcoat', 'clearcoat_roughness': 'show_clearcoat'}
+GRAPH_WRAP = {'periodic': 'repeat', 'repeat': 'repeat', 'clamp': 'edge', 'mirror': 'mirror', 'black': 'reset'}
+
+
+def graph_image(node):
+    """An image node of a material graph as a texture layer, or a word for why it cannot be one."""
+    from . import nodes
+    values = node.get('parameters', {})
+    if node['type'] == 'image':
+        if not values.get('file'):
+            return 'an image node with no file chosen'
+        layer = {'kind': 'imageMap', 'path': values['file'], 'srgb': values.get('srgb', True), 'color_space': values.get('color_space', ''),
+                 'tile_u': GRAPH_WRAP.get(values.get('uaddressmode', 'periodic'), 'repeat'),
+                 'tile_v': GRAPH_WRAP.get(values.get('vaddressmode', 'periodic'), 'repeat')}
+        if 'texcoord' not in node.get('inputs', {}):
+            # Its UV map and scale are baked onto the meshes under this name.
+            layer['coordinate_key'] = nodes.image_descriptor(node)['coordinate_key']
+        return layer
+    if node['type'] == 'ImageMap':
+        if not values.get('texture'):
+            return 'an ImageMap with no texture chosen'
+        wrap = 'repeat' if values.get('wrap_around', True) else 'edge'
+        layer = {'kind': 'imageMap', 'path': values['texture'], 'tile_u': wrap, 'tile_v': wrap, 'scale': values.get('scale', [1, 1])}
+        # 0 reads the file as it is, 1 as sRGB; 2 lets the kind of file decide.
+        if values.get('gamma', 2) in (0, 1):
+            layer['srgb'] = bool(values.get('gamma'))
+        return layer
+    return '%s nodes' % node['type']
+
+
+def graph_layers(source, note):
+    """The images wired into a native material's graph, as texture layers over its own values."""
+    from . import nodes
+    try:
+        graph = nodes.effective(source['node_graph'])
+        root = graph['nodes'][graph['root']]
+    except (ValueError, KeyError, TypeError):
+        return []
+    switches = source.get('native_parameters') or {}
+    layers = []
+    for key, identity in root.get('inputs', {}).items():
+        node = graph['nodes'].get(identity)
+        if node is None:
+            continue
+        effect = GRAPH_INPUTS.get(key)
+        if effect is None:
+            note('a map wired to %s' % key.replace('_', ' '))
+            continue
+        if key in GRAPH_SWITCHES and not switches.get(GRAPH_SWITCHES[key], False):
+            continue
+        if effect == 'normal' and node['type'] == 'normalmap':
+            # The normal map node stands between the material and its image.
+            node = graph['nodes'].get(node.get('inputs', {}).get('in'))
+            if node is None:
+                continue
+        layer = graph_image(node)
+        if isinstance(layer, str):
+            note('%s wired to %s' % (layer, key.replace('_', ' ')))
+            continue
+        layer.update(effect=effect, blend='normal', opacity=1.0, identity=identity)
+        if effect == 'dissolve':
+            layer['invert'] = True
+        layers.append(layer)
+    return layers
+
+
 class Compiler:
     """Collects the materials of one scene; textures and coordinate slots are shared between them."""
 
@@ -317,20 +389,20 @@ class Compiler:
             # A native MoonRay material: its own attributes say what it looks like, not the Modo
             # material it rides on.
             surface = native_surface(native, source.get('native_parameters') or {}, lambda what: self.note(what, name))
-            graph_root = None
-            if source.get('node_graph'):
-                nodes = source['node_graph'].get('nodes', {})
-                graph_root = nodes.get(source['node_graph'].get('root'))
+            wired = []
             if surface is None:
                 self.note('%s, shown with the values of the Modo material' % native, name)
             else:
-                if graph_root and graph_root.get('inputs'):
-                    self.note('the maps wired into a material graph, shown with the values beneath them', name)
+                if source.get('node_graph'):
+                    wired = graph_layers(source, lambda what: self.note(what, name))
                 source = dict(source, **surface)
         defaults = graph.defaults_for(source)
         layers = source.get('layers')
         if layers is None:
             layers = [dict(value, effect=key, kind=value.get('kind', 'imageMap')) for key, value in source.get('textures', {}).items()]
+        if native and surface is not None and wired:
+            # Images wired in the graph go over the material's own values, as Shader Tree layers do.
+            layers = list(layers) + wired
         if native and surface is None:
             layers = []
         elif source.get('node_graph') and not native:

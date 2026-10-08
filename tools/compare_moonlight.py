@@ -155,7 +155,28 @@ def textured(folder):
                     native('cube', 'DwaMetalMaterial', metallic_color=[.95, .6, .4], roughness=.3))
     natives['materials']['gold'] = {'material_stack': [native('gold', 'DwaBaseMaterial', albedo=[.8, .8, .8], roughness=.6,
                                                               show_clearcoat=True, clearcoat_roughness=.05, show_emission=True, emission=[.2, .05, 0.0])]}
-    return {'native_materials': natives, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    # A native material whose inputs read images wired in its graph, as the graph editor and the
+    # material's form make them: no Shader Tree image layer is involved.
+    from moonray_modo import nodes as graph_nodes
+    def wired(identity, **images_by_input):
+        graph = graph_nodes.new('DwaBaseMaterial', {'roughness': .5})
+        for index, (key, (name, srgb)) in enumerate(images_by_input.items()):
+            graph['nodes']['image%d' % index] = {'type': 'image', 'parameters': {'file': images[name], 'srgb': srgb}, 'inputs': {}}
+            graph['nodes']['surface']['inputs'][key] = 'image%d' % index
+        return dict(native(identity, 'DwaBaseMaterial', roughness=.5), node_graph=graph, node_override=True)
+    mapped = lobes(wired('ball', albedo=('colour', True)), wired('cube', albedo=('colour', True), roughness=('roughness', False)))
+    mapped['meshes'] = [dict(mesh) for mesh in mapped['meshes']]
+    for mesh in mapped['meshes']:
+        # The image nodes read the primary UVs, baked under the name each node asks for.
+        keys = {graph_nodes.image_descriptor(node)['coordinate_key'] for material in mapped['materials'].values()
+                for row_ in material.get('material_stack', [material]) if row_.get('node_graph')
+                for node in row_['node_graph']['nodes'].values() if node['type'] == 'image'}
+        if mesh.get('uvs'):
+            mesh['uv_sets'] = {key: list(mesh['uvs']) for key in keys}
+    # The same images as Shader Tree layers, to set the wired ones against.
+    layered_maps = lobes(row('ball', [1, 1, 1], .5, [layer('lb', 'diffCol', 'colour', True)]),
+                         row('cube', [1, 1, 1], .5, [layer('lc', 'diffCol', 'colour', True), layer('lr', 'rough', 'roughness', False)]))
+    return {'graph_maps': mapped, 'layer_maps': layered_maps, 'native_materials': natives, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 

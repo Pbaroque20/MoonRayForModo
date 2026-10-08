@@ -6,6 +6,8 @@ of attributes. Each control is a typed command from lxserv/moonray_material_form
 as there: shader i among the sorted names after a blank first entry, attribute j in sorted order.
 """
 import json
+import sys
+import types
 import re
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -13,6 +15,12 @@ import xml.etree.ElementTree as ET
 root = Path(__file__).resolve().parents[1]
 kit = root / 'kit/MoonRayForModo'
 catalog = json.loads((kit / 'python/moonray_modo/material_catalog.json').read_text(encoding='utf-8'))
+# The package imports Modo's modules on the way in; none is used to say which inputs take an image.
+for name in ('modo', 'lx', 'lxifc', 'lxu'):
+    sys.modules.setdefault(name, types.ModuleType(name))
+sys.path.insert(0, str(kit / 'python'))
+from moonray_modo import graph_images  # noqa: E402
+
 config = ET.Element('configuration')
 attributes = ET.SubElement(config, 'atom', type='Attributes')
 TIP_LENGTH = 90
@@ -80,12 +88,23 @@ for i, shader in enumerate([''] + sorted(catalog)):
     atom(graph, 'Label', 'Open Graph Editor...')
     atom(graph, 'Tooltip', 'Edit this material as a node graph, where its inputs can be connected to maps')
     groups = {}
+    texturable = graph_images.offered(shader)
+
+    def chooser(parent, key, spec, j):
+        # The image on this input: a node wired to it in the material's graph.
+        made = ET.SubElement(parent, 'list', type='Control', val='cmd moonray.material.map%d_%d ?' % (i, j))
+        atom(made, 'Label', plain(spec.get('label', key.replace('_', ' '))) + ' image')
+        atom(made, 'Tooltip', 'Load an image for this input, or remove it. It appears as a node in the graph editor')
     for j, (key, spec) in enumerate(sorted(catalog[shader]['attributes'].items())):
-        if spec['type'] == 'SceneObject*':
-            continue
         group = plain(spec.get('group', 'Parameters')) or 'Parameters'
+        if spec['type'] == 'SceneObject*' and key not in texturable:
+            continue
         if group not in groups:
             groups[group] = nested(form, 'MoonRayShader_%s_%d:sheet' % (shader, len(groups)), group, 1 if groups else 0)
+        if spec['type'] == 'SceneObject*':
+            # A normal map has no value of its own to edit, only its image.
+            chooser(groups[group], key, spec, j)
+            continue
         kind = spec['type']
         how = '' if kind in ('Bool', 'Int', 'Long', 'Float', 'Double', 'Rgb', 'String') else 'Type as [x, y, z]'
         control = ET.SubElement(groups[group], 'list', type='Control', val='cmd moonray.material.attr%d_%d ?' % (i, j))
@@ -94,6 +113,8 @@ for i, shader in enumerate([''] + sorted(catalog)):
         if tip:
             atom(control, 'Tooltip', tip)
         count += 1
+        if key in texturable:
+            chooser(groups[group], key, spec, j)
 # Where the layer types sit in the Shader Tree's Add Layer list, and what they are called.
 categories = ET.SubElement(ET.SubElement(config, 'atom', type='Categories'), 'hash', type='Category', key='itemtype:textureLayer')
 for shader in sorted(catalog):

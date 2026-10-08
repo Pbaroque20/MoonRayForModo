@@ -71,11 +71,16 @@ def image_layers(scene, materials, warnings, baked_effects=()):
     collect(scene, materials, warnings, baked_effects=baked_effects)
 
 
+def arranged(graph):
+    """A graph without where its nodes sit in the editor, which is no part of how it renders;
+    moving a node must not look like an edit to the material."""
+    if not graph or not isinstance(graph.get('nodes'),dict):return graph
+    return dict(graph,nodes={key:{k:v for k,v in node.items() if k!='position'} for key,node in graph['nodes'].items()})
+
+
 def material_values(material):
     from .material_settings import values as material_settings
-    # An open graph editor's working copy is shown in place of what the scene holds.
-    from . import drafts
-    settings = drafts.settings(material) or properties.read(material)
+    settings = properties.read(material)
     settings=dict(settings)
     if settings.get('materialx_override'):
         from .nodes import validate as validate_graph
@@ -90,7 +95,7 @@ def material_values(material):
     diffuse_amount = float(channel(material, 'diffAmt', 1))
     value = {'name':material.name,'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
-                                'node_graph': settings.get('node_graph'),
+                                'node_graph': arranged(settings.get('node_graph')),
                                 'node_override': settings.get('node_override',False) or material.type in ('material.moonrayMaterialX','material.moonrayMoonShine'),
                                 'native_shader': settings.get('native_shader',''),
                                 'native_parameters': settings.get('native_parameters',{}),
@@ -247,8 +252,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         from .layers import material_stack
         library = {}
         for item in scene.items('advancedMaterial', superType=True):
-            from . import drafts
-            held=drafts.settings(item) or properties.read(item)
+            held=properties.read(item)
             if held.get('native_shader') or held.get('materialx_override'):
                 try:
                     tag = material_tag(item)

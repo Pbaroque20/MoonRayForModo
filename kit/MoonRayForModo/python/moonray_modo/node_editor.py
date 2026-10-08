@@ -1,8 +1,9 @@
 """Visual node authoring with editable inputs and non-destructive override layers.
 
 The editor is a window of its own that does not block Modo: it can sit on another monitor
-while the scene is worked on. open_editor() shows it; Save and Apply write the graph to the
-material through an undoable command.
+while the scene is worked on. open_editor() shows it. The material in the scene is the one
+copy of the graph: every edit here is written to it through an undoable command, and an edit
+made elsewhere, such as in the material's properties form, is shown here.
 """
 import copy
 import json
@@ -214,6 +215,8 @@ class Editor(QtWidgets.QDialog):
         self.item=item;self.materialx_override=materialx_override;self.graph_key="materialx_graph" if materialx_override else "node_graph";settings=properties.read(item)
         self.graph=copy.deepcopy(settings.get(self.graph_key) or nodes.from_material(item))
         self.pending=None;self.items={};self.links=[];self.busy=False
+        # writing: this window is the one changing the material. live: edits are written as made.
+        self.writing=False;self.live=False
         self.undo_states=[];self.redo_states=[];self.selected_input=None;self.add_at=None
         # The nodes showing all of their inputs. A matter of the view, not of the graph.
         self.expanded=set()
@@ -258,7 +261,7 @@ class Editor(QtWidgets.QDialog):
         for label,tip,callback in [('Undo','Ctrl+Z',self.undo),('Redo','Ctrl+Y',self.redo)]:
             button=QtWidgets.QToolButton();button.setText(label);button.setToolTip(tip);button.setAutoRaise(True);button.clicked.connect(callback);toolbar.addWidget(button)
         toolbar.addStretch(1)
-        self.output_label=QtWidgets.QLabel();self.output_label.setEnabled(False);self.output_label.setToolTip('The material that is rendered. Save or Apply updates the scene.');toolbar.addWidget(self.output_label)
+        self.output_label=QtWidgets.QLabel();self.output_label.setEnabled(False);self.output_label.setToolTip('The material that is rendered.');toolbar.addWidget(self.output_label)
         splitter=QtWidgets.QSplitter();layout.addWidget(splitter,1)
         self.build_node_browser(splitter)
         self.show_library.toggled.connect(self.library.setVisible)
@@ -281,23 +284,23 @@ class Editor(QtWidgets.QDialog):
         from .material_preview import Panel
         self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([420,340])
         self.finished.connect(lambda *_:self.material_preview.shutdown())
-        # Closed, the preview goes back to the material as the scene has it.
-        self.finished.connect(lambda *_,identity=item.id:self.withdraw_draft(identity))
+        from . import property_notifications
+        property_notifications.watchers.append(self.scene_changed)
+        self.finished.connect(lambda *_:self.stop_watching())
         footer=QtWidgets.QHBoxLayout();layout.addLayout(footer)
         self.info=QtWidgets.QLabel('Tab or double-click adds a node. Drag between sockets to connect.')
         # A long message is cut short rather than widening the window.
         self.info.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
         self.info.setToolTip('Wheel zooms. Middle drag, or Alt and drag, pans. F frames the selection, A everything. Tab or double-click adds a node; drag an input to empty canvas to add the node that feeds it. Ctrl+D duplicates, Delete removes, Ctrl+Z undoes. Right-click a socket or wire to disconnect.')
         footer.addWidget(self.info,1)
-        buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save|QtWidgets.QDialogButtonBox.Apply|QtWidgets.QDialogButtonBox.Close);footer.addWidget(buttons)
-        buttons.button(QtWidgets.QDialogButtonBox.Save).setToolTip('Apply the graph to the material and close')
-        buttons.button(QtWidgets.QDialogButtonBox.Apply).setToolTip('Apply the graph to the material and keep editing')
-        buttons.accepted.connect(self.save);buttons.rejected.connect(self.reject)
-        buttons.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(lambda:self.save(False))
+        buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close);footer.addWidget(buttons)
+        buttons.button(QtWidgets.QDialogButtonBox.Close).setToolTip('Edits are written to the material as they are made; Ctrl+Z here or in Modo undoes them')
+        buttons.rejected.connect(self.reject)
         self.canvas.selectionChanged.connect(self.inspect);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
         for button in self.findChildren(QtWidgets.QPushButton):
             button.setAutoDefault(False);button.setDefault(False)
         self.rebuild();self.frame(everything=True)
+        self.live=True
     def fill_materials(self):
         """List the scene's graph materials, with this one chosen."""
         entries=graph_materials()
@@ -313,9 +316,6 @@ class Editor(QtWidgets.QDialog):
             try:self.fill_materials()
             except Exception:pass
         super().changeEvent(event)
-    def unsaved(self):
-        stored=properties.read(self.item).get(self.graph_key) or nodes.from_material(self.item)
-        return stored!=self.graph
     def switch_material(self,index):
         """Move the editor to the material chosen in the list."""
         import modo
@@ -324,13 +324,6 @@ class Editor(QtWidgets.QDialog):
         try:item=modo.Scene().item(identity)
         except LookupError:self.fill_materials();self.info.setText('That material is no longer in the scene.');return
         self.commit_inputs()
-        if self.unsaved():
-            answer=QtWidgets.QMessageBox.question(self,'Unapplied changes','Apply the changes to '+self.item.name+' before switching?',
-                QtWidgets.QMessageBox.Save|QtWidgets.QMessageBox.Discard|QtWidgets.QMessageBox.Cancel,QtWidgets.QMessageBox.Save)
-            if answer==QtWidgets.QMessageBox.Cancel:self.fill_materials();return
-            if answer==QtWidgets.QMessageBox.Save:
-                self.save(False)
-                if self.unsaved():self.fill_materials();return
         geometry=self.geometry()
         editor=open_editor(item)
         editor.setGeometry(geometry)
@@ -492,9 +485,9 @@ class Editor(QtWidgets.QDialog):
         material=copy.deepcopy(properties.read(self.item))
         material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
         return material
-    def withdraw_draft(self,identity):
-        from . import drafts
-        drafts.withdraw(identity)
+    def stop_watching(self):
+        from . import property_notifications
+        if self.scene_changed in property_notifications.watchers:property_notifications.watchers.remove(self.scene_changed)
     def error(self,exc): QtWidgets.QMessageBox.warning(self,'Node graph',str(exc))
     def selected(self): return next((item.identity for item in self.canvas.selectedItems() if isinstance(item,Node)),None)
     def selected_nodes(self): return [item.identity for item in self.canvas.selectedItems() if isinstance(item,Node)]
@@ -536,7 +529,7 @@ class Editor(QtWidgets.QDialog):
         if before!=self.graph:self.undo_states.append(before);self.undo_states=self.undo_states[-50:];self.redo_states=[]
         self.material_preview.graph_changed(self.graph);self.publish_draft()
     def draft_settings(self):
-        """The material's settings as Save would write them now."""
+        """The material's settings with the graph as it stands."""
         settings=copy.deepcopy(properties.read(self.item))
         settings[self.graph_key]=copy.deepcopy(self.graph)
         if self.materialx_override:settings['materialx_override']=True
@@ -544,19 +537,34 @@ class Editor(QtWidgets.QDialog):
             from .material_override import synchronize
             settings=synchronize(settings,settings[self.graph_key])
         return settings
+    def stored_graph(self):
+        return properties.read(self.item).get(self.graph_key) or nodes.from_material(self.item)
     def publish_draft(self):
-        """Let the preview window show the graph as it stands, applied or not."""
-        from . import drafts
+        """Write the graph to the material, so the scene and the preview have it as it is edited."""
+        if self.writing or not self.live:return
         try:
-            # Where the nodes sit is not part of how the material looks.
-            shape=copy.deepcopy(self.graph)
-            for node in shape.get('nodes',{}).values():node.pop('position',None)
-            if shape==getattr(self,'published',None):return
+            if self.graph==self.stored_graph():return
             nodes.validate(self.graph)
-            drafts.publish(self.item.id,self.draft_settings());self.published=shape
+            settings=self.draft_settings()
         except (ValueError,KeyError,TypeError,RuntimeError,LookupError):
-            # A graph that is not yet valid is not shown; the last valid one stays.
-            pass
+            # A graph that is not yet valid is not written; the scene keeps the last valid one.
+            return
+        self.writing=True
+        try:lx.eval('moonray.material.applyGraph {%s} %s'%(self.item.id,properties.encode(settings)))
+        except (RuntimeError,LookupError) as exc:self.info.setText('Could not update the material: '+str(exc))
+        finally:self.writing=False
+    def scene_changed(self):
+        """The material was written; if not by this window, show what it holds now."""
+        from shiboken2 import isValid
+        if self.writing or not isValid(self) or self.busy:return
+        try:stored=self.stored_graph()
+        except (RuntimeError,LookupError):return
+        if stored==self.graph:return
+        self.undo_states.append(copy.deepcopy(self.graph));self.undo_states=self.undo_states[-50:];self.redo_states=[]
+        self.graph=copy.deepcopy(stored)
+        self.writing=True
+        try:self.rebuild()
+        finally:self.writing=False
     def undo(self):
         if self.undo_states:self.redo_states.append(copy.deepcopy(self.graph));self.graph=self.undo_states.pop();self.rebuild()
     def redo(self):
