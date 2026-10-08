@@ -69,12 +69,13 @@ for name in sorted(catalog, key=lambda name: (ORDER.index(catalog[name]['categor
         categories[entry['category']] = nested(menu, 'MoonRayEntityMenu_%s:sheet' % entry['category'], entry['category_label'], menu=True)
     control(categories[entry['category']], 'moonray.entity.add ' + name, spaced(name))
 
-# The forms, each shown only while an item of its class is selected, with a section per group
+# The forms, each shown only while an item of its class is selected and placed ahead of the
+# locator's own tabs so that it is the one in front, with a section per group
 # of attributes; all but the first start closed.
 for i, name in enumerate(sorted(catalog)):
     form = sheet('MoonRayEntity%d:sheet' % i, 'MoonRay ' + spaced(name))
     atom(form, 'FilterCommand', 'moonray.entity.filter%d' % i)
-    ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '130'
+    ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'
     groups = {}
     for j, (key, spec) in enumerate(sorted(catalog[name]['attributes'].items())):
         group = spec.get('group', 'Parameters')
