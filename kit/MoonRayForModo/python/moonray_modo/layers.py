@@ -70,7 +70,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             continue
         if layer.type not in ('imageMap','constant','checker','noise','grid','dots','gradient'):
             from . import properties
-            if not properties.is_material(layer) and layer.type not in ('defaultShader','mask','envMaterial') and channel(layer,'effect',None) is not None:
+            # A render output says what Modo's own renderer writes; it is not a layer of any material.
+            if not properties.is_material(layer) and layer.type not in ('defaultShader','mask','envMaterial','renderOutput') and channel(layer,'effect',None) is not None:
                 try:
                     scope=material_key if layer_filter is not None else material_tag(layer,texture=True)
                     if scope in materials and texture_groups(layer,channel) is not None:
