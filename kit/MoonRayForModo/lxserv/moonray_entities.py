@@ -47,6 +47,9 @@ def register():
             return modo.Vector3(float(values[0]),float(values[1]),float(values[2]))
         defaults={key:(value if not isinstance(value,list) else None) for key,_,_,value,_ in entities.channels(name)}
         class Drawn(lxu.package.BasicPackageInstance, lxifc.ViewItem3D):
+            def vitm_WorldSpace(self):
+                # Drawn in the item's own space, so the shape moves, turns and scales with it.
+                return False
             def vitm_Draw(self,chanRead,strokeDraw,selectionFlags,itemColor):
                 # Nothing here may raise: a fault while drawing would repeat on every redraw.
                 try:
