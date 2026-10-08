@@ -287,8 +287,8 @@ class DockPreview(lxu.command.BasicCommand):
 lx.bless(DockPreview,'moonray.dock')
 
 
-# Compatibility aliases for saved menus/macros. The old external-render
-# PView route remains experimental and is never started automatically.
+# Compatibility aliases for saved menus/macros. They once belonged to an external-render
+# PView route, which is gone: Modo cannot host an external renderer in its native PView.
 class NativePreviewStartup(lxu.command.BasicCommand):
     def cmd_Flags(self):
         return lx.symbol.fCMD_UI
