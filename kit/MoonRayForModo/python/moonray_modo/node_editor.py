@@ -95,6 +95,8 @@ class Node(QtWidgets.QGraphicsRectItem):
         header=QtWidgets.QGraphicsPathItem(rounded(WIDTH,HEADER,6,square_bottom=True),self)
         header.setBrush(QtGui.QColor(HEADERS[category]));header.setPen(QtGui.QPen(QtCore.Qt.NoPen))
         role='OUTPUT' if identity==editor.graph['root'] else 'DISPLACEMENT' if identity==editor.graph.get('displacement') else ''
+        # A ramp left in MoonRay's default space slides over the surface as the camera moves; say so on the node.
+        if follows_camera(value):role='FOLLOWS CAMERA'
         badge=None
         if role:
             badge=text(self,role,TEXT,0,6,90,size=-2);badge.setPos(WIDTH-badge.boundingRect().width()-12,6);badge.setOpacity(.8)
@@ -185,6 +187,11 @@ def graph_materials():
     return sorted(found,key=lambda entry:entry[0].casefold())
 
 
+def follows_camera(node):
+    """A ramp or gradient laid out in the camera's space, which MoonRay calls render space and uses by default."""
+    return node['type'] in ('RampMap','GradientMap') and int(node.get('parameters',{}).get('space',0)) in (0,1)
+
+
 # The open editors, by the material they edit, so that asking for one again brings it forward.
 _open={}
 
@@ -238,7 +245,7 @@ class Editor(QtWidgets.QDialog):
             action=QtWidgets.QAction(label,self);action.setCheckable(True);action.setChecked(checked);menu.addAction(action)
             return action
         menu_button('Graph', [('Import MaterialX...',self.import_file),('Export Definitions...',self.export_file),('Inspect MaterialX Support...',self.inspect_materialx),
-                    (None,None),('Check Asset Files...',self.check_assets),
+                    (None,None),('Check Asset Files...',self.check_assets),('Fix Ramps That Follow the Camera',self.fix_camera_ramps),
                     (None,None),('Add Override Layer...',self.add_override),('Toggle Override Layer',self.toggle_override)])
         menu_button('Node', [('Add Node...\tTab',lambda:self.quick_add()),('Duplicate\tCtrl+D',self.duplicate),('Delete\tDel',self.remove),
                     (None,None),('Set as Material Output',self.output),('Set / Clear Displacement Output',self.displacement_output),
@@ -485,6 +492,14 @@ class Editor(QtWidgets.QDialog):
         material=copy.deepcopy(properties.read(self.item))
         material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
         return material
+    def fix_camera_ramps(self):
+        """Lay every ramp and gradient that follows the camera out on its object instead."""
+        found=[key for key,node in self.graph['nodes'].items() if follows_camera(node)]
+        if not found:self.info.setText('No ramp or gradient in this graph follows the camera.');return
+        before=copy.deepcopy(self.graph)
+        for key in found:self.graph['nodes'][key].setdefault('parameters',{})['space']=nodes.SPACE_OBJECT
+        self.remember(before);self.rebuild()
+        self.info.setText('%d ramp%s now stay%s on the object.'%(len(found),'' if len(found)==1 else 's','s' if len(found)==1 else ''))
     def stop_watching(self):
         from . import property_notifications
         if self.scene_changed in property_notifications.watchers:property_notifications.watchers.remove(self.scene_changed)
@@ -508,6 +523,9 @@ class Editor(QtWidgets.QDialog):
         if selected in self.items:self.items[selected].setSelected(True)
         # Room on every side, so the graph can be panned freely.
         self.canvas.setSceneRect(self.canvas.itemsBoundingRect().adjusted(-3000,-3000,3000,3000));self.inspect()
+        moving=sum(1 for node in graph['nodes'].values() if follows_camera(node))
+        if moving:self.info.setText('%d ramp%s follow%s the camera. Graph > Fix Ramps That Follow the Camera puts %s on the object.'%(
+            moving,'' if moving==1 else 's','s' if moving==1 else '','it' if moving==1 else 'them'))
         self.material_preview.graph_changed(self.graph);self.publish_draft()
     def edges(self):
         if not hasattr(self,'canvas'): return

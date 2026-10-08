@@ -110,6 +110,22 @@ def step3():
             QtWidgets.QApplication.processEvents()
             editor.grab().save(str(out / 'editor-uv.png'))
             editor.remove()
+        editor.kinds.setCurrentText('RampMap'); editor.add()
+        made = editor.selected()
+        result['new_ramp_space'] = editor.graph['nodes'][made]['parameters'].get('space')
+        editor.set_value(made, 'space', -1, 0)
+        editor.rebuild()
+        result['camera_message'] = editor.info.text()
+        for row in range(editor.table.rowCount()):
+            if editor.table.item(row, 0).data(QtCore.Qt.UserRole) == 'space':
+                widget = editor.table.cellWidget(row, 1)
+                result['space_choices'] = [widget.itemText(i) for i in range(widget.count())]
+        editor.frame(everything=True)
+        QtWidgets.QApplication.processEvents()
+        editor.grab().save(str(out / 'editor-ramp.png'))
+        editor.fix_camera_ramps()
+        result['after_fix'] = [editor.graph['nodes'][made]['parameters'].get('space'), editor.info.text()]
+        editor.canvas.clearSelection(); editor.items[made].setSelected(True); editor.remove()
         editor.canvas.clearSelection()
         other = next(key for key in editor.items if key != root_id)
         editor.items[other].setSelected(True)

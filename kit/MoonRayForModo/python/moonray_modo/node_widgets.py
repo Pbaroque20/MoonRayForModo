@@ -260,6 +260,13 @@ class NumericField(QtWidgets.QDoubleSpinBox):
         self.changed.emit(self.identity,self.key,self.layer,value)
 
 
+# The spaces a ramp or gradient can be laid out in, said plainly and with the usual ones first.
+SPACE_LABELS={'object':'Object (stays on the object)','world':'World (fixed in the scene)','texture':'Texture (follows the UVs)',
+              'render':'Render (follows the camera)','camera':'Camera (follows the camera)','screen':'Screen (follows the picture)',
+              'reference':'Reference (a rest position)'}
+SPACE_ORDER=(4,2,6,0,1,3,5)
+
+
 class ChoiceField(QtWidgets.QComboBox):
     """A switch or a list of named values that is always there to click. As a cell editor made
     on demand it lost the click that opened its list and had to be nudged with an arrow key."""
@@ -270,6 +277,10 @@ class ChoiceField(QtWidgets.QComboBox):
         self.spec,self.kind=spec,kind
         if spec['type']=='Bool':entries=[('Off',0),('On',1)]
         else:entries=[(' '.join(word.capitalize() for word in str(label).replace('_',' ').split()),int(number)) for label,number in sorted(spec['enum'].items(),key=lambda entry:int(entry[1]))]
+        if key=='space':
+            # Say what each space means for where the pattern sits; MoonRay's names alone do not.
+            entries=[(SPACE_LABELS.get(label.casefold(),label),number) for label,number in entries]
+            entries.sort(key=lambda entry:SPACE_ORDER.index(entry[1]) if entry[1] in SPACE_ORDER else len(SPACE_ORDER))
         for label,number in entries:self.addItem(label,number)
         self.setCurrentIndex(max(0,self.findData(int(value or 0))))
         self.setFrame(False);self.setAccessibleName(key);self.setFocusPolicy(QtCore.Qt.StrongFocus)
