@@ -2,8 +2,8 @@
 
 Reads entity_catalog.json and writes kit/MoonRayForModo/entities.cfg: the "Add MoonRay Item"
 submenu that layout.cfg places in the MoonRay menu, and one form per class that shows in the item
-properties when an item of that class is selected. The command numbering follows
-lxserv/moonray_entities.py: classes and their attributes in sorted order.
+properties when an item of that class is selected. The item types and their channels are those
+lxserv/moonray_entities.py registers, both taken from entities.channels.
 """
 import json
 from pathlib import Path
@@ -69,30 +69,40 @@ for name in sorted(catalog, key=lambda name: (ORDER.index(catalog[name]['categor
         categories[entry['category']] = nested(menu, 'MoonRayEntityMenu_%s:sheet' % entry['category'], entry['category_label'], menu=True)
     control(categories[entry['category']], 'moonray.entity.add ' + name, spaced(name))
 
-# The forms, each shown only while an item of its class is selected and placed ahead of the
-# locator's own tabs so that it is the one in front, with a section per group
-# of attributes; all but the first start closed.
+# The forms, each shown only while an item of its type is selected and placed ahead of the
+# locator's own tabs, with a section per group of attributes; all but the first start closed.
+# Every control is the item's own channel, so Modo draws what suits it.
+import sys
+sys.path.insert(0, str(kit / 'python'))
+from moonray_modo import entities
+
 for i, name in enumerate(sorted(catalog)):
     form = sheet('MoonRayEntity%d:sheet' % i, 'MoonRay ' + spaced(name))
-    atom(form, 'FilterCommand', 'moonray.entity.filter%d' % i)
+    atom(form, 'FilterCommand', 'item.withTypeIsSelected {%s} testSupertypes:true' % entities.item_type(name))
+    # Without this a form shown by a command never becomes the tab in front.
+    atom(form, 'FilterCommandPriorityInfluencesTabChoice', 1)
+    atom(form, 'Group', 'itemprops')
     ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'
     groups = {}
-    for j, (key, spec) in enumerate(sorted(catalog[name]['attributes'].items())):
+    for key, channel, kind, default, choices in entities.channels(name):
+        spec = catalog[name]['attributes'][key]
         group = spec.get('group', 'Parameters')
         if group not in groups:
             groups[group] = nested(form, 'MoonRayEntity_%s_%d:sheet' % (name, len(groups)), group, collapsed=1 if groups else 0)
-        kind = spec['type']
-        if kind == 'Bool' or 'enum' in spec:
-            how = 'Default keeps MoonRay\'s value.'
-        elif kind.startswith('SceneObject'):
-            how = 'Type the name of another MoonRay item%s; blank for none.' % (' (several, separated by commas)' if kind != 'SceneObject*' else '')
-        elif kind in ('String', 'Float', 'Double', 'Int', 'Long'):
-            how = 'Blank keeps MoonRay\'s value.'
-        else:
-            how = 'Blank keeps MoonRay\'s value. Type colours, vectors and lists as [x, y, z].'
-        default = 'MoonRay\'s default: %s.' % json.dumps(spec['default']) if 'default' in spec else ''
-        control(groups[group], 'moonray.entity.param%d_%d ?' % (i, j), spec.get('label', key.replace('_', ' ')),
-                ' '.join(part for part in (str(spec.get('comment', '')), default, how) if part))
+        how = ''
+        if kind == 'string':
+            if spec['type'] == 'SceneObject*':
+                how = 'Type the name of another MoonRay item; blank for none.'
+            elif spec['type'].startswith('SceneObject'):
+                how = 'Type the names of other MoonRay items, separated by commas; blank for none.'
+            elif spec['type'] != 'String':
+                how = 'Type a list as [a, b, c]; blank keeps the MoonRay default.'
+            elif spec.get('filename'):
+                how = 'The full path of a file.'
+        elif 'default' not in spec:
+            how = 'The MoonRay default applies until this is changed.'
+        control(groups[group], 'item.channel %s$%s ?' % (entities.item_type(name), channel), spec.get('label', key.replace('_', ' ')),
+                ' '.join(part for part in (str(spec.get('comment', '')), how) if part))
 ET.indent(config)
 ET.ElementTree(config).write(str(kit / 'entities.cfg'), encoding='utf-8', xml_declaration=True)
 print('Generated the menu and forms for', len(catalog), 'MoonRay classes')

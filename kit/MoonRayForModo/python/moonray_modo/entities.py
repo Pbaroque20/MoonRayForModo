@@ -10,7 +10,10 @@ import math
 from functools import lru_cache
 from pathlib import Path
 
-ITEM_TYPE = 'moonray.entity'
+ITEM_TYPE = 'moonray.entity'      # the first, generic item; kept so that scenes holding it still load
+TYPE_PREFIX = 'moonray.'           # each class has its own item type: moonray.EnvLight, ...
+CHANNEL_PREFIX = 'mr_'             # keeps MoonRay's attribute names clear of the locator's own channels
+VECTORS = {'Rgb': ('color', '.R', '.G', '.B'), 'Vec2f': ('xy', '.X', '.Y'), 'Vec3f': ('xyz', '.X', '.Y', '.Z')}
 CLASS_KEY, PARAMETERS_KEY = 'entity_class', 'entity_parameters'
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 SIZES = {'Rgb': 3, 'Rgba': 4, 'Vec2f': 2, 'Vec3f': 3, 'Vec4f': 4}
@@ -85,6 +88,87 @@ def validate(name, parameters):
     return result
 
 
+def item_type(name):
+    return TYPE_PREFIX + name
+
+
+def hint_name(label):
+    """A popup choice as Modo stores it: no spaces or punctuation."""
+    import re
+    return re.sub(r'[^A-Za-z0-9]+', '_', label).strip('_').lower() or 'choice'
+
+
+def channels(name):
+    """How each attribute of a class is held on its Modo item, in attribute order.
+
+    Returns (attribute, channel name, kind, default, choices). kind is boolean, integer, float,
+    color, xy, xyz or string; choices are (value, popup name) pairs for an integer shown as a
+    popup. default is MoonRay's where the schema gives one, otherwise a neutral value, and an
+    attribute still at its default is left out of the scene so MoonRay keeps its own.
+    """
+    result = []
+    for key, spec in sorted(catalog()[name]['attributes'].items()):
+        kind, default, choices = spec['type'], spec.get('default'), None
+        if kind == 'Bool':
+            plan, default = 'boolean', bool(default)
+        elif kind in ('Int', 'Long'):
+            plan, default = 'integer', int(default or 0)
+            if 'enum' in spec:
+                choices, used = [], set()
+                for label, number in sorted(spec['enum'].items(), key=lambda entry: entry[1]):
+                    internal = hint_name(label)
+                    while internal in used:
+                        internal += '_'
+                    used.add(internal)
+                    choices.append((int(number), internal))
+                if default not in [number for number, _ in choices]:
+                    default = choices[0][0]
+        elif kind in ('Float', 'Double'):
+            plan, default = 'float', float(default or 0)
+        elif kind in VECTORS:
+            plan, default = VECTORS[kind][0], [float(v) for v in (default or [0.0] * SIZES[kind])]
+        else:
+            # Text, file paths, the names of other MoonRay items, and lists typed as [a, b, c].
+            plan, default = 'string', ''
+        result.append((key, CHANNEL_PREFIX + key, plan, default, choices))
+    return result
+
+
+def from_channels(name, read):
+    """The attributes the user has changed, from read(channel name) for each of the item's channels."""
+    attributes = catalog()[name]['attributes']
+    parameters = {}
+    for key, channel, plan, default, choices in channels(name):
+        spec = attributes[key]
+        if plan in ('color', 'xy', 'xyz'):
+            value = [float(read(channel + suffix)) for suffix in VECTORS[spec['type']][1:]]
+            changed = any(abs(a - b) > 1e-9 for a, b in zip(value, default))
+        elif plan == 'string':
+            text = str(read(channel) or '').strip()
+            changed = bool(text)
+            if not changed:
+                continue
+            if spec['type'] in ('String', 'SceneObject*'):
+                value = text
+            elif spec['type'].startswith('SceneObject'):
+                value = [part.strip() for part in text.split(',') if part.strip()]
+            else:
+                try:
+                    value = json.loads(text)
+                except ValueError:
+                    raise ValueError('%s must be a list such as [1, 2, 3]' % key)
+        else:
+            value = read(channel)
+            if choices and isinstance(value, str):
+                # Modo hands a popup back by name.
+                value = {internal: number for number, internal in choices}.get(value, default)
+            value = bool(value) if plan == 'boolean' else int(value) if plan == 'integer' else float(value)
+            changed = value != default if plan != 'float' else abs(value - default) > 1e-9
+        if changed:
+            parameters[key] = value
+    return validate(name, parameters)
+
+
 def is_entity(item):
     from . import properties
     return bool(properties.read(item).get(CLASS_KEY))
@@ -95,7 +179,20 @@ def collect(scene, warnings):
     from . import properties
     from .host import render_visible, world_matrix
     result = []
-    # The item type made for them, and plain locators in case that type is unavailable.
+    # Each class has an item type whose channels are its attributes.
+    for name in classes():
+        try:
+            typed_items = list(scene.items(item_type(name), superType=False))
+        except (LookupError, RuntimeError, TypeError):
+            continue
+        for item in typed_items:
+            try:
+                if render_visible(item):
+                    result.append({'identity': item.id, 'name': item.name, 'class': name, 'matrix': world_matrix(item),
+                                   'parameters': from_channels(name, lambda channel: item.channel(channel).get())})
+            except (ValueError, LookupError, RuntimeError, AttributeError, TypeError) as exc:
+                warnings.append('MoonRay item %s: %s.' % (getattr(item, 'name', '?'), exc))
+    # The first, generic item kept its class and values in a tag; plain locators may carry one too.
     items = []
     for kind in (ITEM_TYPE, 'locator'):
         try:
