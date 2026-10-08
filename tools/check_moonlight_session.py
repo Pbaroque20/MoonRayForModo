@@ -1,4 +1,4 @@
-"""Drive the MoonLightIPR session with packed snapshots, as the plugin will; run outside Modo.
+"""Drive the MoonLight session with packed snapshots, as the plugin will; run outside Modo.
 
 Checks scene loading, progressive shared-memory frames, edits that reuse loaded meshes,
 rejection of a bad scene, and shutdown. Writes the final frames to build/moonlight/session.
@@ -194,7 +194,7 @@ def main():
         session.process.stdin.flush()
         if session.process.wait(timeout=10) != 0:
             raise RuntimeError('Session did not exit cleanly')
-        print('MoonLightIPR session check passed')
+        print('MoonLight session check passed')
     finally:
         if session.process.poll() is None:
             session.process.kill()

@@ -1,6 +1,6 @@
-"""Pure Python packer for the MoonLightIPR GPU preview. Does not import or change the Modo scene.
+"""Pure Python packer for the MoonLight GPU preview. Does not import or change the Modo scene.
 
-MoonLightIPR approximates the scene MoonRay renders: one fixed uber-shader with layered
+MoonLight approximates the scene MoonRay renders: one fixed uber-shader with layered
 textures, the environment and lights. Everything it cannot show is reported as a warning,
 never silently.
 """
@@ -108,7 +108,7 @@ def environment_section(scene, environment, warnings, runtime):
                 # The image's own axes in world space, which the session turns directions into.
                 record = (environment_image(item, runtime), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
-                warnings.append('MoonLightIPR shows environment %s as uniform grey; its image could not be made (%s).' % (item.get('name', ''), exc))
+                warnings.append('MoonLight shows environment %s as uniform grey; its image could not be made (%s).' % (item.get('name', ''), exc))
             else:
                 # One image lights the scene and one is seen behind it; any further one falls back to grey.
                 fits = [name for name in targets if images[name] is None]
@@ -117,9 +117,9 @@ def environment_section(scene, environment, warnings, runtime):
                 targets = [name for name in targets if name not in fits]
                 if not targets:
                     continue
-                warnings.append('MoonLightIPR shows one environment image for lighting and one behind the scene; %s is uniform grey where another is in use.' % item.get('name', ''))
+                warnings.append('MoonLight shows one environment image for lighting and one behind the scene; %s is uniform grey where another is in use.' % item.get('name', ''))
         elif item['kind'] not in GRADIENTS:
-            warnings.append('MoonLightIPR shows environment %s as uniform grey; MoonRay renders its %s.' % (item.get('name', ''), item['kind']))
+            warnings.append('MoonLight shows environment %s as uniform grey; MoonRay renders its %s.' % (item.get('name', ''), item['kind']))
         for y in range(ENVIRONMENT_ROWS):
             height = math.cos((y + .5) / ENVIRONMENT_ROWS * math.pi)
             color = working_color(gradient_color(item, height)) if item['kind'] in GRADIENTS else [.5] * 3
@@ -165,7 +165,7 @@ def control_filters(settings, light, scene, warnings):
                                        working_color(finite(settings.get('ramp_color1', [0, 0, 0])))], 'interpolations': [1, 1]})
     shaping = [label for key, label in (('rod_enabled', 'rod'), ('barn_enabled', 'barn door'), ('cookie_file', 'cookie'), ('filter_vdb', 'VDB')) if settings.get(key)]
     if shaping:
-        warnings.append('MoonLightIPR does not apply the %s filter%s on %s.' % (' and '.join(shaping), 's' if len(shaping) > 1 else '', name))
+        warnings.append('MoonLight does not apply the %s filter%s on %s.' % (' and '.join(shaping), 's' if len(shaping) > 1 else '', name))
     return records
 
 
@@ -200,7 +200,7 @@ def lights(scene, warnings, environment=0.0, compiler=None):
         settings = controls.get(light.get('identity', str(index)), {})
         kind = settings.get('kind') or light['kind']
         if kind not in LOCAL_LIGHTS and kind != 'DistantLight':
-            warnings.append('MoonLightIPR does not show %s %s yet.' % (kind, light.get('name', '')))
+            warnings.append('MoonLight does not show %s %s yet.' % (kind, light.get('name', '')))
             continue
         matrix = finite(light.get('matrix', IDENTITY))
         color = [c * float(light['intensity']) for c in working_color(finite(light['color']))]
@@ -210,7 +210,7 @@ def lights(scene, warnings, environment=0.0, compiler=None):
             color = [c * s for c, s in zip(color, record['scale'])]
         filters = [r for r in filters if r['kind'] != 'intensity']
         if filters and (kind == 'DistantLight' or compiler is None):
-            warnings.append('MoonLightIPR applies only intensity filters to %s.' % light.get('name', ''))
+            warnings.append('MoonLight applies only intensity filters to %s.' % light.get('name', ''))
             filters = []
         if kind == 'DistantLight':
             angle = max(1e-3, float(light.get('angle', .5)))
@@ -225,7 +225,7 @@ def lights(scene, warnings, environment=0.0, compiler=None):
         radius = float(light.get('radius', .001 if kind == 'SpotLight' else .05)) * scale_x
         radius = max(.001 * scale_x, radius) if kind != 'SpotLight' else radius
         if min(width, height, radius) <= 0:
-            warnings.append('MoonLightIPR skips light %s, which has no size.' % light.get('name', ''))
+            warnings.append('MoonLight skips light %s, which has no size.' % light.get('name', ''))
             continue
         # A cylinder stands along its local Y axis and emits from its side.
         area = (4 * math.pi * radius ** 2 if kind == 'SphereLight' else width * height if kind in ('RectLight', 'PortalLight')
@@ -235,7 +235,7 @@ def lights(scene, warnings, environment=0.0, compiler=None):
             # MoonRay then lights the scene with the environment only where it shows through a portal.
             lighting = (1 if environment > 0 else 0) + sum(1 for item in scene.get('environments', []) if item.get('indirect', True))
             if lighting != 1:
-                warnings.append('MoonLightIPR passes all %d lighting environments through portal %s; MoonRay needs one chosen.'
+                warnings.append('MoonLight passes all %d lighting environments through portal %s; MoonRay needs one chosen.'
                                 % (lighting, light.get('name', '')))
         # Normalized with MoonRay's default apply_scene_scale: color * intensity is flux / pi at scene scale 1.
         # A portal is not normalized; its colour and intensity multiply what shows through it.
@@ -246,7 +246,7 @@ def lights(scene, warnings, environment=0.0, compiler=None):
             try:
                 texture = compiler.texture({'path': light['texture'], 'srgb': False, 'color_space': 'raw', 'repeat': False})
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
-                warnings.append('MoonLightIPR shows %s without its texture (%s).' % (light.get('name', ''), exc))
+                warnings.append('MoonLight shows %s without its texture (%s).' % (light.get('name', ''), exc))
         local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
             + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture)
@@ -259,7 +259,7 @@ def emitter(mesh, settings, warnings):
     from .scene_digest import content
     from .working_space import color as working_color
     if 'instances' in mesh:
-        warnings.append('MoonLightIPR skips mesh light %s; MoonRay needs instance sharing off for it.' % mesh['name'])
+        warnings.append('MoonLight skips mesh light %s; MoonRay needs instance sharing off for it.' % mesh['name'])
         return None
     matrix = finite(mesh.get('matrix', IDENTITY))
     color = [c * float(settings.get('light_intensity', 1)) for c in working_color(finite(settings.get('light_color', [1, 1, 1])))]
@@ -268,7 +268,7 @@ def emitter(mesh, settings, warnings):
     if cached is None:
         triangles = sum(len(face) - 2 for face in mesh['faces'])
         if not 0 < triangles <= MESH_LIGHT_TRIANGLES:
-            warnings.append('MoonLightIPR skips mesh light %s, which has %d triangles (the limit is %d).' % (mesh['name'], triangles, MESH_LIGHT_TRIANGLES))
+            warnings.append('MoonLight skips mesh light %s, which has %d triangles (the limit is %d).' % (mesh['name'], triangles, MESH_LIGHT_TRIANGLES))
             return None
         # Rows of the matrix are the basis vectors, as elsewhere in the snapshot.
         world = [[v[0] * matrix[0 + a] + v[1] * matrix[4 + a] + v[2] * matrix[8 + a] + matrix[12 + a] for a in range(3)]
@@ -282,7 +282,7 @@ def emitter(mesh, settings, warnings):
                 area += .5 * math.sqrt(sum(v * v for v in normal))
                 corners.extend(a + b + c)
         if not area > 0 or not math.isfinite(area):
-            warnings.append('MoonLightIPR skips mesh light %s, which has no area.' % mesh['name'])
+            warnings.append('MoonLight skips mesh light %s, which has no area.' % mesh['name'])
             return None
         if len(_emitters) > 64:
             _emitters.clear()
@@ -313,7 +313,7 @@ def cage_payload(mesh, material_index, slots, warnings):
     while level > 0 and corner_count * 4 ** (level - 1) > SUBDIVISION_QUADS:
         level -= 1
     if level < wanted:
-        warnings.append('MoonLightIPR subdivides %s %d times rather than %d, to stay under %d quads.' % (mesh['name'], level, wanted, SUBDIVISION_QUADS))
+        warnings.append('MoonLight subdivides %s %d times rather than %d, to stay under %d quads.' % (mesh['name'], level, wanted, SUBDIVISION_QUADS))
     signature = ('cage', content(vertices), content(faces), content(face_materials) if face_materials is not None else '', level,
                  tuple(sorted(material_index.items())) if face_materials is not None else (),
                  tuple((slot, content(values)) for slot, values in sets), content(creases) if creases else '')
@@ -476,7 +476,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if not 16 <= width <= 16384 or not 16 <= height <= 16384:
         raise ValueError('Image dimensions must be between 16 and 16384')
     if samples < 1:
-        raise ValueError('MoonLightIPR needs at least one sample')
+        raise ValueError('MoonLight needs at least one sample')
     warnings = []
     # MoonRay's own items arrive beside the Modo ones; draw those that have a counterpart here.
     from .entities import preview as preview_entities, replaces_environment
@@ -485,11 +485,11 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     scene = preview_entities(scene, warnings)
     camera = scene['camera']
     if camera.get('projection', 'persp') != 'persp':
-        raise ValueError('MoonLightIPR previews perspective cameras only')
+        raise ValueError('MoonLight previews perspective cameras only')
     if camera['focal_mm'] <= 0 or camera['film_mm'] <= 0:
         raise ValueError('Camera focal length and film width must be positive')
     if camera.get('region') or scene.get('region'):
-        warnings.append('MoonLightIPR ignores the render region.')
+        warnings.append('MoonLight ignores the render region.')
     # MoonRay's lens: the f-stop gives its diameter from the focal length, in metres.
     lens = [0.0, 1.0, 0, 0.0]
     if camera.get('dof'):
@@ -499,7 +499,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         blades = int(camera.get('iris_blades', 0))
         lens = [camera['focal_mm'] / stop / 2000, focus, blades if blades >= 3 else 0, float(camera.get('iris_rotation', 0))]
     if any(camera.get('film_offset', [0, 0])) or camera.get('pixel_aspect', 1) != 1:
-        warnings.append('MoonLightIPR ignores film offset and pixel aspect.')
+        warnings.append('MoonLight ignores film offset and pixel aspect.')
     def placed(matrix, focal):
         """Eye, target, up and vertical field of view. The camera looks down its local -Z axis;
         MoonRay's field of view is horizontal."""
@@ -525,7 +525,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))
         if any(light.get('matrix_close', light.get('matrix')) != light.get('matrix') for light in scene.get('lights', [])):
-            warnings.append('MoonLightIPR holds lights still during the shutter.')
+            warnings.append('MoonLight holds lights still during the shutter.')
 
     materials = dict(scene.get('materials', {}))
     materials.setdefault('', {'color': [.5, .5, .5], 'roughness': .4, 'metallic': 0})
@@ -554,7 +554,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             continue
         if mesh.get('subdivision'):
             if mesh.get('vertices_close') is not None and mesh['vertices_close'] != mesh['vertices']:
-                warnings.append('MoonLightIPR shows subdivision mesh %s without its change of shape during the shutter.' % mesh['name'])
+                warnings.append('MoonLight shows subdivision mesh %s without its change of shape during the shutter.' % mesh['name'])
             key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
         else:
             key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots)
@@ -582,7 +582,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             instances.append(struct.pack('<2Ii12f', order[key], material, light, *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
     if scene.get('extra_geometry'):
-        warnings.append('MoonLightIPR does not show curves, volumes or other non-mesh geometry.')
+        warnings.append('MoonLight does not show curves, volumes or other non-mesh geometry.')
     parts.append(struct.pack('<I', len(distant)))
     parts += [struct.pack('<7f', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local

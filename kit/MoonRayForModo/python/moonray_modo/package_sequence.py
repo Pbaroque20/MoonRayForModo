@@ -29,14 +29,14 @@ class PackageSequence(QtCore.QObject):
             import modo
             if modo.Scene().renderItem.id!=self.scene_id:raise ValueError('Scene changed during packaging')
             if animation.single_request is not None:raise ValueError('Another scene capture is active')
-            animation.single_request=lambda:animation.capture_frame(frame/self.fps,self.panel.surface.currentIndex()==2,self.motion,self.fps)
+            animation.single_request=lambda:animation.capture_frame(frame/self.fps,self.panel._settings_values()['surface']==2,self.motion,self.fps)
             animation.single_result=None
             import lx
             try:lx.eval('moonray.captureMotion');snapshot=animation.single_result
             finally:animation.single_request=None;animation.single_result=None
             if snapshot is None:raise ValueError('Frame capture returned no scene')
             snapshot=self.panel._configure_snapshot(snapshot);w,h=self.panel._dimensions(snapshot,True)
-            name='frame.%06d'%frame;assets.package(snapshot,self.root/name,w,h,self.panel.samples.value(),self.panel.environment.value(),asset_store=self.root/'shared-assets')
+            name='frame.%06d'%frame;assets.package(snapshot,self.root/name,w,h,self.panel._settings_values()['samples'],self.panel._settings_values()['environment'],asset_store=self.root/'shared-assets')
             self.finished.append({'frame':frame,'scene':name+'/scene.rdla','sha256':assets.file_hash(self.root/name/'scene.rdla')});self.index+=1;self.write('collecting');self.dialog.setValue(self.index)
             QtCore.QTimer.singleShot(0,self.next)
         except Exception as exc:self.finish('failed',str(exc))

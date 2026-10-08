@@ -1,4 +1,4 @@
-"""MoonLightIPR scene packing and change detection; run outside Modo, no GPU needed."""
+"""MoonLight scene packing and change detection; run outside Modo, no GPU needed."""
 import struct
 import sys
 import unittest

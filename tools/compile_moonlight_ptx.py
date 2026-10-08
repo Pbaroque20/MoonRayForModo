@@ -1,4 +1,4 @@
-"""Compile MoonLightIPR OptiX device code with NVIDIA NVRTC, without a host CUDA compiler."""
+"""Compile MoonLight OptiX device code with NVIDIA NVRTC, without a host CUDA compiler."""
 import ctypes as C
 import os
 from pathlib import Path
@@ -32,5 +32,5 @@ try:
     if result: raise RuntimeError('NVRTC compilation failed: '+str(result))
     lib.nvrtcGetPTXSize(program,C.byref(size));ptx=C.create_string_buffer(size.value);lib.nvrtcGetPTX(program,ptx)
     output.parent.mkdir(parents=True,exist_ok=True);output.write_bytes(ptx.value)
-    print('Compiled MoonLightIPR PTX:',output,flush=True)
+    print('Compiled MoonLight PTX:',output,flush=True)
 finally: lib.nvrtcDestroyProgram(C.byref(program))

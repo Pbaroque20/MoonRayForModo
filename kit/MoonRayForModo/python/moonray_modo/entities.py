@@ -2,7 +2,7 @@
 
 An entity is a locator that carries a MoonRay class name and the attributes the user has set,
 in the item's MoonRay tag. Unset attributes keep MoonRay's defaults. This module holds the
-schema, reads the items, writes them into the RDLA scene, and says which of them MoonLightIPR
+schema, reads the items, writes them into the RDLA scene, and says which of them MoonLight
 can show. Only collect() touches Modo.
 """
 import json
@@ -18,7 +18,7 @@ CLASS_KEY, PARAMETERS_KEY = 'entity_class', 'entity_parameters'
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 SIZES = {'Rgb': 3, 'Rgba': 4, 'Vec2f': 2, 'Vec3f': 3, 'Vec4f': 4}
 CONSTRUCTORS = {'Rgb': 'Rgb', 'Rgba': 'Rgba', 'Vec2f': 'Vec2', 'Vec3f': 'Vec3', 'Vec4f': 'Vec4'}
-# The lights MoonLightIPR shows, with the snapshot keys their sizes go under.
+# The lights MoonLight shows, with the snapshot keys their sizes go under.
 PREVIEW_LIGHTS = {'DistantLight': {'angular_extent': 'angle'}, 'SphereLight': {'radius': 'radius'},
                   'RectLight': {'width': 'width', 'height': 'height'}, 'DiskLight': {'radius': 'radius'},
                   'SpotLight': {'lens_radius': 'radius', 'outer_cone_angle': 'cone'},
@@ -372,7 +372,7 @@ def inverse_rows(matrix):
 
 
 def filter_records(entities, names, owner, warnings):
-    """The light filters named on a light, as MoonLightIPR applies them: an intensity scale, a
+    """The light filters named on a light, as MoonLight applies them: an intensity scale, a
     decay over distance, or a colour ramp. The kinds it cannot apply are named in warnings."""
     from .working_space import color as working_color
     records = []
@@ -390,7 +390,7 @@ def filter_records(entities, names, owner, warnings):
             if value(entity, 'invert'):
                 scale = [1 / c if c else c for c in scale]
             if value(entity, 'light_path_selection'):
-                warnings.append('MoonLightIPR applies %s to every light path.' % entity['name'])
+                warnings.append('MoonLight applies %s to every light path.' % entity['name'])
             records.append({'kind': 'intensity', 'scale': scale})
         elif kind == 'DecayLightFilter':
             records.append({'kind': 'decay', 'near': bool(value(entity, 'falloff_near')), 'far': bool(value(entity, 'falloff_far')),
@@ -406,7 +406,7 @@ def filter_records(entities, names, owner, warnings):
                             'density': min(1.0, max(0.0, float(value(entity, 'density')))),
                             'positions': stops, 'colors': colors, 'interpolations': modes})
         else:
-            warnings.append('MoonLightIPR does not apply %s (%s on %s).' % (kind, entity['name'], owner))
+            warnings.append('MoonLight does not apply %s (%s on %s).' % (kind, entity['name'], owner))
     return records
 
 
@@ -418,7 +418,7 @@ def mesh_lights(scene, warnings=None):
     MoonRay's MeshLight emits only from a real mesh, so the item names a Modo mesh. The plugin
     already knows how to make a mesh emit, from its Object controls; this fills those in from
     the item's colour, intensity and exposure and takes the item out of the list, so the rest
-    of the export and MoonLightIPR treat it as any other emitting mesh.
+    of the export and MoonLight treat it as any other emitting mesh.
     """
     lit = [e for e in scene.get('entities', []) if e['class'] == 'MeshLight']
     if not lit:
@@ -650,7 +650,7 @@ def camera_lines(scene, entity):
     return lines
 
 
-# ---- MoonLightIPR ------------------------------------------------------------------------------
+# ---- MoonLight ------------------------------------------------------------------------------
 
 def box(size):
     x, y, z = (v / 2 for v in size)
@@ -667,7 +667,7 @@ def sphere(radius, segments=48, rings=24):
 
 
 def preview(scene, warnings):
-    """The snapshot with its entities turned into what MoonLightIPR draws: ordinary lights,
+    """The snapshot with its entities turned into what MoonLight draws: ordinary lights,
     environments and meshes. What has no counterpart there is named in warnings."""
     entities = scene.get('entities')
     if not entities:
@@ -697,7 +697,7 @@ def preview(scene, warnings):
                 texture = value(entity, 'texture')
                 if texture:
                     if color != [1.0, 1.0, 1.0]:
-                        warnings.append('MoonLightIPR shows the image of %s without its colour tint.' % label)
+                        warnings.append('MoonLight shows the image of %s without its colour tint.' % label)
                     environments.append(dict(shown, kind='image', name=label, identity=entity['identity'], path=texture, matrix=matrix,
                                              intensity=intensity * sum(color) / 3,
                                              srgb=Path(texture).suffix.lower() not in ('.exr', '.hdr', '.tx')))
@@ -709,15 +709,15 @@ def preview(scene, warnings):
                 skipped.setdefault(name, []).append(label)
                 continue
             if value(entity, 'texture') and name != 'RectLight':
-                warnings.append('MoonLightIPR shows %s without its texture.' % label)
+                warnings.append('MoonLight shows %s without its texture.' % label)
             if value(entity, 'normalized') != (name != 'PortalLight'):
-                warnings.append('MoonLightIPR shows %s with the usual normalization for its kind.' % label)
+                warnings.append('MoonLight shows %s with the usual normalization for its kind.' % label)
             light = {'kind': name, 'identity': entity['identity'], 'name': label, 'color': color, 'intensity': intensity, 'matrix': matrix,
                      'filters': filters}
             if name == 'RectLight' and value(entity, 'texture'):
                 light['texture'] = value(entity, 'texture')
             if filters and name == 'DistantLight':
-                warnings.append('MoonLightIPR applies only intensity filters to distant light %s.' % label)
+                warnings.append('MoonLight applies only intensity filters to distant light %s.' % label)
             light.update({target: float(value(entity, key)) for key, target in PREVIEW_LIGHTS[name].items()})
             if name == 'SpotLight':
                 light['soft_edge'] = max(0.0, light['cone'] - float(value(entity, 'inner_cone_angle'))) / 2
@@ -735,9 +735,9 @@ def preview(scene, warnings):
             continue
         elif category == 'camera':
             if entity['parameters'].get('modo_render_camera'):
-                warnings.append('MoonLightIPR looks through the Modo camera, not %s.' % label)
+                warnings.append('MoonLight looks through the Modo camera, not %s.' % label)
         else:
             skipped.setdefault(name, []).append(label)
     for name, labels in sorted(skipped.items()):
-        warnings.append('MoonLightIPR does not show %s (%s).' % (name, ', '.join(labels[:6]) + (' ...' if len(labels) > 6 else '')))
+        warnings.append('MoonLight does not show %s (%s).' % (name, ', '.join(labels[:6]) + (' ...' if len(labels) > 6 else '')))
     return dict(scene, lights=lights, environments=environments, meshes=meshes, entities=[])

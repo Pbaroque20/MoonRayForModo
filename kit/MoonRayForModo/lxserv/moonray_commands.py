@@ -60,25 +60,20 @@ class PreviewPage(lxu.command.BasicCommand):
     def basic_Execute(self, msg, flags):
         from PySide2 import QtWidgets
         from moonray_modo.panel import Panel
+        from moonray_modo.panel_tools import WINDOW_PAGES
+        if self.dyna_String(0) not in WINDOW_PAGES:
+            # Render settings are the Render item's MoonRay properties; no window is needed.
+            lx.eval('select.item {%s} set' % modo.Scene().renderItem.id)
+            return
         widget = next((w for w in QtWidgets.QApplication.allWidgets()
                        if isinstance(w, Panel) and w.isVisible()), None)
         if widget is None:
             lx.eval('moonray.open')
             widget = next(w for w in QtWidgets.QApplication.allWidgets()
                           if isinstance(w, Panel) and w.isVisible())
-        page = self.dyna_String(0)
-        if page == 'preview':
-            widget.live.setChecked(True)
-        elif page == 'final':
-            widget.render_final()
-        elif page == 'export':
-            widget.export()
-        elif page == 'stop':
-            widget.stop()
-        elif page == 'log':
-            widget.show_log()
-        else:
-            widget.show_page(page)
+        # The window does the rest: output renders, the scene dialogs, or selecting the Render
+        # item, whose MoonRay properties hold the render settings.
+        widget.run(self.dyna_String(0))
 
 
 class SaveSceneSettings(lxu.command.BasicCommand):

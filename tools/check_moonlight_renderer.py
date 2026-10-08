@@ -1,8 +1,8 @@
-"""Route a preview through the plugin's Renderer with the MoonLightIPR engine, outside Modo.
+"""Route a preview through the plugin's Renderer with the MoonLight engine, outside Modo.
 
 Usage: check_moonlight_renderer.py <moonray-runtime> [moonlight-folder]
 Run with a Python that has PySide2, such as Modo's bundled interpreter. The runtime supplies
-the display conversion the panel uses; MoonLightIPR comes from tools/stage_moonlight.py.
+the display conversion the panel uses; MoonLight comes from tools/stage_moonlight.py.
 """
 import os
 import pathlib
@@ -25,7 +25,7 @@ def scene(eye):
     result = snapshot()
     result['camera'] = dict(result['camera'], matrix=look_at(eye, [0, .9, 0]))
     result.update(warnings=[], display=display_values({}), preview_buffer='normal')
-    # What MoonLightIPR leaves out must surface as a notice, not vanish: here, a material's specular colour layer.
+    # What MoonLight leaves out must surface as a notice, not vanish: here, a material's specular colour layer.
     result['materials'] = dict(result['materials'], gold=dict(result['materials']['gold'], textures={'specCol': {'kind': 'constant', 'value': [1, 1, 1]}}))
     return result
 
@@ -76,9 +76,9 @@ renderer.close()
 
 print('finished', state['finished'], 'frames', state['frames'], 'images', len(state['images']), 'notices', state['notices'])
 if state['failures']:
-    raise SystemExit('MoonLightIPR renderer check failed: ' + '; '.join(state['failures']) + '\n' + '\n'.join(state['statuses'][-5:]) + '\n' + renderer.log[-2000:])
+    raise SystemExit('MoonLight renderer check failed: ' + '; '.join(state['failures']) + '\n' + '\n'.join(state['statuses'][-5:]) + '\n' + renderer.log[-2000:])
 if state['finished'] != 3 or not reused or backend != MOONLIGHT_STATUS or not state.get('same_process'):
-    raise SystemExit('Previews did not complete on one MoonLightIPR session across an edit and a Stop')
+    raise SystemExit('Previews did not complete on one MoonLight session across an edit and a Stop')
 if not state['images'] or state['images'][-1][0] != 3:
     raise SystemExit('The finished preview was not displayed\n' + '\n'.join(state['statuses'][-8:]))
 if any((width, height) != (640, 360) for _, width, height, _ in state['images']):
@@ -87,5 +87,5 @@ final = state['images'][-1][3]
 if not any(QtGui.QColor(final.pixel(x, y)).lightness() > 16 for x in range(0, 640, 40) for y in range(0, 360, 40)):
     raise SystemExit('Displayed image is black')
 if not any('specularColor' in notice for notice in state['notices']):
-    raise SystemExit('The layer MoonLightIPR leaves out was not reported')
-print('MoonLightIPR renderer check passed')
+    raise SystemExit('The layer MoonLight leaves out was not reported')
+print('MoonLight renderer check passed')

@@ -1,4 +1,4 @@
-"""Reduce translated materials to the MoonLightIPR uber-shader and its layer stacks.
+"""Reduce translated materials to the MoonLight uber-shader and its layer stacks.
 
 A material becomes starting values for each channel plus an ordered list of layers, each a
 constant, an image, a gradient or a pattern blended over the rows below it, as graph.py builds
@@ -153,7 +153,7 @@ class Compiler:
             self.missing[what].append(name)
 
     def warnings(self):
-        return ['MoonLightIPR leaves out %s (%s).' % (what, ', '.join(names[:6]) + (' ...' if len(names) > 6 else ''))
+        return ['MoonLight leaves out %s (%s).' % (what, ', '.join(names[:6]) + (' ...' if len(names) > 6 else ''))
                 for what, names in sorted(self.missing.items())]
 
     def slot(self, key):

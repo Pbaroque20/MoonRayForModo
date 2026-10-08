@@ -1,4 +1,4 @@
-"""Add the built MoonLightIPR GPU preview to the installed kit, with a backup of what it replaces.
+"""Add the built MoonLight GPU preview to the installed kit, with a backup of what it replaces.
 
 Copies only what this branch changed: the session, its device program and the CUDA runtime into
 the kit's runtime/moonlight folder, the Python modules that route previews to it, and the
@@ -16,10 +16,12 @@ import subprocess
 import sys
 
 MODULES = ('__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
-           'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py', 'materials.py', 'material_editor.py', 'rdl_import.py', 'properties.py')
+           'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py', 'materials.py', 'material_editor.py', 'rdl_import.py', 'properties.py',
+           'panel_tools.py', 'preferences.py', 'scene_settings.py', 'animation.py', 'package_sequence.py')
 # Files outside the Python package, relative to the kit: the commands and forms of the MoonRay
 # items and of native materials.
-KIT_FILES = ('lxserv/moonray_entities.py', 'entities.cfg', 'lxserv/moonray_material_forms.py', 'material_forms.cfg')
+KIT_FILES = ('lxserv/moonray_entities.py', 'entities.cfg', 'lxserv/moonray_material_forms.py', 'material_forms.cfg',
+             'lxserv/moonray_render_settings.py', 'render_settings.cfg', 'lxserv/moonray_commands.py')
 
 root = Path(__file__).resolve().parents[1]
 source = root / 'kit/MoonRayForModo/python/moonray_modo'
@@ -30,7 +32,7 @@ if not target.is_dir():
 processes = subprocess.check_output(['tasklist', '/FI', 'IMAGENAME eq modo.exe', '/FO', 'CSV', '/NH'],
                                     text=True, creationflags=subprocess.CREATE_NO_WINDOW)
 if any(row and row[0].lower() == 'modo.exe' for row in csv.reader(io.StringIO(processes))):
-    raise SystemExit('Close Modo before installing MoonLightIPR; nothing was changed')
+    raise SystemExit('Close Modo before installing MoonLight; nothing was changed')
 
 backup = root / 'backups' / ('before-moonlight-' + datetime.now().strftime('%Y%m%d-%H%M%S'))
 for name in MODULES:
@@ -61,5 +63,5 @@ if tidied != text:
     backup.mkdir(parents=True, exist_ok=True)
     (backup / 'layout.cfg').write_bytes(text.encode('utf-8'))
     layout.write_bytes(tidied.encode('utf-8'))
-print('Installed MoonLightIPR into', kit)
+print('Installed MoonLight into', kit)
 print('Backup:', backup)

@@ -12,10 +12,23 @@ from pathlib import Path
 ENTRY = ('      <list type="Control" val="sub MoonRayEntityMenu:sheet"><atom type="Label">Add MoonRay Item</atom>'
          '<atom type="ShowLabel">1</atom><atom type="PopupFace">option</atom><atom type="Hash">MoonRayEntityMenu:sheet</atom></list>')
 ABOUT = '      <list type="Control" val="cmd moonray.about">'
+# The entries above the viewport one, in order. The preview window does each of them; render
+# settings are the Render item's MoonRay properties.
+ENTRIES = (('moonray.page preview', 'Open Preview', 'preview'), ('moonray.page settings', 'Render Settings', 'settings'),
+           ('moonray.page preferences', 'Preview Preferences...', 'preferences'),
+           ('moonray.page final', 'Render EXR...', 'final'), ('moonray.page animation', 'Render Animation...', 'animation'),
+           ('moonray.page export', 'Export MoonRay Scene...', 'export'), ('moonray.page stop', 'Stop Rendering', 'stop'),
+           ('moonray.page log', 'Render Log', 'log'),
+           ('moonray.page objects', 'Light Links, Emitters and Volumes...', 'objects'),
+           ('moonray.page outputs', 'Named Outputs...', 'outputs'),
+           ('moonray.page colors', 'Color Spaces and Texture Cache...', 'colors'),
+           ('moonray.page report', 'Report Scene Assets...', 'report'), ('moonray.page package', 'Package Render Scene...', 'package'),
+           ('moonray.page package_sequence', 'Package Animation...', 'package_sequence'),
+           ('moonray.assets.relink', 'Relink Missing Images...', 'relink'))
 # A divider goes above each of these: render setup and preview, per-scene settings, output,
 # the viewport, materials, MoonRay items, about.
-GROUPS = ('cmd moonray.page object', 'cmd moonray.page final', 'cmd moonray.dock', 'cmd moonray.material.assign',
-          'sub MoonRayEntityMenu:sheet', 'cmd moonray.about')
+GROUPS = ('cmd moonray.page final', 'cmd moonray.page objects', 'cmd moonray.page report', 'cmd moonray.dock',
+          'cmd moonray.material.assign', 'sub MoonRayEntityMenu:sheet', 'cmd moonray.about')
 DIVIDER = '      <list type="Control" val="div "><atom type="Hash">MoonRayMenu_divider%d:control</atom></list>'
 # Modo's menu drew these as stray letters and bars.
 PLAIN = (('…', '...'), ('—', '-'), ('–', '-'))
@@ -45,6 +58,15 @@ def tidy(text):
         return text
     end = closing(lines, start)
     lines[start:end] = [line for line in lines[start:end] if 'MoonRayMenu_divider' not in line]
+    # Everything from the first entry to the viewport one is rebuilt from ENTRIES.
+    first = next((i for i in range(start, closing(lines, start)) if '<list type="Control"' in lines[i]), None)
+    dock = next((i for i in range(start, closing(lines, start)) if 'val="cmd moonray.dock"' in lines[i]), None)
+    if first is not None and dock is not None and first <= dock:
+        built = []
+        for command, label, key in ENTRIES:
+            built += ['      <list type="Control" val="cmd %s">' % command, '        <atom type="Label">%s</atom>' % label,
+                      '        <atom type="Hash">MoonRayMenu_%s:control</atom>' % key, '      </list>']
+        lines[first:dock] = built
     end = closing(lines, start)
     out, number = [], 0
     for index, line in enumerate(lines):
