@@ -176,7 +176,10 @@ def textured(folder):
     # The same images as Shader Tree layers, to set the wired ones against.
     layered_maps = lobes(row('ball', [1, 1, 1], .5, [layer('lb', 'diffCol', 'colour', True)]),
                          row('cube', [1, 1, 1], .5, [layer('lc', 'diffCol', 'colour', True), layer('lr', 'rough', 'roughness', False)]))
-    return {'graph_maps': mapped, 'layer_maps': layered_maps, 'native_materials': natives, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    # And as Shader Tree layers over the same native material, which leaves only the route the image takes.
+    native_layer_maps = lobes(dict(native('ball', 'DwaBaseMaterial', roughness=.5), layers=[layer('nb', 'diffCol', 'colour', True)]),
+                              dict(native('cube', 'DwaBaseMaterial', roughness=.5), layers=[layer('nc', 'diffCol', 'colour', True), layer('nr', 'rough', 'roughness', False)]))
+    return {'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
