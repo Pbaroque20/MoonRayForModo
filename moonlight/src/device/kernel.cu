@@ -707,7 +707,53 @@ extern "C" __global__ void __raygen__moonlight() {
     const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
     float3 origin = vec(params.cameraOrigin);
     float3 direction = normalize(vec(params.cameraU) * sx + vec(params.cameraV) * sy + vec(params.cameraW));
-    if (params.lensRadius > 0.0f) {
+    bool outside = false;
+    if (params.cameraProjection != 0) {
+        // MoonRay's fisheye and spherical cameras, by its own formulas. Their directions are in
+        // the camera's frame: right, up, and back along the view.
+        const float3 right = normalize(vec(params.cameraU)), up = normalize(vec(params.cameraV)), forward = normalize(vec(params.cameraW));
+        const float* lens = params.cameraProjectionValues;
+        if (params.cameraProjection == 1) {
+            const float w = float(params.width), h = float(params.height);
+            const float x = 0.5f * sx * w, y = 0.5f * sy * h;
+            const unsigned format = unsigned(lens[1]);
+            const float diameter = format == 0 ? fminf(w, h) : format == 1 ? fmaxf(w, h) : sqrtf(w * w + h * h);
+            const float distance = sqrtf(x * x + y * y);
+            const float r = distance * 2.0f / (diameter * fmaxf(lens[2], 1e-6f));
+            float sine, cosine;
+            const unsigned mapping = unsigned(lens[0]);
+            if (mapping == 0) {             // stereographic
+                const float q = 1.0f / (1.0f + r * r);
+                sine = 2.0f * r * q; cosine = (1.0f - r * r) * q;
+            } else if (mapping == 1) {      // equidistant
+                sine = sinf(0.5f * ML_PI * r); cosine = cosf(0.5f * ML_PI * r);
+            } else if (mapping == 2) {      // equisolid angle
+                sine = r * sqrtf(fmaxf(0.0f, 2.0f - r * r)); cosine = 1.0f - r * r;
+            } else {                        // orthographic
+                outside = r * r > 1.0f;
+                sine = r; cosine = sqrtf(fmaxf(0.0f, 1.0f - r * r));
+            }
+            const float across = distance > 0.0f ? x / distance : 1.0f, along = distance > 0.0f ? y / distance : 0.0f;
+            direction = normalize(right * (sine * across) + up * (sine * along) + forward * cosine);
+            outside = outside || atan2f(sine, cosine) > lens[3];
+        } else {
+            const float latitude = lens[0] * (0.5f * sy + 0.5f) + lens[1], longitude = lens[2] * (0.5f * sx + 0.5f) + lens[3];
+            direction = normalize(right * (cosf(latitude) * sinf(longitude)) + up * sinf(latitude)
+                                  + forward * (cosf(latitude) * cosf(longitude)));
+        }
+    }
+    if (outside) {
+        // Beyond the lens's field of view there is no picture.
+        const float weight = 1.0f / float(params.sample + 1);
+        float4* buffers[3] = {reinterpret_cast<float4*>(params.beauty) + pixel, reinterpret_cast<float4*>(params.albedo) + pixel,
+                              reinterpret_cast<float4*>(params.normal) + pixel};
+        for (int i = 0; i < 3; ++i) {
+            const float3 kept = lerp(make_float3(buffers[i]->x, buffers[i]->y, buffers[i]->z), vec(0.0f), weight);
+            *buffers[i] = make_float4(kept.x, kept.y, kept.z, i < 2 ? 1.0f : 0.0f);
+        }
+        return;
+    }
+    if (params.lensRadius > 0.0f && params.cameraProjection == 0) {
         // Depth of field: the ray leaves a point on the lens and still passes through where the
         // pinhole ray meets the plane in focus.
         float lensX, lensY;

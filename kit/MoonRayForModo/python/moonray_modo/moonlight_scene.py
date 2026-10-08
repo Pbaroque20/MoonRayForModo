@@ -18,6 +18,8 @@ SUBDIVISION_QUADS = 3000000
 SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION = 1, 2, 4
 ENVIRONMENT_ROWS = 64
 ENVIRONMENT_IMAGE = (1024, 512)
+# How a camera turns a point of the picture into a direction, by the session's numbering.
+PROJECTIONS = {'persp': 0, 'fisheye': 1, 'spherical': 2}
 ENVIRONMENT_BAKE = (256, 128)       # layered environments are composed in Python, pixel by pixel
 GRADIENTS = ('constant', 'grad2', 'grad4', 'overcast')
 LOCAL_LIGHTS = {'SphereLight': 0, 'RectLight': 1, 'DiskLight': 2, 'SpotLight': 3, 'CylinderLight': 4, 'PortalLight': 5}
@@ -484,8 +486,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         environment = 0.0   # the preview environment light goes too
     scene = preview_entities(scene, warnings)
     camera = scene['camera']
-    if camera.get('projection', 'persp') != 'persp':
-        raise ValueError('MoonLight previews perspective cameras only')
+    projection = camera.get('projection', 'persp')
+    if projection not in PROJECTIONS:
+        raise ValueError('MoonLight previews perspective, fisheye and spherical cameras only')
     if camera['focal_mm'] <= 0 or camera['film_mm'] <= 0:
         raise ValueError('Camera focal length and film width must be positive')
     if camera.get('region') or scene.get('region'):
@@ -517,10 +520,11 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     depths = [min(8, settings[key]) for key in ('max_depth', 'max_diffuse_depth', 'max_glossy_depth')]
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
-    parts = [b'MLS7', struct.pack('<7I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLS8', struct.pack('<7I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
-             struct.pack('<10f', *pose), struct.pack('<2fIf', *lens)]
+             struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
+             struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])])]
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))

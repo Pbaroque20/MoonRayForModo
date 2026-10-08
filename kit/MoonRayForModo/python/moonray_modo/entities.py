@@ -652,6 +652,32 @@ def camera_lines(scene, entity):
 
 # ---- MoonLight ------------------------------------------------------------------------------
 
+def camera_projection(entity):
+    """How MoonLight is to look through a MoonRay camera item: a projection and its numbers, as
+    MoonRay works them out, or None for a camera it has no reading of."""
+    import math
+    name = entity['class']
+    if name == 'FisheyeCamera':
+        return {'projection': 'fisheye', 'projection_values': [float(int(value(entity, 'mapping'))), float(int(value(entity, 'format'))),
+                                                                float(value(entity, 'zoom')), math.radians(float(value(entity, 'fov'))) / 2]}
+    if name == 'SphericalCamera':
+        zoom = 30.0 / max(1e-6, float(value(entity, 'focal')))
+        low, high = math.radians(float(value(entity, 'min_latitude'))), math.radians(float(value(entity, 'max_latitude')))
+        middle = (low + high) / 2 + math.radians(float(value(entity, 'latitude_zoom_offset')))
+        latitude = [zoom * (high - low), middle + (low - middle) * zoom]
+        if bool(value(entity, 'inside_out')) or float(value(entity, 'offset_radius') or 0):
+            return None
+        if [float(value(entity, key)) for key in ('min_latitude', 'max_latitude', 'min_longitude', 'max_longitude')] == [-90.0, 90.0, -180.0, 180.0]:
+            # MoonRay keeps its earlier convention for the whole sphere: the view axis is in the
+            # middle of the picture.
+            low, high = -1.5 * math.pi, .5 * math.pi
+        else:
+            low, high = math.radians(float(value(entity, 'min_longitude'))), math.radians(float(value(entity, 'max_longitude')))
+        middle = (low + high) / 2 + math.radians(float(value(entity, 'longitude_zoom_offset')))
+        return {'projection': 'spherical', 'projection_values': latitude + [zoom * (high - low), middle + (low - middle) * zoom]}
+    return None
+
+
 def box(size):
     x, y, z = (v / 2 for v in size)
     vertices = [[sx * x, sy * y, sz * z] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]
@@ -675,6 +701,7 @@ def preview(scene, warnings):
     lights, environments, meshes = list(scene.get('lights', [])), list(scene.get('environments', [])), list(scene.get('meshes', []))
     scene = mesh_lights(scene, warnings)
     skipped = {}
+    camera = scene['camera']
     entities_checked = checked(scene)
     if replaces_environment(scene):
         # A MoonRay environment light set to replace Modo's leaves only itself and its kind.
@@ -735,9 +762,15 @@ def preview(scene, warnings):
             continue
         elif category == 'camera':
             if entity['parameters'].get('modo_render_camera'):
-                warnings.append('MoonLight looks through the Modo camera, not %s.' % label)
+                lens = camera_projection(entity)
+                if lens is None:
+                    warnings.append('MoonLight looks through the Modo camera, not %s.' % label)
+                else:
+                    # The view is from the item, through its own kind of lens.
+                    camera = dict(scene['camera'], matrix=matrix, dof=False, **lens)
+                    camera.pop('matrix_close', None)
         else:
             skipped.setdefault(name, []).append(label)
     for name, labels in sorted(skipped.items()):
         warnings.append('MoonLight does not show %s (%s).' % (name, ', '.join(labels[:6]) + (' ...' if len(labels) > 6 else '')))
-    return dict(scene, lights=lights, environments=environments, meshes=meshes, entities=[])
+    return dict(scene, camera=camera, lights=lights, environments=environments, meshes=meshes, entities=[])

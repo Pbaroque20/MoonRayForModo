@@ -194,6 +194,12 @@ struct Camera {
     float focusDistance = 1.0f;
     uint32_t blades = 0;
     float bladeAngle = 0.0f;
+    // How a point of the picture becomes a direction: 0 through a pinhole or lens, as above;
+    // 1 MoonRay's FisheyeCamera, with projectionValues its mapping, format, zoom and half field
+    // of view in radians; 2 MoonRay's SphericalCamera, with projectionValues the latitude and
+    // then the longitude as scale and offset over the picture's height and width.
+    uint32_t projection = 0;
+    float projectionValues[4] = {0, 0, 0, 0};
 };
 
 // Every setter restarts accumulation. Errors are reported as std::runtime_error.

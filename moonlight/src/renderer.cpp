@@ -458,6 +458,8 @@ struct Renderer::Impl {
         params.focusDistance = std::max(camera.focusDistance, 1e-6f);
         params.lensBlades = camera.blades >= 3 ? std::min<uint32_t>(camera.blades, 64) : 0;
         params.lensAngle = camera.bladeAngle;
+        params.cameraProjection = camera.projection <= 2 ? camera.projection : 0;
+        std::copy(camera.projectionValues, camera.projectionValues + 4, params.cameraProjectionValues);
     }
 
     // Material indices are followed on the GPU without bounds checks, so reject bad ones here.

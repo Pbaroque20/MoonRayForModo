@@ -216,6 +216,8 @@ struct LaunchParams {
     float focusDistance;    // along the view direction
     unsigned lensBlades;    // 0 for a disc
     float lensAngle;
+    unsigned cameraProjection;      // 0 perspective, 1 fisheye, 2 spherical
+    float cameraProjectionValues[4];
 };
 
 }

@@ -159,7 +159,7 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
-    if (in.value<uint32_t>() != 0x37534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLS7"
+    if (in.value<uint32_t>() != 0x38534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLS7"
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -180,6 +180,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     camera.focusDistance = in.value<float>();
     camera.blades = in.value<uint32_t>();
     camera.bladeAngle = in.value<float>();
+    camera.projection = in.value<uint32_t>();
+    in.floats(camera.projectionValues, 4);
     // With motion blur, the camera again as it is when the shutter closes.
     Camera cameraClose = camera;
     if (sceneFlags & SCENE_MOTION) {

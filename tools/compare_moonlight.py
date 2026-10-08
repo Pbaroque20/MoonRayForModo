@@ -240,6 +240,14 @@ def scenes(folder):
              'parameters': {'intensity': 60.0, 'radius': .3, 'light_filters': ['Decay', 'Tint']}},
             {'identity': 'l_fill', 'name': 'Fill', 'class': 'RectLight', 'matrix': aimed([3, 5, 3], [1, .5, 0]),
              'parameters': {'intensity': 60.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Ramp']}}]),
+        # MoonRay's own cameras, standing where the scene's camera is, with a light and a sky to see by.
+        **{name: dict(base, _environment=0.5, entities=[
+            {'identity': 'l_key', 'name': 'Key', 'class': 'SphereLight', 'matrix': fixture.placed(-3, 4, 2), 'parameters': {'intensity': 60.0, 'radius': .3}},
+            {'identity': 'c_lens', 'name': 'Lens', 'class': kind, 'matrix': base['camera']['matrix'],
+             'parameters': dict(lens, modo_render_camera=True)}])
+           for name, kind, lens in (('fisheye_camera', 'FisheyeCamera', {}),
+                                    ('fisheye_equidistant', 'FisheyeCamera', {'mapping': 1, 'format': 1, 'fov': 140.0}),
+                                    ('spherical_camera', 'SphericalCamera', {}))},
         'entity_textured_light': dict(base, entities=[
             {'identity': 'l_panel', 'name': 'Panel', 'class': 'RectLight', 'matrix': aimed([0, 2.2, 3.5], [0, .8, 0]),
              'parameters': {'intensity': 40.0, 'width': 3.0, 'height': 1.5, 'texture': test_images(folder)['colour']}}]),
