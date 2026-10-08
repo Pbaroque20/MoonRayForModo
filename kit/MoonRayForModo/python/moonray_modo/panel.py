@@ -15,6 +15,8 @@ from .panel_tools import Tools
 RENDER_TIP = 'Render the current scene. The previous image stays until its replacement is ready.'
 STOP_TIP = 'Stop the render in progress and stop following scene changes.'
 # Always offered in the buffer list; choosing one adds the output to the scene if it lacks it.
+# Modo's own style draws menu entries hard against the edge.
+MENU_STYLE = 'QMenu::item { padding: 5px 24px 5px 24px; } QMenu::separator { height: 1px; margin: 4px 10px; }'
 CRYPTOMATTES = (('object', 'Cryptomatte: Objects'), ('material', 'Cryptomatte: Materials'))
 
 
@@ -136,11 +138,13 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.focus_pick)
         gear=self.options_button=QtWidgets.QToolButton();gear.setText('Options');gear.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         gear.setMenu(self._options_menu())
+        # Room for the menu arrow beside the word, which it otherwise covers.
+        gear.setMinimumWidth(gear.fontMetrics().horizontalAdvance('Options')+40)
         row.addWidget(gear)
         return row
 
     def _options_menu(self):
-        menu=self.options_menu=QtWidgets.QMenu(self)
+        menu=self.options_menu=QtWidgets.QMenu(self);menu.setStyleSheet(MENU_STYLE)
         def checkable(target,label):
             # Made here and then added: in Modo's Qt the action a menu makes for a label cannot
             # be used afterwards (it reports as deleted), which stopped IPR from starting.
@@ -153,7 +157,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_lock.setToolTip('Hold automatic updates; the current render continues.')
         self.preview_lock.toggled.connect(self._lock_changed)
         from .clay import CHOICES
-        clay=self.clay_menu=QtWidgets.QMenu('Preview Material',self);menu.addMenu(clay);self.clay_group=QtWidgets.QActionGroup(self)
+        clay=self.clay_menu=QtWidgets.QMenu('Preview Material',self);clay.setStyleSheet(MENU_STYLE);menu.addMenu(clay);self.clay_group=QtWidgets.QActionGroup(self)
         for label,key in CHOICES:
             action=checkable(clay,label.replace(' — ',': '));action.setData(key)
             action.setChecked(key==self.preferences.get('clay'));self.clay_group.addAction(action)
@@ -174,7 +178,7 @@ class Panel(Tools, QtWidgets.QWidget):
         return menu
 
     def _image_menu(self,point=None):
-        menu=QtWidgets.QMenu(self)
+        menu=QtWidgets.QMenu(self);menu.setStyleSheet(MENU_STYLE)
         if point is not None:
             menu.addAction('Focus Here',lambda:self.focus_at(point))
             menu.addSeparator()
