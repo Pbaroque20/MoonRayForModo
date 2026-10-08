@@ -47,5 +47,19 @@ for name in MODULES:
     shutil.copyfile(source / name, target / name)
 for name in KIT_FILES:
     shutil.copyfile(root / 'kit/MoonRayForModo' / name, kit / name)
+# The MoonRay menu gains one entry. The installed layout.cfg is edited in place, not replaced,
+# so nothing else in it changes.
+layout = kit / 'layout.cfg'
+text = layout.read_bytes().decode('utf-8')
+anchor = '      <list type="Control" val="cmd moonray.about">'
+if 'MoonRayEntityMenu' not in text and text.count(anchor) == 1:
+    (backup / 'layout.cfg').write_bytes(text.encode('utf-8'))
+    entry = '      <list type="Control" val="ref MoonRayEntityMenu:sheet"><atom type="Label">Add MoonRay Item</atom></list>'
+    layout.write_bytes(text.replace(anchor, entry + ('
+' if '
+' in text else '
+') + anchor).encode('utf-8'))
+elif 'MoonRayEntityMenu' not in text:
+    print('Could not find where to add "Add MoonRay Item" in', layout)
 print('Installed MoonLightIPR into', kit)
 print('Backup:', backup)

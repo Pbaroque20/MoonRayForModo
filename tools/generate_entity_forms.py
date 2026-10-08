@@ -1,7 +1,7 @@
 """Generate the MoonRay menu entries and property forms for MoonRay's own scene objects.
 
-Reads entity_catalog.json and writes kit/MoonRayForModo/entities.cfg: an "Add MoonRay Item"
-submenu at the end of the MoonRay menu, and one form per class that shows in the item
+Reads entity_catalog.json and writes kit/MoonRayForModo/entities.cfg: the "Add MoonRay Item"
+submenu that layout.cfg places in the MoonRay menu, and one form per class that shows in the item
 properties when an item of that class is selected. The command numbering follows
 lxserv/moonray_entities.py: classes and their attributes in sorted order.
 """
@@ -40,10 +40,9 @@ def spaced(name):
     return ' '.join((' '.join(words + [current])).split())
 
 
-# The menu: a submenu per kind of object, added to the tail of the kit's MoonRay menu.
+# The menu: a submenu per kind of object. layout.cfg names this sheet inside the kit's MoonRay menu.
 menu = ET.SubElement(attributes, 'hash', type='Sheet', key='MoonRayEntityMenu:sheet')
 atom(menu, 'Label', 'Add MoonRay Item')
-ET.SubElement(ET.SubElement(menu, 'hash', type='InCategory', key='MoonRayForModoMenu:sheet#tail'), 'atom', type='Ordinal').text = '60'
 categories = {}
 for name in sorted(catalog):
     entry = catalog[name]
