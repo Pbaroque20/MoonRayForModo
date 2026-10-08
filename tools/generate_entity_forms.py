@@ -112,46 +112,44 @@ for i, name in enumerate(sorted(catalog)):
     groups = {}
     for j, (key, channel, kind, default, choices) in enumerate(entities.channels(name)):
         spec = dict(catalog[name]['attributes'][key], **REWORDED.get(key, {}))
+        shown = entities.presentation(name, key)
+        opens = [(k, ramp[0]) for k, ramp in enumerate(entities.RAMPS.get(name, [])) if key == ramp[1]]
+        if shown == 'hidden' or (shown == 'ramp' and not opens):
+            # Not for typing: a ramp's lists are edited together by one button, and the rest have nothing to choose from.
+            continue
         group = spec.get('group', 'Parameters')
         if group not in groups:
             groups[group] = nested(form, 'MoonRayEntity_%s_%d:sheet' % (name, len(groups)), group, collapsed=1 if groups else 0)
         label = spec.get('label', key.replace('_', ' '))
         tip = brief(spec.get('comment', ''))
         channel_control = 'item.channel %s$%s ?' % (entities.item_type(name), channel)
-        category = entities.reference_category(spec)
-        for k, (ramp_label, positions, _, _) in enumerate(entities.RAMPS.get(name, [])):
-            if key == positions:
-                # The three lists that follow make one ramp; this opens an editor on them together.
+        if opens:
+            # The three lists of a ramp are one thing to edit; this opens the editor on them together.
+            for k, ramp_label in opens:
                 control(groups[group], 'moonray.entity.ramp%d_%d' % (i, k), 'Edit ' + ramp_label + '...',
                         'Edit the stops, their values and how each blends into the next')
-        if choices:
+            continue
+        if shown == 'choice':
             # Named values: a popup drawn by a command.
             control(groups[group], 'moonray.entity.choice%d_%d ?' % (i, j), label, tip)
-        elif category and spec['type'] == 'SceneObject*':
+        elif shown in ('file', 'grid', 'label', 'material', 'uv'):
+            # What used to be typed: a file from a dialog, or a choice of what the scene or the file holds.
+            how = {'file': 'Choose a file, or none', 'grid': "One of the grids in this item's volume file",
+                   'label': 'A name already in use in the scene, or a new one', 'material': 'One of the materials of the scene',
+                   'uv': 'One of the UV maps of the scene'}[shown]
+            control(groups[group], 'moonray.entity.option%d_%d ?' % (i, j), label, '. '.join(part for part in (tip, how) if part))
+        elif shown == 'pick':
             # One other MoonRay item: a popup of those in the scene.
             control(groups[group], 'moonray.entity.pick%d_%d ?' % (i, j), label,
                     '. '.join(part for part in (tip, 'Choose one in the scene, or make a new one') if part))
-        elif category:
-            # Several: popups to attach and detach, and the list itself, which can also be typed.
+        elif shown == 'list':
+            # Several: popups to attach and detach. The detach list shows what is attached.
             one = {'light_filters': 'light filter', 'references': 'geometry'}.get(key, label)
             control(groups[group], 'moonray.entity.append%d_%d ?' % (i, j), 'add ' + one,
                     'Attach a %s: one already in the scene, or a new one made here' % one)
-            control(groups[group], 'moonray.entity.remove%d_%d ?' % (i, j), 'remove ' + one, 'Detach a %s; the item stays in the scene' % one)
-            control(groups[group], channel_control, 'attached ' + label, 'The attached items by name, separated by commas')
-        elif spec.get('filename'):
-            control(groups[group], channel_control, label, tip)
-            control(groups[group], 'moonray.entity.browse%d_%d' % (i, j), 'Browse for ' + label + '...', '')
+            control(groups[group], 'moonray.entity.remove%d_%d ?' % (i, j), 'attached ' + label, 'What is attached. Choose one to detach it; the item stays in the scene')
         else:
-            how = ''
-            if kind == 'string' and spec['type'].startswith('SceneObject'):
-                how = 'Type its name'
-            elif kind == 'string' and spec['type'] != 'String':
-                element = spec['type'][:-6]
-                how = ('Type as 1 0 0; 0 1 0' if element in ('Rgb', 'Vec2f', 'Vec3f') else 'Separate with commas' if element == 'String'
-                       else 'Type as 0 0.5 1')
-            elif kind != 'string' and 'default' not in spec:
-                how = ''
-            control(groups[group], channel_control, label, '. '.join(part for part in (tip, how) if part))
+            control(groups[group], channel_control, label, tip)
 ET.indent(config)
 ET.ElementTree(config).write(str(kit / 'entities.cfg'), encoding='utf-8', xml_declaration=True)
 print('Generated the menu and forms for', len(catalog), 'MoonRay classes')

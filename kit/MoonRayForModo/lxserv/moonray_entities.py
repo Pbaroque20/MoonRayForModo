@@ -289,6 +289,101 @@ def register():
                 for item in items:item.channel(channel).set(str(path).replace('\\','/'))
         return Browse
 
+    def load_vdb(item,path):
+        """Give a VDB shape its file, and what it needs to show as one: the file's first grid as its density, and
+        a VDB volume inside it. Without the volume the shape renders as nothing, or as the box it sits in."""
+        import modo
+        prefix=entities.CHANNEL_PREFIX;scene=modo.Scene()
+        item.channel(prefix+'model').set(str(path).replace(chr(92),'/'))
+        grids=entities.vdb_grids(str(path))
+        if grids and text(item,prefix+'density_grid') not in grids:
+            item.channel(prefix+'density_grid').set('density' if 'density' in grids else grids[0])
+        for other in ('emission_grid','velocity_grid'):
+            if text(item,prefix+other) and text(item,prefix+other) not in grids:item.channel(prefix+other).set('')
+        if not text(item,prefix+'modo_volume'):
+            taken={other.name for other in scene.items()}
+            label,count='VDB Volume',1
+            while label in taken:
+                count+=1;label='VDB Volume %d'%count
+            volume=scene.addItem(entities.item_type('VdbVolume'),name=label)
+            item.channel(prefix+'modo_volume').set(volume.name)
+
+    def scene_names(mode,item,channel):
+        """What there is to choose from for an attribute that used to be typed."""
+        import modo
+        scene=modo.Scene()
+        if mode=='grid':
+            # The grids of the item's own volume file; the usual names until it has one that can be read.
+            source=text(item,entities.CHANNEL_PREFIX+('model' if item.type==entities.item_type('VdbGeometry') else 'vdb_map'))
+            return entities.vdb_grids(source) or ['density','temperature','flame','vel']
+        if mode=='label':
+            found=set()
+            for owner in entities.classes():
+                if channel[len(entities.CHANNEL_PREFIX):] not in entities.catalog()[owner]['attributes']:continue
+                try:found.update(text(other,channel) for other in scene.items(entities.item_type(owner),superType=False))
+                except (LookupError,RuntimeError,TypeError):pass
+            return sorted(found-{''})
+        if mode=='material':
+            found=set()
+            for mask in scene.items('mask'):
+                try:found.add(str(mask.channel('ptag').get() or ''))
+                except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
+            return sorted(found-{''})
+        if mode=='uv':
+            found=set()
+            for mesh in scene.items('mesh',superType=False):
+                try:found.update(vmap.name for vmap in mesh.geometry.vmaps.uvMaps)
+                except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
+            return sorted(found)
+        return []
+
+    def option_command(name,channel,mode,label):
+        """A popup in place of a box to type in: a file from a dialog, a grid of the volume file, a name
+        already in use (or a new one), a material or a UV map of the scene."""
+        action={'file':'Choose file...','label':'New label...'}.get(mode)
+        class Option(Listed):
+            def values(self):
+                items=chosen(name)
+                if not items:return []
+                current=text(items[0],channel)
+                found=[] if mode=='file' else scene_names(mode,items[0],channel)
+                return found+([current] if current and current not in found else [])
+            def shown(self,value):
+                return value.replace('\\','/').rsplit('/',1)[-1] if mode=='file' else value
+            def arg_UIValueHints(self,index):
+                values=self.values()
+                return Popup([('none','(none)')]+[('value%d'%i,self.shown(v)) for i,v in enumerate(values)]+([('action',action)] if action else []))
+            def basic_Enable(self,msg):return bool(chosen(name))
+            def cmd_Query(self,index,query):
+                held=lx.object.ValueArray(query);values=self.values()
+                for item in chosen(name):
+                    current=text(item,channel)
+                    held.AddInt(values.index(current)+1 if current in values else 0)
+            def basic_Execute(self,msg,flags):
+                values=self.values();index=self.dyna_Int(0);items=chosen(name)
+                if not items or index<0:return
+                if index==0:value=''
+                elif index<=len(values):value=values[index-1]
+                elif mode=='file':
+                    import modo
+                    # Images or volume files by what the attribute is for, with every file as the other choice.
+                    wanted=(('vdb','OpenVDB files','*.vdb') if 'vdb' in channel or channel.endswith('model') else
+                            ('images','Images','*.exr;*.hdr;*.tx;*.tif;*.tiff;*.png;*.jpg;*.jpeg;*.tga'))
+                    try:path=modo.dialogs.customFile('fileOpen','Choose '+label,(wanted[0],'all'),(wanted[1],'All files'),(wanted[2],'*.*'))
+                    except RuntimeError:return
+                    if not path:return
+                    value=str(path).replace('\\','/')
+                    if name=='VdbGeometry' and channel==entities.CHANNEL_PREFIX+'model':
+                        for item in items:load_vdb(item,value)
+                        return
+                else:
+                    from PySide2 import QtWidgets
+                    typed,accepted=QtWidgets.QInputDialog.getText(None,'New '+label,'Letters, numbers and underscores:')
+                    value=''.join(c for c in str(typed).strip().replace(' ','_') if c.isalnum() or c=='_')
+                    if not accepted or not value:return
+                for item in items:item.channel(channel).set(value)
+        return Option
+
     def ramp_command(name,label,keys):
         """Opens the ramp editor on the three lists that make one ramp."""
         attributes=entities.catalog()[name]['attributes']
@@ -313,8 +408,11 @@ def register():
     for i,name in enumerate(entities.classes()):
         attributes=entities.catalog()[name]['attributes']
         for j,(key,channel,kind,default,choices) in enumerate(entities.channels(name)):
-            spec=attributes[key];category=entities.reference_category(spec)
-            if choices:lx.bless(choice_command(name,key,channel),'moonray.entity.choice%d_%d'%(i,j))
+            spec=attributes[key];category=entities.reference_category(spec);shown=entities.presentation(name,key)
+            if shown in ('file','grid','label','material','uv'):
+                lx.bless(option_command(name,channel,shown,spec.get('label',key.replace('_',' '))),'moonray.entity.option%d_%d'%(i,j))
+            elif shown in ('hidden','ramp'):pass
+            elif choices:lx.bless(choice_command(name,key,channel),'moonray.entity.choice%d_%d'%(i,j))
             elif category and spec['type']=='SceneObject*':
                 # A portal shows an environment or a distant light, not any light.
                 if (name,key)==('PortalLight','light'):category=('EnvLight','DistantLight')
@@ -324,7 +422,6 @@ def register():
             elif category:
                 lx.bless(append_command(name,channel,category),'moonray.entity.append%d_%d'%(i,j))
                 lx.bless(remove_command(name,channel),'moonray.entity.remove%d_%d'%(i,j))
-            elif spec.get('filename'):lx.bless(browse_command(name,channel,spec.get('label',key.replace('_',' '))),'moonray.entity.browse%d_%d'%(i,j))
 
     for name in entities.classes():
         lx.bless(package(name),entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'locator',lx.symbol.sSRV_USERNAME:entities.display(name)})
@@ -352,9 +449,26 @@ def register():
             for key,value in entities.STARTING.get(name,{}).items():
                 try:item.channel(entities.CHANNEL_PREFIX+key).set(value)
                 except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
+            if name=='VdbGeometry':
+                # A VDB shape is nothing without its file: ask for it now, and set up what shows it.
+                try:path=modo.dialogs.customFile('fileOpen','Choose a VDB file',('vdb','all'),('OpenVDB files','All files'),('*.vdb','*.*'))
+                except RuntimeError:path=None
+                if path:load_vdb(item,path)
             scene.select(item)
 
     lx.bless(Add,'moonray.entity.add')
+
+    class LoadVdb(lxu.command.BasicCommand):
+        """Give the selected VDB shapes a file, by path: what choosing one in the properties does, for scripts."""
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('file',lx.symbol.sTYPE_STRING)
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Enable(self,msg):return bool(chosen('VdbGeometry'))
+        def basic_Execute(self,msg,flags):
+            for item in chosen('VdbGeometry'):load_vdb(item,self.dyna_String(0))
+
+    lx.bless(LoadVdb,'moonray.entity.loadVdb')
 
 
 # A fault here must not keep the rest of the kit from loading.

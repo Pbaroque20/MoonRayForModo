@@ -15,12 +15,12 @@ import shutil
 import subprocess
 import sys
 
-MODULES = ('graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'curve_tubes.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
+MODULES = ('about.py', 'shader_library.py', 'graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'curve_tubes.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
            'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py', 'materials.py', 'material_editor.py', 'rdl_import.py', 'properties.py',
            'panel_tools.py', 'preferences.py', 'scene_settings.py', 'focus.py', 'progress.py', 'node_editor.py', 'node_widgets.py', 'incremental.py', 'graph_images.py', 'property_notifications.py', 'camera_choice.py', 'graph_bake.py', 'nodes.py', 'coordinates.py', 'animation.py', 'package_sequence.py')
 # Files outside the Python package, relative to the kit: the commands and forms of the MoonRay
 # items and of native materials.
-KIT_FILES = ('index.cfg', 'lxserv/moonray_entities.py', 'entities.cfg', 'lxserv/moonray_material_forms.py', 'material_forms.cfg',
+KIT_FILES = ('THIRD_PARTY.txt', 'index.cfg', 'lxserv/moonray_entities.py', 'entities.cfg', 'lxserv/moonray_material_forms.py', 'material_forms.cfg',
              'lxserv/moonray_render_settings.py', 'render_settings.cfg', 'lxserv/moonray_commands.py',
              'lxserv/moonray_material_properties.py', 'lxserv/moonray_moonshine_layer.py', 'shader_layers.cfg', 'lxserv/moonray_camera.py')
 

@@ -164,6 +164,93 @@ def choice_labels(name, key):
             for label, number in sorted(spec['enum'].items(), key=lambda entry: entry[1])]
 
 
+# Attributes nobody should have to type. Each is shown as a list to choose from, or not at all.
+VDB_GRIDS = ('density_grid', 'emission_grid', 'velocity_grid', 'density_grid_name')
+# Names MoonRay matches up between items: shown as the names already in use, with a way to add one.
+LABELS = ('label', 'shadow_receiver_label')
+# What cannot be chosen from anything in a Modo scene, or is given to MoonRay some other way:
+# a camera inside a medium, a map shader by name, the parts of a mesh light, and shadow exclusion's own syntax.
+UNSHOWN = ('medium_geometry', 'medium_material', 'map_shader', 'texture_map', 'parts', 'shadow_exclusion_mappings')
+
+
+def presentation(name, key):
+    """How an attribute is shown in its item's properties, so that none is a box to type in.
+
+    'choice' named values; 'pick' one other item; 'list' several other items; 'ramp' one of the three
+    lists of a ramp, which the ramp editor edits together; 'file' a file chosen in a dialog; 'grid' a
+    grid of the item's VDB file; 'label' a name shared between items; 'material' a material of the scene;
+    'uv' a UV map of the scene; 'hidden' not shown; 'channel' the item's own channel, which is a number,
+    a colour or a switch.
+    """
+    spec = catalog()[name]['attributes'][key]
+    kind = spec['type']
+    if key in UNSHOWN:
+        return 'hidden'
+    if any(key in ramp[1:] for ramp in RAMPS.get(name, [])):
+        return 'ramp'
+    if 'enum' in spec and kind in ('Int', 'Long'):
+        return 'choice'
+    category = reference_category(spec)
+    if category:
+        return 'pick' if kind == 'SceneObject*' else 'list'
+    if kind.startswith('SceneObject') or kind.endswith('Vector'):
+        return 'hidden'
+    if kind == 'String':
+        # MoonRay marks most of its file attributes as such, but not all.
+        if spec.get('filename') or key.endswith(('_image', '_map', '_file_name')):
+            return 'file'
+        if key in VDB_GRIDS:
+            return 'grid'
+        if key in LABELS:
+            return 'label'
+        if key == 'modo_material':
+            return 'material'
+        if key == 'uv_attribute':
+            return 'uv'
+        return 'hidden'
+    return 'channel'
+
+
+def vdb_grids(path):
+    """The names of the grids in an OpenVDB file, read from its header; none if it cannot be read."""
+    import struct
+    try:
+        with open(path, 'rb') as stream:
+            def number(code):
+                size = struct.calcsize(code)
+                return struct.unpack(code, stream.read(size))[0]
+
+            def text():
+                return stream.read(number('<I')).decode('utf-8', 'replace')
+            if stream.read(8) != b' BDV\x00\x00\x00\x00':
+                return []
+            version = number('<I')
+            if version >= 211:
+                stream.read(8)                      # the library's version
+            offsets = bool(number('<B')) if version >= 212 else False
+            if 220 <= version < 222:
+                stream.read(1)                      # compression, held per file in these versions
+            stream.read(36)                         # the file's identifier
+            for _ in range(number('<I')):           # the file's own notes: name, type, value
+                text(); text(); stream.read(number('<I'))
+            names = []
+            for _ in range(min(number('<i'), 256)):
+                name = text()
+                text()                              # the grid's type
+                if version >= 216:
+                    text()                          # the grid it is an instance of
+                stream.read(16)
+                end = number('<q')
+                # Two grids of one name are told apart by a suffix after a separator.
+                names.append(name.split('\x1e')[0])
+                if not offsets:
+                    break
+                stream.seek(end)
+            return [n for i, n in enumerate(names) if n and n not in names[:i]]
+    except (OSError, struct.error, ValueError, UnicodeError):
+        return []
+
+
 def reference_category(spec):
     """The kind of MoonRay item an attribute names, if it names one at all."""
     if not spec['type'].startswith('SceneObject'):
@@ -319,7 +406,8 @@ RAMPS = {'ColorRampLightFilter': [('Colour ramp', 'distances', 'colors', 'interp
          'RodLightFilter': [('Falloff ramp', 'ramp_in_distances', 'ramp_out_distances', 'ramp_interpolation_types')],
          'VdbLightFilter': [('Density remap', 'density_remap_inputs', 'density_remap_outputs', 'density_remap_interpolation_types')],
          'BaseVolume': [('Attenuation ramp', 'attenuation_distances', 'attenuation_colors', 'attenuation_interpolations'),
-                        ('Density ramp', 'density_distances', 'densities', 'density_interpolations')]}
+                        ('Density ramp', 'density_distances', 'densities', 'density_interpolations'),
+                        ('Diffuse ramp', 'diffuse_distances', 'diffuse_colors', 'diffuse_interpolations')]}
 INTERPOLATIONS = ('None', 'Linear', 'Exponential Up', 'Exponential Down', 'Smooth', 'Catmull-Rom', 'Monotone Cubic')
 
 
@@ -625,6 +713,10 @@ def emit_geometry(scene, materials, lines):
         if tag not in materials:
             tag = ''
         parts = [name, '""', 'materials[%s]' % string(tag), 'lightSet']
+        if entity['parameters'].get('modo_volume') and not entity['parameters'].get('modo_material'):
+            # A shape that holds a volume and was given no material is the volume alone: with the scene's
+            # default surface on it, a cloud renders as the solid box it sits in.
+            parts = [name, '""', 'lightSet']
         if entity['parameters'].get('modo_volume'):
             parts.append(reference(entities, entity['parameters']['modo_volume'], 'VOLUME', entity['name'] + '.volume'))
         lines += body + ['table.insert(geometries, %s)' % name, 'table.insert(assignments, {%s})' % ', '.join(parts)]
