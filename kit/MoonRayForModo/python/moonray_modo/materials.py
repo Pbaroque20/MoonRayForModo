@@ -37,8 +37,13 @@ def assign(shader=None):
     material.channel('rough').set(.35)
     for mesh in meshes:
         with mesh.geometry as geometry:
-            for polygon in geometry.polygons:
-                polygon.materialTag=tag
+            # By index: stepping through the polygons while tagging them passed one over.
+            for index in range(len(geometry.polygons)):
+                geometry.polygons[index].materialTag=tag
+        missed=[index for index in range(len(mesh.geometry.polygons)) if mesh.geometry.polygons[index].materialTag!=tag]
+        if missed:
+            with mesh.geometry as geometry:
+                for index in missed:geometry.polygons[index].materialTag=tag
     # Named for what it is; the mask above it already says MoonShine.
     material.name=shader
     scene.select(material)
