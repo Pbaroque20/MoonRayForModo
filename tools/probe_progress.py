@@ -97,7 +97,7 @@ def grab():
                         specks += 1
             result.setdefault('specks', {})[index] = specks
         shots.append([panel.status.text(), panel.render_timing.text(), panel.start.text()])
-        if index < 30 and panel.start.text() == 'Stop':
+        if index < 45 and panel.start.text() == 'Stop':
             QtCore.QTimer.singleShot(1000, grab)
             return
         result['shots'] = shots
