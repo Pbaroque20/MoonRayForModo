@@ -69,6 +69,72 @@ def color_space(source, authored, srgb):
     return space, (str(Path(config).resolve()), Path(config).stat().st_mtime_ns, policy.get('linear_space', 'Linear Rec.709 (sRGB)'))
 
 
+# What each native shader's switched-on extras are called, for the lobes the uber-shader lacks.
+NATIVE_EXTRAS = (('show_fuzz', 'fuzz'), ('show_glitter', 'glitter'))
+
+
+def native_surface(shader, parameters, note):
+    """A native MoonRay material as the values the uber-shader starts from, or None for a shader
+    it has no reading of.
+
+    The Dwa surface shaders share one set of attribute names; each is read with MoonRay's own
+    default where the user has not set it. note(what) records a lobe that is left out.
+    """
+    from . import node_defaults, shader_library
+    if shader not in ('DwaBaseMaterial', 'DwaMetalMaterial', 'DwaSolidDielectricMaterial', 'DwaRefractiveMaterial', 'DwaEmissiveMaterial'):
+        return None
+    attributes = shader_library.catalog()[shader]['attributes']
+    def get(key, missing):
+        if key in parameters:
+            return parameters[key]
+        if key in attributes:
+            try:
+                return node_defaults.value(attributes[key])
+            except ValueError:
+                pass
+        return missing
+    black, white = [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]
+    if shader == 'DwaEmissiveMaterial':
+        emission = get('emission', white) if get('show_emission', True) else black
+        return {'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': black, 'raw_color': black, 'diffuse_amount': 1.0,
+                'roughness': 1.0, 'metallic': 0.0, 'specular_amount': 0.0, 'emission': emission, 'raw_emission': emission,
+                'emission_amount': 1.0, 'presence': float(get('presence', 1.0)), 'ior': 1.5}
+    metal = shader == 'DwaMetalMaterial'
+    glass = shader == 'DwaRefractiveMaterial'
+    metallic = 1.0 if metal else 0.0 if glass or shader == 'DwaSolidDielectricMaterial' else min(1.0, max(0.0, float(get('metallic', 0.0))))
+    albedo = get('albedo', white) if get('show_diffuse', True) and not glass else black
+    # The uber-shader has one colour for the diffuse lobe and the metal's reflection.
+    color = [a + (m - a) * metallic for a, m in zip(albedo, get('metallic_color', white))]
+    roughness = float(get('roughness', .5))
+    transmission = (1.0 if glass else float(get('transmission', 0.0))) if get('show_transmission', True) and shader in (
+        'DwaBaseMaterial', 'DwaRefractiveMaterial') else 0.0
+    ior = float(get('refractive_index', 1.5))
+    emission = get('emission', white) if get('show_emission', False) else black
+    radius = float(get('scattering_radius', 0.0))
+    for switch, label in NATIVE_EXTRAS:
+        if get(switch, False):
+            note(label)
+    if float(get('iridescence', 0.0)) > 0:
+        note('iridescence')
+    if 0 < float(get('specular', 1.0)) < 1:
+        note('a specular weight between 0 and 1, shown at full strength')
+    return {
+        'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': color, 'raw_color': color, 'diffuse_amount': 1.0,
+        'roughness': roughness, 'metallic': metallic, 'ior': ior,
+        'specular_amount': float(get('specular', 1.0)) if get('show_specular', True) else 0.0,
+        'transmission': transmission, 'transmission_color': get('transmission_color', white),
+        'refraction_roughness': float(get('independent_transmission_roughness', .5)) if get('use_independent_transmission_roughness', False) else roughness,
+        'transmission_ior': float(get('independent_transmission_refractive_index', 1.5)) if get('use_independent_transmission_refractive_index', False) else ior,
+        'clearcoat': float(get('clearcoat', 1.0)) if get('show_clearcoat', False) else 0.0, 'clearcoat_roughness': float(get('clearcoat_roughness', .1)),
+        'emission': emission, 'raw_emission': emission, 'emission_amount': 1.0, 'presence': float(get('presence', 1.0)),
+        'anisotropy': float(get('anisotropy', 0.0)), 'thin_geometry': bool(get('thin_geometry', False)),
+        'subsurface_amount': 1.0 if radius > 0 else 0.0, 'subsurface_distance': radius, 'subsurface_color': get('scattering_color', white),
+        'diffuse_roughness': float(get('diffuse_roughness', 0.0)),
+        'dispersion_abbe': float(get('dispersion_abbe_number', 34.0)) if get('use_dispersion', False) else 0.0,
+        # 0 is Beckmann, 1 GGX; only DwaBaseMaterial offers the choice.
+        '_beckmann': get('specular_model', 1) == 0}
+
+
 class Compiler:
     """Collects the materials of one scene; textures and coordinate slots are shared between them."""
 
@@ -246,12 +312,29 @@ class Compiler:
         else:
             # A native shader or node graph has no channel stack to translate.
             source = stack[-1] if stack else material
+        native, surface = source.get('native_shader'), None
+        if native:
+            # A native MoonRay material: its own attributes say what it looks like, not the Modo
+            # material it rides on.
+            surface = native_surface(native, source.get('native_parameters') or {}, lambda what: self.note(what, name))
+            graph_root = None
+            if source.get('node_graph'):
+                nodes = source['node_graph'].get('nodes', {})
+                graph_root = nodes.get(source['node_graph'].get('root'))
+            if surface is None:
+                self.note('%s, shown with the values of the Modo material' % native, name)
+            else:
+                if graph_root and graph_root.get('inputs'):
+                    self.note('the maps wired into a material graph, shown with the values beneath them', name)
+                source = dict(source, **surface)
         defaults = graph.defaults_for(source)
         layers = source.get('layers')
         if layers is None:
             layers = [dict(value, effect=key, kind=value.get('kind', 'imageMap')) for key, value in source.get('textures', {}).items()]
-        if source.get('node_graph') or source.get('native_shader'):
-            self.note('native shaders and node graphs, shown with their base values', name)
+        if native and surface is None:
+            layers = []
+        elif source.get('node_graph') and not native:
+            self.note('node graphs, shown with their base values', name)
             layers = []
         if source.get('diffuse_roughness', 0):
             self.note('diffuse roughness', name)
@@ -463,7 +546,7 @@ class Compiler:
         # A stack binds every channel, anisotropy included, and the plugin selects DwaBaseMaterial's
         # Beckmann lobe whenever anisotropy is bound or set. Everything else gets GGX.
         stretched = bool(stack and supported(stack)) or bool(dwa and (source.get('anisotropy', 0) or 'aniso' in effects))
-        if stretched or source.get('anisotropy', 0):
+        if stretched or source.get('anisotropy', 0) or source.get('_beckmann'):
             flags |= MATERIAL_BECKMANN
         controls = shader_controls(source)
         # The lobe is stretched along a tangent measured from texture u of the primary coordinates,
@@ -490,7 +573,8 @@ class Compiler:
                   min(1.0, max(0.0, float(defaults['rough']))), max(1.0, ior)] + triple(defaults['lumiCol'])
                   + [float(defaults['diffAmt']), float(defaults['lumiAmt']), under, min(1.0, max(0.0, float(defaults['tranAmt'])))]
                   + triple(defaults['tranCol'])
-                  + [min(1.0, max(0.0, float(v))) for v in (defaults['tranRough'],)] + [max(1.0, float(source.get('ior', 1.5)))]
+                  + [min(1.0, max(0.0, float(v))) for v in (defaults['tranRough'],)]
+                  + [max(1.0, float(source.get('transmission_ior', source.get('ior', 1.5))))]
                   + [min(1.0, max(0.0, float(defaults[key]))) for key in ('coatAmt', 'coatRough', 'dissolve')]
                   + [float(source.get('bump_strength', .005)) if bumped else 0.0]
                   + [max(-1.0, min(1.0, float(defaults['aniso']))) if stretched else 0.0,

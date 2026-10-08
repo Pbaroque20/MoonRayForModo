@@ -147,7 +147,15 @@ def textured(folder):
     tiled = dict(simple, meshes=[dict(mesh, uvs=[[0, 0], [0, 2], [2, 2], [2, 0]]) if mesh['name'] == 'Ground' else mesh for mesh in simple['meshes']],
                  materials=dict(simple['materials'], **{'': {'color': [.5, .5, .5], 'roughness': .6, 'textures': {
                      'diffCol': {'path': str(folder / 'tile.<UDIM>.ppm'), 'srgb': True}}}}))
-    return {'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    # Native MoonRay materials, as Assign MoonShine Material makes them: their own attributes
+    # decide the look, not the Modo material they sit on.
+    def native(identity, shader, **parameters):
+        return dict(row(identity, [.5, .5, .5], .4), native_shader=shader, native_parameters=parameters)
+    natives = lobes(native('ball', 'DwaBaseMaterial', albedo=[.1, .7, .2], roughness=.2),
+                    native('cube', 'DwaMetalMaterial', metallic_color=[.95, .6, .4], roughness=.3))
+    natives['materials']['gold'] = {'material_stack': [native('gold', 'DwaBaseMaterial', albedo=[.8, .8, .8], roughness=.6,
+                                                              show_clearcoat=True, clearcoat_roughness=.05, show_emission=True, emission=[.2, .05, 0.0])]}
+    return {'native_materials': natives, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 

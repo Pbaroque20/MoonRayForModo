@@ -191,6 +191,7 @@ running session leaves out the data of meshes it already holds.
 | OCIO texture and environment colour spaces, input colour rules, the ACEScg working space | Images go through the configured OCIO config to linear, as the plugin's `maketx` step does; material colours are computed in Rec.709 and taken to the working space on the GPU, environment images by `oiiotool`. Not tested: no OCIO config was at hand |
 | Bump layers and `bump_strength` | The height's slope tilts the shading normal, with the plugin's own formula and step; normal and bump maps combine |
 | Image files | Converted once by the runtime's `oiiotool` to an uncompressed Targa (or a PFM for `.exr`, `.hdr`, `.tx`), cached under `%LOCALAPPDATA%/MoonRayForModo/MoonLight`, capped at 4096 pixels a side, and read by the session; sRGB images are decoded on the GPU |
+| Native MoonRay materials (`native_shader`, `native_parameters`), from Assign MoonShine Material or a material graph's output node | `DwaBaseMaterial`, `DwaMetalMaterial`, `DwaSolidDielectricMaterial`, `DwaRefractiveMaterial` and `DwaEmissiveMaterial` are read from their own attributes, with MoonRay's defaults where unset: albedo, metallic and its colour, roughness, index, the specular, transmission, clearcoat and emission switches and values, presence, anisotropy, scattering radius and colour, dispersion, and the Beckmann or GGX choice. Fuzz, glitter and iridescence are named in the notices, as are maps wired into a graph (their constant values are shown). Other native shaders are shown with the Modo material's values. A green `DwaBaseMaterial`, a copper `DwaMetalMaterial` and a clearcoated, glowing one compare at 0.996 with 94% of tiles within 10% |
 | Subdivision surfaces, their level and creases | The control cage goes to the session, which runs that many rounds of Catmull-Clark: open edges and the corners of open meshes stay sharp, as MoonRay's default boundary rule has them, and a crease stays sharp for as many rounds as its sharpness. Texture coordinates are carried across each face linearly, where MoonRay smooths them. Capped at 3,000,000 quads. A rounded cube and a creased open one compare at 1.004 with 95% of tiles within 10% |
 | Texture coordinates | Up to 8 coordinate sets per scene, taken from the per-projection sets the capture already bakes, stored per triangle corner |
 | An environment image (latitude-longitude, untransformed UVs) | Converted once to a 1024 x 512 linear float image and importance sampled, with MoonRay's `EnvLight` orientation and the locator's rotation; one image for lighting and one behind the scene |
@@ -208,8 +209,7 @@ running session leaves out the data of meshes it already holds.
 
 Everything else is reported in the packer's warnings rather than dropped silently:
 the alpha of baked procedural layers, layers on channels the shader lacks (specular
-colour, coat normals, diffuse roughness), native shaders and node graphs (shown with
-their base values), a third environment image (shown as uniform grey), light filters,
+colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), light filters,
 moving lights during the shutter, curves and
 volumes, film offset and the render region. Orthographic cameras are refused.
 
