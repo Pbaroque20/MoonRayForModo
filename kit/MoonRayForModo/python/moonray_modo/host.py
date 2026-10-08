@@ -406,8 +406,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                  'soft_edge': max(0.0, math.degrees(float(channel(item, 'edge', 0)))),
                  'width': float(channel(item, 'width', 1)), 'height': float(channel(item, 'height', 1))}
         if item.type == 'sunLight' and channel(item,'sunPos',False):
-            from .sun import matrix as sun_matrix
+            from .sun import matrix as sun_matrix, physical as physical_sun
             light['matrix']=sun_matrix(item)
+            # Modo works out this sun's colour and strength from its height and the haze.
+            light['color'],light['intensity']=physical_sun(item)
         if item.type == 'spotLight':
             # Modo emits along local +Z; MoonRay's authored spot emits along -Z.
             # Precompose a local X half-turn, keeping the world position intact.
