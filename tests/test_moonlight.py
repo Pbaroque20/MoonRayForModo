@@ -77,6 +77,46 @@ class PackTests(unittest.TestCase):
         self.assertEqual(len(emitting)-len(moonlight_scene.pack(still,320,180)[0]),4+80+4+2*36)
         self.assertFalse(any('mesh light' in w for w in warnings))
 
+class EntityTests(unittest.TestCase):
+    def items(self):
+        at=lambda x,y,z:[1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1]
+        return [{'identity':'env','name':'Sky','class':'EnvLight','matrix':at(0,0,0),'parameters':{'color':[.2,.3,.4]}},
+                {'identity':'rod','name':'Rod','class':'RodLightFilter','matrix':at(0,1,0),'parameters':{}},
+                {'identity':'key','name':'Key','class':'SpotLight','matrix':at(0,4,0),'parameters':{'intensity':5.0,'light_filters':['Rod']}},
+                {'identity':'fog','name':'Fog','class':'BaseVolume','parameters':{}},
+                {'identity':'box','name':'Box','class':'BoxGeometry','matrix':at(1,0,0),'parameters':{'modo_material':'red','modo_volume':'Fog'}},
+                {'identity':'eye','name':'Eye','class':'FisheyeCamera','matrix':at(0,1,5),'parameters':{'modo_render_camera':True}}]
+
+    def test_values_are_checked_against_the_schema(self):
+        from moonray_modo import entities
+        self.assertEqual(len(entities.classes()),30)
+        self.assertEqual(entities.validate('SpotLight',{'outer_cone_angle':40})['outer_cone_angle'],40.0)
+        for name,parameters in (('SpotLight',{'outer_cone_angle':'wide'}),('SpotLight',{'no_such':1}),('NoSuchLight',{}),
+                                ('EnvLight',{'color':[1,1]}),('EnvLight',{'visible_in_camera':7})):
+            with self.assertRaises(ValueError):entities.validate(name,parameters)
+
+    def test_items_reach_the_moonray_scene(self):
+        from moonray_modo import rdla
+        with_items=scene();with_items['entities']=self.items();with_items['lights']=with_items['lights'][:1]
+        text=rdla.scene_text(with_items,320,180,1,0.0)
+        self.assertIn('local camera = FisheyeCamera("/modo/camera") {',text)
+        self.assertNotIn('PerspectiveCamera("/modo/camera")',text)
+        self.assertIn('["light_filters"] = {RodLightFilter("/modo/entity/rod")}',text)
+        self.assertIn('table.insert(lights, SpotLight("/modo/entity/key"))',text)
+        self.assertIn('table.insert(assignments, {BoxGeometry("/modo/entity/box"), "", materials["red"], lightSet, BaseVolume("/modo/entity/fog")})',text)
+        self.assertLess(text.index('table.insert(lights, EnvLight("/modo/entity/env"))'),text.index('local lightSet'))
+        # A volume shader has no place, so it must not be given a transform.
+        self.assertNotIn('node_xform',text[text.index('BaseVolume("/modo/entity/fog") {'):text.index('BoxGeometry("/modo/entity/box") {')])
+        broken=scene();broken['entities']=[dict(self.items()[2])];broken['lights']=broken['lights'][:1]
+        with self.assertRaises(ValueError):rdla.scene_text(broken,320,180,1,0.0)
+
+    def test_moonlight_draws_what_it_can_and_names_the_rest(self):
+        with_items=scene();with_items['entities']=self.items()
+        packed,_,warnings=moonlight_scene.pack(with_items,320,180)
+        self.assertGreater(len(packed),len(moonlight_scene.pack(scene(),320,180)[0]))
+        for expected in ('light filters on Key','does not show volumes (Box)','RodLightFilter (Rod)','BaseVolume (Fog)','not Eye'):
+            self.assertTrue(any(expected in w for w in warnings),expected)
+
 class DigestTests(unittest.TestCase):
     def test_follows_content_not_identity(self):
         a,b=scene(),scene()

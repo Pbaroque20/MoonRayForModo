@@ -1,8 +1,9 @@
 """Add the built MoonLightIPR GPU preview to the installed kit, with a backup of what it replaces.
 
-Copies only MoonLightIPR's own files: the session, its device program and the CUDA runtime into
-the kit's runtime/moonlight folder, and the Python modules that route previews to it. The rest
-of the installed kit is left as it is. Close Modo first; a running Modo keeps the old modules
+Copies only what this branch changed: the session, its device program and the CUDA runtime into
+the kit's runtime/moonlight folder, the Python modules that route previews to it, and the
+MoonRay items (their module, schema, commands and forms). The rest of the installed kit is left
+as it is. Close Modo first; a running Modo keeps the old modules
 loaded and the old session open.
 """
 import csv
@@ -15,7 +16,9 @@ import subprocess
 import sys
 
 MODULES = ('__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
-           'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py')
+           'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json')
+# Files outside the Python package, relative to the kit: the MoonRay items' commands and forms.
+KIT_FILES = ('lxserv/moonray_entities.py', 'entities.cfg')
 
 root = Path(__file__).resolve().parents[1]
 source = root / 'kit/MoonRayForModo/python/moonray_modo'
@@ -33,10 +36,16 @@ for name in MODULES:
     if (target / name).is_file():
         (backup / 'python/moonray_modo').mkdir(parents=True, exist_ok=True)
         shutil.copy2(target / name, backup / 'python/moonray_modo' / name)
+for name in KIT_FILES:
+    if (kit / name).is_file():
+        (backup / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(kit / name, backup / name)
 if (kit / 'runtime/moonlight').is_dir():
     shutil.copytree(kit / 'runtime/moonlight', backup / 'runtime/moonlight')
 subprocess.run([sys.executable, str(root / 'tools/stage_moonlight.py'), '--destination', str(kit / 'runtime/moonlight')], check=True)
 for name in MODULES:
     shutil.copyfile(source / name, target / name)
+for name in KIT_FILES:
+    shutil.copyfile(root / 'kit/MoonRayForModo' / name, kit / name)
 print('Installed MoonLightIPR into', kit)
 print('Backup:', backup)

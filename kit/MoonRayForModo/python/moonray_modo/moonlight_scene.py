@@ -339,6 +339,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if samples < 1:
         raise ValueError('MoonLightIPR needs at least one sample')
     warnings = []
+    # MoonRay's own items arrive beside the Modo ones; draw those that have a counterpart here.
+    from .entities import preview as preview_entities
+    scene = preview_entities(scene, warnings)
     camera = scene['camera']
     if camera.get('projection', 'persp') != 'persp':
         raise ValueError('MoonLightIPR previews perspective cameras only')

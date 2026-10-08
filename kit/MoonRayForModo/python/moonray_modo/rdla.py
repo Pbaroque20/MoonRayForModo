@@ -105,6 +105,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
              '  ["mb_shutter_close"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[-1]),
              '  ["near"] = 0.001,', '}',
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
+    from . import entities
+    entity_camera=entities.render_camera(scene)
+    if entity_camera:
+        # A MoonRay camera item set to render takes the place of the Modo camera.
+        lines[1:lines.index('}')+1]=entities.camera_lines(scene,entity_camera)
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
@@ -359,6 +364,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         lines.append('end')
     from .extra_geometry import emit as emit_extra
     emit_extra(scene,materials,lines,crypto)
+    entities.emit_geometry(scene,materials,lines)
     lines += ['GeometrySet("/modo/geometrySet")(geometries)',
               'local layer = Layer("/modo/layer")(assignments)', 'SceneVariables {',
               '  ["camera"] = camera,', '  ["layer"] = layer,',

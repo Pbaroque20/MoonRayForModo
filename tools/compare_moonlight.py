@@ -201,6 +201,12 @@ def scenes(folder):
         'cylinder_light': dict(base, lights=[dict(lamp, kind='CylinderLight', intensity=60.0, radius=.15, height=2.5, matrix=aimed([-1, 4, 2], [0, .5, 0]))]),
         'portal_light': dict(base, _environment=1.0, lights=[dict(lamp, kind='PortalLight', intensity=12.0, width=3.0, height=2.0, matrix=aimed([1, 5, 3], [0, .5, 0]))]),
         'mesh_light': emitting,
+        # MoonRay's own items: a tinted environment, a sphere light, and a box and a ball as shapes.
+        'entities': dict(base, entities=[
+            {'identity': 'e_env', 'name': 'Sky', 'class': 'EnvLight', 'matrix': fixture.placed(0, 0, 0), 'parameters': {'color': [.4, .5, .7], 'intensity': .6}},
+            {'identity': 'e_key', 'name': 'Key', 'class': 'SphereLight', 'matrix': fixture.placed(-1, 5, 3), 'parameters': {'intensity': 50.0, 'radius': .4, 'color': [1.0, .9, .8]}},
+            {'identity': 'e_box', 'name': 'Block', 'class': 'BoxGeometry', 'matrix': fixture.placed(-4.2, .6, 1.5), 'parameters': {'size': [1.2, 1.2, 1.2], 'modo_material': 'red'}},
+            {'identity': 'e_ball', 'name': 'Globe', 'class': 'SphereGeometry', 'matrix': fixture.placed(4.3, .7, 1.8), 'parameters': {'radius': .7, 'modo_material': 'blue'}}]),
         'depth_of_field': dict(base, lights=fixture.snapshot()['lights'], _environment=.3,
                                camera=dict(base['camera'], dof=True, f_stop=.3, focus_distance=6.5)),
         'bokeh_blades': dict(base, lights=fixture.snapshot()['lights'], _environment=.3,

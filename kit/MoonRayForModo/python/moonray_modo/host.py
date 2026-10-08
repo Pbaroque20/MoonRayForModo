@@ -436,5 +436,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             result['source_assets'].append(str(Path(path).resolve()))
     from .native_light_links import capture as capture_light_links
     result['native_light_links']=capture_light_links(scene,result,warnings)
+    from .entities import collect as collect_entities
+    result['entities']=collect_entities(scene,warnings)
     result['warnings'] = sorted(set(warnings))
     return result
