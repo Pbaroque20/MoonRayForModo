@@ -27,6 +27,22 @@ def control(parent, command, label, tip=''):
         atom(item, 'Tooltip', tip)
 
 
+TIP_LENGTH = 90
+
+
+def brief(comment):
+    """MoonRay's description cut down to a tooltip someone will read: its first sentence, kept short."""
+    import re
+    text = ' '.join(str(comment).split())
+    # The first sentence; a full stop inside a number or an abbreviation does not end it.
+    found = re.match(r'(.+?[.!?])(?=\s+[A-Z(]|$)', text)
+    text = (found.group(1) if found else text).rstrip('.')
+    text = re.sub(r'\s*\((?:[^()]*)\)$', '', text)
+    if len(text) > TIP_LENGTH:
+        text = text[:TIP_LENGTH + 1].rsplit(' ', 1)[0].rstrip(',;:') + '...'
+    return text
+
+
 def spaced(name):
     """EnvLight -> Env Light; CookieLightFilter_v2 -> Cookie Light Filter v2."""
     if name == 'DomeMaster3DCamera':
@@ -90,7 +106,7 @@ for i, name in enumerate(sorted(catalog)):
         if group not in groups:
             groups[group] = nested(form, 'MoonRayEntity_%s_%d:sheet' % (name, len(groups)), group, collapsed=1 if groups else 0)
         label = spec.get('label', key.replace('_', ' '))
-        tip = str(spec.get('comment', ''))
+        tip = brief(spec.get('comment', ''))
         channel_control = 'item.channel %s$%s ?' % (entities.item_type(name), channel)
         category = entities.reference_category(spec)
         if choices:
@@ -101,23 +117,22 @@ for i, name in enumerate(sorted(catalog)):
             control(groups[group], 'moonray.entity.pick%d_%d ?' % (i, j), label, tip)
         elif category:
             # Several: the list as text, and a popup that adds to it.
-            control(groups[group], channel_control, label, (tip + ' The names of MoonRay items, separated by commas.').strip())
-            control(groups[group], 'moonray.entity.append%d_%d ?' % (i, j), 'add to ' + label, 'Adds one of the MoonRay items in the scene to the list above.')
+            control(groups[group], channel_control, label, tip)
+            control(groups[group], 'moonray.entity.append%d_%d ?' % (i, j), 'add to ' + label, 'Add a MoonRay item to the list above')
         elif spec.get('filename'):
             control(groups[group], channel_control, label, tip)
-            control(groups[group], 'moonray.entity.browse%d_%d' % (i, j), 'Browse for ' + label + '...', 'Choose the file from a dialog.')
+            control(groups[group], 'moonray.entity.browse%d_%d' % (i, j), 'Browse for ' + label + '...', '')
         else:
             how = ''
             if kind == 'string' and spec['type'].startswith('SceneObject'):
-                how = 'Type the name of the object this refers to; blank for none.'
+                how = 'Type its name'
             elif kind == 'string' and spec['type'] != 'String':
                 element = spec['type'][:-6]
-                how = ('Type the entries separated by semicolons, each as its numbers: 1 0 0; 0 1 0.' if element in ('Rgb', 'Vec2f', 'Vec3f')
-                       else 'Type the entries separated by commas.' if element == 'String' else 'Type the numbers separated by spaces: 0 0.5 1.')
-                how += ' Blank keeps the MoonRay default.'
+                how = ('Type as 1 0 0; 0 1 0' if element in ('Rgb', 'Vec2f', 'Vec3f') else 'Separate with commas' if element == 'String'
+                       else 'Type as 0 0.5 1')
             elif kind != 'string' and 'default' not in spec:
-                how = 'The MoonRay default applies until this is changed.'
-            control(groups[group], channel_control, label, ' '.join(part for part in (tip, how) if part))
+                how = ''
+            control(groups[group], channel_control, label, '. '.join(part for part in (tip, how) if part))
 ET.indent(config)
 ET.ElementTree(config).write(str(kit / 'entities.cfg'), encoding='utf-8', xml_declaration=True)
 print('Generated the menu and forms for', len(catalog), 'MoonRay classes')
