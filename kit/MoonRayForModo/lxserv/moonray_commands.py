@@ -45,7 +45,9 @@ class OpenPreview(lxu.command.BasicCommand):
 
 
 if not lx.service.Platform().IsHeadless():
-    lx.bless(MoonRayView, 'MoonRayForModoPreview')
+    # The name Modo shows for the view in its viewport list and titles a new one with; without
+    # it the server's own name is used.
+    lx.bless(MoonRayView, 'MoonRayForModoPreview', {lx.symbol.sSRV_USERNAME: 'MoonRay Preview'})
 lx.bless(OpenPreview, 'moonray.open')
 
 
