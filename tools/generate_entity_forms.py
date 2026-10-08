@@ -84,7 +84,7 @@ for i, name in enumerate(sorted(catalog)):
     atom(form, 'Group', 'itemprops')
     ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'
     groups = {}
-    for key, channel, kind, default, choices in entities.channels(name):
+    for j, (key, channel, kind, default, choices) in enumerate(entities.channels(name)):
         spec = catalog[name]['attributes'][key]
         group = spec.get('group', 'Parameters')
         if group not in groups:
@@ -101,7 +101,9 @@ for i, name in enumerate(sorted(catalog)):
                 how = 'The full path of a file.'
         elif 'default' not in spec:
             how = 'The MoonRay default applies until this is changed.'
-        control(groups[group], 'item.channel %s$%s ?' % (entities.item_type(name), channel), spec.get('label', key.replace('_', ' ')),
+        # A value with named choices gets its popup from a command; everything else is the channel itself.
+        command = 'moonray.entity.choice%d_%d ?' % (i, j) if choices else 'item.channel %s$%s ?' % (entities.item_type(name), channel)
+        control(groups[group], command, spec.get('label', key.replace('_', ' ')),
                 ' '.join(part for part in (str(spec.get('comment', '')), how) if part))
 ET.indent(config)
 ET.ElementTree(config).write(str(kit / 'entities.cfg'), encoding='utf-8', xml_declaration=True)

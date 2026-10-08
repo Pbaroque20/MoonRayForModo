@@ -39,7 +39,8 @@ def register():
                     elif kind=='integer':
                         add.NewChannel(channel,lx.symbol.sTYPE_INTEGER)
                         add.SetDefault(0.0,int(default))
-                        if choices:add.SetHint(tuple(choices))
+                        # No popup names are attached here: Modo keeps the address it is given
+                        # and crashed when it later drew the form. choice_command draws the popup.
                     elif kind=='float':
                         add.NewChannel(channel,lx.symbol.sTYPE_FLOAT)
                         add.SetDefault(float(default),0)
@@ -54,6 +55,43 @@ def register():
                     else:
                         add.NewChannel(channel,lx.symbol.sTYPE_STRING)
         return Typed
+
+    def choice_command(name,channel,choices):
+        """A popup for an attribute with named values, set on the selected items of one type."""
+        numbers=[number for number,_ in choices]
+        def chosen():
+            import modo
+            return [item for item in modo.Scene().selected if item.type==entities.item_type(name)]
+        class Choice(lxu.command.BasicCommand):
+            def __init__(self):
+                super().__init__()
+                self.dyna_Add('value',lx.symbol.sTYPE_INTEGER)
+                self.dyna_SetHint(0,tuple(choices))
+                self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+            def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+            def basic_Enable(self,msg):return bool(chosen())
+            def cmd_NotifyAddClient(self,argidx,client):
+                if not getattr(self,'_notifications',None):
+                    self._notifications=lxu.command.NotifierHost()
+                    self._notifications.add('select.event','item +v')
+                self._notifications.add_client(client)
+            def cmd_NotifyRemoveClient(self,client):
+                if getattr(self,'_notifications',None):self._notifications.rem_client(client)
+            def cmd_Query(self,index,query):
+                values=lx.object.ValueArray(query)
+                for item in chosen():
+                    try:value=int(item.channel(channel).get())
+                    except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):value=numbers[0]
+                    values.AddInt(value if value in numbers else numbers[0])
+            def basic_Execute(self,msg,flags):
+                value=self.dyna_Int(0)
+                if value not in numbers:raise ValueError('Invalid choice')
+                for item in chosen():item.channel(channel).set(value)
+        return Choice
+
+    for i,name in enumerate(entities.classes()):
+        for j,(key,channel,kind,default,choices) in enumerate(entities.channels(name)):
+            if choices:lx.bless(choice_command(name,channel,choices),'moonray.entity.choice%d_%d'%(i,j))
 
     for name in entities.classes():
         lx.bless(package(name),entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'locator',lx.symbol.sSRV_USERNAME:'MoonRay '+name})
