@@ -154,6 +154,9 @@ PView was removed: Modo cannot host an external renderer there.
   arithmetic between images (one blended into another through a third, an image brought into
   a range, masks taken away) at the images' own sharpness. A wood, a marble, two wallpapers
   and a car paint from a library agree with MoonRay on 72 to 100% of the picture.
+- MoonLight's denoiser keeps more of a texture. It is given the light without the surface
+  colour, so a printed pattern is not its to smooth, and as samples gather a growing share of
+  the picture's own detail is kept beside it. `tools/check_moonlight_denoise.py` measures it.
 - A MoonRay material set to metal now renders as one. Its metallic setting never reached
   MoonRay before.
 

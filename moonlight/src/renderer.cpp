@@ -12,10 +12,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -204,7 +206,7 @@ struct Renderer::Impl {
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
     Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, albedoTables, instanceInput, instanceAccel, accelTemp;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
-    Buffer beauty, albedo, normal, denoised, paramsBuffer;
+    Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
 
     OptixDenoiser denoiser = nullptr;
     OptixDenoiserSizes denoiserSizes = {};
@@ -502,7 +504,37 @@ struct Renderer::Impl {
         return result;
     }
 
+    // How the denoiser is used. Textures survive it best when it is given the light alone: the picture is
+    // divided by the surface colour first, denoised, and multiplied by it again, so that what is in the
+    // colour (a wood grain, a printed pattern) is never the denoiser's to smooth. As a picture gathers
+    // samples its own detail is trusted more, and a growing share of it is kept beside the denoised one.
+    // MOONLIGHT_DENOISE chooses for experiments: "plain" is the denoiser alone, as it was.
+    bool lightAlone() const {
+        const char* mode = std::getenv("MOONLIGHT_DENOISE");
+        return !mode || std::string(mode) != "plain";
+    }
+    float keptShare() const {
+        const char* mode = std::getenv("MOONLIGHT_DENOISE_KEEP");
+        if (mode) return std::clamp(float(std::atof(mode)), 0.0f, 1.0f);
+        // None of the picture's own noise up to 32 samples, half of it at 256, four fifths from 1024 on: about
+        // the shares at which the two, measured against a finished picture, are as wrong as each other.
+        return std::clamp((std::log2(float(std::max(samples, 1u))) - 5.0f) / 6.0f, 0.0f, 0.8f);
+    }
+
     void denoise() {
+        const size_t count = size_t(params.width) * params.height;
+        // The surface colour is never quite nothing, so that dividing by it is safe; the same is multiplied back.
+        const float floor = 0.05f;
+        std::vector<float> colour, light;
+        if (lightAlone()) {
+            colour.resize(count * 4);
+            light.resize(count * 4);
+            ML_CHECK(cudaMemcpy(colour.data(), reinterpret_cast<void*>(albedo.ptr), colour.size() * sizeof(float), cudaMemcpyDeviceToHost));
+            ML_CHECK(cudaMemcpy(light.data(), reinterpret_cast<void*>(beauty.ptr), light.size() * sizeof(float), cudaMemcpyDeviceToHost));
+            for (size_t i = 0; i < count; ++i)
+                for (int c = 0; c < 3; ++c) light[i * 4 + c] /= std::max(colour[i * 4 + c], 0.0f) + floor;
+            lighting.upload(light.data(), light.size() * sizeof(float));
+        }
         if (!denoiser) {
             OptixDenoiserOptions options = {};
             options.guideAlbedo = 1;
@@ -520,15 +552,22 @@ struct Renderer::Impl {
         guides.albedo = image(albedo);
         guides.normal = image(normal);
         OptixDenoiserLayer layer = {};
-        layer.input = image(beauty);
+        layer.input = image(lightAlone() ? lighting : beauty);
         layer.output = image(denoised);
         OptixDenoiserParams denoiserParams = {};
         denoiserParams.denoiseAlpha = OPTIX_DENOISER_ALPHA_MODE_COPY;
         denoiserParams.hdrIntensity = denoiserIntensity.ptr;
+        denoiserParams.blendFactor = keptShare();
         ML_CHECK(optixDenoiserComputeIntensity(denoiser, nullptr, &layer.input, denoiserIntensity.ptr,
             denoiserScratch.ptr, denoiserScratchBytes));
         ML_CHECK(optixDenoiserInvoke(denoiser, nullptr, &denoiserParams, denoiserState.ptr, denoiserSizes.stateSizeInBytes,
             &guides, &layer, 1, 0, 0, denoiserScratch.ptr, denoiserScratchBytes));
+        if (lightAlone()) {
+            ML_CHECK(cudaMemcpy(light.data(), reinterpret_cast<void*>(denoised.ptr), light.size() * sizeof(float), cudaMemcpyDeviceToHost));
+            for (size_t i = 0; i < count; ++i)
+                for (int c = 0; c < 3; ++c) light[i * 4 + c] *= std::max(colour[i * 4 + c], 0.0f) + floor;
+            denoised.upload(light.data(), light.size() * sizeof(float));
+        }
     }
 };
 
