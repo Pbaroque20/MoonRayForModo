@@ -109,6 +109,16 @@ PView was removed: Modo cannot host an external renderer there.
 - A sun placed by date and time takes the colour and strength Modo gives it, following its
   clamp, gamma, thinning and haze.
 - A sun turned by hand now lights its sky from where it stands.
+- The sun of a physical sky shows as a disc of Modo's solar disc size, in both engines.
+
+## Lights and materials against Modo
+
+- Modo's directional, point, area and spot lights are given to MoonRay at the strength they
+  have in Modo. Before, a directional light was 3 times too bright, a point light 13 times too
+  dim, an area light wrong by its size, and a spot light faced away and gave no light.
+- A Modo material's specular amount now reaches MoonRay: none means no highlight. Before, every
+  standard material reflected 4% whatever it was set to.
+- A Modo material is a metal only under its Principled shading model, as in Modo.
 
 ## Outputs
 
@@ -116,10 +126,10 @@ PView was removed: Modo cannot host an external renderer there.
 
 ## Known gaps
 
-- The solar disc is not drawn in the sky, and a ground colour other than mid-grey tints the
-  sky only approximately.
-- An ordinary Modo directional light is given to MoonRay at pi times Modo's strength; only the
-  physical sun is corrected for this so far.
+- A ground colour other than mid-grey tints the physical sky only approximately.
+- A spot light matches Modo on its axis and dims off it by the cosine of the angle.
+- Modo's highlights are broader than MoonRay's at the same roughness; roughness is not yet
+  converted.
 - Curves in MoonLight are tubes of four or eight sides, not true curves.
 
 - Rendering a material added from Add Layer, and rendering a material with a wired graph, were

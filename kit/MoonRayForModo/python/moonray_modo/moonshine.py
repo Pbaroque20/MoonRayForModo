@@ -1,5 +1,32 @@
 """MoonShine material and ordered BSDF-layer serialization."""
 import math
+def sources(material):
+    """The Modo materials a surface is made of: the rows of its stack, or itself."""
+    rows=[layer['material'] for layer in material.get('layers') or [] if layer.get('kind')=='materialBase' and layer.get('material')]
+    return rows or material.get('material_stack') or [material]
+
+
+def specular_ceiling(material):
+    """The most a standard Modo material reflects seen straight on, anywhere on it: its specular amount and
+    colour, or the colour alone where an image varies either."""
+    from . import textures
+    stack=sources(material)
+    most=max([max(m.get('specular',[0])) for m in stack]+[0])
+    layers=material.get('layers')
+    effects=[layer.get('effect') for layer in layers if layer.get('kind')!='materialBase'] if layers is not None else list(material.get('textures',{}))
+    if any(textures.EFFECT_ALIASES.get(e,e) in ('specCol','specAmt') for e in effects):
+        most=max([most]+[max(m.get('raw_specular',[1])) for m in stack])
+    return max(0.0,min(.99,most))
+
+
+def metal_mapped(material):
+    """Whether an image varies how metallic a material is."""
+    from . import textures
+    layers=material.get('layers')
+    effects=[layer.get('effect') for layer in layers if layer.get('kind')!='materialBase'] if layers is not None else list(material.get('textures',{}))
+    return any(textures.EFFECT_ALIASES.get(e,e)=='metallic' for e in effects)
+
+
 def emit(material, tag, index, bindings, lines):
     from .rdla import string, number, vector
     from .material_settings import values
@@ -68,12 +95,20 @@ def emit(material, tag, index, bindings, lines):
             if key=='specularAmount':
                 attributes['show_specular']='true'
     if material.get('standard_material') and 'specularColor' in bindings:
-        # Modo's standard specular amount is normal-incidence reflectance,
-        # whereas Dwa specular is an additional lobe weight. Preserve that distinction.
-        path='/modo/fresnel/'+str(index)
-        lines.append('ModoTextureMap(%s) { ["mode"] = 9, ["foreground"] = %s }'%(string(path),bindings['specularColor']))
-        attributes['refractive_index']='bind(ModoTextureMap(%s), 1)'%string(path)
-        attributes['specular']='1';attributes['show_specular']='true'
+        # Modo's specular amount is how much is reflected seen straight on. MoonRay's index of refraction says
+        # the same thing but cannot take a map, so it is set for the most this material reflects and the
+        # weight of the specular layer, which can, carries the amount as a share of that.
+        most=specular_ceiling(material)
+        if any(m.get('metallic',0)>0 for m in sources(material)) or metal_mapped(material):
+            # A metal reflects by its colour, whatever the specular amount.
+            pass
+        elif most<=0:
+            attributes.update(specular='0',show_specular='false')
+        else:
+            root=math.sqrt(most)
+            path='/modo/fresnel/'+str(index)
+            lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most),)*3))
+            attributes.update(refractive_index=number((1+root)/(1-root)),specular='bind(ModoTextureMap(%s), 1)'%string(path),show_specular='true')
     from .working_space import surface as working_surface
     attributes=working_surface(attributes,'/modo/material/'+str(index),lines,{'albedo','metallic_color','scattering_color','transmission_color','emission','clearcoat_attenuation_color'})
     lines.append('materials[%s] = DwaBaseMaterial("/modo/material/%s") {' % (string(tag),index))

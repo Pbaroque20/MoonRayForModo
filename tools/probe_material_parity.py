@@ -17,7 +17,8 @@ result = {'cases': []}
 WIDTH, HEIGHT = 320, 180
 PLAIN = {'diffCol.R': .8, 'diffCol.G': .5, 'diffCol.B': .3, 'diffAmt': 1.0, 'specAmt': 0.0, 'reflAmt': 0.0}
 CASES = [('default', {}), ('diffuse_only', PLAIN), ('specular', dict(PLAIN, specAmt=.3, rough=.3)), ('reflective', dict(PLAIN, reflAmt=.5, rough=.1)),
-         ('fresnel_only', dict(PLAIN, reflFres=1.0, specFres=1.0)), ('metal', dict(PLAIN, metallic=1.0, rough=.3))]
+         ('metal', dict(PLAIN, metallic=1.0, rough=.3))] + [
+         ('metal_' + kind, dict(PLAIN, metallic=1.0, rough=.3, brdfType=kind)) for kind in ('principled', 'ggx', 'blinn', 'energy')]
 
 
 def channels(item):
@@ -68,7 +69,7 @@ try:
         case = {'name': name}
         try:
             for key, value in defaults.items():
-                if key in ('diffCol.R', 'diffCol.G', 'diffCol.B', 'diffAmt', 'specAmt', 'reflAmt', 'rough', 'reflFres', 'specFres', 'metallic'):
+                if key in ('diffCol.R', 'diffCol.G', 'diffCol.B', 'diffAmt', 'specAmt', 'reflAmt', 'rough', 'reflFres', 'specFres', 'metallic', 'brdfType'):
                     material.channel(key).set(value)
             for key, value in values.items():
                 material.channel(key).set(value)

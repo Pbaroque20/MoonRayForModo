@@ -122,7 +122,8 @@ def material_values(material):
                                 'layer_blend': channel(material,'blend','normal'),
                                 'layer_invert': bool(channel(material,'invert',False)),
                                 'anisotropy': float(channel(material, 'aniso', 0)),
-                                'metallic': float(channel(material, 'metallic', 0)),
+                                # Modo's material is a metal only under its Principled shading model; the others ignore the setting.
+                                'metallic': float(channel(material, 'metallic', 0)) if channel(material, 'brdfType', '') == 'principled' else 0.0,
                                 'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
                                 'emission': [c * float(channel(material, 'radiance', 0)) for c in color(material, 'lumiCol')],
                                 'ior': max(1.0, float(channel(material, 'refIndex', 1.5))),
