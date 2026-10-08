@@ -116,11 +116,15 @@ def register():
         import modo
         return [item for item in modo.Scene().selected if item.type==entities.item_type(name)]
 
+    def kinds(category):
+        """The classes of a kind: a category by name, or the classes themselves."""
+        return entities.classes(category) if isinstance(category,str) else list(category)
+
     def candidates(category,excluding=()):
         """The names of the scene's MoonRay items of one kind, for a picker."""
         import modo
         scene=modo.Scene();names=[]
-        for name in entities.classes(category):
+        for name in kinds(category):
             try:names+=[item.name for item in scene.items(entities.item_type(name),superType=False) if item.id not in excluding]
             except (LookupError,RuntimeError,TypeError):pass
         return sorted(set(names))
@@ -163,44 +167,103 @@ def register():
                 for item in chosen(name):item.channel(channel).set(numbers[index])
         return Choice
 
+    def spaced(name):
+        """EnvLight -> Env Light, for a popup entry."""
+        words=''
+        for c in name.replace('_',' '):
+            if c.isupper() and words and words[-1].islower():words+=' '
+            words+=c
+        return words
+
+    def create(category,index):
+        """Add a new MoonRay item of the index-th class of a kind, under a name no other item has."""
+        import modo
+        scene=modo.Scene();name=kinds(category)[index]
+        taken={item.name for item in scene.items()}
+        label,count=name,1
+        while label in taken:
+            count+=1;label='%s %d'%(name,count)
+        item=scene.addItem(entities.item_type(name),name=label)
+        for key,value in entities.STARTING.get(name,{}).items():
+            try:item.channel(entities.CHANNEL_PREFIX+key).set(value)
+            except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
+        return item.name
+
+    def offered(category,held=()):
+        """What a picker lists: the scene's items of the kind, then one entry per class to make a new one."""
+        existing=[n for n in candidates(category,{item.id for owner in entities.classes() for item in chosen(owner)}) if n not in held]
+        return existing,['New '+spaced(n) for n in kinds(category)]
+
     def pick_command(name,channel,category):
-        """A popup of the scene's MoonRay items an attribute can point at; the first entry is none."""
-        def entries():
-            return ['']+candidates(category,{item.id for item in chosen(name)})
+        """A popup of the MoonRay items an attribute can point at: none, those in the scene, or a new one."""
         class Pick(Listed):
             def arg_UIValueHints(self,index):
-                return Popup([('none','(none)')]+[('item%d'%i,label) for i,label in enumerate(entries()[1:])])
+                existing,fresh=offered(category)
+                return Popup([('none','(none)')]+[('item%d'%i,label) for i,label in enumerate(existing)]
+                             +[('new%d'%i,label) for i,label in enumerate(fresh)])
             def basic_Enable(self,msg):return bool(chosen(name))
             def cmd_Query(self,index,query):
-                values=lx.object.ValueArray(query);names=entries()
+                values=lx.object.ValueArray(query);existing,_=offered(category)
                 for item in chosen(name):
                     current=text(item,channel)
-                    values.AddInt(names.index(current) if current in names else 0)
+                    values.AddInt(existing.index(current)+1 if current in existing else 0)
             def basic_Execute(self,msg,flags):
-                names=entries();index=self.dyna_Int(0)
-                if not 0<=index<len(names):raise ValueError('That item is no longer in the scene')
-                for item in chosen(name):item.channel(channel).set(names[index])
+                existing,fresh=offered(category);index=self.dyna_Int(0)
+                if not 0<=index<=len(existing)+len(fresh):raise ValueError('That item is no longer in the scene')
+                items=chosen(name)
+                value='' if index==0 else existing[index-1] if index<=len(existing) else create(category,index-1-len(existing))
+                for item in items:item.channel(channel).set(value)
         return Pick
 
+    def held_names(item,channel):
+        return [part.strip() for part in text(item,channel).split(',') if part.strip()]
+
     def append_command(name,channel,category):
-        """A popup that adds one more MoonRay item to an attribute that holds several."""
-        def entries():
-            return candidates(category,{item.id for item in chosen(name)})
+        """A popup that attaches one more MoonRay item, from the scene or newly made, to an
+        attribute that holds several."""
         class Append(Listed):
+            def lists(self):
+                items=chosen(name)
+                return offered(category,held_names(items[0],channel) if len(items)==1 else ())
             def arg_UIValueHints(self,index):
-                return Popup([('choose','(choose an item to add)')]+[('item%d'%i,label) for i,label in enumerate(entries())])
+                existing,fresh=self.lists()
+                return Popup([('choose','(choose)')]+[('item%d'%i,label) for i,label in enumerate(existing)]
+                             +[('new%d'%i,label) for i,label in enumerate(fresh)])
             def basic_Enable(self,msg):return bool(chosen(name))
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 for item in chosen(name):values.AddInt(0)
             def basic_Execute(self,msg,flags):
-                names=entries();index=self.dyna_Int(0)-1
+                existing,fresh=self.lists();index=self.dyna_Int(0)-1
                 if index<0:return
-                if index>=len(names):raise ValueError('That item is no longer in the scene')
-                for item in chosen(name):
-                    held=[part.strip() for part in text(item,channel).split(',') if part.strip()]
-                    if names[index] not in held:item.channel(channel).set(', '.join(held+[names[index]]))
+                if index>=len(existing)+len(fresh):raise ValueError('That item is no longer in the scene')
+                items=chosen(name)
+                added=existing[index] if index<len(existing) else create(category,index-len(existing))
+                for item in items:
+                    held=held_names(item,channel)
+                    if added not in held:item.channel(channel).set(', '.join(held+[added]))
         return Append
+
+    def remove_command(name,channel):
+        """A popup that detaches one of the items an attribute holds; the item itself stays in the scene."""
+        class Remove(Listed):
+            def held(self):
+                names=[]
+                for item in chosen(name):names+=[n for n in held_names(item,channel) if n not in names]
+                return names
+            def arg_UIValueHints(self,index):
+                return Popup([('choose','(choose)')]+[('item%d'%i,label) for i,label in enumerate(self.held())])
+            def basic_Enable(self,msg):return bool(self.held())
+            def cmd_Query(self,index,query):
+                values=lx.object.ValueArray(query)
+                for item in chosen(name):values.AddInt(0)
+            def basic_Execute(self,msg,flags):
+                names=self.held();index=self.dyna_Int(0)-1
+                if index<0:return
+                if index>=len(names):raise ValueError('That item is no longer attached')
+                for item in chosen(name):
+                    item.channel(channel).set(', '.join(n for n in held_names(item,channel) if n!=names[index]))
+        return Remove
 
     def browse_command(name,channel,label):
         """A file dialog whose answer goes into a path attribute."""
@@ -221,8 +284,13 @@ def register():
         for j,(key,channel,kind,default,choices) in enumerate(entities.channels(name)):
             spec=attributes[key];category=entities.reference_category(spec)
             if choices:lx.bless(choice_command(name,key,channel),'moonray.entity.choice%d_%d'%(i,j))
-            elif category and spec['type']=='SceneObject*':lx.bless(pick_command(name,channel,category),'moonray.entity.pick%d_%d'%(i,j))
-            elif category:lx.bless(append_command(name,channel,category),'moonray.entity.append%d_%d'%(i,j))
+            elif category and spec['type']=='SceneObject*':
+                # A portal shows an environment or a distant light, not any light.
+                if (name,key)==('PortalLight','light'):category=('EnvLight','DistantLight')
+                lx.bless(pick_command(name,channel,category),'moonray.entity.pick%d_%d'%(i,j))
+            elif category:
+                lx.bless(append_command(name,channel,category),'moonray.entity.append%d_%d'%(i,j))
+                lx.bless(remove_command(name,channel),'moonray.entity.remove%d_%d'%(i,j))
             elif spec.get('filename'):lx.bless(browse_command(name,channel,spec.get('label',key.replace('_',' '))),'moonray.entity.browse%d_%d'%(i,j))
 
     for name in entities.classes():

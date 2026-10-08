@@ -114,11 +114,15 @@ for i, name in enumerate(sorted(catalog)):
             control(groups[group], 'moonray.entity.choice%d_%d ?' % (i, j), label, tip)
         elif category and spec['type'] == 'SceneObject*':
             # One other MoonRay item: a popup of those in the scene.
-            control(groups[group], 'moonray.entity.pick%d_%d ?' % (i, j), label, tip)
+            control(groups[group], 'moonray.entity.pick%d_%d ?' % (i, j), label,
+                    '. '.join(part for part in (tip, 'Choose one in the scene, or make a new one') if part))
         elif category:
-            # Several: the list as text, and a popup that adds to it.
-            control(groups[group], channel_control, label, tip)
-            control(groups[group], 'moonray.entity.append%d_%d ?' % (i, j), 'add to ' + label, 'Add a MoonRay item to the list above')
+            # Several: popups to attach and detach, and the list itself, which can also be typed.
+            one = {'light_filters': 'light filter', 'references': 'geometry'}.get(key, label)
+            control(groups[group], 'moonray.entity.append%d_%d ?' % (i, j), 'add ' + one,
+                    'Attach a %s: one already in the scene, or a new one made here' % one)
+            control(groups[group], 'moonray.entity.remove%d_%d ?' % (i, j), 'remove ' + one, 'Detach a %s; the item stays in the scene' % one)
+            control(groups[group], channel_control, 'attached ' + label, 'The attached items by name, separated by commas')
         elif spec.get('filename'):
             control(groups[group], channel_control, label, tip)
             control(groups[group], 'moonray.entity.browse%d_%d' % (i, j), 'Browse for ' + label + '...', '')
