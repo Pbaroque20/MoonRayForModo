@@ -219,7 +219,7 @@ def lights(scene, warnings, environment=0.0, compiler=None):
             # A white Lambertian surface facing the light reflects color * intensity.
             scale = 1 / math.sin(min(math.radians(angle) / 2, math.pi / 2)) ** 2
             # The light sits on its local +Z axis.
-            distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle])
+            distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, 1 if light.get('camera_visible') else 0])
             continue
         # Sizes follow the node's scale; the flat lights emit along local -Z.
         scale_x, scale_y = math.sqrt(sum(v * v for v in matrix[0:3])), math.sqrt(sum(v * v for v in matrix[4:7]))
@@ -520,7 +520,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     depths = [min(8, settings[key]) for key in ('max_depth', 'max_diffuse_depth', 'max_glossy_depth')]
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
-    parts = [b'MLS8', struct.pack('<7I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLS9', struct.pack('<7I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
              struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
@@ -590,7 +590,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if any(entry.get('kind') != 'curves' for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLight does not show points or volumes.')
     parts.append(struct.pack('<I', len(distant)))
-    parts += [struct.pack('<7f', *light) for light in distant]
+    parts += [struct.pack('<7fI', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local
     parts += [struct.pack('<I', len(meshes))] + meshes + [struct.pack('<I', len(instances))] + instances
     # Drop cached triangulations of meshes that have left the scene.

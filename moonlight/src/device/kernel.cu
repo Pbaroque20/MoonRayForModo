@@ -838,12 +838,13 @@ extern "C" __global__ void __raygen__moonlight() {
                              : params.envPortal ? vec(0.0f) : envRadiance(direction);
             radiance += clampSample(throughput * lightWeight * sky * (sharp ? 1.0f : powerHeuristic(bsdfPdf, envPdf(direction))), clampFound);
             if (camera) guideAlbedo = make_float3(fminf(sky.x, 1.0f), fminf(sky.y, 1.0f), fminf(sky.z, 1.0f));
-            // Distant lights are found by scattered rays only; the camera does not see their discs.
-            for (unsigned i = 0; !camera && i < params.distantLightCount; ++i) {
+            // Distant lights are found by scattered rays; the camera sees only the discs that ask to be seen, as a sun does.
+            for (unsigned i = 0; i < params.distantLightCount; ++i) {
                 const DeviceDistantLight& light = distantLights[i];
+                if (camera && light.visible <= 0.0f) continue;
                 if (dot(direction, vec(light.direction)) >= 1.0f - light.versine)
                     radiance += clampSample(throughput * lightWeight * vec(light.radiance)
-                                            * (sharp ? 1.0f : powerHeuristic(bsdfPdf, distantPdf(light))), clampFound);
+                                            * ((sharp || camera) ? 1.0f : powerHeuristic(bsdfPdf, distantPdf(light))), clampFound);
             }
             break;
         }

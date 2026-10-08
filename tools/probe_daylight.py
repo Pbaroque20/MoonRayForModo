@@ -41,14 +41,23 @@ try:
     camera.rotation.set((-12.0, 26.5, 0.0), degrees=True)
     sun.channel('sunPos').set(True)
     cases = [('afternoon', {'time': 16.0, 'haze': 2.0}, {}), ('morning', {'time': 8.0, 'haze': 2.0}, {}), ('hazy', {'time': 14.0, 'haze': 6.0}, {}),
-             ('unclamped_gamma', {'time': 16.0, 'haze': 2.0}, {'clampedGamma': 2.0})]
+             ('unclamped_gamma', {'time': 16.0, 'haze': 2.0}, {'clampedGamma': 2.0}),
+             ('toward_sun', {'time': 17.5, 'haze': 2.0}, {'disc': 4.0}), ('toward_sun_small', {'time': 17.5, 'haze': 2.0}, {'disc': 1.0})]
     for name, sun_values, sky_values in cases:
         case = {'name': name}
         try:
             for key, value in dict({'clamp': 'clamp', 'gamma': 2.2}, **sun_values).items():
                 sun.channel(key).set(value)
-            for key, value in dict({'normalize': 1, 'clampedGamma': 1.0}, **sky_values).items():
+            for key, value in dict({'normalize': 1, 'clampedGamma': 1.0, 'disc': 1.0}, **sky_values).items():
                 layer.channel(key).set(value)
+            if name.startswith('toward_sun'):
+                # Turn the camera to face the sun, which is low enough to share the picture with the box.
+                import math
+                from moonray_modo import sun as sun_reader
+                toward = sun_reader.direction(sun)
+                camera.position.set((-8.0 * toward[0], 1.2, -8.0 * toward[2]))
+                camera.rotation.set((math.degrees(math.asin(toward[1])) * .5, math.degrees(math.atan2(-toward[0], -toward[2])), 0.0), degrees=True)
+                case['toward'] = toward
             lx.eval('!render.animation {%s} openexr' % str(out / ('modo_' + name)))
             snapshot = host.snapshot()
             case['warnings'] = snapshot.get('warnings')

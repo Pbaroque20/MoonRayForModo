@@ -816,6 +816,7 @@ void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
         const float radius = std::clamp(lights[i].angularExtentDegrees, 0.01f, 360.0f) * 3.14159265358979323846f / 360.0f;
         const float sinHalf = std::sin(0.5f * radius);
         table[i].versine = 2.0f * sinHalf * sinHalf;
+        table[i].visible = lights[i].visibleInCamera ? 1.0f : 0.0f;
     }
     impl->distantLights.upload(table);
     impl->params.distantLights = impl->distantLights.ptr;

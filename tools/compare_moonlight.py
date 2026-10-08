@@ -311,6 +311,9 @@ def scenes(folder):
         'bokeh_blades': dict(base, lights=fixture.snapshot()['lights'], _environment=.3,
                              camera=dict(base['camera'], dof=True, f_stop=.3, focus_distance=11.0, iris_blades=5, iris_rotation=.3)),
         'sun': dict(base, lights=fixture.snapshot()['lights']),
+        # A sun the camera sees as a disc in the sky, low ahead and three degrees wide.
+        'sun_disc': dict(base, _environment=.2, lights=[dict(fixture.snapshot()['lights'][0], angle=3.0, camera_visible=True, intensity=1.0,
+                                                           matrix=fixture.look_at([0, 0, 0], [-.15, -.02, 1.0]))]),
         # Curves: MoonRay's own curve geometry against MoonLight's tubes. Thick tapered strands on the ground and a few leaning ones.
         'curves': dict(base, lights=fixture.snapshot()['lights'], _environment=.3, meshes=[base['meshes'][0]], extra_geometry=[
             {'kind': 'curves', 'identity': 'strands|curves|gold', 'source_item': 'strands', 'name': 'Strands', 'material': 'gold', 'curve_type': 0,

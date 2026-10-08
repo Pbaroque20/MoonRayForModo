@@ -19,7 +19,7 @@ def scene():
 class PackTests(unittest.TestCase):
     def test_known_meshes_are_sent_once(self):
         first,keys,warnings=moonlight_scene.pack(scene(),320,180,.2)
-        self.assertEqual(first[:4],b'MLS8')
+        self.assertEqual(first[:4],b'MLS9')
         self.assertEqual(struct.unpack_from('<2I',first,4),(320,180))
         self.assertEqual(len(keys),1)
         self.assertFalse(any('CylinderLight' in w for w in warnings))

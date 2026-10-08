@@ -159,7 +159,7 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
-    if (in.value<uint32_t>() != 0x38534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLS7"
+    if (in.value<uint32_t>() != 0x39534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLS9"
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -315,6 +315,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         in.floats(light.direction, 3);
         in.floats(light.radiance, 3);
         light.angularExtentDegrees = in.value<float>();
+        light.visibleInCamera = in.value<uint32_t>() != 0;
     }
 
     std::vector<Light> localLights(in.value<uint32_t>());

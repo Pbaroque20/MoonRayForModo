@@ -101,7 +101,7 @@ def texture(environment, width=512, height=256):
     from .gradients import sample as gradient_sample
     if any(layer['kind']=='physical' for layer in environment['layers']):
         width,height = 256,128
-    digest = hashlib.sha256(('stack-v9-daylight|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
+    digest = hashlib.sha256(('stack-v10-daylight|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
     folder = Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')
@@ -146,7 +146,9 @@ def texture(environment, width=512, height=256):
                                 u,v=coordinates.transform_uv(layer,[uv])[0]
                                 foreground,coverage=sample(layer['procedural'],u,v)
                             elif pixels is None:
-                                foreground = daylight_color(direction,layer) if layer['kind']=='physical' else gradient_color(layer,direction[1])
+                                # The renderers show this picture's columns from right to left of the way they are worked out here,
+                                # which only a sky with a sun in it can tell.
+                                foreground = daylight_color((-direction[0],direction[1],direction[2]),layer) if layer['kind']=='physical' else gradient_color(layer,direction[1])
                             else:
                                 d = direction if inv is None else [sum(direction[j]*inv[j*4+i] for j in range(3)) for i in range(3)]
                                 length = max(1e-12, math.sqrt(sum(v*v for v in d)))

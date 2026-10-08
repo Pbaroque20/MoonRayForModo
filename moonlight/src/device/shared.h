@@ -111,7 +111,7 @@ struct DeviceDistantLight {
     float direction[3];     // unit vector towards the centre of the cap
     float versine;          // 1 - cos(angular radius)
     float radiance[3];
-    float pad;
+    float visible;          // 1 if the camera sees the disc
 };
 
 // Sphere, rectangle, disc and spot lights, as MoonRay's lights of the same names.

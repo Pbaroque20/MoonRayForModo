@@ -73,8 +73,8 @@ def collect(scene, warnings):
                                      sky_gamma=max(.01,float(channel(layer,'clampedGamma',1))),
                                      haze=float(channel(sun,'haze',1)),
                                      ground_albedo=rgb(channel(layer,'albedo',.2),'Physical sky ground albedo'))
-                        if float(channel(layer,'disc',1))>0:
-                            warnings.append('Physical daylight: the solar disc is not drawn in the sky; the sun light supplies the sun: '+layer.name)
+                        # The solar disc is the sun light itself, seen by the camera; see host.solar_discs.
+                        entry.update(sun_identity=sun.id,solar_disc=max(0.0,float(channel(layer,'disc',1))))
                     if channel(layer,'fogType','none') != 'none':
                         warnings.append('Environment fog is not translated: '+layer.name)
                 elif layer.type=='gradient':

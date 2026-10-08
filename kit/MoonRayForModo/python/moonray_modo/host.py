@@ -138,6 +138,23 @@ def material_values(material):
     return scale_material(material,value,channel)
 
 
+# The sun's width in the sky, in degrees, at a solar disc size of 100%.
+SUN_DEGREES = 0.53
+
+
+def solar_discs(result):
+    """Show the sun of a physically based sky as a disc: the sun light is made the width of Modo's solar disc and
+    seen by the camera. A sun given a spread wider than the disc keeps it, for its softer shadows."""
+    for environment in result.get('environments', []):
+        for layer in environment.get('layers', []):
+            if layer.get('kind') != 'physical' or layer.get('solar_disc', 0) <= 0 or not environment.get('camera', True):
+                continue
+            for light in result.get('lights', []):
+                if light.get('identity') == layer.get('sun_identity'):
+                    light['angle'] = max(light.get('angle', 0), SUN_DEGREES * layer['solar_disc'])
+                    light['camera_visible'] = True
+
+
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):
     scene = modo.Scene()
     if scene.items('replicator',superType=False):
@@ -422,6 +439,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             warnings.append('Volume '+volume.name+': attach a VDB file in MoonRay scene controls.')
     from .environments import collect as collect_environments
     result['environments'] = collect_environments(scene, warnings)
+    solar_discs(result)
     from .extra_geometry import collect as collect_extra
     result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None and not dirty_meshes and not (evaluated_geometry and refresh_materials) else result.get('extra_geometry',[]) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
     from .scene_references import capture as capture_references

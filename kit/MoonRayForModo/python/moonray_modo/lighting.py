@@ -31,6 +31,8 @@ def emit(scene,meshes,environment,lines):
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Light group labels must use letters, numbers and underscores')
             attrs['label']=string(label)
         if kind=='DistantLight':attrs['angular_extent']=number(light.get('angle',.5))
+        # A sun that shows in the sky as a disc.
+        if light.get('camera_visible'):attrs['visible_in_camera']='1'
         if kind in ('SphereLight','DiskLight','CylinderLight'):attrs['radius']=number(max(.001,light.get('radius',.05)))
         if kind=='CylinderLight':attrs['height']=number(light.get('height',1))
         if kind in ('RectLight','PortalLight'):attrs.update(width=number(light.get('width',1)),height=number(light.get('height',1)))

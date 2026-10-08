@@ -139,6 +139,7 @@ struct DistantLight {
     float direction[3] = {0, 1, 0};     // from the scene towards the light
     float radiance[3] = {1, 1, 1};      // radiance of the disc, after any normalization
     float angularExtentDegrees = 0.5f;  // full angle of the disc
+    bool visibleInCamera = false;       // whether the camera sees the disc, as a sun in the sky
 };
 
 // What a light filter does to a light's radiance on its way to a point, as MoonRay's
