@@ -415,6 +415,45 @@ class NameField(QtWidgets.QComboBox):
         self.changed.emit(self.identity,self.key,self.layer,str(self.itemData(index)))
 
 
+def ramp_groups(schema):
+    """The ramps among a node's attributes. MoonRay holds a ramp as three lists that go together:
+    positions, the colours or values at them, and how each blends to the next. Returns
+    {positions key: (label, positions key, values key, interpolations key)}."""
+    found={}
+    for key in schema:
+        if not key.endswith('positions') or not schema[key]['type']=='FloatVector':continue
+        stem=key[:-len('positions')]
+        values=next((stem+word for word in ('colors','values') if stem+word in schema),None)
+        blends=stem+'interpolations'
+        if values is None or blends not in schema:continue
+        found[key]=((stem.replace('_',' ')+'ramp').strip(),key,values,blends)
+    return found
+
+
+class RampField(QtWidgets.QPushButton):
+    """A ramp as a strip of its colours; a click opens the ramp editor."""
+    edit=QtCore.Signal(str,str)
+    def __init__(self,identity,key,positions,values,parent=None):
+        super().__init__(parent)
+        self.identity,self.key=identity,key
+        self.setAutoDefault(False);self.setDefault(False);self.setFlat(True);self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setAccessibleName(key)
+        self.show_ramp(positions,values)
+        # The property list is rebuilt once the ramp has changed; let this click finish first.
+        self.clicked.connect(lambda:QtCore.QTimer.singleShot(0,lambda:self.edit.emit(self.identity,self.key)))
+    def show_ramp(self,positions,values):
+        stops=[]
+        for position,value in sorted(zip(positions,values),key=lambda pair:pair[0]):
+            parts=list(value)[:3] if isinstance(value,(list,tuple)) else [value]*3
+            # Shown as it will look, not as it is stored: the colours are linear.
+            shown=[max(0.0,min(1.0,float(v)))**(1/2.2) for v in parts]
+            stops.append('stop:%.4f %s'%(max(0.0,min(1.0,float(position))),QtGui.QColor.fromRgbF(*shown).name()))
+        if not stops:stops=['stop:0 #ffffff','stop:1 #000000']
+        self.setStyleSheet('QPushButton { border: 1px solid #15171a; border-radius: 3px; min-height: 16px; '
+                           'background: qlineargradient(x1:0, y1:0, x2:1, y2:0, %s); }'%', '.join(stops))
+        self.setToolTip('%d stops. Click to edit the ramp.'%len(positions))
+
+
 def key_of(table,row):
     """The attribute a row of the property list is for; the row shows its name in plain words."""
     item=table.item(row,0)

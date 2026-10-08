@@ -11,7 +11,7 @@ import os
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes,materialx,properties,shader_library,node_defaults
-from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
+from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,RampField,ramp_groups,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
                            TEXT,TEXT_PORT,TEXT_DIM,GRID,MENU_STYLE,curve,file_parameter,tint_value)
 import lx
 
@@ -754,7 +754,34 @@ class Editor(QtWidgets.QDialog):
         except ValueError as exc:self.graph=before;self.error(exc)
     def filter_properties(self,*args):
         query=self.property_search.text().casefold()
-        for row in range(self.table.rowCount()):self.table.setRowHidden(row,query not in (self.table.item(row,0).text()+' '+key_of(self.table,row)).casefold())
+        hidden=getattr(self,'hidden_rows',set())
+        for row in range(self.table.rowCount()):self.table.setRowHidden(row,row in hidden or query not in (self.table.item(row,0).text()+' '+key_of(self.table,row)).casefold())
+    def edit_ramp(self,identity,key):
+        """Open the ramp editor on a ramp's three lists, and write them back together."""
+        from .ramp_editor import RampDialog
+        if identity not in self.graph['nodes']:return
+        self.commit_inputs()
+        kind=self.graph['nodes'][identity]['type'];schema=nodes.specs(kind)
+        group=ramp_groups(schema).get(key)
+        if group is None:return
+        title,keys=group[0],group[1:]
+        node=nodes.effective(self.graph)['nodes'][identity]
+        held=[node.get('parameters',{}).get(k,node_defaults.value(schema[k])) or [] for k in keys]
+        if len({len(v) for v in held})!=1:held=[[],[],[]]
+        dialog=RampDialog(kind+': '+title,held[0],held[1],held[2],schema[keys[1]]['type']=='RgbVector',self)
+        if dialog.exec_()==QtWidgets.QDialog.Accepted:self.set_ramp(identity,key,*dialog.result())
+    def set_ramp(self,identity,key,positions,values,modes):
+        """Write a ramp's three lists as one change, so that they never disagree in length."""
+        schema=nodes.specs(self.graph['nodes'][identity]['type']);keys=ramp_groups(schema)[key][1:]
+        before=copy.deepcopy(self.graph)
+        try:
+            target=self.target(identity)
+            for k,value in zip(keys,(positions,values,modes)):
+                target.setdefault('parameters',{})[k]=shader_library.typed(value,schema[k])
+                target.setdefault('inputs',{}).pop(k,None)
+            self.validate_draft();self.remember(before);self.edges();self.inspect()
+        except (ValueError,TypeError,KeyError) as exc:
+            self.graph=before;self.info.setText(str(exc))
     def remove(self):
         chosen=self.selected_nodes()
         if not chosen: return
@@ -820,8 +847,11 @@ class Editor(QtWidgets.QDialog):
         self.property_title.setText(self.graph['nodes'][identity].get('label',self.graph['nodes'][identity]['type']) if identity else 'Properties')
         for widget,shown in ((self.table,bool(identity)),(self.property_search,bool(identity)),(self.property_help,bool(identity)),(self.property_hint,not identity)):widget.setVisible(shown)
         self.property_help.setText('')
+        self.hidden_rows=set()
         if identity:
             node=nodes.effective(self.graph)['nodes'][identity]
+            ramps=ramp_groups(nodes.specs(node['type']))
+            members={member:group for group in ramps.values() for member in group[1:]}
             for key,spec in nodes.specs(node['type']).items():
                 if spec['type']=='SceneObject*':
                     if spec.get('interface') in ('INTERFACE_CAMERA','INTERFACE_NODE'):
@@ -853,6 +883,16 @@ class Editor(QtWidgets.QDialog):
                 self.table.itemDelegateForColumn(1).decorate(cell,spec,value)
                 layer=self.layers.currentData() if self.layers.currentData() is not None else -1
                 connected=key in node.get('inputs',{})
+                if key in members:
+                    title,positions_key,values_key,blends_key=members[key]
+                    if key!=positions_key:
+                        # Its row is the ramp's; the list is not shown on its own.
+                        self.hidden_rows.add(row);continue
+                    held=[node.get('parameters',{}).get(k,node_defaults.value(nodes.specs(node['type'])[k])) or [] for k in (positions_key,values_key)]
+                    label.setText(title);cell.setText('');cell.setData(QtCore.Qt.DecorationRole,None)
+                    field=RampField(identity,key,held[0],held[1],self.table)
+                    field.edit.connect(self.edit_ramp);self.place_field(row,cell,field)
+                    continue
                 if spec['type'] in ('Float','Double') and not spec.get('enum'):
                     field=NumericField(identity,key,layer,spec,value,self.table,kind=node['type'],connected=connected)
                     field.changed.connect(self.numeric_changed);field.focused.connect(self.numeric_focus)

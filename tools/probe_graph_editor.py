@@ -113,6 +113,23 @@ def step3():
         editor.kinds.setCurrentText('RampMap'); editor.add()
         made = editor.selected()
         result['new_ramp_space'] = editor.graph['nodes'][made]['parameters'].get('space')
+        rows = {}
+        for row in range(editor.table.rowCount()):
+            if not editor.table.isRowHidden(row):
+                rows[editor.table.item(row, 0).text()] = type(editor.table.cellWidget(row, 1)).__name__
+        result['ramp_rows'] = {k: v for k, v in rows.items() if 'ramp' in k or k in ('colors', 'positions', 'interpolations')}
+        editor.set_ramp(made, 'positions', [0.0, 0.5, 1.0], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [1, 1, 1])
+        ramp_now = editor.graph['nodes'][made]['parameters']
+        result['ramp_set'] = [ramp_now.get('positions'), ramp_now.get('colors'), ramp_now.get('interpolations'), editor.info.text()]
+        result['ramp_selected_after'] = editor.selected() == made
+        for row in range(editor.table.rowCount()):
+            if isinstance(editor.table.cellWidget(row, 1), QtWidgets.QPushButton):
+                editor.table.scrollToItem(editor.table.item(row, 0), QtWidgets.QAbstractItemView.PositionAtTop)
+        QtWidgets.QApplication.processEvents()
+        editor.grab().save(str(out / 'ramp-field.png'))
+        from moonray_modo.ramp_editor import RampDialog
+        dialog = RampDialog('test', [0.0, 1.0], [[1, 0, 0], [0, 0, 1]], [1, 1], True, editor)
+        dialog.show(); dialog.grab().save(str(out / 'ramp-dialog.png')); dialog.close()
         editor.set_value(made, 'space', -1, 0)
         editor.rebuild()
         result['camera_message'] = editor.info.text()
