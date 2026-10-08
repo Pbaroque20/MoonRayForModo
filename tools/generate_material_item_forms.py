@@ -67,6 +67,10 @@ for i, shader in enumerate([''] + sorted(catalog)):
     atom(form, 'FilterCommandPriorityInfluencesTabChoice', 1)
     atom(form, 'Group', 'itemprops')
     ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'
+    # The same material as a graph: its inputs can be wired to maps there.
+    graph = ET.SubElement(form, 'list', type='Control', val='cmd moonray.material.nodes')
+    atom(graph, 'Label', 'Open Graph Editor...')
+    atom(graph, 'Tooltip', 'Edit this material as a node graph, where its inputs can be connected to maps')
     groups = {}
     for j, (key, spec) in enumerate(sorted(catalog[shader]['attributes'].items())):
         if spec['type'] == 'SceneObject*':
