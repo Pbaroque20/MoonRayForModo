@@ -53,7 +53,9 @@ def typed(value, attribute):
         if bound in attribute:
             try: limit=float(str(attribute[bound]).rstrip('f'))
             except ValueError: continue
-            if compare(value,limit): raise ValueError('Value violates '+bound+' '+str(limit))
+            # A number past its limit is brought back to the limit rather than refused: nobody should meet an
+            # error for dragging a slider too far.
+            if compare(value,limit): value=int(limit) if kind in ('Int','Long') else limit
     if 'enum' in attribute and str(int(value)) not in {str(v) for v in attribute['enum'].values()}:
         raise ValueError('Unknown enumerated value')
     return int(value) if kind in ('Int','Long') else float(value)

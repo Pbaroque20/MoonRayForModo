@@ -454,6 +454,8 @@ class Editor(QtWidgets.QDialog):
         field.setAutoFillBackground(True)
         for child in field.findChildren(QtWidgets.QWidget):child.property_row=row;child.installEventFilter(self)
         cell.setFlags(cell.flags() & ~QtCore.Qt.ItemIsEditable)
+        # The control shows the value. Left in the cell as well, the old text shows through behind it.
+        cell.setText('');cell.setData(QtCore.Qt.DecorationRole,None);cell.setBackground(QtGui.QBrush())
         self.table.setCellWidget(row,1,field)
 
     def object_changed(self,identity,key,layer,value):
@@ -475,12 +477,15 @@ class Editor(QtWidgets.QDialog):
                 blocker=QtCore.QSignalBlocker(self.table)
                 for row in range(self.table.rowCount()):
                     if key_of(self.table,row)==key:
-                        cell=self.table.item(row,1);cell.setText(json.dumps(value))
+                        cell=self.table.item(row,1);field=self.table.cellWidget(row,1)
                         font=cell.font();font.setItalic(False);cell.setFont(font)
                         cell.setBackground(QtGui.QBrush())
-                        self.table.itemDelegateForColumn(1).decorate(cell,spec,value)
-                        field=self.table.cellWidget(row,1)
-                        if field is not None:tint_value(field,value,spec,node['type'],key)
+                        if field is not None:
+                            # The control shows the value; the cell beneath it stays empty.
+                            cell.setText('');tint_value(field,value,spec,node['type'],key)
+                        else:
+                            cell.setText(json.dumps(value))
+                            self.table.itemDelegateForColumn(1).decorate(cell,spec,value)
                         break
                 del blocker
             self.edges()

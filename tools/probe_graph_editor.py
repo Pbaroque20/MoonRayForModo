@@ -119,6 +119,11 @@ def step3():
                 rows[editor.table.item(row, 0).text()] = type(editor.table.cellWidget(row, 1)).__name__
         result['ramp_rows'] = {k: v for k, v in rows.items() if 'ramp' in k or k in ('colors', 'positions', 'interpolations')}
         editor.set_ramp(made, 'positions', [0.0, 0.5, 1.0], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [1, 1, 1])
+        editor.set_value(made, 'uv_repeat', -1, [3.0, 2.0])
+        editor.set_value(made, 'input', -1, 0.25)
+        # No value may be left written in a cell that a control stands over.
+        result['text_under_controls'] = [editor.table.item(row, 0).text() for row in range(editor.table.rowCount())
+                                         if editor.table.cellWidget(row, 1) is not None and editor.table.item(row, 1) is not None and editor.table.item(row, 1).text()]
         ramp_now = editor.graph['nodes'][made]['parameters']
         result['ramp_set'] = [ramp_now.get('positions'), ramp_now.get('colors'), ramp_now.get('interpolations'), editor.info.text()]
         result['ramp_selected_after'] = editor.selected() == made
