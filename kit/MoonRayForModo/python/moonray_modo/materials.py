@@ -30,7 +30,8 @@ def assign(shader=None):
                 polygon.materialTag=tag
     if shader:
         properties.write(material,{'shader':'DwaBaseMaterial','native_shader':shader,'native_parameters':{}})
-        material.name='MoonShine '+shader
+        # Named for what it is; the mask above it already says MoonShine.
+        material.name=shader
     scene.select(material)
     return material
 

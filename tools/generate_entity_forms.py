@@ -23,11 +23,18 @@ def atom(parent, kind, text):
     ET.SubElement(parent, 'atom', type=kind).text = str(text)
 
 
+def plain(text):
+    """Modo's menus and forms showed stray characters for anything outside ASCII."""
+    for odd, usual in (('\u2026', '...'), ('\u2014', '-'), ('\u2013', '-'), ('\u2018', "'"), ('\u2019', "'"), ('\u201c', '"'), ('\u201d', '"')):
+        text = text.replace(odd, usual)
+    return text.encode('ascii', 'ignore').decode('ascii')
+
+
 def control(parent, command, label, tip=''):
     item = ET.SubElement(parent, 'list', type='Control', val='cmd ' + command)
-    atom(item, 'Label', label)
+    atom(item, 'Label', plain(label))
     if tip:
-        atom(item, 'Tooltip', tip)
+        atom(item, 'Tooltip', plain(tip))
 
 
 TIP_LENGTH = 90
