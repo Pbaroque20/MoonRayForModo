@@ -1,3 +1,7 @@
+// Reads a MoonRay scene with MoonRay's own reader and writes every object out as JSON, for the plugin's RDL
+// importer. Per object: its class, each attribute's value, which attributes the scene set (the rest are the
+// class's defaults), what is bound to an attribute, which attributes name files, and for an attribute that
+// can change over the shutter, its value at shutter close where that differs.
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 #include <json/json.h>
 #include <iostream>
@@ -16,31 +20,37 @@ VECTOR(Vec2f,2) VECTOR(Vec2d,2) VECTOR(Vec3f,3) VECTOR(Vec3d,3) VECTOR(Vec4f,4) 
 #define MATRIX(T,N) Json::Value value(const T& v){Json::Value a(Json::arrayValue);for(int i=0;i<N;++i)for(int j=0;j<N;++j)a.append(v[i][j]);return a;}
 MATRIX(Mat4f,4) MATRIX(Mat4d,4) MATRIX(Mat3f,3) MATRIX(Mat3d,3)
 template<class T> Json::Value collection(const T& v){Json::Value a(Json::arrayValue);for(const auto& x:v)a.append(value(x));return a;}
+Json::Value flags(const BoolVector& v){Json::Value a(Json::arrayValue);for(const auto x:v)a.append(bool(x));return a;}
 int main(int argc,char** argv){
  if(argc!=3)return 2;
  try{
   SceneContext context;context.setProxyModeEnabled(true);context.setDsoPath(argv[2]);readSceneFromFile(argv[1],context);
-  Json::Value root(Json::objectValue);root["version"]=1;root["objects"]=Json::Value(Json::arrayValue);
+  Json::Value root(Json::objectValue);root["version"]=1;root["reader"]=2;root["objects"]=Json::Value(Json::arrayValue);
   for(auto it=context.beginSceneObject();it!=context.endSceneObject();++it){
    const auto& obj=*it->second;const auto& cls=obj.getSceneClass();Json::Value record(Json::objectValue);
-   record["name"]=obj.getName();record["type"]=cls.getName();
+   record["name"]=obj.getName();record["type"]=cls.getName();record["authored"]=Json::Value(Json::arrayValue);
    for(auto a=cls.beginAttributes();a!=cls.endAttributes();++a){
-    const auto& attr=**a;const auto name=attr.getName();Json::Value v;
+    const auto& attr=**a;const auto name=attr.getName();Json::Value v,close;
+    const bool blur=attr.isBlurrable();
     switch(attr.getType()){
-#define SCALAR(K,T) case K:v=value(obj.get<T>(name));break;
-#define ARRAY(K,T) case K:v=collection(obj.get<T>(name));break;
+#define SCALAR(K,T) case K:v=value(obj.get<T>(name));if(blur)close=value(obj.get<T>(name,TIMESTEP_END));break;
+#define ARRAY(K,T) case K:v=collection(obj.get<T>(name));if(blur)close=collection(obj.get<T>(name,TIMESTEP_END));break;
      SCALAR(TYPE_BOOL,Bool) SCALAR(TYPE_INT,Int) SCALAR(TYPE_LONG,Long) SCALAR(TYPE_FLOAT,Float) SCALAR(TYPE_DOUBLE,Double) SCALAR(TYPE_STRING,String)
      SCALAR(TYPE_RGB,Rgb) SCALAR(TYPE_RGBA,Rgba) SCALAR(TYPE_VEC2F,Vec2f) SCALAR(TYPE_VEC2D,Vec2d) SCALAR(TYPE_VEC3F,Vec3f) SCALAR(TYPE_VEC3D,Vec3d) SCALAR(TYPE_VEC4F,Vec4f) SCALAR(TYPE_VEC4D,Vec4d)
      SCALAR(TYPE_MAT4F,Mat4f) SCALAR(TYPE_MAT4D,Mat4d) SCALAR(TYPE_MAT3F,Mat3f) SCALAR(TYPE_MAT3D,Mat3d) SCALAR(TYPE_SCENE_OBJECT,SceneObject*)
-     ARRAY(TYPE_INT_VECTOR,IntVector) ARRAY(TYPE_FLOAT_VECTOR,FloatVector) ARRAY(TYPE_DOUBLE_VECTOR,DoubleVector) ARRAY(TYPE_STRING_VECTOR,StringVector)
-     ARRAY(TYPE_RGB_VECTOR,RgbVector) ARRAY(TYPE_VEC2F_VECTOR,Vec2fVector) ARRAY(TYPE_VEC3F_VECTOR,Vec3fVector) ARRAY(TYPE_MAT4F_VECTOR,Mat4fVector) ARRAY(TYPE_MAT4D_VECTOR,Mat4dVector)
+     ARRAY(TYPE_INT_VECTOR,IntVector) ARRAY(TYPE_LONG_VECTOR,LongVector) ARRAY(TYPE_FLOAT_VECTOR,FloatVector) ARRAY(TYPE_DOUBLE_VECTOR,DoubleVector) ARRAY(TYPE_STRING_VECTOR,StringVector)
+     ARRAY(TYPE_RGB_VECTOR,RgbVector) ARRAY(TYPE_RGBA_VECTOR,RgbaVector) ARRAY(TYPE_VEC2F_VECTOR,Vec2fVector) ARRAY(TYPE_VEC2D_VECTOR,Vec2dVector)
+     ARRAY(TYPE_VEC3F_VECTOR,Vec3fVector) ARRAY(TYPE_VEC3D_VECTOR,Vec3dVector) ARRAY(TYPE_VEC4F_VECTOR,Vec4fVector) ARRAY(TYPE_VEC4D_VECTOR,Vec4dVector)
+     ARRAY(TYPE_MAT4F_VECTOR,Mat4fVector) ARRAY(TYPE_MAT4D_VECTOR,Mat4dVector) ARRAY(TYPE_MAT3F_VECTOR,Mat3fVector) ARRAY(TYPE_MAT3D_VECTOR,Mat3dVector)
      ARRAY(TYPE_SCENE_OBJECT_VECTOR,SceneObjectVector) ARRAY(TYPE_SCENE_OBJECT_INDEXABLE,SceneObjectIndexable)
+     case TYPE_BOOL_VECTOR:v=flags(obj.get<BoolVector>(name));break;
      default:record["unsupported_attributes"].append(name);continue;
     }
     record["attributes"][name]=v;
+    if(!obj.isDefault(attr))record["authored"].append(name);
     if(attr.isFilename())record["files"].append(name);
     if(attr.isBindable()){const auto* binding=obj.getBinding(attr);if(binding)record["bindings"][name]=binding->getName();}
-    if(attr.isBlurrable())record["motion_attributes"].append(name);
+    if(blur){record["motion_attributes"].append(name);if(close!=v)record["close"][name]=close;}
    }
    root["objects"].append(record);
   }

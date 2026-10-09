@@ -24,11 +24,19 @@ class Compatibility0311(unittest.TestCase):
    {'name':'mesh','type':'RdlMeshGeometry','attributes':{'vertex_list_0':[[0,0,0],[1,0,0],[0,1,0]],'face_vertex_count':[3],'vertices_by_index':[0,1,2],'node_xform':matrix,'uv_list':[[0,0],[1,0],[0,1]],'is_subd':False}},
    {'name':'material','type':'DwaBaseMaterial','attributes':{'albedo':[.3,.4,.5]}}]
   data=rdl_import.plan({'version':1,'objects':records},'test.rdla')
-  self.assertEqual(data['meshes'][0]['vertices'][0],[3,0,0])
+  # The mesh keeps its own points; where it stands is the item's transform.
+  self.assertEqual(data['meshes'][0]['vertices'][0],[0,0,0])
+  self.assertEqual(data['meshes'][0]['matrix'][12],3)
+  self.assertTrue(data['meshes'][0]['render'])
+  self.assertEqual(data['instances'],[])
   self.assertEqual(data['meshes'][0]['tags'],['material'])
-  self.assertEqual(data['materials']['material']['nodes']['material']['parameters']['albedo'],[.3,.4,.5])
+  self.assertEqual(data['materials']['material']['graph']['nodes']['material']['parameters']['albedo'],[.3,.4,.5])
   records[2]['attributes']['vertices_by_index']=[0,1,99]
-  with self.assertRaises(ValueError):rdl_import.plan({'version':1,'objects':records},'test.rdla')
+  # A mesh that does not hold together is left out and named, and the rest of the scene still comes in.
+  broken=rdl_import.plan({'version':1,'objects':records},'test.rdla')
+  self.assertEqual(broken['meshes'],[])
+  self.assertTrue(any('mesh is not imported' in w for w in broken['warnings']))
+  self.assertIn('material',broken['materials'])
  @unittest.skipUnless(os.environ.get('MOONRAY_TEST_RUNTIME'),'Native check explicitly requires a runtime')
  def test_reused_display_pipe_orientation_and_black(self):
   runtime=Path(os.environ['MOONRAY_TEST_RUNTIME'])

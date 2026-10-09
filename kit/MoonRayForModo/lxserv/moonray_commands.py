@@ -554,7 +554,7 @@ class ApplyRdl(lxu.command.BasicCommand):
     def basic_Execute(self,msg,flags):
         from moonray_modo import rdl_import
         if rdl_import.pending is None:raise ValueError('Choose an RDL scene in MoonRay > Import RDL scene first')
-        rdl_import.result=rdl_import.apply(rdl_import.pending)
+        rdl_import.result=rdl_import.apply(rdl_import.pending,rdl_import.pending.get('alone',True))
 
 lx.bless(ImportRdl,'moonray.rdl.import')
 lx.bless(ApplyRdl,'moonray.rdl.apply')

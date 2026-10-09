@@ -179,6 +179,14 @@ def emit_stack(stack, tag, index, lines, library=None, native_index=None):
     from .rdla import string, number
     from .graph import bindings
     from .material_groups import supported, merged
+    # A material that cannot be blended with others (hair, a volume's surface) covers what lies under it when it is
+    # there in full, as an upper material does in the Shader Tree: what is under it is left out.
+    from .shader_library import compatible as blendable, catalog as shader_catalog
+    for position in range(len(stack)-1,0,-1):
+        upper=stack[position]
+        if (upper.get('native_shader') in shader_catalog() and not blendable(upper['native_shader'],'INTERFACE_DWABASELAYERABLE')
+                and upper.get('layer_opacity',1)==1 and not upper.get('layers') and all(g.get('opacity',1)==1 for g in upper.get('material_groups',[]))):
+            stack=stack[position:];break
     if supported(stack):
         material=merged(stack)
         maps=bindings(material,index,lines)
