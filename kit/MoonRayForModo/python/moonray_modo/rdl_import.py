@@ -406,6 +406,10 @@ def plan(document, path):
         if depth > 8:
             warnings.append(short(name) + ': instancers nested more than eight deep are not followed')
             return
+        if kind != 'RdlInstancerGeometry' and not any(row['surface'] or row['volume'] for (geometry, part), row in assigned.items() if geometry in (name, owner)):
+            # MoonRay leaves out a shape the layer gives no material; brought in, it would be in the picture where it was not.
+            warnings.append('%s is given no material by the scene, so MoonRay does not render it; it is not imported.' % short(name))
+            return
         if kind == 'RdlMeshGeometry':
             source = mesh(record, owner)
             if source:
@@ -695,7 +699,11 @@ def apply(data, alone=True):
                     points = tuple(geo.vertices.new(p if keep else transform(p, record['matrix'])).id for p in line)
                     storage = lx.object.storage('p', len(points))
                     storage.set(points)
-                    accessor.New(lx.symbol.iPTYP_LINE, storage, len(points), 0)
+                    made_polygon = accessor.New(lx.symbol.iPTYP_LINE, storage, len(points), 0)
+                    if record['material'] in tags:
+                        # Tagged as it is made: tagging afterwards passes a polygon over now and then.
+                        accessor.Select(made_polygon)
+                        lx.object.StringTag(accessor).Set(lx.symbol.i_POLYTAG_MATERIAL, tags[record['material']])
             if record['material'] in tags:
                 # Twice: tagging polygons just made passes one over now and then.
                 for attempt in range(2):

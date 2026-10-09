@@ -28,6 +28,8 @@ class RdlPrimitives(unittest.TestCase):
         self.assertEqual([max(v[i] for v in a['vertex_list_0']) for i in range(3)],[1,2,3])
     def test_multiple_prototypes_and_disabled_instances(self):
         records=[dict(name=n,type='BoxGeometry',attributes={'size':[size]*3}) for n,size in [('small',2),('large',3)]]
+        records.append(dict(name='red',type='DwaBaseMaterial',attributes={}))
+        records.append(dict(name='layer',type='Layer',attributes={'geometries':['small','large'],'parts':['',''],'surface_shaders':['red','red']}))
         records.append(dict(name='instances',type='RdlInstancerGeometry',attributes={
             'references':['small','large'],'method':2,'ref_indices':[0,1,0],
             'disable_indices':[2],'xform_list':[rdl_import.IDENTITY]*3}))
@@ -42,7 +44,13 @@ class RdlPrimitives(unittest.TestCase):
             'positions':[[1,0,0],[0,2,0]],'orientations':[[0,0,0,1],[0,0,half,half]],'scales':[[1,1,1],[2,2,2]]})
         nested=dict(name='grove',type='RdlInstancerGeometry',attributes={'references':['scatter'],'method':2,
             'xform_list':[rdl_import.IDENTITY,[1,0,0,0,0,1,0,0,0,0,1,0,10,0,0,1]]})
-        plan=rdl_import.plan({'version':1,'objects':[mesh,scatter,nested]},'example.rdla')
+        worn=[dict(name='green',type='DwaBaseMaterial',attributes={}),
+              dict(name='layer',type='Layer',attributes={'geometries':['leaf'],'parts':[''],'surface_shaders':['green']})]
+        plan=rdl_import.plan({'version':1,'objects':[mesh,scatter,nested]+worn},'example.rdla')
+        # Without a material MoonRay would not render the leaf at all, and it is left out.
+        bare=rdl_import.plan({'version':1,'objects':[mesh,scatter,nested]},'example.rdla')
+        self.assertEqual((bare['meshes'],bare['instances']),([],[]))
+        self.assertTrue(any('no material' in w for w in bare['warnings']))
         # One mesh, placed four times: the first placing is the mesh itself, the rest are instances of it.
         self.assertEqual(len(plan['meshes']),1)
         self.assertEqual(len(plan['instances']),3)
@@ -52,7 +60,9 @@ class RdlPrimitives(unittest.TestCase):
         for got,want in zip(places[0][:3],[0,2,0]):self.assertAlmostEqual(got,want,places=5)
         self.assertIsNotNone(rdl_import.decomposed(places[0]))
     def test_curves_lights_and_settings(self):
-        records=[dict(name='/s/hair',type='RdlCurveGeometry',attributes={'curves_vertex_count':[2,3],'vertex_list_0':[[0,0,0],[0,1,0],[1,0,0],[1,1,0],[1,2,0]],
+        records=[dict(name='black',type='HairDiffuseMaterial',attributes={}),
+                 dict(name='layer',type='Layer',attributes={'geometries':['/s/hair'],'parts':[''],'surface_shaders':['black']}),
+                 dict(name='/s/hair',type='RdlCurveGeometry',attributes={'curves_vertex_count':[2,3],'vertex_list_0':[[0,0,0],[0,1,0],[1,0,0],[1,1,0],[1,2,0]],
                       'radius_list':[.001,.002],'curve_type':2}),
                  dict(name='/s/key',type='SphereLight',authored=['intensity','radius','node_xform'],attributes={'intensity':7.0,'radius':.5,'exposure':0.0,'node_xform':rdl_import.IDENTITY}),
                  dict(name='vars',type='SceneVariables',authored=['image_width','image_height','pixel_samples','max_depth'],
