@@ -77,6 +77,79 @@ def mesh_array(values,counts=False):
     # map and chain run through a heavy mesh's faces without a step of Python for each corner.
     return cached('counts' if counts else 'indices',values,lambda:array(map(str,map(len,values))) if counts else array(map(str,chain.from_iterable(values))))
 
+# Meshes cut apart by apart(), kept by the lists they were cut from: the pieces' own lists must stay the same from one
+# render to the next for their text to be reused.
+_APART = {}
+
+
+def apart(meshes, filled):
+    """Give every part of a mesh that holds a volume a mesh of its own.
+
+    MoonRay stops (an access violation as the render begins) when a volume is assigned to one part of a mesh of
+    several parts, as when one glass ball with an absorption depth shares a mesh with other balls. A mesh that is
+    all one material with that volume renders, so each such part is written out as that. filled is the set of
+    material tags that carry a volume."""
+    result = []
+    for mesh in meshes:
+        tags = mesh.get('face_materials')
+        inside = sorted({tag for tag in tags if tag in filled}) if tags else []
+        if not inside or len(set(tags)) < 2 or len(tags) != len(mesh['faces']):
+            result.append(mesh)
+            continue
+        key = (id(mesh['faces']), id(tags), id(mesh['vertices']), tuple(inside))
+        held = _APART.get(key)
+        if held is None or held[0] is not mesh['faces'] or held[1] is not tags or held[2] is not mesh['vertices']:
+            if len(_APART) >= 64:
+                _APART.pop(next(iter(_APART)))
+            held = _APART[key] = (mesh['faces'], tags, mesh['vertices'], _pieces(mesh, inside))
+        for own, changed in held[3]:
+            result.append(dict(mesh, **changed) if own is None else dict({k: v for k, v in mesh.items() if k != 'face_materials'}, **changed))
+    return result
+
+
+def _pieces(mesh, inside):
+    """What changes in a mesh for each piece of it: first what is left, then one piece for each tag in inside."""
+    faces, tags = mesh['faces'], mesh['face_materials']
+    starts, total = [], 0
+    for face in faces:
+        starts.append(total)
+        total += len(face)
+    corner_lists = {key: mesh[key] for key in ('uvs', 'normals') if mesh.get(key) and len(mesh[key]) == total}
+    sets = {key: values for key, values in (mesh.get('uv_sets') or {}).items() if len(values) == total}
+
+    def piece(chosen, own):
+        # Only the points the piece uses, renumbered: a subdivision surface must not be handed points no face holds.
+        order, used = {}, []
+        cut = []
+        for index in chosen:
+            face = []
+            for vertex in faces[index]:
+                if vertex not in order:
+                    order[vertex] = len(used)
+                    used.append(vertex)
+                face.append(order[vertex])
+            cut.append(face)
+        corners = [corner for index in chosen for corner in range(starts[index], starts[index] + len(faces[index]))]
+        changed = {'faces': cut, 'vertices': [mesh['vertices'][v] for v in used]}
+        if 'vertices_close' in mesh and len(mesh['vertices_close']) == len(mesh['vertices']):
+            changed['vertices_close'] = [mesh['vertices_close'][v] for v in used]
+        for key, values in corner_lists.items():
+            changed[key] = [values[c] for c in corners]
+        if mesh.get('uv_sets') is not None:
+            changed['uv_sets'] = {key: [values[c] for c in corners] for key, values in sets.items()}
+        if mesh.get('creases'):
+            changed['creases'] = [(order[a], order[b], sharpness) for a, b, sharpness in mesh['creases'] if a in order and b in order]
+        if own is None:
+            changed['face_materials'] = [tags[index] for index in chosen]
+        else:
+            # One material throughout, and a name of its own among the scene's shapes.
+            changed.update(material=own, identity=str(mesh.get('identity', mesh.get('name', ''))) + '|volume|' + own)
+        return own, changed
+    rest = [index for index, tag in enumerate(tags) if tag not in inside]
+    made = [piece(rest, None)] if rest else []
+    return made + [piece([index for index, tag in enumerate(tags) if tag == own], own) for own in inside]
+
+
 def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     from .serialization import revision
     from .scene_references import configuration as reference_configuration
@@ -272,6 +345,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
               '  table.insert(assignments, a)', 'end']
     from . import geometry
+    render_meshes = apart(render_meshes, {tag for tag, medium in media.items() if medium is not None})
     for index, mesh in enumerate(render_meshes):
         vertices = mesh['vertices']
         faces = mesh['faces']

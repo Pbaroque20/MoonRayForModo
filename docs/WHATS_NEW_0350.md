@@ -213,6 +213,11 @@ PView was removed: Modo cannot host an external renderer there.
   of address space, used only as needed); MOONRAY_MODO_CL1_POOL_SCALE sets another size, from
   1 to 8 times the original. Should the store still fill, the render begins again on the CPU
   and says so, and stays there until an execution mode is chosen again.
+- After 0.3.50.1: a glass material with an absorption depth on one part of a mesh of several
+  parts (one ball among others in the same mesh) no longer stops MoonRay as the render begins.
+  MoonRay cannot take a volume on one part of a mesh, so the plugin writes that part out as a
+  mesh of its own. A map wired to a material's index of refraction, which MoonRay takes as a
+  number only, is no longer sent, which removes a warning for each material from the log.
 - A scene with an imported MaterialX material is read in a fraction of the time. Its texture
   coordinates were worked out again for every polygon, which stopped Modo for seconds on a small
   mesh and for minutes on a dense one, each time the preview read the scene.

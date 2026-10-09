@@ -40,7 +40,9 @@ def restore(panel):
 
 try:
     from moonray_modo import properties, rdl_import
-    if SOURCE:
+    if os.environ.get('PROBE_LXO'):
+        lx.eval('!scene.open {%s} normal' % os.environ['PROBE_LXO'])
+    elif SOURCE:
         document = json.loads(pathlib.Path(SOURCE).read_text(encoding='utf-8'))
         result['import'] = rdl_import.apply(rdl_import.plan(document, document['_path'])).splitlines()[0]
     else:
@@ -135,6 +137,13 @@ def watch():
         if (done and ticks[0] - result['done_at'] >= 12) or ticks[0] > 240:
             result['buffer'] = panel.buffer.currentData()
             result['buffers'] = [panel.buffer.itemData(i) for i in range(panel.buffer.count())]
+            try:
+                import shutil
+                sent = pathlib.Path(str(panel.renderer.current_base) + '.rdla')
+                if sent.is_file():
+                    shutil.copyfile(str(sent), str(out / 'sent.rdla'))
+            except Exception:
+                pass
             result['frame'] = None if frame is None else {'files': sorted(frame['files']), 'engine': frame.get('denoise_engine'), 'partial': frame.get('partial')}
             result['denoiser'] = [panel.renderer.buffers.denoiser.requested, panel.renderer.buffers.denoiser.job is not None]
             result['displayed'] = sorted((panel.renderer.buffers.displayed or {}).keys()) if isinstance(panel.renderer.buffers.displayed, dict) else str(panel.renderer.buffers.displayed)

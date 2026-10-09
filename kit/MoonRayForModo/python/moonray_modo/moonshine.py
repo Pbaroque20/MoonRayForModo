@@ -125,8 +125,9 @@ def emit(material, tag, index, bindings, lines):
             attributes['input_normal' if key=='normal' else 'independent_clearcoat_normal']='ModoNormalMap(%s)' % string(name)
             if key=='coatNormal':attributes['use_independent_clearcoat_normal']='true'
         elif key=='ior':
-            attributes['independent_transmission_refractive_index']=value
-            if not material.get('standard_material'):attributes['refractive_index']=value
+            # MoonRay takes an index of refraction as a number only: a map wired to it is refused with a warning for
+            # each material, and the number set above is what renders either way.
+            continue
         elif key=='specularAmount' and material.get('standard_material'):
             attributes['specular']='1'
             attributes['show_specular']='true'
