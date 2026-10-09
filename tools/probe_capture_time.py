@@ -73,7 +73,7 @@ try:
     cache = dict(snapshot, meshes=[dict(m) for m in snapshot['meshes']])
     result['materials_only'], _ = timed(lambda: host.snapshot(reuse_geometry=cache, refresh_materials=True))
     result['reused'], _ = timed(lambda: host.snapshot(reuse_geometry=cache))
-    from moonray_modo import moonlight_scene, native, properties, scene_settings
+    from moonray_modo import moonlightipr_scene, native, properties, scene_settings
     result['settings'], _ = timed(lambda: scene_settings.complete(properties.scene_settings()), 5)
 except BaseException:
     result['error'] = traceback.format_exc()

@@ -1,6 +1,6 @@
 """Bake what is wired to a material's input into an image, with MoonRay itself.
 
-MoonLight has one fixed material model and reads only images, so a ramp, a noise, a colour
+MoonLightIPR has one fixed material model and reads only images, so a ramp, a noise, a colour
 correction or a chain of math nodes in a material graph means nothing to it. MoonRay knows
 them all: it renders the node's output on a flat square that fills the picture, one unit of
 UV across, and the picture is the node as a texture. The bake is kept, keyed by the nodes

@@ -13,7 +13,7 @@ for name in ('modo', 'lx', 'lxifc', 'lxu'):
     sys.modules.setdefault(name, types.ModuleType(name))
 sys.path.insert(0, str(root / 'kit/MoonRayForModo/python'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import check_moonlight_session as fixture
+import check_moonlightipr_session as fixture
 from moonray_modo import entities, native, rdla
 
 

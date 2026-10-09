@@ -113,11 +113,11 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.ipr_mode)
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
-        self.preview_engine.addItem('MoonLight', 'moonlight')
+        self.preview_engine.addItem('MoonLightIPR', 'moonlightipr')
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(self.preferences.get('preview_engine'))))
         self.preview_engine.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.preview_engine.setMinimumWidth(130)
-        self.preview_engine.setToolTip('MoonLight is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
+        self.preview_engine.setToolTip('MoonLightIPR is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
         self.camera=QtWidgets.QComboBox();self.camera.setMinimumWidth(150)
@@ -349,8 +349,8 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _engine_changed(self,index):
         self.preferences.set('preview_engine',self.preview_engine.currentData())
-        # MoonLight follows edits as they happen, so look for them more often.
-        self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlight' else 150)
+        # MoonLightIPR follows edits as they happen, so look for them more often.
+        self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlightipr' else 150)
 
     def _engine_notices(self,messages):
         """Add what the preview engine left out to the notices of the scene it is showing."""
@@ -435,7 +435,7 @@ class Panel(Tools, QtWidgets.QWidget):
         return self._configure_snapshot(capture_current(values['surface']==2))
 
     def _capture_preview(self):
-        if self.preview_engine.currentData()!='moonlight' or not self.preferences.get('preview_motion'):return self._capture()
+        if self.preview_engine.currentData()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
         from .animation import capture_current
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
         # Stepping through the shutter is not an edit for IPR to follow.
@@ -513,7 +513,7 @@ class Panel(Tools, QtWidgets.QWidget):
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
         engine='moonray' if output else self.preview_engine.currentData()
-        # MoonLight accumulates at full preview size; the IPR quality limits are for MoonRay.
+        # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
         if self._following and not output and engine=='moonray':
             from .ipr import prepare
             scene,width,height=prepare(scene,width,height,values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'))
@@ -610,8 +610,8 @@ class Panel(Tools, QtWidgets.QWidget):
         if self.disposed or not self._following:return
         from .interaction import dragging
         held=dragging()
-        # MoonLight is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
-        if held and self.preview_engine.currentData()!='moonlight':self.release_timer.start();return
+        # MoonLightIPR is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
+        if held and self.preview_engine.currentData()!='moonlightipr':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         try:

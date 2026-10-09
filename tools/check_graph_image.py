@@ -1,4 +1,4 @@
-"""Render a quad captured from Modo with its image applied three ways, in MoonRay and MoonLight.
+"""Render a quad captured from Modo with its image applied three ways, in MoonRay and MoonLightIPR.
 
 tools/probe_graph_image_capture.py makes the capture: a quad facing the camera whose material
 reads an image wired in its graph. The image has red rising with u, blue with v, and a bright
@@ -8,7 +8,7 @@ green corner at u, v = 0, 0, so a turn, flip or shift of the mapping shows at a 
   layer_named    the same image as a Shader Tree layer on the UV set the plugin bakes for it
   layer_primary  the same image as a Shader Tree layer on the mesh's own UVs
 
-Writes one PNG per variant under test-results/graph-image, MoonRay on the left and MoonLight on
+Writes one PNG per variant under test-results/graph-image, MoonRay on the left and MoonLightIPR on
 the right, and prints how far the pictures are from one another, in mean tile luminance.
 
 Usage: python tools/check_graph_image.py <runtime folder>
@@ -22,7 +22,7 @@ import sys
 import zlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import compare_moonlight as compare  # noqa: E402
+import compare_moonlightipr as compare  # noqa: E402
 from moonray_modo import native  # noqa: E402
 
 root = pathlib.Path(__file__).resolve().parents[1]
@@ -70,12 +70,12 @@ def main():
         for name, scene in variants(snapshot).items():
             scene['width'], scene['height'] = WIDTH, HEIGHT
             reference = compare.moonray(scene, runtime, folder, name)
-            preview, warnings = compare.moonlight(scene, session, name)
+            preview, warnings = compare.moonlightipr(scene, session, name)
             write_png(folder / (name + '.png'), reference, preview)
             # How far apart the two engines are, and how far each variant is from the first.
             worst = max(abs(x - y) for x, y in zip(compare.blocks(reference), compare.blocks(preview)))
             first = first or (name, compare.blocks(reference), compare.blocks(preview))
-            print('%-14s largest tile difference MoonRay to MoonLight %.3f; MoonRay to %s %.3f; MoonLight to %s %.3f' % (
+            print('%-14s largest tile difference MoonRay to MoonLightIPR %.3f; MoonRay to %s %.3f; MoonLightIPR to %s %.3f' % (
                 name, worst, first[0], max(abs(x - y) for x, y in zip(compare.blocks(reference), first[1])),
                 first[0], max(abs(x - y) for x, y in zip(compare.blocks(preview), first[2]))))
             for warning in warnings:

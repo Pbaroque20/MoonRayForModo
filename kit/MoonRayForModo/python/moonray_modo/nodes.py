@@ -204,7 +204,7 @@ def space_descriptor(node):
     """Where a RampMap or GradientMap laid out in space puts each point of a surface, as a
     planar projection whose coordinates the plugin bakes onto the meshes. A RampMap reads the x
     and y of the position; a GradientMap reads how far along the line from its start to its end
-    the position is. None for a node that is laid out over the UVs or in a space MoonLight cannot
+    the position is. None for a node that is laid out over the UVs or in a space MoonLightIPR cannot
     follow, which includes MoonRay's default: its render space is the camera's own, so a node
     laid out there moves over the surface with the camera.
     """
@@ -238,7 +238,7 @@ def descriptors(graph):
     g=validate(graph)
     result=[image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
     result+=[layer for layer in (space_descriptor(node) for node in g['nodes'].values()) if layer]
-    # Images whose UVs are moved, turned or scaled by other nodes: MoonLight reads them from the meshes.
+    # Images whose UVs are moved, turned or scaled by other nodes: MoonLightIPR reads them from the meshes.
     result+=[layer for layer in (wired_descriptor(g,node) for node in g['nodes'].values() if node['type']=='image' and 'texcoord' in node.get('inputs',{})) if layer]
     for node in g['nodes'].values():
         if node['type']=='normalmap':

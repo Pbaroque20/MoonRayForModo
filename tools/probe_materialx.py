@@ -87,14 +87,14 @@ def step3():
         panel.window().grab().save(str(out / 'preview.png'))
         if panel._rendering:
             panel.start.click()
-        # MoonLight is in the installed runtime only.
+        # MoonLightIPR is in the installed runtime only.
         panel.preferences.set('runtime', str(pathlib.Path(os.environ['APPDATA']) / 'Luxology/Kits/MoonRayForModo/runtime'))
-        panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonlight'))
+        panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonlightipr'))
         QtWidgets.QApplication.processEvents()
         # With IPR on, changing the engine may already have started it; a click then would stop it.
         if panel.start.text() == 'Render':
             panel.start.click()
-        result['moonlight_started'] = [panel.start.text(), panel.preview_engine.currentData()]
+        result['moonlightipr_started'] = [panel.start.text(), panel.preview_engine.currentData()]
     except Exception:
         result['step3_error'] = traceback.format_exc()
     save()
@@ -104,8 +104,8 @@ def step3():
 def step3b():
     try:
         panel = panel_widget()
-        result['moonlight'] = [panel.status.text(), panel.warnings.toPlainText()[:600]]
-        panel.window().grab().save(str(out / 'preview_moonlight.png'))
+        result['moonlightipr'] = [panel.status.text(), panel.warnings.toPlainText()[:600]]
+        panel.window().grab().save(str(out / 'preview_moonlightipr.png'))
         if panel._rendering:
             panel.start.click()
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(held['engine']))

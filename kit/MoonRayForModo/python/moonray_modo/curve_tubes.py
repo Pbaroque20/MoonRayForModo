@@ -1,6 +1,6 @@
-"""Curves as tubes of polygons, for MoonLight, which draws only meshes.
+"""Curves as tubes of polygons, for MoonLightIPR, which draws only meshes.
 
-MoonRay has curves of its own and is given them as they are. MoonLight's one kind of geometry
+MoonRay has curves of its own and is given them as they are. MoonLightIPR's one kind of geometry
 is the triangle, so each strand becomes a tube with closed ends whose sides are shaded smooth:
 eight-sided while there are few enough points, four-sided for the thousands of strands of hair,
 where a strand is too thin to tell. The tubes are kept by what the curves hold, so thousands
@@ -95,7 +95,7 @@ def build(entry):
 
 
 def meshes(extras):
-    """The curve geometries among a scene's extra geometry, each as a mesh MoonLight can draw."""
+    """The curve geometries among a scene's extra geometry, each as a mesh MoonLightIPR can draw."""
     result = []
     for entry in extras:
         if entry.get('kind') != 'curves' or not entry.get('vertices'):

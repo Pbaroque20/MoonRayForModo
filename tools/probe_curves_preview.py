@@ -1,5 +1,5 @@
 # python
-"""Isolated GUI test: a mesh of curves through the preview window, in MoonRay and in MoonLight, and its controls on the mesh's form."""
+"""Isolated GUI test: a mesh of curves through the preview window, in MoonRay and in MoonLightIPR, and its controls on the mesh's form."""
 import json
 import math
 import pathlib
@@ -86,7 +86,7 @@ def step3():
         panel.window().grab().save(str(out / 'moonray.png'))
         result['engines'] = [panel.preview_engine.itemData(i) for i in range(panel.preview_engine.count())]
         other = next(e for e in result['engines'] if e != 'moonray')
-        # MoonLight is in the installed runtime only.
+        # MoonLightIPR is in the installed runtime only.
         import os
         panel.preferences.set('runtime', str(pathlib.Path(os.environ['APPDATA']) / 'Luxology/Kits/MoonRayForModo/runtime'))
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(other))
@@ -100,8 +100,8 @@ def step3():
 def step4():
     try:
         panel = panel_widget()
-        result['moonlight'] = [panel.status.text(), panel.warnings.toPlainText()[:400]]
-        panel.window().grab().save(str(out / 'moonlight.png'))
+        result['moonlightipr'] = [panel.status.text(), panel.warnings.toPlainText()[:400]]
+        panel.window().grab().save(str(out / 'moonlightipr.png'))
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(held['engine']))
         if held['runtime']:
             panel.preferences.set('runtime', held['runtime'])

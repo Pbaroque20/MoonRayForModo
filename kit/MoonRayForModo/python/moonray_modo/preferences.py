@@ -29,6 +29,9 @@ class Preferences:
             if kind is bool:
                 return str(value).lower() in ('true', '1')
             if kind is str:
+                if key == 'preview_engine' and value == 'moonlight':
+                    # The engine's name as 0.3.50.1 and 0.3.50.2 stored it.
+                    return 'moonlightipr'
                 return str(value) if value else (native.default_runtime() if key == 'runtime' else default)
             return kind(value)
         except (TypeError, ValueError):
@@ -74,7 +77,7 @@ class Dialog(QtWidgets.QDialog):
         form.addRow('Preview size', combo('preview_size', SIZES))
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
-        form.addRow(check('preview_motion', 'Motion blur in MoonLight renders',
+        form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
                           'Render reads the scene at shutter open and close; IPR updates stay sharp'))
         form.addRow(check('capture_safety', 'Re-read the scene every 15 seconds while IPR runs',
                           'Catches edits from procedural items that do not announce their changes. Modo pauses while a large scene is read'))

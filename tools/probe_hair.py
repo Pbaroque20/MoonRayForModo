@@ -1,6 +1,6 @@
 # python
 """Isolated GUI test: hair grown from guide curves on a scalp mesh, both ways of growing, through the object override's own commands,
-and rendered in the preview window by MoonRay and by MoonLight."""
+and rendered in the preview window by MoonRay and by MoonLightIPR."""
 import json
 import math
 import os
@@ -137,7 +137,7 @@ def step3():
         if panel.start.text() == 'Stop':
             panel.start.click()
         panel.preferences.set('runtime', str(pathlib.Path(os.environ['APPDATA']) / 'Luxology/Kits/MoonRayForModo/runtime'))
-        panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonlight'))
+        panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonlightipr'))
         QtWidgets.QApplication.processEvents()
         if panel.start.text() == 'Render':
             panel.start.click()
@@ -150,8 +150,8 @@ def step3():
 def step4():
     try:
         panel = panel_widget()
-        result['moonlight'] = [panel.status.text(), panel.warnings.toPlainText()[:500]]
-        panel.window().grab().save(str(out / 'moonlight_clusters.png'))
+        result['moonlightipr'] = [panel.status.text(), panel.warnings.toPlainText()[:500]]
+        panel.window().grab().save(str(out / 'moonlightipr_clusters.png'))
         modo.Scene().select(modo.Scene().item('Guides'))
         lx.eval('moonray.object.hair_mode 1')
         if panel.start.text() == 'Render':
@@ -165,8 +165,8 @@ def step4():
 def step5():
     try:
         panel = panel_widget()
-        result['moonlight_between'] = panel.status.text()
-        panel.window().grab().save(str(out / 'moonlight_between.png'))
+        result['moonlightipr_between'] = panel.status.text()
+        panel.window().grab().save(str(out / 'moonlightipr_between.png'))
         if panel.start.text() == 'Stop':
             panel.start.click()
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(held['engine']))
