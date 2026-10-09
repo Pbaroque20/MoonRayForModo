@@ -1,4 +1,4 @@
-# MoonLight GPU preview (experimental)
+# MoonLightIPR (experimental)
 
 *Updated October 9, 2026, for MoonRay for Modo 0.3.50.1. Sections that record a check keep the date it was made.*
 
