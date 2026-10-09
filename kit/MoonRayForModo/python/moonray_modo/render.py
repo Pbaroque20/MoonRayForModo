@@ -32,6 +32,9 @@ class Renderer(QtCore.QObject):
         self.buffers.image_object.connect(self.image_object.emit)
         self.buffers.notice.connect(self.status.emit)
         self.session=Session(self)
+        # Set once MoonRay's GPU mode has run out of room on a scene: renders then go to the CPU, where it has not
+        # been seen to, until the user chooses an execution mode again.
+        self.cpu_fallback=False;self.pool_warnings=0;self.fallback_mode=None
         self.buffers.selected.connect(self._select_view)
         self.session.output.connect(self._consume_log)
         self.session.ready.connect(self._persistent_ready)
@@ -231,6 +234,12 @@ class Renderer(QtCore.QObject):
         self.backend_log = ''
         self.gpu_error = False
         mode=request['snapshot'].get('execution_mode','auto')
+        self.pool_warnings=0
+        if self.cpu_fallback and mode!=self.fallback_mode:
+            # The user has chosen a mode since: theirs is tried again.
+            self.cpu_fallback=False
+        if self.cpu_fallback and mode in ('auto','xpu'):
+            mode='vectorized'
         self.backend_status={'auto':'Auto requested (XPU → Vector → Scalar)','xpu':'XPU requested','vectorized':'Vector requested','vector':'Vector requested','scalar':'Scalar requested'}[mode]
         self.buffer_key = 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
@@ -293,6 +302,22 @@ class Renderer(QtCore.QObject):
         except Exception as exc:
             self.failed.emit(str(exc))
 
+    def _fall_back_to_cpu(self):
+        if self.closed or self.canceled or not getattr(self,'active',None):
+            self.cpu_fallback=False;return
+        self.fallback_mode=self.active['snapshot'].get('execution_mode','auto')
+        self.status.emit('The GPU ran out of room for this scene with all its buffers; rendering it on the CPU instead')
+        self.generation+=1
+        self.pending=dict(self.active,generation=self.generation)
+        if self.using_session:
+            # Asked for in another mode, the session ends its process and starts one anew.
+            self._begin_pending()
+        elif self.process.state()!=QtCore.QProcess.NotRunning:
+            self.canceled=True
+            self.process.kill()
+        else:
+            self._begin_pending()
+
     def _read(self):
         text = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
         self._consume_log(text)
@@ -315,6 +340,15 @@ class Renderer(QtCore.QObject):
             self.backend_log=(self.backend_log+text)[-16384:]
             if any(term in self.backend_log for term in ('optixLaunch() failure','cudaStreamSynchronize() error')):
                 self.gpu_error=True
+            # In GPU mode MoonRay keeps what each ray in flight owes every output in a store of fixed size. A scene with
+            # many outputs and adaptive sampling can fill it; MoonRay then warns without end and at last stops with an
+            # error. The CPU modes do not hold rays that way, so the render is begun again there.
+            self.pool_warnings+=text.count("Couldn't allocate a CacheLine")
+            if (self.pool_warnings>200 or 'timed out whilst trying to allocate a CacheLine' in text) and not self.cpu_fallback \
+                    and getattr(self,'active',None) and not self.closed and not self.canceled:
+                # Not from in here, where the renderer's own output is being read: once this has returned.
+                self.cpu_fallback=True
+                QtCore.QTimer.singleShot(0,self._fall_back_to_cpu)
             selected=native.execution_status(self.backend_log)
             if selected and selected!=self.backend_status:
                 self.backend_status=selected

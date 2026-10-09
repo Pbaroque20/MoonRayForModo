@@ -52,8 +52,11 @@ try:
     stored = dict(properties.scene_settings())
     if os.environ.get('PROBE_ORDER', 'before') == 'before':
         stored['denoising'] = {'engine': ENGINE, 'preview': True, 'final': True}
-    stored['samples'] = 3
-    stored['render'] = dict(stored.get('render') or {}, sampling_mode=0)
+    if os.environ.get('PROBE_MAX_ADAPTIVE'):
+        stored['render'] = dict(stored.get('render') or {}, max_adaptive_samples=int(os.environ['PROBE_MAX_ADAPTIVE']))
+    if not os.environ.get('PROBE_KEEP_SAMPLING'):
+        stored['samples'] = 3
+        stored['render'] = dict(stored.get('render') or {}, sampling_mode=0)
     properties.write(scene.renderItem, stored)
     lx.eval('moonray.open')
 except Exception:
@@ -100,11 +103,20 @@ def watch():
         panel = panel_widget()
         ticks[0] += 1
         text = panel.status.text()
+        (out / 'render.log').write_text(getattr(panel.renderer, 'log', '')[-20000:], encoding='utf-8', errors='replace')
         if not result['said'] or result['said'][-1] != text:
             result['said'].append(text)
         frame = panel.renderer.buffers.frame
         if text.startswith('Render unavailable'):
             result['failed'] = text
+            try:
+                import shutil
+                sent = pathlib.Path(str(panel.renderer.current_base) + '.rdla')
+                result['scene'] = [str(sent), sent.is_file()]
+                if sent.is_file():
+                    shutil.copyfile(str(sent), str(out / 'sent.rdla'))
+            except Exception:
+                result['scene_error'] = traceback.format_exc()
             restore(panel)
             save()
             QtCore.QTimer.singleShot(500, lambda: lx.eval('!app.quit'))

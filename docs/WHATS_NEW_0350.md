@@ -189,6 +189,12 @@ PView was removed: Modo cannot host an external renderer there.
   still there. A scene that has its view stored keeps it.
 - With a preview denoiser on, a finished MoonRay preview shows the denoised picture even where
   the preview was opened, or the render begun, before the buffer list had been set to it.
+- A GPU (XPU) render of a scene with many outputs and adaptive sampling no longer stops with
+  "timed out whilst trying to allocate a CacheLine1". MoonRay's store for what rays in flight
+  owe each output is four times its former size in the rebuilt renderer library (about 4 GB
+  of address space, used only as needed); MOONRAY_MODO_CL1_POOL_SCALE sets another size, from
+  1 to 8 times the original. Should the store still fill, the render begins again on the CPU
+  and says so, and stays there until an execution mode is chosen again.
 - A scene with an imported MaterialX material is read in a fraction of the time. Its texture
   coordinates were worked out again for every polygon, which stopped Modo for seconds on a small
   mesh and for minutes on a dense one, each time the preview read the scene.

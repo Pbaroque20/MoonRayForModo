@@ -1,0 +1,35 @@
+diff --git a/lib/rendering/mcrt_common/ThreadLocalState.cc b/lib/rendering/mcrt_common/ThreadLocalState.cc
+index 6a4142a..b5ef92c 100644
+--- a/lib/rendering/mcrt_common/ThreadLocalState.cc
++++ b/lib/rendering/mcrt_common/ThreadLocalState.cc
+@@ -3,6 +3,8 @@
+ 
+ //
+ //
++#include <cstdlib>
++#include <algorithm>
+ #include "ThreadLocalState.h"
+ #include "ProfileAccumulatorHandles.h"
+ #include <moonray/common/mcrt_macros/moonray_static_check.h>
+@@ -156,7 +158,20 @@ void TLSInitParams::setVectorizedDefaults(bool realtimeRender)
+     const int CL1_POOL_SIZE = 1024 * 1024;
+     const int MAX_CL1_POOL_SIZE = 0x0FFFFFFF;
+     MNRY_STATIC_ASSERT(CL1_POOL_SIZE < MAX_CL1_POOL_SIZE);
+-    mPerThreadCL1PoolSize = CL1_POOL_SIZE;
++    // MoonRayForModo: a scene with many render outputs and adaptive sampling fills the store in XPU
++    // mode, where every ray in flight holds what it owes each output; the renderer then stops with
++    // "timed out whilst trying to allocate a CacheLine1". The store is four times upstream's size
++    // here, about 4 GB of address space at 16 threads, touched only as it is used, and
++    // MOONRAY_MODO_CL1_POOL_SCALE sets another multiple of upstream's, from 1 to 8. A handle to an
++    // item has 28 bits for its place among those of all threads (PbrTLState.cc), at least 16 of
++    // them, which bounds the multiple.
++    int cl1Scale = 4;
++    if (const char *text = std::getenv("MOONRAY_MODO_CL1_POOL_SCALE")) {
++        cl1Scale = std::atoi(text);
++    }
++    const int cl1Threads = std::max(16, static_cast<int>(std::thread::hardware_concurrency()));
++    cl1Scale = std::max(1, std::min(std::min(8, cl1Scale), MAX_CL1_POOL_SIZE / (CL1_POOL_SIZE * cl1Threads)));
++    mPerThreadCL1PoolSize = CL1_POOL_SIZE * std::max(1, cl1Scale);
+ 
+ #ifdef FORCE_SINGLE_ENTRY_QUEUES
+     mRayQueueSize = 1;

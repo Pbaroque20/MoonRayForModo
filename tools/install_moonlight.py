@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 
-MODULES = ('display.py', 'display_stream.py', 'mesh_reader.py', 'textures.py', 'primitive_attributes.py', 'rdl_import_dialog.py', 'rdl_primitives.py', 'procedurals.py', 'asset_import.py', 'evaluated.py', 'layers.py', 'hair.py', 'materialx_document.py', 'materialx_definitions.py', 'materialx_expand.py', 'materialx_geometry.py', 'materialx_standard.py', 'materialx.py', 'about.py', 'shader_library.py', 'graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'curve_tubes.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
+MODULES = ('native.py', 'persistent.py', 'display.py', 'display_stream.py', 'mesh_reader.py', 'textures.py', 'primitive_attributes.py', 'rdl_import_dialog.py', 'rdl_primitives.py', 'procedurals.py', 'asset_import.py', 'evaluated.py', 'layers.py', 'hair.py', 'materialx_document.py', 'materialx_definitions.py', 'materialx_expand.py', 'materialx_geometry.py', 'materialx_standard.py', 'materialx.py', 'about.py', 'shader_library.py', 'graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'curve_tubes.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
            'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py', 'materials.py', 'material_editor.py', 'rdl_import.py', 'properties.py',
            'panel_tools.py', 'preferences.py', 'scene_settings.py', 'focus.py', 'progress.py', 'node_editor.py', 'node_widgets.py', 'incremental.py', 'graph_images.py', 'property_notifications.py', 'camera_choice.py', 'graph_bake.py', 'nodes.py', 'coordinates.py', 'animation.py', 'package_sequence.py')
 # Files outside the Python package, relative to the kit: the commands and forms of the MoonRay
@@ -58,6 +58,17 @@ if adapter.is_file() and (kit / 'bin').is_dir():
         backup.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(held, backup / adapter.name)
     shutil.copyfile(adapter, held)
+# The one renderer library rebuilt with more room for a GPU render's outputs (patches/native-windows/cl1-pool-scale.patch),
+# where it has been built into runtime/steady-0350-pool. It goes only into a runtime of the build it was made for.
+pool = root / 'runtime/steady-0350-pool/librendering_mcrt_common.dll'
+made_for = root / 'runtime/steady-0349-candidate/moonray.exe'
+if pool.is_file() and made_for.is_file() and (kit / 'runtime/moonray.exe').is_file()         and (kit / 'runtime/moonray.exe').read_bytes() == made_for.read_bytes():
+    held = kit / 'runtime' / pool.name
+    if held.is_file() and held.read_bytes() != pool.read_bytes():
+        backup.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(held, backup / pool.name)
+        shutil.copyfile(pool, held)
+        print('Installed the renderer library with the larger output store')
 # The scene reader behind Import RDL Scene, where it has been built (tools/build_rdl_reader.py).
 reader = root / 'build/native-avx/bin/modo_rdl_import.exe'
 if reader.is_file() and (kit / 'runtime').is_dir():
