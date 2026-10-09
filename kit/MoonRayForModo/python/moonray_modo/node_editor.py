@@ -11,7 +11,8 @@ import os
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes,materialx,properties,shader_library,node_defaults
-from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,RampField,ramp_groups,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
+from .ramps import parts as ramps_parts
+from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,RampField,MatrixField,ramp_groups,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
                            TEXT,TEXT_PORT,TEXT_DIM,GRID,MENU_STYLE,curve,file_parameter,tint_value)
 import lx
 
@@ -953,6 +954,11 @@ class Editor(QtWidgets.QDialog):
                 elif spec['type']=='String':
                     field=TextField(identity,key,layer,spec,value,hint(key,spec),self.table,kind=node['type'],connected=connected)
                     field.changed.connect(self.object_changed);field.browse.connect(self.choose_node_file);self.place_field(row,cell,field)
+                elif spec['type'] in ('Mat4f','Mat4d') and ramps_parts(value) is not None:
+                    # A transform is a move, a turn and a size, not sixteen numbers to type.
+                    cell.setText('');cell.setData(QtCore.Qt.DecorationRole,None)
+                    field=MatrixField(identity,key,layer,value,self.table,kind=node['type'])
+                    field.changed.connect(self.object_changed);self.place_field(row,cell,field)
                 else:
                     # Lists and the like are typed as they are stored; say what that looks like.
                     cell.setToolTip('Double-click to edit. A list is typed in brackets, for example ["a", "b"] or [1.0, 2.0].')
