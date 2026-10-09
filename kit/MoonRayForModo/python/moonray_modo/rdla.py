@@ -49,13 +49,33 @@ def array(values):
     return '{' + ', '.join(values) + '}'
 
 
+def many_vectors(values,kind):
+    """A long list of vectors as text, written without a step of Python for each number: a heavy mesh has millions.
+    The same text as vector() gives for each. Anything out of the ordinary is left to vector(), which says what is wrong."""
+    from itertools import chain
+    size = 2 if kind == 'Vec2' else (4 if kind in ('Vec4', 'Rgba') else 3)
+    try:
+        # One sum finds a number that is not finite, or a vector of the wrong size, among them all.
+        if sum(map(len, values)) != size * len(values) or not math.isfinite(math.fsum(chain.from_iterable(values))):
+            return None
+        template = kind + '(' + ', '.join(['%.12g'] * size) + ')'
+        return '{' + ', '.join(map(template.__mod__, map(tuple, values))) + '}'
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def vector_array(values,kind='Vec3'):
     from .serialization import array as cached
-    return cached(kind,values,lambda:array(vector(v,kind) for v in values))
+    def write():
+        whole = many_vectors(values,kind) if len(values) > 1000 else None
+        return whole if whole is not None else array(vector(v,kind) for v in values)
+    return cached(kind,values,write)
 
 def mesh_array(values,counts=False):
     from .serialization import array as cached
-    return cached('counts' if counts else 'indices',values,lambda:array(str(len(v)) for v in values) if counts else array(str(v) for f in values for v in f))
+    from itertools import chain
+    # map and chain run through a heavy mesh's faces without a step of Python for each corner.
+    return cached('counts' if counts else 'indices',values,lambda:array(map(str,map(len,values))) if counts else array(map(str,chain.from_iterable(values))))
 
 def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     from .serialization import revision
