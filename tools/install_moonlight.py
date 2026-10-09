@@ -74,7 +74,7 @@ sys.path.insert(0, str(root / 'tools'))
 import moonray_menu
 layout = kit / 'layout.cfg'
 text = layout.read_bytes().decode('utf-8')
-tidied = moonray_menu.curve_controls(moonray_menu.tidy(text))
+tidied = moonray_menu.rdl_entry(moonray_menu.curve_controls(moonray_menu.tidy(text)))
 if 'MoonRayEntityMenu' not in tidied:
     print('Could not find where to add "Add MoonRay Item" in', layout)
 if tidied != text:

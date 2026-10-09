@@ -126,6 +126,19 @@ BASIS_ROW = ('curve_basis', 'Line Points Are', 'The line itself: strands run fro
              'MoonRay draws a smooth curve from them, which a B-spline does not pass through. A curve from a MoonRay scene comes in this way.')
 
 
+def rdl_entry(text):
+    """Import MoonRay Scene in the MoonRay menu, after Import MaterialX Material; unchanged if it is there."""
+    anchor = '<list type="Control" val="cmd moonray.material.importMaterialX">'
+    if 'cmd moonray.rdl.import' in text or text.count(anchor) != 1:
+        return text
+    end = text.index('</list>', text.index(anchor)) + len('</list>')
+    eol = '
+' if '
+' in text else '
+'
+    return text[:end] + eol + '      <list type="Control" val="cmd moonray.rdl.import"><atom type="Label">Import MoonRay Scene (RDL)...</atom></list>' + text[end:]
+
+
 def round_control(text):
     """The mesh form's round-curves and curve-basis controls, after the curve UV control; each unchanged if it is there."""
     anchor = '<list type="Control" val="cmd moonray.object.curve_uv ?">'
