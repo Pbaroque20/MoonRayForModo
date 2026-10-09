@@ -83,6 +83,14 @@ PView was removed: Modo cannot host an external renderer there.
   can share a mesh this way. With nothing selected there, or in item mode, the whole mesh takes
   it as before.
 
+- After 0.3.50.2: **assigning a material asks what Modo's own Polygon Set Material asks.** A
+  name (the material's kind unless one is typed, told apart if taken), the kind of MoonRay
+  material, a colour, and how its polygons are smoothed: flat, or smooth where neighbours meet
+  within an angle, 40 degrees to begin with as in Modo. The name is also the polygon tag. A
+  material that says how its polygons are smoothed is followed by both engines; one that does
+  not leaves the mesh smoothed as before. The object's own MoonRay overrides, and normals a mesh
+  brings itself, come first. There is no control for the angle after assignment yet.
+
 ## The material graph editor
 
 - A window of its own that does not block Modo, so it can stay open on another monitor. Save

@@ -266,10 +266,11 @@ class AssignMaterial(lxu.command.BasicCommand):
         return bool(properties.selected_meshes())
 
     def basic_Execute(self, msg, flags):
-        from moonray_modo.materials import assign
+        from moonray_modo.materials import assign,target,names_in_use
         from moonray_modo.material_editor import choose
-        shader=choose()
-        if shader is not False: assign(shader)
+        chosen=choose(target(),names_in_use())
+        if chosen is not False:
+            assign(chosen['shader'],name=chosen['name'],color=chosen['color'],smoothing=chosen['smoothing'],angle=chosen['angle'])
 
 
 def material_option(key):

@@ -21,9 +21,16 @@ def topology(vertices,faces):
 
 def prepare(mesh):
     settings=options.object_values(mesh.get('geometry_settings',{}))
-    if not settings['override']: return mesh
-    result=dict(mesh);result['smooth']=settings['smooth']
-    smooth=settings['normal_override'] and settings['smooth'] and not mesh.get('subdivision')
+    # Materials that say how their own polygons are smoothed, where the object's overrides do not say so for the whole
+    # mesh and the mesh brings no normals of its own.
+    declared=mesh.get('material_smoothing') or {}
+    by_material=bool(declared) and not mesh.get('subdivision') and not mesh.get('normals') and not (settings['override'] and (settings['normal_override'] or not settings['smooth']))
+    if not settings['override'] and not by_material: return mesh
+    result=dict(mesh)
+    if settings['override']:result['smooth']=settings['smooth']
+    smooth=by_material or (settings['override'] and settings['normal_override'] and settings['smooth'] and not mesh.get('subdivision'))
+    if not settings['override']:
+        settings=dict(settings,angular_tessellation=False)
     angular=settings['angular_tessellation'] and mesh.get('subdivision') and not mesh.get('evaluated_geometry')
     if mesh.get('subdivision') and not mesh.get('evaluated_geometry'):
         result['adaptive_error']=(settings['adaptive_error'] or 2.0) if settings['dynamic_tessellation'] else settings['adaptive_error']
@@ -32,13 +39,19 @@ def prepare(mesh):
     faces=[list(f) for f in mesh['faces']]
     weighted,normals,edges=topology(mesh['vertices'],faces)
     adjacency={};bend=0.;threshold=math.cos(math.radians(settings['smoothing_angle']))
+    limits=None
+    if by_material:
+        # Each polygon's own limit: its material's angle, or everything (as MoonRay smooths) where its material says nothing.
+        tags=mesh.get('face_materials') or [mesh.get('material','')]*len(faces)
+        limits=[math.cos(math.radians(declared.get(tag,180.0))) for tag in tags]
     for (a,b),neighbours in edges.items():
         # Boundary/nonmanifold edges are always sharp.
         if len(neighbours)!=2: continue
         i,j=neighbours
         dot=max(-1.,min(1.,sum(x*y for x,y in zip(normals[i],normals[j]))))
         bend=max(bend,math.degrees(math.acos(dot)))
-        if dot>=threshold-1e-10:
+        # Between two materials the sharper of their two limits holds.
+        if dot>=(max(limits[i],limits[j]) if limits is not None else threshold)-1e-10:
             for vertex in (a,b):
                 adjacency.setdefault((vertex,i),[]).append(j)
                 adjacency.setdefault((vertex,j),[]).append(i)

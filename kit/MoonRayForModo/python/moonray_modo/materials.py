@@ -38,9 +38,34 @@ def chosen_polygons(meshes):
     return picked
 
 
-def assign(shader=None, kind='advancedMaterial'):
+def target():
+    """In words, what an assignment made now would go on."""
+    meshes=properties.selected_meshes()
+    picked=chosen_polygons(meshes)
+    if picked:
+        count=sum(len(v) for v in picked.values());names=[mesh.name for mesh in meshes if mesh.id in picked]
+        return 'the %d selected polygon%s of %s'%(count,'' if count==1 else 's',', '.join(names[:3])+(' and others' if len(names)>3 else ''))
+    names=[mesh.name for mesh in meshes]
+    return 'every polygon of '+', '.join(names[:3])+(' and others' if len(names)>3 else '') if names else ''
+
+
+def names_in_use():
+    """The names and material tags the Shader Tree already holds, which a new material should not repeat."""
+    held=set()
+    for item in modo.Scene().items('mask'):
+        held.add(item.name)
+        try:held.add(item.channel('ptag').get() or '')
+        except (LookupError,RuntimeError,AttributeError):pass
+    return held
+
+
+def assign(shader=None, kind='advancedMaterial', name=None, color=None, smoothing=None, angle=40.0):
     """Give the selected meshes a MoonRay material of their own. With polygons selected, in polygon mode, only those
-    polygons take it and the rest of each mesh keeps what it had; otherwise every polygon of each selected mesh does."""
+    polygons take it and the rest of each mesh keeps what it had; otherwise every polygon of each selected mesh does.
+
+    name is what the material and its polygon tag are called, as with Modo's own Polygon Set Material. color goes to
+    the material's main colour. smoothing, where it is given, has this material say how its polygons are smoothed:
+    False for flat, True for smooth within angle degrees."""
     scene=modo.Scene()
     # Without a named shader it is a DwaBaseMaterial, edited through that material's own form.
     shader=shader or 'DwaBaseMaterial'
@@ -56,12 +81,29 @@ def assign(shader=None, kind='advancedMaterial'):
         # Only the meshes that have polygons picked out are touched.
         meshes=[mesh for mesh in meshes if mesh.id in picked]
     tag='MoonShine_'+uuid.uuid4().hex[:12]
-    mask=scene.addItem('mask',name='MoonShine - '+meshes[0].name+(' (%d polygons)'%sum(len(v) for v in picked.values()) if picked else ''))
+    if name:
+        # Called by its name, as Modo's own materials are, where no other material has taken it.
+        held=names_in_use();tag,count=name,1
+        while tag in held:
+            count+=1;tag='%s %d'%(name,count)
+    mask=scene.addItem('mask',name=tag if name else 'MoonShine - '+meshes[0].name+(' (%d polygons)'%sum(len(v) for v in picked.values()) if picked else ''))
     mask.setParent(scene.renderItem,above_base(scene,mask))
     mask.channel('ptyp').set('Material'); mask.channel('ptag').set(tag)
     material=scene.addItem(kind,name='MoonShine Material')
     material.setParent(mask,0)
-    properties.write(material,{'shader':'DwaBaseMaterial','thin_geometry':False,'moonshine_override':True,'native_shader':shader,'native_parameters':{}})
+    held={'shader':'DwaBaseMaterial','thin_geometry':False,'moonshine_override':True,'native_shader':shader,'native_parameters':{}}
+    if color is not None:
+        from .material_editor import colour_attribute
+        from . import shader_library
+        key=colour_attribute(shader)
+        if key:held['native_parameters']=shader_library.validate(shader,{key:[float(v) for v in color]})
+    if smoothing is not None:
+        held.update(smoothing=bool(smoothing),smoothing_angle=max(0.0,min(180.0,float(angle))))
+    properties.write(material,held)
+    if color is not None:
+        # Modo's own viewport shows the material by this.
+        try:material.channel('diffCol').set(tuple(float(v) for v in color))
+        except (LookupError,RuntimeError,AttributeError,TypeError):pass
     material.channel('diffAmt').set(1)
     material.channel('rough').set(.35)
     for mesh in meshes:
@@ -84,6 +126,7 @@ def assign(shader=None, kind='advancedMaterial'):
                 for index in missed:geometry.polygons[index].materialTag=tag
     # Named for what it is; the mask above it already says MoonShine.
     material.name=shader
+    if name:mask.name=tag
     scene.select(material)
     return material
 

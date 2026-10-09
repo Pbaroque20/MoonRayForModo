@@ -105,6 +105,9 @@ def material_values(material):
                                 'specular_fresnel':float(channel(material,'specFres',1)),
                                 'reflection_fresnel':float(channel(material,'reflFres',1)),
                                 'thin_geometry': settings.get('thin_geometry',False),
+                                # Where a material says how its polygons are smoothed: 0 for flat, otherwise the angle within which
+                                # neighbours are smoothed together. None leaves the mesh to be smoothed as it otherwise would be.
+                                'smoothing_angle': (float(settings.get('smoothing_angle',40.0)) if settings['smoothing'] else 0.0) if settings.get('smoothing') is not None else None,
                                 'diffuse_amount': diffuse_amount,
                                 'raw_color': diffuse,
                                 'raw_specular': color(material, 'specCol'),
@@ -455,6 +458,14 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                                          'smooth': object_settings['smooth'] if object_settings['override'] else True,
                                          'subdivision_level': object_settings['level'],
                                          'subdivision': object_settings['subdivision'] if object_settings['override'] else subdivision})
+                declared = {}
+                for face_tag in set(face_materials):
+                    worn = result['materials'].get(face_tag, {})
+                    said = next((layer.get('smoothing_angle') for layer in reversed(worn.get('material_stack', [worn])) if layer.get('smoothing_angle') is not None), None)
+                    if said is not None:
+                        declared[face_tag] = said
+                if declared:
+                    result['meshes'][-1]['material_smoothing'] = declared
                 own_attributes = primitive_attributes.read(item)
                 if own_attributes:
                     result['meshes'][-1]['attributes'] = own_attributes
