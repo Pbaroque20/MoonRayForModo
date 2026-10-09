@@ -317,9 +317,13 @@ def plan(document, path):
         if kind not in (LINE, BEZIER, BSPLINE):
             warnings.append('%s: curve type %d is imported as straight lines' % (short(record['name']), kind))
             kind = LINE
-        lines, offset, roots, tips = [], 0, [], []
+        lines, offset, roots, tips, smooth = [], 0, [], [], True
         for count in counts:
-            lines.append(followed(points[offset:offset + count], kind))
+            # A curve keeps its control points where there are enough for MoonRay to draw it from them; the item is then
+            # set to render its lines as that curve. Too few, and the path the curve takes is imported in their place.
+            enough = count >= 4 and (kind != BEZIER or (count - 1) % 3 == 0)
+            smooth = smooth and (kind == LINE or enough)
+            lines.append(points[offset:offset + count])
             if len(radii) == len(points):
                 roots.append(radii[offset])
                 tips.append(radii[offset + count - 1])
@@ -334,6 +338,8 @@ def plan(document, path):
         if len(lines) > 64 and roots and (max(roots) - min(roots) > 1e-6 * max(roots) or max(tips) - min(tips) > 1e-6 * max(max(tips), 1e-9)):
             warnings.append(short(record['name']) + ': its curves differ in width; all are given the average root and tip width')
         note_motion(record)
+        if not smooth:
+            lines, kind = [followed(line, kind) for line in lines], LINE
         values = carried(record)
         # Curves that differ in what they carry, or in width, are imported as an item each, so that each keeps its own.
         apart = any(len(held) == len(lines) and len(held) > 1 for name_, kind_, held in values) or (len(roots) == len(lines) and (max(roots) - min(roots) > 1e-6 * max(roots) or max(tips) - min(tips) > 1e-6 * max(max(tips), 1e-9)))
@@ -716,7 +722,7 @@ def apply(data, alone=True):
             if record['attributes']:
                 primitive_attributes.write(item, record['attributes'])
             values = options.object_values(properties.read(item))
-            values.update(override=True, curves=True, curve_root_width=record['root_mm'], curve_tip_width=record['tip_mm'], curve_round=record['round'])
+            values.update(override=True, curves=True, curve_root_width=record['root_mm'], curve_tip_width=record['tip_mm'], curve_round=record['round'], curve_basis=record['kind'])
             properties.write(item, options.object_values(values))
         for record in data['entities']:
             try:

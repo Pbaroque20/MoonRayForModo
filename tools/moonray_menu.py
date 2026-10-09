@@ -122,15 +122,20 @@ ROUND_ROW = ('curve_round', 'Round Curves', 'Renders each strand as a true tube,
      'that turn to face the view: quicker, and the same to look at when they are as thin as hair.')
 
 
+BASIS_ROW = ('curve_basis', 'Line Points Are', 'The line itself: strands run from point to point. Bezier or B-spline control points: '
+             'MoonRay draws a smooth curve from them, which a B-spline does not pass through. A curve from a MoonRay scene comes in this way.')
+
+
 def round_control(text):
-    """The mesh form's round-curves control, after the curve UV control; unchanged if it is there."""
+    """The mesh form's round-curves and curve-basis controls, after the curve UV control; each unchanged if it is there."""
     anchor = '<list type="Control" val="cmd moonray.object.curve_uv ?">'
-    if 'cmd moonray.object.curve_round ?' in text or text.count(anchor) != 1:
-        return text
-    end = text.index('</list>', text.index(anchor)) + len('</list>')
     eol = '\r\n' if '\r\n' in text else '\n'
-    row = eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % ROUND_ROW
-    return text[:end] + row + text[end:]
+    for row in (BASIS_ROW, ROUND_ROW):
+        if 'cmd moonray.object.%s ?' % row[0] in text or text.count(anchor) != 1:
+            continue
+        end = text.index('</list>', text.index(anchor)) + len('</list>')
+        text = text[:end] + eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % row + text[end:]
+    return text
 
 
 def curve_controls(text):

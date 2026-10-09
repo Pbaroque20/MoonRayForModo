@@ -240,6 +240,14 @@ def hair_modes():
 
 lx.bless(object_choice('hair_scalp', scalp_choices), 'moonray.object.hair_scalp')
 lx.bless(object_choice('hair_mode', hair_modes), 'moonray.object.hair_mode')
+
+
+def curve_bases():
+    from moonray_modo import options
+    return [(value, label) for label, value in options.CURVE_BASES]
+
+
+lx.bless(object_choice('curve_basis', curve_bases), 'moonray.object.curve_basis')
 lx.bless(PreviewPage, 'moonray.page')
 lx.bless(SaveSceneSettings, 'moonray.sceneSettings')
 lx.bless(SaveObjectSettings, 'moonray.objectSettings')

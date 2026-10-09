@@ -78,7 +78,12 @@ class RdlPrimitives(unittest.TestCase):
         for got,want in zip(path[0],[.5,2.5,0]):self.assertAlmostEqual(got,want)
         bezier=rdl_import.followed([[0,0,0],[0,3,0],[3,3,0],[3,0,0]],rdl_import.BEZIER,4)
         self.assertEqual((bezier[0],bezier[-1]),([0,0,0],[3,0,0]))
-        self.assertEqual(plan['curves'][0]['kind'],rdl_import.BSPLINE)
+        # Too few points for MoonRay to draw a B-spline from: they come in as lines.
+        self.assertEqual(plan['curves'][0]['kind'],rdl_import.LINE)
+        # With enough, the control points are kept and the item is told what they are.
+        records[2]=dict(records[2],attributes=dict(records[2]['attributes'],curves_vertex_count=[5],radius_list=[.001]))
+        kept=rdl_import.plan({'version':1,'objects':records},'example.rdla')['curves'][0]
+        self.assertEqual((kept['kind'],len(kept['lines'][0])),(rdl_import.BSPLINE,5))
         self.assertAlmostEqual(plan['curves'][0]['root_mm'],2.0)
         self.assertAlmostEqual(plan['curves'][1]['root_mm'],4.0)
         self.assertEqual([(e['name'],e['class'],e['parameters']) for e in plan['entities']],[('key','SphereLight',{'intensity':7.0,'radius':.5})])

@@ -42,6 +42,7 @@ OBJECT = {
     'curve_samples': (8, 'Samples per curve bend'),
     'curve_uv': (True, 'Curve UVs along the length'),
     'curve_round': (False, 'Round curves (true tubes)'),
+    'curve_basis': (0, 'What the points of a line are: the line itself, or the control points of a smooth curve'),
     'hair': (False, 'Grow hair from the curves, as guides'),
     'hair_scalp': ('', 'The mesh the hair grows on'),
     'hair_mode': (0, 'How strands are grown: around each guide, or between guides'),
@@ -52,6 +53,7 @@ OBJECT = {
     'hair_seed': (1, 'Seed: another number grows other hair'),
     'hair_guides': (False, 'Render the guides as well'),
 }
+CURVE_BASES = [('The line itself', 0), ('Bezier control points', 1), ('B-spline control points', 2)]
 HAIR_MODES = [('Around each guide (locks)', 0), ('Between guides (fur)', 1)]
 AOVS = {
     'environment_background': ('Environment background', {'result':8,'lpe':"C<L.'modo_environment'>"}, 'environment_background'),
@@ -95,7 +97,7 @@ def object_values(values):
     if type(result['hair_scalp']) is not str:
         raise ValueError('Invalid object setting: hair_scalp')
     # Numbers past their limits are brought back to them rather than refused.
-    for key, low, high in (('hair_mode', 0, 1), ('hair_count', 1, 2000), ('hair_seed', 0, 1000000)):
+    for key, low, high in (('curve_basis', 0, 2), ('hair_mode', 0, 1), ('hair_count', 1, 2000), ('hair_seed', 0, 1000000)):
         if type(result[key]) is not int:
             raise ValueError('Invalid object setting: ' + key)
         result[key] = min(high, max(low, result[key]))

@@ -14,10 +14,10 @@ def curve_shape(item,settings):
     values=options.object_values(properties.read(item))
     if not values['override']:
         radius=float(settings.get('radius',.001))
-        return dict(root=radius,tip=radius,envelope=1.0,samples=int(settings.get('curve_samples',8)),uv=True,round=False)
+        return dict(root=radius,tip=radius,envelope=1.0,samples=int(settings.get('curve_samples',8)),uv=True,round=False,basis=0)
     if not values['curves']:return None
     shape=dict(root=values['curve_root_width']/2000.0,tip=values['curve_tip_width']/2000.0,envelope=float(values['curve_envelope']),
-               samples=values['curve_samples'],uv=values['curve_uv'],round=values['curve_round'])
+               samples=values['curve_samples'],uv=values['curve_uv'],round=values['curve_round'],basis=values['curve_basis'])
     if values['hair']:
         shape['hair']={key[5:]:values[key] for key in values if key.startswith('hair_')}
     return shape
@@ -165,6 +165,10 @@ def batches(identity,name,strands,shape,material,matrix):
                 if shape['uv']:uvs.append([across,along])
         entry=dict(kind='curves',identity=identity+'|curves|'+tag,source_item=identity,name=name,vertices=vertices,counts=counts,
                    radius=shape['root'],curve_type=0,material=tag,matrix=matrix)
+        # Lines whose points are the control points of a smooth curve go to MoonRay as that curve, where there are
+        # points enough for one: four for a B-spline, four and then three more at a time for a Bezier.
+        basis=shape.get('basis',0)
+        if basis==2 and all(c>=4 for c in counts) or basis==1 and all(c>=4 and (c-1)%3==0 for c in counts):entry['curve_type']=basis
         if shape.get('round'):entry['round']=True
         if tapered:entry['radii']=radii
         if shape['uv']:entry['uvs']=uvs
