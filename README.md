@@ -7,14 +7,14 @@ MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Mo
 
 The plugin includes CPU and XPU rendering, a dockable live preview with a second GPU preview engine, native MoonRay materials with a graph editor, Shader Tree translation, MoonRay's own lights and other items, MaterialX and RDL scene import, AOVs, and denoising.
 
-**Current version: 0.3.50.1 — experimental development build.**
+**Current version: 0.3.50.2 — experimental development build.** It is 0.3.50.1 with one fix: a glass material with an absorption depth on one part of a mesh of several parts no longer stops MoonRay as the render begins.
 
-[Download the packaged 0.3.50.1 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.50.1](docs/WHATS_NEW_0350.md)
+[Download the packaged 0.3.50.2 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.50](docs/WHATS_NEW_0350.md)
 
 ![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
 
-## New in 0.3.50.1
+## New in 0.3.50
 
 - **MoonLight**, an approximate NVIDIA GPU preview engine, chosen in the preview window. It follows edits as they are made; output renders still use MoonRay. See [moonlight/README.md](moonlight/README.md).
 - **MoonRay-specific items, added from the MoonRay menu**: 30 of MoonRay's own lights, light filters, cameras, shapes and volumes as Modo items (dwEnvLight, dwRectLight, dwSpotLight and the rest), each with its own properties form and a viewport proxy, for what Modo has no item for. VDB volumes load from a file.

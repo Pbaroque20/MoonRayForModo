@@ -1,7 +1,7 @@
-# What's new in 0.3.50.1
+# What's new in 0.3.50.1 and 0.3.50.2
 
 A summary of what changed since the packaged 0.3.49 kit. 0.3.50.1 was released on October 9,
-2026. Most of it was checked in a separate test copy of Modo 16.1v9 driven by scripts, and
+2026, and 0.3.50.2 the same day with one fix, marked below. Most of it was checked in a separate test copy of Modo 16.1v9 driven by scripts, and
 parts of it in everyday use; where something was only checked by script, or not at all, the
 notes below say so. The notes were written as the work went, so a later entry sometimes
 overtakes an earlier one; where it does, the earlier one says so.
@@ -213,7 +213,7 @@ PView was removed: Modo cannot host an external renderer there.
   of address space, used only as needed); MOONRAY_MODO_CL1_POOL_SCALE sets another size, from
   1 to 8 times the original. Should the store still fill, the render begins again on the CPU
   and says so, and stays there until an execution mode is chosen again.
-- After 0.3.50.1: a glass material with an absorption depth on one part of a mesh of several
+- **0.3.50.2:** a glass material with an absorption depth on one part of a mesh of several
   parts (one ball among others in the same mesh) no longer stops MoonRay as the render begins.
   MoonRay cannot take a volume on one part of a mesh, so the plugin writes that part out as a
   mesh of its own. A map wired to a material's index of refraction, which MoonRay takes as a
