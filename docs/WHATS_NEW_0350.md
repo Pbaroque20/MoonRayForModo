@@ -77,6 +77,12 @@ PView was removed: Modo cannot host an external renderer there.
   MoonShine Material Override layer is no longer offered in the menus; override layers in
   existing scenes keep working.
 
+- After 0.3.50.2: **with polygons selected, a material goes on those polygons only.** In polygon
+  mode, Assign MoonShine Material to Mesh (and Import MaterialX Material) gives the material to
+  the selected polygons and leaves the rest of the mesh wearing what it had; several materials
+  can share a mesh this way. With nothing selected there, or in item mode, the whole mesh takes
+  it as before.
+
 ## The material graph editor
 
 - A window of its own that does not block Modo, so it can stay open on another monitor. Save

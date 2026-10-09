@@ -1,5 +1,6 @@
 """Undoable material assignment, called only by Modo commands."""
 import uuid
+import lx
 import modo
 from . import properties
 
@@ -15,7 +16,31 @@ def above_base(scene,mask):
         if layer.type=='defaultShader':return index
     return len(layers)
 
+def chosen_polygons(meshes):
+    """The polygons the user has picked out on each mesh, by mesh: {mesh id: [polygon IDs]}. They are held by Modo's
+    own ID for each, not by where it comes in the mesh: tagging a polygon can move it among the others.
+
+    Empty unless Modo is in polygon selection mode and something is selected there. A selection left behind from
+    earlier, while the user works with items or with vertices, is not one they are looking at and does not count."""
+    try:
+        if not lx.eval('select.typeFrom polygon;edge;vertex;item;pivot;center;ptag ?'):
+            return {}
+    except RuntimeError:
+        return {}
+    picked = {}
+    for mesh in meshes:
+        try:
+            indices = [polygon.id for polygon in mesh.geometry.polygons.selected]
+        except (AttributeError, LookupError, RuntimeError):
+            indices = []
+        if indices:
+            picked[mesh.id] = indices
+    return picked
+
+
 def assign(shader=None, kind='advancedMaterial'):
+    """Give the selected meshes a MoonRay material of their own. With polygons selected, in polygon mode, only those
+    polygons take it and the rest of each mesh keeps what it had; otherwise every polygon of each selected mesh does."""
     scene=modo.Scene()
     # Without a named shader it is a DwaBaseMaterial, edited through that material's own form.
     shader=shader or 'DwaBaseMaterial'
@@ -26,8 +51,12 @@ def assign(shader=None, kind='advancedMaterial'):
     for mesh in meshes:
         if not len(mesh.geometry.polygons):
             raise ValueError('Mesh has no polygons: '+mesh.name)
+    picked=chosen_polygons(meshes)
+    if picked:
+        # Only the meshes that have polygons picked out are touched.
+        meshes=[mesh for mesh in meshes if mesh.id in picked]
     tag='MoonShine_'+uuid.uuid4().hex[:12]
-    mask=scene.addItem('mask',name='MoonShine - '+meshes[0].name)
+    mask=scene.addItem('mask',name='MoonShine - '+meshes[0].name+(' (%d polygons)'%sum(len(v) for v in picked.values()) if picked else ''))
     mask.setParent(scene.renderItem,above_base(scene,mask))
     mask.channel('ptyp').set('Material'); mask.channel('ptag').set(tag)
     material=scene.addItem(kind,name='MoonShine Material')
@@ -36,6 +65,15 @@ def assign(shader=None, kind='advancedMaterial'):
     material.channel('diffAmt').set(1)
     material.channel('rough').set(.35)
     for mesh in meshes:
+        if mesh.id in picked:
+            # Each picked polygon is found again by its ID and tagged through the mesh's own accessor.
+            with mesh.geometry as geometry:
+                accessor=lx.object.Polygon(geometry.internalMesh.PolygonAccessor())
+                tagger=lx.object.StringTag(accessor)
+                for identity in picked[mesh.id]:
+                    accessor.Select(identity)
+                    tagger.Set(lx.symbol.i_POLYTAG_MATERIAL,tag)
+            continue
         with mesh.geometry as geometry:
             # By index: stepping through the polygons while tagging them passed one over.
             for index in range(len(geometry.polygons)):
