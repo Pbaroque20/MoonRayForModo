@@ -14,10 +14,10 @@ def curve_shape(item,settings):
     values=options.object_values(properties.read(item))
     if not values['override']:
         radius=float(settings.get('radius',.001))
-        return dict(root=radius,tip=radius,envelope=1.0,samples=int(settings.get('curve_samples',8)),uv=True)
+        return dict(root=radius,tip=radius,envelope=1.0,samples=int(settings.get('curve_samples',8)),uv=True,round=False)
     if not values['curves']:return None
     shape=dict(root=values['curve_root_width']/2000.0,tip=values['curve_tip_width']/2000.0,envelope=float(values['curve_envelope']),
-               samples=values['curve_samples'],uv=values['curve_uv'])
+               samples=values['curve_samples'],uv=values['curve_uv'],round=values['curve_round'])
     if values['hair']:
         shape['hair']={key[5:]:values[key] for key in values if key.startswith('hair_')}
     return shape
@@ -165,6 +165,7 @@ def batches(identity,name,strands,shape,material,matrix):
                 if shape['uv']:uvs.append([across,along])
         entry=dict(kind='curves',identity=identity+'|curves|'+tag,source_item=identity,name=name,vertices=vertices,counts=counts,
                    radius=shape['root'],curve_type=0,material=tag,matrix=matrix)
+        if shape.get('round'):entry['round']=True
         if tapered:entry['radii']=radii
         if shape['uv']:entry['uvs']=uvs
         if ids:entry['ids']=ids
@@ -295,6 +296,8 @@ def emit(scene,materials,lines,crypto=False):
                 curve_type=int(entry.get('curve_type',0))
                 if curve_type not in (0,1,2) or sum(counts)!=len(vertices) or any(type(c)!=int or c<(2 if curve_type==0 else 4) or (curve_type==1 and (c-1)%3) for c in counts):raise ValueError('Invalid curve counts or interpolation')
                 constructor='RdlCurveGeometry';attrs.update(curves_vertex_count=written('counts',counts,lambda:array(str(c) for c in counts)),curve_type=str(curve_type))
+                # MoonRay's own default is a ribbon that faces the view.
+                if entry.get('round'):attrs['curves_subtype']='1'
                 if entry.get('uvs'):
                     if len(entry['uvs']) not in (len(counts),len(vertices)):raise ValueError('Curve UVs must have one entry per strand or per point')
                     attrs['uv_list']=written('uvs',entry['uvs'],lambda:array(vector(v,'Vec2') for v in entry['uvs']))

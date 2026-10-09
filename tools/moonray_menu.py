@@ -118,16 +118,31 @@ HAIR_ROWS = (
     ('hair_guides', 'Render Guides Too', 'Render the guide curves themselves along with the hair grown from them.'))
 
 
+ROUND_ROW = ('curve_round', 'Round Curves', 'Renders each strand as a true tube, with a tube\'s shading across its width. Off, strands are flat ribbons '
+     'that turn to face the view: quicker, and the same to look at when they are as thin as hair.')
+
+
+def round_control(text):
+    """The mesh form's round-curves control, after the curve UV control; unchanged if it is there."""
+    anchor = '<list type="Control" val="cmd moonray.object.curve_uv ?">'
+    if 'cmd moonray.object.curve_round ?' in text or text.count(anchor) != 1:
+        return text
+    end = text.index('</list>', text.index(anchor)) + len('</list>')
+    eol = '\r\n' if '\r\n' in text else '\n'
+    row = eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % ROUND_ROW
+    return text[:end] + row + text[end:]
+
+
 def curve_controls(text):
     """The mesh form's curve controls, after the last of its subdivision controls; unchanged if they are there."""
     anchor = '<list type="Control" val="cmd moonray.object.adaptive_error ?">'
     if 'cmd moonray.object.curves ?' in text or text.count(anchor) != 1:
-        return hair_controls(text)
+        return round_control(hair_controls(text))
     end = text.index('</list>', text.index(anchor)) + len('</list>')
     eol = '\r\n' if '\r\n' in text else '\n'
     rows = ''.join(eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % row
                    for row in CURVE_ROWS)
-    return hair_controls(text[:end] + rows + text[end:])
+    return round_control(hair_controls(text[:end] + rows + text[end:]))
 
 
 def hair_controls(text):

@@ -41,6 +41,7 @@ OBJECT = {
     'curve_envelope': (1.0, 'Curve envelope (1 = even taper; higher keeps the root width longer)'),
     'curve_samples': (8, 'Samples per curve bend'),
     'curve_uv': (True, 'Curve UVs along the length'),
+    'curve_round': (False, 'Round curves (true tubes)'),
     'hair': (False, 'Grow hair from the curves, as guides'),
     'hair_scalp': ('', 'The mesh the hair grows on'),
     'hair_mode': (0, 'How strands are grown: around each guide, or between guides'),
@@ -86,7 +87,7 @@ def render_values(values):
 
 def object_values(values):
     result = {key: values.get(key, default) for key, (default, _) in OBJECT.items()}
-    for key in ('override', 'subdivision', 'smooth', 'normal_override', 'angular_tessellation', 'share_instances', 'dynamic_tessellation', 'curves', 'curve_uv', 'hair', 'hair_guides'):
+    for key in ('override', 'subdivision', 'smooth', 'normal_override', 'angular_tessellation', 'share_instances', 'dynamic_tessellation', 'curves', 'curve_uv', 'curve_round', 'hair', 'hair_guides'):
         if type(result[key]) is not bool:
             raise ValueError('Invalid object setting: ' + key)
     if type(result['level']) is not int or not 1 <= result['level'] <= 5:

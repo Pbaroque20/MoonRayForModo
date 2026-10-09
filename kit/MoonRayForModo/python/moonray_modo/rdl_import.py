@@ -50,6 +50,27 @@ def placed(position, orientation=None, scale=None):
     return [value for row, size in zip(rows, sizes) for value in [v * size for v in row] + [0.0]] + list(position) + [1.0]
 
 
+def followed(points, kind, steps=8):
+    """The path a curve takes through its control points, as points along it: MoonRay's cubic B-spline or Bezier.
+    A Modo curve of the same points would not take the same path, so the path itself is what is imported."""
+    if kind == LINE:
+        return [list(p) for p in points]
+    if kind == BSPLINE:
+        spans = [points[i:i + 4] for i in range(len(points) - 3)]
+        weights = lambda t: ((1 - t) ** 3 / 6, (3 * t ** 3 - 6 * t ** 2 + 4) / 6, (-3 * t ** 3 + 3 * t ** 2 + 3 * t + 1) / 6, t ** 3 / 6)
+    else:
+        spans = [points[i:i + 4] for i in range(0, len(points) - 3, 3)]
+        weights = lambda t: ((1 - t) ** 3, 3 * t * (1 - t) ** 2, 3 * t * t * (1 - t), t ** 3)
+    if not spans:
+        return [list(p) for p in points]
+    path = []
+    for index, span in enumerate(spans):
+        for step in range(steps + (index == len(spans) - 1)):
+            w = weights(step / steps)
+            path.append([sum(w[k] * span[k][axis] for k in range(4)) for axis in range(3)])
+    return path
+
+
 def decomposed(matrix):
     """(position, rows of a pure turn, scale) if the matrix is a move, a turn and a scale along the axes, which a Modo
     item's transform can hold; None if it shears or mirrors."""
@@ -270,7 +291,7 @@ def plan(document, path):
             kind = LINE
         lines, offset, roots, tips = [], 0, [], []
         for count in counts:
-            lines.append(points[offset:offset + count])
+            lines.append(followed(points[offset:offset + count], kind))
             if len(radii) == len(points):
                 roots.append(radii[offset])
                 tips.append(radii[offset + count - 1])
@@ -285,7 +306,7 @@ def plan(document, path):
         if roots and (max(roots) - min(roots) > 1e-6 * max(roots) or max(tips) - min(tips) > 1e-6 * max(max(tips), 1e-9)):
             warnings.append(short(record['name']) + ': its curves differ in width; all are given the average root and tip width')
         note_motion(record)
-        curves.append({'name': label(record['name']), 'lines': lines, 'kind': kind, 'matrix': matrix, 'material': material(record['name'], ''),
+        curves.append({'name': label(record['name']), 'lines': lines, 'kind': kind, 'round': int(a.get('curves_subtype', 0)) == 1, 'matrix': matrix, 'material': material(record['name'], ''),
                        'root_mm': mean(roots) * 2000.0, 'tip_mm': mean(tips) * 2000.0})
 
     def entity(record, matrix, name=None, owner=None):
@@ -630,22 +651,25 @@ def apply(data, alone=True):
             item = scene.addItem('mesh', name=record['name'])
             created.append(item)
             keep = decomposed(record['matrix']) is not None
-            kind = {LINE: lx.symbol.iPTYP_LINE, BEZIER: lx.symbol.iPTYP_BEZIER, BSPLINE: lx.symbol.iPTYP_BSPLINE}[record['kind']]
             with item.geometry as geo:
                 accessor = geo.internalMesh.PolygonAccessor()
                 for line in record['lines']:
-                    points = [geo.vertices.new(p if keep else transform(p, record['matrix'])) for p in line]
+                    # Each point's ID is taken as the point is made; asked for afterwards, every point gives the same one.
+                    points = tuple(geo.vertices.new(p if keep else transform(p, record['matrix'])).id for p in line)
                     storage = lx.object.storage('p', len(points))
-                    storage.set(tuple(point.id for point in points))
-                    accessor.New(kind, storage, len(points), 0)
+                    storage.set(points)
+                    accessor.New(lx.symbol.iPTYP_LINE, storage, len(points), 0)
             if record['material'] in tags:
-                with item.geometry as geo:
-                    for index in range(len(geo.polygons)):
-                        geo.polygons[index].materialTag = tags[record['material']]
+                # Twice: tagging polygons just made passes one over now and then.
+                for attempt in range(2):
+                    with item.geometry as geo:
+                        for index in range(len(geo.polygons)):
+                            if geo.polygons[index].materialTag != tags[record['material']]:
+                                geo.polygons[index].materialTag = tags[record['material']]
             if keep:
                 pose(item, record['matrix'])
             values = options.object_values(properties.read(item))
-            values.update(override=True, curves=True, curve_root_width=record['root_mm'], curve_tip_width=record['tip_mm'])
+            values.update(override=True, curves=True, curve_root_width=record['root_mm'], curve_tip_width=record['tip_mm'], curve_round=record['round'])
             properties.write(item, options.object_values(values))
         for record in data['entities']:
             try:
