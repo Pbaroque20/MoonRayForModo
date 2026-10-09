@@ -65,7 +65,7 @@ class Sequence(QtCore.QObject):
         settings={k:v for k,v in panel._settings_values().items() if k not in ('display','preview_buffer','recovery')}
         snapshot=panel._capture()
         self.signature=hashlib.sha256(json.dumps([source,settings,asset_signature(snapshot)],sort_keys=True).encode()).hexdigest()
-        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,panel.denoise_final.isChecked() and panel.denoiser.currentData()!='off',self.signature)
+        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,settings.get('denoising',{}).get('final',True) and settings.get('denoising',{}).get('engine','off')!='off',self.signature)
         self.directory.mkdir(parents=True,exist_ok=True)
         self.frame, self.last, self.fps, self.motion = first,last,fps,motion
         self.running = False
@@ -101,9 +101,9 @@ class Sequence(QtCore.QObject):
         destination = self.directory/('%s.%06d.exr'%(self.prefix,self.frame))
         if destination.exists():
             self.expected_output=destination.resolve()
-            self.panel.renderer.resume_denoise(destination,self.panel.runtime.text(),self.panel._settings_values()['denoising'])
+            self.panel.renderer.resume_denoise(destination,self.panel.runtime_path(),self.panel._settings_values()['denoising'])
             return
-        snapshot = capture_frame(self.frame/self.fps, self.panel.surface.currentIndex()==2,
+        snapshot = capture_frame(self.frame/self.fps, self.panel._settings_values()['surface']==2,
                                  self.motion, self.fps)
         snapshot['frame']=self.frame;snapshot['fps']=self.fps
         snapshot = self.panel._configure_snapshot(snapshot)

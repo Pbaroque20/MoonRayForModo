@@ -45,7 +45,9 @@ class OpenPreview(lxu.command.BasicCommand):
 
 
 if not lx.service.Platform().IsHeadless():
-    lx.bless(MoonRayView, 'MoonRayForModoPreview')
+    # The name Modo shows for the view in its viewport list and titles a new one with; without
+    # it the server's own name is used.
+    lx.bless(MoonRayView, 'MoonRayForModoPreview', {lx.symbol.sSRV_USERNAME: 'MoonRay Preview'})
 lx.bless(OpenPreview, 'moonray.open')
 
 
@@ -60,25 +62,20 @@ class PreviewPage(lxu.command.BasicCommand):
     def basic_Execute(self, msg, flags):
         from PySide2 import QtWidgets
         from moonray_modo.panel import Panel
+        from moonray_modo.panel_tools import WINDOW_PAGES
+        if self.dyna_String(0) not in WINDOW_PAGES:
+            # Render settings are the Render item's MoonRay properties; no window is needed.
+            lx.eval('select.item {%s} set' % modo.Scene().renderItem.id)
+            return
         widget = next((w for w in QtWidgets.QApplication.allWidgets()
                        if isinstance(w, Panel) and w.isVisible()), None)
         if widget is None:
             lx.eval('moonray.open')
             widget = next(w for w in QtWidgets.QApplication.allWidgets()
                           if isinstance(w, Panel) and w.isVisible())
-        page = self.dyna_String(0)
-        if page == 'preview':
-            widget.live.setChecked(True)
-        elif page == 'final':
-            widget.render_final()
-        elif page == 'export':
-            widget.export()
-        elif page == 'stop':
-            widget.stop()
-        elif page == 'log':
-            widget.show_log()
-        else:
-            widget.show_page(page)
+        # The window does the rest: output renders, the scene dialogs, or selecting the Render
+        # item, whose MoonRay properties hold the render settings.
+        widget.run(self.dyna_String(0))
 
 
 class SaveSceneSettings(lxu.command.BasicCommand):
@@ -164,10 +161,99 @@ def object_command(key):
     return ObjectSetting
 
 
+class ObjectPopup(lxifc.UIValueHints):
+    """The choices of an object setting that is one of a list."""
+    def __init__(self, labels):
+        self.labels = labels
+
+    def uiv_Flags(self):
+        return lx.symbol.fVALHINT_POPUPS
+
+    def uiv_PopCount(self):
+        return len(self.labels)
+
+    def uiv_PopUserName(self, index):
+        return self.labels[index]
+
+    def uiv_PopInternalName(self, index):
+        return 'choice%d' % index
+
+
+def object_choice(key, choices):
+    """A popup for an object setting. choices() gives (stored value, label) pairs, which may depend on the scene."""
+    class ObjectChoice(lxu.command.BasicCommand):
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('value', lx.symbol.sTYPE_INTEGER)
+            self.basic_SetFlags(0, lx.symbol.fCMDARG_QUERY)
+
+        def cmd_Flags(self):
+            return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+        def basic_Enable(self, msg):
+            from moonray_modo import properties
+            return bool(properties.selected_geometry())
+
+        def arg_UIValueHints(self, index):
+            return ObjectPopup([label for _, label in choices()])
+
+        def cmd_Query(self, index, query):
+            from moonray_modo import options, properties
+            held = lx.object.ValueArray(query)
+            stored = [value for value, _ in choices()]
+            for item in properties.selected_geometry():
+                value = options.object_values(properties.read(item))[key]
+                held.AddInt(stored.index(value) if value in stored else 0)
+
+        def basic_Execute(self, msg, flags):
+            from moonray_modo import options, properties
+            offered = choices()
+            index = self.dyna_Int(0)
+            if not 0 <= index < len(offered):
+                raise ValueError('That choice is no longer offered')
+            for item in properties.selected_geometry():
+                values = options.object_values(properties.read(item))
+                values[key] = offered[index][0]
+                properties.write(item, options.object_values(values))
+
+        def basic_Notifier(self, index):
+            if index == 0:
+                return ('select.event', 'item +v')
+            if index == 1:
+                return ('scene.edit', '')
+    return ObjectChoice
+
+
+def scalp_choices():
+    """The meshes hair can grow on: every mesh but the ones selected, which hold the guides."""
+    import modo
+    scene = modo.Scene()
+    chosen = {item.id for item in scene.selected}
+    return [('', '(none)')] + sorted(((item.id, item.name) for item in scene.items('mesh', superType=False) if item.id not in chosen),
+                                     key=lambda entry: entry[1].lower())
+
+
+def hair_modes():
+    from moonray_modo import options
+    return [(value, label) for label, value in options.HAIR_MODES]
+
+
+lx.bless(object_choice('hair_scalp', scalp_choices), 'moonray.object.hair_scalp')
+lx.bless(object_choice('hair_mode', hair_modes), 'moonray.object.hair_mode')
+
+
+def curve_bases():
+    from moonray_modo import options
+    return [(value, label) for label, value in options.CURVE_BASES]
+
+
+lx.bless(object_choice('curve_basis', curve_bases), 'moonray.object.curve_basis')
 lx.bless(PreviewPage, 'moonray.page')
 lx.bless(SaveSceneSettings, 'moonray.sceneSettings')
 lx.bless(SaveObjectSettings, 'moonray.objectSettings')
-for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error', 'share_instances', 'dynamic_tessellation'):
+for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error', 'share_instances', 'dynamic_tessellation',
+             'curves', 'curve_root_width', 'curve_tip_width', 'curve_envelope', 'curve_samples', 'curve_uv', 'curve_round',
+             'hair', 'hair_count', 'hair_width', 'hair_clump', 'hair_length', 'hair_seed', 'hair_guides'):
     lx.bless(object_command(_key), 'moonray.object.' + _key)
 
 
@@ -226,6 +312,84 @@ def material_option(key):
     return MaterialOption
 
 lx.bless(AssignMaterial,'moonray.material.assign')
+
+
+class ImportMaterialX(lxu.command.BasicCommand):
+    """Put a MaterialX file's material on the selected meshes. The file is asked for unless it is given."""
+    def __init__(self):
+        super().__init__()
+        self.dyna_Add('file', lx.symbol.sTYPE_STRING)
+        self.basic_SetFlags(0, lx.symbol.fCMDARG_OPTIONAL)
+
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+    def basic_Enable(self, msg):
+        from moonray_modo import properties
+        return bool(properties.selected_meshes())
+
+    def basic_Execute(self, msg, flags):
+        import modo
+        from moonray_modo import materials
+        path = self.dyna_String(0) if self.dyna_IsSet(0) else None
+        if not path:
+            try:
+                path = modo.dialogs.customFile('fileOpen', 'Import MaterialX Material', ('mtlx', 'all'), ('MaterialX files', 'All files'), ('*.mtlx', '*.*'))
+            except RuntimeError:
+                return
+        if not path:
+            return
+        try:
+            materials.import_materialx(str(path))
+        except ValueError as exc:
+            # What the file uses that cannot be followed, in the importer's own words.
+            modo.dialogs.alert('Import MaterialX Material', 'This MaterialX file could not be imported.' + chr(10) * 2 + str(exc), dtype='warning')
+
+
+lx.bless(ImportMaterialX, 'moonray.material.importMaterialX')
+
+
+class LoadMaterialX(lxu.command.BasicCommand):
+    """Give the selected MaterialX material the material of a file. The file is asked for unless it is given."""
+    def __init__(self):
+        super().__init__()
+        self.dyna_Add('file', lx.symbol.sTYPE_STRING)
+        self.basic_SetFlags(0, lx.symbol.fCMDARG_OPTIONAL)
+
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+    def chosen(self):
+        from moonray_modo import properties
+        return [item for item in modo.Scene().selected if item.type == properties.MATERIALX_TYPE]
+
+    def basic_Enable(self, msg):
+        return len(self.chosen()) == 1
+
+    def basic_Execute(self, msg, flags):
+        from moonray_modo import materials
+        items = self.chosen()
+        if len(items) != 1:
+            return
+        path = self.dyna_String(0) if self.dyna_IsSet(0) else None
+        if not path:
+            try:
+                path = modo.dialogs.customFile('fileOpen', 'Load MaterialX File', ('mtlx', 'all'), ('MaterialX files', 'All files'), ('*.mtlx', '*.*'))
+            except RuntimeError:
+                return
+        if not path:
+            return
+        try:
+            materials.load_materialx(items[0], str(path))
+        except ValueError as exc:
+            modo.dialogs.alert('Load MaterialX File', 'This MaterialX file could not be loaded.' + chr(10) * 2 + str(exc), dtype='warning')
+
+    def basic_Notifier(self, index):
+        if index == 0:
+            return ('select.event', 'item +v')
+
+
+lx.bless(LoadMaterialX, 'moonray.material.loadMaterialX')
 lx.bless(material_option('shader'),'moonray.material.enable')
 lx.bless(material_option('thin_geometry'),'moonray.material.thin')
 
@@ -290,8 +454,8 @@ class DockPreview(lxu.command.BasicCommand):
 lx.bless(DockPreview,'moonray.dock')
 
 
-# Compatibility aliases for saved menus/macros. The old external-render
-# PView route remains experimental and is never started automatically.
+# Compatibility aliases for saved menus/macros. They once belonged to an external-render
+# PView route, which is gone: Modo cannot host an external renderer in its native PView.
 class NativePreviewStartup(lxu.command.BasicCommand):
     def cmd_Flags(self):
         return lx.symbol.fCMD_UI
@@ -398,7 +562,7 @@ class ApplyRdl(lxu.command.BasicCommand):
     def basic_Execute(self,msg,flags):
         from moonray_modo import rdl_import
         if rdl_import.pending is None:raise ValueError('Choose an RDL scene in MoonRay > Import RDL scene first')
-        rdl_import.result=rdl_import.apply(rdl_import.pending)
+        rdl_import.result=rdl_import.apply(rdl_import.pending,rdl_import.pending.get('alone',True),rdl_import.pending.get('progress'))
 
 lx.bless(ImportRdl,'moonray.rdl.import')
 lx.bless(ApplyRdl,'moonray.rdl.apply')

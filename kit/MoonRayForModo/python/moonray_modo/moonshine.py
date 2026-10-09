@@ -1,5 +1,73 @@
 """MoonShine material and ordered BSDF-layer serialization."""
 import math
+def dielectric(cosine,straight):
+    """How much a smooth surface reflects at an angle, given how much it reflects seen straight on."""
+    root=math.sqrt(max(0.0,min(.9999,straight)))
+    index=(1+root)/(1-root)
+    sine=math.sqrt(max(0.0,1-cosine*cosine))/index
+    inner=math.sqrt(max(0.0,1-sine*sine))
+    across=(cosine-index*inner)/(cosine+index*inner)
+    along=(index*cosine-inner)/(index*cosine+inner)
+    return .5*(across*across+along*along)
+
+
+# How far Modo's Fresnel setting, at full, takes a surface toward a mirror at 65 and 75 degrees from straight on,
+# as its own renders show.
+MODO_RISE=((math.cos(math.radians(65)),.083),(math.cos(math.radians(75)),.289))
+
+
+def fresnel_match(straight,rise):
+    """The reflectance to give MoonRay's specular layer so that its rise toward the edge is nearest Modo's.
+
+    Modo reflects its specular amount seen straight on and, by its Fresnel setting, more toward the edge:
+    with the setting at none, the same at every angle. MoonRay's layer always rises as glass of its index
+    does. So the layer is given a higher reflectance, whose rise is flatter, and a weight that brings it
+    back down to the amount; this returns that reflectance, between the amount (the steepest rise there
+    is) and nearly a mirror (none).
+    """
+    if straight<=0:return 0.0
+    best,found=None,straight
+    for step in range(101):
+        lobe=straight+(.99-straight)*(step/100.0)**2
+        if lobe<=0:continue
+        weight=straight/lobe
+        error=sum((weight*dielectric(cosine,lobe)-(straight+(1-straight)*rise*share))**2 for cosine,share in MODO_RISE)
+        if best is None or error<best:best,found=error,lobe
+    return min(.99,found)
+
+
+def sources(material):
+    """The Modo materials a surface is made of: the rows of its stack, or itself."""
+    rows=[layer['material'] for layer in material.get('layers') or [] if layer.get('kind')=='materialBase' and layer.get('material')]
+    return rows or material.get('material_stack') or [material]
+
+
+def specular_ceiling(material):
+    """The most a standard Modo material reflects seen straight on, anywhere on it: its specular amount and
+    colour, or the colour alone where an image varies either."""
+    from . import textures
+    stack=sources(material)
+    most=max([max(m.get('specular',[0])) for m in stack]+[0])
+    layers=material.get('layers')
+    effects=[layer.get('effect') for layer in layers if layer.get('kind')!='materialBase'] if layers is not None else list(material.get('textures',{}))
+    if any(textures.EFFECT_ALIASES.get(e,e) in ('specCol','specAmt') for e in effects):
+        most=max([most]+[max(m.get('raw_specular',[1])) for m in stack])
+    return max(0.0,min(.99,most))
+
+
+def metal_mapped(material):
+    """Whether an image varies how metallic a material is."""
+    return mapped(material,'metallic')
+
+
+def mapped(material,effect):
+    """Whether an image varies one of a material's settings."""
+    from . import textures
+    layers=material.get('layers')
+    effects=[layer.get('effect') for layer in layers if layer.get('kind')!='materialBase'] if layers is not None else list(material.get('textures',{}))
+    return any(textures.EFFECT_ALIASES.get(e,e)==effect for e in effects)
+
+
 def emit(material, tag, index, bindings, lines):
     from .rdla import string, number, vector
     from .material_settings import values
@@ -26,6 +94,8 @@ def emit(material, tag, index, bindings, lines):
         'refractive_index':number(reflection_ior),
         'use_independent_transmission_refractive_index':'true',
         'independent_transmission_refractive_index':number(material.get('ior',1.5)),
+        # DwaBaseMaterial ignores the Abbe number unless dispersion is switched on.
+        'use_dispersion':'true' if material.get('dispersion_abbe',0)>0 else 'false',
         'dispersion_abbe_number':number(material.get('dispersion_abbe',0)),
         'transmission':number(material.get('transmission',0)),
         'transmission_color':vector(material.get('transmission_color',[1,1,1]),'Rgb'),
@@ -46,7 +116,8 @@ def emit(material, tag, index, bindings, lines):
     for key,value in bindings.items():
         if key in ('layerMask','subsurfaceAmount'):
             continue
-        if key=='anisotropy':
+        if key=='anisotropy' and (not material.get('standard_material') or any(m.get('anisotropy',0) for m in sources(material)) or mapped(material,'aniso')):
+            # Only the Beckmann highlight stretches; a standard material that does not stretch keeps GGX, the shape of Modo's own.
             attributes['specular_model']='0'
         if key in ('normal','coatNormal'):
             name='/modo/normal/%s/%s' % (index,key)
@@ -66,12 +137,27 @@ def emit(material, tag, index, bindings, lines):
             if key=='specularAmount':
                 attributes['show_specular']='true'
     if material.get('standard_material') and 'specularColor' in bindings:
-        # Modo's standard specular amount is normal-incidence reflectance,
-        # whereas Dwa specular is an additional lobe weight. Preserve that distinction.
-        path='/modo/fresnel/'+str(index)
-        lines.append('ModoTextureMap(%s) { ["mode"] = 9, ["foreground"] = %s }'%(string(path),bindings['specularColor']))
-        attributes['refractive_index']='bind(ModoTextureMap(%s), 1)'%string(path)
-        attributes['specular']='1';attributes['show_specular']='true'
+        # Modo's specular amount is how much is reflected seen straight on. MoonRay's index of refraction says
+        # the same thing but cannot take a map, so it is set for the most this material reflects and the
+        # weight of the specular layer, which can, carries the amount as a share of that.
+        most=specular_ceiling(material)
+        if any(m.get('metallic',0)>0 for m in sources(material)) or metal_mapped(material):
+            # A metal reflects by its colour, whatever the specular amount.
+            pass
+        elif most<=0:
+            attributes.update(specular='0',show_specular='false')
+        else:
+            stack=sources(material)
+            principled=any(m.get('principled') for m in stack)
+            # Under Modo's Principled model the specular amount is a share of 8% seen straight on, as measured
+            # against Modo, and it always rises toward the edge.
+            straight=most*(.08 if principled else 1.0)
+            rise=1.0 if principled else max(0.0,min(1.0,max(m.get('specular_fresnel',1.0) for m in stack)))
+            lobe=fresnel_match(straight,rise)
+            root=math.sqrt(lobe)
+            path='/modo/fresnel/'+str(index)
+            lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most*lobe/straight),)*3))
+            attributes.update(refractive_index=number((1+root)/(1-root)),specular='bind(ModoTextureMap(%s), 1)'%string(path),show_specular='true')
     from .working_space import surface as working_surface
     attributes=working_surface(attributes,'/modo/material/'+str(index),lines,{'albedo','metallic_color','scattering_color','transmission_color','emission','clearcoat_attenuation_color'})
     lines.append('materials[%s] = DwaBaseMaterial("/modo/material/%s") {' % (string(tag),index))
@@ -93,6 +179,14 @@ def emit_stack(stack, tag, index, lines, library=None, native_index=None):
     from .rdla import string, number
     from .graph import bindings
     from .material_groups import supported, merged
+    # A material that cannot be blended with others (hair, a volume's surface) covers what lies under it when it is
+    # there in full, as an upper material does in the Shader Tree: what is under it is left out.
+    from .shader_library import compatible as blendable, catalog as shader_catalog
+    for position in range(len(stack)-1,0,-1):
+        upper=stack[position]
+        if (upper.get('native_shader') in shader_catalog() and not blendable(upper['native_shader'],'INTERFACE_DWABASELAYERABLE')
+                and upper.get('layer_opacity',1)==1 and not upper.get('layers') and all(g.get('opacity',1)==1 for g in upper.get('material_groups',[]))):
+            stack=stack[position:];break
     if supported(stack):
         material=merged(stack)
         maps=bindings(material,index,lines)

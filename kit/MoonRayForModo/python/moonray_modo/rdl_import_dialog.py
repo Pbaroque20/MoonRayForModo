@@ -9,8 +9,12 @@ class Dialog(QtWidgets.QDialog):
   super().__init__(parent);self.setWindowTitle('Import MoonRay RDL as editable objects');self.resize(700,500)
   self.data=None;self.output=bytearray();self.errors='';self.path=None
   layout=QtWidgets.QVBoxLayout(self)
-  layout.addWidget(QtWidgets.QLabel('Convert supported RDL meshes, cameras, lights and MoonShine material graphs into the current Modo scene.'))
+  layout.addWidget(QtWidgets.QLabel('Bring a MoonRay scene into the current Modo scene: meshes, instances and curves as Modo items, materials as MoonRay materials,\n'
+   'and lights, light filters, volumes and other MoonRay objects as MoonRay items. What cannot be held is listed before anything is made.'))
   self.report=QtWidgets.QPlainTextEdit();self.report.setReadOnly(True);layout.addWidget(self.report,1)
+  self.alone=QtWidgets.QCheckBox('Light it only as the RDL scene is lit');self.alone.setChecked(True)
+  self.alone.setToolTip("Sets the lights already in the Modo scene not to render and keeps Modo's environment out of MoonRay's picture,\nso that the imported scene renders as it did. Off, the scene's lights are added to what is there.")
+  layout.addWidget(self.alone)
   row=QtWidgets.QHBoxLayout();layout.addLayout(row)
   self.choose=QtWidgets.QPushButton('Choose RDL scene…');self.choose.clicked.connect(lambda:self.load());row.addWidget(self.choose)
   self.import_button=QtWidgets.QPushButton('Import editable objects');self.import_button.setEnabled(False);self.import_button.clicked.connect(self.apply);row.addWidget(self.import_button)
@@ -31,12 +35,13 @@ class Dialog(QtWidgets.QDialog):
    self.data=None;self.output.clear();self.errors='';self.import_button.setEnabled(False);self.choose.setEnabled(False);self.cancel.setEnabled(True)
    env=QtCore.QProcessEnvironment()
    for key,value in native.environment(runtime).items():env.insert(key,value)
-   self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.path.parent));self.process.setProgram(str(helper));self.process.setArguments([str(self.path),str(runtime)])
-   self.report.setPlainText('Reading '+str(self.path)+'…');self.process.start()
+   self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.path.parent));self.process.setProgram(str(helper));together=rdl_import.files(self.path);self.process.setArguments([together[0],str(runtime)]+together[1:])
+   self.report.setPlainText('Reading '+' and '.join(Path(p).name for p in together)+' in '+str(self.path.parent)+'…');self.process.start()
   except Exception as exc:self.report.setPlainText(str(exc));self.choose.setEnabled(True);self.cancel.setEnabled(False)
  def read(self):
   self.output.extend(bytes(self.process.readAllStandardOutput()))
-  if len(self.output)>256*1024*1024:self.abort();self.report.setPlainText('Scene exceeds the import transfer limit (256 MiB).')
+  # As text a scene is three to four times the size of its binary file; a scene of a few hundred megabytes fits.
+  if len(self.output)>2048*1024*1024:self.abort();self.report.setPlainText('Scene exceeds the import transfer limit (2 GiB as text).')
  def read_error(self):self.errors=(self.errors+bytes(self.process.readAllStandardError()).decode('utf-8',errors='replace'))[-16384:]
  def error(self,value):
   if value==QtCore.QProcess.FailedToStart:self.report.setPlainText(self.process.errorString());self.choose.setEnabled(True);self.cancel.setEnabled(False)
@@ -44,13 +49,13 @@ class Dialog(QtWidgets.QDialog):
   self.read();self.read_error();self.choose.setEnabled(True);self.cancel.setEnabled(False)
   try:
    if code or status!=QtCore.QProcess.NormalExit:raise ValueError(self.errors or 'RDL loading canceled or failed')
-   marker=b'@@MODO_RDL_JSON\n';offset=self.output.rfind(marker)
+   marker=b'@@MODO_RDL_JSON';offset=self.output.rfind(marker)
    if offset<0:raise ValueError('Decoder returned no scene document')
    document=json.loads(bytes(self.output[offset+len(marker):]).decode('utf-8'));self.output.clear()
    self.data=rdl_import.plan(document,self.path)
-   counts='%d meshes, %d cameras, %d lights, %d materials ready.'%(len(self.data['meshes']),len(self.data['cameras']),len(self.data['lights']),len(self.data['materials']))
+   counts=rdl_import.summary(self.data);counts=counts[:1].upper()+counts[1:]+' ready.'
    self.report.setPlainText(counts+'\n\n'+'\n'.join(self.data['warnings']))
-   self.import_button.setEnabled(bool(self.data['meshes'] or self.data['cameras'] or self.data['lights'] or self.data['materials']))
+   self.import_button.setEnabled(not rdl_import.empty(self.data))
   except Exception as exc:
    message=str(exc)
    missing=re.search(r"global variable '([^']+)' was never declared",message)
@@ -62,9 +67,23 @@ class Dialog(QtWidgets.QDialog):
   if self.data is None:return
   try:
    import lx
-   rdl_import.pending=self.data;lx.eval('moonray.rdl.apply')
+   # Building heavy meshes takes a while, and Modo cannot answer meanwhile: say how far it has come, and let it be stopped.
+   total=sum(len(m['faces']) for m in self.data['meshes'])
+   bar=QtWidgets.QProgressDialog('Importing…','Stop',0,1000,self) if total>50000 else None
+   if bar:bar.setWindowTitle('Import MoonRay scene');bar.setWindowModality(QtCore.Qt.WindowModal);bar.setMinimumDuration(0);bar.setValue(0)
+   def progress(done,whole,what):
+    if not bar:return True
+    bar.setLabelText('Building %s\n%s of %s polygons'%(what,format(done,','),format(whole,',')));bar.setValue(int(1000*done/max(1,whole)))
+    QtWidgets.QApplication.processEvents()
+    return not bar.wasCanceled()
+   rdl_import.pending=dict(self.data,alone=self.alone.isChecked(),progress=progress)
+   try:lx.eval('moonray.rdl.apply')
+   finally:
+    if bar:bar.close()
    self.report.setPlainText(rdl_import.result);self.import_button.setEnabled(False)
-  except Exception as exc:self.report.setPlainText('Import failed: '+str(exc))
+  except Exception as exc:
+   stopped=isinstance(exc,rdl_import.Cancelled) or 'Cancelled' in str(exc)
+   self.report.setPlainText('Import stopped. What it had made was taken back; nothing in the scene has changed.' if stopped else 'Import failed: '+str(exc))
   finally:rdl_import.pending=None
  def abort(self):
   if self.process.state()!=QtCore.QProcess.NotRunning:self.process.kill()

@@ -12,7 +12,7 @@ def show(parent=None):
     pixmap=QtGui.QPixmap(str(root/'assets/about-moonray.png'))
     if not pixmap.isNull(): artwork.setPixmap(pixmap.scaledToWidth(760,QtCore.Qt.SmoothTransformation))
     layout.addWidget(artwork)
-    credits=QtWidgets.QLabel('MoonRay for Modo\nDeveloped by Raphael Tobar w/ AI-Assistance\nVersion '+__version__+' — Development build\n\nMIT License · Copyright © 2026 Raphael Tobar\nMoonRay renderer: Apache License 2.0 · DreamWorks Animation / OpenMoonRay\nModo 16.1v9 · Windows x64 · CPU / AVX + NVIDIA XPU\n\nIndependent integration. MaterialX translation is a supported subset.\nRendering and compatibility validation are ongoing.')
+    credits=QtWidgets.QLabel('MoonRay for Modo\nDeveloped by Raphael Tobar w/ AI-Assistance\nVersion '+__version__+' — Development build\n\nMIT License · Copyright © 2026 Raphael Tobar\nMoonRay renderer: Apache License 2.0 · DreamWorks Animation / OpenMoonRay\nMoonLight GPU preview: created by Raphael Tobar · MIT License · not affiliated with DreamWorks Animation\nModo 16.1v9 · Windows x64 · CPU / AVX + NVIDIA XPU\n\nIndependent integration. MaterialX translation is a supported subset.\nRendering and compatibility validation are ongoing.')
     credits.setWordWrap(True);credits.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
     credits.setStyleSheet('background:#000000;color:#ffffff;padding:20px;font-size:13px;')
     layout.addWidget(credits)

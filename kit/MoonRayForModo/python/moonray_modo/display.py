@@ -2,14 +2,28 @@
 import math
 from pathlib import Path
 
-DEFAULTS={'working_space':'rec709','view':'reinhard','exposure':0.0,'lut':'','lut_space':'display',
+# The view a scene starts with is ACES for an sRGB monitor, as is usual in production; plain sRGB is the next choice.
+DEFAULTS={'working_space':'rec709','view':'aces','exposure':0.0,'lut':'','lut_space':'display',
           'config':'','source':'Linear Rec.709 (sRGB)','display':'sRGB','ocio_view':'ACES 1.0 - SDR Video'}
+
+
+# The ACES view needs no file: OpenColorIO carries the ACES configuration this names.
+ACES_CONFIG='ocio://cg-config-v1.0.0_aces-v1.3_ocio-v2.1'
+ACES={'config':ACES_CONFIG,'source':'Linear Rec.709 (sRGB)','display':'sRGB - Display','ocio_view':'ACES 1.0 - SDR Video'}
+
+
+def built_in(config):
+    """Whether an OCIO configuration is one OpenColorIO carries itself, named and not a file."""
+    return str(config).startswith('ocio://')
 
 
 def values(settings):
     result={key:settings.get(key,value) for key,value in DEFAULTS.items()}
     if result['working_space'] not in ('rec709','acescg'):raise ValueError('Unknown render working space')
-    if result['view'] not in ('srgb','reinhard','raw','ocio'): raise ValueError('Unknown display transform')
+    if result['view'] not in ('srgb','aces','reinhard','raw','ocio'): raise ValueError('Unknown display transform')
+    if result['view']=='aces':
+        # ACES for an sRGB monitor is an OCIO view with everything already chosen.
+        result.update(ACES,view='ocio')
     if result['lut_space'] not in ('linear','display'): raise ValueError('Unknown LUT placement')
     result['exposure']=float(result['exposure'])
     if not math.isfinite(result['exposure']) or not -20<=result['exposure']<=20: raise ValueError('Exposure must be between -20 and 20 stops')
@@ -21,7 +35,7 @@ def values(settings):
 def arguments(settings):
     v=values(settings)
     for key in ('lut','config'):
-        if v[key] and not Path(v[key]).is_file(): raise ValueError('Missing '+key+' file: '+v[key])
+        if v[key] and not built_in(v[key]) and not Path(v[key]).is_file(): raise ValueError('Missing '+key+' file: '+v[key])
     args=[]
     if v['working_space']=='acescg' and v['view'] not in ('raw','ocio'):
         from .working_space import TO_REC709,matrix_argument

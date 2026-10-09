@@ -32,7 +32,8 @@ def execute(path,material_name=None):
         from . import materialx
         graph=materialx.read(path,material_name)
         selected=list(scene.selected)
-        if len(selected)!=1 or selected[0].type not in ('advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','mask'):
+        from . import properties
+        if len(selected)!=1 or not (properties.is_material(selected[0]) or selected[0].type=='mask'):
             raise ValueError('Select one material or material mask before importing a MaterialX override')
         source=selected[0];parent=source if source.type=='mask' else source.parent
         index=len(parent.children()) if source.type=='mask' else source.parentIndex+1

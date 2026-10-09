@@ -31,6 +31,8 @@ def emit(scene,meshes,environment,lines):
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Light group labels must use letters, numbers and underscores')
             attrs['label']=string(label)
         if kind=='DistantLight':attrs['angular_extent']=number(light.get('angle',.5))
+        # A sun that shows in the sky as a disc.
+        if light.get('camera_visible'):attrs['visible_in_camera']='1'
         if kind in ('SphereLight','DiskLight','CylinderLight'):attrs['radius']=number(max(.001,light.get('radius',.05)))
         if kind=='CylinderLight':attrs['height']=number(light.get('height',1))
         if kind in ('RectLight','PortalLight'):attrs.update(width=number(light.get('width',1)),height=number(light.get('height',1)))
@@ -62,7 +64,9 @@ def emit(scene,meshes,environment,lines):
         ref='MeshLight(%s)'%string('/modo/meshLight/'+str(index));refs.setdefault(identity,[]).append(ref)
         label=settings.get('light_label','')
         if label and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Invalid mesh light group label')
-        lines.append('table.insert(lights, %s { ["geometry"] = RdlMeshGeometry("/modo/mesh/%d"), ["color"] = %s, ["intensity"] = %s, ["label"] = %s })'%(ref,index,vector(working_color(settings.get('light_color',[1,1,1])),'Rgb'),number(settings.get('light_intensity',1)),string(label)))
+        lines.append('table.insert(lights, %s { ["geometry"] = RdlMeshGeometry("/modo/meshLight/geometry/%d"), ["color"] = %s, ["intensity"] = %s, ["label"] = %s })'%(ref,index,vector(working_color(settings.get('light_color',[1,1,1])),'Rgb'),number(settings.get('light_intensity',1)),string(label)))
+    from .entities import emit_lights
+    emit_lights(scene,lines)
     lines += ['local lightSet = LightSet("/modo/lightSet")(lights)','local objectLightSets = {}','local objectShadowSets = {}']
     for identity,settings in sorted(objects.items()):
         def selected(key):

@@ -35,7 +35,26 @@ OBJECT = {
     'angular_tessellation': (False, 'Estimate subdivision density from angle'),
     'tessellation_angle': (10.0, 'Target face angle (degrees, estimated)'),
     'adaptive_error': (0.0, 'Subdivision screen error (pixels; 0 = uniform)'),
+    'curves': (True, 'Render curves as tubes'),
+    'curve_root_width': (2.0, 'Curve width at the root (mm)'),
+    'curve_tip_width': (2.0, 'Curve width at the tip (mm)'),
+    'curve_envelope': (1.0, 'Curve envelope (1 = even taper; higher keeps the root width longer)'),
+    'curve_samples': (8, 'Samples per curve bend'),
+    'curve_uv': (True, 'Curve UVs along the length'),
+    'curve_round': (False, 'Round curves (true tubes)'),
+    'curve_basis': (0, 'What the points of a line are: the line itself, or the control points of a smooth curve'),
+    'hair': (False, 'Grow hair from the curves, as guides'),
+    'hair_scalp': ('', 'The mesh the hair grows on'),
+    'hair_mode': (0, 'How strands are grown: around each guide, or between guides'),
+    'hair_count': (20, 'Strands grown per guide'),
+    'hair_width': (10.0, 'Width of a cluster at its root (mm)'),
+    'hair_clump': (0.5, 'How far a cluster closes toward its tip (0 to 1)'),
+    'hair_length': (0.1, 'How much strands vary in length (0 to 1)'),
+    'hair_seed': (1, 'Seed: another number grows other hair'),
+    'hair_guides': (False, 'Render the guides as well'),
 }
+CURVE_BASES = [('The line itself', 0), ('Bezier control points', 1), ('B-spline control points', 2)]
+HAIR_MODES = [('Around each guide (locks)', 0), ('Between guides (fur)', 1)]
 AOVS = {
     'environment_background': ('Environment background', {'result':8,'lpe':"C<L.'modo_environment'>"}, 'environment_background'),
     'environment_lighting': ('Environment lighting', {'result':8,'lpe':"C.+<L.'modo_environment'>"}, 'environment_lighting'),
@@ -70,12 +89,26 @@ def render_values(values):
 
 def object_values(values):
     result = {key: values.get(key, default) for key, (default, _) in OBJECT.items()}
-    for key in ('override', 'subdivision', 'smooth', 'normal_override', 'angular_tessellation', 'share_instances', 'dynamic_tessellation'):
+    for key in ('override', 'subdivision', 'smooth', 'normal_override', 'angular_tessellation', 'share_instances', 'dynamic_tessellation', 'curves', 'curve_uv', 'curve_round', 'hair', 'hair_guides'):
         if type(result[key]) is not bool:
             raise ValueError('Invalid object setting: ' + key)
     if type(result['level']) is not int or not 1 <= result['level'] <= 5:
         raise ValueError('Subdivision level must be between 1 and 5')
-    for key,low,high in [('smoothing_angle',0,180),('tessellation_angle',0.1,180),('adaptive_error',0,64)]:
+    if type(result['hair_scalp']) is not str:
+        raise ValueError('Invalid object setting: hair_scalp')
+    # Numbers past their limits are brought back to them rather than refused.
+    for key, low, high in (('curve_basis', 0, 2), ('hair_mode', 0, 1), ('hair_count', 1, 2000), ('hair_seed', 0, 1000000)):
+        if type(result[key]) is not int:
+            raise ValueError('Invalid object setting: ' + key)
+        result[key] = min(high, max(low, result[key]))
+    for key, low, high in (('hair_width', 0.0, 100000.0), ('hair_clump', 0.0, 1.0), ('hair_length', 0.0, .95)):
+        if type(result[key]) not in (float, int) or not math.isfinite(result[key]):
+            raise ValueError('Invalid object setting: ' + key)
+        result[key] = min(high, max(low, float(result[key])))
+    if type(result['curve_samples']) is not int or not 1 <= result['curve_samples'] <= 256:
+        raise ValueError('Samples per curve bend must be between 1 and 256')
+    for key,low,high in [('smoothing_angle',0,180),('tessellation_angle',0.1,180),('adaptive_error',0,64),
+                         ('curve_root_width',0,100000),('curve_tip_width',0,100000),('curve_envelope',0.01,100)]:
         value=result[key]
         if type(value) not in (float,int) or not math.isfinite(value) or not low<=value<=high:
             raise ValueError('Invalid object setting: '+key)

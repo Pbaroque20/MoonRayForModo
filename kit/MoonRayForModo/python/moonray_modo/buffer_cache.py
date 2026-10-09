@@ -59,6 +59,10 @@ class BufferCache(QtCore.QObject):
         self.selected.emit(key)
         self._request()
 
+    def busy(self):
+        """True while a display conversion is running; publish_memory drops frames meanwhile."""
+        return self.worker is not None or self.process.state()!=QtCore.QProcess.NotRunning
+
     def publish_memory(self,key,width,height,pixels,runtime,snapshot,backend):
         if self.closed or self.worker is not None or self.process.state()!=QtCore.QProcess.NotRunning:return
         if not 0<len(pixels)<=64*1024*1024 or len(pixels)!=width*height*12:raise ValueError('Invalid shared image size')

@@ -10,6 +10,8 @@
 #include <moonray/rendering/rndr/RenderOutputDriver.h>
 #include <cctype>
 #include <cmath>
+#include <limits>
+#include <vector>
 #include "modo_bucket_output.h"
 #include "modo_shared_image.h"
 #include "modo_scene_memory.h"
@@ -60,6 +62,11 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                     return key;
                 };
                 bool reportedMissingSamples=false;
+                // The last value shown for each pixel of a view. A pixel a worker was adding to
+                // while its picture was taken can be caught part way, lighter or darker than it
+                // is; such a pixel keeps the value it last had when it was at rest.
+                std::string steadyView;
+                std::vector<float> steady;
 
                 auto snapshot = [&](const std::string& key) -> bool {
                     if(useShared && !sharedImage.ready())return false;
@@ -93,6 +100,13 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         if (!channels || channels>3 || aov.getWidth()!=pixels.getWidth() || aov.getHeight()!=pixels.getHeight()) return false;
                     }
                     if(sampleWeights.getWidth()!=pixels.getWidth() || sampleWeights.getHeight()!=pixels.getHeight())return false;
+                    // Coverage again, after the colours: where it differs from before, a worker
+                    // touched the pixel in between.
+                    scene_rdl2::fb_util::FloatBuffer weightsAfter;
+                    driver->snapshotWeightBuffer(&weightsAfter, true, false);
+                    const bool compare=weightsAfter.getWidth()==pixels.getWidth() && weightsAfter.getHeight()==pixels.getHeight();
+                    const size_t count=size_t(pixels.getWidth())*pixels.getHeight();
+                    if(steadyView!=key || steady.size()!=count*3){steadyView=key;steady.assign(count*3,std::numeric_limits<float>::quiet_NaN());}
                     size_t missingSamples=0;
                     auto readPixel=[&](size_t i,float* rgb) {
                         const unsigned x=i%pixels.getWidth(),y=i/pixels.getWidth();
@@ -103,6 +117,10 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         // Preserve MoonRay's coarse-pass reconstruction; do not replace
                         // it using a weight snapshot captured at a different instant.
                         if(!(sampleWeights.getRow(y)[x]>0.f))++missingSamples;
+                        float* kept=&steady[i*3];
+                        if(compare && weightsAfter.getRow(y)[x]!=sampleWeights.getRow(y)[x] && !std::isnan(kept[0])){
+                            rgb[0]=kept[0];rgb[1]=kept[1];rgb[2]=kept[2];
+                        } else {kept[0]=rgb[0];kept[1]=rgb[1];kept[2]=rgb[2];}
                     };
                     auto reportMissing=[&]() {
                         if(missingSamples && !reportedMissingSamples){
@@ -135,6 +153,12 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         (filmActivity!=lastFilmActivity || key!=lastView || !published) && context->isFrameReadyForDisplay()) {
                         printStatusLine(*context, driver->getLastFrameMcrtStartTime(), false);
                         modoBucketOutput(id,driver->getWidth(),driver->getHeight());
+                        {
+                            // How far the frame is, for the host's time estimate.
+                            std::size_t submitted=0,total=0;
+                            const float fraction=context->getFrameProgressFraction(&submitted,&total);
+                            std::cout << "\n@@MODO_PROGRESS " << id << " " << fraction << std::endl;
+                        }
                         try {
                             if(snapshot(key)){published=true;lastFilmActivity=filmActivity;lastView=key;}
                         } catch (const std::exception& e) {

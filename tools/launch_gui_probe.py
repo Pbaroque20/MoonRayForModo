@@ -12,9 +12,9 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('probe',nargs='?',default='probe_gui.py')
 parser.add_argument('--profile',default='gui-profile')
 parser.add_argument('--wait',action='store_true')
+parser.add_argument('--timeout',type=int,default=180)
 parser.add_argument('--without-native',action='store_true')
 parser.add_argument('--without-controller',action='store_true')
-parser.add_argument('--native-binary',type=pathlib.Path)
 parser.add_argument('--kit-source',type=pathlib.Path)
 parser.add_argument('--user-settings',action='store_true',help='Copy user UI preferences into the disposable profile')
 parser.add_argument('--user-kits',action='store_true',help='Read other installed kit definitions without copying or modifying them')
@@ -42,13 +42,6 @@ if saved_frame.is_file():
         tree.write(str(saved_frame),encoding='utf-8',xml_declaration=True)
 shutil.copytree(args.kit_source.resolve() if args.kit_source else root / 'kit/MoonRayForModo', profile / 'Configs/MoonRayForModo', dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns('bin') if args.without_native else None)
-if args.native_binary:
-    binary=args.native_binary.resolve()
-    if args.without_native or not binary.is_file() or binary.suffix.lower()!='.lx':
-        raise SystemExit('Supply an existing .lx candidate without --without-native.')
-    destination=profile/'Configs/MoonRayForModo/bin/MoonRayPreview.lx'
-    destination.parent.mkdir(exist_ok=True)
-    shutil.copy2(binary,destination)
 startup_config=ET.Element('configuration')
 startup_preferences=ET.SubElement(startup_config,'atom',{'type':'Preferences'})
 ET.SubElement(startup_preferences,'atom',{'type':'application.modoIntroShowStartup'}).text='false'
@@ -92,17 +85,6 @@ ET.ElementTree(imports).write(str(config / 'Imports.cfg'), encoding='utf-8', xml
 log = (root / 'test-results/gui-console.log').open('w', encoding='utf-8')
 probe=root/'tools'/args.probe
 assert probe.resolve().parent==root/'tools' and probe.is_file()
-if probe.name=='probe_pview_default.py':
-    (profile/'Configs/native-default.cfg').write_text('<configuration><atom type="PView"><atom type="DefaultRendererName">moonray.cpu</atom></atom><atom type="Preferences"><atom type="pview.startPaused">0</atom></atom></configuration>')
-if probe.name.startswith('probe_native_preview') and not (root/'kit/MoonRayForModo/bin/MoonRayPreview.lx').is_file():
-    bridge=root/'build/modo-bridge/MoonRayPreview.lx'
-    if not bridge.is_file():
-        raise SystemExit('Build the native preview adapter before launching this test.')
-    extension=ET.Element('configuration')
-    atom=ET.SubElement(extension,'atom',{'type':'Extensions64'})
-    ET.SubElement(atom,'list',{'type':'AutoScan'}).text=bridge.parent.as_posix()
-    ET.ElementTree(extension).write(str(profile/'Configs/native-preview.cfg'),
-                                   encoding='utf-8',xml_declaration=True)
 startup=subprocess.STARTUPINFO()
 startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW
 startup.wShowWindow=1  # This is an explicitly interactive GUI probe, not a hidden worker.
@@ -113,20 +95,13 @@ process = subprocess.Popen([r'C:\Program Files\Modo16.1v9\modo\modo.exe',
 print('Started isolated Modo GUI test, PID', process.pid)
 if args.wait:
     try:
-        exit_code=process.wait(timeout=960 if probe.name=='probe_pview_manual.py' else 180)
+        exit_code=process.wait(timeout=args.timeout)
         print('Modo exit:', exit_code)
         # Modo's GUI also returns 1 for a normal scripted quit in the no-plugin
         # control profile. Windows exception codes are never accepted.
         clean=exit_code in (0,1)
         (profile/'process-result.json').write_text(json.dumps({'pid':process.pid,
             'exit_code':exit_code,'clean_shutdown':clean},indent=2))
-        if probe.name in ('probe_pview_kit.py','probe_pview_manual.py','probe_pview_default.py'):
-            report_path=root/'test-results/pview-kit/report.json'
-            report=json.loads(report_path.read_text())
-            if report.get('pid')==process.pid:
-                report['clean_shutdown']=clean
-                report['passed']=bool(report.get('render_cycle_passed') and clean)
-                report_path.write_text(json.dumps(report,indent=2))
         if not clean: raise SystemExit(1)
     except subprocess.TimeoutExpired:
         process.kill()

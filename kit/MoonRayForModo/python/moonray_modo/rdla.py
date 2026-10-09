@@ -49,13 +49,33 @@ def array(values):
     return '{' + ', '.join(values) + '}'
 
 
+def many_vectors(values,kind):
+    """A long list of vectors as text, written without a step of Python for each number: a heavy mesh has millions.
+    The same text as vector() gives for each. Anything out of the ordinary is left to vector(), which says what is wrong."""
+    from itertools import chain
+    size = 2 if kind == 'Vec2' else (4 if kind in ('Vec4', 'Rgba') else 3)
+    try:
+        # One sum finds a number that is not finite, or a vector of the wrong size, among them all.
+        if sum(map(len, values)) != size * len(values) or not math.isfinite(math.fsum(chain.from_iterable(values))):
+            return None
+        template = kind + '(' + ', '.join(['%.12g'] * size) + ')'
+        return '{' + ', '.join(map(template.__mod__, map(tuple, values))) + '}'
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def vector_array(values,kind='Vec3'):
     from .serialization import array as cached
-    return cached(kind,values,lambda:array(vector(v,kind) for v in values))
+    def write():
+        whole = many_vectors(values,kind) if len(values) > 1000 else None
+        return whole if whole is not None else array(vector(v,kind) for v in values)
+    return cached(kind,values,write)
 
 def mesh_array(values,counts=False):
     from .serialization import array as cached
-    return cached('counts' if counts else 'indices',values,lambda:array(str(len(v)) for v in values) if counts else array(str(v) for f in values for v in f))
+    from itertools import chain
+    # map and chain run through a heavy mesh's faces without a step of Python for each corner.
+    return cached('counts' if counts else 'indices',values,lambda:array(map(str,map(len,values))) if counts else array(map(str,chain.from_iterable(values))))
 
 def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     from .serialization import revision
@@ -70,6 +90,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         raise ValueError("Image dimensions must be between 16 and 16384")
     if not 1 <= int(samples) <= 64:
         raise ValueError("Pixel sample grid must be between 1 and 64")
+    from . import entities
+    # A MeshLight item makes the mesh it names emit, through the same settings as Object controls.
+    scene = entities.mesh_lights(scene)
+    if entities.replaces_environment(scene):
+        # A MoonRay environment light set to replace Modo's: neither the Modo environments nor
+        # the preview environment light are written.
+        scene = dict(scene, environments=[])
+        environment = 0
     camera = scene['camera']
     dof = bool(camera.get('dof', False))
     if dof and (camera.get('f_stop', 4) <= 0 or camera.get('focus_distance', 4) <= 0):
@@ -105,6 +133,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
              '  ["mb_shutter_close"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[-1]),
              '  ["near"] = 0.001,', '}',
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
+    entity_camera=entities.render_camera(scene)
+    if entity_camera:
+        # A MoonRay camera item set to render takes the place of the Modo camera.
+        lines[1:lines.index('}')+1]=entities.camera_lines(scene,entity_camera)
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
@@ -283,6 +315,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["rate"] = 6,',
                       '  ["vec2f_values_0"] = %s,' % vector_array(values,'Vec2'), '}']
             user_data.append('UserData(%s)' % string(name))
+        from . import primitive_attributes
+        instance_values = []
+        if mesh.get('instance_attributes') and len(mesh['instance_attributes']) == len(mesh.get('instances') or []):
+            # One value for each instance, on the instancer.
+            instance_values = primitive_attributes.emit('/modo/instances/%s/attribute' % index, mesh['instance_attributes'], lines)
+        elif mesh.get('attributes') and 'instances' not in mesh:
+            user_data += primitive_attributes.emit('/modo/mesh/%s/attribute' % index, [mesh['attributes']], lines)
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,
                   '    ["node_xform"] = %s,' % node_matrix(mesh),
                   '    ["vertex_list_0"] = %s,' % vector_array(vertices),
@@ -327,6 +366,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '    ["part_face_count_list"] = %s,' % array(str(len(v)) for v in parts.values()),
                       '    ["part_face_indices"] = %s,' % array(str(f) for v in parts.values() for f in v)]
         lines += ['  }']
+        if scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{}).get('mesh_light'):
+            # MoonRay refuses a MeshLight whose geometry is also in the layer, so the light gets its own copy.
+            opening=len(lines)-1-lines[::-1].index('  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index)
+            lines += ['  RdlMeshGeometry("/modo/meshLight/geometry/%s") {' % index]+lines[opening+1:]
         if parts:
             for part_index, face_tag in enumerate(parts):
                 lines.append('  assign(geometry, %s, %s, %s)' %
@@ -340,7 +383,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             if mesh['instances']:
                 instance_crypto=cryptomatte.instance_userdata(mesh,lines,scene) if crypto else None
                 lines += ['  local instances = RdlInstancerGeometry("/modo/instances/%s") {' % index,
-                          *(['    ["primitive_attributes"] = {%s},'%instance_crypto] if instance_crypto else []),
+                          *(['    ["primitive_attributes"] = {%s},'%', '.join(([instance_crypto] if instance_crypto else [])+instance_values)] if instance_crypto or instance_values else []),
                           '    ["method"] = 2,',
                           '    ["references"] = {geometry},',
                           '    ["use_reference_xforms"] = false,',
@@ -355,6 +398,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         lines.append('end')
     from .extra_geometry import emit as emit_extra
     emit_extra(scene,materials,lines,crypto)
+    entities.emit_geometry(scene,materials,lines)
     lines += ['GeometrySet("/modo/geometrySet")(geometries)',
               'local layer = Layer("/modo/layer")(assignments)', 'SceneVariables {',
               '  ["camera"] = camera,', '  ["layer"] = layer,',
@@ -391,6 +435,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         bounds = [math.floor(left*width), math.floor((1-bottom)*height),
                   math.ceil(right*width), math.ceil((1-top)*height)]
         lines.append('  ["sub_viewport"] = %s,' % array(str(v) for v in bounds))
+    # Scene variables the scene holds beyond the plugin's own settings, as a scene brought in from MoonRay does: each
+    # has the last word over what the plugin would have written for it.
+    for key, value in sorted((scene.get('scene_variables') or {}).items()):
+        if not isinstance(key, str) or not key.replace('_', '').isalnum() or not isinstance(value, (bool, int, float)):
+            continue
+        opening = len(lines) - 1 - lines[::-1].index('SceneVariables {')
+        lines[opening:] = [line for line in lines[opening:] if not line.startswith('  [%s] = ' % string(key))]
+        lines.append('  [%s] = %s,' % (string(key), ('true' if value else 'false') if isinstance(value, bool) else str(value) if isinstance(value, int) else number(value)))
     lines.append('}')
     if output_file:
         selected = scene.get('aovs', ['alpha'])

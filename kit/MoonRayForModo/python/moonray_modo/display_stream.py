@@ -43,11 +43,11 @@ def convert(pixels,width,height,kind,settings,runtime,source=None):
   if source is None:raise ValueError('Cryptomatte preview requires a completed multichannel buffer')
  v=display.values({'view':'raw'}) if kind=='cryptomatte' else display.values(settings)
  for key in ('lut','config'):
-  if v[key] and not Path(v[key]).is_file():raise ValueError('Missing '+key+' file: '+v[key])
+  if v[key] and not display.built_in(v[key]) and not Path(v[key]).is_file():raise ValueError('Missing '+key+' file: '+v[key])
  if v['view']=='ocio' and not all(v[k] for k in ('source','display','ocio_view')):raise ValueError('OCIO source, display and view are required')
  args=[str(Path(runtime)/'modo_display_stream.exe'),kind,v['view'],str(v['exposure']),v['working_space'],v['lut'],v['lut_space'],v['config'],v['source'],v['display'],v['ocio_view'],' '.join(str(x) for row in working_space.TO_REC709 for x in row)]
  # Rebuild processors if the user edits the configuration or LUT in place.
- stamp=tuple((str(Path(v[k]).resolve()),Path(v[k]).stat().st_mtime_ns,Path(v[k]).stat().st_size) for k in ('lut','config') if v[k])
+ stamp=tuple((str(Path(v[k]).resolve()),Path(v[k]).stat().st_mtime_ns,Path(v[k]).stat().st_size) for k in ('lut','config') if v[k] and not display.built_in(v[k]))
  signature=(tuple(args),stamp)
  if source is None and (width<=0 or height<=0 or len(pixels)!=width*height*12 or len(pixels)>64*1024*1024):raise ValueError('Invalid float image size')
  with _lock:

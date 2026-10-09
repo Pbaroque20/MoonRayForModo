@@ -25,7 +25,7 @@ except Exception:
         (root/'test-results/material-error.txt').write_text(traceback.format_exc())
     raise
 material=scene.selected[0]
-assert material.name=='MoonShine Material' and material.type=='advancedMaterial'
+assert material.name=='DwaBaseMaterial' and material.type=='advancedMaterial'
 assert properties.read(material)['shader']=='DwaBaseMaterial'
 assert abs(lx.eval('item.channel advancedMaterial$rough ?')-.35)<1e-6
 tag=mesh.geometry.polygons[0].materialTag
@@ -38,7 +38,7 @@ assert 'DwaBaseMaterial(' in rdla.scene_text(snapshot)
 saved=root/'test-results/moonshine-material.lxo'
 lx.eval('!scene.saveAs {%s} $LXOB true' % saved)
 lx.eval('scene.open {%s}' % saved)
-restored=modo.Scene().item('MoonShine Material')
+restored=modo.Scene().item('DwaBaseMaterial')
 assert properties.read(restored)['shader']=='DwaBaseMaterial' and properties.read(restored)['thin_geometry']
 (root/'test-results/material-host.json').write_text(json.dumps({'passed':True,'assignment':True,
     'native_properties':True,'rdla_shader':True,'saved_reopened':True},indent=2))

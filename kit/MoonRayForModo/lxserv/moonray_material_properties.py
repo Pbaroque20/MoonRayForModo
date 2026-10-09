@@ -127,7 +127,7 @@ class MoonShineOverride(Observed):
         super().__init__();self.dyna_Add('enabled',lx.symbol.sTYPE_BOOLEAN)
         self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
     def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-    def basic_Enable(self,msg):return bool(selected()) and all(i.type in ('advancedMaterial','material.moonrayMoonShine') for i in selected())
+    def basic_Enable(self,msg):return bool(selected()) and all(i.type in ('advancedMaterial','material.moonrayMoonShine',properties.MATERIALX_TYPE) or properties.layer_shader(i) for i in selected())
     def cmd_Query(self,index,query):
         values=lx.object.ValueArray(query)
         for item in selected():values.AddInt(int(material_override.enabled(properties.read(item))))
@@ -149,11 +149,11 @@ class OpenNodes(Observed):
     def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
     def basic_Enable(self,msg):
         items=selected()
-        return len(items)==1 and items[0].type in ('advancedMaterial','material.moonrayMoonShine') and material_override.enabled(properties.read(items[0]))
+        return len(items)==1 and (items[0].type in ('advancedMaterial','material.moonrayMoonShine',properties.MATERIALX_TYPE) or properties.layer_shader(items[0])) and material_override.enabled(properties.read(items[0]))
     def basic_Execute(self,msg,flags):
-        from moonray_modo.node_editor import Editor
+        from moonray_modo.node_editor import open_editor
         if not self.basic_Enable(msg):raise ValueError('Enable MoonShine Material Override to open its node editor')
-        Editor(selected()[0]).exec_()
+        open_editor(selected()[0])
 
 
 class NodeOverride(OpenNodes):
@@ -166,6 +166,19 @@ class NodeOverride(OpenNodes):
         properties.write(items[0],{'materialx_override':False})
         items[0].name='MaterialX Override'
 
+class ApplyGraph(lxu.command.BasicCommand):
+    """Write a material's settings from the graph editor, which is not inside a command of its own."""
+    def __init__(self):
+        super().__init__()
+        self.dyna_Add('item',lx.symbol.sTYPE_STRING);self.dyna_Add('settings',lx.symbol.sTYPE_STRING)
+    def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+    def basic_Execute(self,msg,flags):
+        import modo
+        try:item=modo.Scene().item(self.dyna_String(0))
+        except LookupError:raise ValueError('The material this graph belongs to is no longer in the scene')
+        properties.write(item,properties.decode(self.dyna_String(1)))
+
+lx.bless(ApplyGraph,'moonray.material.applyGraph')
 lx.bless(OpenNodes,'moonray.material.nodes')
 lx.bless(NodeOverride,'moonray.material.nodeOverride')
 
@@ -185,8 +198,8 @@ class MaterialXOverride(Observed):
         if len(items)!=1 or items[0].type!='material.moonrayMaterialX': raise ValueError('Select one MaterialX Override layer')
         item=items[0]
         if self.dyna_Int(0):
-            from moonray_modo.node_editor import Editor
-            Editor(item,materialx_override=True).exec_()
+            from moonray_modo.node_editor import open_editor
+            open_editor(item,materialx_override=True)
         else:
             settings=properties.read(item);settings['materialx_override']=False;properties.write(item,settings)
 
@@ -194,10 +207,10 @@ class MaterialXOverride(Observed):
 class EditMaterialX(OpenNodes):
     def basic_Enable(self,msg): return len(selected())==1 and selected()[0].type=='material.moonrayMaterialX'
     def basic_Execute(self,msg,flags):
-        from moonray_modo.node_editor import Editor
+        from moonray_modo.node_editor import open_editor
         items=selected()
         if len(items)!=1 or items[0].type!='material.moonrayMaterialX': raise ValueError('Select one MaterialX Override layer')
-        Editor(items[0],materialx_override=True).exec_()
+        open_editor(items[0],materialx_override=True)
 
 lx.bless(MaterialXOverride,'moonray.material.materialxOverride')
 lx.bless(EditMaterialX,'moonray.material.editMaterialX')

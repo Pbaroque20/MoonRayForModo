@@ -73,7 +73,8 @@ def collect(scene, warnings):
                                      sky_gamma=max(.01,float(channel(layer,'clampedGamma',1))),
                                      haze=float(channel(sun,'haze',1)),
                                      ground_albedo=rgb(channel(layer,'albedo',.2),'Physical sky ground albedo'))
-                        warnings.append('Physical daylight uses a single-scattering approximation; sun angles, linked Sun Light, haze, ground albedo and sky clamp/gamma are translated; ozone and solar-disc parity remain unverified: '+layer.name)
+                        # The solar disc is the sun light itself, seen by the camera; see host.solar_discs.
+                        entry.update(sun_identity=sun.id,solar_disc=max(0.0,float(channel(layer,'disc',1))))
                     if channel(layer,'fogType','none') != 'none':
                         warnings.append('Environment fog is not translated: '+layer.name)
                 elif layer.type=='gradient':

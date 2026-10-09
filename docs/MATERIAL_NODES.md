@@ -1,5 +1,7 @@
 # Material nodes and MaterialX Override (0.2.0 development)
 
+> **Superseded in part by 0.3.50.** Native materials now have their own forms, open directly in a redesigned graph editor, and are in the Shader Tree's Add Layer list; see [What's new in 0.3.50.1](WHATS_NEW_0350.md). The notes below describe the earlier editor, including typing values as JSON, which is no longer needed.
+
 Select a standard Shader Tree material. In its **MoonShine Material** properties,
 choose the material type from the dropdown at the top. The corresponding controls
 appear underneath in the same pane. **Open Node Editor** opens a separate visual

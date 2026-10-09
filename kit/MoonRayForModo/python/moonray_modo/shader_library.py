@@ -53,7 +53,9 @@ def typed(value, attribute):
         if bound in attribute:
             try: limit=float(str(attribute[bound]).rstrip('f'))
             except ValueError: continue
-            if compare(value,limit): raise ValueError('Value violates '+bound+' '+str(limit))
+            # A number past its limit is brought back to the limit rather than refused: nobody should meet an
+            # error for dragging a slider too far.
+            if compare(value,limit): value=int(limit) if kind in ('Int','Long') else limit
     if 'enum' in attribute and str(int(value)) not in {str(v) for v in attribute['enum'].values()}:
         raise ValueError('Unknown enumerated value')
     return int(value) if kind in ('Int','Long') else float(value)
@@ -167,8 +169,10 @@ def emit(material, name, index, lines, library, trail=(), authored_bindings=None
             authored[key]='Rgb('+', '.join([authored[key]]*3)+')'
         low=name+'/limits/'+key+'/low';high=name+'/limits/'+key+'/high'
         lines.append('OpMap(%s) { ["operation"] = 4, ["op1"] = %s, ["op2"] = Rgb(0,0,0) }'%(string(low),authored[key]))
-        lines.append('OpMap(%s) { ["operation"] = 5, ["op1"] = bind(OpMap(%s)), ["op2"] = Rgb(1,1,1) }'%(string(high),string(low)))
-        authored[key]='bind(OpMap(%s))'%string(high)
+        lines.append('OpMap(%s) { ["operation"] = 5, ["op1"] = bind(OpMap(%s), Rgb(1,1,1)), ["op2"] = Rgb(1,1,1) }'%(string(high),string(low)))
+        # MoonRay multiplies what a map gives by the attribute's own value, so that value must be 1: left at
+        # its default, which for metallic is 0, the material is no metal at all whatever the map says.
+        authored[key]='bind(OpMap(%s), %s)'%(string(high),'1' if key=='metallic' else 'Rgb(1,1,1)')
     lines.append('%s(%s) {'%(shader,string(name)))
     lines.extend('  [%s] = %s,'%(string(key),value) for key,value in authored.items())
     lines.append('}')
