@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 
-MODULES = ('native.py', 'persistent.py', 'display.py', 'display_stream.py', 'mesh_reader.py', 'textures.py', 'primitive_attributes.py', 'rdl_import_dialog.py', 'rdl_primitives.py', 'procedurals.py', 'asset_import.py', 'evaluated.py', 'layers.py', 'hair.py', 'materialx_document.py', 'materialx_definitions.py', 'materialx_expand.py', 'materialx_geometry.py', 'materialx_standard.py', 'materialx.py', 'about.py', 'shader_library.py', 'graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'curve_tubes.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
+MODULES = ('ramps.py', 'geometry.py', 'native.py', 'persistent.py', 'display.py', 'display_stream.py', 'mesh_reader.py', 'textures.py', 'primitive_attributes.py', 'rdl_import_dialog.py', 'rdl_primitives.py', 'procedurals.py', 'asset_import.py', 'evaluated.py', 'layers.py', 'hair.py', 'materialx_document.py', 'materialx_definitions.py', 'materialx_expand.py', 'materialx_geometry.py', 'materialx_standard.py', 'materialx.py', 'about.py', 'shader_library.py', 'graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'curve_tubes.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
            'moonlightipr_scene.py', 'moonlightipr_materials.py', 'moonlightipr_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py', 'materials.py', 'material_editor.py', 'rdl_import.py', 'properties.py',
            'panel_tools.py', 'preferences.py', 'scene_settings.py', 'focus.py', 'progress.py', 'node_editor.py', 'node_widgets.py', 'incremental.py', 'graph_images.py', 'property_notifications.py', 'camera_choice.py', 'graph_bake.py', 'nodes.py', 'coordinates.py', 'animation.py', 'package_sequence.py')
 # Files outside the Python package, relative to the kit: the commands and forms of the MoonRay
@@ -49,6 +49,13 @@ if (kit / 'runtime/moonlightipr').is_dir():
 subprocess.run([sys.executable, str(root / 'tools/stage_moonlightipr.py'), '--destination', str(kit / 'runtime/moonlightipr')], check=True)
 for name in MODULES:
     shutil.copyfile(source / name, target / name)
+# What the engine was called before it was MoonLightIPR: its modules and its folder are no longer read, and are moved
+# into the backup rather than left beside the ones that are.
+for old in list(target.glob('moonlight_*.py')) + [kit / 'runtime/moonlight']:
+    if old.exists():
+        held = backup / 'before-the-rename' / old.name
+        held.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(old), str(held))
 # The native geometry adapter, where it has been built with the reader for heavy meshes (tools/build_modo_bridge.py
 # --output-dir build/modo-geometry-fast --geometry-only --skip-tests). Modo must be closed: it holds the file open.
 adapter = root / 'build/modo-geometry-fast/MoonRayGeometry.lx'
