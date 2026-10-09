@@ -132,10 +132,7 @@ def rdl_entry(text):
     if 'cmd moonray.rdl.import' in text or text.count(anchor) != 1:
         return text
     end = text.index('</list>', text.index(anchor)) + len('</list>')
-    eol = '
-' if '
-' in text else '
-'
+    eol = '\r\n' if '\r\n' in text else '\n'
     return text[:end] + eol + '      <list type="Control" val="cmd moonray.rdl.import"><atom type="Label">Import MoonRay Scene (RDL)...</atom></list>' + text[end:]
 
 
