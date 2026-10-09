@@ -442,6 +442,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _configure_snapshot(self, scene):
         values = self._settings_values()
         scene['render_settings'] = values['render']
+        scene['scene_variables'] = values['scene_variables']
         scene['aovs'] = values['aovs']
         scene['production']=values['production']
         scene['asset_settings']=values['asset_settings']

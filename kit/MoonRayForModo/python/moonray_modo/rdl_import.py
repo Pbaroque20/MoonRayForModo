@@ -545,7 +545,18 @@ def plan(document, path):
         settings['resolution'] = [int(scene.get('image_width', 1920)), int(scene.get('image_height', 1080))]
     if 'pixel_samples' in set_keys:
         settings['samples'] = max(1, int(scene['pixel_samples']))
-    render = {key: scene[key] for key in options.render_values({}) if key in set_keys and key in scene}
+    # Where the scene left one of the plugin's render settings alone, MoonRay's own value for it is what the scene was
+    # made with, and the plugin's may differ: an older reader does not say which were set, and then none are taken.
+    render = {key: scene[key] for key in options.render_values({}) if 'authored' in variables and key in scene}
+    # The rest of what the scene says of itself as a whole, kept beside the plugin's settings and written back out.
+    apart = ('image_width', 'image_height', 'pixel_samples', 'camera', 'layer', 'output_file', 'res', 'fps', 'enable_dof', 'enable_motion_blur',
+             'two_stage_output', 'texture_cache_size', 'texture_file_handles', 'machine_id', 'num_machines', 'task_distribution_type', 'tmp_dir',
+             'batch_tile_order', 'progressive_tile_order', 'checkpoint_tile_order', 'resume_render', 'resumable_output', 'on_resume_script', 'stats_file')
+    extra = {key: scene[key] for key in sorted(set_keys | ({'scene_scale'} if 'authored' in variables else set()))
+             if key in scene and key not in apart and key not in render and isinstance(scene[key], (bool, int, float))
+             and not key.startswith(('checkpoint', 'debug', 'deep_', 'fatal_', 'cryptomatte'))}
+    if extra:
+        settings['scene_variables'] = extra
     if render:
         try:
             options.render_values(dict(render))
@@ -842,6 +853,8 @@ def apply(data, alone=True, progress=None):
                 stored['samples'] = settings['samples']
             if 'render' in settings:
                 stored['render'] = dict(stored.get('render') or {}, **settings['render'])
+            if 'scene_variables' in settings:
+                stored['scene_variables'] = dict(stored.get('scene_variables') or {}, **settings['scene_variables'])
             if 'aovs' in settings:
                 stored['aovs'] = sorted(set(stored.get('aovs', ['alpha'])) | set(settings['aovs']))
             if 'custom_aovs' in settings:

@@ -89,7 +89,8 @@ class RdlPrimitives(unittest.TestCase):
         self.assertEqual([(e['name'],e['class'],e['parameters']) for e in plan['entities']],[('key','SphereLight',{'intensity':7.0,'radius':.5})])
         self.assertEqual(plan['settings']['resolution'],[800,600])
         self.assertEqual(plan['settings']['samples'],6)
-        self.assertEqual(plan['settings']['render'],{'max_depth':7})
+        # The plugin's own render settings take MoonRay's value where the scene has one, set or not; the rest the scene set is kept beside them.
+        self.assertEqual(plan['settings']['render'],{'max_depth':7,'light_samples':2})
         self.assertEqual([(o['name'],o['kind'],o['expression']) for o in plan['settings']['custom_aovs']],[('spec','lpe','C<RS>L')])
     def test_invalid_dimensions(self):
         for attrs in ({'radius':0},{'radius':float('nan')},{'zmin':1,'zmax':-1}):

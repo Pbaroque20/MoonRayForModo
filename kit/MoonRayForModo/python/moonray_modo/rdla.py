@@ -435,6 +435,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         bounds = [math.floor(left*width), math.floor((1-bottom)*height),
                   math.ceil(right*width), math.ceil((1-top)*height)]
         lines.append('  ["sub_viewport"] = %s,' % array(str(v) for v in bounds))
+    # Scene variables the scene holds beyond the plugin's own settings, as a scene brought in from MoonRay does: each
+    # has the last word over what the plugin would have written for it.
+    for key, value in sorted((scene.get('scene_variables') or {}).items()):
+        if not isinstance(key, str) or not key.replace('_', '').isalnum() or not isinstance(value, (bool, int, float)):
+            continue
+        opening = len(lines) - 1 - lines[::-1].index('SceneVariables {')
+        lines[opening:] = [line for line in lines[opening:] if not line.startswith('  [%s] = ' % string(key))]
+        lines.append('  [%s] = %s,' % (string(key), ('true' if value else 'false') if isinstance(value, bool) else str(value) if isinstance(value, int) else number(value)))
     lines.append('}')
     if output_file:
         selected = scene.get('aovs', ['alpha'])

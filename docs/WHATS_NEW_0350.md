@@ -165,7 +165,17 @@ PView was removed: Modo cannot host an external renderer there.
   outputs go to the render settings. A scene in two files, scene.rdlb and scene.rdla, is read
   as one. What has no home in Modo is listed before anything is made. By default the result is
   lit only as the RDL scene is lit. `tools/check_rdl_import.py` renders a scene before and
-  after its trip through Modo: five of MoonRay's six test scenes come back the same picture.
+  after its trip through Modo: five of MoonRay's six test scenes and all ten of its published
+  example scenes come back the same picture. A large import shows how far it has come and can
+  be stopped, which takes back what it had made.
+- Heavy scenes are read far sooner. The plugin's native adapter hands over a mesh of 5,000
+  polygons or more in one call, such a mesh is put together whole where it is of the usual
+  kind, and its long lists are written out for MoonRay without a step for each number. A
+  bedroom of 121 MB as MoonRay's own file is read in 14 seconds and written out in 16.
+- The scene's settings keep MoonRay scene variables the plugin has no control for; an imported
+  scene's arrive there and are written back out, so that it renders with what it was made with.
+- A texture already in MoonRay's .tx form, with nothing to change in its colours, is used as
+  it is and no longer converted again.
 - An item can carry values for its material to read (MoonRay's primitive attributes), each
   instance its own; an imported scene's per-shape and per-instance colours arrive this way.
   There is no form for them yet. A value that differs from face to face is not held.

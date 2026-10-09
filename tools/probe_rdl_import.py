@@ -48,7 +48,7 @@ try:
             save()
             entry['warnings'] = snapshot.get('warnings', [])
             values = scene_settings.complete(properties.scene_settings())
-            snapshot.update(render_settings=values['render'], aovs=values['aovs'], custom_aovs=[], production=values['production'],
+            snapshot.update(render_settings=values['render'], scene_variables=values['scene_variables'], aovs=values['aovs'], custom_aovs=[], production=values['production'],
                             asset_settings=values['asset_settings'], environments=[] if not values['modo_environment'] else snapshot.get('environments', []))
             from moonray_modo.extra_geometry import attach
             attach(snapshot, values['production'])
