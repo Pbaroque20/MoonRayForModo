@@ -6,8 +6,7 @@ Created by Raphael Tobar. Released under the [MIT License](LICENSE). MoonLight i
 Animation product and is not affiliated with, sponsored by or endorsed by DreamWorks Animation;
 it is a separate renderer that previews what MoonRay will render. See [NOTICE.md](NOTICE.md).
 
-MoonLight is the name of the preview engine, as the plugin shows it. It was called MoonLightIPR
-until 0.3.50, and the git branch still is. Files, folders, the C++ namespace and the session
+MoonLightIPR is the name of the preview engine, as the plugin shows it. Files, folders, the C++ namespace and the session
 executable use `moonlight`.
 
 MoonLight is a small standalone OptiX path tracer intended as an interactive preview
