@@ -2,8 +2,8 @@
 import math
 from pathlib import Path
 
-# The view a scene starts with is the plain one: linear light shown as an sRGB monitor expects it, nothing else done to it.
-DEFAULTS={'working_space':'rec709','view':'srgb','exposure':0.0,'lut':'','lut_space':'display',
+# The view a scene starts with is ACES for an sRGB monitor, as is usual in production; plain sRGB is the next choice.
+DEFAULTS={'working_space':'rec709','view':'aces','exposure':0.0,'lut':'','lut_space':'display',
           'config':'','source':'Linear Rec.709 (sRGB)','display':'sRGB','ocio_view':'ACES 1.0 - SDR Video'}
 
 

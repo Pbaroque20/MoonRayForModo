@@ -89,6 +89,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self._poll()
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(self._settings_values_stored().get('preview_buffer','beauty'))))
         self.buffer.currentIndexChanged.connect(self._buffer_changed)
+        # What the user last chose from the list themselves, as against what the panel showed for them.
+        self._buffer_picked=None
+        self.buffer.activated.connect(lambda index:setattr(self,'_buffer_picked',self.buffer.itemData(index)))
         self.preview_engine.currentIndexChanged.connect(self._engine_changed)
         self.preview_engine.currentIndexChanged.connect(self._preview_changed)
         self.ipr_mode.toggled.connect(self._ipr_changed)
@@ -537,6 +540,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _denoising_changed(self,*args):
         if self.disposed:return
         engine=self._preview_denoiser()
+        self._buffer_picked=None
         self.renderer.buffers.denoiser.request(engine)
         self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' else 'denoised_beauty'))
 
@@ -691,7 +695,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Done'))
         if not output:
-            self.renderer.buffers.denoiser.request(self._preview_denoiser())
+            engine=self._preview_denoiser()
+            self.renderer.buffers.denoiser.request(engine)
+            # With a preview denoiser on, the finished picture shown is the denoised one, unless Beauty was chosen by hand:
+            # the preview may have been opened, or the render begun, before the list had been set to it.
+            if engine!='off' and self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
+                self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty'))
             snapshot=(self.renderer.active or {}).get('snapshot',{})
             if self._following and self.preferences.get('ipr/refine') and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:
                 self.refine_timer.start()
