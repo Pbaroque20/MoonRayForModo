@@ -1,5 +1,7 @@
 # MoonLight GPU preview (experimental)
 
+*Updated October 9, 2026, for MoonRay for Modo 0.3.50.1. Sections that record a check keep the date it was made.*
+
 Created by Raphael Tobar. Released under the [MIT License](LICENSE). MoonLight is not a DreamWorks
 Animation product and is not affiliated with, sponsored by or endorsed by DreamWorks Animation;
 it is a separate renderer that previews what MoonRay will render. See [NOTICE.md](NOTICE.md).
@@ -11,8 +13,22 @@ executable use `moonlight`.
 MoonLight is a small standalone OptiX path tracer intended as an interactive preview
 engine beside MoonRay. It does not touch MoonRay's renderer. It is an approximation:
 one fixed uber-shader replaces MoonRay's materials, and final frames always come from
-MoonRay. `tools/install_moonlight.py` adds it to an installed kit; it is not yet part of the
-release package.
+MoonRay. It ships in the 0.3.50.1 release, in the runtime's `moonlight` folder, and is
+chosen in the preview window's engine popup. `tools/install_moonlight.py` adds a newer
+build to an installed kit during development.
+
+## Where it stands
+
+- It is used inside Modo: Render and IPR both go through it, and with IPR on it follows
+  light, transform and material edits, including while they are dragged.
+- It draws Modo's standard and Principled materials, MoonRay's Dwa surface materials,
+  material stacks from the Shader Tree, imported MaterialX graphs, MoonRay's own light
+  items, curves and hair, subdivision surfaces, depth of field and motion blur.
+- It does not draw volumes, has no hair shading model (hair wears the ordinary surface
+  shader), and produces beauty only: other buffers and Cryptomatte need MoonRay.
+- Agreement with MoonRay is measured, scene by scene, further down. It is close on
+  lights and plain materials and looser on layered materials and glass.
+- It has been run on one GPU, an RTX 3090.
 
 ## What exists
 
@@ -25,7 +41,16 @@ release package.
   Lambert diffuse under a GGX specular lobe, using the UsdPreviewSurface metallic
   workflow (`baseColor`, `metallic`, `roughness`, `ior`, `emission`). The environment
   is importance sampled and combined with BSDF sampling. Depth defaults to 4 bounces
-  with Russian roulette.
+  with Russian roulette. Since then: a weight on the specular lobe and a conductor's
+  Fresnel, so that Modo's and MoonRay's materials keep their own balance; refraction,
+  clearcoat, subsurface, anisotropy, absorption and dispersion; and a distant light whose
+  disc the camera can see, for the sun of a physical sky.
+- The denoiser is given the light without the surface colour: the picture is divided by
+  the albedo, denoised and multiplied back, so that a printed pattern is not smoothed away,
+  and from 32 samples on a growing share of the picture's own detail is kept beside the
+  denoised one (half at 256 samples, four fifths from 1024). `tools/check_moonlight_denoise.py`
+  measures what it keeps. The divide and multiply run on the CPU; their cost at 4K has not
+  been measured.
 - `probe/moonlight_probe.cpp`: renders a built-in scene, times samples and the
   material, transform and camera edit paths, and writes images.
 - `session/`: `moonlight_session.exe`, a long-lived process. It reads packed scenes
@@ -138,6 +163,9 @@ anisotropy is bound. Both shaders also add back the light lost between facets
 MoonLight computes the same albedo tables at start-up, and they agree with MoonRay's
 to a few percent.
 
+Since October 7 the plugin chooses GGX for Modo's standard materials unless anisotropy is
+set, and MoonLight follows whichever the material uses.
+
 A bare ground plane under the sun isolates these. Through `DwaBaseMaterial` it now
 matches MoonRay to three decimal places at roughness 0.3 and 0.6, a black plastic
 matches to four, a blue metal at roughness 0.35 shows no sun glint in either, and a
@@ -155,7 +183,28 @@ the metal balls twice as bright. The test scenes use only plain and metallic
 materials on simple shapes; they say nothing about textures, layered materials or
 anything else the packer reports as approximated.
 
+Later comparisons, October 8 and 9, 2026:
+
+| Scene | MoonLight / MoonRay | Picture within 10% |
+|---|---|---|
+| Rect, disk and sphere lights whose brightness is not spread over their size (`normalized` off) | 1.010 | 97% |
+| MoonRay's own items: a tinted environment, a sphere light, a box and a ball | 1.014 | 96% |
+| Portal light, run again | 1.004 | 97% |
+| Five MaterialX materials from a library (a wood, a marble, two wallpapers, a car paint), on a ball | not recorded | 92 to 100% on four, 72% on the car paint |
+
+Lights with `normalized` off were drawn far too dim until October 9: MoonLight treated every
+light as normalized. It now gives such a light the brightness that comes to the same
+thing (the intensity times pi times its area), which is what brought a hallway lit by large
+windows level with MoonRay. A distant light set that way is not worked out and gets a notice.
+
+The car paint's flakes are in its reflection, not its colour, so the denoiser softens them
+at low sample counts; they sharpen as the picture gathers samples.
+
 ## Using it in Modo
+
+With the release installed there is nothing to set up: choose **MoonLight** in the preview
+window's engine popup and press Render. The rest of this section is for development builds.
+
 
 `python tools/install_moonlight.py` adds a built MoonLight to the installed kit: the
 session into the kit's `runtime/moonlight`, plus the Python modules that route
@@ -216,9 +265,22 @@ running session leaves out the data of meshes it already holds.
 
 Everything else is reported in the packer's warnings rather than dropped silently:
 the alpha of baked procedural layers, layers on channels the shader lacks (specular
-colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), light filters,
-moving lights during the shutter, curves and
+colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), light filters other than intensity, decay and colour ramp,
+moving lights during the shutter,
 volumes, film offset and the render region. Orthographic cameras are refused.
+
+Added to what is translated since the table was written:
+
+- **Curves** (a mesh's curves, splines and line polygons, and hair grown from guides): tubes
+  of polygons, eight sides or four, capped, with the object's width, taper and UVs. They are
+  not true curves, and they wear the ordinary surface shader.
+- **Imported MaterialX graphs**: UVs that nodes move, turn or scale, and arithmetic between
+  images (one blended into another through a third, an image brought into a range, masks
+  taken away), as a layer stack at the images' own sharpness.
+- **The specular amount** of Modo's standard material and the Principled material's metallic
+  and F0, as a weight on the specular lobe, as the plugin now sends them to MoonRay.
+- **The sun of a physical sky**: the distant light's disc is seen by the camera.
+- **Lights that are not normalized**, as described above.
 
 ## Build
 
@@ -264,9 +326,9 @@ through the plugin's `Renderer` completed on one session, 10 of 14 frames were
 displayed (the rest arrived while a conversion was running), the finished frame was
 always shown, and an unsupported light reached the notices.
 
-None of this has run inside Modo or on a snapshot captured from a real scene, and
-no MoonLight image has been compared with a MoonRay render. The panel edits were
-checked for syntax only, since `panel.py` needs Modo to import.
+That was the state on October 6. Since then MoonLight has been used inside Modo on real
+scenes, the comparisons with MoonRay above were made, and isolated-Modo tests drive the
+panel with it (`tools/probe_curves_preview.py`, `tools/probe_materialx.py`, `tools/probe_hair.py`).
 
 ## Update latency
 
@@ -287,7 +349,11 @@ too. The packer keys triangulations by the same content hashes, so a recapture i
 new lists reuses them. Stop now pauses the session and keeps its meshes loaded;
 only switching the preview engine to MoonRay, or closing the panel, ends it.
 
-Capturing the scene from Modo happens before any of this and has not been timed.
+Capturing the scene from Modo happens before any of this. As of 0.3.50.1 a mesh of 5,000
+polygons or more is read from Modo in one call by the plugin's native adapter: a
+139,000-polygon test went from 4.8 s to 1.4 s. A scene with an imported MaterialX material
+used to stall this step for minutes, which is fixed; the whole scene is also no longer read
+again every 15 seconds while IPR runs unless that is asked for in the preferences.
 
 With MoonLight selected the panel looks for changes every 60 ms and no longer waits
 for the mouse button to come up when Modo reports a light, transform or material
@@ -302,12 +368,16 @@ recapture, which waits for release. Why it was classified so was not established
 
 - The preview buffer menu has no effect; MoonLight produces beauty only. Choosing a
   Cryptomatte buffer says that it needs the MoonRay engine.
-- Following the scene in IPR with MoonLight has not been exercised in the redesigned preview
-  window.
+- With the ACES or an OCIO view transform the picture goes through a slower display path
+  than plain sRGB; its cost during fast IPR updates has not been measured.
+- Viewport navigation reaches MoonLight only when the mouse button comes up, because Modo
+  reports it only then.
 
 ## Not done yet
 
-- Staging MoonLight as part of the installed runtime and the release package.
+- A hair shading model, then skin: hair and curves wear the ordinary surface shader.
+- True curve primitives in place of tubes of polygons.
+- Non-normalized distant lights; textures on lights other than rect lights.
 - The layer features listed above as reported; rod, barn door, cookie, VDB and combined
   light filters; volumes.
 - Motion blur during IPR updates, moving lights, and a comparison of motion blur with MoonRay.
