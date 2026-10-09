@@ -155,6 +155,10 @@ def textured(folder):
                     native('cube', 'DwaMetalMaterial', metallic_color=[.95, .6, .4], roughness=.3))
     natives['materials']['gold'] = {'material_stack': [native('gold', 'DwaBaseMaterial', albedo=[.8, .8, .8], roughness=.6,
                                                               show_clearcoat=True, clearcoat_roughness=.05, show_emission=True, emission=[.2, .05, 0.0])]}
+    # MoonRay's skin material: light scattering beneath it on the ball, and the same under a film of moisture on the cube.
+    skins = lobes(native('ball', 'DwaSkinMaterial', albedo=[.85, .6, .5], roughness=.45, scattering_radius=.35, scattering_color=[1, .45, .3]),
+                  native('cube', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, scattering_radius=.15, scattering_color=[1, .5, .35],
+                         show_moisture=True, moisture_roughness=.1))
     # A native material whose inputs read images wired in its graph, as the graph editor and the
     # material's form make them: no Shader Tree image layer is involved.
     from moonray_modo import nodes as graph_nodes
@@ -214,7 +218,7 @@ def textured(folder):
     # And as Shader Tree layers over the same native material, which leaves only the route the image takes.
     native_layer_maps = lobes(dict(native('ball', 'DwaBaseMaterial', roughness=.5), layers=[layer('nb', 'diffCol', 'colour', True)]),
                               dict(native('cube', 'DwaBaseMaterial', roughness=.5), layers=[layer('nc', 'diffCol', 'colour', True), layer('nr', 'rough', 'roughness', False)]))
-    return {'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    return {'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
@@ -286,6 +290,20 @@ def scenes(folder):
         'entity_textured_light': dict(base, entities=[
             {'identity': 'l_panel', 'name': 'Panel', 'class': 'RectLight', 'matrix': aimed([0, 2.2, 3.5], [0, .8, 0]),
              'parameters': {'intensity': 40.0, 'width': 3.0, 'height': 1.5, 'texture': test_images(folder)['colour']}}]),
+        # A picture on each other kind of light, which MoonRay lays out differently for each.
+        **{'textured_' + kind.lower(): dict(base, entities=[
+            {'identity': 'l_pictured', 'name': 'Pictured', 'class': kind, 'matrix': matrix,
+             'parameters': dict(values, texture=test_images(folder)['colour'])}])
+           for kind, matrix, values in (
+               ('SphereLight', fixture.placed(0, 2.2, 3.0), {'intensity': 40.0, 'radius': .8}),
+               ('DiskLight', aimed([0, 2.2, 3.5], [0, .8, 0]), {'intensity': 40.0, 'radius': 1.2}),
+               ('SpotLight', aimed([0, 6, 4], [0, .5, 0]), {'intensity': 80.0, 'lens_radius': .05, 'outer_cone_angle': 50.0, 'inner_cone_angle': 40.0}),
+               ('CylinderLight', aimed([0, 2.4, 3.2], [0, .8, 0]), {'intensity': 40.0, 'radius': .4, 'height': 3.0}),
+               ('DistantLight', fixture.look_at([0, 0, 0], [-.3, -.6, -.5]), {'intensity': 3.0, 'angular_extent': 40.0}))},
+        # A distant light whose brightness is not divided by the size of its disc.
+        'distant_unnormalized': dict(base, entities=[
+            {'identity': 'u_sun', 'name': 'Sun', 'class': 'DistantLight', 'matrix': fixture.look_at([0, 0, 0], [-.3, -.6, -.5]),
+             'parameters': {'color': [900.0, 850.0, 800.0], 'angular_extent': 6.0, 'normalized': False}}]),
         'entity_mesh_light': dict(base, meshes=base['meshes'] + [panel], entities=[
             {'identity': 'l_lamp', 'name': 'Glow', 'class': 'MeshLight', 'parameters': {'intensity': 60.0, 'color': [1.0, .85, .7], 'geometry': 'Panel'}}]),
         # Subdivision surfaces: the cube rounded off, and a second one with two creased edges and an open top.

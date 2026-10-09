@@ -93,14 +93,14 @@ struct DeviceMaterial {
 };
 
 struct DeviceMesh {
-    DevicePtr positions;    // float[3] per vertex
+    DevicePtr positions;    // float[3] per vertex; unused for curves, whose control points OptiX hands back
     DevicePtr normals;      // float[3] per vertex, or 0 for faceted shading
-    DevicePtr indices;      // unsigned[3] per triangle
+    DevicePtr indices;      // unsigned[3] per triangle; for curves, each segment's first control point
     DevicePtr materialIds;  // unsigned per triangle, or 0 to use the instance material
-    DevicePtr uvs;          // float[2] per triangle corner, one run of triangleCount * 3 per set
+    DevicePtr uvs;          // float[2] per triangle corner, one run of triangleCount * 3 per set; for curves, one set, per control point
     unsigned triangleCount;
     int uvSet[UV_SLOTS];    // which of this mesh's sets serves each scene-wide slot, or -1
-    unsigned pad;
+    unsigned curves;        // curves rather than triangles: 1 round cubic B-spline segments, 2 round straight ones
 };
 
 struct DeviceInstance {
@@ -116,6 +116,11 @@ struct DeviceDistantLight {
     float versine;          // 1 - cos(angular radius)
     float radiance[3];
     float visible;          // 1 if the camera sees the disc
+    float u[3];             // the light's own x and y axes, which a picture across the disc runs along
+    float uvScale;          // what MoonRay's equal-area mapping multiplies a direction's x and y by
+    float v[3];
+    float pad;
+    unsigned long long texture;     // a picture across the disc, or 0
 };
 
 // Sphere, rectangle, disc and spot lights, as MoonRay's lights of the same names.
@@ -141,7 +146,7 @@ struct DeviceLight {
     DevicePtr triangles;    // mesh: float[10] per triangle, a corner, two edges and the running share of the area
     unsigned triangleCount;
     unsigned filterStart;   // this light's run in LaunchParams::lightFilters
-    unsigned long long texture;     // rect: a picture across the light, or 0
+    unsigned long long texture;     // a picture across the light, laid out as MoonRay lays it on each kind; 0 for none
     unsigned filterCount;
     unsigned pad;
 };

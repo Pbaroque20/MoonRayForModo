@@ -15,7 +15,9 @@ namespace {
 
 // Layout flags; keep in step with moonlightipr_scene.py.
 const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 4, MESH_SMOOTH = 8, MESH_HAS_UVS = 16, MESH_MOVES = 32,
-               MESH_SUBDIVIDE = 64;     // the data is a control cage to be subdivided here
+               MESH_SUBDIVIDE = 64,     // the data is a control cage to be subdivided here
+               MESH_CURVES = 128,       // the data is curves: control points, their radii and each segment's first point
+               MESH_LINEAR = 256;       // those curves' segments are straight, from one point to the next
 const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4;
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
@@ -313,21 +315,24 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     }
     const uint64_t environmentNow = in.hash(environmentStart, in.position());
 
+    const auto image = [&](int32_t texture) {
+        if (texture >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLightIPR scene light refers to a missing texture");
+        return texture < 0 ? -1 : int32_t(textureIndices[texture]);
+    };
     std::vector<DistantLight> lights(in.value<uint32_t>());
     for (DistantLight& light : lights) {
         in.floats(light.direction, 3);
         in.floats(light.radiance, 3);
         light.angularExtentDegrees = in.value<float>();
         light.visibleInCamera = in.value<uint32_t>() != 0;
+        in.floats(light.axisX, 3);
+        in.floats(light.axisY, 3);
+        light.texture = image(in.value<int32_t>());
     }
 
     std::vector<Light> localLights(in.value<uint32_t>());
     std::vector<std::vector<float>> lightTriangles(localLights.size());
     std::vector<std::vector<LightFilter>> lightFilters(localLights.size());
-    const auto image = [&](int32_t texture) {
-        if (texture >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLightIPR scene light refers to a missing texture");
-        return texture < 0 ? -1 : int32_t(textureIndices[texture]);
-    };
     for (size_t l = 0; l < localLights.size(); ++l) {
         Light& light = localLights[l];
         const uint32_t kind = in.value<uint32_t>();
@@ -372,7 +377,23 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         const uint32_t flags = in.value<uint32_t>();
         meshSlots[m] = in.array<int32_t>(UV_SLOT_COUNT);
         auto cached = meshes.find(key);
-        if (flags & MESH_HAS_DATA) {
+        if ((flags & MESH_HAS_DATA) && (flags & MESH_CURVES)) {
+            const uint32_t pointCount = in.value<uint32_t>(), segmentCount = in.value<uint32_t>();
+            const std::vector<float> positions = in.array<float>(size_t(pointCount) * 3), radii = in.array<float>(pointCount);
+            const std::vector<uint32_t> segments = in.array<uint32_t>(segmentCount);
+            const std::vector<float> uvs = in.array<float>(flags & MESH_HAS_UVS ? size_t(pointCount) * 2 : 0);
+            if (cached == meshes.end()) {
+                CurveDesc desc;
+                desc.positions = positions.data();
+                desc.radii = radii.data();
+                desc.pointCount = pointCount;
+                desc.segments = segments.data();
+                desc.segmentCount = segmentCount;
+                desc.uvs = uvs.empty() ? nullptr : uvs.data();
+                desc.linear = (flags & MESH_LINEAR) != 0;
+                cached = meshes.emplace(key, CachedMesh{renderer.addCurves(desc), 0}).first;
+            }
+        } else if (flags & MESH_HAS_DATA) {
             uint32_t vertexCount = 0, triangleCount = 0;
             std::vector<float> positions, normals, closePositions;
             std::vector<uint32_t> indices, materialIds;

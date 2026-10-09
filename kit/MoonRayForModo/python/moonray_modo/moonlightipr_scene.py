@@ -12,7 +12,7 @@ from itertools import chain
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # Layout flags; keep in step with moonlightipr/session/scene_loader.cpp.
-MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE = 1, 2, 4, 8, 16, 32, 64
+MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE, MESH_CURVES, MESH_LINEAR = 1, 2, 4, 8, 16, 32, 64, 128, 256
 # A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
 SUBDIVISION_QUADS = 3000000
 SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION = 1, 2, 4
@@ -211,6 +211,15 @@ def lights(scene, warnings, environment=0.0, compiler=None):
         for record in [r for r in filters if r['kind'] == 'intensity']:
             color = [c * s for c, s in zip(color, record['scale'])]
         filters = [r for r in filters if r['kind'] != 'intensity']
+        # A picture on the light, read as MoonRay reads it: without a colour conversion. A sphere's and a cylinder's
+        # go all the way round, so they repeat where a flat light's stops at its edge.
+        texture = -1
+        if light.get('texture') and compiler is not None and kind != 'PortalLight':
+            try:
+                texture = compiler.texture({'path': light['texture'], 'srgb': False, 'color_space': 'raw',
+                                            'repeat': kind in ('SphereLight', 'CylinderLight')})
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                warnings.append('MoonLightIPR shows %s without its texture (%s).' % (light.get('name', ''), exc))
         if filters and (kind == 'DistantLight' or compiler is None):
             warnings.append('MoonLightIPR applies only intensity filters to %s.' % light.get('name', ''))
             filters = []
@@ -219,7 +228,8 @@ def lights(scene, warnings, environment=0.0, compiler=None):
             # A white Lambertian surface facing the light reflects color * intensity.
             scale = 1 / math.sin(min(math.radians(angle) / 2, math.pi / 2)) ** 2
             # The light sits on its local +Z axis.
-            distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, 1 if light.get('camera_visible') else 0])
+            distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, 1 if light.get('camera_visible') else 0]
+                           + unit(matrix[0:3]) + unit(matrix[4:7]) + [texture])
             continue
         # Sizes follow the node's scale; the flat lights emit along local -Z.
         scale_x, scale_y = math.sqrt(sum(v * v for v in matrix[0:3])), math.sqrt(sum(v * v for v in matrix[4:7]))
@@ -242,13 +252,6 @@ def lights(scene, warnings, environment=0.0, compiler=None):
         # Normalized with MoonRay's default apply_scene_scale: color * intensity is flux / pi at scene scale 1.
         # A portal is not normalized; its colour and intensity multiply what shows through it.
         normalization = 1.0 if kind == 'PortalLight' else 1 / (math.pi * area)
-        # A picture on a rect light, read as MoonRay reads it: without a colour conversion.
-        texture = -1
-        if light.get('texture') and compiler is not None:
-            try:
-                texture = compiler.texture({'path': light['texture'], 'srgb': False, 'color_space': 'raw', 'repeat': False})
-            except (OSError, ValueError, subprocess.SubprocessError) as exc:
-                warnings.append('MoonLightIPR shows %s without its texture (%s).' % (light.get('name', ''), exc))
         local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
             + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture)
@@ -553,9 +556,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     objects = scene.get('production', {}).get('objects', {})
 
     used, meshes, instances, order = set(), [], [], {}
-    from .curve_tubes import meshes as curve_meshes
-    # Curves are drawn as tubes of polygons; MoonLightIPR has no curve primitive.
-    for mesh in list(geometry.render_meshes(scene.get('meshes', []))) + curve_meshes(scene.get('extra_geometry', [])):
+    for mesh in geometry.render_meshes(scene.get('meshes', [])):
         if not mesh['faces']:
             continue
         if mesh.get('subdivision'):
@@ -587,10 +588,32 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         for placement, later in zip(opening, ending):
             instances.append(struct.pack('<2Ii12f', order[key], material, light, *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
+    # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
+    from .moonlightipr_curves import payload as curve_payload
+    from .moonlightipr_materials import UV_SLOTS
+    for entry in scene.get('extra_geometry', []):
+        if entry.get('kind') != 'curves' or not entry.get('vertices'):
+            continue
+        packed = curve_payload(entry, compiler.slots.get(''))
+        if packed is None:
+            continue
+        key, payload, coordinates, straight = packed
+        if key not in order:
+            order[key] = len(meshes)
+            flags = MESH_CURVES | (MESH_HAS_UVS if coordinates else 0) | (MESH_LINEAR if straight else 0)
+            slot_map = [-1] * UV_SLOTS
+            if coordinates:
+                slot_map[compiler.slots['']] = 0
+            head = key + struct.pack('<I', flags | (0 if key in known else MESH_HAS_DATA)) + struct.pack('<%di' % UV_SLOTS, *slot_map)
+            meshes.append(head if key in known else head + payload)
+        used.add(key)
+        placement = transform(entry.get('matrix') or IDENTITY)
+        instances.append(struct.pack('<2Ii12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, *placement)
+                         + (struct.pack('<12f', *placement) if motion else b''))
     if any(entry.get('kind') != 'curves' for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points or volumes.')
     parts.append(struct.pack('<I', len(distant)))
-    parts += [struct.pack('<7fI', *light) for light in distant]
+    parts += [struct.pack('<7fI6fi', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local
     parts += [struct.pack('<I', len(meshes))] + meshes + [struct.pack('<I', len(instances))] + instances
     # Drop cached triangulations of meshes that have left the scene.

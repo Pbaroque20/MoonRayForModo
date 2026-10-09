@@ -67,7 +67,9 @@ struct Buffer {
 };
 
 struct Mesh {
-    Buffer positions, normals, indices, materialIds, uvs, accel;
+    Buffer positions, normals, indices, materialIds, uvs, accel, widths;
+    bool curves = false;    // round curve segments: positions, widths and each segment's first point
+    bool linear = false;    // those segments are straight, not cubic B-splines
     OptixTraversableHandle handle = 0;
     uint32_t triangleCount = 0;
     uint32_t uvSetCount = 0;
@@ -192,8 +194,8 @@ DeviceMaterial toDevice(const Material& m) {
 
 struct Renderer::Impl {
     OptixDeviceContext context = nullptr;
-    OptixModule module = nullptr;
-    OptixProgramGroup groups[4] = {};
+    OptixModule module = nullptr, curveModule = nullptr, linearModule = nullptr;
+    OptixProgramGroup groups[6] = {};
     OptixPipeline pipeline = nullptr;
     OptixShaderBindingTable sbt = {};
     Buffer raygenRecord, missRecords, hitRecord;
@@ -202,6 +204,7 @@ struct Renderer::Impl {
     std::vector<std::unique_ptr<Texture>> textures;
     std::vector<int32_t> layerTextures;     // every texture the current layers use
     std::vector<int32_t> lightTextures;     // and those the lights and their filters use
+    std::vector<int32_t> distantTextures;
     std::vector<Instance> instances;
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
     Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, albedoTables, instanceInput, instanceAccel, accelTemp;
@@ -223,6 +226,8 @@ struct Renderer::Impl {
         if (denoiser) optixDenoiserDestroy(denoiser);
         if (pipeline) optixPipelineDestroy(pipeline);
         for (OptixProgramGroup group : groups) if (group) optixProgramGroupDestroy(group);
+        if (curveModule) optixModuleDestroy(curveModule);
+        if (linearModule) optixModuleDestroy(linearModule);
         if (module) optixModuleDestroy(module);
         if (context) optixDeviceContextDestroy(context);
     }
@@ -240,7 +245,8 @@ struct Renderer::Impl {
         pipelineOptions.numAttributeValues = 2;
         pipelineOptions.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
         pipelineOptions.pipelineLaunchParamsVariableName = "params";
-        pipelineOptions.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
+        pipelineOptions.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE | OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_CUBIC_BSPLINE
+                                             | OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_LINEAR;
 
         char log[4096];
         size_t logSize = sizeof(log);
@@ -248,7 +254,17 @@ struct Renderer::Impl {
             ptx.data(), ptx.size(), log, &logSize, &module);
         if (compiled != OPTIX_SUCCESS) throw std::runtime_error(std::string("MoonLightIPR device program rejected: ") + log);
 
-        OptixProgramGroupDesc descriptions[4] = {};
+        // OptiX's own test of a ray against a curve; its options must be those the curves are built with.
+        OptixBuiltinISOptions curveOptions = {};
+        curveOptions.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE;
+        curveOptions.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+        curveOptions.curveEndcapFlags = OPTIX_CURVE_ENDCAP_ON;
+        ML_CHECK(optixBuiltinISModuleGet(context, &moduleOptions, &pipelineOptions, &curveOptions, &curveModule));
+        curveOptions.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR;
+        curveOptions.curveEndcapFlags = OPTIX_CURVE_ENDCAP_DEFAULT;
+        ML_CHECK(optixBuiltinISModuleGet(context, &moduleOptions, &pipelineOptions, &curveOptions, &linearModule));
+
+        OptixProgramGroupDesc descriptions[6] = {};
         descriptions[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
         descriptions[0].raygen.module = module;
         descriptions[0].raygen.entryFunctionName = "__raygen__moonlightipr";
@@ -263,37 +279,45 @@ struct Renderer::Impl {
         descriptions[3].hitgroup.entryFunctionNameCH = "__closesthit__radiance";
         descriptions[3].hitgroup.moduleAH = module;
         descriptions[3].hitgroup.entryFunctionNameAH = "__anyhit__presence";
+        descriptions[4].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+        descriptions[4].hitgroup.moduleCH = module;
+        descriptions[4].hitgroup.entryFunctionNameCH = "__closesthit__curve";
+        descriptions[4].hitgroup.moduleIS = curveModule;
+        descriptions[5] = descriptions[4];
+        descriptions[5].hitgroup.moduleIS = linearModule;
         OptixProgramGroupOptions groupOptions = {};
         logSize = sizeof(log);
-        ML_CHECK(optixProgramGroupCreate(context, descriptions, 4, &groupOptions, log, &logSize, groups));
+        ML_CHECK(optixProgramGroupCreate(context, descriptions, 6, &groupOptions, log, &logSize, groups));
 
         // Shading runs in the ray generation program, so traces never nest.
         OptixPipelineLinkOptions linkOptions = {};
         linkOptions.maxTraceDepth = 1;
         logSize = sizeof(log);
-        ML_CHECK(optixPipelineCreate(context, &pipelineOptions, &linkOptions, groups, 4, log, &logSize, &pipeline));
+        ML_CHECK(optixPipelineCreate(context, &pipelineOptions, &linkOptions, groups, 6, log, &logSize, &pipeline));
         OptixStackSizes stackSizes = {};
         for (OptixProgramGroup group : groups) ML_CHECK(optixUtilAccumulateStackSizes(group, &stackSizes));
         unsigned fromTraversal = 0, fromState = 0, continuation = 0;
         ML_CHECK(optixUtilComputeStackSizes(&stackSizes, 1, 0, 0, &fromTraversal, &fromState, &continuation));
         ML_CHECK(optixPipelineSetStackSize(pipeline, fromTraversal, fromState, continuation, 2));
 
-        // Geometry is found through the instance id, so one hit record serves every mesh.
-        SbtRecord raygen, miss[2], hit;
+        // Geometry is found through the instance id, so one hit record serves every mesh and one each kind of curve.
+        SbtRecord raygen, miss[2], hit[3];
         ML_CHECK(optixSbtRecordPackHeader(groups[0], &raygen));
         ML_CHECK(optixSbtRecordPackHeader(groups[1], &miss[0]));
         ML_CHECK(optixSbtRecordPackHeader(groups[2], &miss[1]));
-        ML_CHECK(optixSbtRecordPackHeader(groups[3], &hit));
+        ML_CHECK(optixSbtRecordPackHeader(groups[3], &hit[0]));
+        ML_CHECK(optixSbtRecordPackHeader(groups[4], &hit[1]));
+        ML_CHECK(optixSbtRecordPackHeader(groups[5], &hit[2]));
         raygenRecord.upload(&raygen, sizeof(raygen));
         missRecords.upload(miss, sizeof(miss));
-        hitRecord.upload(&hit, sizeof(hit));
+        hitRecord.upload(hit, sizeof(hit));
         sbt.raygenRecord = raygenRecord.ptr;
         sbt.missRecordBase = missRecords.ptr;
         sbt.missRecordStrideInBytes = sizeof(SbtRecord);
         sbt.missRecordCount = 2;
         sbt.hitgroupRecordBase = hitRecord.ptr;
         sbt.hitgroupRecordStrideInBytes = sizeof(SbtRecord);
-        sbt.hitgroupRecordCount = 1;
+        sbt.hitgroupRecordCount = 3;
     }
 
     // refit moves an existing structure to the vertices now in the mesh's buffer.
@@ -312,6 +336,21 @@ struct Renderer::Impl {
         input.triangleArray.indexStrideInBytes = 3 * sizeof(uint32_t);
         input.triangleArray.flags = &flags;
         input.triangleArray.numSbtRecords = 1;
+        if (mesh.curves) {
+            input = OptixBuildInput{};
+            input.type = OPTIX_BUILD_INPUT_TYPE_CURVES;
+            input.curveArray.curveType = mesh.linear ? OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR : OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE;
+            input.curveArray.numPrimitives = unsigned(triangleCount);
+            input.curveArray.vertexBuffers = &mesh.positions.ptr;
+            input.curveArray.numVertices = unsigned(vertexCount);
+            input.curveArray.vertexStrideInBytes = 3 * sizeof(float);
+            input.curveArray.widthBuffers = &mesh.widths.ptr;
+            input.curveArray.widthStrideInBytes = sizeof(float);
+            input.curveArray.indexBuffer = mesh.indices.ptr;
+            input.curveArray.indexStrideInBytes = sizeof(uint32_t);
+            input.curveArray.flag = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+            input.curveArray.endcapFlags = mesh.linear ? OPTIX_CURVE_ENDCAP_DEFAULT : OPTIX_CURVE_ENDCAP_ON;
+        }
 
         OptixAccelBuildOptions options = {};
         if (!mesh.close.empty()) {
@@ -370,6 +409,7 @@ struct Renderer::Impl {
                 entry.materialIds = mesh->materialIds.ptr;
                 entry.uvs = mesh->uvs.ptr;
                 entry.triangleCount = mesh->triangleCount;
+                entry.curves = mesh->curves ? (mesh->linear ? 2 : 1) : 0;
                 // A slot may only name a set this mesh has; the kernel does not check.
                 for (unsigned slot = 0; slot < UV_SLOTS; ++slot)
                     entry.uvSet[slot] = mesh->uvSlots[slot] >= 0 && uint32_t(mesh->uvSlots[slot]) < mesh->uvSetCount ? mesh->uvSlots[slot] : -1;
@@ -389,7 +429,7 @@ struct Renderer::Impl {
                 input[i].transform[k] = instances[i].moves ? instances[i].transform[k] + (instances[i].closeTransform[k] - instances[i].transform[k]) * time
                                                            : instances[i].transform[k];
             input[i].instanceId = unsigned(i);
-            input[i].sbtOffset = 0;
+            input[i].sbtOffset = meshes[instances[i].mesh]->curves ? (meshes[instances[i].mesh]->linear ? 2 : 1) : 0;
             input[i].visibilityMask = 255;
             input[i].flags = OPTIX_INSTANCE_FLAG_NONE;
             input[i].traversableHandle = meshes[instances[i].mesh]->handle;
@@ -634,6 +674,35 @@ uint32_t Renderer::addMesh(const MeshDesc& desc) {
     return uint32_t(slot - impl->meshes.begin());
 }
 
+uint32_t Renderer::addCurves(const CurveDesc& desc) {
+    if (!desc.positions || !desc.radii || !desc.segments || !desc.pointCount || !desc.segmentCount)
+        throw std::runtime_error("MoonLightIPR curves need control points, radii and segments");
+    if (desc.pointCount > 0xffffffffu || desc.segmentCount > 0xffffffffu) throw std::runtime_error("MoonLightIPR curves are too large");
+    for (size_t i = 0; i < desc.segmentCount; ++i)
+        if (size_t(desc.segments[i]) + (desc.linear ? 2 : 4) > desc.pointCount) throw std::runtime_error("MoonLightIPR curve segment is out of range");
+    for (size_t i = 0; i < desc.pointCount; ++i)
+        if (!(desc.radii[i] >= 0.0f) || !std::isfinite(desc.radii[i])) throw std::runtime_error("MoonLightIPR curve radius is invalid");
+    auto mesh = std::make_unique<Mesh>();
+    mesh->curves = true;
+    mesh->linear = desc.linear;
+    mesh->positions.upload(desc.positions, desc.pointCount * 3 * sizeof(float));
+    mesh->widths.upload(desc.radii, desc.pointCount * sizeof(float));
+    mesh->indices.upload(desc.segments, desc.segmentCount * sizeof(uint32_t));
+    if (desc.uvs) {
+        mesh->uvs.upload(desc.uvs, desc.pointCount * 2 * sizeof(float));
+        mesh->uvSetCount = 1;
+    }
+    mesh->triangleCount = uint32_t(desc.segmentCount);
+    mesh->vertexCount = desc.pointCount;
+    impl->buildMesh(*mesh, desc.pointCount, desc.segmentCount);
+    auto slot = std::find(impl->meshes.begin(), impl->meshes.end(), nullptr);
+    if (slot == impl->meshes.end()) slot = impl->meshes.emplace(slot);
+    *slot = std::move(mesh);
+    impl->uploadMeshTable();
+    impl->restart();
+    return uint32_t(slot - impl->meshes.begin());
+}
+
 void Renderer::removeMesh(uint32_t mesh) {
     if (mesh >= impl->meshes.size() || !impl->meshes[mesh]) throw std::runtime_error("MoonLightIPR mesh does not exist");
     for (const Instance& instance : impl->instances)
@@ -695,7 +764,8 @@ uint32_t Renderer::addTexture(const TextureDesc& desc) {
 void Renderer::removeTexture(uint32_t texture) {
     if (texture >= impl->textures.size() || !impl->textures[texture]) throw std::runtime_error("MoonLightIPR texture does not exist");
     if (std::find(impl->layerTextures.begin(), impl->layerTextures.end(), int32_t(texture)) != impl->layerTextures.end()
-        || std::find(impl->lightTextures.begin(), impl->lightTextures.end(), int32_t(texture)) != impl->lightTextures.end())
+        || std::find(impl->lightTextures.begin(), impl->lightTextures.end(), int32_t(texture)) != impl->lightTextures.end()
+        || std::find(impl->distantTextures.begin(), impl->distantTextures.end(), int32_t(texture)) != impl->distantTextures.end())
         throw std::runtime_error("MoonLightIPR texture is still used by a material or a light");
     ML_CHECK(cudaDeviceSynchronize());  // a queued launch may still sample it
     impl->textures[texture].reset();
@@ -850,7 +920,9 @@ void Renderer::setEnvironment(const Environment& environment) {
 
 void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
     std::vector<DeviceDistantLight> table(count);
+    std::vector<int32_t> used;
     for (size_t i = 0; i < count; ++i) {
+        table[i] = DeviceDistantLight{};
         std::copy(lights[i].direction, lights[i].direction + 3, table[i].direction);
         scaleTo(table[i].direction, 1.0f);
         std::copy(lights[i].radiance, lights[i].radiance + 3, table[i].radiance);
@@ -859,7 +931,20 @@ void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
         const float sinHalf = std::sin(0.5f * radius);
         table[i].versine = 2.0f * sinHalf * sinHalf;
         table[i].visible = lights[i].visibleInCamera ? 1.0f : 0.0f;
+        if (lights[i].texture >= 0) {
+            if (size_t(lights[i].texture) >= impl->textures.size() || !impl->textures[lights[i].texture])
+                throw std::runtime_error("MoonLightIPR light refers to a missing texture");
+            used.push_back(lights[i].texture);
+            table[i].texture = static_cast<unsigned long long>(impl->textures[lights[i].texture]->object);
+            std::copy(lights[i].axisX, lights[i].axisX + 3, table[i].u);
+            std::copy(lights[i].axisY, lights[i].axisY + 3, table[i].v);
+            scaleTo(table[i].u, 1.0f);
+            scaleTo(table[i].v, 1.0f);
+            // MoonRay's DistantLight: half the square root of a half, over the sine of half the disc's radius.
+            table[i].uvScale = 0.5f * std::sqrt(0.5f) / sinHalf;
+        }
     }
+    impl->distantTextures = std::move(used);
     impl->distantLights.upload(table);
     impl->params.distantLights = impl->distantLights.ptr;
     impl->params.distantLightCount = unsigned(count);
@@ -886,7 +971,7 @@ void Renderer::setLights(const Light* lights, size_t count) {
         out = DeviceLight{};
         out.type = light.kind;
         std::copy(light.radiance, light.radiance + 3, out.radiance);
-        if (light.texture >= 0 && light.kind == Light::Rect) out.texture = object(light.texture);
+        if (light.texture >= 0 && light.kind != Light::Portal && light.kind != Light::Mesh) out.texture = object(light.texture);
         out.filterStart = unsigned(filters.size());
         out.filterCount = unsigned(light.filterCount);
         for (size_t f = 0; f < light.filterCount; ++f) {

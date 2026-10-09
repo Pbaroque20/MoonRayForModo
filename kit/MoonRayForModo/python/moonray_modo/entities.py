@@ -800,8 +800,8 @@ def sphere(radius, segments=48, rings=24):
 
 
 def emitting_area(name, light):
-    """What MoonRay divides a normalized light's brightness by: pi times its surface. None for a kind of light this is
-    not worked out for."""
+    """What MoonRay divides a normalized light's brightness by: pi times its surface, or for a distant light the squared
+    sine of its disc's radius. None for a kind of light this is not worked out for."""
     import math
     if name in ('RectLight', 'PortalLight'):
         size = light['width'] * light['height']
@@ -811,6 +811,9 @@ def emitting_area(name, light):
         size = 4 * math.pi * light['radius'] ** 2
     elif name == 'CylinderLight':
         size = 2 * math.pi * light['radius'] * light['height']
+    elif name == 'DistantLight':
+        # MoonRay divides a normalized distant light by the squared sine of its disc's radius, and nothing else.
+        return math.sin(min(math.radians(max(1e-3, light['angle'])) / 2, math.pi / 2)) ** 2
     else:
         return None
     return math.pi * size if size > 1e-12 else None
@@ -859,11 +862,9 @@ def preview(scene, warnings):
             if name not in PREVIEW_LIGHTS:
                 skipped.setdefault(name, []).append(label)
                 continue
-            if value(entity, 'texture') and name != 'RectLight':
-                warnings.append('MoonLightIPR shows %s without its texture.' % label)
             light = {'kind': name, 'identity': entity['identity'], 'name': label, 'color': color, 'intensity': intensity, 'matrix': matrix,
                      'filters': filters}
-            if name == 'RectLight' and value(entity, 'texture'):
+            if name != 'PortalLight' and value(entity, 'texture'):
                 light['texture'] = value(entity, 'texture')
             if filters and name == 'DistantLight':
                 warnings.append('MoonLightIPR applies only intensity filters to distant light %s.' % label)

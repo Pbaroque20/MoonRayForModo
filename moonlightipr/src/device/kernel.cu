@@ -26,6 +26,8 @@ struct Hit {
     unsigned instance;
     int light;                  // the mesh light this surface belongs to, or -1
     int valid;
+    int curve;                  // the hit is on a curve, which curveTangent runs along
+    float3 curveTangent;
 };
 
 ML_INLINE Hit* hitPayload() {
@@ -152,6 +154,19 @@ ML_INLINE float3 sampleDistant(const DeviceDistantLight& light, float u1, float 
     const float versine = u1 * light.versine, phi = 2.0f * ML_PI * u2;
     const float sinTheta = sqrtf(versine * (2.0f - versine));
     return Frame(vec(light.direction)).toWorld(make_float3(sinTheta * cosf(phi), sinTheta * sinf(phi), 1.0f - versine));
+}
+
+// A picture across the disc of a distant light, by MoonRay's equal-area mapping of the directions inside it.
+ML_INLINE float3 distantRadiance(const DeviceDistantLight& light, float3 direction) {
+    float3 radiance = vec(light.radiance);
+    if (light.texture) {
+        // In the light's frame, which MoonRay turns half way about x: the light stands along -z there.
+        const float x = dot(direction, vec(light.u)), y = -dot(direction, vec(light.v)), z = -dot(direction, vec(light.direction));
+        const float scale = -light.uvScale / sqrtf(fmaxf(1.0f - z, 1e-20f));
+        const float4 texel = tex2D<float4>(light.texture, 1.0f - clamp(x * scale + 0.5f, 0.0f, 1.0f), 1.0f - clamp(y * scale + 0.5f, 0.0f, 1.0f));
+        radiance = radiance * make_float3(texel.x, texel.y, texel.z);
+    }
+    return radiance;
 }
 
 // ---- Sphere, rectangle, disc, spot, cylinder, portal and mesh lights ---------------------------
@@ -317,9 +332,36 @@ ML_INLINE bool hitLightShape(const DeviceLight& light, float3 p, float3 directio
 ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float distance) {
     float3 tint = vec(1.0f);
     if (light.texture) {
-        // MoonRay runs u and v against the light's own x and y.
-        const float3 offset = p + wi * distance - vec(light.position), u = vec(light.u), v = vec(light.v);
-        const float4 texel = tex2D<float4>(light.texture, 0.5f - 0.5f * dot(offset, u) / dot(u, u), 0.5f + 0.5f * dot(offset, v) / dot(v, v));
+        // Where MoonRay looks its picture up for a point on each kind of light, from that light's own sources.
+        const float3 onLight = p + wi * distance, offset = onLight - vec(light.position), u = vec(light.u), v = vec(light.v);
+        float s, t;
+        if (light.type == LIGHT_SPHERE) {
+            // Latitude and longitude about the light's own y axis. MoonRay reads a picture laid round a sphere from
+            // its top row down, where one laid flat is read from its bottom row up; hence the turned latitude.
+            const float3 n = offset * (1.0f / light.radius);
+            const float y = clamp(-dot(n, v), -1.0f, 1.0f);
+            s = fabsf(y) >= 1.0f ? 0.0f : atan2f(dot(n, vec(light.normal)), -dot(n, u)) / (2.0f * ML_PI) + 0.5f;
+            t = acosf(y) / ML_PI;
+        } else if (light.type == LIGHT_CYLINDER) {
+            // Along the axis, then around it from the light's own x.
+            float around = atan2f(-dot(offset, vec(light.normal)), dot(offset, u));
+            if (around < 0.0f) around += 2.0f * ML_PI;
+            s = 0.5f + 0.5f * dot(offset, v) / light.halfHeight;
+            t = around / (2.0f * ML_PI);
+        } else if (light.type == LIGHT_SPOT) {
+            // Across the focal plane, where the line from the lens point through p meets it.
+            const float3 n = vec(light.normal), toPoint = p - onLight;
+            const float depth = fmaxf(dot(toPoint, n), 1e-12f);
+            const float3 focal = offset + (toPoint - n * depth) * (light.focalDistance / depth);
+            s = 0.5f - 0.5f * dot(focal, u) * light.rcpFocalRadius;
+            t = 0.5f + 0.5f * dot(focal, v) * light.rcpFocalRadius;
+        } else {
+            // A rectangle or a disc: across its width and its height, which for a disc are its diameter.
+            const float across = light.type == LIGHT_DISK ? light.radius : dot(u, u), up = light.type == LIGHT_DISK ? light.radius : dot(v, v);
+            s = 0.5f + 0.5f * dot(offset, u) / across;
+            t = 0.5f - 0.5f * dot(offset, v) / up;
+        }
+        const float4 texel = tex2D<float4>(light.texture, 1.0f - s, 1.0f - t);
         tint = make_float3(texel.x, texel.y, texel.z);
     }
     const DeviceFilter* filters = reinterpret_cast<const DeviceFilter*>(params.lightFilters) + light.filterStart;
@@ -696,7 +738,7 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toSun));
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(p, ng, toSun), toSun, seed))
-            radiance += clampSample(weight * (e.diffuse + e.specular) * vec(light.radiance)
+            radiance += clampSample(weight * (e.diffuse + e.specular) * distantRadiance(light, toSun)
                                     * (powerHeuristic(distantPdf(light), pdf) / distantPdf(light)), lit);
     }
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
@@ -848,6 +890,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             hit.flags = MATERIAL_MATTE;
             hit.light = -1;
             hit.valid = 1;
+            hit.curve = 0;
             direction = -ns;        // seen from straight above, as far as the diffuse lobe cares
             probing = false;
             reach = 1e16f;
@@ -872,7 +915,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 const DeviceDistantLight& light = distantLights[i];
                 if (camera && light.visible <= 0.0f) continue;
                 if (dot(direction, vec(light.direction)) >= 1.0f - light.versine)
-                    radiance += clampSample(throughput * lightWeight * vec(light.radiance)
+                    radiance += clampSample(throughput * lightWeight * distantRadiance(light, direction)
                                             * ((sharp || camera) ? 1.0f : powerHeuristic(bsdfPdf, distantPdf(light))), clampFound);
             }
             break;
@@ -1169,6 +1212,11 @@ struct Corners {
 // The three texture coordinates of a triangle in one scene-wide slot; false if the mesh has none.
 ML_INLINE bool triangleUvs(const DeviceMesh& mesh, unsigned slot, unsigned primitive, Corners& uv) {
     if (!mesh.uvs || slot >= UV_SLOTS || mesh.uvSet[slot] < 0) return false;
+    if (mesh.curves) {
+        // A strand has one coordinate, where it grows from; the whole of it is that colour.
+        uv.a = uv.b = uv.c = reinterpret_cast<const float2*>(mesh.uvs)[reinterpret_cast<const unsigned*>(mesh.indices)[primitive]];
+        return true;
+    }
     const float2* values = reinterpret_cast<const float2*>(mesh.uvs) + ((unsigned long long)(mesh.uvSet[slot]) * mesh.triangleCount + primitive) * 3;
     uv.a = values[0];
     uv.b = values[1];
@@ -1352,44 +1400,20 @@ ML_INLINE float3 working(float3 c) {
     return make_float3(dot(vec(m), c), dot(vec(m + 3), c), dot(vec(m + 6), c));
 }
 
-extern "C" __global__ void __closesthit__radiance() {
-    Hit* hit = hitPayload();
-    const DeviceInstance& instance = reinterpret_cast<const DeviceInstance*>(params.instances)[optixGetInstanceId()];
-    const DeviceMesh& mesh = reinterpret_cast<const DeviceMesh*>(params.meshes)[instance.mesh];
-    const unsigned primitive = optixGetPrimitiveIndex();
-    const uint3 triangle = reinterpret_cast<const uint3*>(mesh.indices)[primitive];
-    const float3* positions = reinterpret_cast<const float3*>(mesh.positions);
-    const float3 p0 = positions[triangle.x], p1 = positions[triangle.y], p2 = positions[triangle.z];
-    const float2 uv = optixGetTriangleBarycentrics();
-    const float w = 1.0f - uv.x - uv.y;
-
-    const float3 ng = cross(p1 - p0, p2 - p0);
-    float3 ns = ng;
-    if (mesh.normals) {
-        const float3* normals = reinterpret_cast<const float3*>(mesh.normals);
-        ns = normals[triangle.x] * w + normals[triangle.y] * uv.x + normals[triangle.z] * uv.y;
-    }
-    hit->p = optixTransformPointFromObjectToWorldSpace(p0 * w + p1 * uv.x + p2 * uv.y);
-    hit->ng = normalize(optixTransformNormalFromObjectToWorldSpace(ng));
-    hit->ns = normalize(optixTransformNormalFromObjectToWorldSpace(ns));
-    hit->t = optixGetRayTmax();
-    hit->instance = optixGetInstanceId();
-    hit->light = instance.light;
-    hit->valid = 1;
-
-    const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[primitive] : instance.material;
-    const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
+// The material at a hit, with its layers run: everything about the surface that does not depend on how the
+// geometry lies. channel is left holding the layers' results, and anisotropy what the material asks for.
+ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, const DeviceMesh& mesh, unsigned primitive, float2 uv,
+                                    float3* channel, float& anisotropy) {
+    MappedSlots slots;
+    float3 reach;
+    float subsurface;
     hit->ior = material.ior;
     hit->specular = material.specular;
     hit->transmissionIor = material.transmissionIor;
     hit->flags = material.flags;
     hit->abbe = material.abbe;
     hit->absorptionDistance = material.absorptionDistance;
-    float3 channel[CHANNEL_COUNT];
-    MappedSlots slots;
     slots.normal = slots.bump = UV_SLOTS;
-    float3 reach;
-    float subsurface, anisotropy;
     if (material.layerCount) {
         slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f));
         // Scalars take the mean of a colour, as MoonRay does for a map bound to a float attribute.
@@ -1433,6 +1457,40 @@ extern "C" __global__ void __closesthit__radiance() {
                           * material.subsurfaceRadius;
     hit->anisotropy = 0.0f;
     hit->tangent = vec(0.0f);
+    return slots;
+}
+
+extern "C" __global__ void __closesthit__radiance() {
+    Hit* hit = hitPayload();
+    const DeviceInstance& instance = reinterpret_cast<const DeviceInstance*>(params.instances)[optixGetInstanceId()];
+    const DeviceMesh& mesh = reinterpret_cast<const DeviceMesh*>(params.meshes)[instance.mesh];
+    const unsigned primitive = optixGetPrimitiveIndex();
+    const uint3 triangle = reinterpret_cast<const uint3*>(mesh.indices)[primitive];
+    const float3* positions = reinterpret_cast<const float3*>(mesh.positions);
+    const float3 p0 = positions[triangle.x], p1 = positions[triangle.y], p2 = positions[triangle.z];
+    const float2 uv = optixGetTriangleBarycentrics();
+    const float w = 1.0f - uv.x - uv.y;
+
+    const float3 ng = cross(p1 - p0, p2 - p0);
+    float3 ns = ng;
+    if (mesh.normals) {
+        const float3* normals = reinterpret_cast<const float3*>(mesh.normals);
+        ns = normals[triangle.x] * w + normals[triangle.y] * uv.x + normals[triangle.z] * uv.y;
+    }
+    hit->p = optixTransformPointFromObjectToWorldSpace(p0 * w + p1 * uv.x + p2 * uv.y);
+    hit->ng = normalize(optixTransformNormalFromObjectToWorldSpace(ng));
+    hit->ns = normalize(optixTransformNormalFromObjectToWorldSpace(ns));
+    hit->t = optixGetRayTmax();
+    hit->instance = optixGetInstanceId();
+    hit->light = instance.light;
+    hit->valid = 1;
+    hit->curve = 0;
+
+    const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[primitive] : instance.material;
+    const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
+    float3 channel[CHANNEL_COUNT];
+    float anisotropy;
+    const MappedSlots slots = resolveMaterial(hit, material, mesh, primitive, uv, channel, anisotropy);
 
     const float3 e1 = optixTransformVectorFromObjectToWorldSpace(p1 - p0), e2 = optixTransformVectorFromObjectToWorldSpace(p2 - p0);
     float3 alongU, alongV;
@@ -1483,4 +1541,55 @@ extern "C" __global__ void __closesthit__radiance() {
             hit->anisotropy = anisotropy;
         }
     }
+}
+
+// A hit on a curve: a round segment, straight or a cubic B-spline, whose control points OptiX hands back.
+extern "C" __global__ void __closesthit__curve() {
+    Hit* hit = hitPayload();
+    const DeviceInstance& instance = reinterpret_cast<const DeviceInstance*>(params.instances)[optixGetInstanceId()];
+    const DeviceMesh& mesh = reinterpret_cast<const DeviceMesh*>(params.meshes)[instance.mesh];
+    const unsigned primitive = optixGetPrimitiveIndex();
+    float4 control[4];
+    // Where along the segment, then the middle of the strand there and the way it runs.
+    const float u = optixGetCurveParameter(), v = 1.0f - u;
+    float3 centre, along;
+    if (mesh.curves == 2) {
+        optixGetLinearCurveVertexData(optixGetGASTraversableHandle(), primitive, optixGetSbtGASIndex(), 0.0f, control);
+        const float3 q0 = make_float3(control[0].x, control[0].y, control[0].z), q1 = make_float3(control[1].x, control[1].y, control[1].z);
+        centre = q0 * v + q1 * u;
+        along = q1 - q0;
+    } else {
+        optixGetCubicBSplineVertexData(optixGetGASTraversableHandle(), primitive, optixGetSbtGASIndex(), 0.0f, control);
+        const float3 q0 = make_float3(control[0].x, control[0].y, control[0].z), q1 = make_float3(control[1].x, control[1].y, control[1].z);
+        const float3 q2 = make_float3(control[2].x, control[2].y, control[2].z), q3 = make_float3(control[3].x, control[3].y, control[3].z);
+        centre = (q0 * (v * v * v) + q1 * (3.0f * u * u * u - 6.0f * u * u + 4.0f) + q2 * (-3.0f * u * u * u + 3.0f * u * u + 3.0f * u + 1.0f)
+                  + q3 * (u * u * u)) * (1.0f / 6.0f);
+        along = (q0 * (-v * v) + q1 * (3.0f * u * u - 4.0f * u) + q2 * (-3.0f * u * u + 2.0f * u + 1.0f) + q3 * (u * u)) * 0.5f;
+        if (dot(along, along) <= 1e-24f) along = q2 - q1;
+    }
+    if (dot(along, along) <= 1e-24f) along = make_float3(0.0f, 1.0f, 0.0f);
+    along = normalize(along);
+
+    const float3 world = optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax();
+    // Out from the strand's middle: at right angles to it, except on the rounded end and joints of straight
+    // pieces, which are parts of spheres. On a flat end cap that leaves nothing, and the cap faces the ray.
+    float3 out = optixTransformPointFromWorldToObjectSpace(world) - centre;
+    if (mesh.curves != 2 || (u > 0.0f && u < 1.0f)) out = out - along * dot(out, along);
+    if (dot(out, out) <= 1e-24f) {
+        const float3 arriving = optixTransformVectorFromWorldToObjectSpace(optixGetWorldRayDirection());
+        out = dot(arriving, along) > 0.0f ? -along : along;
+    }
+    hit->p = world;
+    hit->ng = hit->ns = normalize(optixTransformNormalFromObjectToWorldSpace(out));
+    hit->t = optixGetRayTmax();
+    hit->instance = optixGetInstanceId();
+    hit->light = -1;
+    hit->valid = 1;
+    hit->curve = 1;
+    hit->curveTangent = normalize(optixTransformVectorFromObjectToWorldSpace(along));
+
+    const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[instance.material];
+    float3 channel[CHANNEL_COUNT];
+    float anisotropy;
+    resolveMaterial(hit, material, mesh, primitive, make_float2(0.0f, 0.0f), channel, anisotropy);
 }

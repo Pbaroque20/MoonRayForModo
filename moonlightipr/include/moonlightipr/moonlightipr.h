@@ -113,6 +113,20 @@ struct MeshDesc {
     const float* closePositions = nullptr;
 };
 
+// Curves, as round segments: tubes whose middle follows a cubic B-spline, or runs straight from point to point,
+// and whose radius is that of the control points, blended the same way. Each segment names its first control
+// point; the three after it complete a cubic one and the one after it a straight one, so the segments of one
+// strand share their points. Straight pieces meet in a rounded joint. Buffers are copied.
+struct CurveDesc {
+    const float* positions = nullptr;       // 3 floats per control point
+    const float* radii = nullptr;           // 1 per control point
+    size_t pointCount = 0;
+    const uint32_t* segments = nullptr;     // 1 per segment
+    size_t segmentCount = 0;
+    const float* uvs = nullptr;             // 2 floats per control point, or null; a segment takes its first point's
+    bool linear = false;                    // straight segments rather than cubic ones
+};
+
 const uint32_t UV_SLOT_COUNT = 8;
 
 struct Instance {
@@ -145,6 +159,10 @@ struct DistantLight {
     float radiance[3] = {1, 1, 1};      // radiance of the disc, after any normalization
     float angularExtentDegrees = 0.5f;  // full angle of the disc
     bool visibleInCamera = false;       // whether the camera sees the disc, as a sun in the sky
+    // A picture across the disc, from addTexture, laid out along the light's own x and y axes as MoonRay lays it.
+    int32_t texture = -1;
+    float axisX[3] = {1, 0, 0};
+    float axisY[3] = {0, 1, 0};
 };
 
 // What a light filter does to a light's radiance on its way to a point, as MoonRay's
@@ -183,7 +201,7 @@ struct Light {
     float innerConeDegrees = 30.0f;     // spot: full angle where the falloff begins
     const float* triangles = nullptr;   // mesh: three world-space corners, 9 floats per triangle
     size_t triangleCount = 0;
-    int32_t texture = -1;               // rect: a picture across the light, from addTexture
+    int32_t texture = -1;               // a picture across the light, from addTexture; not for a portal or a mesh
     const LightFilter* filters = nullptr;
     size_t filterCount = 0;
 };
@@ -219,6 +237,8 @@ public:
 
     // Builds one acceleration structure per mesh; returns its index for Instance::mesh.
     uint32_t addMesh(const MeshDesc& mesh);
+    // Curves are instanced, moved and removed as meshes are, and take the instance's material.
+    uint32_t addCurves(const CurveDesc& curves);
     // Frees a mesh no instance uses; its index may be handed out again.
     void removeMesh(uint32_t mesh);
     // Rebuilds only the instance layer, which is all a transform edit costs.
