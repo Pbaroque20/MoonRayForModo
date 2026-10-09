@@ -295,6 +295,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["rate"] = 6,',
                       '  ["vec2f_values_0"] = %s,' % vector_array(values,'Vec2'), '}']
             user_data.append('UserData(%s)' % string(name))
+        from . import primitive_attributes
+        instance_values = []
+        if mesh.get('instance_attributes') and len(mesh['instance_attributes']) == len(mesh.get('instances') or []):
+            # One value for each instance, on the instancer.
+            instance_values = primitive_attributes.emit('/modo/instances/%s/attribute' % index, mesh['instance_attributes'], lines)
+        elif mesh.get('attributes') and 'instances' not in mesh:
+            user_data += primitive_attributes.emit('/modo/mesh/%s/attribute' % index, [mesh['attributes']], lines)
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,
                   '    ["node_xform"] = %s,' % node_matrix(mesh),
                   '    ["vertex_list_0"] = %s,' % vector_array(vertices),
@@ -356,7 +363,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             if mesh['instances']:
                 instance_crypto=cryptomatte.instance_userdata(mesh,lines,scene) if crypto else None
                 lines += ['  local instances = RdlInstancerGeometry("/modo/instances/%s") {' % index,
-                          *(['    ["primitive_attributes"] = {%s},'%instance_crypto] if instance_crypto else []),
+                          *(['    ["primitive_attributes"] = {%s},'%', '.join(([instance_crypto] if instance_crypto else [])+instance_values)] if instance_crypto or instance_values else []),
                           '    ["method"] = 2,',
                           '    ["references"] = {geometry},',
                           '    ["use_reference_xforms"] = false,',

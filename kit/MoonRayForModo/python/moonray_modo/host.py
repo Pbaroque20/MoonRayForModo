@@ -297,6 +297,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes'] if not dirty_meshes or mesh['identity'].split('|')[0] not in dirty_meshes]
         # Resolve each visible instance to one mesh prototype, including hidden sources.
         instances = {}
+        from . import primitive_attributes
+        instance_attributes = {}
         for instance in ([] if evaluated_geometry or reuse_geometry is not None else scene.items('meshInst', superType=False)):
             if not render_visible(instance):
                 continue
@@ -313,6 +315,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 if source.type != 'mesh':
                     raise ValueError('source is not a mesh')
                 instances.setdefault(source.id, []).append((instance.id,world_matrix(instance)))
+                # What this instance alone carries for its material to read.
+                instance_attributes[instance.id]=primitive_attributes.read(instance)
             except (ValueError, LookupError) as exc:
                 warnings.append('Instance %s: %s.' % (instance.name, exc))
         # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
@@ -393,9 +397,15 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                                          'smooth': object_settings['smooth'] if object_settings['override'] else True,
                                          'subdivision_level': object_settings['level'],
                                          'subdivision': object_settings['subdivision'] if object_settings['override'] else subdivision})
+                own_attributes = primitive_attributes.read(item)
+                if own_attributes:
+                    result['meshes'][-1]['attributes'] = own_attributes
                 if item.id in instances:
                     result['meshes'][-1]['instances'] = transforms
                     result['meshes'][-1]['instance_ids'] = [identity for identity,value in instance_records]
+                    held = [own_attributes if identity == item.id else instance_attributes.get(identity, []) for identity,value in instance_records]
+                    if any(held):
+                        result['meshes'][-1]['instance_attributes'] = held
         # World/locator projections cannot share baked UVs across transforms.
         # Keep ordinary UV instances shared; expand only affected prototypes.
         expanded = []

@@ -232,6 +232,31 @@ def plan(document, path):
         if moving or record.get('attributes', {}).get('vertex_list_1'):
             warnings.append('%s changes shape over the shutter; its shape at shutter open is imported.' % short(record['name']))
 
+    def carried(record):
+        """What a shape's UserData holds: [(name, type, values)]."""
+        from . import primitive_attributes
+        found = []
+        for reference in record.get('attributes', {}).get('primitive_attributes') or []:
+            held = objects.get(reference)
+            if not held or held['type'] != 'UserData':
+                continue
+            read = primitive_attributes.from_userdata(held)
+            if not read:
+                warnings.append('%s: the values in %s are of a kind the plugin does not hold' % (short(record['name']), short(reference)))
+            found += read
+        return found
+
+    def picked(values, index=None, count=None):
+        """The attributes of one thing out of what a shape carries: those with one value for everything, and with index,
+        those with one value for each of count things."""
+        return [{'name': name, 'type': kind, 'value': held[0] if len(held) == 1 else held[index]}
+                for name, kind, held in values if len(held) == 1 or (index is not None and len(held) == count)]
+
+    def merged(own, outer):
+        """A shape's attributes under those of the instancer that repeats it, whose values are the ones MoonRay uses."""
+        names = {entry['name'] for entry in outer}
+        return [entry for entry in own if entry['name'] not in names] + list(outer)
+
     def mesh(record, owner=None):
         """A mesh in its own space, once however many times it is placed. Returns its name in the plan."""
         key = record['name']
@@ -272,15 +297,18 @@ def plan(document, path):
             warnings.append(short(record['name']) + ': subdivision crease and corner weights are not imported')
         if volume_of(record['name']):
             warnings.append(short(record['name']) + ': the volume inside it is not imported; MoonRay volumes go in a MoonRay shape')
+        for name_, kind_, held in carried(record):
+            if len(held) > 1:
+                warnings.append('%s: %s differs from face to face or point to point, which is not imported; only one value for a whole item is' % (short(record['name']), name_))
         note_motion(record)
         name = label(record['name'])
         meshes.append({'name': name, 'vertices': vertices, 'faces': faces, 'uv': uv, 'normals': normals, 'tags': tags, 'subd': bool(a.get('is_subd', False)),
-                       'matrix': None, 'render': False})
+                       'matrix': None, 'render': False, 'attributes': []})
         mesh.made[key] = name
         return name
     mesh.made = {}
 
-    def strands(record, matrix):
+    def strands(record, matrix, outer=()):
         a = record.get('attributes', {})
         counts, points, radii = a.get('curves_vertex_count', []), a.get('vertex_list_0', []), a.get('radius_list', [])
         if not counts or sum(counts) != len(points) or any(type(n) != int or n < 2 for n in counts):
@@ -303,13 +331,19 @@ def plan(document, path):
             warnings.append(short(record['name']) + ': its radii are neither one for each point nor one for each curve; the first is used throughout')
             roots, tips = [radii[0]], [radii[0]]
         mean = lambda values: sum(values) / len(values) if values else 0.001
-        if roots and (max(roots) - min(roots) > 1e-6 * max(roots) or max(tips) - min(tips) > 1e-6 * max(max(tips), 1e-9)):
+        if len(lines) > 64 and roots and (max(roots) - min(roots) > 1e-6 * max(roots) or max(tips) - min(tips) > 1e-6 * max(max(tips), 1e-9)):
             warnings.append(short(record['name']) + ': its curves differ in width; all are given the average root and tip width')
         note_motion(record)
-        curves.append({'name': label(record['name']), 'lines': lines, 'kind': kind, 'round': int(a.get('curves_subtype', 0)) == 1, 'matrix': matrix, 'material': material(record['name'], ''),
-                       'root_mm': mean(roots) * 2000.0, 'tip_mm': mean(tips) * 2000.0})
+        values = carried(record)
+        # Curves that differ in what they carry, or in width, are imported as an item each, so that each keeps its own.
+        apart = any(len(held) == len(lines) and len(held) > 1 for name_, kind_, held in values) or (len(roots) == len(lines) and (max(roots) - min(roots) > 1e-6 * max(roots) or max(tips) - min(tips) > 1e-6 * max(max(tips), 1e-9)))
+        for index in (range(len(lines)) if apart and len(lines) <= 64 else [None]):
+            curves.append({'name': label(record['name']) if index is None else label('%s %d' % (record['name'], index + 1)),
+                           'lines': lines if index is None else [lines[index]], 'kind': kind, 'round': int(a.get('curves_subtype', 0)) == 1, 'matrix': matrix,
+                           'material': material(record['name'], ''), 'attributes': merged(picked(values, index, len(lines)), outer),
+                           'root_mm': (mean(roots) if index is None else roots[index]) * 2000.0, 'tip_mm': (mean(tips) if index is None else tips[index]) * 2000.0})
 
-    def entity(record, matrix, name=None, owner=None):
+    def entity(record, matrix, name=None, owner=None, outer=()):
         """A MoonRay item of the object's class, holding the attributes the scene set."""
         kind, spec = record['type'], catalog[record['type']]['attributes']
         a, parameters = record.get('attributes', {}), {}
@@ -345,7 +379,9 @@ def plan(document, path):
             unread = [key for key in record['unsupported_attributes'] if key in spec]
             if unread:
                 warnings.append('%s: %s could not be read' % (short(record['name']), ', '.join(unread)))
-        made = {'name': name or label(record['name']), 'class': kind, 'matrix': matrix, 'parameters': parameters, 'material': None, 'volume': None}
+        made = {'name': name or label(record['name']), 'class': kind, 'matrix': matrix, 'parameters': parameters, 'material': None, 'volume': None,
+                'attributes': merged(picked(carried(record)), outer) if catalog[kind]['category'] == 'geometry' else []}
+        parameters.pop('primitive_attributes', None)
         if catalog[kind]['category'] == 'geometry':
             made['material'] = material(record['name'], '', owner)
             volume = volume_of(owner or record['name']) or volume_of(record['name'])
@@ -361,7 +397,7 @@ def plan(document, path):
         items.append(made)
         return made
 
-    def place(name, matrix, title, owner=None, depth=0):
+    def place(name, matrix, title, owner=None, depth=0, outer=()):
         """Put one object into the scene at a matrix: a mesh, a MoonRay shape, curves, or everything an instancer repeats."""
         record = objects.get(name)
         if record is None:
@@ -373,17 +409,17 @@ def plan(document, path):
         if kind == 'RdlMeshGeometry':
             source = mesh(record, owner)
             if source:
-                instances.append({'name': title, 'source': source, 'matrix': matrix})
+                instances.append({'name': title, 'source': source, 'matrix': matrix, 'attributes': merged(picked(carried(record)), outer)})
         elif kind == 'RdlCurveGeometry':
-            strands(dict(record, name=name), matrix) if title == label(name) else warnings.append(short(name) + ': instanced curves are not imported')
+            strands(dict(record, name=name), matrix, outer) if title == label(name) else warnings.append(short(name) + ': instanced curves are not imported')
         elif kind == 'RdlInstancerGeometry':
-            repeated(record, matrix, title, depth)
+            repeated(record, matrix, title, depth, outer)
         elif kind in catalog and catalog[kind]['category'] == 'geometry':
-            entity(record, matrix, title, owner)
+            entity(record, matrix, title, owner, outer)
         else:
             warnings.append('%s: %s has no counterpart in Modo and is not imported' % (short(name), kind))
 
-    def repeated(record, parent, title, depth):
+    def repeated(record, parent, title, depth, outer=()):
         a, name = record.get('attributes', {}), record['name']
         references = [r for r in a.get('references', [])]
         if not references:
@@ -412,8 +448,7 @@ def plan(document, path):
         if len(transforms) > INSTANCE_LIMIT:
             warnings.append('%s: only the first %d of its %d instances are imported' % (short(name), INSTANCE_LIMIT, len(transforms)))
             transforms = transforms[:INSTANCE_LIMIT]
-        if a.get('primitive_attributes'):
-            warnings.append(short(name) + ': the values it gives each instance (primitive attributes) are not imported')
+        values, total = carried(record), len(transforms)
         own = checked_matrix(a.get('node_xform', IDENTITY), name)
         for index, matrix in enumerate(transforms):
             if index in disabled:
@@ -427,7 +462,7 @@ def plan(document, path):
             matrix = product(product(matrix, own), parent)
             if a.get('use_reference_xforms', True):
                 matrix = product(checked_matrix(objects[reference].get('attributes', {}).get('node_xform', IDENTITY), reference), matrix)
-            place(reference, matrix, '%s %d' % (title, index + 1), name, depth + 1)
+            place(reference, matrix, '%s %d' % (title, index + 1), name, depth + 1, merged(picked(values, index, total), outer))
 
     # A shape an instancer repeats is not in the picture itself, only where the instancer puts it.
     referenced = {name for v in objects.values() if v['type'] == 'RdlInstancerGeometry' for name in v.get('attributes', {}).get('references', [])}
@@ -474,7 +509,7 @@ def plan(document, path):
     for record in meshes:
         entry = first.get(record['name'])
         if entry:
-            record['matrix'], record['render'] = entry['matrix'], True
+            record['matrix'], record['render'], record['attributes'] = entry['matrix'], True, entry['attributes']
             # The mesh takes the place and the name of its first instance.
             entry['source'] = None
     instances = [entry for entry in instances if entry['source']]
@@ -535,8 +570,6 @@ def plan(document, path):
         settings['custom_aovs'] = custom
     if scene.get('motion_steps') and len(scene['motion_steps']) > 1 and any('close' in v for v in objects.values()):
         warnings.append('The scene is imported as it stands at shutter open; Modo holds its motion as animation, which RDL does not carry.')
-    if any(v['type'] == 'UserData' for v in objects.values()):
-        warnings.append('Values given to shapes for their materials to read (UserData primitive attributes) are not imported.')
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
                 settings=settings, warnings=list(dict.fromkeys(warnings)), source=str(path))
 
@@ -569,7 +602,7 @@ def apply(data, alone=True):
     already in the Modo scene are set not to render, and Modo's environment is kept out of MoonRay's picture."""
     import lx
     import modo
-    from . import entities, materials, options, properties, shader_library
+    from . import entities, materials, options, primitive_attributes, properties, shader_library
     scene = modo.Scene()
     created, warnings, tags, made = [], list(data['warnings']), {}, {}
     previous_camera, previous_selection = scene.renderCamera, list(scene.selected)
@@ -630,6 +663,8 @@ def apply(data, alone=True):
                     offset += len(face)
             if keep:
                 pose(item, record['matrix'])
+            if record['attributes']:
+                primitive_attributes.write(item, record['attributes'])
             if not record['render']:
                 # Only its instances are in the picture, as in the scene it came from.
                 item.channel('render').set('off')
@@ -645,6 +680,8 @@ def apply(data, alone=True):
                 created.append(item)
                 item.channel('render').set('default')
                 pose(item, record['matrix'])
+                if record['attributes']:
+                    primitive_attributes.write(item, record['attributes'])
             except (ValueError, LookupError, RuntimeError) as exc:
                 warnings.append('%s is not imported: %s' % (record['name'], exc))
         for record in data['curves']:
@@ -668,6 +705,8 @@ def apply(data, alone=True):
                                 geo.polygons[index].materialTag = tags[record['material']]
             if keep:
                 pose(item, record['matrix'])
+            if record['attributes']:
+                primitive_attributes.write(item, record['attributes'])
             values = options.object_values(properties.read(item))
             values.update(override=True, curves=True, curve_root_width=record['root_mm'], curve_tip_width=record['tip_mm'], curve_round=record['round'])
             properties.write(item, options.object_values(values))
@@ -683,6 +722,8 @@ def apply(data, alone=True):
                 parameters['modo_material'] = tags[record['material']]
             if record['volume']:
                 parameters['modo_volume'] = record['volume']
+            if record['attributes']:
+                primitive_attributes.write(item, record['attributes'])
             spec = entities.catalog()[record['class']]['attributes']
             for key, channel, plan_kind, default, choices in entities.channels(record['class']):
                 if key not in parameters:

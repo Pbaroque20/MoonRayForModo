@@ -60,7 +60,8 @@ class RdlPrimitives(unittest.TestCase):
                  dict(name='/out/spec',type='RenderOutput',attributes={'result':8,'lpe':'C<RS>L','channel_name':'spec'})]
         plan=rdl_import.plan({'version':1,'objects':records},'example.rdla')
         # Too few points for a span of the curve: they are kept as they are.
-        self.assertEqual([len(line) for line in plan['curves'][0]['lines']],[2,3])
+        # Two curves of two widths: an item each, so that each keeps its own.
+        self.assertEqual([[len(line) for line in c['lines']] for c in plan['curves']],[[2],[3]])
         # A B-spline does not pass through its control points; what is imported is the path it does take.
         path=rdl_import.followed([[0,0,0],[0,3,0],[3,3,0],[3,0,0],[6,0,0]],rdl_import.BSPLINE,4)
         self.assertEqual(len(path),9)
@@ -68,7 +69,8 @@ class RdlPrimitives(unittest.TestCase):
         bezier=rdl_import.followed([[0,0,0],[0,3,0],[3,3,0],[3,0,0]],rdl_import.BEZIER,4)
         self.assertEqual((bezier[0],bezier[-1]),([0,0,0],[3,0,0]))
         self.assertEqual(plan['curves'][0]['kind'],rdl_import.BSPLINE)
-        self.assertAlmostEqual(plan['curves'][0]['root_mm'],3.0)
+        self.assertAlmostEqual(plan['curves'][0]['root_mm'],2.0)
+        self.assertAlmostEqual(plan['curves'][1]['root_mm'],4.0)
         self.assertEqual([(e['name'],e['class'],e['parameters']) for e in plan['entities']],[('key','SphereLight',{'intensity':7.0,'radius':.5})])
         self.assertEqual(plan['settings']['resolution'],[800,600])
         self.assertEqual(plan['settings']['samples'],6)

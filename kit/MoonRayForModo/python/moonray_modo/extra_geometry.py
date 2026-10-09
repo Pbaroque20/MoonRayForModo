@@ -213,7 +213,12 @@ def collect(scene,warnings,controls):
             except (LookupError,RuntimeError,TypeError,AttributeError) as exc:
                 raise ValueError('Cannot read evaluated curves for '+item.name+': '+str(exc))
             if shape.get('hair'):strands=grown(scene,item,strands,shape['hair'],warnings)
-            result+=batches(item.id,item.name,strands,shape,settings.get('material',''),world_matrix(item))
+            made=batches(item.id,item.name,strands,shape,settings.get('material',''),world_matrix(item))
+            from . import primitive_attributes
+            carried=primitive_attributes.read(item)
+            for entry in made:
+                if carried:entry['attributes']=carried
+            result+=made
         if not mesh.PolygonCount() or point_ids or settings.get('points'):
             vertices=[];stable=[];id_name=settings.get('point_id_map','')
             id_map=first_map(mesh,lx.symbol.i_VMAP_WEIGHT,id_name) if id_name else None
@@ -304,9 +309,14 @@ def emit(scene,materials,lines,crypto=False):
         if 'visibility' in entry:
             camera,indirect,reflection,refraction,subsurface,shadow=entry['visibility']
             for key,value in [('visible_in_camera',camera),('visible_shadow',shadow),('visible_diffuse_reflection',indirect),('visible_diffuse_transmission',indirect),('visible_glossy_reflection',reflection),('visible_mirror_reflection',reflection),('visible_glossy_transmission',refraction),('visible_mirror_transmission',refraction)]:attrs[key]='true' if value else 'false'
+        carried=[]
         if crypto and kind!='vdb':
             from .cryptomatte import userdata_set
-            attrs['primitive_attributes']=array(userdata_set(entry,lines,scene))
+            carried=list(userdata_set(entry,lines,scene))
+        if entry.get('attributes') and kind=='curves':
+            from . import primitive_attributes
+            carried+=primitive_attributes.emit(path+'/attribute',[entry['attributes']],lines)
+        if carried:attrs['primitive_attributes']=array(carried)
         lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':
             lines += ['  local a = {g, "", %s, objectLightSets[%s] or (nativeLightSets[%s] and nativeLightSets[%s][%s]) or lightSet}'%(shader,string(owner(entry)),string(owner(entry)),string(owner(entry)),string(tag)),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']

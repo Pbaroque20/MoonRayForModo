@@ -359,8 +359,10 @@ def collect(scene, warnings):
         for item in typed_items:
             try:
                 if render_visible(item):
+                    from . import primitive_attributes
                     result.append({'identity': item.id, 'name': item.name, 'class': name, 'matrix': world_matrix(item),
-                                   'parameters': from_channels(name, lambda channel: item.channel(channel).get())})
+                                   'parameters': from_channels(name, lambda channel: item.channel(channel).get()),
+                                   'attributes': primitive_attributes.read(item)})
             except (ValueError, LookupError, RuntimeError, AttributeError, TypeError) as exc:
                 warnings.append('MoonRay item %s: %s.' % (getattr(item, 'name', '?'), exc))
     # The first, generic item kept its class and values in a tag; plain locators may carry one too.
@@ -708,6 +710,11 @@ def emit_geometry(scene, materials, lines):
     for entity in entities:
         if catalog()[entity['class']]['category'] != 'geometry':
             continue
+        held = []
+        if entity.get('attributes'):
+            # What the shape carries for its material to read.
+            from . import primitive_attributes
+            held = primitive_attributes.emit('/modo/entity/%s/attribute' % entity['identity'], [entity['attributes']], lines)
         name, body = block(entities, entity)
         tag = entity['parameters'].get('modo_material', '')
         if tag not in materials:
@@ -720,6 +727,14 @@ def emit_geometry(scene, materials, lines):
         if entity['parameters'].get('modo_volume'):
             parts.append(reference(entities, entity['parameters']['modo_volume'], 'VOLUME', entity['name'] + '.volume'))
         lines += body + ['table.insert(geometries, %s)' % name, 'table.insert(assignments, {%s})' % ', '.join(parts)]
+        if held:
+            # MoonRay's own shapes take such values only from an instancer, so the shape is given one that puts it
+            # once where it stands. A shape an instancer repeats is not in the picture a second time on its own.
+            holder = 'RdlInstancerGeometry(%s)' % string('/modo/entity/%s/holder' % entity['identity'])
+            lines += [holder + ' {', '  ["method"] = 2,', '  ["references"] = {%s},' % name, '  ["use_reference_xforms"] = true,',
+                      '  ["use_reference_attributes"] = true,', '  ["xform_list"] = {Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)},',
+                      '  ["primitive_attributes"] = {%s},' % ', '.join(held), '}',
+                      'table.insert(geometries, %s)' % holder, 'table.insert(assignments, {%s, "", nil, lightSet})' % holder]
 
 
 def render_camera(scene):
