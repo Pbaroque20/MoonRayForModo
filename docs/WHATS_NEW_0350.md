@@ -183,6 +183,11 @@ PView was removed: Modo cannot host an external renderer there.
   points of a Bezier or B-spline curve that MoonRay draws (Line Points Are).
 - A material that cannot be blended with others, such as a hair material, now renders when it
   is over the base material. It was refused before.
+- A scene's view transform starts as plain sRGB: linear light shown as an sRGB monitor expects
+  it. Highlight compression, which darkens the whole picture, is still there to choose. A
+  scene that has its view stored keeps it.
+- ACES (sRGB display) is a view transform of its own: the ACES 1.0 SDR view for an sRGB monitor,
+  from the configuration OpenColorIO carries, with no file to find.
 - A scene with an imported MaterialX material is read in a fraction of the time. Its texture
   coordinates were worked out again for every polygon, which stopped Modo for seconds on a small
   mesh and for minutes on a dense one, each time the preview read the scene.

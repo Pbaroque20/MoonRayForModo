@@ -62,7 +62,7 @@ def render_field(key, label, tip=''):
 DENOISERS = [('Off', 'off'), ('NVIDIA OptiX (GPU)', 'optix'), ('Intel Open Image Denoise (CPU)', 'oidn_cpu')]
 BACKGROUNDS = [('Scene environment', 'environment'), ('Black', 'black'), ('Solid color', 'color'), ('Image', 'image')]
 SURFACES = [('As modeled', 0), ('Smooth subdivision', 1), ('Modo evaluated geometry', 2)]
-VIEWS = [('Highlight compression + sRGB', 'reinhard'), ('sRGB', 'srgb'), ('Raw linear', 'raw'), ('OCIO display / view', 'ocio')]
+VIEWS = [('sRGB', 'srgb'), ('ACES (sRGB display)', 'aces'), ('Highlight compression + sRGB', 'reinhard'), ('Raw linear', 'raw'), ('OCIO display / view', 'ocio')]
 LUT_SPACES = [('After display transform', 'display'), ('Scene-linear, before view', 'linear')]
 MODES = [('Auto (XPU, Vector, Scalar)', 'auto'), ('XPU (NVIDIA GPU + CPU)', 'xpu'), ('Vector (CPU / AVX)', 'vectorized'), ('Scalar (CPU)', 'scalar')]
 
