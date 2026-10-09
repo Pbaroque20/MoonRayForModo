@@ -107,6 +107,9 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
         return str(cache/'tile.<UDIM>.tx')
 
     source = Path(source).resolve()
+    if source.suffix.lower()=='.tx' and space in ('raw','linear') and mipmaps:
+        # Already a texture made for the renderer, and nothing to change in its colours: it is used as it is.
+        return str(source)
     stat = source.stat()
     key_data = repr((str(source),stat.st_size,stat.st_mtime_ns,transform_key,'v4-input-ocio'))
     if not mipmaps:
@@ -130,7 +133,7 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
     args += ['-o', str(staged), str(source)]
     try:
         result = subprocess.run(args, env=native.environment(runtime), stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, timeout=120,
+            stderr=subprocess.STDOUT, text=True, timeout=600,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode or not staged.is_file():
             raise ValueError('Texture conversion failed for %s: %s' % (source.name, result.stdout[-1200:]))

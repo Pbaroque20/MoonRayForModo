@@ -36,7 +36,9 @@ def document(runtime, path):
 def rendered(runtime, scene, output, size, cwd):
     """Render a scene file at a size and return its pixels' luminance, row by row."""
     scenes = [word for name in rdl_import.files(scene) for word in ('-in', name)]
-    for args in ([str(runtime / 'moonray.exe')] + scenes + ['-out', str(output), '-size', str(size[0]), str(size[1]), '-exec_mode', 'auto'],
+    for args in ([str(runtime / 'moonray.exe')] + scenes + ['-out', str(output), '-size', str(size[0]), str(size[1]), '-exec_mode', 'auto',
+                  # Both at the same plain sampling, so that the pictures differ only by what the scenes hold.
+                  '-scene_var', 'sampling_mode', '0', '-scene_var', 'pixel_samples', '6'],
                  [str(runtime / 'oiiotool.exe'), str(output), '--ch', 'R,G,B', '-d', 'float', '-o', str(output.with_suffix('.pfm'))],
                  [str(runtime / 'oiiotool.exe'), str(output), '--ch', 'R,G,B', '--colorconvert', 'linear', 'sRGB', '-o', str(output.with_suffix('.png'))]):
         done = subprocess.run(args, env=native.environment(runtime), cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW)

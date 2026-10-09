@@ -510,6 +510,13 @@ def plan(document, path):
         except ValueError as exc:
             warnings.append('%s is not imported: %s' % (short(name), exc))
 
+    # The scene can say that its lights are seen by the camera. The plugin has no such setting for the whole scene, so
+    # each light that left the matter to the scene is told so itself.
+    if scene.get('lights_visible_in_camera'):
+        for made in items:
+            if catalog[made['class']]['category'] == 'light' and 'visible_in_camera' not in made['parameters']:
+                made['parameters']['visible_in_camera'] = 1
+
     # Materials nothing wears come in too, to be assigned in Modo.
     worn = {key.split('|')[0] for key in materials}
     bound = {target for v in objects.values() for target in v.get('bindings', {}).values()}
