@@ -635,6 +635,11 @@ class Panel(Tools, QtWidgets.QWidget):
             if reuse:
                 from .incremental import classify
                 reuse=classify(modo.Scene(),items,self._geometry_cache)
+            if held and reuse is True:
+                # A physically based sky is painted again for every place its sun is put, which a drag cannot keep
+                # up with: the sun of such a sky is shown where it was let go.
+                from .incremental import moves_sky
+                if moves_sky(modo.Scene(),items,self._geometry_cache):reuse=False
             if held and reuse not in (True,'transforms','materials'):
                 # Modo reports some drags as they happen (the transform tool) and others only on
                 # release (viewport navigation). Of those it reports, only light, transform and
