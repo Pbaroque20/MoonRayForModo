@@ -40,6 +40,11 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 | ![Modern Hall](docs/images/rdl-modern_hall.jpg) | ![Contemporary Bathroom](docs/images/rdl-contemporary_bathroom.jpg) |
 | Modern Hall (NewSee2l035, CC BY) | Contemporary Bathroom (Mareck, CC0) |
 
+### Imported MaterialX materials
+
+![A wood from a MaterialX library, in MoonRay and in MoonLight](docs/images/moonlight-materialx-TH_Wood_Table.jpg)
+*TH Wood Table from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all), imported from its `.mtlx` file: MoonRay on the left, MoonLight on the right.*
+
 ### View transforms
 
 ![One render shown as sRGB, ACES and highlight compression](docs/images/view-transforms.jpg)

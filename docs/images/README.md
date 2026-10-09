@@ -29,6 +29,16 @@ The scenes are from [MoonRay's published example scenes](https://docs.openmoonra
 - `view-transforms.jpg`: one linear render of Modern Hall (NewSee2l035, CC BY) shown three ways: plain sRGB, ACES (sRGB display), and highlight compression + sRGB.
 - `moonlight-*.jpg`: the same scene in MoonRay on the left and MoonLight on the right, from `tools/compare_moonlight.py`. The scenes are built by that script.
 
+## MaterialX materials (`moonlight-materialx-*.jpg`)
+
+Five materials from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all), imported with **Import MaterialX Material** and put on a ball: MoonRay on the left, MoonLight on the right. Car Paint, TH Wood Table, Pale Pink Carrara Marble, Indigo Palm Wallpaper and Fresco Decor Wallpaper. The library publishes its materials under the MIT License or as public domain; four of the five files carry the MIT terms in the file itself. Made by `tools/render_materialx.py`.
+
+![Car Paint](moonlight-materialx-Car_Paint.jpg)
+![TH Wood Table](moonlight-materialx-TH_Wood_Table.jpg)
+![Pale Pink Carrara Marble](moonlight-materialx-Pale_Pink_Carrara_Marble.jpg)
+![Indigo Palm Wallpaper](moonlight-materialx-Indigo_Palm_Wallpaper.jpg)
+![Fresco Decor Wallpaper](moonlight-materialx-Fresco_Decor_Wallpaper.jpg)
+
 ## All ten example scenes
 
 Left of each pair: MoonRay's render from the scene's own files. Right: after import into Modo.

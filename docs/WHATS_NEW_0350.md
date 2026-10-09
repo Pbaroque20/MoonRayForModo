@@ -218,6 +218,11 @@ PView was removed: Modo cannot host an external renderer there.
   mesh and for minutes on a dense one, each time the preview read the scene.
 - IPR no longer reads the whole scene again every 15 seconds unless asked to, in the preview's
   preferences. It is for procedural items that do not announce their changes.
+  ![A marble from a MaterialX library, in MoonRay and in MoonLight](images/moonlight-materialx-Pale_Pink_Carrara_Marble.jpg)
+  ![A wood from a MaterialX library, in MoonRay and in MoonLight](images/moonlight-materialx-TH_Wood_Table.jpg)
+
+  *Pale Pink Carrara Marble and TH Wood Table from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all), imported and rendered in
+  MoonRay (left) and MoonLight (right).*
 - A MoonRay material set to metal now renders as one. Its metallic setting never reached
   MoonRay before.
 

@@ -212,6 +212,11 @@ light as normalized. It now gives such a light the brightness that comes to the 
 thing (the intensity times pi times its area), which is what brought a hallway lit by large
 windows level with MoonRay. A distant light set that way is not worked out and gets a notice.
 
+![A wood from a MaterialX library](../docs/images/moonlight-materialx-TH_Wood_Table.jpg)
+![A wallpaper from a MaterialX library](../docs/images/moonlight-materialx-Indigo_Palm_Wallpaper.jpg)
+![A car paint from a MaterialX library](../docs/images/moonlight-materialx-Car_Paint.jpg)
+*TH Wood Table, Indigo Palm Wallpaper and Car Paint from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all) (MIT License or public domain), MoonRay left, MoonLight right.*
+
 The car paint's flakes are in its reflection, not its colour, so the denoiser softens them
 at low sample counts; they sharpen as the picture gathers samples.
 
