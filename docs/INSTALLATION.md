@@ -1,6 +1,6 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.3.49**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
+These instructions are for **0.3.50.1**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
 
 ## Requirements
 
@@ -10,7 +10,7 @@ These instructions are for **0.3.49**, **Modo 16.1v9**, and **Windows x64**. Thi
 
 ## Download and install
 
-1. Open the [0.3.49 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.49). Download **MoonRayForModo-0.3.49-kit.zip** and **MoonRayForModo-0.3.49-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
+1. Open the [0.3.50.1 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.1). Download **MoonRayForModo-0.3.50.1-kit.zip** and **MoonRayForModo-0.3.50.1-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
 2. Save your scene and close all Modo instances.
 3. Extract both ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders. The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, and `runtime/moonray.exe`.
 4. In Windows Explorer, enter `%APPDATA%\Luxology\Kits`. Create the `Kits` folder if needed. If a `MoonRayForModo` folder already exists, move it to a backup location **outside Kits**; do not merge a new release into the old installation.
@@ -22,9 +22,13 @@ Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration 
 
 ## Using the plugin
 
-- **Render** starts a preview; **IPR** updates it after scene changes. The preview can dock as a Modo custom viewport; it does not populate Modo's built-in Render View slots.
-- In the Shader Tree, add **MoonShine Material Override** above a Modo material. Enable the override and choose **Edit Material Graph**.
-- After a preview pass completes, enable **Beauty denoiser** with **Denoise beauty preview** checked to denoise cached pixels without rerendering. Select **Beauty** or **Denoised Beauty** in the render-buffer dropdown.
+- Open **MoonRay > Render Setup**. **Render** starts a preview; with **IPR** ticked it keeps following the scene until Stop. The preview can dock as a Modo custom viewport; it does not populate Modo's built-in Render View slots.
+- Choose the preview engine beside IPR: **MoonRay**, or **MoonLight** for an approximate GPU preview that follows edits as they are made (NVIDIA GPU required). Output renders always use MoonRay.
+- Render settings are on the Render item's **MoonRay** tab and under **MoonRay > Render Settings**: sampling, depths, denoising, view transform (ACES by default) and outputs.
+- To give a mesh a MoonRay material, select it and choose **MoonRay > Assign MoonShine Material to Mesh**, or add one from the Shader Tree's **Add Layer** list. Its form has **Open Graph**.
+- **MoonRay > Import MaterialX Material...** and **MoonRay > Import MoonRay Scene (RDL)...** bring in materials and whole MoonRay scenes. For a scene kept as `scene.rdlb` and `scene.rdla`, choose either file.
+- **MoonRay > Add MoonRay Item** adds MoonRay's own lights, light filters, cameras, shapes and volumes.
+- With a **Beauty denoiser** chosen and **Denoise Preview** on, a finished preview shows **Denoised Beauty**; choose **Beauty** in the buffer list to compare. The denoised view is off while IPR is following the scene.
 
 ## Checksums and troubleshooting
 
@@ -34,16 +38,18 @@ If the MoonRay menu is missing, check the folder nesting and restart Modo. If th
 
 To roll back, close Modo, move the new kit outside `Kits`, and restore your backed-up kit. If you changed the runtime path, restore that path too. Only one MoonRay kit should remain under `Kits`.
 
-See the [README](../README.md) for current limitations. This release was packaged with file-integrity checks; no new render, Modo UI, or clean-machine tests were run.
+See the [README](../README.md) for current limitations. This release was packaged with file-integrity checks, and the packaged files were unpacked into an empty folder and rendered from there with no environment set; it has been run on one machine only, and no clean-machine install was tested.
 
 ## Standalone command-line rendering
 
-Version 0.3.49 defaults to the folder containing `moonray.exe` when locating `shaders/OptixGPUPrograms.ptx` and shader libraries. Keep the complete runtime folder together. No environment setup is required for the bundled layout. Existing `REZ_MOONRAY_ROOT`, `RDL2_DSO_PATH`, and `TMPDIR` settings take precedence; clear stale values if they point to another installation.
+The runtime defaults to the folder containing `moonray.exe` when locating `shaders/OptixGPUPrograms.ptx` and shader libraries. Keep the complete runtime folder together. No environment setup is required for the bundled layout. Existing `REZ_MOONRAY_ROOT`, `RDL2_DSO_PATH`, and `TMPDIR` settings take precedence; clear stale values if they point to another installation.
 
 In PowerShell, adjust these paths:
 
 ```powershell
 & 'C:\path\MoonRayForModo\runtime\moonray.exe' -in 'C:\scenes\scene.rdla' -out 'C:\renders\beauty.exr' -exec_mode xpu 2>&1 | Tee-Object "$env:USERPROFILE\Desktop\moonray-log.txt"
 ```
+
+A GPU render with many outputs has four times the room it had for what each ray owes them; `MOONRAY_MODO_CL1_POOL_SCALE` (1 to 8, default 4) sets another size if a render still reports that it could not allocate a CacheLine1.
 
 If OptiX still fails, report the complete log and NVIDIA driver version. Automatic file discovery does not resolve an incompatible driver or invalid PTX program.
