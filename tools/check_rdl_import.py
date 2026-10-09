@@ -24,7 +24,8 @@ TILE = 20
 
 def document(runtime, path):
     """The scene as MoonRay's reader sees it: every object with its class and attributes."""
-    done = subprocess.run([str(runtime / 'modo_rdl_import.exe'), str(path), str(runtime)], env=native.environment(runtime), cwd=str(path.parent),
+    together = rdl_import.files(path)
+    done = subprocess.run([str(runtime / 'modo_rdl_import.exe'), together[0], str(runtime)] + together[1:], env=native.environment(runtime), cwd=str(path.parent),
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
     offset = done.stdout.rfind(MARKER)
     if done.returncode or offset < 0:
@@ -34,7 +35,8 @@ def document(runtime, path):
 
 def rendered(runtime, scene, output, size, cwd):
     """Render a scene file at a size and return its pixels' luminance, row by row."""
-    for args in ([str(runtime / 'moonray.exe'), '-in', str(scene), '-out', str(output), '-size', str(size[0]), str(size[1]), '-exec_mode', 'auto'],
+    scenes = [word for name in rdl_import.files(scene) for word in ('-in', name)]
+    for args in ([str(runtime / 'moonray.exe')] + scenes + ['-out', str(output), '-size', str(size[0]), str(size[1]), '-exec_mode', 'auto'],
                  [str(runtime / 'oiiotool.exe'), str(output), '--ch', 'R,G,B', '-d', 'float', '-o', str(output.with_suffix('.pfm'))],
                  [str(runtime / 'oiiotool.exe'), str(output), '--ch', 'R,G,B', '--colorconvert', 'linear', 'sRGB', '-o', str(output.with_suffix('.png'))]):
         done = subprocess.run(args, env=native.environment(runtime), cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -92,14 +94,14 @@ def main():
         arguments = arguments[2:]
     for name in arguments:
         path = Path(name).resolve()
-        print(path.name)
+        print(path.parent.name + '/' + path.name)
         try:
             read = document(runtime, path)
         except RuntimeError as exc:
             print('  could not be read:', str(exc).strip().splitlines()[-1])
             continue
         if keep:
-            (keep / (path.stem + '.document.json')).write_text(json.dumps(dict(read, _path=str(path))), encoding='utf-8')
+            (keep / ((path.parent.name if path.stem == 'scene' else path.stem) + '.document.json')).write_text(json.dumps(dict(read, _path=str(path))), encoding='utf-8')
         kinds = collections.Counter(record['type'] for record in read['objects'])
         print('  holds: ' + ', '.join('%d %s' % (count, kind) for kind, count in sorted(kinds.items())))
         plan = rdl_import.plan(read, path)

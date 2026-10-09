@@ -157,6 +157,22 @@ PView was removed: Modo cannot host an external renderer there.
 - MoonLight's denoiser keeps more of a texture. It is given the light without the surface
   colour, so a printed pattern is not its to smooth, and as samples gather a growing share of
   the picture's own detail is kept beside it. `tools/check_moonlight_denoise.py` measures it.
+- Import RDL Scene brings a MoonRay scene in whole. Meshes keep their transforms and are
+  instanced, not copied, however deeply the scene's instancers nest; curves come in as curves;
+  lights, light filters, volumes, MoonRay's own shapes and its other cameras become MoonRay
+  items holding every attribute the scene set; materials come in with their graphs and
+  displacement, as their own kind in the Shader Tree; image size, sampling, depths and render
+  outputs go to the render settings. A scene in two files, scene.rdlb and scene.rdla, is read
+  as one. What has no home in Modo is listed before anything is made. By default the result is
+  lit only as the RDL scene is lit. `tools/check_rdl_import.py` renders a scene before and
+  after its trip through Modo: five of MoonRay's six test scenes come back the same picture.
+- An item can carry values for its material to read (MoonRay's primitive attributes), each
+  instance its own; an imported scene's per-shape and per-instance colours arrive this way.
+  There is no form for them yet. A value that differs from face to face is not held.
+- A mesh's curves can be round tubes (Round Curves), and a line's points can be the control
+  points of a Bezier or B-spline curve that MoonRay draws (Line Points Are).
+- A material that cannot be blended with others, such as a hair material, now renders when it
+  is over the base material. It was refused before.
 - A scene with an imported MaterialX material is read in a fraction of the time. Its texture
   coordinates were worked out again for every polygon, which stopped Modo for seconds on a small
   mesh and for minutes on a dense one, each time the preview read the scene.

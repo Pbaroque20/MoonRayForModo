@@ -2,6 +2,7 @@
 // importer. Per object: its class, each attribute's value, which attributes the scene set (the rest are the
 // class's defaults), what is bound to an attribute, which attributes name files, and for an attribute that
 // can change over the shutter, its value at shutter close where that differs.
+// Arguments: a scene file, the folder of MoonRay's classes, then any further files of the same scene, read in order.
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 #include <json/json.h>
 #include <iostream>
@@ -22,9 +23,10 @@ MATRIX(Mat4f,4) MATRIX(Mat4d,4) MATRIX(Mat3f,3) MATRIX(Mat3d,3)
 template<class T> Json::Value collection(const T& v){Json::Value a(Json::arrayValue);for(const auto& x:v)a.append(value(x));return a;}
 Json::Value flags(const BoolVector& v){Json::Value a(Json::arrayValue);for(const auto x:v)a.append(bool(x));return a;}
 int main(int argc,char** argv){
- if(argc!=3)return 2;
+ if(argc<3)return 2;
  try{
   SceneContext context;context.setProxyModeEnabled(true);context.setDsoPath(argv[2]);readSceneFromFile(argv[1],context);
+  for(int i=3;i<argc;++i)readSceneFromFile(argv[i],context);
   Json::Value root(Json::objectValue);root["version"]=1;root["reader"]=2;root["objects"]=Json::Value(Json::arrayValue);
   for(auto it=context.beginSceneObject();it!=context.endSceneObject();++it){
    const auto& obj=*it->second;const auto& cls=obj.getSceneClass();Json::Value record(Json::objectValue);

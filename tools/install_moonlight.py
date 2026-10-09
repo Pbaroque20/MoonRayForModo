@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 
-MODULES = ('procedurals.py', 'asset_import.py', 'evaluated.py', 'layers.py', 'hair.py', 'materialx_document.py', 'materialx_definitions.py', 'materialx_expand.py', 'materialx_geometry.py', 'materialx_standard.py', 'materialx.py', 'about.py', 'shader_library.py', 'graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'curve_tubes.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
+MODULES = ('primitive_attributes.py', 'rdl_import_dialog.py', 'rdl_primitives.py', 'procedurals.py', 'asset_import.py', 'evaluated.py', 'layers.py', 'hair.py', 'materialx_document.py', 'materialx_definitions.py', 'materialx_expand.py', 'materialx_geometry.py', 'materialx_standard.py', 'materialx.py', 'about.py', 'shader_library.py', 'graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'curve_tubes.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
            'moonlight_scene.py', 'moonlight_materials.py', 'moonlight_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py', 'materials.py', 'material_editor.py', 'rdl_import.py', 'properties.py',
            'panel_tools.py', 'preferences.py', 'scene_settings.py', 'focus.py', 'progress.py', 'node_editor.py', 'node_widgets.py', 'incremental.py', 'graph_images.py', 'property_notifications.py', 'camera_choice.py', 'graph_bake.py', 'nodes.py', 'coordinates.py', 'animation.py', 'package_sequence.py')
 # Files outside the Python package, relative to the kit: the commands and forms of the MoonRay
@@ -49,6 +49,14 @@ if (kit / 'runtime/moonlight').is_dir():
 subprocess.run([sys.executable, str(root / 'tools/stage_moonlight.py'), '--destination', str(kit / 'runtime/moonlight')], check=True)
 for name in MODULES:
     shutil.copyfile(source / name, target / name)
+# The scene reader behind Import RDL Scene, where it has been built (tools/build_rdl_reader.py).
+reader = root / 'build/native-avx/bin/modo_rdl_import.exe'
+if reader.is_file() and (kit / 'runtime').is_dir():
+    held = kit / 'runtime' / reader.name
+    if held.is_file():
+        backup.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(held, backup / reader.name)
+    shutil.copyfile(reader, held)
 for name in KIT_FILES:
     shutil.copyfile(root / 'kit/MoonRayForModo' / name, kit / name)
 # The MoonRay menu: its MoonRay items submenu, dividers between its groups, and plain characters.

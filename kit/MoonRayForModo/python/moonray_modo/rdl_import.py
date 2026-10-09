@@ -26,6 +26,14 @@ pending = None
 result = ''
 
 
+def files(path):
+    """The files of the scene a chosen file belongs to, in the order to read them. A scene is often two files of one
+    name: the binary one with the bulk of it, then the text one with what was tuned by hand, which has the last word."""
+    path = Path(path)
+    both = [path.with_suffix(suffix) for suffix in ('.rdlb', '.rdla')]
+    return [str(p) for p in both] if all(p.is_file() for p in both) else [str(path)]
+
+
 def transform(point, matrix):
     return [sum(point[j] * matrix[j * 4 + i] for j in range(3)) + matrix[12 + i] for i in range(3)]
 

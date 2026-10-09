@@ -35,8 +35,8 @@ class Dialog(QtWidgets.QDialog):
    self.data=None;self.output.clear();self.errors='';self.import_button.setEnabled(False);self.choose.setEnabled(False);self.cancel.setEnabled(True)
    env=QtCore.QProcessEnvironment()
    for key,value in native.environment(runtime).items():env.insert(key,value)
-   self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.path.parent));self.process.setProgram(str(helper));self.process.setArguments([str(self.path),str(runtime)])
-   self.report.setPlainText('Reading '+str(self.path)+'…');self.process.start()
+   self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.path.parent));self.process.setProgram(str(helper));together=rdl_import.files(self.path);self.process.setArguments([together[0],str(runtime)]+together[1:])
+   self.report.setPlainText('Reading '+' and '.join(Path(p).name for p in together)+' in '+str(self.path.parent)+'…');self.process.start()
   except Exception as exc:self.report.setPlainText(str(exc));self.choose.setEnabled(True);self.cancel.setEnabled(False)
  def read(self):
   self.output.extend(bytes(self.process.readAllStandardOutput()))
