@@ -23,6 +23,13 @@ The scenes are from [MoonRay's published example scenes](https://docs.openmoonra
 
 `rdl-test-curves.jpg` and `rdl-test-multi-level-instances.jpg` are two of the test scenes in MoonRay's own source (`testdata`), which is under the Apache License 2.0.
 
+## The graph editor, curves and car paint flakes
+
+- `graph-editor.png`, `graph-editor-materialx.png`: the material graph editor in Modo 16.1v9, with a MoonRay material and with the Car Paint from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all) (MIT License or public domain). The material preview in the editor's corner uses the MoonRay Widget model, whose notice the editor shows.
+- `curves-tubes.jpg`: curves on a mesh rendered as tubes, MoonRay on the left and MoonLight on the right, from `tools/probe_curves.py`.
+- `materialx-flakes.jpg`: the same Car Paint close up, MoonRay on the left and MoonLight on the right, from `tools/render_materialx.py`.
+- `materialx-flakes-preview.png`: that material in the preview window with each engine, from `tools/probe_materialx.py`.
+
 ## Others
 
 - `preview-window.png`: the MoonRay Preview window in Modo 16.1v9, rendering The Wooden Staircase (Wig42, CC BY) after import. The yellow squares are the tiles being worked on.

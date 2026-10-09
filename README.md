@@ -29,6 +29,19 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 - **ACES by default**: the preview's view transform starts as ACES for an sRGB monitor, with no configuration file to find. Plain sRGB and others remain as choices.
 - **Heavy scenes**: meshes of 5,000 polygons or more are read from Modo in one call by the native adapter, and written out for MoonRay several times faster. GPU renders with many outputs have four times the room they had, and fall back to the CPU rather than stop if that still runs out.
 
+### The graph editor
+
+![The material graph editor with a MoonRay material](docs/images/graph-editor.png)
+*A MoonRay material in the graph editor: nodes to add on the left, the graph in the middle, and a control for every property of the selected node on the right. Edits here, in the material's form and in the Shader Tree show in each other, and IPR follows them.*
+
+![The graph editor with an imported MaterialX material](docs/images/graph-editor-materialx.png)
+*An imported MaterialX car paint. With no node selected the panel shows the material's own controls: the colours, numbers and images its file names.*
+
+### Curves as tubes
+
+![Curves rendered as tubes, in MoonRay and in MoonLight](docs/images/curves-tubes.jpg)
+*A mesh's curves, splines and line polygons rendered with a width at the root and at the tip: MoonRay on the left, MoonLight on the right. The gold strands taper to a point; the red ones keep their width.*
+
 ### Imported MoonRay scenes, before and after
 
 In each pair, MoonRay's render of the scene from its own files is on the left; on the right is the same scene after it was imported into Modo and rendered through the plugin. Small, low-sample test renders; [docs/images](docs/images/README.md) has the scenes' authors and licenses.
@@ -44,6 +57,12 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 
 ![A wood from a MaterialX library, in MoonRay and in MoonLight](docs/images/moonlight-materialx-TH_Wood_Table.jpg)
 *TH Wood Table from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all), imported from its `.mtlx` file: MoonRay on the left, MoonLight on the right.*
+
+![Car paint flakes close up, in MoonRay and in MoonLight](docs/images/materialx-flakes.jpg)
+*The flakes of the library's Car Paint, close up: MoonRay on the left, MoonLight on the right. The flakes are in the reflection, driven by the file's own flake textures.*
+
+![The car paint in the preview window with each engine](docs/images/materialx-flakes-preview.png)
+*The same material at a normal viewing distance in the preview window, with MoonRay and then MoonLight chosen. MoonLight's denoiser softens the flakes at this distance until the picture has gathered more samples.*
 
 ### View transforms
 
