@@ -40,7 +40,8 @@ class Dialog(QtWidgets.QDialog):
   except Exception as exc:self.report.setPlainText(str(exc));self.choose.setEnabled(True);self.cancel.setEnabled(False)
  def read(self):
   self.output.extend(bytes(self.process.readAllStandardOutput()))
-  if len(self.output)>256*1024*1024:self.abort();self.report.setPlainText('Scene exceeds the import transfer limit (256 MiB).')
+  # As text a scene is three to four times the size of its binary file; a scene of a few hundred megabytes fits.
+  if len(self.output)>2048*1024*1024:self.abort();self.report.setPlainText('Scene exceeds the import transfer limit (2 GiB as text).')
  def read_error(self):self.errors=(self.errors+bytes(self.process.readAllStandardError()).decode('utf-8',errors='replace'))[-16384:]
  def error(self,value):
   if value==QtCore.QProcess.FailedToStart:self.report.setPlainText(self.process.errorString());self.choose.setEnabled(True);self.cancel.setEnabled(False)

@@ -29,9 +29,15 @@ try:
         try:
             lx.eval('!scene.new')
             document = json.loads(source.read_text(encoding='utf-8'))
+            import time
+            started = time.perf_counter()
             data = rdl_import.plan(document, document['_path'])
+            entry['plan_seconds'] = round(time.perf_counter() - started, 1)
+            started = time.perf_counter()
             entry['plan'] = rdl_import.summary(data)
             entry['said'] = rdl_import.apply(data).splitlines()[0]
+            entry['apply_seconds'] = round(time.perf_counter() - started, 1)
+            save()
             scene = modo.Scene()
             entry['items'] = {kind: len(scene.items(kind, superType=False)) for kind in ('mesh', 'meshInst', 'camera', 'mask')}
             entry['moonray_items'] = sorted(item.type for item in scene.items() if item.type.startswith('moonray.'))
