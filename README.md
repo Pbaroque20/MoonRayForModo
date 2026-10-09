@@ -11,6 +11,9 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 [Download the packaged 0.3.50.1 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.50.1](docs/WHATS_NEW_0350.md)
 
+![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
+*The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
+
 ## New in 0.3.50.1
 
 - **MoonLight**, an approximate NVIDIA GPU preview engine, chosen in the preview window. It follows edits as they are made; output renders still use MoonRay. See [moonlight/README.md](moonlight/README.md).
@@ -25,6 +28,27 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 - **Editing that goes both ways, live**: a material can be edited in the graph editor, in its properties form or in the Shader Tree; a change in one shows in the others, and with IPR on the preview follows each change as it is made, without a re-read of the scene. MoonLight follows lights, transforms and materials even while they are being dragged.
 - **ACES by default**: the preview's view transform starts as ACES for an sRGB monitor, with no configuration file to find. Plain sRGB and others remain as choices.
 - **Heavy scenes**: meshes of 5,000 polygons or more are read from Modo in one call by the native adapter, and written out for MoonRay several times faster. GPU renders with many outputs have four times the room they had, and fall back to the CPU rather than stop if that still runs out.
+
+### Imported MoonRay scenes, before and after
+
+In each pair, MoonRay's render of the scene from its own files is on the left; on the right is the same scene after it was imported into Modo and rendered through the plugin. Small, low-sample test renders; [docs/images](docs/images/README.md) has the scenes' authors and licenses.
+
+| | |
+|---|---|
+| ![Bedroom](docs/images/rdl-bedroom.jpg) | ![Country Kitchen](docs/images/rdl-country_kitchen.jpg) |
+| Bedroom (SlykDrako, CC0) | Country Kitchen (Jay-Artist, CC BY) |
+| ![Modern Hall](docs/images/rdl-modern_hall.jpg) | ![Contemporary Bathroom](docs/images/rdl-contemporary_bathroom.jpg) |
+| Modern Hall (NewSee2l035, CC BY) | Contemporary Bathroom (Mareck, CC0) |
+
+### View transforms
+
+![One render shown as sRGB, ACES and highlight compression](docs/images/view-transforms.jpg)
+*One linear render shown three ways: plain sRGB, ACES (the default), and highlight compression + sRGB. Modern Hall by NewSee2l035, CC BY.*
+
+### MoonLight beside MoonRay
+
+![Lights that are not normalized, in MoonRay and in MoonLight](docs/images/moonlight-entity_unnormalized.jpg)
+*MoonRay on the left, MoonLight on the right: a rect, a disk and a sphere light. [moonlight/README.md](moonlight/README.md) has more pairs and the measured differences.*
 
 ## Currently implemented
 

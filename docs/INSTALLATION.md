@@ -22,6 +22,8 @@ Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration 
 
 ## Using the plugin
 
+![The MoonRay Preview window](images/preview-window.png)
+
 - Open **MoonRay > Render Setup**. **Render** starts a preview; with **IPR** ticked it keeps following the scene until Stop. The preview can dock as a Modo custom viewport; it does not populate Modo's built-in Render View slots.
 - Choose the preview engine beside IPR: **MoonRay**, or **MoonLight** for an approximate GPU preview that follows edits as they are made (NVIDIA GPU required). Output renders always use MoonRay.
 - Render settings are on the Render item's **MoonRay** tab and under **MoonRay > Render Settings**: sampling, depths, denoising, view transform (ACES by default) and outputs.

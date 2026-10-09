@@ -23,6 +23,9 @@ the preview window says what a render left out.
 
 [moonlight/README.md](../moonlight/README.md) has the comparisons with MoonRay and the build steps.
 
+![Many lights, in MoonRay and in MoonLight](images/moonlight-many_lights.jpg)
+*MoonRay on the left, MoonLight on the right: nine sphere and rect lights of different power.*
+
 ## MoonRay's own items
 
 **MoonRay > Add MoonRay Item** adds MoonRay's lights, light filters, cameras, shapes and
@@ -180,6 +183,14 @@ PView was removed: Modo cannot host an external renderer there.
   scene's arrive there and are written back out, so that it renders with what it was made with.
 - A texture already in MoonRay's .tx form, with nothing to change in its colours, is used as
   it is and no longer converted again.
+  ![Bedroom, from MoonRay's files and after import](images/rdl-bedroom.jpg)
+  ![The Wooden Staircase, from MoonRay's files and after import](images/rdl-the_wooden_staircase.jpg)
+  ![Curves, from MoonRay's files and after import](images/rdl-test-curves.jpg)
+  ![Nested instancers, from MoonRay's files and after import](images/rdl-test-multi-level-instances.jpg)
+
+  *Left of each pair: MoonRay's render from the scene's own files. Right: after import into Modo.
+  Bedroom (SlykDrako, CC0), The Wooden Staircase (Wig42, CC BY), and two of MoonRay's own test
+  scenes. The other eight example scenes are in [images](images/README.md).*
 - An item can carry values for its material to read (MoonRay's primitive attributes), each
   instance its own; an imported scene's per-shape and per-instance colours arrive this way.
   There is no form for them yet. A value that differs from face to face is not held.
@@ -191,6 +202,9 @@ PView was removed: Modo cannot host an external renderer there.
   monitor, from the configuration OpenColorIO carries, with no file to find. Plain sRGB, linear
   light shown as an sRGB monitor expects it, is the next choice, and highlight compression is
   still there. A scene that has its view stored keeps it.
+  ![One render shown as sRGB, ACES and highlight compression](images/view-transforms.jpg)
+
+  *The same linear render as plain sRGB, as ACES, and with highlight compression.*
 - With a preview denoiser on, a finished MoonRay preview shows the denoised picture even where
   the preview was opened, or the render begun, before the buffer list had been set to it.
 - A GPU (XPU) render of a scene with many outputs and adaptive sampling no longer stops with

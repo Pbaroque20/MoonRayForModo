@@ -17,6 +17,9 @@ MoonRay. It ships in the 0.3.50.1 release, in the runtime's `moonlight` folder, 
 chosen in the preview window's engine popup. `tools/install_moonlight.py` adds a newer
 build to an installed kit during development.
 
+![A glass ball and a clearcoated cube, in MoonRay and in MoonLight](../docs/images/moonlight-dwa_glass_coat.jpg)
+*MoonRay on the left, MoonLight on the right. Every pair on this page is laid out that way and comes from `tools/compare_moonlight.py`.*
+
 ## Where it stands
 
 - It is used inside Modo: Render and IPR both go through it, and with IPR on it follows
@@ -101,6 +104,9 @@ October 6, 2026 against `xpu-paths-0349-candidate` (MoonLight 2048 samples, Moon
 | Disk light | 1.006 | 95% |
 | Spot light | 1.005 | 91% |
 
+![Nine lights of different power](../docs/images/moonlight-many_lights.jpg)
+*Nine sphere and rect lights of different power.*
+
 Three more scenes cover textures and the two ways a material reaches MoonRay:
 
 | Scene | MoonLight / MoonRay | Tiles within 10% |
@@ -131,6 +137,12 @@ samples, MoonRay 36):
 | Absorption inside glass | 1.006 | 89% |
 | Dispersion (Abbe number 4) | 1.056 | 83% |
 | Checker, noise, a gradient and layer curves | 0.971 | 56% |
+
+![Depth of field](../docs/images/moonlight-depth_of_field.jpg)
+*Depth of field through a disc lens.*
+
+![A physical sky](../docs/images/moonlight-physical_sky.jpg)
+*A physical sky.*
 
 In the last scene the checker, the noise and the gradient agree by eye; the stripes where
 the curves push roughness to about 0.9 are paler in MoonRay. Roughness above 0.6 on
@@ -191,6 +203,9 @@ Later comparisons, October 8 and 9, 2026:
 | MoonRay's own items: a tinted environment, a sphere light, a box and a ball | 1.014 | 96% |
 | Portal light, run again | 1.004 | 97% |
 | Five MaterialX materials from a library (a wood, a marble, two wallpapers, a car paint), on a ball | not recorded | 92 to 100% on four, 72% on the car paint |
+
+![Lights that are not normalized](../docs/images/moonlight-entity_unnormalized.jpg)
+*A rect, a disk and a sphere light with `normalized` off, after the fix described next.*
 
 Lights with `normalized` off were drawn far too dim until October 9: MoonLight treated every
 light as normalized. It now gives such a light the brightness that comes to the same
@@ -274,12 +289,14 @@ Added to what is translated since the table was written:
 - **Curves** (a mesh's curves, splines and line polygons, and hair grown from guides): tubes
   of polygons, eight sides or four, capped, with the object's width, taper and UVs. They are
   not true curves, and they wear the ordinary surface shader.
+  ![Curves as tubes](../docs/images/moonlight-curves.jpg)
 - **Imported MaterialX graphs**: UVs that nodes move, turn or scale, and arithmetic between
   images (one blended into another through a third, an image brought into a range, masks
   taken away), as a layer stack at the images' own sharpness.
 - **The specular amount** of Modo's standard material and the Principled material's metallic
   and F0, as a weight on the specular lobe, as the plugin now sends them to MoonRay.
 - **The sun of a physical sky**: the distant light's disc is seen by the camera.
+  ![The sun's disc in a physical sky](../docs/images/moonlight-sun_disc.jpg)
 - **Lights that are not normalized**, as described above.
 
 ## Build
