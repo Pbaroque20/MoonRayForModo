@@ -306,6 +306,11 @@ def scenes(folder):
             {'identity': 'e_key', 'name': 'Key', 'class': 'SphereLight', 'matrix': fixture.placed(-1, 5, 3), 'parameters': {'intensity': 50.0, 'radius': .4, 'color': [1.0, .9, .8]}},
             {'identity': 'e_box', 'name': 'Block', 'class': 'BoxGeometry', 'matrix': fixture.placed(-4.2, .6, 1.5), 'parameters': {'size': [1.2, 1.2, 1.2], 'modo_material': 'red'}},
             {'identity': 'e_ball', 'name': 'Globe', 'class': 'SphereGeometry', 'matrix': fixture.placed(4.3, .7, 1.8), 'parameters': {'radius': .7, 'modo_material': 'blue'}}]),
+        # Lights whose brightness is not spread over their size, as scenes made elsewhere for MoonRay often have them.
+        'entity_unnormalized': dict(base, entities=[
+            {'identity': 'u_rect', 'name': 'Window', 'class': 'RectLight', 'matrix': aimed([-2, 4, 3], [0, .5, 0]), 'parameters': {'color': [3.0, 3.0, 3.0], 'width': 2.0, 'height': 1.2, 'normalized': False}},
+            {'identity': 'u_disk', 'name': 'Lamp', 'class': 'DiskLight', 'matrix': aimed([3, 3, 2], [0, .5, 0]), 'parameters': {'color': [6.0, 5.0, 4.0], 'radius': .5, 'normalized': False}},
+            {'identity': 'u_ball', 'name': 'Bulb', 'class': 'SphereLight', 'matrix': fixture.placed(0, 4, -1), 'parameters': {'color': [8.0, 8.0, 8.0], 'radius': .3, 'normalized': False}}]),
         'depth_of_field': dict(base, lights=fixture.snapshot()['lights'], _environment=.3,
                                camera=dict(base['camera'], dof=True, f_stop=.3, focus_distance=6.5)),
         'bokeh_blades': dict(base, lights=fixture.snapshot()['lights'], _environment=.3,

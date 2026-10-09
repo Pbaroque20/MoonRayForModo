@@ -799,6 +799,23 @@ def sphere(radius, segments=48, rings=24):
     return vertices, faces
 
 
+def emitting_area(name, light):
+    """What MoonRay divides a normalized light's brightness by: pi times its surface. None for a kind of light this is
+    not worked out for."""
+    import math
+    if name in ('RectLight', 'PortalLight'):
+        size = light['width'] * light['height']
+    elif name in ('DiskLight', 'SpotLight'):
+        size = math.pi * light['radius'] ** 2
+    elif name == 'SphereLight':
+        size = 4 * math.pi * light['radius'] ** 2
+    elif name == 'CylinderLight':
+        size = 2 * math.pi * light['radius'] * light['height']
+    else:
+        return None
+    return math.pi * size if size > 1e-12 else None
+
+
 def preview(scene, warnings):
     """The snapshot with its entities turned into what MoonLight draws: ordinary lights,
     environments and meshes. What has no counterpart there is named in warnings."""
@@ -844,8 +861,6 @@ def preview(scene, warnings):
                 continue
             if value(entity, 'texture') and name != 'RectLight':
                 warnings.append('MoonLight shows %s without its texture.' % label)
-            if value(entity, 'normalized') != (name != 'PortalLight'):
-                warnings.append('MoonLight shows %s with the usual normalization for its kind.' % label)
             light = {'kind': name, 'identity': entity['identity'], 'name': label, 'color': color, 'intensity': intensity, 'matrix': matrix,
                      'filters': filters}
             if name == 'RectLight' and value(entity, 'texture'):
@@ -853,6 +868,15 @@ def preview(scene, warnings):
             if filters and name == 'DistantLight':
                 warnings.append('MoonLight applies only intensity filters to distant light %s.' % label)
             light.update({target: float(value(entity, key)) for key, target in PREVIEW_LIGHTS[name].items()})
+            # MoonLight draws each kind of light the usual way for its kind: its brightness spread over its size, except
+            # for a portal. A light set the other way is given the brightness that comes to the same thing.
+            usual = name != 'PortalLight'
+            if bool(value(entity, 'normalized')) != usual:
+                size = emitting_area(name, light)
+                if size is None:
+                    warnings.append('MoonLight shows %s with the usual normalization for its kind.' % label)
+                else:
+                    light['intensity'] = intensity * size if usual else intensity / size
             if name == 'SpotLight':
                 light['soft_edge'] = max(0.0, light['cone'] - float(value(entity, 'inner_cone_angle'))) / 2
             lights.append(light)
