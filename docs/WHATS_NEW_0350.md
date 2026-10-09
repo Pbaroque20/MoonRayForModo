@@ -1,8 +1,10 @@
-# What's new in 0.3.50.1 (unreleased)
+# What's new in 0.3.50.1
 
-A summary of what changed since the packaged 0.3.49 kit. This build is in development and has
-not been released. Most of it was checked in a separate test copy of Modo 16.1v9 driven by
-scripts; where something was only checked that way, or not at all, the notes below say so.
+A summary of what changed since the packaged 0.3.49 kit. 0.3.50.1 was released on October 9,
+2026. Most of it was checked in a separate test copy of Modo 16.1v9 driven by scripts, and
+parts of it in everyday use; where something was only checked by script, or not at all, the
+notes below say so. The notes were written as the work went, so a later entry sometimes
+overtakes an earlier one; where it does, the earlier one says so.
 
 ## MoonLight, a GPU preview engine
 
@@ -14,8 +16,10 @@ It shows Modo and MoonRay lights (including cylinder, portal and mesh lights), t
 rectangle lights, decay, intensity and colour-ramp light filters, layered and physical-sky
 environments, subsurface, anisotropy, dispersion, absorption in glass, gradient, checker and
 noise layers, depth of field, Modo subdivision, and the Dwa surface materials' own attributes.
-Motion blur applies to Render, not to IPR updates. Volumes, curves and the remaining light
-filters are not shown; the Notices list in the preview window says what a render left out.
+Motion blur applies to Render, not to IPR updates. Curves and hair are shown as tubes, and
+imported MaterialX graphs as their nodes say (both added later in this version; see Curves and
+MaterialX below). Volumes and the remaining light filters are not shown; the Notices list in
+the preview window says what a render left out.
 
 [moonlight/README.md](../moonlight/README.md) has the comparisons with MoonRay and the build steps.
 
@@ -60,8 +64,8 @@ PView was removed: Modo cannot host an external renderer there.
 - **Assign MoonShine Material to Mesh** makes a native MoonRay material, a DwaBaseMaterial
   unless another is chosen, placed above the Base Material so that it takes effect.
 - **MoonRay's materials are in the Shader Tree's Add Layer list**, under MoonRay Materials.
-  The Add Layer popup itself has not been checked; a layer of this kind made directly behaved
-  as described here.
+  A material added this way was at first passed over at render time; that is fixed, and it
+  now renders.
 - A native material has **its own properties form**, with a control for each attribute, that
   opens in front when the material is selected. Edits show in the preview with either engine.
 - **Open Graph Editor** on that form opens the same material as a node graph. The separate
@@ -219,9 +223,16 @@ PView was removed: Modo cannot host an external renderer there.
 - A spot light matches Modo on its axis and dims off it by the cosine of the angle.
 - Curves in MoonLight are tubes of four or eight sides, not true curves.
 
-- Rendering a material added from Add Layer, and rendering a material with a wired graph, were
-  not exercised in this round.
-- IPR following with MoonLight, and the scene dialogs opened from the MoonRay menu, were not
-  exercised in the new preview window.
+- Curves and hair wear the ordinary surface shader in MoonLight; there is no hair shading model
+  or skin there yet, and no volumes.
+- An RDL import leaves out motion, values that differ face by face, subdivision creases,
+  authored normals and light linking, and names each in its report. Opening a large scene's
+  files takes minutes, with no progress shown, before the import proper begins.
+- The values an item carries for its material (primitive attributes) have no form.
+- With a preview denoiser on, one order of working left the preview on Beauty when the render
+  finished; that is fixed, but the case first reported was not reproduced, so it may not be
+  the only one.
+- The import's progress bar and Stop button were not watched in the dialog.
 - The sections of the Render item's form all start expanded.
-- Unit tests show two failures that predate this work.
+- The package was run from an empty folder with a bare environment, on the machine that built
+  it. It was not installed on a clean machine, and XPU and MoonLight were run on one GPU.

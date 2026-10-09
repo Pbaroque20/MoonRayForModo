@@ -1,6 +1,6 @@
 # Preview controls development update
 
-> **Superseded in part by 0.3.50.** The preview window was rebuilt as a viewer and its settings moved to the Render item's MoonRay properties; see [What's new in 0.3.50.1](WHATS_NEW_0350.md). The notes below describe the earlier tabbed window.
+> **Superseded in part by 0.3.50.1.** The preview window was rebuilt as a viewer and its settings moved to the Render item's MoonRay properties; the view transform now starts as ACES for an sRGB monitor, with plain sRGB next and highlight compression still offered; and with a preview denoiser on, a finished render shows Denoised Beauty. See [What's new in 0.3.50.1](WHATS_NEW_0350.md). The notes below describe the controls as they were first added.
 
 ## Render buffers
 

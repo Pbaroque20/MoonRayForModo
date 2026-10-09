@@ -1,5 +1,7 @@
 # Native MoonRay material library
 
+> **Written for an earlier version.** The materials listed here are the same, but as of 0.3.50.1 each has its own properties form and its own kind of layer in the Shader Tree's Add Layer list, and the type dropdown described below is gone. See [What's new in 0.3.50.1](WHATS_NEW_0350.md).
+
 This development update compiles all 20 materials in the vendored MoonShine source, plus the four core MoonRay materials (24 selectable types). The AVX CPU runtime is staged separately from the previous runtimes. Build succeeded; rendering and Modo interaction tests are deferred.
 
 Select meshes and choose Assign MoonShine Material to choose a type. The first choice preserves the existing Modo-controlled DwaBase workflow. Select a Shader Tree material and open **MoonRay Material Type and Parameters...** in its MoonShine properties to choose a native type and edit its attributes. Search filters parameters. Empty fields retain the upstream defaults; numbers and arrays use JSON syntax. Colors are linear RGB arrays. Save stores settings with the scene through an undoable Modo command. Changing the Modo-controls checkbox removes the native type and overrides.

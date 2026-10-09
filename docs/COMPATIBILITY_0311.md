@@ -47,6 +47,8 @@ incremental dependency graph is claimed.
 
 ## Editable RDL scene import
 
+> **Superseded by 0.3.50.1.** The importer was rewritten: it is at **MoonRay > Import MoonRay Scene (RDL)...**, keeps transforms and instances, brings in curves, MoonRay's own lights and other items, displacement, scene settings and outputs, and reads a scene kept as `scene.rdlb` and `scene.rdla` as one. See [What's new in 0.3.50.1](WHATS_NEW_0350.md). What follows describes the first importer.
+
 Use MoonRay > Import RDL scene, choose .rdla or .rdlb, review the conversion report,
 then Import editable objects. The asset library's Import action also accepts RDL.
 MoonRay's own parser reads the source in a separate process. Generic .rdl is not

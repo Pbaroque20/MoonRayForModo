@@ -1,6 +1,6 @@
 # Material nodes and MaterialX Override (0.2.0 development)
 
-> **Superseded in part by 0.3.50.** Native materials now have their own forms, open directly in a redesigned graph editor, and are in the Shader Tree's Add Layer list; see [What's new in 0.3.50.1](WHATS_NEW_0350.md). The notes below describe the earlier editor, including typing values as JSON, which is no longer needed.
+> **Superseded in large part by 0.3.50.1.** The MoonShine and MaterialX override layers described below are no longer offered: a MoonRay material is assigned to a mesh or added from the Shader Tree's Add Layer list, has its own form, and opens in a redesigned graph editor with a control for every property; a MaterialX file is brought in with **MoonRay > Import MaterialX Material...** as a material of its own kind. Scenes that hold override layers still load and render. See [What's new in 0.3.50.1](WHATS_NEW_0350.md).
 
 Select a standard Shader Tree material. In its **MoonShine Material** properties,
 choose the material type from the dropdown at the top. The corresponding controls
