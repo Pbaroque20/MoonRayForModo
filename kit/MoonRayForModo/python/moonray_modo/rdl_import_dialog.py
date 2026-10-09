@@ -67,9 +67,23 @@ class Dialog(QtWidgets.QDialog):
   if self.data is None:return
   try:
    import lx
-   rdl_import.pending=dict(self.data,alone=self.alone.isChecked());lx.eval('moonray.rdl.apply')
+   # Building heavy meshes takes a while, and Modo cannot answer meanwhile: say how far it has come, and let it be stopped.
+   total=sum(len(m['faces']) for m in self.data['meshes'])
+   bar=QtWidgets.QProgressDialog('Importing…','Stop',0,1000,self) if total>50000 else None
+   if bar:bar.setWindowTitle('Import MoonRay scene');bar.setWindowModality(QtCore.Qt.WindowModal);bar.setMinimumDuration(0);bar.setValue(0)
+   def progress(done,whole,what):
+    if not bar:return True
+    bar.setLabelText('Building %s\n%s of %s polygons'%(what,format(done,','),format(whole,',')));bar.setValue(int(1000*done/max(1,whole)))
+    QtWidgets.QApplication.processEvents()
+    return not bar.wasCanceled()
+   rdl_import.pending=dict(self.data,alone=self.alone.isChecked(),progress=progress)
+   try:lx.eval('moonray.rdl.apply')
+   finally:
+    if bar:bar.close()
    self.report.setPlainText(rdl_import.result);self.import_button.setEnabled(False)
-  except Exception as exc:self.report.setPlainText('Import failed: '+str(exc))
+  except Exception as exc:
+   stopped=isinstance(exc,rdl_import.Cancelled) or 'Cancelled' in str(exc)
+   self.report.setPlainText('Import stopped. What it had made was taken back; nothing in the scene has changed.' if stopped else 'Import failed: '+str(exc))
   finally:rdl_import.pending=None
  def abort(self):
   if self.process.state()!=QtCore.QProcess.NotRunning:self.process.kill()

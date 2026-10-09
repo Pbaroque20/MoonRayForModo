@@ -203,7 +203,10 @@ def collect(scene,warnings,controls):
         mesh=modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item,'deformed')
         polygons=lx.object.Polygon(mesh.PolygonAccessor());points=lx.object.Point(mesh.PointAccessor())
         splines=lines=0;point_ids=set()
-        for i in range(mesh.PolygonCount()):
+        # A heavy mesh the scene reader has just found to hold only surface polygons has no curves or loose points to look for.
+        from . import mesh_reader
+        known=mesh_reader.SURFACES_ONLY.get(item.id)==(mesh.PolygonCount(),mesh.PointCount())
+        for i in range(0 if known else mesh.PolygonCount()):
             polygons.SelectByIndex(i);kind=lxu.utils.decodeID4(polygons.Type())
             splines+=kind in ('CURV','BEZR','BSPL');lines+=kind=='LINE'
             if kind=='OPNT':point_ids.update(int(polygons.VertexByIndex(v)) for v in range(polygons.VertexCount()))

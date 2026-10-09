@@ -42,7 +42,10 @@ try:
             entry['items'] = {kind: len(scene.items(kind, superType=False)) for kind in ('mesh', 'meshInst', 'camera', 'mask')}
             entry['moonray_items'] = sorted(item.type for item in scene.items() if item.type.startswith('moonray.'))
             entry['materials'] = sorted(item.type for item in scene.items() if properties.is_material(item) and item.type != 'advancedMaterial')
+            started = time.perf_counter()
             snapshot = host.snapshot()
+            entry['read_seconds'] = round(time.perf_counter() - started, 1)
+            save()
             entry['warnings'] = snapshot.get('warnings', [])
             values = scene_settings.complete(properties.scene_settings())
             snapshot.update(render_settings=values['render'], aovs=values['aovs'], custom_aovs=[], production=values['production'],
@@ -52,7 +55,9 @@ try:
             width = 400
             height = max(1, round(width * scene.renderItem.channel('resY').get() / max(1, scene.renderItem.channel('resX').get())))
             entry['size'] = [width, height]
+            started = time.perf_counter()
             (folder / (name + '.imported.rdla')).write_text(rdla.scene_text(snapshot, width, height, 4, 0.0, str(folder / (name + '.imported.exr'))), encoding='utf-8')
+            entry['write_seconds'] = round(time.perf_counter() - started, 1)
         except Exception:
             entry['error'] = traceback.format_exc()
             try:

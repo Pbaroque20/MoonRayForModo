@@ -327,38 +327,16 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             mesh = modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item, 'deformed')
             if not mesh.PolygonCount():
                 continue
-            points = lx.object.Point(mesh.PointAccessor())
-            polygons = lx.object.Polygon(mesh.PolygonAccessor())
-            vertices, point_indices = [], {}
-            for index in range(mesh.PointCount()):
-                points.SelectByIndex(index)
-                point_indices[int(points.ID())] = index
-                vertices.append(list(points.Pos()))
             groups = {}
-            uv_maps = {}
             # Worked out once for each material, not for each polygon: a node graph's is found by following its nodes.
             tag_descriptors = {}
-            normal_map = first_map(mesh, lx.symbol.i_VMAP_NORMAL)
-            tags = lx.object.StringTag(polygons)
             transform = world_matrix(item)
-            for index in range(mesh.PolygonCount()):
-                polygons.SelectByIndex(index)
-                if lxu.utils.decodeID4(polygons.Type()) in ('CURV','BEZR','BSPL','LINE','OPNT'):continue
-                count = polygons.VertexCount()
-                if count < 3:
-                    warnings.append('Skipped curve/line polygon in ' + item.name)
-                    continue
-                try:
-                    tag = tags.Get(lx.symbol.i_POLYTAG_MATERIAL) or ''
-                except LookupError:
-                    tag = ''
-                face = [point_indices[int(polygons.VertexByIndex(v))] for v in range(count)]
-                subdivision = lxu.utils.decodeID4(polygons.Type()) in ('SUBD', 'PSUB')
+
+            def polygon(face, tag, subdivision, uv_of, normals):
+                """Put one polygon with its like. uv_of(name) is its corners' values in a UV map, or nothing."""
                 maps = result['materials'].get(tag, {}).get('textures', {})
                 uv_name = result['materials'].get(tag, {}).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
-                if uv_name not in uv_maps:
-                    uv_maps[uv_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, uv_name)
-                face_uv = corner_values(polygons, uv_maps[uv_name], count, 2)
+                face_uv = uv_of(uv_name)
                 # A UV map several images read, each moved or scaled its own way, is read from the polygon once.
                 read = {uv_name: face_uv}
                 if uv_name and not face_uv:
@@ -370,14 +348,86 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                     source_name = descriptor.get('uv_map','')
                     source_uv = []
                     if descriptor.get('projection','uv') == 'uv':
-                        if source_name not in uv_maps:
-                            uv_maps[source_name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, source_name)
                         if source_name not in read:
-                            read[source_name] = corner_values(polygons, uv_maps[source_name], count, 2)
+                            read[source_name] = uv_of(source_name)
                         source_uv = read[source_name]
                     extra_uvs[key] = coordinates.face(descriptor, [vertices[v] for v in face], source_uv, transform)
-                groups.setdefault((subdivision, uv_name), []).append((face, tag,
-                    face_uv, corner_values(polygons, normal_map, count, 3), extra_uvs))
+                groups.setdefault((subdivision, uv_name), []).append((face, tag, face_uv, normals, extra_uvs))
+
+            from . import mesh_reader
+            whole = mesh_reader.read(mesh)
+            if whole is not None:
+                # A heavy mesh, read in one go by the native adapter.
+                vertices = whole.vertices
+                if whole.small:
+                    warnings.append('Skipped curve/line polygon in ' + item.name)
+                mesh_reader.SURFACES_ONLY[item.id] = (mesh.PolygonCount(), mesh.PointCount()) if not whole.lines and not whole.small else None
+                # The usual mesh, all of one kind of polygon with one UV map for all its materials and nothing worked out
+                # for each polygon, is put together whole. Any other is taken a polygon at a time below.
+                names = set()
+                plain = len(whole.counts) and whole.subdivided.count(whole.subdivided[0]) == len(whole.subdivided)
+                for which in set(whole.tag_indices) if plain else ():
+                    tag = whole.tags[which]
+                    maps = result['materials'].get(tag, {}).get('textures', {})
+                    names.add(result['materials'].get(tag, {}).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else ''))
+                    if tag not in tag_descriptors:
+                        tag_descriptors[tag] = coordinates.descriptors({tag:result['materials'].get(tag,{})})
+                    plain = plain and not tag_descriptors[tag]
+                if plain and len(names) == 1:
+                    uv_name = next(iter(names))
+                    which = whole.uv_map(uv_name)
+                    complete = which is not None and whole.uv_valid[which].count(1) == len(whole.counts)
+                    if complete or not uv_name:
+                        normal = whole.normal_values is not None and whole.normal_valid.count(1) == len(whole.counts)
+                        tags_of = whole.tags
+                        groups[(bool(whole.subdivided[0]), uv_name)] = (whole.faces(), [tags_of[i] for i in whole.tag_indices],
+                            whole.uv_values[which] if complete else [], whole.normal_values if normal else [], {})
+                        whole = None
+            if whole is not None:
+                chosen = {}
+                offset = 0
+                indices, uv_values, uv_valid = whole.indices, whole.uv_values, whole.uv_valid
+                normal_values, normal_valid = whole.normal_values, whole.normal_valid
+                for index, count in enumerate(whole.counts):
+                    limit = offset + count
+
+                    def uv_of(name, index=index, offset=offset, limit=limit):
+                        if name not in chosen:
+                            chosen[name] = whole.uv_map(name)
+                        which = chosen[name]
+                        return uv_values[which][offset:limit] if which is not None and uv_valid[which][index] else []
+                    polygon(list(indices[offset:limit]), whole.tags[whole.tag_indices[index]], bool(whole.subdivided[index]), uv_of,
+                            normal_values[offset:limit] if normal_values is not None and normal_valid[index] else [])
+                    offset = limit
+            elif not groups:
+                points = lx.object.Point(mesh.PointAccessor())
+                polygons = lx.object.Polygon(mesh.PolygonAccessor())
+                vertices, point_indices = [], {}
+                for index in range(mesh.PointCount()):
+                    points.SelectByIndex(index)
+                    point_indices[int(points.ID())] = index
+                    vertices.append(list(points.Pos()))
+                uv_maps = {}
+                normal_map = first_map(mesh, lx.symbol.i_VMAP_NORMAL)
+                tags = lx.object.StringTag(polygons)
+                for index in range(mesh.PolygonCount()):
+                    polygons.SelectByIndex(index)
+                    if lxu.utils.decodeID4(polygons.Type()) in ('CURV','BEZR','BSPL','LINE','OPNT'):continue
+                    count = polygons.VertexCount()
+                    if count < 3:
+                        warnings.append('Skipped curve/line polygon in ' + item.name)
+                        continue
+                    try:
+                        tag = tags.Get(lx.symbol.i_POLYTAG_MATERIAL) or ''
+                    except LookupError:
+                        tag = ''
+
+                    def uv_of(name, count=count):
+                        if name not in uv_maps:
+                            uv_maps[name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, name)
+                        return corner_values(polygons, uv_maps[name], count, 2)
+                    polygon([point_indices[int(polygons.VertexByIndex(v))] for v in range(count)], tag,
+                            lxu.utils.decodeID4(polygons.Type()) in ('SUBD', 'PSUB'), uv_of, corner_values(polygons, normal_map, count, 3))
             transform = world_matrix(item)
             object_settings = options.object_values(properties.read(item))
             instance_records = sorted(instances.get(item.id, []),key=lambda pair:pair[0])
@@ -385,14 +435,22 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 instance_records = [(item.id,transform)] + instance_records
             transforms = [value for identity,value in instance_records]
             for (subdivision, uv_name), tagged_faces in sorted(groups.items()):
-                faces, face_materials, face_uvs, face_normals, extras = zip(*tagged_faces)
+                if isinstance(tagged_faces, tuple):
+                    # Put together whole, above.
+                    faces, face_materials, whole_uvs, whole_normals, whole_sets = tagged_faces
+                    face_uvs = face_normals = extras = None
+                else:
+                    faces, face_materials, face_uvs, face_normals, extras = zip(*tagged_faces)
+                    whole_uvs = [uv for values in face_uvs for uv in values] if all(face_uvs) else []
+                    whole_normals = [n for values in face_normals for n in values] if all(face_normals) else []
+                    whole_sets = {key:[uv for face,values in zip(faces,extras) for uv in values.get(key,[[0,0]]*len(face))]
+                                  for key in sorted({k for values in extras for k in values})}
                 result['meshes'].append({'name': item.name, 'identity':item.id+'|'+str(subdivision)+'|'+uv_name, 'vertices': vertices,
-                                         'uv_sets': {key:[uv for face,values in zip(faces,extras) for uv in values.get(key,[[0,0]]*len(face))]
-                                                     for key in sorted({k for values in extras for k in values})},
+                                         'uv_sets': whole_sets,
                                          'faces': list(faces), 'matrix': transform, 'material': '',
                                          'face_materials': list(face_materials),
-                                         'uvs': [uv for values in face_uvs for uv in values] if all(face_uvs) else [],
-                                         'normals': [n for values in face_normals for n in values] if all(face_normals) else [],
+                                         'uvs': whole_uvs,
+                                         'normals': whole_normals,
                                          'geometry_settings': object_settings, 'object_override': object_settings['override'],
                                          'smooth': object_settings['smooth'] if object_settings['override'] else True,
                                          'subdivision_level': object_settings['level'],

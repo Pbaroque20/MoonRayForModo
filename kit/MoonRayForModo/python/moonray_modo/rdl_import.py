@@ -622,9 +622,14 @@ def entity_text(spec, value):
     return json.dumps(value)
 
 
-def apply(data, alone=True):
+class Cancelled(Exception):
+    """The user stopped an import part way; what it had made is taken back."""
+
+
+def apply(data, alone=True, progress=None):
     """Make what a plan describes. alone lights the result as the RDL scene was lit and by nothing else: the lights
-    already in the Modo scene are set not to render, and Modo's environment is kept out of MoonRay's picture."""
+    already in the Modo scene are set not to render, and Modo's environment is kept out of MoonRay's picture.
+    progress(done, total, what) is told how far the meshes have come, in polygons, and returns False to stop."""
     import lx
     import modo
     from . import entities, materials, options, primitive_attributes, properties, shader_library
@@ -664,6 +669,7 @@ def apply(data, alone=True):
             properties.write(layer, {'shader': 'DwaBaseMaterial', 'moonshine_override': True, 'native_shader': shader,
                                      'native_parameters': record['graph']['nodes'][record['graph']['root']].get('parameters', {}),
                                      'node_graph': record['graph'], 'node_override': True})
+        built, total = 0, sum(len(record['faces']) for record in data['meshes'])
         for record in data['meshes']:
             item = scene.addItem('mesh', name=record['name'])
             created.append(item)
@@ -675,17 +681,46 @@ def apply(data, alone=True):
                 vertices_in = [transform(v, record['matrix']) for v in vertices_in]
                 warnings.append(record['name'] + ': its transform shears or mirrors, so it is applied to the points')
             with item.geometry as geo:
-                vertices = [geo.vertices.new(v) for v in vertices_in]
-                uv = geo.vmaps.addUVMap('RDL UV') if record['uv'] else None
-                offset = 0
+                # Through the mesh's own accessors: the scripting layer's vertex and polygon objects cost some ten times
+                # as much for each one made, which is minutes for a heavy mesh.
+                mesh = geo.internalMesh
+                point, polygon = lx.object.Point(mesh.PointAccessor()), lx.object.Polygon(mesh.PolygonAccessor())
+                vertices = [point.New(v) for v in vertices_in]
+                uv, pair = None, lx.object.storage('f', 2)
+                if record['uv']:
+                    uv = lx.object.MeshMap(mesh.MeshMapAccessor()).New(lx.symbol.i_VMAP_TEXTUREUV, 'RDL UV')
+                by_point = len(record['uv']) == len(vertices)
+                if uv and by_point:
+                    # One value for each point, wherever the point is used.
+                    for identity, value in zip(vertices, record['uv']):
+                        point.Select(identity)
+                        pair.set((value[0], value[1]))
+                        point.SetMapValue(uv, pair)
+                kind = lx.symbol.iPTYP_SUBD if record['subd'] else lx.symbol.iPTYP_FACE
+                tagger, uvs, face_tags = lx.object.StringTag(polygon), record['uv'], record['tags']
+                offset, corners, sized = 0, {}, 0
                 for face_index, face in enumerate(record['faces']):
-                    polygon = geo.polygons.new([vertices[i] for i in face], polyType=lx.symbol.iPTYP_SUBD if record['subd'] else lx.symbol.iPTYP_FACE)
-                    if record['tags'][face_index] in tags:
-                        polygon.materialTag = tags[record['tags'][face_index]]
-                    if uv:
-                        for corner, index in enumerate(face):
-                            polygon.setUV(record['uv'][index if len(record['uv']) == len(vertices) else offset + corner], corner, uv)
-                    offset += len(face)
+                    count = len(face)
+                    if count != sized:
+                        corners[count] = corners.get(count) or lx.object.storage('p', count)
+                        sized = count
+                    storage = corners[count]
+                    storage.set(tuple(vertices[i] for i in face))
+                    made_polygon = polygon.New(kind, storage, count, 0)
+                    wears = tags.get(face_tags[face_index])
+                    if wears or (uv and not by_point):
+                        polygon.Select(made_polygon)
+                        if wears:
+                            tagger.Set(lx.symbol.i_POLYTAG_MATERIAL, wears)
+                        if uv and not by_point:
+                            for corner, index in enumerate(face):
+                                value = uvs[offset + corner]
+                                pair.set((value[0], value[1]))
+                                polygon.SetMapValue(vertices[index], uv, pair)
+                    offset += count
+                    if progress and not face_index % 20000 and progress(built + face_index, total, record['name']) is False:
+                        raise Cancelled()
+            built += len(record['faces'])
             if keep:
                 pose(item, record['matrix'])
             if record['attributes']:
