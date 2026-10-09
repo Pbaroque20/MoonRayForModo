@@ -48,6 +48,15 @@ def moves_sky(scene,identities,cache):
     return False
 
 
+def surroundings(snapshot):
+    """What lights the scene from all around, as something to compare: Modo's environments with their layers, where
+    a sky's sun stands, and MoonRay's own environment lights. Each change to it has the preview make and load the
+    whole environment again, which a drag cannot keep up with."""
+    import json
+    lights=[entity for entity in snapshot.get('entities') or [] if entity.get('class') in ('EnvLight','PortalLight')]
+    return json.dumps([snapshot.get('environments') or [],lights],sort_keys=True,default=str)
+
+
 def refresh_transforms(scene,snapshot):
     from .host import world_matrix
     for mesh in snapshot['meshes']:

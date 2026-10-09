@@ -35,6 +35,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.changes=Changes();self._geometry_cache=None;self._last_time=None;self._live_settings=None;self._asset_signature=[];self._asset_scene={};self._last_full_capture=0
         self.last_digest = None
         self._pending_preview=False
+        self._surroundings=None
         self._rendering=False
         # IPR is a choice of how Render behaves; following is Render having been pressed with it on.
         self._following=False
@@ -506,6 +507,9 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
+        if not output:
+            from .incremental import surroundings
+            self._surroundings=surroundings(scene)
         self._set_rendering(True)
         self._ipr_refine_scene=scene if not output else None
         values=self._settings_values();get=self.preferences.get
@@ -648,6 +652,12 @@ class Panel(Tools, QtWidgets.QWidget):
                 self.changes.full=self.changes.full or full;self.changes.items.update(items)
                 self.release_timer.start();return
             scene = self._capture(reuse)
+            if held:
+                # Whatever was dragged, if it changed what lights the scene from all around (an environment, one of
+                # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
+                from .incremental import surroundings
+                if self._surroundings is not None and surroundings(scene)!=self._surroundings:
+                    self.changes.items.update(items);self.release_timer.start();return
             self._last_time=time;self._live_settings=settings
             if self._digest(scene) != self.last_digest:self._submit(scene)
         except Exception as exc:

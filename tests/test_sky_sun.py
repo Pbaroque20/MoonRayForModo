@@ -40,4 +40,20 @@ class SkySun(unittest.TestCase):
         self.assertFalse(incremental.moves_sky(self.scene,{'sun'},None))
 
 
+class Surroundings(unittest.TestCase):
+    def scene(self,direction=(0,1,0),turn=0.0,lamp=1.0):
+        return {'environments':[{'kind':'stack','layers':[{'kind':'physical','sun_identity':'sun','sun_direction':list(direction)}]}],
+                'entities':[{'class':'EnvLight','matrix':[turn]*16},{'class':'RectLight','matrix':[lamp]*16}],
+                'lights':[{'identity':'lamp','intensity':lamp}]}
+
+    def test_a_sun_moved_or_an_environment_light_turned_changes_them(self):
+        base=incremental.surroundings(self.scene())
+        self.assertNotEqual(base,incremental.surroundings(self.scene(direction=(1,0,0))))
+        self.assertNotEqual(base,incremental.surroundings(self.scene(turn=.5)))
+
+    def test_another_light_does_not(self):
+        self.assertEqual(incremental.surroundings(self.scene()),incremental.surroundings(self.scene(lamp=3.0)))
+        self.assertEqual(incremental.surroundings({}),incremental.surroundings({'lights':[1]}))
+
+
 if __name__=='__main__':unittest.main()
