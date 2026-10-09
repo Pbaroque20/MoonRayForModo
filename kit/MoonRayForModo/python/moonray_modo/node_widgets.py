@@ -103,7 +103,11 @@ class GraphView(QtWidgets.QGraphicsView):
         self.rubber=None;self.start_socket=None
     def wheelEvent(self,event):
         factor=1.15 if event.angleDelta().y()>0 else 1/1.15
-        if .2<=self.transform().m11()*factor<=3.0:self.scale(factor,factor)
+        # Zooming in is always allowed up to three times life size, and zooming out down to a twentieth. Framing a
+        # large graph can leave the view smaller than a fifth; held to that as a floor in both directions, the wheel
+        # then did nothing at all.
+        scale=self.transform().m11()*factor
+        if (factor>1 and scale<=3.0) or (factor<1 and scale>=.05):self.scale(factor,factor)
         event.accept()
     def mousePressEvent(self,event):
         # Middle drag pans, and so does Alt with the left button.
