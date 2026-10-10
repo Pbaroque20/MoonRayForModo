@@ -20,7 +20,7 @@ ENTRIES = (('moonray.page preview', 'Open Preview', 'preview'), ('moonray.page s
            ('moonray.page export', 'Export MoonRay Scene...', 'export'), ('moonray.page stop', 'Stop Rendering', 'stop'),
            ('moonray.page log', 'Render Log', 'log'),
            ('moonray.page objects', 'Light Links, Emitters and Volumes...', 'objects'),
-           ('moonray.page outputs', 'Named Outputs...', 'outputs'),
+           ('moonray.page outputs', 'Light Path Expressions...', 'outputs'),
            ('moonray.page colors', 'Color Spaces and Texture Cache...', 'colors'),
            ('moonray.page report', 'Report Scene Assets...', 'report'), ('moonray.page package', 'Package Render Scene...', 'package'),
            ('moonray.page package_sequence', 'Package Animation...', 'package_sequence'),
