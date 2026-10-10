@@ -11,16 +11,30 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 [Download the packaged 0.3.50.2 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.50](docs/WHATS_NEW_0350.md)
 
-**Since 0.3.50.2, on the `MoonLightIPR` branch and not yet in a release:**
+## New preview features for 0.3.51
 
-- **MoonLightIPR draws more of what MoonRay draws**: hair as hair (MoonRay's hair material with its four lobes, glints and cuticles), MoonRay's skin material with light passing through thin parts, curves as true curves lit as MoonRay's ribbons or as round tubes, even fog in a MoonRay box or sphere, and a picture on every kind of light, sampled where it is bright.
-- **Modo's shading models**: Blinn and Ashikhmin highlights, and rough GTR, are matched to Modo's own renders by measurement, in MoonRay and in MoonLightIPR.
-- **The sun's disc of a physical sky** is drawn in Modo's own colour, with Disc In-Scatter, and no longer in the colour the sun lights the scene with.
-- **Assigning a MoonRay material** goes on the selected polygons when polygons are selected, and asks for a name, a kind, a colour and a smoothing angle, as Modo's own Set Material does.
-- **Graph editor and forms**: a large imported graph opens on its output and zooms from any size; a material's ramps open in the ramp editor from its properties; a projection's matrix is a move, a turn and a size.
-- **Preview**: with MoonLightIPR the buffer list holds its one picture, Denoised Beauty; a drag that changes the environment (a sky's sun, an environment light) is shown when the mouse button comes up.
-- **Light path expressions** have their own entry in the MoonRay menu and sit under Advanced in the render settings.
-- **Fixes to what MoonRay is given**: a MoonRay shape that holds a volume is written as a mesh, which MoonRay fills where it left its own box and sphere empty; hair with glints carries the number of each strand's own that MoonRay needs.
+*Coming in 0.3.51. On the `MoonLightIPR` branch now; not yet released.*
+
+**In the MoonLightIPR preview**
+
+- **Hair** shaded as hair, with MoonRay's hair material.
+- **Skin** with MoonRay's skin material, including light glowing through thin parts.
+- **Curves** drawn as real strands, as ribbons or round tubes.
+- **Fog** inside a MoonRay box or sphere.
+- **Textures on every kind of light**, not only rect lights.
+
+**Closer to Modo**
+
+- **Blinn and Ashikhmin materials** now match Modo's highlights.
+- **The sun's disc** in a physical sky has Modo's colour and follows Disc In-Scatter.
+
+**Working faster**
+
+- **Assign a MoonRay material to selected polygons**, with a name, type, colour and smoothing angle.
+- **Graph editor**: big graphs open on the output node and zoom freely.
+- **Ramps** open in the ramp editor straight from a material's properties.
+- **Light Path Expressions** has its own entry in the MoonRay menu and under Advanced in the render settings.
+- **Dragging the sun or an environment light** updates the preview when you let go.
 
 ![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
