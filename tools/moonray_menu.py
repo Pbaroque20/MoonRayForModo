@@ -17,6 +17,7 @@ ABOUT = '      <list type="Control" val="cmd moonray.about">'
 ENTRIES = (('moonray.page preview', 'Open Preview', 'preview'), ('moonray.page settings', 'Render Settings', 'settings'),
            ('moonray.page preferences', 'Preview Preferences...', 'preferences'),
            ('moonray.page final', 'Render EXR...', 'final'), ('moonray.page animation', 'Render Animation...', 'animation'),
+           ('moonray.page bake', 'Bake Selected Mesh to Texture...', 'bake'),
            ('moonray.page export', 'Export MoonRay Scene...', 'export'), ('moonray.page stop', 'Stop Rendering', 'stop'),
            ('moonray.page log', 'Render Log', 'log'),
            ('moonray.page objects', 'Light Links, Emitters and Volumes...', 'objects'),

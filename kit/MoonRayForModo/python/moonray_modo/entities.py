@@ -762,6 +762,17 @@ def camera_lines(scene, entity):
     entities = checked(scene)
     steps = scene.get('motion_steps', [-.25, .25])
     shutter = [(key, number(steps[i])) for key, i in (('mb_shutter_open', 0), ('mb_shutter_close', -1)) if key not in entity['parameters']]
+    target = entity['parameters'].get('geometry')
+    if entity['class'] == 'BakeCamera' and not any(target in (e['name'], e['identity']) and catalog()[e['class']]['category'] == 'geometry' for e in entities):
+        # What it bakes is a Modo mesh, which the scene's text names only once the meshes are written.
+        from .bake import placeholder
+        entity = dict(entity, parameters={key: held for key, held in entity['parameters'].items() if key != 'geometry'})
+        shutter = shutter + [('geometry', placeholder(target or ''))]
+    if entity['class'] == 'BakeCamera' and not entity['parameters'].get('normal_map'):
+        # MoonRay's bake camera only forgets a normal map it never had when it is given a name that differs from
+        # none; left with none, it reads one that is not there and stops. A name with no file behind it is asked
+        # for, not found, and the surface's own normals are used, which is what no normal map means.
+        shutter = shutter + [('normal_map', string('modo-no-normal-map'))]
     lines = block(entities, entity, shutter)[1]
     # The rest of the scene file knows the camera by this name.
     lines[0] = 'local camera = %s(%s) {' % (entity['class'], string('/modo/camera'))
@@ -936,7 +947,8 @@ def preview(scene, warnings):
             extra.append({'kind': 'vdb', 'identity': entity['identity'], 'name': label, 'file': value(entity, 'model'), 'matrix': matrix,
                           'density_grid': value(entity, 'density_grid') or 'density', 'emission_grid': value(entity, 'emission_grid') or '',
                           'density': sum(stops) / 3, 'volume_color': [float(v) for v in (value(shader, 'color_mult') or [1.0, 1.0, 1.0])],
-                          'anisotropy': float(value(shader, 'anisotropy') or 0.0)})
+                          'anisotropy': float(value(shader, 'anisotropy') or 0.0),
+                          'emission': sum(float(v) for v in (value(shader, 'incandescence_gain_mult') or [1.0, 1.0, 1.0])) / 3})
         elif category in ('lightfilter', 'volume'):
             # A filter shows through the lights that name it, and a volume in the shape that holds it; what cannot be
             # applied is said there.

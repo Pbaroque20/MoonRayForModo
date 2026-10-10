@@ -590,4 +590,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                   '  ["file_name"] = %s,' % string(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
+    if entity_camera and entity_camera['class'] == 'BakeCamera':
+        from .bake import resolve
+        resolve(lines, render_meshes)
     return '\n'.join(lines) + '\n'
