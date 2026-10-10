@@ -11,30 +11,7 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 [Download the packaged 0.3.50.2 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.50](docs/WHATS_NEW_0350.md)
 
-## New preview features for 0.3.51
-
-*Coming in 0.3.51. On the `MoonLightIPR` branch now; not yet released.*
-
-**In the MoonLightIPR preview**
-
-- **Hair** shaded as hair, with MoonRay's hair material.
-- **Skin** with MoonRay's skin material, including light glowing through thin parts.
-- **Curves** drawn as real strands, as ribbons or round tubes.
-- **Fog** inside a MoonRay box or sphere.
-- **Textures on every kind of light**, not only rect lights.
-
-**Closer to Modo**
-
-- **Blinn and Ashikhmin materials** now match Modo's highlights.
-- **The sun's disc** in a physical sky has Modo's colour and follows Disc In-Scatter.
-
-**Working faster**
-
-- **Assign a MoonRay material to selected polygons**, with a name, type, colour and smoothing angle.
-- **Graph editor**: big graphs open on the output node and zoom freely.
-- **Ramps** open in the ramp editor straight from a material's properties.
-- **Light Path Expressions** has its own entry in the MoonRay menu and under Advanced in the render settings.
-- **Dragging the sun or an environment light** updates the preview when you let go.
+The next version's preview features are being built on the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
 ![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
