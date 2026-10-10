@@ -1,4 +1,4 @@
-# MoonRay for Modo: the MoonLightIPR branch
+# MoonLightIPR
 
 This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo), where the next version's preview features are built and tried. For the plugin itself, its download and its installation, see the [main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo).
 
