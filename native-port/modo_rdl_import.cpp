@@ -27,8 +27,12 @@ int main(int argc,char** argv){
  try{
   SceneContext context;context.setProxyModeEnabled(true);context.setDsoPath(argv[2]);readSceneFromFile(argv[1],context);
   for(int i=3;i<argc;++i)readSceneFromFile(argv[i],context);
+  // How far this has come, a line at a time on the error stream, for whoever waits to show: a large scene takes minutes.
+  size_t total=0,done=0;for(auto it=context.beginSceneObject();it!=context.endSceneObject();++it)++total;
+  const size_t every=total/200+1;std::cerr<<"@@MODO_RDL_STAGE objects 0 "<<total<<std::endl;
   Json::Value root(Json::objectValue);root["version"]=1;root["reader"]=2;root["objects"]=Json::Value(Json::arrayValue);
   for(auto it=context.beginSceneObject();it!=context.endSceneObject();++it){
+   if(++done%every==0)std::cerr<<"@@MODO_RDL_STAGE objects "<<done<<" "<<total<<std::endl;
    const auto& obj=*it->second;const auto& cls=obj.getSceneClass();Json::Value record(Json::objectValue);
    record["name"]=obj.getName();record["type"]=cls.getName();record["authored"]=Json::Value(Json::arrayValue);
    for(auto a=cls.beginAttributes();a!=cls.endAttributes();++a){
@@ -57,6 +61,9 @@ int main(int argc,char** argv){
    root["objects"].append(record);
   }
   Json::StreamWriterBuilder writer;writer["indentation"]="";
-  std::cout<<"\n@@MODO_RDL_JSON\n"<<Json::writeString(writer,root)<<std::endl;return 0;
+  std::cerr<<"@@MODO_RDL_STAGE writing 0 0"<<std::endl;
+  const std::string text=Json::writeString(writer,root);
+  std::cerr<<"@@MODO_RDL_STAGE sending "<<text.size()<<" 0"<<std::endl;
+  std::cout<<"\n@@MODO_RDL_JSON\n"<<text<<std::endl;return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<std::endl;return 1;}
 }

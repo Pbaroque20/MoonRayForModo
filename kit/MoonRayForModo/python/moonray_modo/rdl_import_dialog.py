@@ -4,6 +4,27 @@ from pathlib import Path
 from PySide2 import QtCore,QtWidgets
 from . import native,rdl_import
 
+def bytes_read(pid):
+ """How many bytes a running process has read from files so far, or None where that cannot be asked."""
+ try:
+  import ctypes
+  from ctypes import wintypes
+  class Counters(ctypes.Structure):
+   _fields_=[(name,ctypes.c_ulonglong) for name in ('read_count','write_count','other_count','read_bytes','written_bytes','other_bytes')]
+  kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+  kernel.OpenProcess.restype=wintypes.HANDLE;kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
+  kernel.GetProcessIoCounters.argtypes=[wintypes.HANDLE,ctypes.POINTER(Counters)];kernel.CloseHandle.argtypes=[wintypes.HANDLE]
+  handle=kernel.OpenProcess(0x1000,False,int(pid))
+  if not handle:return None
+  try:
+   held=Counters()
+   return int(held.read_bytes) if kernel.GetProcessIoCounters(handle,ctypes.byref(held)) else None
+  finally:kernel.CloseHandle(handle)
+ except Exception:return None
+
+def clock(seconds):return '%d:%02d'%(int(seconds)//60,int(seconds)%60)
+def megabytes(count):return '%s MB'%format(int(round(count/1048576.0)),',')
+
 class Dialog(QtWidgets.QDialog):
  def __init__(self,parent=None):
   super().__init__(parent);self.setWindowTitle('Import MoonRay RDL as editable objects');self.resize(700,500)
@@ -12,6 +33,11 @@ class Dialog(QtWidgets.QDialog):
   layout.addWidget(QtWidgets.QLabel('Bring a MoonRay scene into the current Modo scene: meshes, instances and curves as Modo items, materials as MoonRay materials,\n'
    'and lights, light filters, volumes and other MoonRay objects as MoonRay items. What cannot be held is listed before anything is made.'))
   self.report=QtWidgets.QPlainTextEdit();self.report.setReadOnly(True);layout.addWidget(self.report,1)
+  # How far the reading of the scene's files has come: a large scene takes minutes before there is anything to list.
+  self.stage=QtWidgets.QLabel('');self.stage.setVisible(False);layout.addWidget(self.stage)
+  self.bar=QtWidgets.QProgressBar();self.bar.setRange(0,1000);self.bar.setTextVisible(False);self.bar.setVisible(False);layout.addWidget(self.bar)
+  self.ticker=QtCore.QTimer(self);self.ticker.setInterval(400);self.ticker.timeout.connect(self.tick)
+  self.began=QtCore.QElapsedTimer();self.size=0;self.told=None;self.pending_error=''
   self.alone=QtWidgets.QCheckBox('Light it only as the RDL scene is lit');self.alone.setChecked(True)
   self.alone.setToolTip("Sets the lights already in the Modo scene not to render and keeps Modo's environment out of MoonRay's picture,\nso that the imported scene renders as it did. Off, the scene's lights are added to what is there.")
   layout.addWidget(self.alone)
@@ -32,21 +58,58 @@ class Dialog(QtWidgets.QDialog):
    settings=QtCore.QSettings('MoonRayForModo','NativePreview');runtime=native.configured_runtime(settings)
    helper=runtime/'modo_rdl_import.exe'
    if not helper.is_file():raise ValueError('Install the RDL-import runtime before importing')
-   self.data=None;self.output.clear();self.errors='';self.import_button.setEnabled(False);self.choose.setEnabled(False);self.cancel.setEnabled(True)
+   self.data=None;self.output.clear();self.errors='';self.told=None;self.pending_error='';self.import_button.setEnabled(False);self.choose.setEnabled(False);self.cancel.setEnabled(True)
    env=QtCore.QProcessEnvironment()
    for key,value in native.environment(runtime).items():env.insert(key,value)
    self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.path.parent));self.process.setProgram(str(helper));together=rdl_import.files(self.path);self.process.setArguments([together[0],str(runtime)]+together[1:])
    self.report.setPlainText('Reading '+' and '.join(Path(p).name for p in together)+' in '+str(self.path.parent)+'…');self.process.start()
+   self.size=sum(Path(p).stat().st_size for p in together);self.began.start();self.bar.setRange(0,1000);self.bar.setValue(0)
+   self.stage.setText('Opening the scene\'s files (%s)'%megabytes(self.size));self.stage.setVisible(True);self.bar.setVisible(True);self.ticker.start()
   except Exception as exc:self.report.setPlainText(str(exc));self.choose.setEnabled(True);self.cancel.setEnabled(False)
+ def tick(self):
+  """Say what the reader is doing: opening the files, by how much of them it has read; then handing the scene over."""
+  if self.process.state()==QtCore.QProcess.NotRunning:return
+  spent=clock(self.began.elapsed()/1000.0)
+  kind,done,whole=self.told or ('',0,0)
+  if self.output:
+   if kind=='sending' and done:
+    self.bar.setRange(0,1000);self.bar.setValue(int(1000*min(1.0,len(self.output)/done)))
+    self.stage.setText('Receiving the scene: %s of %s (%s)'%(megabytes(len(self.output)),megabytes(done),spent));return
+   self.bar.setRange(0,0);self.stage.setText('Receiving the scene: %s so far (%s)'%(megabytes(len(self.output)),spent));return
+  if kind=='objects' and whole:
+   self.bar.setRange(0,1000);self.bar.setValue(int(1000*done/whole))
+   self.stage.setText('Describing the scene: %s of %s objects (%s)'%(format(done,','),format(whole,','),spent));return
+  if kind in ('writing','sending'):
+   self.bar.setRange(0,0);self.stage.setText('Writing the scene out to hand over (%s)'%spent);return
+  read=bytes_read(self.process.processId())
+  if read is None or not self.size:
+   self.bar.setRange(0,0);self.stage.setText('Opening the scene\'s files (%s, %s)'%(megabytes(self.size),spent));return
+  if read>=self.size:
+   self.bar.setRange(0,0);self.stage.setText('Files read; MoonRay is making the scene of them (%s)'%spent);return
+  self.bar.setRange(0,1000);self.bar.setValue(int(1000*read/self.size))
+  self.stage.setText('Opening the scene\'s files: %s of %s (%s)'%(megabytes(read),megabytes(self.size),spent))
+ def settle(self):
+  self.ticker.stop();self.stage.setVisible(False);self.bar.setVisible(False)
  def read(self):
   self.output.extend(bytes(self.process.readAllStandardOutput()))
   # As text a scene is three to four times the size of its binary file; a scene of a few hundred megabytes fits.
   if len(self.output)>2048*1024*1024:self.abort();self.report.setPlainText('Scene exceeds the import transfer limit (2 GiB as text).')
- def read_error(self):self.errors=(self.errors+bytes(self.process.readAllStandardError()).decode('utf-8',errors='replace'))[-16384:]
+ def read_error(self):
+  text=self.pending_error+bytes(self.process.readAllStandardError()).decode('utf-8',errors='replace')
+  lines=text.split('\n');self.pending_error=lines.pop()
+  for line in lines:
+   # The reader's own word of how far it has come is kept apart from what it says went wrong.
+   found=re.match(r'@@MODO_RDL_STAGE (\w+) (\d+) (\d+)',line.strip())
+   if found:self.told=(found.group(1),int(found.group(2)),int(found.group(3)))
+   else:self.errors=(self.errors+line+'\n')[-16384:]
  def error(self,value):
-  if value==QtCore.QProcess.FailedToStart:self.report.setPlainText(self.process.errorString());self.choose.setEnabled(True);self.cancel.setEnabled(False)
+  if value==QtCore.QProcess.FailedToStart:self.settle();self.report.setPlainText(self.process.errorString());self.choose.setEnabled(True);self.cancel.setEnabled(False)
  def finished(self,code,status):
-  self.read();self.read_error();self.choose.setEnabled(True);self.cancel.setEnabled(False)
+  self.read();self.read_error();self.errors+=self.pending_error;self.pending_error='';self.choose.setEnabled(True);self.cancel.setEnabled(False)
+  self.ticker.stop()
+  if not code and status==QtCore.QProcess.NormalExit:
+   # Working out what the scene holds stops Modo from answering for a while; say so before it starts.
+   self.bar.setRange(0,0);self.stage.setText('Working out what to import from %s of scene…'%megabytes(len(self.output)));QtWidgets.QApplication.processEvents()
   try:
    if code or status!=QtCore.QProcess.NormalExit:raise ValueError(self.errors or 'RDL loading canceled or failed')
    marker=b'@@MODO_RDL_JSON';offset=self.output.rfind(marker)
@@ -63,6 +126,7 @@ class Dialog(QtWidgets.QDialog):
     message=('The scene requires '+missing.group(1)+', which could not be loaded from the selected MoonRay runtime. '
      'Choose the updated bundled runtime in MoonRay settings. Third-party geometry or shader plugins require a compatible Windows build.\n\n'+message)
    self.report.setPlainText('Cannot import: '+message)
+  finally:self.settle()
  def apply(self):
   if self.data is None:return
   try:
