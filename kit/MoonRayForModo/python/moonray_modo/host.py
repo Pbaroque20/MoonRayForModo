@@ -94,6 +94,10 @@ def material_values(material):
     diffuse = color(material, 'diffCol', (.5, .5, .5))
     # Modo's Principled model shows the diffuse colour in full, whatever the diffuse amount is set to.
     diffuse_amount = 1.0 if channel(material, 'brdfType', '') == 'principled' else float(channel(material, 'diffAmt', 1))
+    # Modo's Blinn and Ashikhmin highlights are another lobe of MoonRay's, at another roughness and strength.
+    from .shading_models import translated
+    model = str(channel(material, 'brdfType', 'gtr'))
+    lobe_roughness, lobe_strength, beckmann = translated(model, float(channel(material, 'rough', .4)))
     value = {'name':material.name,'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
                                 'node_graph': arranged(settings.get('node_graph')),
@@ -115,8 +119,9 @@ def material_values(material):
                                 'bump_strength': float(channel(material, 'bumpAmp', .005)),
                                 'base_layer_id': material.id,
                                 'specular_amount': float(channel(material, 'specAmt', .04)),
+                                'shading_model': model, '_beckmann': beckmann, '_specular_strength': lobe_strength,
                                 'emission_amount': float(channel(material, 'radiance', 0)),
-                                'roughness': float(channel(material, 'rough', .4)),
+                                'roughness': lobe_roughness,
                                 'diffuse_roughness': float(channel(material, 'diffRough', 0)),
                                 'subsurface_amount': min(1,max(0,float(channel(material,'subsAmt',0)))),
                                 'subsurface_distance': max(0,float(channel(material,'subsDist',0))),
@@ -252,10 +257,6 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             result['materials'][tag] = material_values(material)
             if material.type=='advancedMaterial' and not properties.read(material).get('native_shader'):
                 # What of Modo's material MoonRay is not given as Modo renders it, as measured against Modo's renders.
-                model=channel(material,'brdfType','gtr')
-                if model in ('blinn','ashikhmin'):
-                    warnings.append("%s: Modo's %s shading model is rendered as GTR, and its highlights will differ; GTR and Principled are followed." %
-                                    (material.name,model.capitalize()))
                 if float(channel(material,'reflAmt',0))>0 and not channel(material,'reflSpec',1):
                     warnings.append("%s: a reflection amount apart from the specular amount (Match Specular off) is not followed." % material.name)
             if channel(material,'subsAmt',0) or channel(material,'aniso',0):

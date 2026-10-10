@@ -88,7 +88,8 @@ def emit(material, tag, index, bindings, lines):
         'bssrdf':str(controls['subsurface_model']),
         'enable_sss_input_normal':'true' if controls['sss_input_normal'] else 'false',
         'resolve_self_intersections':'true' if controls['sss_resolve_self_intersections'] else 'false',
-        'specular_model':'0' if material.get('anisotropy',0) else '1',
+        # Beckmann for a highlight that stretches, and for Modo's Blinn and Ashikhmin models, whose shape it is.
+        'specular_model':'0' if material.get('anisotropy',0) or material.get('_beckmann') else '1',
         'shading_tangent':vector([math.cos(controls['anisotropy_angle']), math.sin(controls['anisotropy_angle'])],'Vec2'),
         'anisotropy':number(max(-1,min(1,material.get('anisotropy',0)))),
         'refractive_index':number(reflection_ior),
@@ -157,7 +158,10 @@ def emit(material, tag, index, bindings, lines):
             lobe=fresnel_match(straight,rise)
             root=math.sqrt(lobe)
             path='/modo/fresnel/'+str(index)
-            lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most*lobe/straight),)*3))
+            # Modo's Blinn and Ashikhmin highlights reflect less than a lobe that keeps all the light. The amount is divided
+            # by the number below, so a weaker highlight is a larger one.
+            strength=max(1e-6,float(material.get('_specular_strength',1.0)))
+            lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most*lobe/straight/strength),)*3))
             attributes.update(refractive_index=number((1+root)/(1-root)),specular='bind(ModoTextureMap(%s), 1)'%string(path),show_specular='true')
     from .working_space import surface as working_surface
     attributes=working_surface(attributes,'/modo/material/'+str(index),lines,{'albedo','metallic_color','scattering_color','transmission_color','emission','clearcoat_attenuation_color'})
