@@ -247,6 +247,7 @@ struct Renderer::Impl {
     std::vector<std::unique_ptr<Texture>> grids;     // 3D, of densities
     std::vector<float> gridPeaks;
     std::vector<int32_t> volumeGrids;       // every grid the current materials use
+    std::vector<int32_t> lightGrids;        // and those the lights' filters use
     std::vector<int32_t> layerTextures;     // every texture the current layers use
     std::vector<int32_t> lightTextures;     // and those the lights and their filters use
     std::vector<int32_t> distantTextures;
@@ -865,7 +866,8 @@ uint32_t Renderer::addGrid(const GridDesc& desc) {
 
 void Renderer::removeGrid(uint32_t grid) {
     if (grid >= impl->grids.size() || !impl->grids[grid]) throw std::runtime_error("MoonLightIPR grid does not exist");
-    if (std::find(impl->volumeGrids.begin(), impl->volumeGrids.end(), int32_t(grid)) != impl->volumeGrids.end())
+    if (std::find(impl->volumeGrids.begin(), impl->volumeGrids.end(), int32_t(grid)) != impl->volumeGrids.end()
+        || std::find(impl->lightGrids.begin(), impl->lightGrids.end(), int32_t(grid)) != impl->lightGrids.end())
         throw std::runtime_error("MoonLightIPR grid is still used by a material");
     ML_CHECK(cudaDeviceSynchronize());
     impl->grids[grid].reset();
@@ -1154,6 +1156,7 @@ void Renderer::setLights(const Light* lights, size_t count) {
     std::vector<float> triangles;       // of every mesh light, 10 floats each
     std::vector<size_t> triangleStart(count, 0);
     std::vector<DeviceFilter> filters;
+    std::vector<int32_t> usedGrids;
     std::vector<int32_t> used;
     std::vector<float> distributions;
     std::vector<size_t> distributionStart(count, size_t(-1));
@@ -1187,6 +1190,12 @@ void Renderer::setLights(const Light* lights, size_t count) {
             std::copy(in.rows, in.rows + 12, filter.rows);
             std::copy(in.more, in.more + 12, filter.b);
             if (in.kind == LightFilter::Cookie) filter.texture = object(in.texture);
+            if (in.kind == LightFilter::Vdb) {
+                if (in.texture < 0 || size_t(in.texture) >= impl->grids.size() || !impl->grids[in.texture] || impl->gridPeaks[in.texture] < 0.0f)
+                    throw std::runtime_error("MoonLightIPR light filter refers to a missing grid");
+                filter.texture = static_cast<unsigned long long>(impl->grids[in.texture]->object);
+                usedGrids.push_back(in.texture);
+            }
             if (in.kind == LightFilter::Ramp) {
                 if (!(in.values[1] > in.values[0])) throw std::runtime_error("MoonLightIPR ramp filter has no length");
                 filter.texture = object(in.texture);
@@ -1283,6 +1292,7 @@ void Renderer::setLights(const Light* lights, size_t count) {
     impl->lightFilters.upload(filters);
     impl->params.lightFilters = impl->lightFilters.ptr;
     impl->lightTextures = std::move(used);
+    impl->lightGrids = std::move(usedGrids);
     impl->restart();
 }
 

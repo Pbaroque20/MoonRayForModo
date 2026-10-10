@@ -501,7 +501,7 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
             tint = tint * value;
             continue;
         }
-        if (filter.type == FILTER_ROD || filter.type == FILTER_BARN || filter.type == FILTER_COOKIE) {
+        if (filter.type == FILTER_ROD || filter.type == FILTER_BARN || filter.type == FILTER_COOKIE || filter.type == FILTER_VDB) {
             const float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
                                              dot(vec(filter.rows + 8), p) + filter.rows[11]);
             if (filter.type == FILTER_ROD) {
@@ -513,6 +513,15 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
                 scale = 1.0f + (scale - 1.0f) * filter.b[1];
                 const float3 colour = vec(filter.b + 2);
                 tint = tint * (colour + (vec(1.0f) - colour) * scale);
+                continue;
+            }
+            if (filter.type == FILTER_VDB) {
+                // A grid of densities: where it is full the light passes as it is; where it is empty it takes the tint.
+                float density = tex3D<float>(filter.texture, local.x, local.y, local.z);
+                if (filter.flags & FILTER_INVERT) density = 1.0f - density;
+                density = fmaxf(density, 0.0f);
+                const float3 colour = vec(filter.b);
+                tint = tint * (colour + (vec(1.0f) - colour) * density);
                 continue;
             }
             if (filter.type == FILTER_COOKIE) {

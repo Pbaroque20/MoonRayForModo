@@ -352,6 +352,12 @@ def scenes(folder):
              'parameters': {'texture': quarters_image(folder), 'projector_focal': 40.0, 'projector_film_width_aperture': 24.0}},
             {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
              'parameters': {'intensity': 160.0, 'width': .4, 'height': .4, 'light_filters': ['Slide']}}]),
+        # A VDB light filter: the ball of fog as a grid that lets light through where it is full and none where it is empty.
+        'filter_vdb': dict(base, _environment=.15, entities=[
+            {'identity': 'f_vdb', 'name': 'Gobo', 'class': 'VdbLightFilter', 'matrix': fixture.placed(.4, .6, .3, 1.6),
+             'parameters': {'vdb_map': vdb_ball(folder), 'density_grid_name': 'density', 'vdb_interpolation_type': 1, 'color_tint': [.9, .2, .1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 90.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Gobo']}}]),
         # MoonRay's own cameras, standing where the scene's camera is, with a light and a sky to see by.
         **{name: dict(base, _environment=0.5, entities=[
             {'identity': 'l_key', 'name': 'Key', 'class': 'SphereLight', 'matrix': fixture.placed(-3, 4, 2), 'parameters': {'intensity': 60.0, 'radius': .3}},

@@ -140,7 +140,7 @@ def environment_section(scene, environment, warnings, runtime):
     return parts
 
 
-FILTER_DECAY, FILTER_RAMP, FILTER_ROD, FILTER_BARN, FILTER_COOKIE = 0, 1, 2, 3, 4
+FILTER_DECAY, FILTER_RAMP, FILTER_ROD, FILTER_BARN, FILTER_COOKIE, FILTER_VDB = 0, 1, 2, 3, 4, 5
 FILTER_NEAR, FILTER_FAR = 1, 2
 FILTER_DIRECTIONAL, FILTER_MIRROR, FILTER_PLACED = 1, 2, 4
 RAMP_SAMPLES = 256
@@ -180,8 +180,9 @@ def control_filters(settings, light, scene, warnings):
         if settings.get('cookie_file'):
             records.append(cookie_record(transform, settings['cookie_file'], float(settings.get('cookie_focal', 30)), float(settings.get('cookie_aperture', 24)), 1.0,
                                          float(settings.get('cookie_density', 1)), bool(settings.get('cookie_invert')), 0, False))
-    if settings.get('filter_vdb'):
-        warnings.append('MoonLightIPR does not apply the VDB filter on %s.' % name)
+        if settings.get('filter_vdb'):
+            records.append({'kind': 'vdb', 'file': settings['filter_vdb'], 'grid': settings.get('filter_vdb_grid', 'density'), 'matrix': transform,
+                            'tint': working_color(finite(settings.get('filter_vdb_tint', [0, 0, 0]))), 'invert': False})
     return records
 
 
@@ -203,6 +204,19 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
             parts.append(struct.pack('<2I4f12fi12f', FILTER_BARN, (1 if record['invert'] else 0) | (2 if record['orthographic'] else 0) | (4 if record['physical'] else 0),
                                      *record['low'], *record['high'], *(v for row in rows for v in row), -1,
                                      record['radius'], *record['edges'], record['focal'], *record['color'], record['density'], 0.0, 0.0))
+        elif record['kind'] == 'vdb':
+            import subprocess
+            from .entities import inverse_rows
+            from .moonlightipr_volumes import dense, product
+            try:
+                file, unit = dense(record['file'], record['grid'], compiler.runtime)
+            except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+                if warnings is not None:
+                    warnings.append('MoonLightIPR leaves out a VDB light filter whose grid it cannot read (%s).' % exc)
+                continue
+            rows = inverse_rows(product(unit, [float(v) for v in record['matrix']]))
+            parts.append(struct.pack('<2I4f12fi12f', FILTER_VDB, 1 if record['invert'] else 0, 0.0, 0.0, 0.0, 0.0, *(v for row in rows for v in row),
+                                     compiler.grid(file), *record['tint'], *([0.0] * 9)))
         elif record['kind'] == 'cookie':
             import subprocess
             try:

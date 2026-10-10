@@ -512,6 +512,13 @@ def filter_records(entities, names, owner, warnings):
                                        float(value(entity, 'projector_focal_distance')), float(value(entity, 'rotation')),
                                        working_color(value(entity, 'color')), float(value(entity, 'density')), bool(value(entity, 'invert')),
                                        int(value(entity, 'projector_type')) == 1, int(value(entity, 'mode')) == 1))
+        elif kind == 'VdbLightFilter':
+            if not value(entity, 'vdb_map'):
+                continue
+            if float(value(entity, 'blur_value')) > 0 or entity['parameters'].get('density_remap_inputs') or value(entity, 'density_rescale_enable'):
+                warnings.append('MoonLightIPR shows %s without its blur and its density remap.' % entity['name'])
+            records.append({'kind': 'vdb', 'file': str(value(entity, 'vdb_map')), 'grid': str(value(entity, 'density_grid_name') or ''), 'matrix': entity.get('matrix', IDENTITY),
+                            'tint': working_color(value(entity, 'color_tint')), 'invert': bool(value(entity, 'invert_density'))})
         elif kind == 'CookieLightFilter_v2':
             if entity['parameters'].get('projector'):
                 warnings.append('MoonLightIPR does not apply %s, which is thrown from a camera item (%s on %s).' % (kind, entity['name'], owner))

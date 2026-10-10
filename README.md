@@ -14,7 +14,7 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **Skin** with MoonRay's skin material, including light glowing through thin parts.
 - **Curves** drawn as real strands, as ribbons or round tubes.
 - **Fog** inside a MoonRay box or sphere, and **VDB clouds and smoke** from a file, with their own glow. VDB volumes can overlap.
-- **Rod, barn door and cookie light filters**, on MoonRay lights and on Modo lights.
+- **Rod, barn door, cookie and VDB light filters**, on MoonRay lights and on Modo lights.
 - **Textures on every kind of light**, not only rect lights.
 
 ![Hair, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-hair_dark.jpg)
@@ -55,7 +55,7 @@ The ones you are most likely to meet:
 
 - Very smooth highlights are dimmer than Modo's.
 - Hair in MoonLightIPR is close to MoonRay's but not exact.
-- MoonLightIPR scatters light in fog once, whatever Volume bounces is set to, and leaves out the VDB light filter.
+- MoonLightIPR scatters light in fog once, whatever Volume bounces is set to.
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode. The faster modes do not draw them rightly in this build.
 - Tested on one machine (RTX 3090) only.
 

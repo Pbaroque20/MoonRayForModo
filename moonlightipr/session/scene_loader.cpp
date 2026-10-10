@@ -417,12 +417,19 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         lightFilters[l].resize(in.value<uint32_t>());
         for (LightFilter& filter : lightFilters[l]) {
             const uint32_t filterKind = in.value<uint32_t>();
-            if (filterKind > LightFilter::Cookie) throw std::runtime_error("MoonLightIPR scene has an unknown light filter");
+            if (filterKind > LightFilter::Vdb) throw std::runtime_error("MoonLightIPR scene has an unknown light filter");
             filter.kind = LightFilter::Kind(filterKind);
             filter.flags = in.value<uint32_t>();
             in.floats(filter.values, 4);
             in.floats(filter.rows, 12);
-            filter.texture = image(in.value<int32_t>());
+            const int32_t named = in.value<int32_t>();
+            if (filter.kind == LightFilter::Vdb) {
+                // A grid, by its place among the scene's grids.
+                if (named < 0 || named >= int32_t(gridIndices.size())) throw std::runtime_error("MoonLightIPR scene light filter refers to a missing grid");
+                filter.texture = int32_t(gridIndices[named]);
+            } else {
+                filter.texture = image(named);
+            }
             in.floats(filter.more, 12);
         }
         light.filters = lightFilters[l].data();
