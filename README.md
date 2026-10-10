@@ -100,13 +100,14 @@ Fixed on the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/
 - A large material graph opens zoomed far out and will not zoom in.
 - A mistyped light path expression fails the render with no plain message.
 
-Still open:
+Still open, among others:
 
 - Very smooth highlights (roughness under about 0.2) are dimmer than Modo's.
 - Under Principled, Modo's diffuse gets brighter with roughness and MoonRay's does not.
-- MoonLightIPR leaves out rod, barn door, cookie and VDB light filters, and shows no motion blur while it follows edits.
+- MoonLightIPR leaves out rod, barn door, cookie and VDB light filters.
 - Opening a large RDL scene's files takes minutes, with no progress shown.
-- Tested on one machine (RTX 3090) only.
+
+Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
 
 ## Limitations
 
@@ -131,15 +132,7 @@ Still open:
 - Light linking, and the remaining Shader Tree effects and masks.
 - Broader validation: other GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.
 
-**From MoonRay's reference documentation** (things MoonRay does that the plugin has no control for yet)
-
-- **Deep images**: deep EXR output and its settings.
-- **Light sets, shadow sets, shadow receiver sets and trace sets**: which lights light, and which objects shadow, what.
-- **Display filters**: MoonRay's post-render filters (blend, colour correct, convolution, depth of field, halftone, ramp, toon and the rest). Only the image filter is in the Windows build.
-- **Render settings not in the form**: volume quality and depth, presence and hair depth, sample and roughness clamping, pixel filter, texture blur and texture cache size, Russian roulette, frame-locked noise.
-- **Texture baking** with the bake camera as a workflow, not only as an item.
-- **Arras**: rendering one frame across several machines.
-- **Alembic and USD geometry procedurals**, which the Windows build does not include.
+Each of these, and what MoonRay documents that the plugin has no control for yet (deep images, light and shadow sets, display filters, texture baking, Arras and more), is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues).
 
 **Production readiness:** this is an experimental development build, not a production-certified release. It has been exercised on one machine. Each release note says what was and was not checked.
 
