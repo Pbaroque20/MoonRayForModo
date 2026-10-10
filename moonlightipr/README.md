@@ -1,4 +1,4 @@
-# MoonLightIPR GPU preview (experimental)
+# MoonLightIPR (experimental)
 
 *Updated October 9, 2026, for MoonRay for Modo 0.3.50.1. Sections that record a check keep the date it was made.*
 
@@ -8,9 +8,10 @@ it is a separate renderer that previews what MoonRay will render. See [NOTICE.md
 
 MoonLightIPR is the name of the preview engine everywhere: in the plugin, in these documents, and
 in the source, where files, folders, the C++ namespace and the session executable are
-`moonlightipr`. Releases 0.3.50.1 and 0.3.50.2 showed it as "MoonLight" and shipped it in a
-`moonlight` folder; the full name is used from then on so that it is not taken for Moonlight,
-the renderer DreamWorks used before MoonRay, with which it has nothing to do.
+`moonlightipr`. The name echoes MoonLight, the rasterization renderer DreamWorks used before
+MoonRay; the two are otherwise unrelated. Releases 0.3.50.1 and 0.3.50.2 showed it as
+"MoonLight" and shipped it in a `moonlight` folder; the full name is used from then on so that
+the one is not taken for the other.
 
 MoonLightIPR is a small standalone OptiX path tracer intended as an interactive preview
 engine beside MoonRay. It does not touch MoonRay's renderer. It is an approximation:
