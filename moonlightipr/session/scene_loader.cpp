@@ -170,6 +170,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     settings.width = in.value<uint32_t>();
     settings.height = in.value<uint32_t>();
     const uint32_t maxDepth = in.value<uint32_t>(), maxDiffuseDepth = in.value<uint32_t>(), maxGlossyDepth = in.value<uint32_t>();
+    const uint32_t maxVolumeDepth = in.value<uint32_t>();
     settings.targetSamples = in.value<uint32_t>();
     const uint32_t sceneFlags = in.value<uint32_t>();
     settings.denoise = (sceneFlags & SCENE_DENOISE) != 0;
@@ -624,7 +625,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         renderer.setEnvironment(environment);
         environmentHash = environmentNow;
     }
-    renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth);
+    renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth, maxVolumeDepth);
     if (settings.width != renderer.width() || settings.height != renderer.height()) renderer.resize(settings.width, settings.height);
     renderer.setCamera(camera);
     renderer.setCameraMotion(sceneFlags & SCENE_MOTION ? &cameraClose : nullptr);

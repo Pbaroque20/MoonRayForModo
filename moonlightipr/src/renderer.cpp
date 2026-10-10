@@ -674,6 +674,7 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     // MoonRay's defaults, including its sample_clamping_value.
     impl->params.maxDepth = 4;
     impl->params.maxDiffuseDepth = impl->params.maxGlossyDepth = 2;
+    impl->params.maxVolumeDepth = 1;
     impl->params.sampleClamp = 10.0f;
     std::vector<float> albedo = albedoTable(false);
     const std::vector<float> beckmann = albedoTable(true);
@@ -1331,7 +1332,8 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     impl->restart();
 }
 
-void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t glossyBounces) {
+void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t glossyBounces, uint32_t volumeBounces) {
+    impl->params.maxVolumeDepth = volumeBounces;
     impl->params.maxDepth = bounces;
     impl->params.maxDiffuseDepth = diffuseBounces;
     impl->params.maxGlossyDepth = glossyBounces;

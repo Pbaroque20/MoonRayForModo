@@ -456,6 +456,13 @@ def scenes(folder):
                           'parameters': {'size': [2.6, 2.6, 2.6], 'modo_volume': 'Mist'}}])
            for name, values in (('thin', {'attenuation_intensity': .4}), ('thick', {'attenuation_intensity': 2.5}),
                                 ('coloured', {'attenuation_intensity': 1.2, 'attenuation_color': [1.0, .6, .3], 'diffuse_color': [.5, .7, 1.0], 'anisotropy': .4}))},
+        # The thick block again with light let scatter in it three times.
+        'fog_bounces': dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               render_settings=dict(base['render_settings'], max_volume_depth=3),
+               entities=[{'identity': 'v_fog', 'name': 'Mist', 'class': 'BaseVolume', 'parameters': {'attenuation_intensity': 2.5}},
+                         {'identity': 'g_block', 'name': 'Cloud', 'class': 'BoxGeometry', 'matrix': fixture.placed(0, 1.6, 2.5),
+                          'parameters': {'size': [2.6, 2.6, 2.6], 'modo_volume': 'Mist'}}]),
         # A VDB volume: a ball of fog with a hole in it, thicker toward its middle, from a file MoonRay reads itself.
         **{'vdb_' + name: dict(base, lights=fixture.snapshot()['lights'] + [
                dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3, _exec_mode='scalar' if values.get('_scalar') else 'auto',
@@ -465,6 +472,12 @@ def scenes(folder):
                                 # The same ball with the light its emission grid gives off: a glowing core off to one side.
                                 # MoonRay draws a volume that gives off light in its scalar mode only, in this build.
                                 ('glow', {'density': 2.0, 'emission_grid': 'emission', 'emission': 3.0, '_scalar': True}))},
+        # The thick ball again with light let scatter in it four times, which is what brightens a cloud from inside.
+        'vdb_bounces': dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               render_settings=dict(base['render_settings'], max_volume_depth=4),
+               extra_geometry=[dict(kind='vdb', identity='smoke|vdb', source_item='smoke', name='Smoke', file=vdb_ball(folder), density=6.0,
+                                    matrix=fixture.placed(0, 1.5, 2.5))]),
         # Two balls of fog that overlap, one behind the other from the lamp: each shadows the other and the ground.
         'vdb_two': dict(base, lights=fixture.snapshot()['lights'] + [
                dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,

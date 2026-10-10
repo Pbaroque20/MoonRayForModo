@@ -58,7 +58,7 @@ ML_INLINE float fogDensity(const DeviceVolume& fog, float3 p) {
 
 // What the fogs that have grids let through along a ray. Each fills the unit cube its rows take the scene into, so
 // where the ray is inside one is worked out from the cube, and any number of them may lie along the ray or overlap.
-ML_INLINE float3 gridShadow(float3 origin, float3 direction, float distance, unsigned& seed) {
+ML_INLINE float3 gridShadow(float3 origin, float3 direction, float distance, unsigned& seed, float thin) {
     float3 through = vec(1.0f);
     const DeviceVolume* fogs = reinterpret_cast<const DeviceVolume*>(params.volumes);
     for (unsigned i = 0; i < params.volumeCount; ++i) {
@@ -82,13 +82,15 @@ ML_INLINE float3 gridShadow(float3 origin, float3 direction, float distance, uns
         const float step = (to - from) / steps;
         float thick = 0.0f, at = from + step * rnd(seed);
         for (int k = 0; k < steps; ++k, at += step) thick += fogDensity(fog, origin + direction * at);
-        thick *= step;
+        thick *= step * thin;
         through *= make_float3(expf(-thick * fog.extinction[0]), expf(-thick * fog.extinction[1]), expf(-thick * fog.extinction[2]));
     }
     return through;
 }
 
-ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float distance = 1e16f) {
+// thin scales what fog stops: MoonRay lets light that has already scattered in fog through more of it (its volume
+// attenuation factor), which stands for the light that would have found its way round.
+ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float distance = 1e16f, float thin = 1.0f) {
     // A fog with a grid is not the same all through, so the any-hit test only notes where the ray goes into it and
     // comes out, and which fog it is; what it stops is added up along that stretch below.
     unsigned unoccluded = 0, stream = seed, d0 = 0, d1 = 0, d2 = 0, e0 = 0, e1 = 0, e2 = 0;
@@ -100,11 +102,11 @@ ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float d
                0, 1, 1, unoccluded, stream, d0, d1, d2, e0, e1, e2, entered, left, gridded);
     if (!unoccluded) return vec(0.0f);
     // Asked of every ray where there is any fog at all: one that starts and ends inside a grid crosses no edge of it.
-    const float3 through = params.volumeCount ? gridShadow(origin, direction, distance, seed) : vec(1.0f);
+    const float3 through = params.volumeCount ? gridShadow(origin, direction, distance, seed, thin) : vec(1.0f);
     if (!(d0 | d1 | d2 | e0 | e1 | e2)) return through;
     // A fog entered and never left is one the light itself is in: it is crossed from its edge to the ray's end.
     const float3 inside = make_float3(fmaxf(0.0f, __uint_as_float(e0)), fmaxf(0.0f, __uint_as_float(e1)), fmaxf(0.0f, __uint_as_float(e2)));
-    const float3 depth = make_float3(__uint_as_float(d0), __uint_as_float(d1), __uint_as_float(d2)) + inside * fminf(distance, 1e12f);
+    const float3 depth = (make_float3(__uint_as_float(d0), __uint_as_float(d1), __uint_as_float(d2)) + inside * fminf(distance, 1e12f)) * thin;
     return through * make_float3(expf(-fmaxf(0.0f, depth.x)), expf(-fmaxf(0.0f, depth.y)), expf(-fmaxf(0.0f, depth.z)));
 }
 
@@ -1232,8 +1234,19 @@ ML_INLINE float phase(float cosine, float g) {
     const float denominator = 1.0f + g * g - 2.0f * g * cosine;
     return (1.0f - g * g) / (4.0f * ML_PI * denominator * sqrtf(fmaxf(denominator, 1e-12f)));
 }
+// A way for light to go on from a point in fog, drawn as the fog sends it: mostly straight on where g is near 1.
+ML_INLINE float3 samplePhase(float3 forward, float g, float u1, float u2) {
+    float cosine;
+    if (fabsf(g) < 1e-3f) cosine = 1.0f - 2.0f * u1;
+    else {
+        const float part = (1.0f - g * g) / (1.0f - g + 2.0f * g * u1);
+        cosine = (1.0f + g * g - part * part) / (2.0f * g);
+    }
+    const float sine = sqrtf(fmaxf(0.0f, 1.0f - cosine * cosine)), phi = 2.0f * ML_PI * u2;
+    return normalize(Frame(forward).toWorld(make_float3(sine * cosf(phi), sine * sinf(phi), cosine)));
+}
 // The light every lamp sends to a point in fog and on along wo, the way back to the viewer.
-ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit, unsigned& seed) {
+ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit, unsigned& seed, float thin = 1.0f) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
@@ -1241,12 +1254,12 @@ ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit,
         float lightPdf;
         const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
         if (lightPdf > 0.0f)
-            radiance += clampSample(weight * envRadiance(toLight) * shadow(p, toLight, seed) * (phase(-dot(wo, toLight), g) / lightPdf), lit);
+            radiance += clampSample(weight * envRadiance(toLight) * shadow(p, toLight, seed, 1e16f, thin) * (phase(-dot(wo, toLight), g) / lightPdf), lit);
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
         const DeviceDistantLight& light = distantLights[i];
         const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
-        radiance += clampSample(weight * distantRadiance(light, toSun) * shadow(p, toSun, seed) * (phase(-dot(wo, toSun), g) / distantPdf(light, toSun)), lit);
+        radiance += clampSample(weight * distantRadiance(light, toSun) * shadow(p, toSun, seed, 1e16f, thin) * (phase(-dot(wo, toSun), g) / distantPdf(light, toSun)), lit);
     }
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
@@ -1255,7 +1268,7 @@ ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit,
         float distance, lampPdf;
         if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
         if (params.lightPick) lampPdf *= lights[i].pick;
-        radiance += clampSample(weight * emitted * shadow(p, toLamp, seed, distance * 0.999f) * (phase(-dot(wo, toLamp), g) / lampPdf), lit);
+        radiance += clampSample(weight * emitted * shadow(p, toLamp, seed, distance * 0.999f, thin) * (phase(-dot(wo, toLamp), g) / lampPdf), lit);
     }
     return radiance;
 }
@@ -1404,7 +1417,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
             if (most > 0.0f && to > from) {
                 bool stopped = false;
-                float at = from, anisotropy = 0.0f;
+                float at = from, anisotropy = 0.0f, stops = 0.0f;
                 float3 albedo = vec(0.0f);
                 for (int k = 0; k < 1024; ++k) {
                     at += -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / most;
@@ -1432,15 +1445,42 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     if (given.x + given.y + given.z > 0.0f) radiance += clampSample(throughput * lightWeight * given * (1.0f / most), clampFound);
                     if (rnd(seed) * most < thick) {
                         stopped = true;
+                        stops = thick;
                         albedo = albedo * (1.0f / thick);
                         anisotropy /= thick;
                         break;
                     }
                 }
                 if (stopped) {
-                    // Light scatters in fog once: what the lamps send here goes on towards the viewer.
+                    // What the lamps send here goes on towards the viewer.
+                    float3 here = origin + direction * at;
                     if (bounces)
-                        radiance += fogLight(origin + direction * at, -direction, anisotropy, throughput * bounceWeight * albedo, roughDepth >= 1, seed);
+                        radiance += fogLight(here, -direction, anisotropy, throughput * bounceWeight * albedo, roughDepth >= 1, seed);
+                    // And, for as many times as the scene allows, so does what other fog sends here, as MoonRay works it
+                    // out (after Wrenninge): from here the light is followed a step at a time through the fog, each step
+                    // as long as the fog where it starts makes likely, and ended where a step lands outside the fog.
+                    // Each time the light has scattered before, it counts for less, fog stops less of it on its way
+                    // from the lamps, and it is thrown more evenly.
+                    float3 carried = throughput * bounceWeight * albedo, way = samplePhase(direction, anisotropy, rnd(seed), rnd(seed));
+                    for (unsigned order = 1; bounces && order < params.maxVolumeDepth; ++order) {
+                        here = here + way * (-logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / stops);
+                        float thick = 0.0f, turned = 0.0f;
+                        float3 kept = vec(0.0f);
+                        for (unsigned i = 0; i < params.volumeCount; ++i) {
+                            const DeviceVolume& fog = fogs[i];
+                            if (!fog.grid) continue;
+                            const float there = (fog.extinction[0] + fog.extinction[1] + fog.extinction[2]) * (1.0f / 3.0f) * fogDensity(fog, here);
+                            thick += there;
+                            kept += vec(fog.albedo) * there;
+                            turned += fog.anisotropy * there;
+                        }
+                        if (!(thick > 0.0f)) break;
+                        carried = carried * kept * (1.0f / thick);
+                        const float less = powf(0.65f, float(order)), even = turned / thick * powf(0.5f, float(order));
+                        radiance += fogLight(here, -way, even, carried * less, true, seed, less);
+                        way = samplePhase(way, even, rnd(seed), rnd(seed));
+                        stops = thick;
+                    }
                     break;
                 }
             }
@@ -1461,9 +1501,26 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 const float density = average(stops * left);
                 if (!(density > 0.0f)) break;
                 radiance += clampSample(throughput * lightWeight * vec(fog.emission) * left * (1.0f / density), clampFound);
-                if (bounces)
-                    radiance += fogLight(origin + direction * reached, -direction, fog.anisotropy,
-                                         throughput * bounceWeight * stops * vec(fog.albedo) * left * (1.0f / density), roughDepth >= 1, seed);
+                const float3 on = throughput * bounceWeight * stops * vec(fog.albedo) * left * (1.0f / density);
+                float3 here = origin + direction * reached;
+                if (bounces) radiance += fogLight(here, -direction, fog.anisotropy, on, roughDepth >= 1, seed);
+                // And what other fog sends here, as MoonRay works it out: the light is followed a step at a time, each
+                // as long as the fog makes likely, and ended where a step leaves the fog or meets something in it.
+                // Each time the light has scattered before, it counts for less, fog stops less of it on its way from
+                // the lamps, and it is thrown more evenly.
+                const float thickness = average(stops);
+                float3 carried = on, way = samplePhase(direction, fog.anisotropy, rnd(seed), rnd(seed));
+                for (unsigned order = 1; bounces && thickness > 0.0f && order < params.maxVolumeDepth; ++order) {
+                    const float step = -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / thickness;
+                    Hit met;
+                    traceRadiance(here, way, met, step);
+                    if (met.valid) break;
+                    here = here + way * step;
+                    carried = carried * stops * vec(fog.albedo) * (1.0f / thickness);
+                    const float less = powf(0.65f, float(order)), even = fog.anisotropy * powf(0.5f, float(order));
+                    radiance += fogLight(here, -way, even, carried * less, true, seed, less);
+                    way = samplePhase(way, even, rnd(seed), rnd(seed));
+                }
                 break;
             }
             // Not stopped before the next surface: what the other colours make of having got this far.

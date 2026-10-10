@@ -330,7 +330,7 @@ public:
     void resize(uint32_t width, uint32_t height);
     // Total bounces, and of those how many may leave a diffuse and a specular lobe, as
     // MoonRay's max_depth, max_diffuse_depth and max_glossy_depth.
-    void setMaxDepth(uint32_t bounces, uint32_t diffuseBounces = 2, uint32_t glossyBounces = 2);
+    void setMaxDepth(uint32_t bounces, uint32_t diffuseBounces = 2, uint32_t glossyBounces = 2, uint32_t volumeBounces = 1);
 
     // Adds one sample per pixel to the accumulated image.
     void render();

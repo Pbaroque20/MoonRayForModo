@@ -56,7 +56,6 @@ The ones you are most likely to meet:
 
 - Very smooth highlights are dimmer than Modo's.
 - Hair in MoonLightIPR is close to MoonRay's but not exact.
-- MoonLightIPR scatters light in fog once, whatever Volume bounces is set to.
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode. The faster modes do not draw them rightly in this build.
 - Tested on one machine (RTX 3090) only.
 

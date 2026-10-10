@@ -280,6 +280,8 @@ struct LaunchParams {
     unsigned maxDepth;      // bounces after the camera ray
     unsigned maxDiffuseDepth;   // of those, how many may leave a diffuse lobe
     unsigned maxGlossyDepth;    // and how many a specular lobe
+    unsigned maxVolumeDepth;    // how many times light may scatter in fog along one path; MoonRay's max_volume_depth
+    unsigned depthPad;
     float sampleClamp;      // largest value of one light sample after the first bounce; 0 is unlimited
     unsigned presence;      // some material can be partly absent or is a fog's edge, so rays must run the any-hit test
 
