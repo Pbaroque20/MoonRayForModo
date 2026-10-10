@@ -234,6 +234,20 @@ def textured(folder):
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
 
+def quarters_image(folder):
+    """A picture whose four quarters are told apart by colour, and its top from its bottom by a white bar near the top:
+    for telling which way round and which way up a projector throws it."""
+    width, height = 256, 256
+    def pixel(u, v):     # v runs upwards
+        if .8 < v < .9 and .2 < u < .8:
+            return [1.0, 1.0, 1.0]
+        return [(.1, .1, .9), (.9, .8, .1)][u > .5] if v < .5 else [(.9, .15, .1), (.1, .8, .2)][u > .5]
+    path = folder / 'quarters.pfm'
+    rows = [struct.pack('<%df' % (width * 3), *[c for x in range(width) for c in pixel((x + .5) / width, (y + .5) / height)]) for y in range(height)]
+    path.write_bytes(('PF\n%d %d\n-1.0\n' % (width, height)).encode() + b''.join(rows))
+    return str(path)
+
+
 def sky_image(folder):
     """A latitude-longitude sky whose sides are told apart by colour, with one bright patch."""
     width, height = 512, 256
@@ -320,6 +334,30 @@ def scenes(folder):
              'parameters': {'intensity': 60.0, 'radius': .3, 'light_filters': ['Decay', 'Tint']}},
             {'identity': 'l_fill', 'name': 'Fill', 'class': 'RectLight', 'matrix': aimed([3, 5, 3], [1, .5, 0]),
              'parameters': {'intensity': 60.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Ramp']}}]),
+        # The filters that shape a light: a rod that reddens what stands in it, barn doors that cut the light to an opening,
+        # and a picture thrown from where the light is.
+        'filter_rod': dict(base, _environment=.15, entities=[
+            {'identity': 'f_rod', 'name': 'Rod', 'class': 'RodLightFilter', 'matrix': fixture.placed(.9, .6, .4),
+             'parameters': {'width': 1.6, 'height': 2.2, 'depth': 1.8, 'radius': .2, 'edge': .6, 'color': [1.0, .15, .1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 90.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Rod']}}]),
+        'filter_barn': dict(base, _environment=.15, entities=[
+            {'identity': 'f_barn', 'name': 'Doors', 'class': 'BarnDoorLightFilter', 'matrix': fixture.placed(0, 0, 0),
+             'parameters': {'projector_width': .5, 'projector_height': .3, 'edge': .25, 'radius': .3, 'size_left': .1, 'rotation': 20.0}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 120.0, 'width': .4, 'height': .4, 'light_filters': ['Doors']}}]),
+        # MoonRay draws a cookie rightly in its scalar mode only, in this build.
+        'filter_cookie': dict(base, _environment=.15, _exec_mode='scalar', entities=[
+            {'identity': 'f_cookie', 'name': 'Slide', 'class': 'CookieLightFilter_v2', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'texture': quarters_image(folder), 'projector_focal': 40.0, 'projector_film_width_aperture': 24.0}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 160.0, 'width': .4, 'height': .4, 'light_filters': ['Slide']}}]),
+        # A VDB light filter: the ball of fog as a grid that lets light through where it is full and none where it is empty.
+        'filter_vdb': dict(base, _environment=.15, entities=[
+            {'identity': 'f_vdb', 'name': 'Gobo', 'class': 'VdbLightFilter', 'matrix': fixture.placed(.4, .6, .3, 1.6),
+             'parameters': {'vdb_map': vdb_ball(folder), 'density_grid_name': 'density', 'vdb_interpolation_type': 1, 'color_tint': [.9, .2, .1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 90.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Gobo']}}]),
         # MoonRay's own cameras, standing where the scene's camera is, with a light and a sky to see by.
         **{name: dict(base, _environment=0.5, entities=[
             {'identity': 'l_key', 'name': 'Key', 'class': 'SphereLight', 'matrix': fixture.placed(-3, 4, 2), 'parameters': {'intensity': 60.0, 'radius': .3}},
@@ -420,10 +458,18 @@ def scenes(folder):
                                 ('coloured', {'attenuation_intensity': 1.2, 'attenuation_color': [1.0, .6, .3], 'diffuse_color': [.5, .7, 1.0], 'anisotropy': .4}))},
         # A VDB volume: a ball of fog with a hole in it, thicker toward its middle, from a file MoonRay reads itself.
         **{'vdb_' + name: dict(base, lights=fixture.snapshot()['lights'] + [
-               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3, _exec_mode='scalar' if values.get('_scalar') else 'auto',
                extra_geometry=[dict(values, kind='vdb', identity='smoke|vdb', source_item='smoke', name='Smoke', file=vdb_ball(folder),
                                     matrix=fixture.placed(0, 1.5, 2.5))])
-           for name, values in (('thin', {'density': 1.0}), ('thick', {'density': 6.0, 'volume_color': [.6, .75, 1.0], 'anisotropy': .5}))},
+           for name, values in (('thin', {'density': 1.0}), ('thick', {'density': 6.0, 'volume_color': [.6, .75, 1.0], 'anisotropy': .5}),
+                                # The same ball with the light its emission grid gives off: a glowing core off to one side.
+                                # MoonRay draws a volume that gives off light in its scalar mode only, in this build.
+                                ('glow', {'density': 2.0, 'emission_grid': 'emission', 'emission': 3.0, '_scalar': True}))},
+        # Two balls of fog that overlap, one behind the other from the lamp: each shadows the other and the ground.
+        'vdb_two': dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               extra_geometry=[dict(kind='vdb', identity=name + '|vdb', source_item=name, name=name, file=vdb_ball(folder), density=4.0,
+                                    matrix=fixture.placed(x, 1.5, 2.5)) for name, x in (('near', -.7), ('far', .5))]),
         # A cloud from a VDB file of one's own, named in MOONLIGHTIPR_TEST_VDB, standing over the scene.
         **({'vdb_cloud': dict(base, lights=fixture.snapshot()['lights'], _environment=.6, extra_geometry=[
                {'kind': 'vdb', 'identity': 'cloud|vdb', 'source_item': 'cloud', 'name': 'Cloud', 'file': os.environ['MOONLIGHTIPR_TEST_VDB'],
@@ -444,7 +490,7 @@ def moonray(scene, runtime, folder, name):
     # MoonRay takes minutes per scene on the CPU; keep its image while the scene text is unchanged.
     fresh = source.is_file() and source.read_text(encoding='utf-8') == text and output.with_suffix('.pfm').is_file()
     source.write_text(text, encoding='utf-8')
-    for args in () if fresh else ([str(runtime / 'moonray.exe')] + native.arguments(source, output, 0, 'auto'),
+    for args in () if fresh else ([str(runtime / 'moonray.exe')] + native.arguments(source, output, 0, scene.get('_exec_mode', 'auto')),
                  [str(runtime / 'oiiotool.exe'), str(output), '--ch', 'R,G,B', '-d', 'float', '-o', str(output.with_suffix('.pfm'))]):
         done = subprocess.run(args, env=native.environment(runtime), cwd=str(folder), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               creationflags=subprocess.CREATE_NO_WINDOW)

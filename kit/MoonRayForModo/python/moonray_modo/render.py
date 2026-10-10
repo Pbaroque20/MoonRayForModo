@@ -14,6 +14,22 @@ MOONLIGHTIPR_STATUS = 'MoonLightIPR (GPU preview, approximate)'
 MOONLIGHTIPR_SAMPLES = 256
 
 
+def scalar_only(snapshot):
+    """What in a scene this build of MoonRay draws rightly only in its scalar mode, in words, or None. A VDB volume
+    that gives off light stops its vector and GPU modes; a cookie filter leaves pixels that are not numbers in them."""
+    if any(entry.get('kind')=='vdb' and entry.get('emission_grid') and float(entry.get('emission',1))>0 for entry in snapshot.get('extra_geometry',[])):
+        return 'A VDB volume with an emission grid'
+    lights=(snapshot.get('production') or {}).get('lights',{})
+    if any(isinstance(held,dict) and held.get('cookie_file') for held in lights.values())             or any(str(entity.get('class','')).startswith('CookieLightFilter') for entity in snapshot.get('entities',[])):
+        return 'A light with a cookie filter'
+    return None
+
+
+def deep_beside(path):
+    """Where the deep EXR of a render goes: beside it, under its name."""
+    path=Path(path);return path.with_name(path.stem+'.deep.exr')
+
+
 class Renderer(QtCore.QObject):
     notices = QtCore.Signal(object)
     buckets = QtCore.Signal(object)
@@ -240,6 +256,11 @@ class Renderer(QtCore.QObject):
             self.cpu_fallback=False
         if self.cpu_fallback and mode in ('auto','xpu'):
             mode='vectorized'
+        # Two things this build of MoonRay draws rightly in its scalar mode only.
+        slow=scalar_only(request['snapshot'])
+        if mode!='scalar' and slow:
+            mode='scalar'
+            request['snapshot'].setdefault('warnings',[]).append(slow+" is rendered in MoonRay's scalar mode, which is slower: its vector and GPU modes do not draw it rightly in this build.")
         self.backend_status={'auto':'Auto requested (XPU → Vector → Scalar)','xpu':'XPU requested','vectorized':'Vector requested','vector':'Vector requested','scalar':'Scalar requested'}[mode]
         self.buffer_key = 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
@@ -267,6 +288,12 @@ class Renderer(QtCore.QObject):
                 self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
                 raise ValueError('The selected runtime has no XPU GPU program/CUDA runtime. Choose the XPU runtime or CPU mode.')
+            snapshot.pop('_deep_file',None);self.deep_path=None
+            if request['output'] and (snapshot.get('deep') or {}).get('enabled'):
+                if snapshot.get('_recovery') or (snapshot.get('recovery') or {}).get('enabled'):
+                    snapshot.setdefault('warnings',[]).append('A deep EXR is not written while checkpoints are being saved; turn one of the two off.')
+                else:
+                    self.deep_path=self.current_base.with_suffix('.deep.exr');snapshot['_deep_file']=self.deep_path.as_posix()
             if request['output']:
                 from .recovery import prepare as prepare_recovery
                 snapshot['_recovery']=prepare_recovery(snapshot,request['output'],request['width'],request['height'],self.sample_grid,request['environment'],request['runtime'])
@@ -453,6 +480,9 @@ class Renderer(QtCore.QObject):
             destination = Path(self.active['output'])
             try:
                 if not self.original_published: self._publish(self.image_path,destination)
+                deep=getattr(self,'deep_path',None)
+                if deep is not None and deep.is_file():self._publish(deep,deep_beside(destination))
+                self.deep_path=None
             except OSError as exc:
                 self.failed.emit('Cannot save render: '+str(exc));return
             self.finished.emit(str(destination))

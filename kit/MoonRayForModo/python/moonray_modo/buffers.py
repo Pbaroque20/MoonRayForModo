@@ -9,7 +9,7 @@ def conversion(key, source, destination, display=None):
     args=['--no-autopremult',str(source),'--fixnan','black']
     if key in ('alpha','depth','wireframe','sample_count'):
         args += ['--ch','0,0,0']
-    elif key in ('uv','motion'):
+    elif key in ('uv','motion','motion_vectors'):
         args += ['--ch','0,1,B=0']
     else:
         args += ['--ch','0,1,2']
@@ -17,11 +17,11 @@ def conversion(key, source, destination, display=None):
         args += ['--mulc','0.5','--addc','0.5']
     elif key in ('depth','sample_count'):
         args += ['--rangecompress']
-    elif key=='motion':
+    elif key in ('motion','motion_vectors'):
         args += ['--mulc','0.5','--addc','0.5']
     elif key=='position':
         args += ['--rangecompress','--mulc','0.5','--addc','0.5']
-    elif key not in ('alpha','uv','wireframe','motion'):
+    elif key not in ('alpha','uv','wireframe','motion','motion_vectors'):
         from .display import arguments
         args += arguments(display or {})
     return args+['-d','uint8','-o',str(destination)]

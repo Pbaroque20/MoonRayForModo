@@ -115,8 +115,10 @@ class EntityTests(unittest.TestCase):
         with_items=scene();with_items['entities']=self.items()
         packed,_,warnings=moonlightipr_scene.pack(with_items,320,180)
         self.assertGreater(len(packed),len(moonlightipr_scene.pack(scene(),320,180)[0]))
-        for expected in ('does not apply RodLightFilter (Rod on Key)','does not show volumes (Box)'):
+        for expected in ('does not show volumes (Box)',):
             self.assertTrue(any(expected in w for w in warnings),expected)
+        # A rod is one of the filters it draws.
+        self.assertFalse(any('does not apply RodLightFilter' in w for w in warnings))
         # A volume is spoken of where the shape that holds it is, not a second time on its own.
         self.assertFalse(any('BaseVolume' in w for w in warnings))
         # The fisheye camera set to render is what MoonLightIPR looks through, so nothing is said of it.

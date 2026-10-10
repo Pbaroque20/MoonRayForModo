@@ -17,6 +17,8 @@ DEFAULTS = {
     # A new scene outputs the object Cryptomatte, so the first render already has the mattes to look at.
     'custom_aovs': [{'name': 'crypto_object', 'kind': 'cryptomatte', 'category': 'object', 'depth': 6, 'precision': 0, 'filter': 0, 'part': '', 'expression': ''}], 'aovs': ['alpha'],
     'recovery': {'enabled': False, 'resume': True, 'minutes': 1.0},
+    # A deep EXR written beside the render: every surface and volume a pixel sees, each at its own depth.
+    'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
     'denoising': {'engine': 'off', 'preview': True, 'final': True},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
 }
@@ -30,7 +32,7 @@ def complete(stored):
     for key in DEFAULTS:
         if key in stored:
             held = copy.deepcopy(stored[key])
-            if isinstance(DEFAULTS[key], dict) and key in ('recovery', 'denoising'):
+            if isinstance(DEFAULTS[key], dict) and key in ('recovery', 'denoising', 'deep'):
                 result[key].update(held if isinstance(held, dict) else {})
             else:
                 result[key] = held
@@ -54,6 +56,8 @@ def field(key, path, kind, label, tip='', low=None, high=None, choices=None, sca
 
 def render_field(key, label, tip=''):
     default, low, high, _ = options.RENDER[key]
+    if key in options.BOOLS:
+        return field(key, ('render', key), 'bool', label, tip)
     if key in options.ENUMS:
         return field(key, ('render', key), 'choice', label, tip, choices=options.ENUMS[key])
     return field(key, ('render', key), 'float' if isinstance(default, float) else 'int', label, tip, low, high)
@@ -64,6 +68,7 @@ BACKGROUNDS = [('Scene environment', 'environment'), ('Black', 'black'), ('Solid
 SURFACES = [('As modeled', 0), ('Smooth subdivision', 1), ('Modo evaluated geometry', 2)]
 VIEWS = [('ACES (sRGB display)', 'aces'), ('sRGB', 'srgb'), ('Highlight compression + sRGB', 'reinhard'), ('Raw linear', 'raw'), ('OCIO display / view', 'ocio')]
 LUT_SPACES = [('After display transform', 'display'), ('Scene-linear, before view', 'linear')]
+DEEP_FORMATS = [('OpenEXR 2', 0), ('OpenDCX 2', 1)]
 MODES = [('Auto (XPU, Vector, Scalar)', 'auto'), ('XPU (NVIDIA GPU + CPU)', 'xpu'), ('Vector (CPU / AVX)', 'vectorized'), ('Scalar (CPU)', 'scalar')]
 
 # (group, starts collapsed, fields). A field of kind 'button' runs a command instead, and one of
@@ -90,6 +95,31 @@ GROUPS = [
         render_field('max_glossy_depth', 'Glossy'),
         render_field('max_mirror_depth', 'Mirror / Refraction', 'Raise for stacked glass surfaces'),
         render_field('shadow_terminator_fix', 'Shadow Terminator', 'Softens the faceted shadow edge on coarse meshes'),
+        render_field('max_volume_depth', 'Volume', 'How many times light bounces inside fog, smoke and clouds. 1 is quick; more brightens thick clouds'),
+        render_field('max_hair_depth', 'Hair', 'Bounces from hair to hair. More brightens light hair'),
+        render_field('max_presence_depth', 'Presence', 'How many see-through surfaces a ray passes before it stops'),
+        render_field('max_subsurface_per_path', 'Subsurface', 'How many times one path may go beneath a surface'),
+    ]),
+    ('Volumes', True, [
+        render_field('volume_quality', 'Quality', 'How finely fog and clouds are stepped through; higher is cleaner and slower'),
+        render_field('volume_shadow_quality', 'Shadow Quality', 'The same, for the shadows volumes cast'),
+        render_field('volume_illumination_samples', 'Light Samples', 'Samples of light taken along each ray through a volume; 0 turns volume lighting off'),
+        render_field('volume_indirect_samples', 'Indirect Samples', 'Samples of bounced light inside volumes'),
+        render_field('volume_opacity_threshold', 'Opacity Threshold', 'A ray stops once a volume has hidden this much of what is behind it'),
+        render_field('volume_overlap_mode', 'Overlapping Volumes', 'What is rendered where volumes overlap'),
+    ]),
+    ('Noise and Filtering', True, [
+        render_field('sample_clamping_value', 'Sample Clamp', 'Limits how bright one sample may be, which removes fireflies; 0 is no limit'),
+        render_field('sample_clamping_depth', 'Clamp From Bounce', 'The clamp applies from this bounce on; 1 leaves what the camera sees directly alone'),
+        render_field('roughness_clamping_factor', 'Roughness Clamp', 'Roughens materials after a bounce to remove fireflies; 0 is off'),
+        render_field('russian_roulette_threshold', 'Russian Roulette', 'Paths dimmer than this may be ended early. Lower is cleaner and slower'),
+        render_field('pixel_filter', 'Pixel Filter'),
+        render_field('pixel_filter_width', 'Pixel Filter Width', 'In pixels'),
+        render_field('texture_blur', 'Texture Blur', 'Softens every texture lookup'),
+        render_field('transparency_threshold', 'Transparency Threshold', 'A ray stops once surfaces have hidden this much of what is behind them'),
+        render_field('presence_threshold', 'Presence Threshold', 'A ray through see-through surfaces stops once they have hidden this much'),
+        render_field('enable_presence_shadows', 'Presence Shadows', 'See-through surfaces cast lighter shadows. Slower'),
+        render_field('lock_frame_noise', 'Same Noise Every Frame', 'The noise pattern does not change from frame to frame'),
     ]),
     ('Denoising', True, [
         field('denoiser', ('denoising', 'engine'), 'choice', 'Denoiser', '', choices=DENOISERS),
@@ -137,6 +167,11 @@ GROUPS = [
     ]),
     ('Output Renders', True, [
         field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in Render EXR and animations'),
+        field('deep', ('deep', 'enabled'), 'bool', 'Save a Deep EXR', 'Written beside the render as name.deep.exr: every surface and volume a pixel sees, each at its own depth, for deep compositing'),
+        field('deep_format', ('deep', 'format'), 'choice', 'Deep Format', 'OpenEXR 2 opens everywhere. OpenDCX adds per-sample coverage masks, for compositors that read them', choices=DEEP_FORMATS),
+        field('deep_curvature', ('deep', 'curvature'), 'float', 'Deep Curvature Tolerance', 'Degrees a surface may curve within a pixel before it is split into more deep samples', 0.0, 180.0),
+        field('deep_z', ('deep', 'z'), 'float', 'Deep Depth Tolerance', 'How far a surface may run in depth within a pixel before it is split', 0.0, 1000000.0),
+        field('deep_volume', ('deep', 'volume'), 'int', 'Deep Volume Detail', 'Lower makes smaller files for volumes', 1, 1000),
         field('checkpoint', ('recovery', 'enabled'), 'bool', 'Save Checkpoints'),
         field('checkpoint_resume', ('recovery', 'resume'), 'bool', 'Resume Matching Checkpoint'),
         field('checkpoint_minutes', ('recovery', 'minutes'), 'float', 'Checkpoint Interval', 'Minutes', 0.1, 1440.0),

@@ -109,6 +109,8 @@ struct DeviceVolume {
     float peak;                 // the grid's largest value
     unsigned long long grid;    // a 3D texture of densities, or 0 for an even fog
     float rows[12];             // scene to the grid's unit cube, three rows of (x, y, z, offset)
+    unsigned long long glow;    // a 3D texture of how much light the fog gives off, times emission; or 0
+    float glowRows[12];         // scene to that grid's own unit cube
 };
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
@@ -201,9 +203,13 @@ struct DeviceLight {
     DevicePtr distribution;
 };
 
-// What a light filter does to the light arriving at a point, as MoonRay's DecayLightFilter and
-// ColorRampLightFilter. A plain intensity filter is folded into the light's radiance instead.
-const unsigned FILTER_DECAY = 0, FILTER_RAMP = 1;
+// What a light filter does to the light arriving at a point, as MoonRay's DecayLightFilter, ColorRampLightFilter,
+// RodLightFilter, BarnDoorLightFilter and CookieLightFilter_v2. A plain intensity filter is folded into the light's
+// radiance instead.
+const unsigned FILTER_DECAY = 0, FILTER_RAMP = 1, FILTER_ROD = 2, FILTER_BARN = 3, FILTER_COOKIE = 4, FILTER_VDB = 5;
+const unsigned FILTER_INVERT = 1;       // rod, barn door, cookie
+const unsigned FILTER_ORTHO = 2, FILTER_PHYSICAL = 4;      // barn door: how it projects, and through the light's own ray
+const unsigned FILTER_WHITE = 2, FILTER_EDGELESS = 4;      // cookie: lit outside its picture; its picture read past its edge
 const unsigned FILTER_NEAR = 1, FILTER_FAR = 2;     // decay: which ends fall off
 const unsigned FILTER_DIRECTIONAL = 1, FILTER_MIRROR = 2, FILTER_PLACED = 4;    // ramp
 struct DeviceFilter {
@@ -211,7 +217,15 @@ struct DeviceFilter {
     unsigned flags;
     float a[4];             // decay: near start, near end, far start, far end. Ramp: begin, end, intensity, density
     float rows[12];         // ramp with FILTER_PLACED: world to the filter's own space, three rows of (x, y, z, offset)
-    unsigned long long texture;     // ramp: its colours from begin to end, 257 across
+    unsigned long long texture;     // ramp: its colours from begin to end, 257 across. Cookie: its picture
+    // Rod: a holds half its width, height and depth and its corner radius; b its edge, density and colour; rows take
+    // the scene into its own space. Barn door: a holds the opening's low and high corners; b its corner radius, one
+    // over the edge at left, bottom, right and top, its focal distance, colour and density; rows take the scene into
+    // the projector's space, which looks along +z. Cookie: rows give a point's place across the picture, up it, and
+    // what both are divided by, which is below nothing behind the projector; b holds its density. VDB: texture is a
+    // grid of densities, rows take the scene into the grid's unit cube, and b holds the colour light takes where the
+    // grid is empty.
+    float b[12];
 };
 
 // How much of the light a specular lobe reflects when its Fresnel term is one, tabulated over
@@ -233,6 +247,8 @@ struct LaunchParams {
     DevicePtr albedo2;      // float, two ALBEDO_TABLE runs: GGX, then Beckmann
     DevicePtr hairs;        // DeviceHair, indexed by DeviceMaterial::hair
     DevicePtr volumes;      // DeviceVolume, likewise
+    unsigned volumeCount;
+    unsigned volumePad;
 
     // Latitude-longitude environment with a piecewise-constant sampling distribution.
     DevicePtr envPixels;        // float[4], envWidth * envHeight; what lights the scene

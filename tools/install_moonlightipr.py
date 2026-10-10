@@ -105,6 +105,10 @@ if reader.is_file() and (kit / 'runtime').is_dir():
         backup.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(held, backup / reader.name)
     shutil.copyfile(reader, held)
+# What grows hair, where it has been built (tools/build_hair_grower.py).
+grower = root / 'build/native-avx/bin/modo_hair_grow.exe'
+if grower.is_file() and (kit / 'runtime').is_dir():
+    shutil.copyfile(grower, kit / 'runtime' / grower.name)
 # What reads a VDB file for the preview, where it has been built (tools/build_vdb_grid.py).
 grids = root / 'build/native-avx/bin/modo_vdb_grid.exe'
 if grids.is_file() and (kit / 'runtime').is_dir():

@@ -9,14 +9,14 @@ from . import properties, rdla
 
 
 # What Panel.run() does in the window; any other page is a group of render settings.
-WINDOW_PAGES = ('preferences', 'final', 'export', 'animation', 'stop', 'log', 'objects', 'outputs', 'colors',
+WINDOW_PAGES = ('preferences', 'final', 'bake', 'export', 'animation', 'stop', 'log', 'objects', 'outputs', 'colors',
                 'report', 'package', 'package_sequence', 'preview')
 
 
 class Tools:
     def run(self, page):
         """Do what a menu entry or a form button names."""
-        actions = {'preferences': self.edit_preferences, 'final': self.render_final, 'export': self.export,
+        actions = {'preferences': self.edit_preferences, 'final': self.render_final, 'bake': self.bake_texture, 'export': self.export,
                    'animation': self.render_animation, 'stop': self.stop, 'log': self.show_log,
                    'objects': self._edit_production, 'outputs': self._edit_outputs, 'colors': self._edit_assets,
                    'report': self._report_assets, 'package': self._package_assets,
@@ -147,6 +147,56 @@ class Tools:
         self.stop()
         try:
             self._submit(self._capture_output(), path)
+        except Exception as exc:
+            self._failed(str(exc))
+
+    def bake_texture(self):
+        """Render what MoonRay sees on the selected mesh into a picture laid out by its UVs."""
+        import modo
+        from . import bake
+        if self._output_busy():
+            self.status.setText('An output render is running. Press Stop before starting another.')
+            return
+        chosen = [item for item in modo.Scene().selected if item.type == 'mesh']
+        if len(chosen) != 1:
+            self.status.setText('Select the one mesh to bake, then choose Bake Selected Mesh to Texture again.')
+            return
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle('Bake %s to a texture' % chosen[0].name)
+        form = QtWidgets.QFormLayout(dialog)
+        note = QtWidgets.QLabel('MoonRay renders the lighting and materials on this mesh into a picture laid out by its UVs.\n'
+                                'The outputs ticked in the render settings are baked with it.')
+        note.setWordWrap(True)
+        form.addRow(note)
+        size = QtWidgets.QComboBox()
+        for value in bake.SIZES:
+            size.addItem('%d x %d' % (value, value), value)
+        size.setCurrentIndex(max(0, size.findData(int(self.settings.value('bake/size', 2048)))))
+        form.addRow('Size', size)
+        udim = QtWidgets.QSpinBox()
+        udim.setRange(1001, 1999)
+        udim.setToolTip('Which tile of the UVs is baked. 1001 is the first: U and V from 0 to 1.')
+        form.addRow('UDIM tile', udim)
+        mode = QtWidgets.QComboBox()
+        for label, value in bake.MODES:
+            mode.addItem(label, value)
+        mode.setCurrentIndex(mode.findData(3))
+        mode.setToolTip('Where each point of the surface is looked at from. Down the normal bakes what does not depend on the view;\n'
+                        'from the camera keeps the highlights and reflections the render camera would see.')
+        form.addRow('Looked at', mode)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        path = self._save_path('Bake to OpenEXR', 'bake', 'exr', 'OpenEXR (*.exr)')
+        if not path:
+            return
+        self.settings.setValue('bake/size', size.currentData())
+        self.stop()
+        try:
+            self._submit(bake.scene(self._capture_output(), chosen[0].id, size.currentData(), udim.value(), mode.currentData()), path)
         except Exception as exc:
             self._failed(str(exc))
 

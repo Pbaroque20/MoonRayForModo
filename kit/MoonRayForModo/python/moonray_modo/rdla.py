@@ -338,14 +338,25 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["attenuation_color"] = %s,' % attenuation,
                       '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
                       '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
-    lines += ['local function assign(g, part, tag, owner)',
+    lines += ['local objectShadowReceiverSets = {}',
+              'local function assign(g, part, tag, owner)',
               '  local a = {g, part, materials[tag], objectLightSets[owner] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
               '  if objectShadowSets[owner] then table.insert(a, objectShadowSets[owner]) end',
+              '  if objectShadowReceiverSets[owner] then table.insert(a, objectShadowReceiverSets[owner]) end',
               '  if displacements[tag] then table.insert(a, displacements[tag]) end',
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
               '  table.insert(assignments, a)', 'end']
     from . import geometry
     render_meshes = apart(render_meshes, {tag for tag, medium in media.items() if medium is not None})
+    # The objects an object casts no shadow onto, as MoonRay's shadow receiver set: the meshes of those objects, which
+    # are known by their place among the meshes about to be written.
+    for identity, settings in sorted((scene.get('production', {}).get('objects', {})).items()):
+        spared = set(settings.get('shadow_receivers') or [])
+        found = [place for place, held in enumerate(render_meshes) if held.get('faces') and 'instances' not in held
+                 and (held.get('source_item') or str(held.get('identity', '')).split('|')[0]) in spared]
+        if found:
+            lines.append('objectShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (string(identity), string('/modo/shadowReceivers/' + identity),
+                                                                                    array('RdlMeshGeometry("/modo/mesh/%d")' % place for place in found)))
     for index, mesh in enumerate(render_meshes):
         vertices = mesh['vertices']
         faces = mesh['faces']
@@ -489,10 +500,19 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               '  ["two_stage_output"] = false,']
     if crypto:lines.append('  ["deep_id_attribute_names"] = '+array(string('modo_'+cat+'_id') for cat in (('object','material','asset') if multi_crypto else ('object',)))+',')
     for key, value in options.render_values(scene.get('render_settings', {})).items():
-        if key not in ('batch_tile_order','bucket_size'):
+        if key in options.BOOLS:
+            lines.append('  [%s] = %s,' % (string(key), 'true' if value else 'false'))
+        elif key not in ('batch_tile_order','bucket_size'):
             lines.append('  [%s] = %s,' % (string(key), number(value)))
         if key=='batch_tile_order':
             lines.extend('  [%s] = %s,'%(string(name),number(value)) for name in ('progressive_tile_order','checkpoint_tile_order'))
+    deep=scene.get('_deep_file') if output_file else None
+    if deep:
+        held=scene.get('deep') or {}
+        lines += ['  ["deep_format"] = %d,'%(1 if int(held.get('format',0))==1 else 0),
+                  '  ["deep_curvature_tolerance"] = %s,'%number(max(0.0,min(180.0,float(held.get('curvature',45.0))))),
+                  '  ["deep_z_tolerance"] = %s,'%number(max(0.0,float(held.get('z',2.0)))),
+                  '  ["deep_vol_compression_res"] = %d,'%max(1,min(1000,int(held.get('volume',10))))]
     recovery=scene.get('_recovery') if output_file else None
     if recovery:
         lines += ['  ["checkpoint_active"] = true,','  ["resumable_output"] = true,','  ["checkpoint_bg_write"] = false,',
@@ -554,6 +574,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value))
                       for attr, value in attributes.items()]
             lines.append('}')
+    if deep:
+        # The beauty again, as a deep image in a file of its own: a deep and a flat image cannot share one.
+        lines += ['RenderOutput("/modo/deep/beauty") {','  ["file_name"] = %s,'%string(str(deep)),'  ["output_type"] = "deep",','  ["result"] = 0,','}']
     preview_files=scene.get('preview_buffer_files',{})
     if not preview_files and scene.get('preview_buffer_file'):
         preview_files={scene.get('preview_buffer','beauty'):scene['preview_buffer_file']}
@@ -578,4 +601,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                   '  ["file_name"] = %s,' % string(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
+    if entity_camera and entity_camera['class'] == 'BakeCamera':
+        from .bake import resolve
+        resolve(lines, render_meshes)
     return '\n'.join(lines) + '\n'

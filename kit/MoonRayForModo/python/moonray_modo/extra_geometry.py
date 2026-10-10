@@ -83,33 +83,40 @@ def grown(scene,item,strands,settings,warnings):
                  packed('d',[settings['mode'],settings['count'],settings['width'],settings['clump'],settings['length'],settings['seed']])):
         held.update(part.tobytes());held.update(b'|')
     key=held.digest()
-    if key not in GROWN:
-        if len(GROWN)>=8:GROWN.pop(next(iter(GROWN)))
-        # The scalp's grid is kept by its triangles: a guide moved, or a setting changed, leaves the scalp as it was.
-        surface=None
-        if triangles:
-            shape=hashlib.sha1(packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles))).tobytes()).digest()
-            if shape not in SCALPS:
-                if len(SCALPS)>=4:SCALPS.pop(next(iter(SCALPS)))
-                SCALPS[shape]=hair.Scalp(triangles)
-            surface=SCALPS[shape]
-        GROWN[key]=hair.grow(guides,surface,settings['mode'],settings['count'],
-                             settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'])
-    children,adrift=GROWN[key]
-    if adrift:
-        warnings.append('Hair on %s: %d of %d guides %s too far from the scalp, and the hair of %s grows from the guide itself. Start each guide on the surface.'%(item.name,adrift,len(guides),'starts' if adrift==1 else 'start','it' if adrift==1 else 'them'))
     # Each strand keeps its guide's material, and goes back into the mesh's own space, where its curves are.
     placed=(key,tuple(float(v) for v in matrix),tuple(tag for _,tag,_ in strands),bool(settings['guides']))
     if placed not in PLACED:
         if len(PLACED)>=8:PLACED.pop(next(iter(PLACED)))
-        per=max(1,settings['count']);grown_strands=[]
-        # The matrix written out: this runs once for every point of every strand.
-        a,b,c,_,d,e,f,_,g,h,i,_,x,y,z,_=(float(v) for v in back)
-        for index,child in enumerate(children):
-            tag=strands[min(len(strands)-1,index//per)][1]
-            grown_strands.append(([[p[0]*a+p[1]*d+p[2]*g+x,p[0]*b+p[1]*e+p[2]*h+y,p[0]*c+p[1]*f+p[2]*i+z] for p in child],tag,None))
-        PLACED[placed]=(list(strands) if settings['guides'] else [])+grown_strands
-    return PLACED[placed]
+        # The runtime's own program grows the same hair many times faster, and puts it back in the mesh's space itself.
+        from . import hair_native
+        fast=hair_native.grow(guides,triangles,settings['mode'],settings['count'],settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'],
+                              [float(v) for v in back])
+        if fast is not None:
+            local,adrift=fast
+        else:
+            if key not in GROWN:
+                if len(GROWN)>=8:GROWN.pop(next(iter(GROWN)))
+                # The scalp's grid is kept by its triangles: a guide moved, or a setting changed, leaves the scalp as it was.
+                surface=None
+                if triangles:
+                    shape=hashlib.sha1(packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles))).tobytes()).digest()
+                    if shape not in SCALPS:
+                        if len(SCALPS)>=4:SCALPS.pop(next(iter(SCALPS)))
+                        SCALPS[shape]=hair.Scalp(triangles)
+                    surface=SCALPS[shape]
+                GROWN[key]=hair.grow(guides,surface,settings['mode'],settings['count'],
+                                     settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'])
+            children,adrift=GROWN[key]
+            # The matrix written out: this runs once for every point of every strand.
+            a,b,c,_,d,e,f,_,g,h,i,_,x,y,z,_=(float(v) for v in back)
+            local=[[[p[0]*a+p[1]*d+p[2]*g+x,p[0]*b+p[1]*e+p[2]*h+y,p[0]*c+p[1]*f+p[2]*i+z] for p in child] for child in children]
+        per=max(1,settings['count'])
+        grown_strands=[(child,strands[min(len(strands)-1,index//per)][1],None) for index,child in enumerate(local)]
+        PLACED[placed]=((list(strands) if settings['guides'] else [])+grown_strands,adrift)
+    made,adrift=PLACED[placed]
+    if adrift:
+        warnings.append('Hair on %s: %d of %d guides %s too far from the scalp, and the hair of %s grows from the guide itself. Start each guide on the surface.'%(item.name,adrift,len(guides),'starts' if adrift==1 else 'start','it' if adrift==1 else 'them'))
+    return made
 
 
 def polylines(mesh,polygons,points,id_tag,item):
@@ -226,6 +233,72 @@ def written(kind,values,write):
     return WRITTEN[key]
 
 
+def fur_entries(scene,item,mesh,polygons,points,warnings):
+    """The fur of a mesh that wears one of Modo's Fur materials, as curve geometry: one for each Fur material that is
+    on any of its polygons."""
+    import lx,lxu.utils
+    from . import fur
+    from .host import channel,world_matrix
+    try:layers=list(scene.items('furMaterial'))
+    except (LookupError,RuntimeError,TypeError):return []
+    made=[]
+    for layer in layers:
+        mask=layer.parent if layer.parent is not None and layer.parent.type=='mask' else None
+        if not channel(layer,'enable',1) or (mask is not None and not channel(mask,'enable',1)):continue
+        wanted=''
+        if mask is not None:
+            # Which polygons the group is for: those of a material tag, of chosen items, or all.
+            if channel(mask,'ptyp','') not in ('Material',''):continue
+            wanted=channel(mask,'ptag','') or ''
+            if wanted=='(all)':wanted=''
+            try:targets=list(mask.itemGraph('shadeLoc').forward())
+            except (LookupError,RuntimeError,AttributeError):targets=[]
+            if targets and all(target.id!=item.id for target in targets):continue
+        tags=lx.object.StringTag(polygons);places={};faces=[]
+        for i in range(mesh.PolygonCount()):
+            polygons.SelectByIndex(i)
+            if lxu.utils.decodeID4(polygons.Type()) not in ('FACE','SUBD','PSUB') or polygons.VertexCount()<3:continue
+            if wanted and strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)!=wanted:continue
+            corners=[]
+            for v in range(polygons.VertexCount()):
+                point=polygons.VertexByIndex(v)
+                if point not in places:
+                    points.Select(point);places[point]=tuple(points.Pos())
+                corners.append(point)
+            faces.append((corners,strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)))
+        if not faces:continue
+        # The surface's normal at each point: its faces' normals together, so fur on a round thing stands out all round.
+        normals={}
+        for corners,_ in faces:
+            x=y=z=0.0
+            for k,point in enumerate(corners):
+                a,b=places[point],places[corners[(k+1)%len(corners)]]
+                x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1])
+            for point in corners:
+                held=normals.get(point,(0.0,0.0,0.0));normals[point]=(held[0]+x,held[1]+y,held[2]+z)
+        for point,(x,y,z) in normals.items():
+            size=math.sqrt(x*x+y*y+z*z) or 1.0;normals[point]=(x/size,y/size,z/size)
+        triangles=[(places[c[0]],places[c[k]],places[c[k+1]],normals[c[0]],normals[c[k]],normals[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+        # Each fibre takes the material of the polygon it stands on.
+        worn=[tag for c,tag in faces for k in range(1,len(c)-1)]
+        read=lambda key,layer=layer:layer.channel(key).get()
+        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read))
+        left=fur.unread(read)
+        if left:warnings.append('Fur on %s is grown without %s, which the plugin does not read from a Fur material.'%(item.name,', '.join(left)))
+        if asked>len(strands):
+            warnings.append('Fur on %s: Modo would grow %s fibres; %s are grown, each wider, to cover the surface as well.'%(item.name,format(asked,','),format(len(strands),',')))
+        if not strands:continue
+        shape=dict(root=root,tip=tip,envelope=1.0,samples=8,uv=True,round=False,basis=0)
+        kept=(item.id+'|fur|'+layer.id,item.name,root,tip,wanted,tuple(world_matrix(item)))
+        held=BATCHED.get(kept)
+        if held is None or held[0] is not strands:
+            if len(BATCHED)>=8:BATCHED.pop(next(iter(BATCHED)))
+            held=BATCHED[kept]=(strands,batches(item.id+'|fur|'+layer.id,item.name,[(strand,worn[at],None) for strand,at in zip(strands,stands)],shape,'',world_matrix(item)))
+        # The fur is its mesh's, for what lights it and what it is called.
+        made+=[dict(entry,source_item=item.id) for entry in held[1]]
+    return made
+
+
 def collect(scene,warnings,controls):
     import lx,modo,lxu.utils
     from .host import render_visible,world_matrix,first_map
@@ -277,6 +350,8 @@ def collect(scene,warnings,controls):
             for entry in made:
                 if carried:entry['attributes']=carried
             result+=made
+        try:result+=fur_entries(scene,item,mesh,polygons,points,warnings)
+        except (LookupError,RuntimeError,TypeError,AttributeError,ValueError) as exc:warnings.append('Fur on %s could not be read: %s'%(item.name,exc))
         if not mesh.PolygonCount() or point_ids or settings.get('points'):
             vertices=[];stable=[];id_name=settings.get('point_id_map','')
             id_map=first_map(mesh,lx.symbol.i_VMAP_WEIGHT,id_name) if id_name else None

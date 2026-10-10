@@ -156,6 +156,12 @@ def load_materialx(material,path,graph=None):
     settings.update(shader='DwaBaseMaterial',moonshine_override=True,native_shader=graph['nodes'][graph['root']]['type'],node_graph=graph)
     properties.write(material,synchronize(settings,graph))
     material.name=Path(path).stem
+    if graph.get('materialx_left_out'):
+        # An OpenPBR or glTF surface says a few things the material it becomes has no word for.
+        try:
+            import lx
+            lx.out('MoonRay: %s was imported without %s'%(Path(path).name,', '.join(graph['materialx_left_out'])))
+        except Exception:pass
     return material
 
 

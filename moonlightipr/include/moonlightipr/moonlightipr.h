@@ -91,6 +91,10 @@ struct Material {
     // stops, and the rows that take a point of the scene into the unit cube the grid fills. -1 for an even fog.
     int32_t volumeGrid = -1;
     float volumeRows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+    // A grid of how much light such a fog gives off at each place, which volumeEmission multiplies, and the rows
+    // into its own unit cube: the grid of a fire need not cover what the grid of its smoke does. -1 for none.
+    int32_t volumeGlowGrid = -1;
+    float volumeGlowRows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
 };
 
 // A block of numbers on the GPU, x fastest, read between its cells.
@@ -98,6 +102,7 @@ struct GridDesc {
     const float* values = nullptr;
     uint32_t counts[3] = {0, 0, 0};
     float peak = 0.0f;      // the largest of the values
+    uint32_t channels = 1;  // 1 for a grid of numbers, 4 for a grid of colours
 };
 
 // An image on the GPU. Pixels are RGBA, top row first: bytes, or floats when floatData is set.
@@ -221,7 +226,7 @@ struct DistantLight {
 // DecayLightFilter and ColorRampLightFilter. Scale a light's radiance directly for a plain
 // intensity filter.
 struct LightFilter {
-    enum Kind : uint32_t { Decay = 0, Ramp = 1 };
+    enum Kind : uint32_t { Decay = 0, Ramp = 1, Rod = 2, BarnDoor = 3, Cookie = 4, Vdb = 5 };
     Kind kind = Decay;
     // Decay: 1 falls off near, 2 falls off far. Ramp: 1 measures along the light's direction
     // rather than from it, 2 mirrors behind the light, 4 measures in the filter's own space.
@@ -230,7 +235,9 @@ struct LightFilter {
     float values[4] = {0, 0, 0, 0};
     // Ramp with flag 4: world to the filter's space, three rows of (x, y, z, offset).
     float rows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
-    int32_t texture = -1;   // ramp: a 257 x 1 image of its colours from begin to end
+    int32_t texture = -1;   // ramp: a 257 x 1 image of its colours from begin to end. Cookie: its picture. VDB: a grid from addGrid
+    // Rod, barn door and cookie: the rest of what they are, as shared.h says of DeviceFilter::b.
+    float more[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 };
 
 // A sphere, rectangle, disc, spot, cylinder, portal or mesh light, as MoonRay's lights of the
