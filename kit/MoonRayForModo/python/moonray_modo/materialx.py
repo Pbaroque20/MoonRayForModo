@@ -46,6 +46,9 @@ def read(path, material_name=None):
     document=normalize(document)
     from .materialx_expand import expand
     document=expand(document)
+    # An OpenPBR or glTF surface is read as the Standard Surface it comes closest to.
+    from .materialx_surfaces import standardize
+    left_out=standardize(document)
     # The surface's own normal and tangent, by name, before they are turned into the nodes that read them.
     geometric={}
     for parent in [document]+list(document.findall('nodegraph')):
@@ -66,7 +69,7 @@ def read(path, material_name=None):
     if material_name:
         materials=[e for e in materials if e.get('name')==material_name]
     if len(materials)!=1: raise ValueError('Choose a document with exactly one surface material (or specify its name)')
-    graph={'version':1,'nodes':{},'overrides':[],'materialx_source':str(path),'materialx_version':document.get('version',''),'materialx_dependencies':dependencies}
+    graph={'version':1,'nodes':{},'overrides':[],'materialx_left_out':left_out,'materialx_source':str(path),'materialx_version':document.get('version',''),'materialx_dependencies':dependencies}
     visiting=set();cache={};controls=[]
     def spoken(name):
         """UVScale_Flakes -> UV Scale Flakes; baseColor -> Base Color."""
