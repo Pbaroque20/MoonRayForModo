@@ -489,7 +489,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               '  ["two_stage_output"] = false,']
     if crypto:lines.append('  ["deep_id_attribute_names"] = '+array(string('modo_'+cat+'_id') for cat in (('object','material','asset') if multi_crypto else ('object',)))+',')
     for key, value in options.render_values(scene.get('render_settings', {})).items():
-        if key not in ('batch_tile_order','bucket_size'):
+        if key in options.BOOLS:
+            lines.append('  [%s] = %s,' % (string(key), 'true' if value else 'false'))
+        elif key not in ('batch_tile_order','bucket_size'):
             lines.append('  [%s] = %s,' % (string(key), number(value)))
         if key=='batch_tile_order':
             lines.extend('  [%s] = %s,'%(string(name),number(value)) for name in ('progressive_tile_order','checkpoint_tile_order'))

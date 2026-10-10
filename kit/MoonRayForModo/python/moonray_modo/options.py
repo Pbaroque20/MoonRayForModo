@@ -22,7 +22,34 @@ RENDER = {
     'max_mirror_depth': (4, 0, 64, 'Mirror / refraction bounces'),
     'light_samples': (2, 1, 16, 'Light sample grid'),
     'shadow_terminator_fix': (1, 0, 4, 'Shadow boundary correction'),
+    # MoonRay's own scene variables, each starting at MoonRay's own value, so a scene that leaves them alone renders
+    # as it did before they were here.
+    'max_volume_depth': (1, 0, 64, 'Volume bounces'),
+    'max_presence_depth': (16, 0, 256, 'Presence depth'),
+    'max_hair_depth': (5, 0, 64, 'Hair bounces'),
+    'max_subsurface_per_path': (1, 0, 64, 'Subsurface per path'),
+    'russian_roulette_threshold': (0.0375, 0.0, 1.0, 'Russian roulette threshold'),
+    'transparency_threshold': (1.0, 0.0, 1.0, 'Transparency threshold'),
+    'presence_threshold': (0.999, 0.0, 1.0, 'Presence threshold'),
+    'enable_presence_shadows': (0, 0, 1, 'Presence shadows'),
+    'volume_quality': (0.5, 0.0, 1.0, 'Volume quality'),
+    'volume_shadow_quality': (1.0, 0.0, 1.0, 'Volume shadow quality'),
+    'volume_illumination_samples': (4, 0, 64, 'Volume illumination samples'),
+    'volume_indirect_samples': (0, 0, 64, 'Volume indirect samples'),
+    'volume_opacity_threshold': (0.995, 0.0, 1.0, 'Volume opacity threshold'),
+    'volume_overlap_mode': (0, 0, 2, 'Overlapping volumes'),
+    'sample_clamping_value': (10.0, 0.0, 1000000.0, 'Sample clamp'),
+    'sample_clamping_depth': (1, 0, 64, 'Sample clamp from bounce'),
+    'roughness_clamping_factor': (0.0, 0.0, 1.0, 'Roughness clamp'),
+    'texture_blur': (0.0, 0.0, 1000.0, 'Texture blur'),
+    'pixel_filter': (1, 0, 2, 'Pixel filter'),
+    'pixel_filter_width': (3.0, 0.1, 64.0, 'Pixel filter width'),
+    'lock_frame_noise': (0, 0, 1, 'Lock noise across frames'),
 }
+# Settings MoonRay holds as on or off; they are kept here as 0 or 1.
+BOOLS = ('enable_presence_shadows', 'lock_frame_noise')
+ENUMS['volume_overlap_mode'] = [('Add them up', 0), ('The densest', 1), ('One at random', 2)]
+ENUMS['pixel_filter'] = [('Box', 0), ('Cubic B-spline (default)', 1), ('Quadratic B-spline', 2)]
 OBJECT = {
     'override': (False, 'Use object overrides'),
     'subdivision': (True, 'Subdivide in MoonRay'),
@@ -70,6 +97,14 @@ AOVS = {
     'glossy_direct': ('Direct glossy', {'result': 8, 'lpe': 'glossy'}, 'glossy_direct'),
     'emission': ('Emission', {'result': 8, 'lpe': 'emission'}, 'emission'),
     'transmission': ('Refraction / transmission', {'result': 8, 'lpe': 'C<T.>.*[<L.>O]'}, 'transmission'),
+    'indirect_diffuse': ('Indirect diffuse', {'result': 8, 'lpe': 'C<RD>[DSG]+[<L.>O]'}, 'indirect_diffuse'),
+    'indirect_glossy': ('Indirect glossy', {'result': 8, 'lpe': 'C<RG>[DSG]+[<L.>O]'}, 'indirect_glossy'),
+    'mirror_reflection': ('Mirror reflections', {'result': 8, 'lpe': 'reflection'}, 'mirror_reflection'),
+    'subsurface': ('Subsurface and translucency', {'result': 8, 'lpe': 'translucent'}, 'subsurface'),
+    # Beside direct diffuse, this is a shadow pass: divide one by the other, or take one from the other.
+    'unshadowed_diffuse': ('Diffuse without shadows', {'result': 8, 'lpe': 'unoccluded;CD[<L.>O]'}, 'unshadowed_diffuse'),
+    'albedo': ('Albedo', {'result': 7, 'material_aov': 'albedo'}, 'albedo'),
+    'motion_vectors': ('Motion vectors', {'result': 3, 'state_variable': 12}, 'motion_vectors'),
 }
 
 
@@ -77,6 +112,8 @@ def render_values(values):
     result = {}
     for key, (default, minimum, maximum, _) in RENDER.items():
         value = values.get(key, default)
+        if key in BOOLS and type(value) is bool: value = int(value)
+        if isinstance(default, float) and type(value) is int: value = float(value)
         valid_type=type(value) in (int,float) if isinstance(default,float) else type(value) is int
         if not valid_type or not math.isfinite(value) or not minimum <= value <= maximum:
             raise ValueError('Invalid render setting: ' + key)
