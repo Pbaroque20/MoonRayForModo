@@ -149,8 +149,11 @@ SUN_DEGREES = 0.53
 
 
 def solar_discs(result):
-    """Show the sun of a physically based sky as a disc: the sun light is made the width of Modo's solar disc and
-    seen by the camera. A sun given a spread wider than the disc keeps it, for its softer shadows."""
+    """Show the sun of a physically based sky as a disc. The camera sees a disc of Modo's width and of the colour
+    Modo's own renderer gives it, which Disc In-Scatter changes; that disc lights nothing. The sun light itself is
+    made as wide, and one given a spread wider than the disc keeps it, for its softer shadows."""
+    import math
+    from .daylight import disc as disc_radiance
     for environment in result.get('environments', []):
         for layer in environment.get('layers', []):
             if layer.get('kind') != 'physical' or layer.get('solar_disc', 0) <= 0 or not environment.get('camera', True):
@@ -158,7 +161,11 @@ def solar_discs(result):
             for light in result.get('lights', []):
                 if light.get('identity') == layer.get('sun_identity'):
                     light['angle'] = max(light.get('angle', 0), SUN_DEGREES * layer['solar_disc'])
-                    light['camera_visible'] = True
+                    toward = layer['sun_direction']
+                    length = math.sqrt(sum(v * v for v in toward)) or 1.0
+                    seen = disc_radiance(math.degrees(math.asin(max(-1.0, min(1.0, toward[1] / length)))), float(layer.get('haze', 2.0)),
+                                         float(layer.get('inscatter', 0.0)), bool(layer.get('normalize')))
+                    light['disc'] = {'radiance': [v * float(environment.get('intensity', 1.0)) for v in seen], 'angle': SUN_DEGREES * layer['solar_disc']}
 
 
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):

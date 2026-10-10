@@ -47,6 +47,34 @@ def between(axis, value):
     return upper - 1, upper, (value - axis[upper - 1]) / span if span else 0.0
 
 
+_disc = {}
+
+
+def disc(elevation, haze, inscatter=0.0, normalize=False):
+    """The radiance at the middle of Modo's solar disc, as its own renderer draws it: for a sun that many degrees
+    up, a haze amount, and Disc In-Scatter from 0 to 1. Measured over a grid of all three (tools/probe_modo_disc.py,
+    tools/build_modo_disc.py) and read between its entries, since what in-scatter does is not a straight line: with
+    the sun high it adds light, and with the sun low in thick haze the disc at half of it is darker than at either
+    end. The disc's size, the sky's gamma and the sun's thinning leave it alone. With Clamp Sky Brightness the disc
+    is its colour with the strongest part made 1."""
+    if not _disc:
+        _disc.update(json.loads((Path(__file__).resolve().parent / 'modo_disc.json').read_text()))
+    values = _disc['disc']
+    e0, e1, et = between(_disc['elevations'], elevation)
+    h0, h1, ht = between(_disc['hazes'], haze)
+    a0, a1, at = between(_disc['amounts'], inscatter)
+    found = [0.0, 0.0, 0.0]
+    for e, ew in ((e0, 1 - et), (e1, et)):
+        for h, hw in ((h0, 1 - ht), (h1, ht)):
+            for a, aw in ((a0, 1 - at), (a1, at)):
+                for c in range(3):
+                    found[c] += values[e][h][a][c] * ew * hw * aw
+    if normalize:
+        strongest = max(found)
+        found = [v / strongest for v in found] if strongest > 0 else found
+    return found
+
+
 def sky(elevation, haze):
     """The sky for a sun height in degrees and a haze amount: (radiance by height and angle, clamp scale)."""
     key = (round(elevation, 3), round(haze, 3))

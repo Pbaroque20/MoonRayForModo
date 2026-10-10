@@ -1058,6 +1058,9 @@ void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
         const float sinHalf = std::sin(0.5f * radius);
         table[i].versine = 2.0f * sinHalf * sinHalf;
         table[i].visible = lights[i].visibleInCamera ? 1.0f : 0.0f;
+        std::copy(lights[i].seenRadiance, lights[i].seenRadiance + 3, table[i].seen);
+        const float seenHalf = std::sin(0.5f * std::clamp(lights[i].seenExtentDegrees, 0.01f, 360.0f) * 3.14159265358979323846f / 360.0f);
+        table[i].seenVersine = 2.0f * seenHalf * seenHalf;
         if (lights[i].texture >= 0) {
             if (size_t(lights[i].texture) >= impl->textures.size() || !impl->textures[lights[i].texture])
                 throw std::runtime_error("MoonLightIPR light refers to a missing texture");

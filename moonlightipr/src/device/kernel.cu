@@ -1331,7 +1331,13 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // Distant lights are found by scattered rays; the camera sees only the discs that ask to be seen, as a sun does.
             for (unsigned i = 0; i < params.distantLightCount; ++i) {
                 const DeviceDistantLight& light = distantLights[i];
-                if (camera && light.visible <= 0.0f) continue;
+                if (camera || (sharp && light.visible > 0.0f)) {
+                    // The camera, and a mirror, see the disc they are told to: for a sun in a physical sky, not the one that
+                    // lights the scene.
+                    if (light.visible > 0.0f && dot(direction, vec(light.direction)) >= 1.0f - light.seenVersine)
+                        radiance += clampSample(throughput * lightWeight * vec(light.seen), clampFound);
+                    continue;
+                }
                 if (dot(direction, vec(light.direction)) >= 1.0f - light.versine)
                     radiance += clampSample(throughput * lightWeight * distantRadiance(light, direction)
                                             * ((sharp || camera) ? 1.0f : powerHeuristic(bsdfPdf, distantPdf(light, direction))), clampFound);

@@ -161,6 +161,8 @@ struct DeviceDistantLight {
     float pad;
     unsigned long long texture;     // a picture across the disc, or 0
     DevicePtr distribution;         // where that picture is bright, to draw directions from; see DeviceLight
+    float seen[3];          // the disc the camera sees, which may differ from the one that lights the scene
+    float seenVersine;
 };
 
 // Sphere, rectangle, disc and spot lights, as MoonRay's lights of the same names.

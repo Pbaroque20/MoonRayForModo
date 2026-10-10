@@ -356,6 +356,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         in.floats(light.axisX, 3);
         in.floats(light.axisY, 3);
         light.texture = image(in.value<int32_t>());
+        in.floats(light.seenRadiance, 3);
+        light.seenExtentDegrees = in.value<float>();
     }
 
     std::vector<Light> localLights(in.value<uint32_t>());

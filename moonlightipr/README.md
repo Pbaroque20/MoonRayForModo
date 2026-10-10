@@ -335,7 +335,12 @@ Added to what is translated since the table was written:
   taken away), as a layer stack at the images' own sharpness.
 - **The specular amount** of Modo's standard material and the Principled material's metallic
   and F0, as a weight on the specular lobe, as the plugin now sends them to MoonRay.
-- **The sun of a physical sky**: the distant light's disc is seen by the camera.
+- **The sun of a physical sky**: the camera, and mirrors, see a disc of Modo's width in the colour
+  Modo's own renderer gives it, which Disc In-Scatter changes; the disc lights nothing, and the sun
+  light goes on lighting the scene as before. The colour is read from a table measured in Modo
+  over sun height, haze and five amounts of in-scatter (`tools/probe_modo_disc.py`,
+  `tools/build_modo_disc.py`); with Clamp Sky Brightness the disc's strongest part is 1. MoonRay
+  is given the same disc as a second distant light.
   ![The sun's disc in a physical sky](../docs/images/moonlightipr-sun_disc.jpg)
 - **Lights that are not normalized**, as described above.
 

@@ -196,6 +196,10 @@ struct DistantLight {
     float radiance[3] = {1, 1, 1};      // radiance of the disc, after any normalization
     float angularExtentDegrees = 0.5f;  // full angle of the disc
     bool visibleInCamera = false;       // whether the camera sees the disc, as a sun in the sky
+    // What the camera then sees: a disc of this radiance and this full angle, which may differ from what lights the
+    // scene, as the disc of a physical sky does.
+    float seenRadiance[3] = {1, 1, 1};
+    float seenExtentDegrees = 0.5f;
     // A picture across the disc, from addTexture, laid out along the light's own x and y axes as MoonRay lays it.
     int32_t texture = -1;
     float axisX[3] = {1, 0, 0};

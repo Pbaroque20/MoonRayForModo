@@ -364,6 +364,10 @@ def scenes(folder):
         # A sun the camera sees as a disc in the sky, low ahead and three degrees wide.
         'sun_disc': dict(base, _environment=.2, lights=[dict(fixture.snapshot()['lights'][0], angle=3.0, camera_visible=True, intensity=1.0,
                                                            matrix=fixture.look_at([0, 0, 0], [-.15, -.02, 1.0]))]),
+        # The same sun, whose disc the camera sees in a colour and a width of its own, as the disc of a physical sky is.
+        'sun_disc_seen': dict(base, _environment=.2, lights=[dict(fixture.snapshot()['lights'][0], angle=1.0, intensity=1.0,
+                                                                matrix=fixture.look_at([0, 0, 0], [-.15, -.02, 1.0]),
+                                                                disc={'radiance': [12.0, 6.0, 2.0], 'angle': 4.0})]),
         # Curves: MoonRay's own curve geometry against MoonLightIPR's tubes. Thick tapered strands on the ground and a few leaning ones.
         'curves': dict(base, lights=fixture.snapshot()['lights'], _environment=.3, meshes=[base['meshes'][0]], extra_geometry=[
             {'kind': 'curves', 'identity': 'strands|curves|gold', 'source_item': 'strands', 'name': 'Strands', 'material': 'gold', 'curve_type': 0,

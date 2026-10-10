@@ -357,11 +357,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self._limit_buffers()
 
     def _limit_buffers(self):
-        """MoonLightIPR makes the picture and its denoised form and nothing else. The other buffers are MoonRay's, so
-        the list leaves them out while MoonLightIPR is the engine."""
+        """MoonLightIPR makes one picture, which its own denoiser has already cleaned: the list then holds that alone,
+        under the name Denoised Beauty. The other buffers are MoonRay's."""
         only=self.preview_engine.currentData()=='moonlightipr'
-        for row in range(2,self.buffer.count()):self.buffer.view().setRowHidden(row,only)
-        if only and self.buffer.currentIndex()>1:self.buffer.setCurrentIndex(0)
+        self.buffer.setItemText(0,'Denoised Beauty' if only else 'Beauty')
+        for row in range(1,self.buffer.count()):self.buffer.view().setRowHidden(row,only)
+        if only and self.buffer.currentIndex()!=0:self.buffer.setCurrentIndex(0)
 
     def _engine_notices(self,messages):
         """Add what the preview engine left out to the notices of the scene it is showing."""

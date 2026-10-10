@@ -228,8 +228,12 @@ def lights(scene, warnings, environment=0.0, compiler=None):
             # A white Lambertian surface facing the light reflects color * intensity.
             scale = 1 / math.sin(min(math.radians(angle) / 2, math.pi / 2)) ** 2
             # The light sits on its local +Z axis.
-            distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, 1 if light.get('camera_visible') else 0]
-                           + unit(matrix[0:3]) + unit(matrix[4:7]) + [texture])
+            # A sun's disc as the camera sees it has a colour and a width of its own; any other distant light the camera
+            # sees is seen as it shines.
+            seen = light.get('disc')
+            shown = working_color(finite(seen['radiance'])) + [float(seen['angle'])] if seen else [c * scale for c in color] + [angle]
+            distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, 1 if seen or light.get('camera_visible') else 0]
+                           + unit(matrix[0:3]) + unit(matrix[4:7]) + [texture] + shown)
             continue
         # Sizes follow the node's scale; the flat lights emit along local -Z.
         scale_x, scale_y = math.sqrt(sum(v * v for v in matrix[0:3])), math.sqrt(sum(v * v for v in matrix[4:7]))
@@ -617,7 +621,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if any(entry.get('kind') != 'curves' for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points or volumes.')
     parts.append(struct.pack('<I', len(distant)))
-    parts += [struct.pack('<7fI6fi', *light) for light in distant]
+    parts += [struct.pack('<7fI6fi4f', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local
     parts += [struct.pack('<I', len(meshes))] + meshes + [struct.pack('<I', len(instances))] + instances
     # Drop cached triangulations of meshes that have left the scene.

@@ -56,4 +56,24 @@ class Surroundings(unittest.TestCase):
         self.assertEqual(incremental.surroundings({}),incremental.surroundings({'lights':[1]}))
 
 
+class Disc(unittest.TestCase):
+    def test_the_disc_is_read_from_modos_own_pictures_and_between_them(self):
+        from moonray_modo import daylight
+        high=daylight.disc(30,2.0)
+        for a,b in zip(high,[129.5,112.9,60.1]):self.assertAlmostEqual(a,b,delta=.1)
+        more=daylight.disc(30,2.0,1.0)
+        self.assertTrue(all(m>h for m,h in zip(more,high)))
+        half=daylight.disc(30,2.0,.5)
+        for h,a,b in zip(half,high,more):self.assertAlmostEqual(h,(a+b)/2,delta=.5)
+        # Between two sun heights, and no further than the table goes.
+        between=daylight.disc(25,2.0)
+        self.assertTrue(daylight.disc(20,2.0)[0]<between[0]<high[0])
+        self.assertEqual(daylight.disc(89,2.0),daylight.disc(80,2.0))
+
+    def test_a_clamped_sky_has_a_disc_whose_strongest_part_is_one(self):
+        from moonray_modo import daylight
+        clamped=daylight.disc(30,2.0,0.0,True)
+        self.assertAlmostEqual(max(clamped),1.0);self.assertAlmostEqual(clamped[2],60.06/129.5,delta=.01)
+
+
 if __name__=='__main__':unittest.main()
