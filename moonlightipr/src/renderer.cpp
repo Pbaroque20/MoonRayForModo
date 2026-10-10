@@ -1191,6 +1191,7 @@ void Renderer::setLights(const Light* lights, size_t count) {
             std::copy(in.rows, in.rows + 12, filter.rows);
             std::copy(in.more, in.more + 12, filter.b);
             if (in.kind == LightFilter::Cookie) filter.texture = object(in.texture);
+            if (in.ramp >= 0 && (in.kind == LightFilter::Rod || in.kind == LightFilter::Vdb)) filter.ramp = object(in.ramp);
             if (in.kind == LightFilter::Vdb) {
                 if (in.texture < 0 || size_t(in.texture) >= impl->grids.size() || !impl->grids[in.texture] || impl->gridPeaks[in.texture] < 0.0f)
                     throw std::runtime_error("MoonLightIPR light filter refers to a missing grid");

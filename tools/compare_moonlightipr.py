@@ -352,6 +352,28 @@ def scenes(folder):
              'parameters': {'texture': quarters_image(folder), 'projector_focal': 40.0, 'projector_film_width_aperture': 24.0}},
             {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
              'parameters': {'intensity': 160.0, 'width': .4, 'height': .4, 'light_filters': ['Slide']}}]),
+        # The same filters with what each can be told besides: a rod that fades over its edge by a ramp of its own, a
+        # cookie thrown from a camera item and blurred with distance, and a VDB filter blurred and its densities remapped.
+        'filter_rod_ramp': dict(base, _environment=.15, entities=[
+            {'identity': 'f_rod', 'name': 'Rod', 'class': 'RodLightFilter', 'matrix': fixture.placed(.9, .6, .4),
+             'parameters': {'width': 1.2, 'height': 1.6, 'depth': 1.2, 'radius': .1, 'edge': 1.4, 'color': [1.0, .15, .1],
+                            'ramp_in_distances': [0.0, .3, .6, 1.0], 'ramp_out_distances': [0.0, .9, .2, 1.0], 'ramp_interpolation_types': [1, 1, 1, 1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 90.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Rod']}}]),
+        'filter_cookie_blur': dict(base, _environment=.15, _exec_mode='scalar', entities=[
+            {'identity': 'c_slide', 'name': 'Lantern', 'class': 'PerspectiveCamera', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'focal': 45.0, 'film_width_aperture': 24.0}},
+            {'identity': 'f_cookie', 'name': 'Slide', 'class': 'CookieLightFilter_v2', 'matrix': fixture.placed(0, 0, 0),
+             'parameters': {'texture': quarters_image(folder), 'projector': 'Lantern', 'blur_near_distance': 4.0, 'blur_midpoint': 6.0, 'blur_far_distance': 8.0,
+                            'blur_near_value': 0.0, 'blur_mid_value': .04, 'blur_far_value': .15}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 160.0, 'width': .4, 'height': .4, 'light_filters': ['Slide']}}]),
+        'filter_vdb_remap': dict(base, _environment=.15, entities=[
+            {'identity': 'f_vdb', 'name': 'Gobo', 'class': 'VdbLightFilter', 'matrix': fixture.placed(.4, .6, .3, 1.6),
+             'parameters': {'vdb_map': vdb_ball(folder), 'density_grid_name': 'density', 'vdb_interpolation_type': 1, 'color_tint': [.1, .3, .9], 'blur_value': .25,
+                            'density_remap_inputs': [0.0, .3, 1.0], 'density_remap_outputs': [1.0, 0.0, .8], 'density_remap_interpolation_types': [1, 1, 1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 90.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Gobo']}}]),
         # A VDB light filter: the ball of fog as a grid that lets light through where it is full and none where it is empty.
         'filter_vdb': dict(base, _environment=.15, entities=[
             {'identity': 'f_vdb', 'name': 'Gobo', 'class': 'VdbLightFilter', 'matrix': fixture.placed(.4, .6, .3, 1.6),

@@ -6,6 +6,7 @@ preferences.py; output renders, exports and the scene dialogs are in panel_tools
 """
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import host, options, properties, scene_settings
+import functools
 import lx
 from .render import Renderer
 from .viewer import Preview
@@ -67,6 +68,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.start_requested.connect(self.start_render)
         self.preview.region_drawn.connect(self._region_drawn)
         self.preview.hovered.connect(self._probe)
+        self.preview.set_gamma(self.preferences.get('display_gamma'))
         self.preview.set_worker_overlay(self.preferences.get('worker_tiles'))
         self.preview.set_show_buckets(self.preferences.get('show_buckets'))
         layout.addWidget(self.preview, 1)
@@ -136,18 +138,32 @@ class Panel(Tools, QtWidgets.QWidget):
             self.buffer.addItem(label,key)
         self.buffer.setToolTip('The render buffer shown. Switching does not restart the render.')
         row.addWidget(self.buffer,1)
+        # Exposure and gamma: each a button that puts it back as it was, and its value beside it.
+        reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click to put it back to 0.')
+        reset.clicked.connect(lambda:self.exposure.setValue(0.0));row.addWidget(reset)
         self.exposure=QtWidgets.QDoubleSpinBox();self.exposure.setRange(-20,20);self.exposure.setSingleStep(.25)
-        self.exposure.setPrefix('EV ');self.exposure.setKeyboardTracking(False)
+        self.exposure.setKeyboardTracking(False)
         self.exposure.setToolTip('Display exposure in stops. The rendered values are not changed.')
         self.exposure.valueChanged.connect(lambda value:self.display_timer.start())
         row.addWidget(self.exposure)
-        # Which of the picture is shown: all of it, one of its colours as greys, or its alpha.
-        self.channels=QtWidgets.QButtonGroup(self);self.channels.setExclusive(True)
-        for key,label,tip in (('rgb','RGB','Show the whole picture'),('r','R','Show the red channel alone, as greys'),('g','G','Show the green channel alone, as greys'),
-                              ('b','B','Show the blue channel alone, as greys'),('a','A','Show the alpha channel')):
-            button=QtWidgets.QToolButton();button.setText(label);button.setCheckable(True);button.setToolTip(tip);button.setProperty('channel',key)
-            button.setChecked(key=='rgb');self.channels.addButton(button);row.addWidget(button)
-        self.channels.buttonClicked.connect(lambda button:self._channel_chosen(button.property('channel')))
+        reset=QtWidgets.QToolButton();reset.setText('Gamma');reset.setToolTip('Viewing gamma. Click to put it back to 1.')
+        reset.clicked.connect(lambda:self.gamma.setValue(1.0));row.addWidget(reset)
+        self.gamma=QtWidgets.QDoubleSpinBox();self.gamma.setRange(.1,5.0);self.gamma.setSingleStep(.05);self.gamma.setDecimals(2)
+        self.gamma.setValue(self.preferences.get('display_gamma'))
+        self.gamma.setToolTip('A gamma for looking at the picture, after its view transform: above 1 lifts the shadows, below 1 deepens them.\nIt is kept with this window, not with the scene, and changes neither the render nor a saved EXR.')
+        self.gamma.valueChanged.connect(self._gamma_changed)
+        row.addWidget(self.gamma)
+        # One channel of the picture at a time: its red, green or blue as greys, or its alpha. A button pressed is
+        # lit in its own colour; pressed again it goes out and the whole picture is back.
+        self.channels={}
+        for key,label,lit,ink,tip in (('r','R','#c0392b','#ffffff','Show the red channel alone, as greys. Click again for the whole picture.'),
+                                      ('g','G','#2e9e4f','#ffffff','Show the green channel alone, as greys. Click again for the whole picture.'),
+                                      ('b','B','#2f6fd0','#ffffff','Show the blue channel alone, as greys. Click again for the whole picture.'),
+                                      ('a','A','#e8e8e8','#101010','Show the alpha channel. Click again for the whole picture.')):
+            button=QtWidgets.QToolButton();button.setText(label);button.setCheckable(True);button.setToolTip(tip)
+            button.setStyleSheet('QToolButton:checked { background-color: %s; color: %s; border: 1px solid %s; border-radius: 3px; }'%(lit,ink,lit))
+            button.clicked.connect(functools.partial(self._channel_clicked,key))
+            self.channels[key]=button;row.addWidget(button)
         self._before_alpha=None
         self.region_enabled=QtWidgets.QCheckBox('Region')
         self.region_enabled.setToolTip('Render only a region of the frame. While this is on, drag with the left button in the picture to draw the region.\nThe middle button still moves the picture. Its numbers are also in the Render item\'s MoonRay properties.')
@@ -217,7 +233,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
         row.addWidget(self.status,1)
         # What is under the pointer: its place in the picture and its values.
-        self.probe=QtWidgets.QLabel('');self.probe.setEnabled(False)
+        self.probe=QtWidgets.QLabel('');self.probe.setTextFormat(QtCore.Qt.RichText)
         self.probe.setToolTip('The pixel under the pointer: its place from the top left, then red, green, blue and alpha.\nLinear values are the render\'s own, before the view transform; display values are what is on screen.')
         # And its colour as it is on screen, in a small square beside the numbers.
         self.swatch=QtWidgets.QLabel('');self.swatch.setFixedSize(14,14);self.swatch.setVisible(False)
@@ -288,16 +304,28 @@ class Panel(Tools, QtWidgets.QWidget):
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
 
+    def _gamma_changed(self,value):
+        self.preferences.set('display_gamma',float(value))
+        self.preview.set_gamma(value)
+
+    def _channel_clicked(self,key,*_):
+        """A channel's button pressed: lit, it shows that channel; pressed again, the whole picture."""
+        self._channel_chosen(key if self.channels[key].isChecked() else 'rgb')
+
     def _channel_chosen(self,channel):
-        """One colour is the picture's own channel shown as greys; alpha is the render's alpha output, shown in the picture's place."""
+        """One colour is the picture's own channel shown as greys; alpha is the render's alpha output, shown in the
+        picture's place; 'rgb' is the whole picture again."""
         if channel=='a':
             index=self.buffer.findData('alpha')
             if index<0 or self.buffer.view().isRowHidden(index):
                 self.status.setText('This engine gives the preview no alpha; choose MoonRay to see it.')
-                self.channels.buttons()[0].setChecked(True);channel='rgb'
-            else:
-                if self.buffer.currentData()!='alpha':self._before_alpha=self.buffer.currentData()
-                self.buffer.setCurrentIndex(index);self.preview.set_channel('rgb');return
+                channel='rgb'
+            elif self.buffer.currentData()!='alpha':
+                self._before_alpha=self.buffer.currentData()
+        # Only the one chosen is lit.
+        for key,button in self.channels.items():button.setChecked(key==channel)
+        if channel=='a':
+            self.buffer.setCurrentIndex(self.buffer.findData('alpha'));self.preview.set_channel('rgb');return
         if self._before_alpha is not None and self.buffer.currentData()=='alpha':
             self.buffer.setCurrentIndex(max(0,self.buffer.findData(self._before_alpha)))
         self._before_alpha=None
@@ -328,12 +356,15 @@ class Panel(Tools, QtWidgets.QWidget):
             except struct.error:return None
         values=linear(frame.get('key','beauty'),3)
         alpha=linear('alpha',1)
-        if values is not None:
-            text='%d, %d   R %.4f  G %.4f  B %.4f'%(x,y,*values)+('  A %.4f'%alpha[0] if alpha else '')+'   linear'
-        else:
-            colour=QtGui.QColor(self.preview.image.pixel(x,y))
-            text='%d, %d   R %.3f  G %.3f  B %.3f'%(x,y,colour.redF(),colour.greenF(),colour.blueF())+('  A %.4f'%alpha[0] if alpha else '')+'   display'
-        self.probe.setText(text)
+        kind='linear'
+        if values is None:
+            values,kind=(shown.redF(),shown.greenF(),shown.blueF()),'display'
+        # Each value in its own colour: red, green, blue, and alpha in white.
+        parts=['<span style="color:#8a8f99">%d, %d</span>'%(x,y)]
+        parts+=['<span style="color:%s">%s&nbsp;%.4f</span>'%(ink,name,value) for name,ink,value in zip('RGB',('#ff5f52','#55d27a','#5b9bff'),values)]
+        if alpha:parts.append('<span style="color:#ffffff">A&nbsp;%.4f</span>'%alpha[0])
+        parts.append('<span style="color:#8a8f99">%s</span>'%kind)
+        self.probe.setText('&nbsp;&nbsp;'.join(parts))
 
     def _region_toggled(self,enabled):
         self.preview.set_region(self._settings_values()['region'] if enabled else None,enabled)

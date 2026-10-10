@@ -85,15 +85,33 @@ def look():
         result['probe_off_the_picture'] = panel.probe.text()
         # Each channel, by its button.
         centre = QtCore.QPoint(int(area.center().x()), int(area.center().y()))
-        for button in panel.channels.buttons():
+        for key, button in panel.channels.items():
             button.click()
             QtWidgets.QApplication.processEvents()
             shown = view.shown()
             colour = QtGui.QColor(shown.pixel(view.image.width() // 2, view.image.height() // 2))
             result['channel_' + button.text()] = {'buffer': panel.buffer.currentData(), 'viewer': view.channel, 'middle': [colour.red(), colour.green(), colour.blue()],
-                                                  'status': panel.status.text()[:80]}
-            view.grab().save(str(out / ('channel_%s.png' % button.text())))
-        panel.channels.buttons()[0].click()
+                                                  'lit': [k for k, other in panel.channels.items() if other.isChecked()], 'status': panel.status.text()[:80]}
+            panel.window().grab().save(str(out / ('channel_%s.png' % button.text())))
+            if key == 'g':
+                # Pressed again, it goes out and the whole picture is back.
+                button.click()
+                QtWidgets.QApplication.processEvents()
+                result['green_pressed_again'] = [view.channel, [k for k, other in panel.channels.items() if other.isChecked()]]
+        panel._channel_chosen('rgb')
+        # Gamma lifts the picture's middle; its button puts it back.
+        before = QtGui.QColor(view.shown().pixel(view.image.width() // 2, view.image.height() // 2)).red()
+        panel.gamma.setValue(2.0)
+        QtWidgets.QApplication.processEvents()
+        lifted = QtGui.QColor(view.shown().pixel(view.image.width() // 2, view.image.height() // 2)).red()
+        panel.window().grab().save(str(out / 'gamma_2.png'))
+        panel.gamma.setValue(1.0)
+        panel.exposure.setValue(1.5)
+        result['gamma'] = {'red_at_1': before, 'red_at_2': lifted, 'back_at_1': QtGui.QColor(view.shown().pixel(view.image.width() // 2, view.image.height() // 2)).red()}
+        resets = [b for b in panel.findChildren(QtWidgets.QToolButton) if b.text() in ('EV', 'Gamma')]
+        next(b for b in resets if b.text() == 'EV').click()
+        result['exposure_after_reset'] = panel.exposure.value()
+        result['buffers'] = [panel.buffer.itemText(i) for i in range(panel.buffer.count())]
         # The region: switched on, then dragged with the left button.
         panel.region_enabled.setChecked(True)
         QtWidgets.QApplication.processEvents()

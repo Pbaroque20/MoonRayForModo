@@ -210,6 +210,7 @@ const unsigned FILTER_DECAY = 0, FILTER_RAMP = 1, FILTER_ROD = 2, FILTER_BARN = 
 const unsigned FILTER_INVERT = 1;       // rod, barn door, cookie
 const unsigned FILTER_ORTHO = 2, FILTER_PHYSICAL = 4;      // barn door: how it projects, and through the light's own ray
 const unsigned FILTER_WHITE = 2, FILTER_EDGELESS = 4;      // cookie: lit outside its picture; its picture read past its edge
+const unsigned FILTER_ROUND = 8;        // cookie and VDB: blurred over a disc or a ball, not by the camera's own bell
 const unsigned FILTER_NEAR = 1, FILTER_FAR = 2;     // decay: which ends fall off
 const unsigned FILTER_DIRECTIONAL = 1, FILTER_MIRROR = 2, FILTER_PLACED = 4;    // ramp
 struct DeviceFilter {
@@ -226,6 +227,11 @@ struct DeviceFilter {
     // grid of densities, rows take the scene into the grid's unit cube, and b holds the colour light takes where the
     // grid is empty.
     float b[12];
+    // Rod: how its edge fades, 257 across from the box out to the edge's end. VDB: what its densities are remapped
+    // to, 257 across from a[0] to a[1]. 0 for neither. A cookie's b also holds, after its density, the projector's
+    // place and its blur: the near, middle and far distances, then the blur at each. A VDB's b holds, after its
+    // tint, its blur and how much of the grid's cube a unit of the filter's own space is along each axis.
+    unsigned long long ramp;
 };
 
 // How much of the light a specular lobe reflects when its Fresnel term is one, tabulated over

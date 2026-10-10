@@ -19,6 +19,9 @@ class _PreviewBody:
         # Which of the picture is shown: all of it, or one of red, green and blue as greys.
         self.channel = 'rgb'
         self._single = None
+        # A gamma for looking at the picture, over and above its view transform: 1 leaves it as it is.
+        self.gamma = 1.0
+        self._curved = None
         # The part of the frame that is rendered, as (left, top, right, bottom) from 0 to 1, where a region is on; and
         # whether a drag of the left button draws a new one, in place of moving the picture.
         self.region = None
@@ -45,6 +48,7 @@ class _PreviewBody:
         # the renderer output and its alpha channel untouched on disk.
         self.image = image.convertToFormat(QtGui.QImage.Format_RGB32)
         self._single = None
+        self._curved = None
         self.update()
 
     def set_channel(self, channel):
@@ -53,18 +57,39 @@ class _PreviewBody:
         self._single = None
         self.update()
 
+    def set_gamma(self, gamma):
+        """Brighten or darken the middle of the picture for looking at: above 1 lifts it, below 1 lowers it."""
+        self.gamma = min(5.0, max(.1, float(gamma)))
+        self._curved = None
+        self._single = None
+        self.update()
+
+    def looked_at(self):
+        """The picture with the viewing gamma on it."""
+        if abs(self.gamma - 1.0) < 1e-6 or self.image.isNull():
+            return self.image
+        if self._curved is None:
+            try:
+                # Every byte of the picture through one table: its colours, and a spare byte that stays as it is.
+                table = bytes(min(255, int(round(255.0 * (value / 255.0) ** (1.0 / self.gamma)))) for value in range(256))
+                data = bytes(self.image.constBits())[:self.image.width() * self.image.height() * 4].translate(table)
+                self._curved = (data, QtGui.QImage(data, self.image.width(), self.image.height(), self.image.width() * 4, QtGui.QImage.Format_RGB32))
+            except (TypeError, ValueError, RuntimeError):
+                return self.image
+        return self._curved[1]
+
     def shown(self):
         """The picture as it is drawn: itself, or the one channel asked for."""
         if self.channel == 'rgb' or self.image.isNull():
-            return self.image
+            return self.looked_at()
         if self._single is None:
             try:
                 # A pixel is held as blue, green, red and a spare byte: every fourth byte from the channel's place.
-                data = bytes(self.image.constBits())[:self.image.width() * self.image.height() * 4]
+                data = bytes(self.looked_at().constBits())[:self.image.width() * self.image.height() * 4]
                 one = data['bgr'.index(self.channel)::4]
                 self._single = (one, QtGui.QImage(one, self.image.width(), self.image.height(), self.image.width(), QtGui.QImage.Format_Grayscale8))
             except (TypeError, ValueError, RuntimeError):
-                return self.image
+                return self.looked_at()
         return self._single[1]
 
     def set_region(self, region, tool):

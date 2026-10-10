@@ -454,6 +454,15 @@ ML_INLINE bool hitLightShape(const DeviceLight& light, float3 p, float3 directio
     return true;
 }
 
+// MoonRay's bell for a blur: the camera's own quadratic B-spline, as a number from -1.5 to 1.5 for one from 0 to 1.
+ML_INLINE float bellWarp(float r) {
+    if (r < 1.0f / 6.0f) return powf(6.0f * r, 1.0f / 3.0f) - 1.5f;
+    if (r >= 5.0f / 6.0f) return 1.5f - powf(6.0f * (1.0f - r), 1.0f / 3.0f);
+    float u = (6.0f * r - 3.0f) / 4.0f;
+    for (int j = 0; j < 4; ++j) u = (8.0f * u * u * u - 12.0f * r + 6.0f) / (12.0f * u * u - 9.0f);
+    return u;
+}
+
 // What a light's picture and its filters make of the light travelling from it to p: the point
 // on the light is distance along wi.
 ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float distance) {
@@ -504,13 +513,17 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
             continue;
         }
         if (filter.type == FILTER_ROD || filter.type == FILTER_BARN || filter.type == FILTER_COOKIE || filter.type == FILTER_VDB) {
-            const float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
-                                             dot(vec(filter.rows + 8), p) + filter.rows[11]);
+            float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
+                                       dot(vec(filter.rows + 8), p) + filter.rows[11]);
+            // What is random about a blur: its own for each point, each sample and each filter.
+            unsigned blur = tea(__float_as_uint(p.x) ^ (__float_as_uint(p.y) * 0x9e3779b9u) ^ (__float_as_uint(p.z) * 0x85ebca6bu), params.sample * 16u + i);
             if (filter.type == FILTER_ROD) {
                 // A box with rounded corners: inside it the light takes the rod's colour, and fades back over its edge.
                 const float3 q = make_float3(fabsf(local.x) - filter.a[0], fabsf(local.y) - filter.a[1], fabsf(local.z) - filter.a[2]);
                 const float r = length(make_float3(fmaxf(q.x, 0.0f), fmaxf(q.y, 0.0f), fmaxf(q.z, 0.0f))) + fminf(fmaxf(q.x, fmaxf(q.y, q.z)), 0.0f) - filter.a[3];
                 float scale = r <= 0.0f ? 0.0f : r < filter.b[0] ? r / filter.b[0] : 1.0f;
+                // The rod's own way of fading over its edge, where it has one.
+                if (filter.ramp && r > 0.0f && r < filter.b[0]) scale = tex2D<float4>(filter.ramp, (scale * 256.0f + 0.5f) / 257.0f, 0.5f).x;
                 if (filter.flags & FILTER_INVERT) scale = 1.0f - scale;
                 scale = 1.0f + (scale - 1.0f) * filter.b[1];
                 const float3 colour = vec(filter.b + 2);
@@ -519,8 +532,20 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
             }
             if (filter.type == FILTER_VDB) {
                 // A grid of densities: where it is full the light passes as it is; where it is empty it takes the tint.
+                if (filter.b[3] > 0.0f) {
+                    // Blurred: looked up a little way off, by the bell or anywhere in a ball.
+                    float3 off;
+                    if (filter.flags & FILTER_ROUND) {
+                        const float z = 1.0f - 2.0f * rnd(blur), around = 2.0f * ML_PI * rnd(blur), flat = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+                        off = make_float3(flat * cosf(around), flat * sinf(around), z) * powf(rnd(blur), 1.0f / 3.0f);
+                    } else {
+                        off = make_float3(bellWarp(rnd(blur)), bellWarp(rnd(blur)), bellWarp(rnd(blur)));
+                    }
+                    local = local + make_float3(off.x * filter.b[4], off.y * filter.b[5], off.z * filter.b[6]) * filter.b[3];
+                }
                 float density = tex3D<float>(filter.texture, local.x, local.y, local.z);
                 if (filter.flags & FILTER_INVERT) density = 1.0f - density;
+                if (filter.ramp) density = tex2D<float4>(filter.ramp, (clamp((density - filter.a[0]) / (filter.a[1] - filter.a[0]), 0.0f, 1.0f) * 256.0f + 0.5f) / 257.0f, 0.5f).x;
                 density = fmaxf(density, 0.0f);
                 const float3 colour = vec(filter.b);
                 tint = tint * (colour + (vec(1.0f) - colour) * density);
@@ -533,7 +558,23 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
                     tint = tint * outside;
                     continue;
                 }
-                const float s = local.x / local.z, t = local.y / local.z;
+                float s = local.x / local.z, t = local.y / local.z;
+                if (filter.b[7] > 0.0f || filter.b[8] > 0.0f || filter.b[9] > 0.0f) {
+                    // Blurred by how far the point is from the projector: one blur near, one at the middle, one far.
+                    const float far = length(p - vec(filter.b + 1));
+                    float wide = filter.b[9];
+                    if (far <= filter.b[4]) wide = filter.b[7];
+                    else if (far <= filter.b[5]) wide = filter.b[5] > filter.b[4] ? filter.b[7] + (filter.b[8] - filter.b[7]) * (far - filter.b[4]) / (filter.b[5] - filter.b[4]) : filter.b[8];
+                    else if (far <= filter.b[6]) wide = filter.b[6] > filter.b[5] ? filter.b[8] + (filter.b[9] - filter.b[8]) * (far - filter.b[5]) / (filter.b[6] - filter.b[5]) : filter.b[9];
+                    if (filter.flags & FILTER_ROUND) {
+                        const float out = sqrtf(rnd(blur)), around = 2.0f * ML_PI * rnd(blur);
+                        s += out * cosf(around) * wide;
+                        t += out * sinf(around) * wide;
+                    } else {
+                        s += bellWarp(rnd(blur)) * wide;
+                        t += bellWarp(rnd(blur)) * wide;
+                    }
+                }
                 if ((s < 0.0f || s > 1.0f || t < 0.0f || t > 1.0f) && !(filter.flags & FILTER_EDGELESS)) {
                     tint = tint * outside;
                     continue;

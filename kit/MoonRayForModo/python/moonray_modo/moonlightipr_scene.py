@@ -186,24 +186,37 @@ def control_filters(settings, light, scene, warnings):
     return records
 
 
+def scalar_ramp(compiler, lists):
+    """A ramp of numbers as an image the session reads, 257 across its own stops' span: (image, low, high)."""
+    from .entities import ramp_eval
+    low, high = min(lists[0]), max(lists[0])
+    if not high > low:
+        high = low + 1.0
+    steps = [i / (RAMP_SAMPLES - 1) for i in range(RAMP_SAMPLES)]
+    values = [float(ramp_eval(lists[0], lists[1], lists[2], low + (high - low) * x)) for x in steps]
+    return compiler.ramp({'positions': steps, 'colors': [[v, v, v] for v in values]}, exact=True), low, high
+
+
 def packed_filters(records, compiler, light_matrix=None, warnings=None):
     """Decay and ramp filters as the session reads them; a ramp's colours go into a small image."""
     from .entities import ramp_eval
     parts = []
     for record in records:
         if record['kind'] == 'decay':
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_DECAY, (FILTER_NEAR if record['near'] else 0) | (FILTER_FAR if record['far'] else 0),
-                                     *record['distances'], *([0.0] * 12), -1, *([0.0] * 12)))
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_DECAY, (FILTER_NEAR if record['near'] else 0) | (FILTER_FAR if record['far'] else 0),
+                                     *record['distances'], *([0.0] * 12), -1, *([0.0] * 12), -1))
         elif record['kind'] == 'rod':
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_ROD, 1 if record['invert'] else 0, *record['corner'], record['radius'],
+            # Its own way of fading over its edge: from 0 at the box to 1 at the edge's end.
+            fade = scalar_ramp(compiler, record['fade'])[0] if record.get('fade') else -1
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_ROD, 1 if record['invert'] else 0, *record['corner'], record['radius'],
                                      *(v for row in record['rows'] for v in row), -1,
-                                     record['edge'], record['density'], *record['color'], *([0.0] * 7)))
+                                     record['edge'], record['density'], *record['color'], *([0.0] * 7), fade))
         elif record['kind'] == 'barn':
             from .entities import barn_rows
             rows = barn_rows(record, light_matrix or IDENTITY)
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_BARN, (1 if record['invert'] else 0) | (2 if record['orthographic'] else 0) | (4 if record['physical'] else 0),
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_BARN, (1 if record['invert'] else 0) | (2 if record['orthographic'] else 0) | (4 if record['physical'] else 0),
                                      *record['low'], *record['high'], *(v for row in rows for v in row), -1,
-                                     record['radius'], *record['edges'], record['focal'], *record['color'], record['density'], 0.0, 0.0))
+                                     record['radius'], *record['edges'], record['focal'], *record['color'], record['density'], 0.0, 0.0, -1))
         elif record['kind'] == 'vdb':
             import subprocess
             from .entities import inverse_rows
@@ -215,8 +228,12 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
                     warnings.append('MoonLightIPR leaves out a VDB light filter whose grid it cannot read (%s).' % exc)
                 continue
             rows = inverse_rows(product(unit, [float(v) for v in record['matrix']]))
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_VDB, 1 if record['invert'] else 0, 0.0, 0.0, 0.0, 0.0, *(v for row in rows for v in row),
-                                     compiler.grid(file), *record['tint'], *([0.0] * 9)))
+            remap, low, high = scalar_ramp(compiler, record['remap']) if record.get('remap') else (-1, 0.0, 1.0)
+            # A blur is so far in the filter's own space; how much of the grid's cube that is along each of its axes.
+            spans = [1.0 / (math.sqrt(sum(v * v for v in unit[axis * 4:axis * 4 + 3])) or 1.0) for axis in range(3)]
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_VDB, (1 if record['invert'] else 0) | (8 if record.get('round') else 0), low, high, 0.0, 0.0,
+                                     *(v for row in rows for v in row), compiler.grid(file), *record['tint'], float(record.get('blur', 0.0)), *spans,
+                                     *([0.0] * 5), remap))
         elif record['kind'] == 'cookie':
             import subprocess
             try:
@@ -227,8 +244,10 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
                 continue
             if record['front'] is not None and warnings is not None:
                 warnings.append('MoonLightIPR throws an orthographic cookie behind its projector as well as in front.')
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_COOKIE, (1 if record['invert'] else 0) | (2 if record['white'] else 0) | (4 if record['edgeless'] else 0),
-                                     0.0, 0.0, 0.0, 0.0, *(v for row in record['rows'] for v in row), picture, record['density'], *([0.0] * 11)))
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_COOKIE, (1 if record['invert'] else 0) | (2 if record['white'] else 0) | (4 if record['edgeless'] else 0)
+                                     | (8 if record.get('round') else 0),
+                                     0.0, 0.0, 0.0, 0.0, *(v for row in record['rows'] for v in row), picture, record['density'], *record['place'], *record['blur'],
+                                     0.0, 0.0, -1))
         elif record['kind'] == 'ramp':
             # The ramp over its own 0 to 1, which the session stretches from begin to end.
             steps = [i / (RAMP_SAMPLES - 1) for i in range(RAMP_SAMPLES)]
@@ -237,8 +256,8 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
             rows = record['rows'] or [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
             flags = ((FILTER_DIRECTIONAL if record['directional'] else 0) | (FILTER_MIRROR if record['mirror'] else 0)
                      | (FILTER_PLACED if record['rows'] else 0))
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_RAMP, flags, record['begin'], record['end'], record['intensity'], record['density'],
-                                     *(v for row in rows for v in row), texture, *([0.0] * 12)))
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_RAMP, flags, record['begin'], record['end'], record['intensity'], record['density'],
+                                     *(v for row in rows for v in row), texture, *([0.0] * 12), -1))
     return struct.pack('<I', len(parts)) + b''.join(parts)
 
 

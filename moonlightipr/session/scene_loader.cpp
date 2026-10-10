@@ -432,6 +432,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 filter.texture = image(named);
             }
             in.floats(filter.more, 12);
+            filter.ramp = image(in.value<int32_t>());
         }
         light.filters = lightFilters[l].data();
         light.filterCount = lightFilters[l].size();

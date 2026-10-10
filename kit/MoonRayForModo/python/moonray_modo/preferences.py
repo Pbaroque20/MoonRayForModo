@@ -8,6 +8,7 @@ KEYS = {
     'runtime': ('', str), 'preview_engine': ('moonray', str), 'preview_size': (640, int),
     'persistent_preview': (True, bool), 'capture_safety': (False, bool), 'preview_motion': (False, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
+    'display_gamma': (1.0, float),
     'ipr/width': (160, int), 'ipr/samples': (1, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
 }
 

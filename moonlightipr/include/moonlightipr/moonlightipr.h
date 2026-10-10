@@ -238,6 +238,7 @@ struct LightFilter {
     int32_t texture = -1;   // ramp: a 257 x 1 image of its colours from begin to end. Cookie: its picture. VDB: a grid from addGrid
     // Rod, barn door and cookie: the rest of what they are, as shared.h says of DeviceFilter::b.
     float more[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    int32_t ramp = -1;      // rod: a 257 x 1 image of how its edge fades. VDB: of what its densities are remapped to
 };
 
 // A sphere, rectangle, disc, spot, cylinder, portal or mesh light, as MoonRay's lights of the
