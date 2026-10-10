@@ -219,6 +219,31 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         textureIndex = cached->second.index;
     }
 
+    // Grids of densities, which the fogs among the materials refer to: "MLV1", three counts, the largest value, a
+    // transform the packer has already used, then the values.
+    std::vector<uint32_t> gridIndices(in.value<uint32_t>());
+    for (uint32_t& gridIndex : gridIndices) {
+        const uint64_t key = in.value<uint64_t>();
+        const std::string file = in.text(in.value<uint32_t>());
+        auto cached = grids.find(key);
+        if (cached == grids.end()) {
+            std::ifstream source(file, std::ios::binary);
+            const std::vector<char> data((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>());
+            GridDesc desc;
+            if (data.size() < 84 || std::memcmp(data.data(), "MLV1", 4) != 0) throw std::runtime_error("Cannot read MoonLightIPR grid: " + file);
+            std::memcpy(desc.counts, data.data() + 4, 12);
+            std::memcpy(&desc.peak, data.data() + 16, 4);
+            const size_t count = size_t(desc.counts[0]) * desc.counts[1] * desc.counts[2];
+            if (!count || count > (data.size() - 84) / 4) throw std::runtime_error("MoonLightIPR grid is truncated: " + file);
+            std::vector<float> values(count);
+            std::memcpy(values.data(), data.data() + 84, count * 4);
+            desc.values = values.data();
+            cached = grids.emplace(key, CachedMesh{renderer.addGrid(desc), 0}).first;
+        }
+        cached->second.lastUsed = generation;
+        gridIndex = cached->second.index;
+    }
+
     std::vector<Material> materials(in.value<uint32_t>());
     for (Material& material : materials) {
         in.floats(material.baseColor, 3);
@@ -278,6 +303,10 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             in.floats(material.volumeAlbedo, 3);
             in.floats(material.volumeEmission, 3);
             material.volumeAnisotropy = in.value<float>();
+            const int32_t grid = in.value<int32_t>();
+            if (grid >= int32_t(gridIndices.size())) throw std::runtime_error("MoonLightIPR scene volume refers to a missing grid");
+            material.volumeGrid = grid < 0 ? -1 : int32_t(gridIndices[grid]);
+            in.floats(material.volumeRows, 12);
         }
     }
     std::vector<Layer> layers(in.value<uint32_t>());
@@ -512,6 +541,12 @@ SceneSettings SceneLoader::apply(const std::string& path) {
 
     renderer.setMaterials(materials.data(), materials.size(), layers.data(), layers.size(), tiles.data(), tiles.size());
     renderer.setWorkingSpace(sceneFlags & SCENE_WORKING_SPACE ? workingSpace : nullptr);
+    for (auto entry = grids.begin(); entry != grids.end();) {
+        if (generation - entry->second.lastUsed >= MESH_RETENTION) {
+            renderer.removeGrid(entry->second.index);
+            entry = grids.erase(entry);
+        } else ++entry;
+    }
     for (auto entry = textures.begin(); entry != textures.end();) {
         if (generation - entry->second.lastUsed >= MESH_RETENTION) {
             renderer.removeTexture(entry->second.index);

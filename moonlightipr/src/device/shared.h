@@ -96,15 +96,19 @@ struct DeviceMaterial {
     float frontKeep[3];         // what that leaves of the diffuse light on the lit side
 };
 
-// An even fog, as MoonRay's BaseVolume with constant values: how much light it stops in a unit of distance, how
-// much of what it stops is scattered on rather than absorbed, what it gives off, and which way it scatters.
+// A fog: how much light it stops in a unit of distance, how much of what it stops is scattered on rather than
+// absorbed, what it gives off, and which way it scatters. It is even all through, as MoonRay's BaseVolume with
+// constant values, or as thick at each place as a grid of densities says, as a VDB volume: the grid fills the
+// unit cube that rows takes a point of the scene into, and what the fog stops is multiplied by its value there.
 struct DeviceVolume {
     float extinction[3];
     float anisotropy;           // -1 back the way the light came, 0 evenly, 1 straight on
     float albedo[3];
     float pad0;
     float emission[3];
-    float pad1;
+    float peak;                 // the grid's largest value
+    unsigned long long grid;    // a 3D texture of densities, or 0 for an even fog
+    float rows[12];             // scene to the grid's unit cube, three rows of (x, y, z, offset)
 };
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once

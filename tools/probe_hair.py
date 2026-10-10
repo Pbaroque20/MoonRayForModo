@@ -71,6 +71,14 @@ try:
     lx.eval('moonray.object.hair 1')
     unplaced = collected()
     result['no_scalp'] = [[len(e['counts']) for e in unplaced[0]], unplaced[1]]
+    # Hair as it is when it is first switched on, with nothing else set: how many strands a guide grows, how thick each
+    # is and how wide the first cluster is across, to see that its strands stand apart.
+    first = unplaced[0][0]
+    per = lx.eval('moonray.object.hair_count ?')
+    roots = [first['vertices'][sum(first['counts'][:i])] for i in range(min(per, len(first['counts'])))]
+    result['as_switched_on'] = {'count': per, 'width_setting': lx.eval('moonray.object.hair_width ?'), 'clump': lx.eval('moonray.object.hair_clump ?'),
+                                'strand_radius_mm': [round(1000 * v, 3) for v in ((first.get('radii') or [first.get('radius')])[0], (first.get('radii') or [first.get('radius')])[-1])],
+                                'cluster_across_mm': round(1000 * max(math.dist(a, b) for a in roots for b in roots), 1)}
     # The scalp is chosen from the popup: none, then the scene's other meshes by name.
     from lxserv import moonray_commands
     choices = moonray_commands.scalp_choices()

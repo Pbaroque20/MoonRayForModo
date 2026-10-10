@@ -219,7 +219,16 @@ def collect(scene,warnings,controls):
                 if splines:strands=sampled(mesh,polygons,shape['samples'],id_tag,item,strands)
             except (LookupError,RuntimeError,TypeError,AttributeError) as exc:
                 raise ValueError('Cannot read evaluated curves for '+item.name+': '+str(exc))
-            if shape.get('hair'):strands=grown(scene,item,strands,shape['hair'],warnings)
+            if shape.get('hair'):
+                # A cluster left at no width is sized from its guides, a sixth of their length across; and no strand is so
+                # thick that the strands of a cluster run into one another, which is what made a lock look like one rod.
+                growing=dict(shape['hair'])
+                if growing['width']<=0:
+                    lengths=[sum(math.dist(a,b) for a,b in zip(points,points[1:])) for points,_,_ in strands if len(points)>1]
+                    growing['width']=1000.0*(sum(lengths)/len(lengths) if lengths else 0.06)/6.0
+                strands=grown(scene,item,strands,growing,warnings)
+                apart=growing['width']/1000.0/(12.0*math.sqrt(max(1,growing['count'])))
+                shape=dict(shape,root=min(shape['root'],apart),tip=min(shape['tip'],apart))
             made=batches(item.id,item.name,strands,shape,settings.get('material',''),world_matrix(item))
             from . import primitive_attributes
             carried=primitive_attributes.read(item)

@@ -35,6 +35,7 @@ private:
     Renderer& renderer;
     std::unordered_map<uint64_t, CachedMesh> meshes;
     std::unordered_map<uint64_t, CachedMesh> textures;  // the same bookkeeping, for images
+    std::unordered_map<uint64_t, CachedMesh> grids;     // and for the grids of densities fogs have
     // The environment is rebuilt only when its part of the scene changes; its image is kept
     // decoded because an intensity or rotation edit reuses it.
     uint64_t environmentHash = 0;

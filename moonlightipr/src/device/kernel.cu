@@ -50,19 +50,42 @@ ML_INLINE void traceRadiance(float3 origin, float3 direction, Hit& hit, float di
 // It returns what is left of the light: nothing behind a surface, and behind fog what the fog lets through. The any-hit
 // test adds up, in the other six payload words, the fog crossed: the distance to each edge it leaves less the distance
 // to each it enters, times how much that fog stops, and how much the fogs entered and not left stop.
+// How thick a fog is at a point: 1 all through an even one, the grid's value in one that has a grid.
+ML_INLINE float fogDensity(const DeviceVolume& fog, float3 p) {
+    if (!fog.grid) return 1.0f;
+    return tex3D<float>(fog.grid, dot(vec(fog.rows), p) + fog.rows[3], dot(vec(fog.rows + 4), p) + fog.rows[7], dot(vec(fog.rows + 8), p) + fog.rows[11]);
+}
+
 ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float distance = 1e16f) {
+    // A fog with a grid is not the same all through, so the any-hit test only notes where the ray goes into it and
+    // comes out, and which fog it is; what it stops is added up along that stretch below.
     unsigned unoccluded = 0, stream = seed, d0 = 0, d1 = 0, d2 = 0, e0 = 0, e1 = 0, e2 = 0;
+    unsigned entered = __float_as_uint(0.0f), left = __float_as_uint(1e30f), gridded = 0;
     rnd(seed);
     optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(255),
                (params.presence ? OPTIX_RAY_FLAG_NONE : OPTIX_RAY_FLAG_DISABLE_ANYHIT)
                | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
-               0, 1, 1, unoccluded, stream, d0, d1, d2, e0, e1, e2);
+               0, 1, 1, unoccluded, stream, d0, d1, d2, e0, e1, e2, entered, left, gridded);
     if (!unoccluded) return vec(0.0f);
-    if (!(d0 | d1 | d2 | e0 | e1 | e2)) return vec(1.0f);
+    float3 through = vec(1.0f);
+    if (gridded) {
+        const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[gridded - 1];
+        const float from = fmaxf(0.0f, __uint_as_float(entered)), to = fminf(__uint_as_float(left), fminf(distance, 1e12f));
+        if (to > from) {
+            // Twenty-four steps along the stretch, each begun at a different place from ray to ray.
+            const int steps = 24;
+            const float step = (to - from) / steps;
+            float thick = 0.0f, at = from + step * rnd(seed);
+            for (int i = 0; i < steps; ++i, at += step) thick += fogDensity(fog, origin + direction * at);
+            thick *= step;
+            through = make_float3(expf(-thick * fog.extinction[0]), expf(-thick * fog.extinction[1]), expf(-thick * fog.extinction[2]));
+        }
+    }
+    if (!(d0 | d1 | d2 | e0 | e1 | e2)) return through;
     // A fog entered and never left is one the light itself is in: it is crossed from its edge to the ray's end.
     const float3 inside = make_float3(fmaxf(0.0f, __uint_as_float(e0)), fmaxf(0.0f, __uint_as_float(e1)), fmaxf(0.0f, __uint_as_float(e2)));
     const float3 depth = make_float3(__uint_as_float(d0), __uint_as_float(d1), __uint_as_float(d2)) + inside * fminf(distance, 1e12f);
-    return make_float3(expf(-fmaxf(0.0f, depth.x)), expf(-fmaxf(0.0f, depth.y)), expf(-fmaxf(0.0f, depth.z)));
+    return through * make_float3(expf(-fmaxf(0.0f, depth.x)), expf(-fmaxf(0.0f, depth.y)), expf(-fmaxf(0.0f, depth.z)));
 }
 
 // Moves a ray origin off the surface, towards the side the ray leaves from.
@@ -1262,6 +1285,26 @@ extern "C" __global__ void __raygen__moonlightipr() {
         if (medium >= 0 && !probing) {
             // In fog: how far the light gets before the fog stops it, drawn for one colour chosen evenly.
             const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[medium];
+            if (fog.grid) {
+                // A fog as thick as its grid says: steps drawn as if it were everywhere as thick as at its thickest, each
+                // of which is a real stop only as often as the fog there is that thick (Woodcock tracking). The fog is
+                // taken to stop every colour alike, by the mean of what it stops.
+                const float stopsAt = (fog.extinction[0] + fog.extinction[1] + fog.extinction[2]) * (1.0f / 3.0f), most = stopsAt * fog.peak;
+                const float limit = hit.valid ? hit.t : 1e30f;
+                bool stopped = false;
+                float at = 0.0f;
+                for (int i = 0; most > 0.0f && i < 512; ++i) {
+                    at += -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / most;
+                    if (at >= limit) break;
+                    if (rnd(seed) * fog.peak < fogDensity(fog, origin + direction * at)) { stopped = true; break; }
+                }
+                if (stopped) {
+                    // As in an even fog, light scatters once: what the lamps send here goes on towards the viewer.
+                    if (bounces)
+                        radiance += fogLight(origin + direction * at, -direction, fog.anisotropy, throughput * bounceWeight * vec(fog.albedo), roughDepth >= 1, seed);
+                    break;
+                }
+            } else {
             const float3 stops = vec(fog.extinction);
             const float limit = hit.valid ? hit.t : 1e30f, choice = rnd(seed);
             const float chosen = choice < 1.0f / 3.0f ? stops.x : choice < 2.0f / 3.0f ? stops.y : stops.z;
@@ -1284,6 +1327,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             if (!(chance > 0.0f)) break;
             lightWeight *= left * (1.0f / chance);
             bounceWeight *= left * (1.0f / chance);
+            }
         }
         const bool emerged = probing;
         if (emerged) {
@@ -1842,6 +1886,14 @@ extern "C" __global__ void __anyhit__presence() {
         // looking for what is there to see takes the edge as its hit, to know it is in fog from there.
         if (!(optixGetRayFlags() & OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT)) return;
         const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[material.hair];
+        if (fog.grid) {
+            // Where the ray goes in and comes out, for the ray's sender to add up the fog between.
+            if (optixIsBackFaceHit()) optixSetPayload_9(__float_as_uint(optixGetRayTmax()));
+            else optixSetPayload_8(__float_as_uint(optixGetRayTmax()));
+            optixSetPayload_10(material.hair + 1);
+            optixIgnoreIntersection();
+            return;
+        }
         const float sign = optixIsBackFaceHit() ? 1.0f : -1.0f, crossed = sign * optixGetRayTmax();
         optixSetPayload_2(__float_as_uint(__uint_as_float(optixGetPayload_2()) + crossed * fog.extinction[0]));
         optixSetPayload_3(__float_as_uint(__uint_as_float(optixGetPayload_3()) + crossed * fog.extinction[1]));

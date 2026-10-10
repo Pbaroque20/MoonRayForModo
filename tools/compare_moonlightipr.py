@@ -272,6 +272,15 @@ def tuft():
             'matrix': fixture.placed(0, 0, 0), 'vertices': vertices, 'counts': counts, 'radius': .012}
 
 
+def vdb_ball(folder):
+    """A small VDB file made by the runtime's own grid tool: a ball of fog with a hole off to one side."""
+    path = folder / 'ball.vdb'
+    if not path.is_file():
+        runtime = native.find_runtime(os.environ['MOONRAY_MODO_RUNTIME'])
+        subprocess.run([str(runtime / 'modo_vdb_grid.exe'), '--ball', str(path)], env=native.environment(runtime), check=True)
+    return str(path)
+
+
 def scenes(folder):
     base = fixture.snapshot()
     base.update(lights=[], environments=[], render_settings={'sampling_mode': 0, 'max_depth': 4})
@@ -409,6 +418,16 @@ def scenes(folder):
                           'parameters': {'size': [2.6, 2.6, 2.6], 'modo_volume': 'Mist'}}])
            for name, values in (('thin', {'attenuation_intensity': .4}), ('thick', {'attenuation_intensity': 2.5}),
                                 ('coloured', {'attenuation_intensity': 1.2, 'attenuation_color': [1.0, .6, .3], 'diffuse_color': [.5, .7, 1.0], 'anisotropy': .4}))},
+        # A VDB volume: a ball of fog with a hole in it, thicker toward its middle, from a file MoonRay reads itself.
+        **{'vdb_' + name: dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               extra_geometry=[dict(values, kind='vdb', identity='smoke|vdb', source_item='smoke', name='Smoke', file=vdb_ball(folder),
+                                    matrix=fixture.placed(0, 1.5, 2.5))])
+           for name, values in (('thin', {'density': 1.0}), ('thick', {'density': 6.0, 'volume_color': [.6, .75, 1.0], 'anisotropy': .5}))},
+        # A cloud from a VDB file of one's own, named in MOONLIGHTIPR_TEST_VDB, standing over the scene.
+        **({'vdb_cloud': dict(base, lights=fixture.snapshot()['lights'], _environment=.6, extra_geometry=[
+               {'kind': 'vdb', 'identity': 'cloud|vdb', 'source_item': 'cloud', 'name': 'Cloud', 'file': os.environ['MOONLIGHTIPR_TEST_VDB'],
+                'density': 4.0, 'matrix': fixture.placed(0, 2.2, 1.5, .8)}])} if os.environ.get('MOONLIGHTIPR_TEST_VDB') else {}),
         'uniform_sky': dict(base, _environment=1.0),
         'gradient_sky': dict(base, environments=fixture.snapshot()['environments']),
         'sphere_light': dict(base, lights=[dict(lamp, kind='SphereLight', intensity=60.0, radius=.4, matrix=fixture.placed(-1, 5, 3))]),

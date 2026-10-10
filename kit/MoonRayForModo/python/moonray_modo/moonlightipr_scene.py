@@ -544,6 +544,11 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     clay = clay_material(scene.get('_clay_preview'))
     if clay:
         materials = {tag: clay for tag in materials}
+    # VDB volumes: each a unit cube over its grid, in a material that is the fog.
+    from .moonlightipr_volumes import fogs as vdb_fogs
+    fogs = vdb_fogs(scene, runtime, warnings)
+    for _, tag, fog in fogs:
+        materials[tag] = fog
     material_index = {tag: index for index, tag in enumerate(sorted(materials))}
     compiler = Compiler(runtime)
     records = [compiler.material(materials[tag], tag or 'base material') for tag in sorted(materials)]
@@ -551,6 +556,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     distant, local = lights(scene, warnings, environment, compiler)
     # Images first: the session reads them before the layers and lights that name them.
     parts += [struct.pack('<I', len(compiler.textures))] + list(compiler.textures)
+    parts += [struct.pack('<I', len(compiler.grids))] + list(compiler.grids)
     parts += [struct.pack('<I', len(records))] + records
     parts += [struct.pack('<I', len(compiler.layers))] + compiler.layers
     parts.append(struct.pack('<I%di' % len(compiler.tiles), len(compiler.tiles), *compiler.tiles))
@@ -560,7 +566,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     objects = scene.get('production', {}).get('objects', {})
 
     used, meshes, instances, order = set(), [], [], {}
-    for mesh in geometry.render_meshes(scene.get('meshes', [])):
+    for mesh in list(geometry.render_meshes(scene.get('meshes', []))) + [fog for fog, _, _ in fogs]:
         if not mesh['faces']:
             continue
         if mesh.get('subdivision'):
@@ -618,8 +624,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         placement = transform(entry.get('matrix') or IDENTITY)
         instances.append(struct.pack('<2Ii12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, *placement)
                          + (struct.pack('<12f', *transform(entry.get('matrix_close') or entry.get('matrix') or IDENTITY)) if motion else b''))
-    if any(entry.get('kind') != 'curves' for entry in scene.get('extra_geometry', [])):
-        warnings.append('MoonLightIPR does not show points or volumes.')
+    if any(entry.get('kind') not in ('curves', 'vdb') for entry in scene.get('extra_geometry', [])):
+        warnings.append('MoonLightIPR does not show points.')
     parts.append(struct.pack('<I', len(distant)))
     parts += [struct.pack('<7fI6fi4f', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local

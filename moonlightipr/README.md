@@ -31,7 +31,7 @@ build to an installed kit during development.
   material stacks from the Shader Tree, imported MaterialX graphs, MoonRay's own light
   items, curves and hair, subdivision surfaces, depth of field and motion blur.
 - It shades hair as MoonRay's hair material does, reads MoonRay's skin material, draws curves as
-  curves and draws an even fog in a MoonRay box or sphere shape. VDB volumes it does not draw.
+  curves, and draws fog: even fog in a MoonRay box or sphere, and VDB volumes from their files.
 - It produces beauty only: other buffers and Cryptomatte need MoonRay.
 - Agreement with MoonRay is measured, scene by scene, further down. It is close on
   lights and plain materials and looser on layered materials and glass.
@@ -291,7 +291,7 @@ Everything else is reported in the packer's warnings rather than dropped silentl
 the alpha of baked procedural layers, layers on channels the shader lacks (specular
 colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), light filters other than intensity, decay and colour ramp,
 moving lights during the shutter,
-VDB volumes, film offset and the render region. Orthographic cameras are refused.
+film offset and the render region. Orthographic cameras are refused.
 
 Added to what is translated since the table was written:
 
@@ -321,9 +321,16 @@ Added to what is translated since the table was written:
 - **Volumes**: a `BaseVolume` with constant values, on a MoonRay box or sphere shape that has
   no material, is an even fog: it dims and tints what is behind it, scatters the lights' light
   once (MoonRay's default) with its anisotropy, glows with its emission, and thins shadows.
-  Brightness 1.03 to 1.04, 80 to 89% of tiles within a tenth. Not drawn: VDB volumes, volumes
-  with ramps, a volume inside a shape that also has a surface material, and fog seen from a
-  camera inside it.
+  Brightness 1.03 to 1.04, 80 to 89% of tiles within a tenth. Not drawn: volumes with ramps, a
+  volume inside a shape that also has a surface material, and fog seen from a camera inside it.
+- **VDB volumes**: a Modo volume item with a VDB file, or a `VdbGeometry` item with a `VdbVolume`,
+  is fog as thick at each place as the file's density grid says. The runtime's `modo_vdb_grid`
+  reads the grid once into a plain block of at most 192 cells along an edge, which the session
+  holds as a 3D picture; density, colour and anisotropy are the item's. Light scatters in it once,
+  and it shadows and is shadowed. Against MoonRay: brightness 1.00 to 1.02, 79 to 92% of tiles
+  within a tenth. Not drawn: the emission grid's glow, motion from a velocity grid, and a second
+  VDB volume behind the first along one shadow ray.
+  ![A VDB cloud, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-vdb_cloud.jpg)
   ![Fog, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-fog_coloured.jpg)
 - **Pictures on lights**: sphere, disk, spot, cylinder and distant lights show their texture as
   rect lights did, each laid out as MoonRay lays it (91 to 95% of tiles within a tenth). A
@@ -443,7 +450,7 @@ recapture, which waits for release. Why it was classified so was not established
 
 ## Not done yet
 
-- VDB volumes, volumes with ramps, and fog seen from inside it.
+- Volumes with ramps, a VDB volume's emission, and fog seen from inside it.
 - Subsurface light found across the surface as well as down its normal.
 - The layer features listed above as reported; rod, barn door, cookie, VDB and combined
   light filters.
