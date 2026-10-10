@@ -140,7 +140,7 @@ def environment_section(scene, environment, warnings, runtime):
     return parts
 
 
-FILTER_DECAY, FILTER_RAMP = 0, 1
+FILTER_DECAY, FILTER_RAMP, FILTER_ROD, FILTER_BARN, FILTER_COOKIE = 0, 1, 2, 3, 4
 FILTER_NEAR, FILTER_FAR = 1, 2
 FILTER_DIRECTIONAL, FILTER_MIRROR, FILTER_PLACED = 1, 2, 4
 RAMP_SAMPLES = 256
@@ -165,20 +165,56 @@ def control_filters(settings, light, scene, warnings):
                             'begin': begin, 'end': end, 'intensity': 1.0, 'density': 1.0, 'positions': [0.0, 1.0],
                             'colors': [working_color(finite(settings.get('ramp_color0', [1, 1, 1]))),
                                        working_color(finite(settings.get('ramp_color1', [0, 0, 0])))], 'interpolations': [1, 1]})
-    shaping = [label for key, label in (('rod_enabled', 'rod'), ('barn_enabled', 'barn door'), ('cookie_file', 'cookie'), ('filter_vdb', 'VDB')) if settings.get(key)]
-    if shaping:
-        warnings.append('MoonLightIPR does not apply the %s filter%s on %s.' % (' and '.join(shaping), 's' if len(shaping) > 1 else '', name))
+    # The shaping filters, placed as light_filters.emit places them for MoonRay: with a locator, or with the light.
+    from .entities import rod_record, barn_record, cookie_record
+    located = settings.get('filter_locator')
+    transform = scene.get('scene_references', {}).get(located, {}).get('matrix') if located else light.get('matrix', IDENTITY)
+    if transform is not None:
+        if settings.get('rod_enabled'):
+            records.append(rod_record(transform, *(float(settings.get(key, default)) for key, default in (('rod_width', 1), ('rod_height', 1), ('rod_depth', 1), ('rod_radius', 0), ('rod_edge', .1))),
+                                      working_color(finite(settings.get('rod_color', [0, 0, 0]))), float(settings.get('rod_density', 1)), bool(settings.get('rod_invert'))))
+        if settings.get('barn_enabled'):
+            records.append(barn_record(transform if located else None, {side: float(settings.get('barn_' + side, 0)) for side in ('left', 'bottom', 'right', 'top')},
+                                       1.0, 1.0, 0.0, float(settings.get('barn_edge', .1)), {side: 1.0 for side in ('left', 'bottom', 'right', 'top')},
+                                       30.0, 0.0, [1.0, 1.0, 1.0], 1.0, False, False, False))
+        if settings.get('cookie_file'):
+            records.append(cookie_record(transform, settings['cookie_file'], float(settings.get('cookie_focal', 30)), float(settings.get('cookie_aperture', 24)), 1.0,
+                                         float(settings.get('cookie_density', 1)), bool(settings.get('cookie_invert')), 0, False))
+    if settings.get('filter_vdb'):
+        warnings.append('MoonLightIPR does not apply the VDB filter on %s.' % name)
     return records
 
 
-def packed_filters(records, compiler):
+def packed_filters(records, compiler, light_matrix=None, warnings=None):
     """Decay and ramp filters as the session reads them; a ramp's colours go into a small image."""
     from .entities import ramp_eval
     parts = []
     for record in records:
         if record['kind'] == 'decay':
-            parts.append(struct.pack('<2I4f12fi', FILTER_DECAY, (FILTER_NEAR if record['near'] else 0) | (FILTER_FAR if record['far'] else 0),
-                                     *record['distances'], *([0.0] * 12), -1))
+            parts.append(struct.pack('<2I4f12fi12f', FILTER_DECAY, (FILTER_NEAR if record['near'] else 0) | (FILTER_FAR if record['far'] else 0),
+                                     *record['distances'], *([0.0] * 12), -1, *([0.0] * 12)))
+        elif record['kind'] == 'rod':
+            parts.append(struct.pack('<2I4f12fi12f', FILTER_ROD, 1 if record['invert'] else 0, *record['corner'], record['radius'],
+                                     *(v for row in record['rows'] for v in row), -1,
+                                     record['edge'], record['density'], *record['color'], *([0.0] * 7)))
+        elif record['kind'] == 'barn':
+            from .entities import barn_rows
+            rows = barn_rows(record, light_matrix or IDENTITY)
+            parts.append(struct.pack('<2I4f12fi12f', FILTER_BARN, (1 if record['invert'] else 0) | (2 if record['orthographic'] else 0) | (4 if record['physical'] else 0),
+                                     *record['low'], *record['high'], *(v for row in rows for v in row), -1,
+                                     record['radius'], *record['edges'], record['focal'], *record['color'], record['density'], 0.0, 0.0))
+        elif record['kind'] == 'cookie':
+            import subprocess
+            try:
+                picture = compiler.texture({'path': record['texture'], 'srgb': False, 'color_space': 'raw', 'repeat': False})
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                if warnings is not None:
+                    warnings.append('MoonLightIPR leaves out a cookie whose picture it cannot read (%s).' % exc)
+                continue
+            if record['front'] is not None and warnings is not None:
+                warnings.append('MoonLightIPR throws an orthographic cookie behind its projector as well as in front.')
+            parts.append(struct.pack('<2I4f12fi12f', FILTER_COOKIE, (1 if record['invert'] else 0) | (2 if record['white'] else 0) | (4 if record['edgeless'] else 0),
+                                     0.0, 0.0, 0.0, 0.0, *(v for row in record['rows'] for v in row), picture, record['density'], *([0.0] * 11)))
         elif record['kind'] == 'ramp':
             # The ramp over its own 0 to 1, which the session stretches from begin to end.
             steps = [i / (RAMP_SAMPLES - 1) for i in range(RAMP_SAMPLES)]
@@ -187,8 +223,8 @@ def packed_filters(records, compiler):
             rows = record['rows'] or [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
             flags = ((FILTER_DIRECTIONAL if record['directional'] else 0) | (FILTER_MIRROR if record['mirror'] else 0)
                      | (FILTER_PLACED if record['rows'] else 0))
-            parts.append(struct.pack('<2I4f12fi', FILTER_RAMP, flags, record['begin'], record['end'], record['intensity'], record['density'],
-                                     *(v for row in rows for v in row), texture))
+            parts.append(struct.pack('<2I4f12fi12f', FILTER_RAMP, flags, record['begin'], record['end'], record['intensity'], record['density'],
+                                     *(v for row in rows for v in row), texture, *([0.0] * 12)))
     return struct.pack('<I', len(parts)) + b''.join(parts)
 
 
@@ -259,7 +295,7 @@ def lights(scene, warnings, environment=0.0, compiler=None):
         local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
             + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture)
-            + (packed_filters(filters, compiler) if compiler is not None else struct.pack('<I', 0)))
+            + (packed_filters(filters, compiler, matrix, warnings) if compiler is not None else struct.pack('<I', 0)))
     return distant, local
 
 

@@ -501,6 +501,68 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
             tint = tint * value;
             continue;
         }
+        if (filter.type == FILTER_ROD || filter.type == FILTER_BARN || filter.type == FILTER_COOKIE) {
+            const float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
+                                             dot(vec(filter.rows + 8), p) + filter.rows[11]);
+            if (filter.type == FILTER_ROD) {
+                // A box with rounded corners: inside it the light takes the rod's colour, and fades back over its edge.
+                const float3 q = make_float3(fabsf(local.x) - filter.a[0], fabsf(local.y) - filter.a[1], fabsf(local.z) - filter.a[2]);
+                const float r = length(make_float3(fmaxf(q.x, 0.0f), fmaxf(q.y, 0.0f), fmaxf(q.z, 0.0f))) + fminf(fmaxf(q.x, fmaxf(q.y, q.z)), 0.0f) - filter.a[3];
+                float scale = r <= 0.0f ? 0.0f : r < filter.b[0] ? r / filter.b[0] : 1.0f;
+                if (filter.flags & FILTER_INVERT) scale = 1.0f - scale;
+                scale = 1.0f + (scale - 1.0f) * filter.b[1];
+                const float3 colour = vec(filter.b + 2);
+                tint = tint * (colour + (vec(1.0f) - colour) * scale);
+                continue;
+            }
+            if (filter.type == FILTER_COOKIE) {
+                // A picture thrown from a projector: local is the point's place across it, up it, and what divides both.
+                const float outside = (filter.flags & FILTER_WHITE) ? 1.0f : 0.0f;
+                if (!(local.z > 0.0f)) {
+                    tint = tint * outside;
+                    continue;
+                }
+                const float s = local.x / local.z, t = local.y / local.z;
+                if ((s < 0.0f || s > 1.0f || t < 0.0f || t > 1.0f) && !(filter.flags & FILTER_EDGELESS)) {
+                    tint = tint * outside;
+                    continue;
+                }
+                // MoonRay reads a cookie's picture from its top row down, as it does one laid round a sphere.
+                const float4 texel = tex2D<float4>(filter.texture, s, t);
+                float3 value = vec(1.0f - filter.b[0]) + make_float3(texel.x, texel.y, texel.z) * filter.b[0];
+                if (filter.flags & FILTER_INVERT) value = vec(1.0f) - value;
+                tint = tint * value;
+                continue;
+            }
+            // Barn doors: an opening in front of a projector, seen from the point; the light is what comes through.
+            if (!(local.z > 0.0f)) {
+                tint = vec(0.0f);
+                continue;
+            }
+            float3 at = local;
+            if (filter.flags & FILTER_PHYSICAL) {
+                // Where the ray to the light crosses the plane the doors stand in.
+                const float3 way = make_float3(dot(vec(filter.rows), wi), dot(vec(filter.rows + 4), wi), dot(vec(filter.rows + 8), wi));
+                if (fabsf(way.z) > 1e-9f) at = at + way * ((filter.b[5] - at.z) / way.z);
+            }
+            const float over = (filter.flags & FILTER_ORTHO) ? 1.0f : 1.0f / at.z;
+            const float x = at.x * over, y = -at.y * over;
+            const float dx = x - clamp(x, filter.a[0], filter.a[2]), dy = y - clamp(y, filter.a[1], filter.a[3]);
+            const float sx = dx * filter.b[dx < 0.0f ? 1 : 3], sy = dy * filter.b[dy < 0.0f ? 2 : 4];
+            const float r = sqrtf(dx * dx + dy * dy), scaled = sqrtf(sx * sx + sy * sy);
+            const float r0 = filter.b[0], r1 = scaled > 0.0f ? r / scaled : 0.0f;
+            float scale = 0.0f;
+            if (r <= r0) scale = 1.0f;
+            else if (r < r1) {
+                // The edge falls off as a blurred step does: the bell curve's running total, stretched to reach 0 and 1.
+                const float low = 0.5f * (1.0f + erff(-1.0f / sqrtf(0.2f)));
+                const float value = 0.5f * (1.0f + erff((1.0f - 2.0f * (r - r0) / (r1 - r0)) / sqrtf(0.2f)));
+                scale = value * (1.0f + 2.0f * low) - low;
+            }
+            if (filter.flags & FILTER_INVERT) scale = 1.0f - scale;
+            tint = tint * (vec(1.0f) + (vec(filter.b + 6) * scale - vec(1.0f)) * filter.b[9]);
+            continue;
+        }
         // A colour by distance: from the light or the filter, or along the way either faces.
         float along = distance;
         if (filter.flags & FILTER_PLACED) {

@@ -495,9 +495,106 @@ def filter_records(entities, names, owner, warnings):
                             'begin': begin, 'end': end, 'intensity': float(value(entity, 'intensity')),
                             'density': min(1.0, max(0.0, float(value(entity, 'density')))),
                             'positions': stops, 'colors': colors, 'interpolations': modes})
+        elif kind == 'RodLightFilter':
+            if entity['parameters'].get('ramp_in_distances'):
+                warnings.append('MoonLightIPR fades %s evenly over its edge, not by its own ramp.' % entity['name'])
+            records.append(rod_record(entity.get('matrix', IDENTITY), *(float(value(entity, key)) for key in ('width', 'height', 'depth', 'radius', 'edge')),
+                                      [c * float(value(entity, 'intensity')) for c in working_color(value(entity, 'color'))],
+                                      float(value(entity, 'density')), bool(value(entity, 'invert'))))
+        elif kind == 'BarnDoorLightFilter':
+            if int(value(entity, 'pre_barn_mode')) != 2:
+                warnings.append('MoonLightIPR leaves out what %s does to light before it reaches the doors.' % entity['name'])
+            records.append(barn_record(None if value(entity, 'use_light_xform') else entity.get('matrix', IDENTITY),
+                                       {side: float(value(entity, 'size_' + side)) for side in ('left', 'bottom', 'right', 'top')},
+                                       float(value(entity, 'projector_width')), float(value(entity, 'projector_height')),
+                                       float(value(entity, 'radius')), float(value(entity, 'edge')),
+                                       {side: float(value(entity, 'edge_scale_' + side)) for side in ('left', 'bottom', 'right', 'top')},
+                                       float(value(entity, 'projector_focal_distance')), float(value(entity, 'rotation')),
+                                       working_color(value(entity, 'color')), float(value(entity, 'density')), bool(value(entity, 'invert')),
+                                       int(value(entity, 'projector_type')) == 1, int(value(entity, 'mode')) == 1))
+        elif kind == 'CookieLightFilter_v2':
+            if entity['parameters'].get('projector'):
+                warnings.append('MoonLightIPR does not apply %s, which is thrown from a camera item (%s on %s).' % (kind, entity['name'], owner))
+                continue
+            if any(float(value(entity, key)) > 0 for key in ('blur_near_value', 'blur_mid_value', 'blur_far_value')):
+                warnings.append('MoonLightIPR shows %s without its blur.' % entity['name'])
+            if not value(entity, 'texture'):
+                continue
+            records.append(cookie_record(entity.get('matrix', IDENTITY), str(value(entity, 'texture')), float(value(entity, 'projector_focal')),
+                                         float(value(entity, 'projector_film_width_aperture')), float(value(entity, 'projector_pixel_aspect_ratio')),
+                                         float(value(entity, 'density')), bool(value(entity, 'invert')), int(value(entity, 'outside_projection')),
+                                         int(value(entity, 'projector_type')) == 1))
         else:
             warnings.append('MoonLightIPR does not apply %s (%s on %s).' % (kind, entity['name'], owner))
     return records
+
+
+def rod_record(matrix, width, height, depth, radius, edge, color, density, invert):
+    """MoonRay's RodLightFilter: a box with rounded corners, in whose own space a point's distance from it is taken."""
+    return {'kind': 'rod', 'rows': inverse_rows(matrix), 'corner': [abs(width) / 2, abs(height) / 2, abs(depth) / 2], 'radius': radius, 'edge': max(0.0, edge),
+            'color': [float(c) for c in color], 'density': min(1.0, max(0.0, density)), 'invert': invert}
+
+
+# MoonRay turns a barn door half way round its x axis, as it does its lights: the doors then face the way the light shines.
+TURNED = [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+
+def barn_record(matrix, sizes, width, height, radius, edge, edge_scales, focal, rotation, color, density, invert, orthographic, physical):
+    """MoonRay's BarnDoorLightFilter: an opening with rounded corners in front of a projector. matrix is the filter's
+    own place, or None where it goes with the light, whose place is then put in when the light is packed."""
+    wide, high = max(width, 1e-5) + sizes['left'] + sizes['right'], max(height, 1e-5) + sizes['bottom'] + sizes['top']
+    least = min(wide, high)
+    corner, soft = radius * least / 2, edge * least
+    centre = [(sizes['right'] - sizes['left']) / 2, (sizes['top'] - sizes['bottom']) / 2]
+    half = [(wide - 2 * corner) / 2, (high - 2 * corner) / 2]
+    return {'kind': 'barn', 'matrix': matrix, 'low': [centre[0] - half[0], centre[1] - half[1]], 'high': [centre[0] + half[0], centre[1] + half[1]],
+            'radius': corner, 'edges': [1 / max(1e-9, corner + soft * edge_scales[side]) for side in ('left', 'bottom', 'right', 'top')],
+            'focal': max(focal, .1), 'rotation': rotation, 'color': [float(c) for c in color], 'density': min(1.0, max(0.0, density)),
+            'invert': invert, 'orthographic': orthographic, 'physical': physical}
+
+
+def barn_rows(record, light_matrix):
+    """Rows that take a point of the scene into a barn door's projector space, which looks along +z."""
+    import math
+    from .coordinates import inverse
+    placed = record['matrix']
+    if placed is None:
+        # With the light: where the light stands and the way it faces, without its size.
+        placed = list(light_matrix)
+        for axis in range(3):
+            length = math.sqrt(sum(v * v for v in placed[axis * 4:axis * 4 + 3])) or 1.0
+            placed[axis * 4:axis * 4 + 3] = [v / length for v in placed[axis * 4:axis * 4 + 3]]
+    # The half turn first, then the place; and the doors' own turn about the way they face, before either.
+    angle = math.radians(record['rotation'])
+    twist = [math.cos(angle), math.sin(angle), 0.0, 0.0, -math.sin(angle), math.cos(angle), 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    def product(a, b):
+        return [sum(a[row * 4 + k] * b[k * 4 + column] for k in range(4)) for row in range(4) for column in range(4)]
+    whole = product(TURNED, placed)
+    inv = inverse(whole)
+    rows = [[inv[0 * 4 + i], inv[1 * 4 + i], inv[2 * 4 + i], inv[12 + i]] for i in range(3)]
+    # MoonRay turns the point about z by the doors' rotation before it is projected.
+    turned = [[twist[0] * a + twist[4] * b for a, b in zip(rows[0], rows[1])], [twist[1] * a + twist[5] * b for a, b in zip(rows[0], rows[1])], rows[2]]
+    return turned
+
+
+def cookie_record(matrix, texture, focal, film, aspect, density, invert, outside, orthographic):
+    """MoonRay's CookieLightFilter_v2 thrown from its own place: rows give a point's place across the picture, up
+    it, and what both are divided by. The projector looks along its own -z."""
+    rows = inverse_rows(matrix)
+    focal, film, aspect = max(focal, .1), max(film, .01), aspect or 1.0
+    if orthographic:
+        # Across four half-widths of film, whatever the distance; in front of the projector is where -z is above nothing.
+        across, up = 1 / (2 * film), aspect / (2 * film)
+        made = [[across * v for v in rows[0]], [up * v for v in rows[1]], [0.0, 0.0, 0.0, 1.0]]
+        made[0][3] += .5
+        made[1][3] += .5
+        front = [-v for v in rows[2]]
+    else:
+        scale = focal / film
+        made = [[scale * a - .5 * c for a, c in zip(rows[0], rows[2])], [scale * aspect * b - .5 * c for b, c in zip(rows[1], rows[2])], [-v for v in rows[2]]]
+        front = None
+    return {'kind': 'cookie', 'rows': made, 'front': front, 'texture': texture, 'density': min(1.0, max(0.0, density)), 'invert': invert,
+            'white': outside == 1, 'edgeless': outside == 2}
 
 
 # ---- Mesh lights -------------------------------------------------------------------------------

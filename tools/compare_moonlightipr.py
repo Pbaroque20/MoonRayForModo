@@ -234,6 +234,20 @@ def textured(folder):
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
 
+def quarters_image(folder):
+    """A picture whose four quarters are told apart by colour, and its top from its bottom by a white bar near the top:
+    for telling which way round and which way up a projector throws it."""
+    width, height = 256, 256
+    def pixel(u, v):     # v runs upwards
+        if .8 < v < .9 and .2 < u < .8:
+            return [1.0, 1.0, 1.0]
+        return [(.1, .1, .9), (.9, .8, .1)][u > .5] if v < .5 else [(.9, .15, .1), (.1, .8, .2)][u > .5]
+    path = folder / 'quarters.pfm'
+    rows = [struct.pack('<%df' % (width * 3), *[c for x in range(width) for c in pixel((x + .5) / width, (y + .5) / height)]) for y in range(height)]
+    path.write_bytes(('PF\n%d %d\n-1.0\n' % (width, height)).encode() + b''.join(rows))
+    return str(path)
+
+
 def sky_image(folder):
     """A latitude-longitude sky whose sides are told apart by colour, with one bright patch."""
     width, height = 512, 256
@@ -320,6 +334,24 @@ def scenes(folder):
              'parameters': {'intensity': 60.0, 'radius': .3, 'light_filters': ['Decay', 'Tint']}},
             {'identity': 'l_fill', 'name': 'Fill', 'class': 'RectLight', 'matrix': aimed([3, 5, 3], [1, .5, 0]),
              'parameters': {'intensity': 60.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Ramp']}}]),
+        # The filters that shape a light: a rod that reddens what stands in it, barn doors that cut the light to an opening,
+        # and a picture thrown from where the light is.
+        'filter_rod': dict(base, _environment=.15, entities=[
+            {'identity': 'f_rod', 'name': 'Rod', 'class': 'RodLightFilter', 'matrix': fixture.placed(.9, .6, .4),
+             'parameters': {'width': 1.6, 'height': 2.2, 'depth': 1.8, 'radius': .2, 'edge': .6, 'color': [1.0, .15, .1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 90.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Rod']}}]),
+        'filter_barn': dict(base, _environment=.15, entities=[
+            {'identity': 'f_barn', 'name': 'Doors', 'class': 'BarnDoorLightFilter', 'matrix': fixture.placed(0, 0, 0),
+             'parameters': {'projector_width': .5, 'projector_height': .3, 'edge': .25, 'radius': .3, 'size_left': .1, 'rotation': 20.0}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 120.0, 'width': .4, 'height': .4, 'light_filters': ['Doors']}}]),
+        # MoonRay draws a cookie rightly in its scalar mode only, in this build.
+        'filter_cookie': dict(base, _environment=.15, _exec_mode='scalar', entities=[
+            {'identity': 'f_cookie', 'name': 'Slide', 'class': 'CookieLightFilter_v2', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'texture': quarters_image(folder), 'projector_focal': 40.0, 'projector_film_width_aperture': 24.0}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 160.0, 'width': .4, 'height': .4, 'light_filters': ['Slide']}}]),
         # MoonRay's own cameras, standing where the scene's camera is, with a light and a sky to see by.
         **{name: dict(base, _environment=0.5, entities=[
             {'identity': 'l_key', 'name': 'Key', 'class': 'SphereLight', 'matrix': fixture.placed(-3, 4, 2), 'parameters': {'intensity': 60.0, 'radius': .3}},

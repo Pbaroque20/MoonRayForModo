@@ -14,6 +14,17 @@ MOONLIGHTIPR_STATUS = 'MoonLightIPR (GPU preview, approximate)'
 MOONLIGHTIPR_SAMPLES = 256
 
 
+def scalar_only(snapshot):
+    """What in a scene this build of MoonRay draws rightly only in its scalar mode, in words, or None. A VDB volume
+    that gives off light stops its vector and GPU modes; a cookie filter leaves pixels that are not numbers in them."""
+    if any(entry.get('kind')=='vdb' and entry.get('emission_grid') and float(entry.get('emission',1))>0 for entry in snapshot.get('extra_geometry',[])):
+        return 'A VDB volume with an emission grid'
+    lights=(snapshot.get('production') or {}).get('lights',{})
+    if any(isinstance(held,dict) and held.get('cookie_file') for held in lights.values())             or any(str(entity.get('class','')).startswith('CookieLightFilter') for entity in snapshot.get('entities',[])):
+        return 'A light with a cookie filter'
+    return None
+
+
 def deep_beside(path):
     """Where the deep EXR of a render goes: beside it, under its name."""
     path=Path(path);return path.with_name(path.stem+'.deep.exr')
@@ -245,11 +256,11 @@ class Renderer(QtCore.QObject):
             self.cpu_fallback=False
         if self.cpu_fallback and mode in ('auto','xpu'):
             mode='vectorized'
-        # A VDB volume that gives off light stops this build of MoonRay in its vector and GPU modes; scalar draws it.
-        if mode!='scalar' and any(entry.get('kind')=='vdb' and entry.get('emission_grid') and float(entry.get('emission',1))>0
-                                  for entry in request['snapshot'].get('extra_geometry',[])):
+        # Two things this build of MoonRay draws rightly in its scalar mode only.
+        slow=scalar_only(request['snapshot'])
+        if mode!='scalar' and slow:
             mode='scalar'
-            request['snapshot'].setdefault('warnings',[]).append("A VDB volume with an emission grid is rendered in MoonRay's scalar mode, which is slower: its vector and GPU modes stop on such a volume in this build.")
+            request['snapshot'].setdefault('warnings',[]).append(slow+" is rendered in MoonRay's scalar mode, which is slower: its vector and GPU modes do not draw it rightly in this build.")
         self.backend_status={'auto':'Auto requested (XPU → Vector → Scalar)','xpu':'XPU requested','vectorized':'Vector requested','vector':'Vector requested','scalar':'Scalar requested'}[mode]
         self.buffer_key = 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')

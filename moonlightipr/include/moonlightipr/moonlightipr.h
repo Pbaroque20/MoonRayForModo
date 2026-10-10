@@ -226,7 +226,7 @@ struct DistantLight {
 // DecayLightFilter and ColorRampLightFilter. Scale a light's radiance directly for a plain
 // intensity filter.
 struct LightFilter {
-    enum Kind : uint32_t { Decay = 0, Ramp = 1 };
+    enum Kind : uint32_t { Decay = 0, Ramp = 1, Rod = 2, BarnDoor = 3, Cookie = 4 };
     Kind kind = Decay;
     // Decay: 1 falls off near, 2 falls off far. Ramp: 1 measures along the light's direction
     // rather than from it, 2 mirrors behind the light, 4 measures in the filter's own space.
@@ -235,7 +235,9 @@ struct LightFilter {
     float values[4] = {0, 0, 0, 0};
     // Ramp with flag 4: world to the filter's space, three rows of (x, y, z, offset).
     float rows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
-    int32_t texture = -1;   // ramp: a 257 x 1 image of its colours from begin to end
+    int32_t texture = -1;   // ramp: a 257 x 1 image of its colours from begin to end. Cookie: its picture
+    // Rod, barn door and cookie: the rest of what they are, as shared.h says of DeviceFilter::b.
+    float more[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 };
 
 // A sphere, rectangle, disc, spot, cylinder, portal or mesh light, as MoonRay's lights of the

@@ -1185,6 +1185,8 @@ void Renderer::setLights(const Light* lights, size_t count) {
             filter.flags = in.flags;
             std::copy(in.values, in.values + 4, filter.a);
             std::copy(in.rows, in.rows + 12, filter.rows);
+            std::copy(in.more, in.more + 12, filter.b);
+            if (in.kind == LightFilter::Cookie) filter.texture = object(in.texture);
             if (in.kind == LightFilter::Ramp) {
                 if (!(in.values[1] > in.values[0])) throw std::runtime_error("MoonLightIPR ramp filter has no length");
                 filter.texture = object(in.texture);
