@@ -70,6 +70,7 @@ struct Mesh {
     Buffer positions, normals, indices, materialIds, uvs, accel, widths;
     bool curves = false;    // round curve segments: positions, widths and each segment's first point
     bool linear = false;    // those segments are straight, not cubic B-splines
+    bool ribbon = false;    // and they are lit as flat ribbons facing the ray
     OptixTraversableHandle handle = 0;
     uint32_t triangleCount = 0;
     uint32_t uvSetCount = 0;
@@ -81,6 +82,10 @@ struct Mesh {
     bool ownsMaterials = false;
     uint32_t maxMaterial = 0;
 };
+
+// OptiX's test of a ray against a curve is made for one set of build flags, so every set of curves is built with
+// these, whether or not it changes shape during the shutter.
+const unsigned CURVE_BUILD_FLAGS = OPTIX_BUILD_FLAG_ALLOW_UPDATE | OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
 
 struct SbtRecord {
     alignas(OPTIX_SBT_RECORD_ALIGNMENT) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
@@ -105,6 +110,9 @@ void scaleTo(float* v, float length) {
 struct Texture {
     cudaArray_t array = nullptr;
     cudaTextureObject_t object = 0;
+    // How bright the picture is, on a grid of at most 64 by 64, top row first: what a light that wears it is sampled by.
+    std::vector<float> brightness;
+    uint32_t gridWidth = 0, gridHeight = 0;
     ~Texture() {
         if (object) cudaDestroyTextureObject(object);
         if (array) cudaFreeArray(array);
@@ -183,6 +191,10 @@ DeviceMaterial toDevice(const Material& m) {
     d.absorptionDistance = m.thin ? 0.0f : std::max(m.absorptionDistance, 0.0f);
     d.abbe = std::max(m.abbe, 0.0f);
     d.specular = std::clamp(m.specularWeight, 0.0f, 1.0f);
+    for (int c = 0; c < 3; ++c) {
+        d.back[c] = std::clamp(m.diffuseTransmission[c], 0.0f, 1.0f);
+        d.frontKeep[c] = std::clamp(m.diffuseKept[c], 0.0f, 1.0f);
+    }
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
             | (m.beckmann ? MATERIAL_BECKMANN : 0);
     d.layerStart = m.layerStart;
@@ -209,7 +221,14 @@ DeviceHair toDeviceHair(const Material& m) {
     d.eta = std::max(m.ior, 1.0001f);
     d.saturation = m.hairSaturation;
     d.lobes = m.hairLobes & 15;
-    d.cylinder = m.hairFresnel != 0;
+    d.lobes |= m.hairGlint ? HAIR_GLINT : 0;
+    d.fresnel = std::min<uint32_t>(m.hairFresnel, 2);
+    // MoonRay: a cuticle of half a layer to a layer and a half; a glint's width from its roughness.
+    d.layers = 0.5f + std::clamp(m.hairCuticle, 0.0f, 1.0f);
+    d.glintWidth = std::max(0.125f * m.hairGlintRoughness * m.hairGlintRoughness, 1e-3f);
+    d.glintEccentricity = std::clamp(m.hairGlintEccentricity, 0.5f, 1.0f);
+    d.glintSaturation = m.hairGlintSaturation;
+    std::copy(m.hairTwists, m.hairTwists + 2, d.twists);
     return d;
 }
 
@@ -232,6 +251,7 @@ struct Renderer::Impl {
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
     Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, volumeTable, albedoTables, instanceInput, instanceAccel, accelTemp;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
+    Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
 
     OptixDenoiser denoiser = nullptr;
@@ -281,7 +301,7 @@ struct Renderer::Impl {
         // OptiX's own test of a ray against a curve; its options must be those the curves are built with.
         OptixBuiltinISOptions curveOptions = {};
         curveOptions.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE;
-        curveOptions.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+        curveOptions.buildFlags = CURVE_BUILD_FLAGS;
         curveOptions.curveEndcapFlags = OPTIX_CURVE_ENDCAP_ON;
         ML_CHECK(optixBuiltinISModuleGet(context, &moduleOptions, &pipelineOptions, &curveOptions, &curveModule));
         curveOptions.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR;
@@ -306,6 +326,8 @@ struct Renderer::Impl {
         descriptions[4].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
         descriptions[4].hitgroup.moduleCH = module;
         descriptions[4].hitgroup.entryFunctionNameCH = "__closesthit__curve";
+        descriptions[4].hitgroup.moduleAH = module;
+        descriptions[4].hitgroup.entryFunctionNameAH = "__anyhit__curve";
         descriptions[4].hitgroup.moduleIS = curveModule;
         descriptions[5] = descriptions[4];
         descriptions[5].hitgroup.moduleIS = linearModule;
@@ -373,14 +395,14 @@ struct Renderer::Impl {
             input.curveArray.widthStrideInBytes = sizeof(float);
             input.curveArray.indexBuffer = mesh.indices.ptr;
             input.curveArray.indexStrideInBytes = sizeof(uint32_t);
-            input.curveArray.flag = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+            input.curveArray.flag = OPTIX_GEOMETRY_FLAG_REQUIRE_SINGLE_ANYHIT_CALL;
             input.curveArray.endcapFlags = mesh.linear ? OPTIX_CURVE_ENDCAP_DEFAULT : OPTIX_CURVE_ENDCAP_ON;
         }
 
         OptixAccelBuildOptions options = {};
         if (!mesh.close.empty()) {
             // A mesh that changes shape is refitted for every sample, so it is not compacted.
-            options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_UPDATE | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+            options.buildFlags = mesh.curves ? CURVE_BUILD_FLAGS : OPTIX_BUILD_FLAG_ALLOW_UPDATE | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
             options.operation = refit ? OPTIX_BUILD_OPERATION_UPDATE : OPTIX_BUILD_OPERATION_BUILD;
             if (refit) {
                 accelTemp.reserve(mesh.updateBytes);
@@ -398,7 +420,7 @@ struct Renderer::Impl {
                 mesh.accel.ptr, sizes.outputSizeInBytes, &mesh.handle, nullptr, 0));
             return;
         }
-        options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+        options.buildFlags = mesh.curves ? CURVE_BUILD_FLAGS : OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
         options.operation = OPTIX_BUILD_OPERATION_BUILD;
         OptixAccelBufferSizes sizes = {};
         ML_CHECK(optixAccelComputeMemoryUsage(context, &options, &input, 1, &sizes));
@@ -434,7 +456,7 @@ struct Renderer::Impl {
                 entry.materialIds = mesh->materialIds.ptr;
                 entry.uvs = mesh->uvs.ptr;
                 entry.triangleCount = mesh->triangleCount;
-                entry.curves = mesh->curves ? (mesh->linear ? 2 : 1) : 0;
+                entry.curves = mesh->curves ? (mesh->linear ? 2 : 1) | (mesh->ribbon ? 4 : 0) : 0;
                 // A slot may only name a set this mesh has; the kernel does not check.
                 for (unsigned slot = 0; slot < UV_SLOTS; ++slot)
                     entry.uvSet[slot] = mesh->uvSlots[slot] >= 0 && uint32_t(mesh->uvSlots[slot]) < mesh->uvSetCount ? mesh->uvSlots[slot] : -1;
@@ -710,6 +732,12 @@ uint32_t Renderer::addCurves(const CurveDesc& desc) {
     auto mesh = std::make_unique<Mesh>();
     mesh->curves = true;
     mesh->linear = desc.linear;
+    mesh->ribbon = desc.ribbon;
+    if (desc.strands) mesh->normals.upload(desc.strands, desc.pointCount * 3 * sizeof(float));
+    if (desc.closePositions) {
+        mesh->open.assign(desc.positions, desc.positions + desc.pointCount * 3);
+        mesh->close.assign(desc.closePositions, desc.closePositions + desc.pointCount * 3);
+    }
     mesh->positions.upload(desc.positions, desc.pointCount * 3 * sizeof(float));
     mesh->widths.upload(desc.radii, desc.pointCount * sizeof(float));
     mesh->indices.upload(desc.segments, desc.segmentCount * sizeof(uint32_t));
@@ -780,6 +808,19 @@ uint32_t Renderer::addTexture(const TextureDesc& desc) {
     sampling.normalizedCoords = 1;
     sampling.sRGB = desc.srgb && !desc.floatData;
     ML_CHECK(cudaCreateTextureObject(&texture->object, &resource, &sampling, nullptr));
+    texture->gridWidth = std::min<uint32_t>(desc.width, 64);
+    texture->gridHeight = std::min<uint32_t>(desc.height, 64);
+    texture->brightness.assign(size_t(texture->gridWidth) * texture->gridHeight, 0.0f);
+    for (uint32_t y = 0; y < desc.height; ++y)
+        for (uint32_t x = 0; x < desc.width; ++x) {
+            const size_t i = (size_t(y) * desc.width + x) * 4;
+            float rgb[3];
+            for (int c = 0; c < 3; ++c)
+                rgb[c] = desc.floatData ? static_cast<const float*>(desc.pixels)[i + c] : static_cast<const unsigned char*>(desc.pixels)[i + c] / 255.0f;
+            const float value = 0.2126f * rgb[0] + 0.7152f * rgb[1] + 0.0722f * rgb[2];
+            if (std::isfinite(value) && value > 0.0f)
+                texture->brightness[size_t(uint64_t(y) * texture->gridHeight / desc.height) * texture->gridWidth + size_t(uint64_t(x) * texture->gridWidth / desc.width)] += value;
+        }
     auto slot = std::find(impl->textures.begin(), impl->textures.end(), nullptr);
     if (slot == impl->textures.end()) slot = impl->textures.emplace(slot);
     *slot = std::move(texture);
@@ -968,9 +1009,45 @@ void Renderer::setEnvironment(const Environment& environment) {
     impl->restart();
 }
 
+// Where a picture is bright, as the kernel draws points from it: its width and height, a running total over its
+// rows, then one over each row's columns. Every part of the picture keeps a little chance, so that none of the
+// light is lost; with round, only the circle inside the square counts, as for a disc.
+static void appendDistribution(const Texture& texture, bool round, std::vector<float>& out) {
+    const uint32_t width = texture.gridWidth, height = texture.gridHeight;
+    std::vector<float> cells(texture.brightness);
+    double total = 0.0;
+    for (float value : cells) total += value;
+    const float least = total > 0.0 ? float(0.05 * total / cells.size()) : 1.0f;
+    for (uint32_t y = 0; y < height; ++y)
+        for (uint32_t x = 0; x < width; ++x) {
+            const float dx = (x + 0.5f) / width - 0.5f, dy = (y + 0.5f) / height - 0.5f;
+            float& cell = cells[size_t(y) * width + x];
+            // A cell the circle only touches still counts, since part of it is lit.
+            const float margin = 0.75f / std::min(width, height);
+            cell = round && std::sqrt(dx * dx + dy * dy) > 0.5f + margin ? 0.0f : cell + least;
+        }
+    out.push_back(float(width));
+    out.push_back(float(height));
+    const size_t rows = out.size();
+    out.resize(out.size() + height + 1 + size_t(height) * (width + 1), 0.0f);
+    for (uint32_t y = 0; y < height; ++y) {
+        float* columns = &out[rows + height + 1 + size_t(y) * (width + 1)];
+        for (uint32_t x = 0; x < width; ++x) columns[x + 1] = columns[x] + cells[size_t(y) * width + x];
+        const float sum = columns[width];
+        out[rows + y + 1] = out[rows + y] + sum;
+        for (uint32_t x = 1; x <= width; ++x) columns[x] = sum > 0.0f ? columns[x] / sum : float(x) / width;
+        columns[width] = 1.0f;
+    }
+    const float sum = out[rows + height];
+    for (uint32_t y = 1; y <= height; ++y) out[rows + y] = sum > 0.0f ? out[rows + y] / sum : float(y) / height;
+    out[rows + height] = 1.0f;
+}
+
 void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
     std::vector<DeviceDistantLight> table(count);
     std::vector<int32_t> used;
+    std::vector<float> distributions;
+    std::vector<size_t> distributionStart(count, size_t(-1));
     for (size_t i = 0; i < count; ++i) {
         table[i] = DeviceDistantLight{};
         std::copy(lights[i].direction, lights[i].direction + 3, table[i].direction);
@@ -992,8 +1069,13 @@ void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
             scaleTo(table[i].v, 1.0f);
             // MoonRay's DistantLight: half the square root of a half, over the sine of half the disc's radius.
             table[i].uvScale = 0.5f * std::sqrt(0.5f) / sinHalf;
+            distributionStart[i] = distributions.size();
+            appendDistribution(*impl->textures[lights[i].texture], true, distributions);
         }
     }
+    impl->distantDistributions.upload(distributions);
+    for (size_t i = 0; i < count; ++i)
+        if (distributionStart[i] != size_t(-1)) table[i].distribution = impl->distantDistributions.ptr + distributionStart[i] * sizeof(float);
     impl->distantTextures = std::move(used);
     impl->distantLights.upload(table);
     impl->params.distantLights = impl->distantLights.ptr;
@@ -1008,6 +1090,8 @@ void Renderer::setLights(const Light* lights, size_t count) {
     std::vector<size_t> triangleStart(count, 0);
     std::vector<DeviceFilter> filters;
     std::vector<int32_t> used;
+    std::vector<float> distributions;
+    std::vector<size_t> distributionStart(count, size_t(-1));
     const auto object = [&](int32_t texture) {
         if (texture < 0 || size_t(texture) >= impl->textures.size() || !impl->textures[texture])
             throw std::runtime_error("MoonLightIPR light refers to a missing texture");
@@ -1022,6 +1106,11 @@ void Renderer::setLights(const Light* lights, size_t count) {
         out.type = light.kind;
         std::copy(light.radiance, light.radiance + 3, out.radiance);
         if (light.texture >= 0 && light.kind != Light::Portal && light.kind != Light::Mesh) out.texture = object(light.texture);
+        // The flat lights and the cylinder are sampled where their picture is bright; a sphere's and a spot's evenly.
+        if (out.texture && (light.kind == Light::Rect || light.kind == Light::Disk || light.kind == Light::Cylinder)) {
+            distributionStart[i] = distributions.size();
+            appendDistribution(*impl->textures[light.texture], light.kind == Light::Disk, distributions);
+        }
         out.filterStart = unsigned(filters.size());
         out.filterCount = unsigned(light.filterCount);
         for (size_t f = 0; f < light.filterCount; ++f) {
@@ -1114,6 +1203,9 @@ void Renderer::setLights(const Light* lights, size_t count) {
     }
     if (!table.empty()) table.back().cumulative = 1.0f;
     impl->params.lightPick = count > 4;
+    impl->lightDistributions.upload(distributions);
+    for (size_t i = 0; i < count; ++i)
+        if (distributionStart[i] != size_t(-1)) table[i].distribution = impl->lightDistributions.ptr + distributionStart[i] * sizeof(float);
     impl->lightTriangles.upload(triangles);
     for (size_t i = 0; i < count; ++i)
         if (table[i].type == LIGHT_MESH) table[i].triangles = impl->lightTriangles.ptr + triangleStart[i] * sizeof(float);

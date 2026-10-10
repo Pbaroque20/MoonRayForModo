@@ -16,10 +16,11 @@ LINEAR, BEZIER, BSPLINE = 0, 1, 2
 BUILT = {}
 
 
-def segments(entry):
+def segments(entry, points=None):
     """(control points, a radius for each, the first control point of every segment, a strand for every control point,
-    whether the segments are straight)."""
-    points, counts = entry['vertices'], entry['counts']
+    whether the segments are straight, how far along its strand every control point is). points stands in for the
+    entry's own, for where they are at another moment."""
+    points, counts = entry['vertices'] if points is None else points, entry['counts']
     radii = entry.get('radii') or [entry.get('radius', .001)]
     per_point = len(radii) == len(points)
     per_strand = len(radii) == len(counts) and not per_point
@@ -29,7 +30,7 @@ def segments(entry):
         kind = LINEAR
     if kind == BEZIER and not all(count >= 4 and (count - 1) % 3 == 0 for count in counts if count >= 2):
         kind = LINEAR
-    controls, widths, firsts, strands = [], [], [], []
+    controls, widths, firsts, strands, alongs = [], [], [], [], []
     start = 0
     for strand, count in enumerate(counts):
         here = points[start:start + count]
@@ -37,53 +38,64 @@ def segments(entry):
         start += count
         if count < 2:
             continue
-
-        def add(four, four_wide):
-            firsts.append(len(controls))
-            controls.extend(four)
-            widths.extend(max(0.0, w) for w in four_wide)
-            strands.extend([strand] * 4)
-        if kind == BSPLINE:
-            # The strand's own control points, shared between the segments that follow one another.
-            first = len(controls)
-            controls.extend(here)
-            widths.extend(max(0.0, w) for w in wide)
-            strands.extend([strand] * count)
-            firsts.extend(range(first, first + count - 3))
-        elif kind == BEZIER:
-            for i in range(0, count - 1, 3):
+        if kind == BEZIER:
+            pieces = (count - 1) // 3
+            for piece, i in enumerate(range(0, count - 1, 3)):
                 b, w = here[i:i + 4], wide[i:i + 4]
                 # The B-spline control points of the cubic these four Bezier points make.
                 mix = ((6, -7, 2, 0), (0, 2, -1, 0), (0, -1, 2, 0), (0, 2, -7, 6))
-                add([[sum(m * p[axis] for m, p in zip(row, b)) for axis in range(3)] for row in mix],
-                    [sum(m * v for m, v in zip(row, w)) for row in mix])
+                firsts.append(len(controls))
+                controls.extend([sum(m * p[axis] for m, p in zip(row, b)) for axis in range(3)] for row in mix)
+                widths.extend(max(0.0, sum(m * v for m, v in zip(row, w))) for row in mix)
+                strands.extend([strand] * 4)
+                # The piece runs between its two middle control points.
+                alongs.extend([piece / pieces, piece / pieces, (piece + 1) / pieces, (piece + 1) / pieces])
         else:
+            # The strand's own points, shared between the segments that follow one another.
             first = len(controls)
             controls.extend(here)
             widths.extend(max(0.0, w) for w in wide)
             strands.extend([strand] * count)
-            firsts.extend(range(first, first + count - 1))
-    return controls, widths, firsts, strands, kind == LINEAR
+            alongs.extend(i / (count - 1) for i in range(count))
+            firsts.extend(range(first, first + count - (3 if kind == BSPLINE else 1)))
+    return controls, widths, firsts, strands, kind == LINEAR, alongs
+
+
+def chance(strand):
+    """A number from 0 up to 1 that is a strand's own, for what differs from one hair to the next."""
+    return int.from_bytes(hashlib.blake2b(struct.pack('<I', strand), digest_size=4).digest(), 'little') / 4294967296.0
 
 
 def payload(entry, slot):
-    """One curve geometry for the session: (key, payload, has coordinates, straight). slot is the scene-wide coordinate slot
-    its strands' coordinates serve, or None; a strand has one coordinate, or one for each of its points."""
+    """One curve geometry for the session: (key, payload, has coordinates, straight, moves). slot is the scene-wide
+    coordinate slot its strands' coordinates serve, or None; a strand has one coordinate, or one for each of its
+    points. With motion blur the entry says where its points are when the shutter closes, under vertices_close."""
+    closing = entry.get('vertices_close')
+    if closing is not None and (closing is entry['vertices'] or closing == entry['vertices']):
+        closing = None
+    if closing is not None and len(closing) != len(entry['vertices']):
+        raise ValueError('Motion samples of %s must have equal point counts' % entry.get('name', ''))
     held = hashlib.sha1()
     for part in (array('d', itertools.chain.from_iterable(entry['vertices'])), array('q', entry['counts']),
                  array('d', entry.get('radii') or [entry.get('radius', .001)]), array('d', itertools.chain.from_iterable(entry.get('uvs') or [])),
-                 array('q', [int(entry.get('curve_type', LINEAR)), -1 if slot is None else slot])):
+                 array('q', [int(entry.get('curve_type', LINEAR)), -1 if slot is None else slot]),
+                 array('d', itertools.chain.from_iterable(closing or []))):
         held.update(part.tobytes())
         held.update(b'|')
     signature = held.digest()
     if signature in BUILT:
         return BUILT[signature]
-    controls, widths, firsts, strands, straight = segments(entry)
+    controls, widths, firsts, strands, straight, alongs = segments(entry)
     if not firsts:
         return None
     positions, radii, indices = array('f', itertools.chain.from_iterable(controls)), array('f', widths), array('I', firsts)
-    if not math.isfinite(sum(positions)) or not math.isfinite(sum(radii)):
+    moved = array('f', itertools.chain.from_iterable(segments(entry, closing)[0])) if closing is not None else array('f')
+    if not math.isfinite(sum(positions)) or not math.isfinite(sum(radii)) or not math.isfinite(sum(moved)):
         raise ValueError('Curves %s contain a non-finite number' % entry.get('name', ''))
+    # How far along its strand each control point is, and its strand's own number.
+    numbers = {}
+    strand_values = array('f', itertools.chain.from_iterable(
+        (along, numbers.setdefault(strand, chance(strand)), 0.0) for along, strand in zip(alongs, strands)))
     uvs = entry.get('uvs') or []
     coordinates = array('f')
     if uvs and slot is not None and len(uvs) == len(entry['counts']):
@@ -97,9 +109,11 @@ def payload(entry, slot):
         coordinates = array('f', itertools.chain.from_iterable(first[strand] for strand in strands))
     if coordinates and not math.isfinite(sum(coordinates)):
         raise ValueError('Curves %s have invalid texture coordinates' % entry.get('name', ''))
-    data = struct.pack('<2I', len(radii), len(indices)) + positions.tobytes() + radii.tobytes() + indices.tobytes() + coordinates.tobytes()
-    key = hashlib.blake2b(b'curves' + struct.pack('<2I', 1 if coordinates else 0, 1 if straight else 0) + data, digest_size=8).digest()
+    data = (struct.pack('<2I', len(radii), len(indices)) + positions.tobytes() + radii.tobytes() + indices.tobytes()
+            + strand_values.tobytes() + coordinates.tobytes() + moved.tobytes())
+    key = hashlib.blake2b(b'curves' + struct.pack('<3I', 1 if coordinates else 0, 1 if straight else 0, 1 if moved else 0) + data,
+                          digest_size=8).digest()
     if len(BUILT) >= 16:
         BUILT.pop(next(iter(BUILT)))
-    BUILT[signature] = (key, data, bool(coordinates), straight)
+    BUILT[signature] = (key, data, bool(coordinates), straight, bool(moved))
     return BUILT[signature]

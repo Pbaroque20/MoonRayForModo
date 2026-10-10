@@ -56,6 +56,10 @@ struct Material {
     // How much of the dielectric's reflection there is, as DwaBaseMaterial's specular: 1 is all of it.
     // The coat and a metal are not weighted.
     float specularWeight = 1.0f;
+    // Diffuse light that passes through to the far side, as DwaBaseMaterial's diffuse transmission lets an ear glow,
+    // and what that leaves of the diffuse light on the lit side.
+    float diffuseTransmission[3] = {0, 0, 0};
+    float diffuseKept[3] = {1, 1, 1};
     // On curves, a hair fibre as MoonRay's HairMaterial, in place of all the above but baseColor (the hair's colour),
     // its layers, emission and ior. The four lobes are light reflected off the fibre, passed through it, reflected
     // once inside it, and the rest: each has a roughness along the fibre and an offset in degrees from the tilt of
@@ -67,7 +71,13 @@ struct Material {
     float hairAzimuthalRoughness = 1.0f;    // how far light passing through spreads around the fibre
     float hairSaturation = 1.0f;
     uint32_t hairLobes = 15;
-    uint32_t hairFresnel = 1;               // 0 by the angle along the fibre alone; otherwise as a cylinder
+    uint32_t hairFresnel = 1;               // 0 by the angle along the fibre alone; 1 as a cylinder; 2 layered cuticles
+    float hairCuticle = 0.1f;               // for 2: how thick the cuticle is, 0 to 1
+    // An elliptical fibre's glints: two streaks beside its reflection from inside. The fibre's cross-section turns
+    // between hairTwists[0] and [1] times from root to tip, a number of its own for each strand.
+    bool hairGlint = false;
+    float hairGlintRoughness = 0.5f, hairGlintEccentricity = 0.85f, hairGlintSaturation = 0.5f;
+    float hairTwists[2] = {1.5f, 2.5f};
     // An even fog filling a closed mesh, as MoonRay's BaseVolume with constant values, in place of a surface: the
     // mesh itself is not seen. How much light the fog stops in a unit of distance, how much of that is scattered
     // on, what it gives off, and which way it scatters (-1 back, 0 evenly, 1 on). Light scatters in it once. A
@@ -145,6 +155,12 @@ struct CurveDesc {
     const uint32_t* segments = nullptr;     // 1 per segment
     size_t segmentCount = 0;
     const float* uvs = nullptr;             // 2 floats per control point, or null; a segment takes its first point's
+    // 3 floats per control point, or null: how far along its strand it is from 0 to 1, a number from 0 to 1 that is
+    // its strand's own, and nothing. Hair glints turn with them.
+    const float* strands = nullptr;
+    // Where the control points are when the shutter closes, for curves that change shape; null if they do not.
+    const float* closePositions = nullptr;
+    bool ribbon = false;                    // lit as a flat ribbon that faces each ray, as MoonRay's default strand is
     bool linear = false;                    // straight segments rather than cubic ones
 };
 

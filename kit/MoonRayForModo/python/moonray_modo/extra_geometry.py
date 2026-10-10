@@ -323,6 +323,14 @@ def emit(scene,materials,lines,crypto=False):
         if entry.get('attributes') and kind=='curves':
             from . import primitive_attributes
             carried+=primitive_attributes.emit(path+'/attribute',[entry['attributes']],lines)
+        if kind=='curves':
+            # MoonRay's hair glints turn with a number that is each strand's own, which it reads from the strands as
+            # scatter_tag; without it a hair material with glints renders as an error.
+            held=materials.get(tag) or {};held=(held.get('material_stack') or [held])[-1]
+            if held.get('native_shader')=='HairMaterial_v3' and (held.get('native_parameters') or {}).get('show_hair_glint'):
+                from .moonlightipr_curves import chance
+                lines+=['UserData(%s) {'%string(path+'/scatter'),'  ["float_key"] = "scatter_tag",','  ["float_values_0"] = {%s},'%', '.join('%.6f'%chance(i) for i in range(len(counts))),'}']
+                carried.append('UserData(%s)'%string(path+'/scatter'))
         if carried:attrs['primitive_attributes']=array(carried)
         lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':

@@ -159,6 +159,12 @@ def textured(folder):
     skins = lobes(native('ball', 'DwaSkinMaterial', albedo=[.85, .6, .5], roughness=.45, scattering_radius=.35, scattering_color=[1, .45, .3]),
                   native('cube', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, scattering_radius=.15, scattering_color=[1, .5, .35],
                          show_moisture=True, moisture_roughness=.1))
+    # Skin thin enough for light to come through: the ball lit mostly from behind lets it pass, with and without scattering.
+    thin = lobes(native('ball', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, diffuse_transmission_color=[.9, .35, .25]),
+                 native('cube', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, diffuse_transmission_color=[.6, .6, .6],
+                        diffuse_transmission_blending_behavior=0, scattering_radius=.1, scattering_color=[1, .5, .35]))
+    thin['lights'] = [{'kind': 'SphereLight', 'identity': 'behind', 'name': 'Behind', 'color': [1, 1, 1], 'intensity': 150.0, 'radius': .4,
+                       'matrix': fixture.placed(0, 3.0, -5.0)}]
     # A native material whose inputs read images wired in its graph, as the graph editor and the
     # material's form make them: no Shader Tree image layer is involved.
     from moonray_modo import nodes as graph_nodes
@@ -218,7 +224,7 @@ def textured(folder):
     # And as Shader Tree layers over the same native material, which leaves only the route the image takes.
     native_layer_maps = lobes(dict(native('ball', 'DwaBaseMaterial', roughness=.5), layers=[layer('nb', 'diffCol', 'colour', True)]),
                               dict(native('cube', 'DwaBaseMaterial', roughness=.5), layers=[layer('nc', 'diffCol', 'colour', True), layer('nr', 'rough', 'roughness', False)]))
-    return {'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    return {'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
@@ -374,7 +380,18 @@ def scenes(folder):
                meshes=[base['meshes'][0]], materials=dict(base['materials'], hair={
                    'color': [.5, .5, .5], 'roughness': .4, 'native_shader': 'HairMaterial_v3', 'native_parameters': dict(values, hair_color=colour)}),
                extra_geometry=[tuft()])
-           for name, colour, values in (('dark', [.25, .12, .05], {}), ('fair', [.85, .7, .45], {'primary_specular_roughness': .3}))},
+           for name, colour, values in (('dark', [.25, .12, .05], {}), ('fair', [.85, .7, .45], {'primary_specular_roughness': .3}),
+                                        # Glints of an elliptical fibre, a layered cuticle, and washed-out light passing straight through.
+                                        ('glint', [.45, .25, .1], {'show_hair_glint': True, 'glint_roughness': .5}),
+                                        ('glint_even', [.45, .25, .1], {'show_hair_glint': True, 'glint_min_twists': 0.0, 'glint_max_twists': 0.0}),
+                                        ('cuticle', [.45, .25, .1], {'fresnel_type': 2, 'cuticle_layer_thickness': .8}),
+                                        ('pale_through', [.6, .3, .1], {'direct_transmission_saturation': .2}))},
+        # Strands that are half there, and a strand that moves while the shutter is open.
+        'curves_presence': dict(base, lights=fixture.snapshot()['lights'], _environment=.3, meshes=[base['meshes'][0]],
+                                materials=dict(base['materials'], sheer={'color': [.8, .2, .1], 'roughness': .5, 'metallic': 0, 'presence': .5}),
+                                extra_geometry=[{'kind': 'curves', 'identity': 'rods|curves|sheer', 'source_item': 'rods', 'name': 'Rods', 'material': 'sheer',
+                                                 'curve_type': 0, 'matrix': fixture.placed(0, 0, 1.6), 'radius': .2, 'round': True,
+                                                 'vertices': [[-2.5 + i, .2 + .9 * j, .3 * j] for i in range(6) for j in range(3)], 'counts': [3] * 6}]),
         # Fog: a block of it between the camera and the scene, lit by the sun and a lamp, thin and thick and coloured.
         **{'fog_' + name: dict(base, lights=fixture.snapshot()['lights'] + [
                dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,

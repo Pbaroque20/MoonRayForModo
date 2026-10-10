@@ -12,7 +12,7 @@ from itertools import chain
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # Layout flags; keep in step with moonlightipr/session/scene_loader.cpp.
-MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE, MESH_CURVES, MESH_LINEAR = 1, 2, 4, 8, 16, 32, 64, 128, 256
+MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE, MESH_CURVES, MESH_LINEAR, MESH_RIBBON = 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
 # A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
 SUBDIVISION_QUADS = 3000000
 SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION = 1, 2, 4
@@ -597,10 +597,14 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         packed = curve_payload(entry, compiler.slots.get(''))
         if packed is None:
             continue
-        key, payload, coordinates, straight = packed
+        key, payload, coordinates, straight, moves = packed
+        # MoonRay's own default strand is a flat ribbon that faces the view; Round tubes is the object's choice.
+        ribbon = not entry.get('round')
+        key = key if not ribbon else hashlib.blake2b(key + b'ribbon', digest_size=8).digest()
         if key not in order:
             order[key] = len(meshes)
-            flags = MESH_CURVES | (MESH_HAS_UVS if coordinates else 0) | (MESH_LINEAR if straight else 0)
+            flags = (MESH_CURVES | (MESH_HAS_UVS if coordinates else 0) | (MESH_LINEAR if straight else 0) | (MESH_MOVES if moves else 0)
+                     | (MESH_RIBBON if ribbon else 0))
             slot_map = [-1] * UV_SLOTS
             if coordinates:
                 slot_map[compiler.slots['']] = 0
@@ -609,7 +613,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         used.add(key)
         placement = transform(entry.get('matrix') or IDENTITY)
         instances.append(struct.pack('<2Ii12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, *placement)
-                         + (struct.pack('<12f', *placement) if motion else b''))
+                         + (struct.pack('<12f', *transform(entry.get('matrix_close') or entry.get('matrix') or IDENTITY)) if motion else b''))
     if any(entry.get('kind') != 'curves' for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points or volumes.')
     parts.append(struct.pack('<I', len(distant)))

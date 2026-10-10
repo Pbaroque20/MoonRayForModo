@@ -97,7 +97,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 
 ## Still to implement
 
-- VDB volumes, volumes with ramps and hair glints in MoonLightIPR.
+- VDB volumes and volumes with ramps in MoonLightIPR.
 - One-click outputs for indirect diffuse and specular, shadows, albedo, subsurface and motion vectors.
 - OpenPBR and glTF MaterialX surfaces.
 - Per-face and per-point values (primitive attributes) on meshes, and a form for editing the values items carry.

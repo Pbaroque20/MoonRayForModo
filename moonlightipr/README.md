@@ -297,19 +297,26 @@ Added to what is translated since the table was written:
 - **Curves** (a mesh's curves, splines and line polygons, and hair grown from guides): true
   curves on the GPU, with the object's width and taper and each strand's UV. The line through a
   strand's points is round straight segments with rounded joints; B-spline and Bezier strands are
-  round cubic segments. MoonRay's default is a flat ribbon facing the ray, so a thick strand's
-  shading differs across its width.
+  round cubic segments. Unless the object asks for round tubes they are lit as MoonRay's default
+  strand is, a flat ribbon facing each ray (91% of tiles within a tenth of MoonRay). A partly
+  absent material is honoured on them, and they blur when they move or change shape during the
+  shutter.
   ![Curves, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-curves.jpg)
 - **Hair**: on curves, `HairMaterial_v3` is a hair fibre with MoonRay's four lobes (light
   reflected off the fibre, passed through it, reflected once inside it, and the rest), by the
   formulas of MoonRay's own hair code and its rules for each lobe's roughness and offset. Hair
-  colour can be textured. Glints, the saturation of direct transmission and layered cuticles
-  are reported as left out. `HairDiffuseMaterial` is its colour on a matte strand. Measured on
+  colour can be textured. Glints (with each strand's own twist), the saturation of direct
+  transmission and the layered cuticle Fresnel are drawn too: 76%, 77% and 78% of tiles within
+  a tenth. `HairDiffuseMaterial` is its colour on a matte strand. Measured on
   a head of 2,500 strands: brightness 1.02 of MoonRay's, 77% (dark) and 80% (fair) of tiles
   within a tenth.
   ![Hair, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-hair_dark.jpg)
-- **Skin**: `DwaSkinMaterial` is read as itself: albedo, scattering beneath the surface, and
-  moisture as a clear coat. Brightness 0.98, 98% of tiles within a tenth.
+- **Skin**: `DwaSkinMaterial` is read as itself: albedo, scattering beneath the surface,
+  moisture as a clear coat, and diffuse light passing through to the far side (diffuse
+  transmission, on every Dwa surface material). Brightness 0.98, 98% of tiles within a tenth;
+  with light passing through, 1.03 and 99%. Light beneath the surface is still looked for down
+  the normal only: probing across the surface as well, which would light thin ears from behind
+  by scattering, was tried and measured darker than MoonRay, and was left out.
 - **Volumes**: a `BaseVolume` with constant values, on a MoonRay box or sphere shape that has
   no material, is an even fog: it dims and tints what is behind it, scatters the lights' light
   once (MoonRay's default) with its anisotropy, glows with its emission, and thins shadows.
@@ -319,7 +326,9 @@ Added to what is translated since the table was written:
   ![Fog, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-fog_coloured.jpg)
 - **Pictures on lights**: sphere, disk, spot, cylinder and distant lights show their texture as
   rect lights did, each laid out as MoonRay lays it (91 to 95% of tiles within a tenth). A
-  distant light with `normalized` off is as bright as MoonRay makes it (98%).
+  distant light with `normalized` off is as bright as MoonRay makes it (98%). Rect, disk,
+  cylinder and distant lights are sampled where their picture is bright, which takes the noise
+  out of a mostly dark picture; sphere and spot lights are sampled evenly.
   ![A picture on a sphere light](../docs/images/moonlightipr-textured_spherelight.jpg)
 - **Imported MaterialX graphs**: UVs that nodes move, turn or scale, and arithmetic between
   images (one blended into another through a third, an image brought into a range, masks
@@ -423,7 +432,8 @@ recapture, which waits for release. Why it was classified so was not established
 
 ## Not done yet
 
-- VDB volumes, volumes with ramps, and fog seen from inside it; hair glints.
+- VDB volumes, volumes with ramps, and fog seen from inside it.
+- Subsurface light found across the surface as well as down its normal.
 - The layer features listed above as reported; rod, barn door, cookie, VDB and combined
   light filters.
 - Motion blur during IPR updates, moving lights, and a comparison of motion blur with MoonRay.

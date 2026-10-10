@@ -124,9 +124,12 @@ def native_surface(shader, parameters, note):
         # Skin's moisture is a clear layer over it, which is what the coat is.
         coat = float(get('moisture_mask', 1.0)) if get('show_moisture', False) else 0.0
         coat_roughness = float(get('moisture_roughness', .25))
-        if any(float(v) > 0 for v in get('diffuse_transmission_color', black)):
-            note('light passing through thin skin (diffuse transmission)')
+    # Diffuse light that passes through to the far side, and what MoonRay then takes from the lit side: the same of
+    # each colour, or as much of every colour as of the strongest.
+    passed = [min(1.0, max(0.0, float(v))) * min(1.0, max(0.0, float(get('diffuse_transmission', 1.0)))) for v in get('diffuse_transmission_color', black)]
+    kept = [1.0 - v for v in passed] if int(get('diffuse_transmission_blending_behavior', 1)) == 0 else [1.0 - max(passed)] * 3
     return {
+        '_back': passed, '_front_keep': kept,
         'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': color, 'raw_color': color, 'diffuse_amount': 1.0,
         'roughness': roughness, 'metallic': metallic, 'ior': ior,
         'specular_amount': float(get('specular', 1.0)) if get('show_specular', True) else 0.0,
@@ -174,19 +177,18 @@ def hair_surface(shader, parameters, note):
     inside = float(get('independent_secondary_specular_roughness', .4)) if get('use_independent_secondary_specular_roughness', False) else 2 * rough
     shown = ((1 if get('show_primary_specular', True) else 0) | (2 if get('show_transmission', True) else 0)
              | (4 if get('show_secondary_specular', True) else 0) | (8 if get('show_multiple_scattering', True) else 0))
-    if get('show_hair_glint', False):
-        note('hair glints')
-    if float(get('direct_transmission_saturation', 1.0)) != 1.0:
-        note('the saturation of light passing straight through hair')
+    if get('show_hair_glint', False) and get('show_secondary_specular', True):
+        shown |= 16
     kind = int(get('fresnel_type', 1))
-    if kind == 2:
-        note('layered cuticles, shown as a plain fibre')
     surface['_hair'] = {'roughness': [rough, through, inside, 4 * rough],
                         'offset': [float(get('primary_specular_offset', -3.0)), float(get('transmission_offset', -1.5)),
                                    float(get('secondary_specular_offset', -4.5)), 0.0],
                         'tint': list(get('primary_specular_tint', white)) + list(get('transmission_tint', white)) + list(get('secondary_specular_tint', white)),
                         'azimuthal': float(get('transmission_azimuthal_roughness', 1.0)),
-                        'saturation': float(get('direct_transmission_saturation', 1.0)), 'lobes': shown, 'fresnel': 0 if kind == 0 else 1}
+                        'saturation': float(get('direct_transmission_saturation', 1.0)), 'lobes': shown, 'fresnel': kind if kind in (0, 1, 2) else 1,
+                        'glint': [float(get('glint_roughness', .5)), float(get('glint_eccentricity', .85)), float(get('glint_saturation', .5)),
+                                  float(get('glint_min_twists', 1.5)), float(get('glint_max_twists', 2.5))],
+                        'cuticle': float(get('cuticle_layer_thickness', .1))}
     return surface
 
 
@@ -923,19 +925,22 @@ class Compiler:
                   + [max(-1.0, min(1.0, float(defaults['aniso']))) if stretched else 0.0,
                      math.cos(controls['anisotropy_angle']), math.sin(controls['anisotropy_angle'])]
                   + [min(1.0, max(0.0, float(defaults['subsAmt']))) if radius > 0 else 0.0] + triple(defaults['subsCol'])
-                  + [radius, depth, max(0.0, float(source.get('dispersion_abbe', 0))) if dwa else 0.0, min(1.0, max(0.0, weight))])
+                  + [radius, depth, max(0.0, float(source.get('dispersion_abbe', 0))) if dwa else 0.0, min(1.0, max(0.0, weight))]
+                  + triple(source.get('_back', [0.0, 0.0, 0.0])) + triple(source.get('_front_keep', [1.0, 1.0, 1.0])))
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Material %s contains a non-finite number' % name)
         fog = material.get('_volume')
-        record = struct.pack('<33f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
+        record = struct.pack('<39f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
                              UV_SLOTS if tangent_slot is None else tangent_slot)
         fibre = source.get('_hair')
         if fibre:
             # A hair fibre's four lobes, for where the material is on curves.
             numbers = [float(v) for v in fibre['roughness'] + fibre['offset'] + fibre['tint'] + [fibre['azimuthal'], fibre['saturation']]]
-            if not all(math.isfinite(v) for v in numbers):
+            later = [float(v) for v in fibre['glint'] + [fibre['cuticle']]]
+            numbers_checked = numbers + later
+            if not all(math.isfinite(v) for v in numbers_checked):
                 raise ValueError('Material %s contains a non-finite number' % name)
-            record += struct.pack('<19f2I', *numbers, fibre['lobes'], fibre['fresnel'])
+            record += struct.pack('<19f2I6f', *numbers, fibre['lobes'], fibre['fresnel'], *later)
         if fog:
             # An even fog in place of a surface: what it stops, what of that it scatters on, what it gives off, and which way.
             numbers = [float(v) for v in list(fog['extinction']) + list(fog['albedo']) + list(fog['emission']) + [fog['anisotropy']]]

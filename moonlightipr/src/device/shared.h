@@ -92,6 +92,8 @@ struct DeviceMaterial {
     float abbe;                 // Abbe number of a dispersive solid; 0 for none
     float specular;             // weight of the dielectric's reflection
     unsigned hair;              // with MATERIAL_HAIR, this material's entry in LaunchParams::hairs; with MATERIAL_VOLUME, in volumes
+    float back[3];              // diffuse light that passes through to the other side, as a thin ear lets it
+    float frontKeep[3];         // what that leaves of the diffuse light on the lit side
 };
 
 // An even fog, as MoonRay's BaseVolume with constant values: how much light it stops in a unit of distance, how
@@ -107,7 +109,8 @@ struct DeviceVolume {
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
 // inside it (TRT), and everything after that (TRRT). The fibre's colour is the material's own.
-const unsigned HAIR_R = 1, HAIR_TT = 2, HAIR_TRT = 4, HAIR_TRRT = 8;
+const unsigned HAIR_R = 1, HAIR_TT = 2, HAIR_TRT = 4, HAIR_TRRT = 8,
+               HAIR_GLINT = 16;     // the two bright streaks an elliptical fibre adds to TRT
 struct DeviceHair {
     float variance[4];          // how far each of the four spreads along the fibre
     float sinShift[4];          // and how far the fibre's scales tilt it towards the root
@@ -117,20 +120,26 @@ struct DeviceHair {
     float absorption;           // what turns the fibre's colour into what it absorbs, from that spread
     float eta;
     float saturation;           // of light passing straight through
-    unsigned lobes;             // which of the four are shown
-    unsigned cylinder;          // the Fresnel term knows how far off the fibre's middle the light struck
-    unsigned pad[2];
+    unsigned lobes;             // which of the four are shown, and the glint
+    unsigned fresnel;           // 0 by the angle along the fibre; 1 also by how far off its middle the light struck; 2 layered cuticles
+    float glintWidth;           // how far a glint spreads around the fibre
+    float glintEccentricity;    // how far from round the fibre is
+    float glintSaturation;
+    float twists[2];            // fewest and most turns the fibre's cross-section makes from root to tip
+    float layers;               // cuticle layers, for the layered Fresnel term
 };
 
 struct DeviceMesh {
     DevicePtr positions;    // float[3] per vertex; unused for curves, whose control points OptiX hands back
-    DevicePtr normals;      // float[3] per vertex, or 0 for faceted shading
+    DevicePtr normals;      // float[3] per vertex, or 0 for faceted shading; for curves, per control point: how far along
+                            // its strand it is, its strand's own number from 0 to 1, and nothing
     DevicePtr indices;      // unsigned[3] per triangle; for curves, each segment's first control point
     DevicePtr materialIds;  // unsigned per triangle, or 0 to use the instance material
     DevicePtr uvs;          // float[2] per triangle corner, one run of triangleCount * 3 per set; for curves, one set, per control point
     unsigned triangleCount;
     int uvSet[UV_SLOTS];    // which of this mesh's sets serves each scene-wide slot, or -1
-    unsigned curves;        // curves rather than triangles: 1 round cubic B-spline segments, 2 round straight ones
+    unsigned curves;        // curves rather than triangles: 1 round cubic B-spline segments, 2 round straight ones;
+                            // with 4 added they are lit as flat ribbons facing the ray, MoonRay's default
 };
 
 struct DeviceInstance {
@@ -151,6 +160,7 @@ struct DeviceDistantLight {
     float v[3];
     float pad;
     unsigned long long texture;     // a picture across the disc, or 0
+    DevicePtr distribution;         // where that picture is bright, to draw directions from; see DeviceLight
 };
 
 // Sphere, rectangle, disc and spot lights, as MoonRay's lights of the same names.
@@ -179,6 +189,10 @@ struct DeviceLight {
     unsigned long long texture;     // a picture across the light, laid out as MoonRay lays it on each kind; 0 for none
     unsigned filterCount;
     unsigned pad;
+    // Rect, disc and cylinder with a picture: where the picture is bright, as a width and a height (floats), a
+    // running total over its rows (height + 1), then one over each row's columns (height rows of width + 1), all
+    // in the picture's own coordinates. Points on the light are drawn from it. 0 for none.
+    DevicePtr distribution;
 };
 
 // What a light filter does to the light arriving at a point, as MoonRay's DecayLightFilter and

@@ -17,7 +17,8 @@ namespace {
 const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 4, MESH_SMOOTH = 8, MESH_HAS_UVS = 16, MESH_MOVES = 32,
                MESH_SUBDIVIDE = 64,     // the data is a control cage to be subdivided here
                MESH_CURVES = 128,       // the data is curves: control points, their radii and each segment's first point
-               MESH_LINEAR = 256;       // those curves' segments are straight, from one point to the next
+               MESH_LINEAR = 256,       // those curves' segments are straight, from one point to the next
+               MESH_RIBBON = 512;       // and they are lit as flat ribbons that face the ray
 const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4;
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
@@ -244,6 +245,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         material.absorptionDistance = in.value<float>();
         material.abbe = in.value<float>();
         material.specularWeight = in.value<float>();
+        in.floats(material.diffuseTransmission, 3);
+        in.floats(material.diffuseKept, 3);
         const uint32_t materialFlags = in.value<uint32_t>();
         material.thin = (materialFlags & 1) != 0;
         material.clearcoatDims = (materialFlags & 2) != 0;
@@ -261,6 +264,12 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             material.hairSaturation = in.value<float>();
             material.hairLobes = in.value<uint32_t>();
             material.hairFresnel = in.value<uint32_t>();
+            material.hairGlint = (material.hairLobes & 16) != 0;
+            material.hairGlintRoughness = in.value<float>();
+            material.hairGlintEccentricity = in.value<float>();
+            material.hairGlintSaturation = in.value<float>();
+            in.floats(material.hairTwists, 2);
+            material.hairCuticle = in.value<float>();
         }
         if (materialFlags & 128) {
             // An even fog in place of a surface.
@@ -400,7 +409,9 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             const uint32_t pointCount = in.value<uint32_t>(), segmentCount = in.value<uint32_t>();
             const std::vector<float> positions = in.array<float>(size_t(pointCount) * 3), radii = in.array<float>(pointCount);
             const std::vector<uint32_t> segments = in.array<uint32_t>(segmentCount);
+            const std::vector<float> strands = in.array<float>(size_t(pointCount) * 3);
             const std::vector<float> uvs = in.array<float>(flags & MESH_HAS_UVS ? size_t(pointCount) * 2 : 0);
+            const std::vector<float> closing = in.array<float>(flags & MESH_MOVES ? size_t(pointCount) * 3 : 0);
             if (cached == meshes.end()) {
                 CurveDesc desc;
                 desc.positions = positions.data();
@@ -410,6 +421,9 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 desc.segmentCount = segmentCount;
                 desc.uvs = uvs.empty() ? nullptr : uvs.data();
                 desc.linear = (flags & MESH_LINEAR) != 0;
+                desc.ribbon = (flags & MESH_RIBBON) != 0;
+                desc.strands = strands.data();
+                desc.closePositions = closing.empty() ? nullptr : closing.data();
                 cached = meshes.emplace(key, CachedMesh{renderer.addCurves(desc), 0}).first;
             }
         } else if (flags & MESH_HAS_DATA) {
