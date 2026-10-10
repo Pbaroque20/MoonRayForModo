@@ -19,6 +19,8 @@ def topology(vertices,faces):
         weighted.append(n)
     return weighted,[unit(n) for n in weighted],edges
 
+_SMOOTHED={}
+
 def prepare(mesh):
     settings=options.object_values(mesh.get('geometry_settings',{}))
     # Materials that say how their own polygons are smoothed, where the object's overrides do not say so for the whole
@@ -36,6 +38,14 @@ def prepare(mesh):
         result['adaptive_error']=(settings['adaptive_error'] or 2.0) if settings['dynamic_tessellation'] else settings['adaptive_error']
         if 'instances' in mesh: result['adaptive_error']=0.0
     if not (smooth or angular): return result
+    # Normals worked out for a mesh are kept by what the mesh holds: it is drawn again at every edit of something else.
+    kept=None
+    if by_material and not settings['override']:
+        from .scene_digest import content
+        kept=(content(mesh['vertices']),content(mesh['faces']),content(mesh['face_materials']) if mesh.get('face_materials') else mesh.get('material',''),
+              tuple(sorted(declared.items())))
+        if kept in _SMOOTHED:
+            result['normals']=_SMOOTHED[kept];return result
     faces=[list(f) for f in mesh['faces']]
     weighted,normals,edges=topology(mesh['vertices'],faces)
     adjacency={};bend=0.;threshold=math.cos(math.radians(settings['smoothing_angle']))
@@ -73,6 +83,9 @@ def prepare(mesh):
                     for f in connected: cache[(vertex,f)]=normal
                 corners.append(cache[key])
         result['normals']=corners
+        if kept is not None:
+            if len(_SMOOTHED)>=64:_SMOOTHED.pop(next(iter(_SMOOTHED)))
+            _SMOOTHED[kept]=corners
     return result
 
 

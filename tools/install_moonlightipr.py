@@ -1,10 +1,12 @@
 """Add the built MoonLightIPR GPU preview to the installed kit, with a backup of what it replaces.
 
-Copies only what this branch changed: the session, its device program and the CUDA runtime into
-the kit's runtime/moonlightipr folder, the Python modules that route previews to it, and the
-MoonRay items (their module, schema, commands and forms). The rest of the installed kit is left
-as it is. Close Modo first; a running Modo keeps the old modules
-loaded and the old session open.
+Copies the session, its device program and the CUDA runtime into the kit's runtime/moonlightipr
+folder, and every file of the kit in this repository that differs from the installed one: the
+Python modules, the commands, the forms and the assets. Nothing is named here one by one, so a
+new module is installed without being added to a list. The installed layout.cfg is edited, not
+replaced, and the installed bin and runtime folders are left to the steps below. A module that
+is no longer in the repository is moved into the backup. Close Modo first; a running Modo keeps
+the old modules loaded and the old session open.
 """
 import csv
 from datetime import datetime
@@ -15,19 +17,30 @@ import shutil
 import subprocess
 import sys
 
-MODULES = ('moonlightipr_volumes.py', 'outputs_dialog.py', 'shading_models.py', 'modo_disc.json', 'ramps.py', 'geometry.py', 'native.py', 'persistent.py', 'display.py', 'display_stream.py', 'mesh_reader.py', 'textures.py', 'primitive_attributes.py', 'rdl_import_dialog.py', 'rdl_primitives.py', 'procedurals.py', 'asset_import.py', 'evaluated.py', 'layers.py', 'hair.py', 'materialx_document.py', 'materialx_definitions.py', 'materialx_expand.py', 'materialx_geometry.py', 'materialx_standard.py', 'materialx.py', 'about.py', 'shader_library.py', 'graph.py', 'light_units.py', 'environment_layers.py', 'environments.py', 'modo_daylight.bin', 'modo_daylight.json', 'sun.py', 'daylight.py', 'moonlightipr_curves.py', 'options.py', 'extra_geometry.py', '__init__.py', 'panel.py', 'render.py', 'buffer_cache.py', 'assets.py', 'changes.py', 'scene_digest.py', 'moonshine.py', 'rdla.py', 'lighting.py', 'gradients.py',
-           'moonlightipr_scene.py', 'moonlightipr_materials.py', 'moonlightipr_session.py', 'host.py', 'entities.py', 'entity_catalog.json', 'ramp_editor.py', 'materials.py', 'material_editor.py', 'rdl_import.py', 'properties.py',
-           'panel_tools.py', 'preferences.py', 'scene_settings.py', 'focus.py', 'progress.py', 'node_editor.py', 'node_widgets.py', 'incremental.py', 'graph_images.py', 'property_notifications.py', 'camera_choice.py', 'graph_bake.py', 'nodes.py', 'coordinates.py', 'animation.py', 'package_sequence.py')
-# Files outside the Python package, relative to the kit: the commands and forms of the MoonRay
-# items and of native materials.
-KIT_FILES = ('THIRD_PARTY.txt', 'index.cfg', 'lxserv/moonray_entities.py', 'entities.cfg', 'lxserv/moonray_material_forms.py', 'material_forms.cfg',
-             'lxserv/moonray_render_settings.py', 'render_settings.cfg', 'lxserv/moonray_commands.py',
-             'lxserv/moonray_material_properties.py', 'lxserv/moonray_moonshine_layer.py', 'shader_layers.cfg', 'lxserv/moonray_camera.py')
-
 root = Path(__file__).resolve().parents[1]
 source = root / 'kit/MoonRayForModo/python/moonray_modo'
 kit = Path(os.environ['APPDATA']) / 'Luxology/Kits/MoonRayForModo'
 target = kit / 'python/moonray_modo'
+repository = root / 'kit/MoonRayForModo'
+# Left alone: the layout is edited in place below, bin holds the adapter built for this machine, and the two notes
+# are what an install writes about itself.
+SKIPPED = ('layout.cfg', 'runtime.json', 'development-install.json')
+
+
+def kit_files():
+    """Every file of the repository's kit that an installed kit should hold as it is here, relative to the kit."""
+    for path in sorted(repository.rglob('*')):
+        name = path.relative_to(repository)
+        if path.is_file() and path.suffix != '.pyc' and '__pycache__' not in name.parts and name.parts[0] != 'bin' and name.as_posix() not in SKIPPED:
+            yield name
+
+
+def keep(path, name):
+    """Put an installed file into the backup before it is replaced or removed."""
+    (backup / name).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, backup / name)
+
+
 if not target.is_dir():
     raise SystemExit('MoonRayForModo is not installed in ' + str(kit))
 processes = subprocess.check_output(['tasklist', '/FI', 'IMAGENAME eq modo.exe', '/FO', 'CSV', '/NH'],
@@ -36,22 +49,30 @@ if any(row and row[0].lower() == 'modo.exe' for row in csv.reader(io.StringIO(pr
     raise SystemExit('Close Modo before installing MoonLightIPR; nothing was changed')
 
 backup = root / 'backups' / ('before-moonlightipr-' + datetime.now().strftime('%Y%m%d-%H%M%S'))
-for name in MODULES:
-    if (target / name).is_file():
-        (backup / 'python/moonray_modo').mkdir(parents=True, exist_ok=True)
-        shutil.copy2(target / name, backup / 'python/moonray_modo' / name)
-for name in KIT_FILES:
-    if (kit / name).is_file():
-        (backup / name).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(kit / name, backup / name)
 if (kit / 'runtime/moonlightipr').is_dir():
     shutil.copytree(kit / 'runtime/moonlightipr', backup / 'runtime/moonlightipr')
 subprocess.run([sys.executable, str(root / 'tools/stage_moonlightipr.py'), '--destination', str(kit / 'runtime/moonlightipr')], check=True)
-for name in MODULES:
-    shutil.copyfile(source / name, target / name)
+copied = 0
+for name in kit_files():
+    held = kit / name
+    if held.is_file() and held.read_bytes() == (repository / name).read_bytes():
+        continue
+    if held.is_file():
+        keep(held, name)
+    held.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(repository / name, held)
+    copied += 1
+# A module the repository no longer has would still be imported, or loaded as a server, if it were left.
+removed = 0
+for folder in ('python/moonray_modo', 'lxserv'):
+    for old in sorted((kit / folder).glob('*.py')):
+        if not (repository / folder / old.name).is_file():
+            keep(old, Path('no-longer-in-the-kit') / folder / old.name)
+            old.unlink()
+            removed += 1
 # What the engine was called before it was MoonLightIPR: its modules and its folder are no longer read, and are moved
 # into the backup rather than left beside the ones that are.
-for old in list(target.glob('moonlight_*.py')) + [kit / 'runtime/moonlight']:
+for old in [kit / 'runtime/moonlight']:
     if old.exists():
         held = backup / 'before-the-rename' / old.name
         held.parent.mkdir(parents=True, exist_ok=True)
@@ -88,8 +109,6 @@ if reader.is_file() and (kit / 'runtime').is_dir():
 grids = root / 'build/native-avx/bin/modo_vdb_grid.exe'
 if grids.is_file() and (kit / 'runtime').is_dir():
     shutil.copyfile(grids, kit / 'runtime' / grids.name)
-for name in KIT_FILES:
-    shutil.copyfile(root / 'kit/MoonRayForModo' / name, kit / name)
 # The MoonRay menu: its MoonRay items submenu, dividers between its groups, and plain characters.
 # The installed layout.cfg is edited in place, not replaced, so nothing else in it changes.
 sys.path.insert(0, str(root / 'tools'))
@@ -104,4 +123,5 @@ if tidied != text:
     (backup / 'layout.cfg').write_bytes(text.encode('utf-8'))
     layout.write_bytes(tidied.encode('utf-8'))
 print('Installed MoonLightIPR into', kit)
+print('Kit files replaced or added: %d; modules no longer in the kit removed: %d' % (copied, removed))
 print('Backup:', backup)

@@ -88,6 +88,14 @@ for i, shader in enumerate([''] + sorted(catalog)):
     graph = ET.SubElement(form, 'list', type='Control', val='cmd moonray.material.nodes')
     atom(graph, 'Label', 'Open Graph Editor...')
     atom(graph, 'Tooltip', 'Edit this material as a node graph, where its inputs can be connected to maps')
+    # How the material's polygons are smoothed: set in the assign dialog, changed here.
+    smoothing = nested(form, 'MoonRayShader_%s_smoothing:sheet' % shader, 'Smoothing', 1)
+    made = ET.SubElement(smoothing, 'list', type='Control', val='cmd moonray.material.smoothing ?')
+    atom(made, 'Label', 'Smoothing')
+    atom(made, 'Tooltip', 'Flat makes every polygon of this material flat. Smooth Within the Angle smooths neighbouring polygons together where the angle between them is within the angle below. As Modo\'s Material Says follows the Smoothing settings of the Modo material')
+    made = ET.SubElement(smoothing, 'list', type='Control', val='cmd moonray.material.smoothing_angle ?')
+    atom(made, 'Label', 'Angle (degrees)')
+    atom(made, 'Tooltip', 'Edges sharper than this stay sharp. 180 smooths everything')
     groups = {}
     texturable = graph_images.offered(shader)
 
@@ -119,6 +127,15 @@ for i, shader in enumerate([''] + sorted(catalog)):
                 ramp_count += 1
             continue
         kind = spec['type']
+        if ramps.numbers(spec):
+            # A direction is a number field for each of its parts, as in the graph editor.
+            for part in range(ramps.numbers(spec)):
+                control = ET.SubElement(groups[group], 'list', type='Control', val='cmd moonray.material.attr%d_%d_%d ?' % (i, j, part))
+                atom(control, 'Label', plain(spec.get('label', key.replace('_', ' '))) + ' ' + 'XYZW'[part])
+                if brief(spec.get('comment', '')):
+                    atom(control, 'Tooltip', brief(spec.get('comment', '')))
+            count += 1
+            continue
         how = '' if kind in ('Bool', 'Int', 'Long', 'Float', 'Double', 'Rgb', 'String') else 'Type as [x, y, z]'
         control = ET.SubElement(groups[group], 'list', type='Control', val='cmd moonray.material.attr%d_%d ?' % (i, j))
         atom(control, 'Label', plain(spec.get('label', key.replace('_', ' '))))
