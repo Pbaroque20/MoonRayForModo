@@ -884,6 +884,8 @@ class Compiler:
                 weight = straight / lobe if lobe > 0 else 0.0
             if source.get('specular_amount', .04) <= 0:
                 ior = 1.0
+        # Modo's Blinn and Ashikhmin highlights reflect less than a lobe that keeps all the light.
+        weight *= float(source.get('_specular_strength', 1.0))
         # A stack's coat is DwaBaseMaterial's outer specular, which shades what is beneath it.
         flags = (MATERIAL_THIN if source.get('thin_geometry') else 0) | (MATERIAL_COAT_DIMS if stack else 0)
         # A metal rendered through DwaBaseMaterial reflects by its own curve, with a white edge.

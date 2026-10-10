@@ -123,8 +123,7 @@ GROUPS = [
     ]),
     ('Outputs (AOVs)', True,
      [field('aov_' + key, ('aovs',), 'member', label, 'Adds the ' + channel + ' channel to the EXR', member=key)
-      for key, (label, _, channel) in options.AOVS.items()]
-     + [field('outputs', None, 'button', 'Named Outputs...', 'Light path expressions, material AOVs and ID mattes')]),
+      for key, (label, _, channel) in options.AOVS.items()]),
     ('Display', True, [
         field('view', ('display', 'view'), 'choice', 'View Transform', 'How the preview is shown; EXRs stay linear', choices=VIEWS),
         field('exposure', ('display', 'exposure'), 'float', 'Exposure', 'Stops', -20.0, 20.0),
@@ -148,6 +147,11 @@ GROUPS = [
         field('timeout', ('timeout',), 'int', 'Time Limit', 'Minutes; 0 is no limit', 0, 10080),
         render_field('bucket_size', 'Bucket Size'),
         render_field('batch_tile_order', 'Bucket Order'),
+    ]),
+    # Outputs that are written as expressions rather than ticked: a part of the light picked out by the path it took,
+    # a value a material holds, an ID matte.
+    ('Advanced', True, [
+        field('outputs', None, 'button', 'Light Path Expressions...', 'Named outputs of the render: light path expressions, material AOVs and ID mattes'),
     ]),
 ]
 

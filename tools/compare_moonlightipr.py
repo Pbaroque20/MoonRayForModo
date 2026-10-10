@@ -165,6 +165,11 @@ def textured(folder):
                         diffuse_transmission_blending_behavior=0, scattering_radius=.1, scattering_color=[1, .5, .35]))
     thin['lights'] = [{'kind': 'SphereLight', 'identity': 'behind', 'name': 'Behind', 'color': [1, 1, 1], 'intensity': 150.0, 'radius': .4,
                        'matrix': fixture.placed(0, 3.0, -5.0)}]
+    # Modo's Blinn and Ashikhmin shading models, as the plugin hands them on: a Beckmann highlight at part strength.
+    def strong(identity, color, roughness, strength):
+        made = row(identity, color, roughness, _beckmann=True, _specular_strength=strength)
+        return dict(made, specular=[.5] * 3, specular_amount=.5, specular_fresnel=0.0)
+    models = lobes(strong('ball', [.6, .3, .15], .36, .59), strong('cube', [.2, .4, .6], .44, .81))
     # A native material whose inputs read images wired in its graph, as the graph editor and the
     # material's form make them: no Shader Tree image layer is involved.
     from moonray_modo import nodes as graph_nodes
@@ -224,7 +229,7 @@ def textured(folder):
     # And as Shader Tree layers over the same native material, which leaves only the route the image takes.
     native_layer_maps = lobes(dict(native('ball', 'DwaBaseMaterial', roughness=.5), layers=[layer('nb', 'diffCol', 'colour', True)]),
                               dict(native('cube', 'DwaBaseMaterial', roughness=.5), layers=[layer('nc', 'diffCol', 'colour', True), layer('nr', 'rough', 'roughness', False)]))
-    return {'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    return {'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 

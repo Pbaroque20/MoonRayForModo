@@ -4,7 +4,7 @@ from . import outputs
 
 class OutputsDialog(QtWidgets.QDialog):
     def __init__(self,entries,parent=None):
-        super().__init__(parent);self.setWindowTitle('MoonRay render outputs');self.resize(940,460)
+        super().__init__(parent);self.setWindowTitle('Light path expressions and named outputs');self.resize(940,460)
         layout=QtWidgets.QVBoxLayout(self)
         note=QtWidgets.QLabel('Add named channels to the final EXR. LPE uses MoonRay expressions; Material AOV uses its native expression. Cryptomatte supports object, material and asset categories with a matching runtime. Each category uses a separate EXR part, a manifest and 32-bit channels. Volume coverage is not available. Motion vectors require motion samples.');note.setWordWrap(True);layout.addWidget(note)
         group=QtWidgets.QPushButton('Add light-group output…');group.clicked.connect(self.light_group);layout.addWidget(group)
