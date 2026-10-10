@@ -65,6 +65,25 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 
 The [main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo#limitations) lists the plugin's wider limitations.
 
+## Still to implement
+
+- One-click outputs for indirect diffuse and specular, shadows, albedo, subsurface and motion vectors.
+- Rod, barn door, cookie and VDB light filters in MoonLightIPR, and motion blur while it follows edits.
+- Modo's Fur material, light linking, and the remaining Shader Tree effects and masks.
+- OpenPBR and glTF MaterialX surfaces.
+- Per-face and per-point values on meshes, with a form to edit them.
+- Motion, creases and authored normals from imported RDL scenes, and progress while a large one opens.
+
+**From MoonRay's reference documentation** (things MoonRay does that the plugin has no control for yet)
+
+- **Deep images**: deep EXR output and its settings.
+- **Light sets, shadow sets, shadow receiver sets and trace sets**: which lights light, and which objects shadow, what.
+- **Display filters**: MoonRay's post-render filters (blend, colour correct, convolution, depth of field, halftone, ramp, toon and the rest). Only the image filter is in the Windows build.
+- **Render settings not in the form**: volume quality and depth, presence and hair depth, sample and roughness clamping, pixel filter, texture blur and texture cache size, Russian roulette, frame-locked noise.
+- **Texture baking** with the bake camera as a workflow, not only as an item.
+- **Arras**: rendering one frame across several machines.
+- **Alembic and USD geometry procedurals**, which the Windows build does not include.
+
 ## More
 
 - [How MoonLightIPR works, what it draws and how closely it matches MoonRay](moonlightipr/README.md)
