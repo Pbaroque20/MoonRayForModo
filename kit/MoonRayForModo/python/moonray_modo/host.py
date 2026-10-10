@@ -112,6 +112,9 @@ def material_values(material):
                                 # Where a material says how its polygons are smoothed: 0 for flat, otherwise the angle within which
                                 # neighbours are smoothed together. None leaves the mesh to be smoothed as it otherwise would be.
                                 'smoothing_angle': (float(settings.get('smoothing_angle',40.0)) if settings['smoothing'] else 0.0) if settings.get('smoothing') is not None else None,
+                                # Modo's own word on the same, which holds where the MoonRay settings say nothing: its material's
+                                # Smoothing and Smoothing Angle.
+                                'modo_smoothing_angle': math.degrees(float(channel(material, 'smAngle', math.radians(40.0)))) if float(channel(material, 'smooth', 1.0)) > 0 else 0.0,
                                 'diffuse_amount': diffuse_amount,
                                 'raw_color': diffuse,
                                 'raw_specular': color(material, 'specCol'),
@@ -151,6 +154,8 @@ def material_values(material):
 
 # The sun's width in the sky, in degrees, at a solar disc size of 100%.
 SUN_DEGREES = 0.53
+# The most polygons a mesh may have for its material's Modo smoothing angle to be worked out for it.
+SMOOTHING_ANGLE_FACES = 50000
 
 
 def solar_discs(result):
@@ -192,6 +197,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     if projection not in ('persp','ortho'):
         raise ValueError('Unsupported camera projection: '+projection)
     warnings = []
+    smoothed_whole = []
     render = scene.renderItem
     width, height = int(channel(render, 'resX', 1280)), int(channel(render, 'resY', 720))
     if channel(camera, 'resOverride', 0):
@@ -468,8 +474,18 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                                          'subdivision': object_settings['subdivision'] if object_settings['override'] else subdivision})
                 declared = {}
                 for face_tag in set(face_materials):
-                    worn = result['materials'].get(face_tag, {})
+                    # Polygons no material is set on wear the scene's base material.
+                    worn = result['materials'].get(face_tag) or result['materials'].get('', {})
                     said = next((layer.get('smoothing_angle') for layer in reversed(worn.get('material_stack', [worn])) if layer.get('smoothing_angle') is not None), None)
+                    if said is None:
+                        # Modo's own smoothing angle, as Modo draws the mesh. Working it out takes seconds on a heavy mesh,
+                        # which is then smoothed all over, as MoonRay smooths, and named in a notice.
+                        modo_said = next((layer.get('modo_smoothing_angle') for layer in reversed(worn.get('material_stack', [worn])) if layer.get('modo_smoothing_angle') is not None), None)
+                        if modo_said is not None and modo_said < 179.0:
+                            if len(faces) <= SMOOTHING_ANGLE_FACES:
+                                said = modo_said
+                            elif item.name not in smoothed_whole:
+                                smoothed_whole.append(item.name)
                     if said is not None:
                         declared[face_tag] = said
                 if declared:
@@ -564,5 +580,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     result['native_light_links']=capture_light_links(scene,result,warnings)
     from .entities import collect as collect_entities
     result['entities']=collect_entities(scene,warnings)
+    if smoothed_whole:
+        warnings.append("Smoothed all over rather than within their material's smoothing angle, having more than %d polygons: %s. "
+                        'Set a smoothing angle in the MoonRay material settings to hold it.'
+                        % (SMOOTHING_ANGLE_FACES, ', '.join(smoothed_whole[:6]) + (' ...' if len(smoothed_whole) > 6 else '')))
     result['warnings'] = sorted(set(warnings))
     return result
