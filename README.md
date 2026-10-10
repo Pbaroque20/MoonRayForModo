@@ -35,12 +35,35 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **Light Path Expressions** has its own entry in the MoonRay menu and under Advanced in the render settings.
 - **Dragging the sun or an environment light** updates the preview when you let go.
 
-## Still rough
+## Known issues
 
-- Most of the new features have been measured against MoonRay but not yet used on production scenes.
-- Volumes scatter light once, and a VDB volume's own glow (its emission grid) is not drawn.
-- Very smooth highlights are dimmer than Modo's.
+**MoonLightIPR preview**
+
+- Very smooth highlights (roughness under about 0.2) are dimmer than Modo's.
+- Fog and clouds scatter light once, so thick clouds look darker inside than in MoonRay. A VDB's own glow (its emission grid) is not drawn.
+- Two VDB volumes that overlap shadow each other wrongly.
+- Hair is close to MoonRay's but not exact; see-through strands cast shadows that are too dark or too light.
+- Skin and wax look for light beneath the surface straight down only, so thin edges can look flat.
+- Textured sphere and spot lights are noisier than textured rect and distant lights.
+- Rod, barn door, cookie and VDB light filters are not drawn.
+- Motion blur is not shown while the preview follows your edits.
+
+**Hair**
+
+- Growing dense hair for the first time, or after moving a guide, takes several seconds (about 8 for 30,000 strands). Re-rendering after that is quick.
 - Hair grows from curves you draw as guides; Modo's Fur material is not read.
+
+**Materials and Modo parity**
+
+- Under Principled, Modo's diffuse gets brighter with roughness and MoonRay's does not.
+- A roughness driven by an image is not adjusted for Blinn and Ashikhmin materials.
+
+**Everything here**
+
+- Tested on one machine (RTX 3090), and measured against MoonRay rather than used on production scenes.
+- The light path expression check catches typing mistakes only; an expression can pass and still match no light.
+
+The [main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo#limitations) lists the plugin's wider limitations.
 
 ## More
 
