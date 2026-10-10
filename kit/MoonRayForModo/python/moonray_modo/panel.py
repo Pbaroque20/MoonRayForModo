@@ -65,6 +65,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.customContextMenuRequested.connect(lambda point:self._image_menu(point).exec_(self.preview.mapToGlobal(point)))
         self.preview.installEventFilter(self)
         self.preview.start_requested.connect(self.start_render)
+        self.preview.region_drawn.connect(self._region_drawn)
+        self.preview.hovered.connect(self._probe)
         self.preview.set_worker_overlay(self.preferences.get('worker_tiles'))
         self.preview.set_show_buckets(self.preferences.get('show_buckets'))
         layout.addWidget(self.preview, 1)
@@ -139,8 +141,16 @@ class Panel(Tools, QtWidgets.QWidget):
         self.exposure.setToolTip('Display exposure in stops. The rendered values are not changed.')
         self.exposure.valueChanged.connect(lambda value:self.display_timer.start())
         row.addWidget(self.exposure)
+        # Which of the picture is shown: all of it, one of its colours as greys, or its alpha.
+        self.channels=QtWidgets.QButtonGroup(self);self.channels.setExclusive(True)
+        for key,label,tip in (('rgb','RGB','Show the whole picture'),('r','R','Show the red channel alone, as greys'),('g','G','Show the green channel alone, as greys'),
+                              ('b','B','Show the blue channel alone, as greys'),('a','A','Show the alpha channel')):
+            button=QtWidgets.QToolButton();button.setText(label);button.setCheckable(True);button.setToolTip(tip);button.setProperty('channel',key)
+            button.setChecked(key=='rgb');self.channels.addButton(button);row.addWidget(button)
+        self.channels.buttonClicked.connect(lambda button:self._channel_chosen(button.property('channel')))
+        self._before_alpha=None
         self.region_enabled=QtWidgets.QCheckBox('Region')
-        self.region_enabled.setToolTip('Render only the region set in the Render item\'s MoonRay properties.')
+        self.region_enabled.setToolTip('Render only a region of the frame. While this is on, drag with the left button in the picture to draw the region.\nThe middle button still moves the picture. Its numbers are also in the Render item\'s MoonRay properties.')
         self.region_enabled.toggled.connect(self._region_toggled)
         row.addWidget(self.region_enabled)
         self.focus_pick=QtWidgets.QToolButton();self.focus_pick.setText('Focus');self.focus_pick.setCheckable(True)
@@ -206,6 +216,10 @@ class Panel(Tools, QtWidgets.QWidget):
         # A long message is cut short rather than widening the window.
         self.status.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
         row.addWidget(self.status,1)
+        # What is under the pointer: its place in the picture and its values.
+        self.probe=QtWidgets.QLabel('');self.probe.setEnabled(False)
+        self.probe.setToolTip('The pixel under the pointer: its place from the top left, then red, green, blue and alpha.\nLinear values are the render\'s own, before the view transform; display values are what is on screen.')
+        row.addWidget(self.probe)
         self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
         row.addWidget(self.image_info)
         self.render_timing=QtWidgets.QLabel('');self.render_timing.setEnabled(False)
@@ -271,7 +285,53 @@ class Panel(Tools, QtWidgets.QWidget):
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
 
+    def _channel_chosen(self,channel):
+        """One colour is the picture's own channel shown as greys; alpha is the render's alpha output, shown in the picture's place."""
+        if channel=='a':
+            index=self.buffer.findData('alpha')
+            if index<0 or self.buffer.view().isRowHidden(index):
+                self.status.setText('This engine gives the preview no alpha; choose MoonRay to see it.')
+                self.channels.buttons()[0].setChecked(True);channel='rgb'
+            else:
+                if self.buffer.currentData()!='alpha':self._before_alpha=self.buffer.currentData()
+                self.buffer.setCurrentIndex(index);self.preview.set_channel('rgb');return
+        if self._before_alpha is not None and self.buffer.currentData()=='alpha':
+            self.buffer.setCurrentIndex(max(0,self.buffer.findData(self._before_alpha)))
+        self._before_alpha=None
+        self.preview.set_channel(channel)
+
+    def _region_drawn(self,left,top,right,bottom):
+        """A rectangle dragged in the picture is the region to render."""
+        region=[round(min(1.0,max(0.0,v)),4) for v in (left,top,right,bottom)]
+        if region[2]-region[0]<.005 or region[3]-region[1]<.005:return
+        self._store(region=region,region_enabled=True)
+        self.preview.set_region(region,True)
+        self.status.setText('Region set: %d%% to %d%% across, %d%% to %d%% down.'%(region[0]*100,region[2]*100,region[1]*100,region[3]*100))
+        if self._following:self.preview_timer.start()
+
+    def _probe(self,x,y):
+        """Say what is under the pointer: the render's own linear values where they are held, else what is on screen."""
+        if x<0 or self.preview.image.isNull():
+            self.probe.setText('');return
+        import struct
+        frame=self.renderer.buffers.displayed or {}
+        def linear(key,count):
+            # A buffer held in memory is rows of three floats, the bottom row first.
+            held=(frame.get('linear') or {}).get(key) or ((self.renderer.buffers.progressive_frames.get(key) or {}).get('linear') or {}).get(key)
+            if not held or (held[0],held[1])!=(self.preview.image.width(),self.preview.image.height()):return None
+            try:return struct.unpack_from('<3f',held[2],((held[1]-1-y)*held[0]+x)*12)[:count]
+            except struct.error:return None
+        values=linear(frame.get('key','beauty'),3)
+        alpha=linear('alpha',1)
+        if values is not None:
+            text='%d, %d   R %.4f  G %.4f  B %.4f'%(x,y,*values)+('  A %.4f'%alpha[0] if alpha else '')+'   linear'
+        else:
+            colour=QtGui.QColor(self.preview.image.pixel(x,y))
+            text='%d, %d   R %.3f  G %.3f  B %.3f'%(x,y,colour.redF(),colour.greenF(),colour.blueF())+('  A %.4f'%alpha[0] if alpha else '')+'   display'
+        self.probe.setText(text)
+
     def _region_toggled(self,enabled):
+        self.preview.set_region(self._settings_values()['region'] if enabled else None,enabled)
         if enabled==self._settings_values()['region_enabled']:return
         self._store(region_enabled=bool(enabled))
         if self._following:self.preview_timer.start()
@@ -333,6 +393,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if not self.display_timer.isActive():
             blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker
         blocker=QtCore.QSignalBlocker(self.region_enabled);self.region_enabled.setChecked(values['region_enabled']);del blocker
+        self.preview.set_region(values['region'] if values['region_enabled'] else None,values['region_enabled'])
         if previous is None:return
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
