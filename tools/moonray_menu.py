@@ -83,15 +83,6 @@ def tidy(text):
     return eol.join(out)
 
 
-if __name__ == '__main__':
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/layout.cfg'
-    before = path.read_bytes().decode('utf-8')
-    after = tidy(before)
-    if after != before:
-        path.write_bytes(after.encode('utf-8'))
-    print('Menu in order:', path)
-
-
 CURVE_ROWS = (
     ('curves', 'Render Curves as Tubes', 'Requires object overrides. Curves, splines and line polygons of this mesh render as round tubes, '
      'all of one material as a single curve geometry.'),
@@ -106,12 +97,12 @@ CURVE_ROWS = (
 
 HAIR_ROWS = (
     ('hair', 'Grow Hair from Curves', 'Requires object overrides. The curves of this mesh become guides: many strands are grown from each when the scene '
-     'is rendered, and take the curve widths above.'),
+     'is rendered. They take the curve widths above, made thinner where needed to keep the strands of a cluster apart.'),
     ('hair_scalp', 'Hair Scalp', 'The mesh the hair grows on. Every root is held to its surface, so no strand floats above it or starts inside it.'),
     ('hair_mode', 'Hair Grows', 'Around each guide: strands follow that guide and gather toward it, as locks. Between guides: each strand is '
      'shaped by the guides nearest it and fills the space between them, as fur.'),
     ('hair_count', 'Strands per Guide', 'How many strands are grown from each guide.'),
-    ('hair_width', 'Cluster Width at Root (mm)', 'How far from its guide a strand may start.'),
+    ('hair_width', 'Cluster Width at Root (mm)', 'How far from its guide a strand may start. 0 sizes it from the guides: a sixth of their length.'),
     ('hair_clump', 'Cluster Closes toward Tip', 'Around each guide: 0 keeps the strands as far apart as at the root, 1 brings them to the guide at its tip.'),
     ('hair_length', 'Length Variation', 'How much shorter than its guide a strand may be: 0 for none, 0.3 for up to 30%.'),
     ('hair_seed', 'Hair Seed', 'Another number grows other hair from the same guides. The same number always grows the same hair.'),
@@ -152,12 +143,20 @@ def curve_controls(text):
     """The mesh form's curve controls, after the last of its subdivision controls; unchanged if they are there."""
     anchor = '<list type="Control" val="cmd moonray.object.adaptive_error ?">'
     if 'cmd moonray.object.curves ?' in text or text.count(anchor) != 1:
-        return round_control(hair_controls(text))
+        return worded(round_control(hair_controls(text)))
     end = text.index('</list>', text.index(anchor)) + len('</list>')
     eol = '\r\n' if '\r\n' in text else '\n'
     rows = ''.join(eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % row
                    for row in CURVE_ROWS)
-    return round_control(hair_controls(text[:end] + rows + text[end:]))
+    return worded(round_control(hair_controls(text[:end] + rows + text[end:])))
+
+
+def worded(text):
+    """The curve and hair controls that are already in the form, labelled and explained as they now are here."""
+    for key, label, tip in CURVE_ROWS + HAIR_ROWS:
+        text = re.sub(r'(<list type="Control" val="cmd moonray\.object\.%s \?">)<atom type="Label">[^<]*</atom><atom type="Tooltip">[^<]*</atom>' % re.escape(key),
+                      lambda found: '%s<atom type="Label">%s</atom><atom type="Tooltip">%s</atom>' % (found.group(1), label, tip), text)
+    return text
 
 
 def hair_controls(text):
@@ -170,3 +169,13 @@ def hair_controls(text):
     rows = ''.join(eol + '      <list type="Control" val="cmd moonray.object.%s ?"><atom type="Label">%s</atom><atom type="Tooltip">%s</atom></list>' % row
                    for row in HAIR_ROWS)
     return text[:end] + rows + text[end:]
+
+
+if __name__ == '__main__':
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/layout.cfg'
+    before = path.read_bytes().decode('utf-8')
+    # As tools/install_moonlightipr.py applies it to an installed kit.
+    after = rdl_entry(curve_controls(tidy(before)))
+    if after != before:
+        path.write_bytes(after.encode('utf-8'))
+    print('Menu in order:', path)

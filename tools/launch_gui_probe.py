@@ -85,12 +85,19 @@ ET.ElementTree(imports).write(str(config / 'Imports.cfg'), encoding='utf-8', xml
 log = (root / 'test-results/gui-console.log').open('w', encoding='utf-8')
 probe=root/'tools'/args.probe
 assert probe.resolve().parent==root/'tools' and probe.is_file()
+# The test Modo previews with the MoonLightIPR that is built now, not with one an earlier test left in its profile:
+# an older session refuses the scenes a newer plugin sends it.
+import os,sys
+environment=dict(os.environ)
+if (root/'build/moonlightipr/bin/moonlightipr_session.exe').is_file() and not environment.get('MOONRAY_MODO_MOONLIGHTIPR'):
+    subprocess.run([sys.executable,str(root/'tools/stage_moonlightipr.py'),'--destination',str(root/'build/moonlightipr/stage')],check=True,stdout=subprocess.DEVNULL)
+    environment['MOONRAY_MODO_MOONLIGHTIPR']=str(root/'build/moonlightipr/stage')
 startup=subprocess.STARTUPINFO()
 startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW
 startup.wShowWindow=1  # This is an explicitly interactive GUI probe, not a hidden worker.
 process = subprocess.Popen([r'C:\Program Files\Modo16.1v9\modo\modo.exe',
     '-path:user=' + str(profile), '-config:' + str(config),
-    '-cmdlate:@{' + str(probe) + '}'], stdout=log, stderr=subprocess.STDOUT,startupinfo=startup)
+    '-cmdlate:@{' + str(probe) + '}'], stdout=log, stderr=subprocess.STDOUT,startupinfo=startup,env=environment)
 (root / 'test-results/gui-process.txt').write_text(str(process.pid))
 print('Started isolated Modo GUI test, PID', process.pid)
 if args.wait:
