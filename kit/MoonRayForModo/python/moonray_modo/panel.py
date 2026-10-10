@@ -93,6 +93,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # What the user last chose from the list themselves, as against what the panel showed for them.
         self._buffer_picked=None
         self.buffer.activated.connect(lambda index:setattr(self,'_buffer_picked',self.buffer.itemData(index)))
+        self._limit_buffers()
         self.preview_engine.currentIndexChanged.connect(self._engine_changed)
         self.preview_engine.currentIndexChanged.connect(self._preview_changed)
         self.ipr_mode.toggled.connect(self._ipr_changed)
@@ -347,11 +348,20 @@ class Panel(Tools, QtWidgets.QWidget):
         while self.buffer.count()>base:self.buffer.removeItem(self.buffer.count()-1)
         for label,name in names:self.buffer.addItem(label,name)
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
+        self._limit_buffers()
 
     def _engine_changed(self,index):
         self.preferences.set('preview_engine',self.preview_engine.currentData())
         # MoonLightIPR follows edits as they happen, so look for them more often.
         self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlightipr' else 150)
+        self._limit_buffers()
+
+    def _limit_buffers(self):
+        """MoonLightIPR makes the picture and its denoised form and nothing else. The other buffers are MoonRay's, so
+        the list leaves them out while MoonLightIPR is the engine."""
+        only=self.preview_engine.currentData()=='moonlightipr'
+        for row in range(2,self.buffer.count()):self.buffer.view().setRowHidden(row,only)
+        if only and self.buffer.currentIndex()>1:self.buffer.setCurrentIndex(0)
 
     def _engine_notices(self,messages):
         """Add what the preview engine left out to the notices of the scene it is showing."""
