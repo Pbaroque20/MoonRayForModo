@@ -4,6 +4,49 @@ from . import options
 KINDS={'lpe':'Light path expression','material':'Material AOV','cryptomatte':'Cryptomatte','motion':'Motion vectors',
        'depth':'Depth','normal':'Normal','position':'World position','alpha':'Alpha'}
 
+# Light path expressions that are often wanted, as (what it is called, a name for the output, the expression). The
+# single words are MoonRay's own shorthand for an expression.
+PRESETS=(('Direct diffuse','diffuse_direct_light','C<RD>[<L.>O]'),
+         ('Indirect diffuse','diffuse_indirect','C<RD>[DSG]+[<L.>O]'),
+         ('Direct glossy','glossy_direct_light','C<RG>[<L.>O]'),
+         ('Indirect glossy','glossy_indirect','C<RG>[DSG]+[<L.>O]'),
+         ('Mirror reflections','reflections','reflection'),
+         ('Refractions','refractions','transmission'),
+         ('Subsurface and translucency','translucency','translucent'),
+         ('Caustics','caustics','caustic'),
+         ('Emission','emitted','emission'),
+         ('Diffuse without shadows','diffuse_unshadowed','unoccluded;CD[<L.>O]'))
+LPE_WORDS=('caustic','diffuse','emission','glossy','mirror','reflection','translucent','transmission')
+
+def lpe_problem(expression):
+    """What is wrong with a light path expression, in plain words, or None if nothing is seen to be. It looks at how
+    the expression is written, not at whether MoonRay will find any light on such a path."""
+    text=expression.strip()
+    if not text:return 'Enter a light path expression'
+    if ';' in text:
+        prefix,text=(part.strip() for part in text.split(';',1))
+        if prefix!='unoccluded':return 'The only word allowed before a semicolon is unoccluded'
+        if not text:return 'Enter an expression after the semicolon'
+    if text in LPE_WORDS:return None
+    if re.fullmatch(r'[a-z]+',text):return 'Unknown word "%s". MoonRay knows: %s'%(text,', '.join(LPE_WORDS))
+    if text.count("'")%2:return 'A label in quotes is not closed'
+    bare=re.sub(r"'[^']*'",'',text)
+    odd=sorted(set(re.findall(r"[^A-Za-z.*+?^|()\[\]<>{},0-9 ]",bare)))
+    if odd:return 'These characters do not belong in an expression: '+' '.join(odd)
+    letters=sorted(set(re.findall(r'[A-Za-z]',bare))-set('CRTVLOBDGSsUM'))
+    if letters:return ('Unknown event %s. Events are C camera, R reflection, T transmission, V volume, L light, O emission, B background; '
+                       'D diffuse, G glossy, S mirror, s straight')%', '.join(letters)
+    for opening,closing,name in (('[',']','square brackets'),('<','>','angle brackets'),('(',')','parentheses')):
+        depth=0
+        for character in bare:
+            depth+=character==opening;depth-=character==closing
+            if depth<0:break
+        if depth:return 'The %s do not match'%name
+    if re.search(r'\[\s*\]|<\s*>|\(\s*\)',bare):return 'Empty brackets'
+    if re.match(r'[*+?|]',bare) or re.search(r'[|(\[<][*+?]',bare):return 'A *, + or ? has nothing before it to repeat'
+    if not bare.lstrip('( ').startswith('C'):return 'An expression starts at the camera, with C'
+    return None
+
 def values(entries):
     if not isinstance(entries,list) or len(entries)>128:raise ValueError('Use at most 128 custom outputs')
     result=[];names=set(options.AOVS)|{'beauty','denoised_beauty','denoise_albedo','denoise_normal','R','G','B','A','object_id','modo_object_id'}
@@ -17,6 +60,7 @@ def values(entries):
         if not isinstance(v['part'],str) or not re.fullmatch(r'[A-Za-z0-9_]*',v['part']):raise ValueError('EXR part name must use letters, numbers and underscores')
         if not isinstance(v['expression'],str) or len(v['expression'])>4096:raise ValueError('Invalid AOV expression')
         if v['kind'] in ('lpe','material') and not v['expression'].strip():raise ValueError('Enter a light path or material AOV expression')
+        if v['kind']=='lpe' and lpe_problem(v['expression']):raise ValueError('%s: %s'%(name,lpe_problem(v['expression'])))
         if type(v['depth']) is not int or not 1<=v['depth']<=16:raise ValueError('Cryptomatte depth must be between 1 and 16')
         if v['category'] not in ('object','material','asset'):raise ValueError('Unknown Cryptomatte category')
         if v['kind']=='cryptomatte':v.update(precision=0,filter=0)
