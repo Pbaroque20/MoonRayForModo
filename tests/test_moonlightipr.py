@@ -107,7 +107,7 @@ class EntityTests(unittest.TestCase):
         self.assertIn('table.insert(assignments, {RdlMeshGeometry("/modo/entity/box"), "", materials["red"], lightSet, BaseVolume("/modo/entity/fog")})',text)
         self.assertLess(text.index('table.insert(lights, EnvLight("/modo/entity/env"))'),text.index('local lightSet'))
         # A volume shader has no place, so it must not be given a transform.
-        self.assertNotIn('node_xform',text[text.index('BaseVolume("/modo/entity/fog") {'):text.index('BoxGeometry("/modo/entity/box") {')])
+        self.assertNotIn('node_xform',text[text.index('BaseVolume("/modo/entity/fog") {'):text.index('RdlMeshGeometry("/modo/entity/box") {')])
         broken=scene();broken['entities']=[dict(self.items()[2])];broken['lights']=broken['lights'][:1]
         with self.assertRaises(ValueError):rdla.scene_text(broken,320,180,1,0.0)
 
