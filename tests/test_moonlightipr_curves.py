@@ -54,5 +54,12 @@ class Curves(unittest.TestCase):
         self.assertFalse(curves.payload(entry,None)[2])
         self.assertIsNone(curves.payload({'vertices':[[0,0,0]],'counts':[1]},None))
 
+    def test_the_same_lists_are_known_without_reading_them_and_a_changed_one_is_not(self):
+        entry={'identity':'a','vertices':[[0,0,0],[0,1,0],[1,0,0],[1,1,0]],'counts':[2,2],'radius':.1}
+        first=curves.payload(entry,None)
+        self.assertIs(curves.payload(dict(entry),None),first)
+        self.assertNotEqual(curves.payload(dict(entry,radius=.2),None)[1],first[1])
+        self.assertNotEqual(curves.payload(dict(entry,vertices=[[0,0,0],[0,2,0],[1,0,0],[1,1,0]]),None)[0],first[0])
+
 
 if __name__=='__main__':unittest.main()

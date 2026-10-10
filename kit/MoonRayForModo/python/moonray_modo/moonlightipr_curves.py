@@ -14,6 +14,8 @@ from array import array
 
 LINEAR, BEZIER, BSPLINE = 0, 1, 2
 BUILT = {}
+# What was built for an entry whose lists are the very lists seen before, found without reading them through.
+SAME = {}
 
 
 def segments(entry, points=None):
@@ -75,6 +77,11 @@ def payload(entry, slot):
         closing = None
     if closing is not None and len(closing) != len(entry['vertices']):
         raise ValueError('Motion samples of %s must have equal point counts' % entry.get('name', ''))
+    lists = (entry['vertices'], entry['counts'], entry.get('radii'), entry.get('uvs'), closing)
+    plain = (len(entry['vertices']), entry.get('radius', .001), int(entry.get('curve_type', LINEAR)), slot)
+    same = SAME.get(tuple(id(part) for part in lists))
+    if same is not None and all(a is b for a, b in zip(same[0], lists)) and same[1] == plain:
+        return same[2]
     held = hashlib.sha1()
     for part in (array('d', itertools.chain.from_iterable(entry['vertices'])), array('q', entry['counts']),
                  array('d', entry.get('radii') or [entry.get('radius', .001)]), array('d', itertools.chain.from_iterable(entry.get('uvs') or [])),
@@ -83,8 +90,13 @@ def payload(entry, slot):
         held.update(part.tobytes())
         held.update(b'|')
     signature = held.digest()
+    def remembered(built):
+        if len(SAME) >= 16:
+            SAME.pop(next(iter(SAME)))
+        SAME[tuple(id(part) for part in lists)] = (lists, plain, built)
+        return built
     if signature in BUILT:
-        return BUILT[signature]
+        return remembered(BUILT[signature])
     controls, widths, firsts, strands, straight, alongs = segments(entry)
     if not firsts:
         return None
@@ -93,9 +105,9 @@ def payload(entry, slot):
     if not math.isfinite(sum(positions)) or not math.isfinite(sum(radii)) or not math.isfinite(sum(moved)):
         raise ValueError('Curves %s contain a non-finite number' % entry.get('name', ''))
     # How far along its strand each control point is, and its strand's own number.
-    numbers = {}
+    numbers = {strand: chance(strand) for strand in set(strands)}
     strand_values = array('f', itertools.chain.from_iterable(
-        (along, numbers.setdefault(strand, chance(strand)), 0.0) for along, strand in zip(alongs, strands)))
+        (along, numbers[strand], 0.0) for along, strand in zip(alongs, strands)))
     uvs = entry.get('uvs') or []
     coordinates = array('f')
     if uvs and slot is not None and len(uvs) == len(entry['counts']):
@@ -116,4 +128,4 @@ def payload(entry, slot):
     if len(BUILT) >= 16:
         BUILT.pop(next(iter(BUILT)))
     BUILT[signature] = (key, data, bool(coordinates), straight, bool(moved))
-    return BUILT[signature]
+    return remembered(BUILT[signature])

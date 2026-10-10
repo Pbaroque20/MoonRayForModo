@@ -46,30 +46,39 @@ def unit(a, fallback=(0.0, 1.0, 0.0)):
 
 
 def on_triangle(p, a, b, c):
-    """The point of a triangle nearest p (Ericson, Real-Time Collision Detection)."""
-    ab, ac, ap = sub(b, a), sub(c, a), sub(p, a)
-    d1, d2 = dot(ab, ap), dot(ac, ap)
+    """The point of a triangle nearest p (Ericson, Real-Time Collision Detection). Written out number by number: it is
+    run for every strand of hair against every triangle near it."""
+    ax, ay, az = a
+    px, py, pz = p
+    abx, aby, abz = b[0] - ax, b[1] - ay, b[2] - az
+    acx, acy, acz = c[0] - ax, c[1] - ay, c[2] - az
+    apx, apy, apz = px - ax, py - ay, pz - az
+    d1, d2 = abx * apx + aby * apy + abz * apz, acx * apx + acy * apy + acz * apz
     if d1 <= 0 and d2 <= 0:
         return a
-    bp = sub(p, b)
-    d3, d4 = dot(ab, bp), dot(ac, bp)
+    bpx, bpy, bpz = px - b[0], py - b[1], pz - b[2]
+    d3, d4 = abx * bpx + aby * bpy + abz * bpz, acx * bpx + acy * bpy + acz * bpz
     if d3 >= 0 and d4 <= d3:
         return b
     vc = d1 * d4 - d3 * d2
     if vc <= 0 and d1 >= 0 and d3 <= 0:
-        return add(a, scaled(ab, d1 / (d1 - d3)))
-    cp = sub(p, c)
-    d5, d6 = dot(ab, cp), dot(ac, cp)
+        k = d1 / (d1 - d3)
+        return (ax + abx * k, ay + aby * k, az + abz * k)
+    cpx, cpy, cpz = px - c[0], py - c[1], pz - c[2]
+    d5, d6 = abx * cpx + aby * cpy + abz * cpz, acx * cpx + acy * cpy + acz * cpz
     if d6 >= 0 and d5 <= d6:
         return c
     vb = d5 * d2 - d1 * d6
     if vb <= 0 and d2 >= 0 and d6 <= 0:
-        return add(a, scaled(ac, d2 / (d2 - d6)))
+        k = d2 / (d2 - d6)
+        return (ax + acx * k, ay + acy * k, az + acz * k)
     va = d3 * d6 - d5 * d4
     if va <= 0 and (d4 - d3) >= 0 and (d5 - d6) >= 0:
-        return add(b, scaled(sub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6))))
+        k = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+        return (b[0] + (c[0] - b[0]) * k, b[1] + (c[1] - b[1]) * k, b[2] + (c[2] - b[2]) * k)
     denominator = 1.0 / (va + vb + vc)
-    return add(a, add(scaled(ab, vb * denominator), scaled(ac, vc * denominator)))
+    v, w = vb * denominator, vc * denominator
+    return (ax + (abx * v + acx * w), ay + (aby * v + acy * w), az + (abz * v + acz * w))
 
 
 class Scalp:
@@ -124,19 +133,29 @@ class Scalp:
         best, found = reach, None
         px, py, pz = point
         moved = math.sqrt((px - origin[0]) ** 2 + (py - origin[1]) ** 2 + (pz - origin[2]) ** 2)
-        for index, far in zip(candidates, distances):
+        middles, reaches, triangles, widest, root = self.middles, self.reaches, self.triangles, self.widest, math.sqrt
+        near = []
+        for place, (index, far) in enumerate(zip(candidates, distances)):
             # The patch is in order of distance from its own middle; past this, none can be nearer.
-            if far - moved - self.widest > best:
+            if far - moved - widest > best:
                 break
-            mx, my, mz = self.middles[index]
+            mx, my, mz = middles[index]
             # Nothing of this triangle can be nearer than its middle less its size.
-            if math.sqrt((px - mx) ** 2 + (py - my) ** 2 + (pz - mz) ** 2) - self.reaches[index] > best:
-                continue
-            a, b, c = self.triangles[index]
+            gap = root((px - mx) * (px - mx) + (py - my) * (py - my) + (pz - mz) * (pz - mz)) - reaches[index]
+            if gap <= best:
+                near.append((gap, place, index))
+        # The likeliest first: once one is found close by, most of the others cannot be nearer and are not worked out.
+        # Of triangles equally near, the one furthest along the patch is kept, as it was when they were taken in order.
+        near.sort()
+        last = -1
+        for gap, place, index in near:
+            if gap > best:
+                break
+            a, b, c = triangles[index]
             q = on_triangle(point, a, b, c)
-            distance = math.sqrt((px - q[0]) ** 2 + (py - q[1]) ** 2 + (pz - q[2]) ** 2)
-            if distance <= best:
-                best, found = distance, (q, index)
+            distance = root((px - q[0]) ** 2 + (py - q[1]) ** 2 + (pz - q[2]) ** 2)
+            if distance < best or (distance == best and place > last):
+                best, found, last = distance, (q, index), place
         if found is None:
             return None
         a, b, c = self.triangles[found[1]]
@@ -244,11 +263,17 @@ def grow(guides, scalp, mode=CLUSTERS, count=20, width=.01, clump=.5, length_var
         if scalp is not None and placed is None:
             adrift += 1
         normal = placed[1] if placed else unit(sub(guide[1], guide[0]))
+        # How far the guide's own root is from the scalp. A strand that starts some way from the root has the scalp
+        # no further off than that way and this together, so it need not look as far as it otherwise might.
+        off = math.sqrt(dot(sub(placed[0], root), sub(placed[0], root))) if placed else None
         helper = (1.0, 0.0, 0.0) if abs(normal[0]) < .9 else (0.0, 1.0, 0.0)
         across = unit(cross(normal, helper))
         along = cross(normal, across)
         steps = len(guide) - 1
         others = [guides[other] for other in near[index]] if near else []
+        # What is the same for every strand of this guide: its shape from its root, and its neighbours' shapes.
+        own = [sub(p, root) for p in guide]
+        shapes = [guide] + [resampled(other, len(guide)) for other in others]
         for _ in range(count):
             angle, distance = chance.uniform(0, 2 * math.pi), width * math.sqrt(chance.random())
             shorter = 1.0 - length_variation * chance.random()
@@ -259,7 +284,6 @@ def grow(guides, scalp, mode=CLUSTERS, count=20, width=.01, clump=.5, length_var
                 weights[0] += 1.0
                 total = sum(weights)
                 weights = [w / total for w in weights]
-                shapes = [guide] + [resampled(other, len(guide)) for other in others]
                 start = (0.0, 0.0, 0.0)
                 for weight, shape in zip(weights, shapes):
                     start = add(start, scaled(shape[0], weight))
@@ -272,22 +296,23 @@ def grow(guides, scalp, mode=CLUSTERS, count=20, width=.01, clump=.5, length_var
                 offset = scaled(add(scaled(across, math.cos(angle)), scaled(along, math.sin(angle))), distance * .25)
                 start = add(start, offset)
                 spread = (0.0, 0.0, 0.0)
+                near_by = None
             else:
                 spread = scaled(add(scaled(across, math.cos(angle)), scaled(along, math.sin(angle))), distance)
                 start = add(root, spread)
-                body = [sub(p, root) for p in guide]
-            landed = scalp.nearest_among(start, patch, width * REACH) if scalp is not None else None
+                body = own
+                near_by = None if off is None else min(width * REACH, (distance + off) * 1.0001 + 1e-9)
+            landed = scalp.nearest_among(start, patch, near_by or width * REACH) if scalp is not None else None
             if landed is None:
                 # No surface within reach: the strand keeps its guide's root rather than hang in the air.
                 base, spread = root, (0.0, 0.0, 0.0)
-                body = [sub(p, root) for p in guide]
+                body = own
             else:
                 base = landed[0]
-            strand = []
-            for j, reach in enumerate(body):
-                share = j / steps
-                # In a cluster the strand starts apart from its guide and closes on it toward the tip.
-                closing = scaled(spread, -clump * share) if not others else (0.0, 0.0, 0.0)
-                strand.append(list(add(base, add(scaled(reach, shorter), closing))))
-            strands.append(strand)
+            # In a cluster the strand starts apart from its guide and closes on it toward the tip.
+            bx, by, bz = base
+            sx, sy, sz = spread
+            pull = 0.0 if others else -clump / steps
+            strands.append([[bx + (reach[0] * shorter + sx * (pull * j)), by + (reach[1] * shorter + sy * (pull * j)), bz + (reach[2] * shorter + sz * (pull * j))]
+                            for j, reach in enumerate(body)])
     return strands, adrift

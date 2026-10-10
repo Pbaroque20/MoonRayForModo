@@ -1,7 +1,13 @@
 """Native strands, points and file-backed VDB volumes; no proxy polygon shells."""
 import json,math,re
 from pathlib import Path
-from .rdla import IDENTITY,string,number,vector,node_matrix,array
+from .rdla import IDENTITY,string,number,vector,node_matrix,array,many_vectors
+
+
+def vectors(values,kind='Vec3'):
+    """A long list of vectors as text: all at once where there are many, which is what hair is."""
+    whole=many_vectors(values,kind) if len(values)>1000 else None
+    return whole if whole is not None else array(vector(v,kind) for v in values)
 
 def asset_frame(path,frame):
     # A run of # is a fixed-width frame field (e.g. smoke.####.vdb).
@@ -26,6 +32,12 @@ def curve_shape(item,settings):
 # Hair that has been grown, kept by what it was grown from: growing it takes seconds, and nothing about it
 # changes until its guides, its scalp or its settings do.
 GROWN={}
+# The grown strands back in their mesh's own space, and the curve geometry made of them, kept so that a scene read
+# again with its hair as it was hands on the very same lists. What comes after knows a list it has seen by which
+# list it is, and does not go through a hundred thousand points to find that nothing moved.
+PLACED={}
+BATCHED={}
+SCALPS={}
 
 
 def scalp_triangles(scene,identity):
@@ -73,17 +85,31 @@ def grown(scene,item,strands,settings,warnings):
     key=held.digest()
     if key not in GROWN:
         if len(GROWN)>=8:GROWN.pop(next(iter(GROWN)))
-        GROWN[key]=hair.grow(guides,hair.Scalp(triangles) if triangles else None,settings['mode'],settings['count'],
+        # The scalp's grid is kept by its triangles: a guide moved, or a setting changed, leaves the scalp as it was.
+        surface=None
+        if triangles:
+            shape=hashlib.sha1(packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles))).tobytes()).digest()
+            if shape not in SCALPS:
+                if len(SCALPS)>=4:SCALPS.pop(next(iter(SCALPS)))
+                SCALPS[shape]=hair.Scalp(triangles)
+            surface=SCALPS[shape]
+        GROWN[key]=hair.grow(guides,surface,settings['mode'],settings['count'],
                              settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'])
     children,adrift=GROWN[key]
     if adrift:
         warnings.append('Hair on %s: %d of %d guides %s too far from the scalp, and the hair of %s grows from the guide itself. Start each guide on the surface.'%(item.name,adrift,len(guides),'starts' if adrift==1 else 'start','it' if adrift==1 else 'them'))
     # Each strand keeps its guide's material, and goes back into the mesh's own space, where its curves are.
-    per=max(1,settings['count']);grown_strands=[]
-    for index,child in enumerate(children):
-        tag=strands[min(len(strands)-1,index//per)][1]
-        grown_strands.append(([transform(p,back) for p in child],tag,None))
-    return (list(strands) if settings['guides'] else [])+grown_strands
+    placed=(key,tuple(float(v) for v in matrix),tuple(tag for _,tag,_ in strands),bool(settings['guides']))
+    if placed not in PLACED:
+        if len(PLACED)>=8:PLACED.pop(next(iter(PLACED)))
+        per=max(1,settings['count']);grown_strands=[]
+        # The matrix written out: this runs once for every point of every strand.
+        a,b,c,_,d,e,f,_,g,h,i,_,x,y,z,_=(float(v) for v in back)
+        for index,child in enumerate(children):
+            tag=strands[min(len(strands)-1,index//per)][1]
+            grown_strands.append(([[p[0]*a+p[1]*d+p[2]*g+x,p[0]*b+p[1]*e+p[2]*h+y,p[0]*c+p[1]*f+p[2]*i+z] for p in child],tag,None))
+        PLACED[placed]=(list(strands) if settings['guides'] else [])+grown_strands
+    return PLACED[placed]
 
 
 def polylines(mesh,polygons,points,id_tag,item):
@@ -157,7 +183,7 @@ def batches(identity,name,strands,shape,material,matrix):
             if not (tapered or shape['uv']):continue
             # How far along the strand each point is, by length rather than by count.
             lengths=[0.0]
-            for a,b in zip(strand,strand[1:]):lengths.append(lengths[-1]+math.sqrt((b[0]-a[0])**2+(b[1]-a[1])**2+(b[2]-a[2])**2))
+            for a,b in zip(strand,strand[1:]):lengths.append(lengths[-1]+math.dist(a,b))
             total=lengths[-1] or 1.0;across=(index+.5)/len(members)
             for length in lengths:
                 along=length/total
@@ -180,16 +206,23 @@ def batches(identity,name,strands,shape,material,matrix):
 # The text of the long lists of a curve geometry, kept by what is in them: thousands of strands
 # are slow to write out and are the same from one render to the next.
 WRITTEN={}
+SEEN={}
 
 
 def written(kind,values,write):
     import hashlib,itertools
     from array import array as packed
+    # A list seen before, the very same one, is not read through again.
+    seen=SEEN.get((kind,id(values)))
+    if seen is not None and seen[0] is values and seen[1]==len(values):return seen[2]
     flat=values if not values or not isinstance(values[0],(list,tuple)) else itertools.chain.from_iterable(values)
     key=(kind,len(values),hashlib.sha1(packed('d',flat).tobytes()).digest())
     if key not in WRITTEN:
         if len(WRITTEN)>=32:WRITTEN.pop(next(iter(WRITTEN)))
         WRITTEN[key]=write()
+    if len(values)>4096:
+        if len(SEEN)>=32:SEEN.pop(next(iter(SEEN)))
+        SEEN[(kind,id(values))]=(values,len(values),WRITTEN[key])
     return WRITTEN[key]
 
 
@@ -229,7 +262,16 @@ def collect(scene,warnings,controls):
                 strands=grown(scene,item,strands,growing,warnings)
                 apart=growing['width']/1000.0/(12.0*math.sqrt(max(1,growing['count'])))
                 shape=dict(shape,root=min(shape['root'],apart),tip=min(shape['tip'],apart))
-            made=batches(item.id,item.name,strands,shape,settings.get('material',''),world_matrix(item))
+            if shape.get('hair'):
+                # Hair that grew as it did before is the geometry it was before: the same lists, not new ones alike.
+                kept=(item.id,item.name,tuple(sorted((k,v) for k,v in shape.items() if k!='hair')),settings.get('material',''),tuple(world_matrix(item)))
+                held=BATCHED.get(kept)
+                if held is None or held[0] is not strands:
+                    if len(BATCHED)>=8:BATCHED.pop(next(iter(BATCHED)))
+                    held=BATCHED[kept]=(strands,batches(item.id,item.name,strands,shape,settings.get('material',''),world_matrix(item)))
+                made=[dict(entry) for entry in held[1]]
+            else:
+                made=batches(item.id,item.name,strands,shape,settings.get('material',''),world_matrix(item))
             from . import primitive_attributes
             carried=primitive_attributes.read(item)
             for entry in made:
@@ -306,12 +348,12 @@ def emit(scene,materials,lines,crypto=False):
             counts=entry.get('counts',[])
             allowed={1,len(vertices),len(counts)} if kind=='curves' else {len(vertices)}
             if len(radii) not in allowed:raise ValueError('Radius count does not match geometry')
-            attrs.update(vertex_list_0=written('points',vertices,lambda:array(vector(v) for v in vertices)),
-                         radius_list=written('radii',radii,lambda:array(number(v) for v in radii)))
+            attrs.update(vertex_list_0=written('points',vertices,lambda:vectors(vertices)),
+                         radius_list=written('radii',radii,lambda:'{'+', '.join(map('%.12g'.__mod__,radii))+'}'))
             for key,target in (('vertices_close','vertex_list_1'),('velocities','velocity_list_0')):
                 if key in entry:
                     if len(entry[key])!=len(vertices):raise ValueError('Motion data does not match geometry vertices')
-                    attrs[target]=array(vector(v) for v in entry[key])
+                    attrs[target]=vectors(entry[key])
             constructor='RdlPointGeometry'
             if kind=='curves':
                 curve_type=int(entry.get('curve_type',0))
@@ -321,7 +363,7 @@ def emit(scene,materials,lines,crypto=False):
                 if entry.get('round'):attrs['curves_subtype']='1'
                 if entry.get('uvs'):
                     if len(entry['uvs']) not in (len(counts),len(vertices)):raise ValueError('Curve UVs must have one entry per strand or per point')
-                    attrs['uv_list']=written('uvs',entry['uvs'],lambda:array(vector(v,'Vec2') for v in entry['uvs']))
+                    attrs['uv_list']=written('uvs',entry['uvs'],lambda:vectors(entry['uvs'],'Vec2'))
         if 'visibility' in entry:
             camera,indirect,reflection,refraction,subsurface,shadow=entry['visibility']
             for key,value in [('visible_in_camera',camera),('visible_shadow',shadow),('visible_diffuse_reflection',indirect),('visible_diffuse_transmission',indirect),('visible_glossy_reflection',reflection),('visible_mirror_reflection',reflection),('visible_glossy_transmission',refraction),('visible_mirror_transmission',refraction)]:attrs[key]='true' if value else 'false'
