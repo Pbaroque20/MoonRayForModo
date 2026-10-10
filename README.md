@@ -13,14 +13,14 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **Hair** shaded as hair, with MoonRay's hair material.
 - **Skin** with MoonRay's skin material, including light glowing through thin parts.
 - **Curves** drawn as real strands, as ribbons or round tubes.
-- **Fog** inside a MoonRay box or sphere.
+- **Fog** inside a MoonRay box or sphere, and **VDB clouds and smoke** from a file.
 - **Textures on every kind of light**, not only rect lights.
 
 ![Hair, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-hair_dark.jpg)
 *Hair in MoonRay (left) and in the MoonLightIPR preview (right).*
 
-![Fog, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-fog_coloured.jpg)
-*Coloured fog in a box, MoonRay (left) and MoonLightIPR (right).*
+![A VDB cloud, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-vdb_cloud.jpg)
+*A cloud from a VDB file, MoonRay (left) and MoonLightIPR (right).*
 
 **Closer to Modo**
 
@@ -38,7 +38,7 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 ## Still rough
 
 - Most of the new features have been measured against MoonRay but not yet used on production scenes.
-- Fog is even fog only: no VDB volumes.
+- Volumes scatter light once, and a VDB volume's own glow (its emission grid) is not drawn.
 - Very smooth highlights are dimmer than Modo's.
 - Hair grows from curves you draw as guides; Modo's Fur material is not read.
 

@@ -244,6 +244,9 @@ struct Renderer::Impl {
 
     std::vector<std::unique_ptr<Mesh>> meshes;
     std::vector<std::unique_ptr<Texture>> textures;
+    std::vector<std::unique_ptr<Texture>> grids;     // 3D, of densities
+    std::vector<float> gridPeaks;
+    std::vector<int32_t> volumeGrids;       // every grid the current materials use
     std::vector<int32_t> layerTextures;     // every texture the current layers use
     std::vector<int32_t> lightTextures;     // and those the lights and their filters use
     std::vector<int32_t> distantTextures;
@@ -285,7 +288,7 @@ struct Renderer::Impl {
         OptixPipelineCompileOptions pipelineOptions = {};
         pipelineOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
         // Two words carry a radiance ray's hit record; a ray looking for a light uses all eight to add up the fog it crosses.
-        pipelineOptions.numPayloadValues = 8;
+        pipelineOptions.numPayloadValues = 11;
         pipelineOptions.numAttributeValues = 2;
         pipelineOptions.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
         pipelineOptions.pipelineLaunchParamsVariableName = "params";
@@ -827,6 +830,45 @@ uint32_t Renderer::addTexture(const TextureDesc& desc) {
     return uint32_t(slot - impl->textures.begin());
 }
 
+uint32_t Renderer::addGrid(const GridDesc& desc) {
+    const size_t count = size_t(desc.counts[0]) * desc.counts[1] * desc.counts[2];
+    if (!desc.values || !count || desc.counts[0] > 2048 || desc.counts[1] > 2048 || desc.counts[2] > 2048)
+        throw std::runtime_error("MoonLightIPR grid has no values or is too large");
+    auto grid = std::make_unique<Texture>();
+    const cudaChannelFormatDesc format = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+    const cudaExtent extent = make_cudaExtent(desc.counts[0], desc.counts[1], desc.counts[2]);
+    ML_CHECK(cudaMalloc3DArray(&grid->array, &format, extent));
+    cudaMemcpy3DParms copy = {};
+    copy.srcPtr = make_cudaPitchedPtr(const_cast<float*>(desc.values), desc.counts[0] * sizeof(float), desc.counts[0], desc.counts[1]);
+    copy.dstArray = grid->array;
+    copy.extent = extent;
+    copy.kind = cudaMemcpyHostToDevice;
+    ML_CHECK(cudaMemcpy3D(&copy));
+    cudaResourceDesc resource = {};
+    resource.resType = cudaResourceTypeArray;
+    resource.res.array.array = grid->array;
+    cudaTextureDesc sampling = {};
+    // Outside the grid there is no fog.
+    for (int axis = 0; axis < 3; ++axis) sampling.addressMode[axis] = cudaAddressModeBorder;
+    sampling.filterMode = cudaFilterModeLinear;
+    sampling.readMode = cudaReadModeElementType;
+    sampling.normalizedCoords = 1;
+    ML_CHECK(cudaCreateTextureObject(&grid->object, &resource, &sampling, nullptr));
+    auto slot = std::find(impl->grids.begin(), impl->grids.end(), nullptr);
+    if (slot == impl->grids.end()) { slot = impl->grids.emplace(slot); impl->gridPeaks.push_back(0.0f); }
+    *slot = std::move(grid);
+    impl->gridPeaks[slot - impl->grids.begin()] = std::max(desc.peak, 0.0f);
+    return uint32_t(slot - impl->grids.begin());
+}
+
+void Renderer::removeGrid(uint32_t grid) {
+    if (grid >= impl->grids.size() || !impl->grids[grid]) throw std::runtime_error("MoonLightIPR grid does not exist");
+    if (std::find(impl->volumeGrids.begin(), impl->volumeGrids.end(), int32_t(grid)) != impl->volumeGrids.end())
+        throw std::runtime_error("MoonLightIPR grid is still used by a material");
+    ML_CHECK(cudaDeviceSynchronize());
+    impl->grids[grid].reset();
+}
+
 void Renderer::removeTexture(uint32_t texture) {
     if (texture >= impl->textures.size() || !impl->textures[texture]) throw std::runtime_error("MoonLightIPR texture does not exist");
     if (std::find(impl->layerTextures.begin(), impl->layerTextures.end(), int32_t(texture)) != impl->layerTextures.end()
@@ -851,6 +893,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
     impl->hairTable.upload(hairs);
     impl->params.hairs = impl->hairTable.ptr;
     std::vector<DeviceVolume> volumes;
+    std::vector<int32_t> usedGrids;
     for (size_t i = 0; i < count; ++i) {
         if (!materials[i].volume) continue;
         DeviceVolume fog{};
@@ -860,11 +903,20 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
             fog.emission[c] = std::max(materials[i].volumeEmission[c], 0.0f);
         }
         fog.anisotropy = std::clamp(materials[i].volumeAnisotropy, -0.99f, 0.99f);
+        if (materials[i].volumeGrid >= 0) {
+            const int32_t grid = materials[i].volumeGrid;
+            if (size_t(grid) >= impl->grids.size() || !impl->grids[grid]) throw std::runtime_error("MoonLightIPR volume refers to a missing grid");
+            fog.grid = static_cast<unsigned long long>(impl->grids[grid]->object);
+            fog.peak = impl->gridPeaks[grid];
+            std::copy(materials[i].volumeRows, materials[i].volumeRows + 12, fog.rows);
+            usedGrids.push_back(grid);
+        }
         table[i].flags = (table[i].flags & ~MATERIAL_HAIR) | MATERIAL_VOLUME;
         table[i].hair = unsigned(volumes.size());
         volumes.push_back(fog);
     }
     impl->volumeTable.upload(volumes);
+    impl->volumeGrids = std::move(usedGrids);
     impl->params.volumes = impl->volumeTable.ptr;
     // Layers and textures are followed on the GPU without checks, so settle them here.
     for (const DeviceMaterial& material : table)

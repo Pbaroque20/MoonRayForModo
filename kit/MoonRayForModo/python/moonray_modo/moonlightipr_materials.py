@@ -477,6 +477,7 @@ class Compiler:
         self.runtime = runtime
         self.textures = {}      # record -> index, in first-use order
         self.slots = {}         # coordinate key -> scene-wide slot
+        self.grids = {}         # a fog's grid of densities, as its record -> its index
         self.layers = []
         self.tiles = []         # runs of a count and that many texture indices, one per UDIM tile
         self.tile_runs = {}     # what a run was made from -> where it starts
@@ -497,6 +498,12 @@ class Compiler:
                 return None
             self.slots[key] = len(self.slots)
         return self.slots[key]
+
+    def grid(self, target):
+        """A grid of densities the session is to load; return its index."""
+        path = str(target).encode('utf-8')
+        record = hashlib.blake2b(b'grid' + path, digest_size=8).digest() + struct.pack('<I', len(path)) + path
+        return self.grids.setdefault(record, len(self.grids))
 
     def record(self, target, flags):
         path = str(target).encode('utf-8')
@@ -948,5 +955,9 @@ class Compiler:
             numbers = [float(v) for v in list(fog['extinction']) + list(fog['albedo']) + list(fog['emission']) + [fog['anisotropy']]]
             if not all(math.isfinite(v) for v in numbers):
                 raise ValueError('Material %s contains a non-finite number' % name)
-            record += struct.pack('<10f', *numbers)
+            # And, for a fog as thick as a grid says, the grid and the rows that take the scene into its unit cube.
+            rows = [float(v) for v in fog.get('rows') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]]
+            if len(rows) != 12 or not all(math.isfinite(v) for v in rows):
+                raise ValueError('Material %s has an invalid volume transform' % name)
+            record += struct.pack('<10fi12f', *numbers, self.grid(fog['grid']) if fog.get('grid') else -1, *rows)
         return record

@@ -856,6 +856,7 @@ def preview(scene, warnings):
         return scene
     lights, environments, meshes = list(scene.get('lights', [])), list(scene.get('environments', [])), list(scene.get('meshes', []))
     materials = dict(scene.get('materials', {}))
+    extra = list(scene.get('extra_geometry', []))
     scene = mesh_lights(scene, warnings)
     skipped = {}
     camera = scene['camera']
@@ -925,8 +926,20 @@ def preview(scene, warnings):
                 mesh['material'] = '|volume|' + entity['identity']
                 materials[mesh['material']] = {'color': [0.0, 0.0, 0.0], 'roughness': 1.0, 'metallic': 0, '_volume': fog}
             meshes.append(mesh)
-        elif category == 'lightfilter':
-            # A filter shows through the lights that name it; what cannot be applied is said there.
+        elif name == 'VdbGeometry':
+            # A VDB file with the volume shader that says what its fog stops and scatters.
+            shader = next((e for e in entities_checked if e['name'] == entity['parameters'].get('modo_volume') and e['class'] == 'VdbVolume'), None)
+            if shader is None or not value(entity, 'model'):
+                skipped.setdefault('volumes', []).append(label)
+                continue
+            stops = [float(v) for v in (value(shader, 'opacity_gain_mult') or [1.0, 1.0, 1.0])]
+            extra.append({'kind': 'vdb', 'identity': entity['identity'], 'name': label, 'file': value(entity, 'model'), 'matrix': matrix,
+                          'density_grid': value(entity, 'density_grid') or 'density', 'emission_grid': value(entity, 'emission_grid') or '',
+                          'density': sum(stops) / 3, 'volume_color': [float(v) for v in (value(shader, 'color_mult') or [1.0, 1.0, 1.0])],
+                          'anisotropy': float(value(shader, 'anisotropy') or 0.0)})
+        elif category in ('lightfilter', 'volume'):
+            # A filter shows through the lights that name it, and a volume in the shape that holds it; what cannot be
+            # applied is said there.
             continue
         elif category == 'camera':
             if entity['parameters'].get('modo_render_camera'):
@@ -941,4 +954,4 @@ def preview(scene, warnings):
             skipped.setdefault(name, []).append(label)
     for name, labels in sorted(skipped.items()):
         warnings.append('MoonLightIPR does not show %s (%s).' % (name, ', '.join(labels[:6]) + (' ...' if len(labels) > 6 else '')))
-    return dict(scene, camera=camera, lights=lights, environments=environments, meshes=meshes, materials=materials, entities=[])
+    return dict(scene, camera=camera, lights=lights, environments=environments, meshes=meshes, materials=materials, extra_geometry=extra, entities=[])

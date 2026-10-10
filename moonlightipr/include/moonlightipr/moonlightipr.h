@@ -87,6 +87,17 @@ struct Material {
     float volumeAlbedo[3] = {1, 1, 1};
     float volumeEmission[3] = {0, 0, 0};
     float volumeAnisotropy = 0.0f;
+    // A fog that is not the same all through, as a VDB volume: a grid from addGrid whose values multiply what the fog
+    // stops, and the rows that take a point of the scene into the unit cube the grid fills. -1 for an even fog.
+    int32_t volumeGrid = -1;
+    float volumeRows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+};
+
+// A block of numbers on the GPU, x fastest, read between its cells.
+struct GridDesc {
+    const float* values = nullptr;
+    uint32_t counts[3] = {0, 0, 0};
+    float peak = 0.0f;      // the largest of the values
 };
 
 // An image on the GPU. Pixels are RGBA, top row first: bytes, or floats when floatData is set.
@@ -287,6 +298,10 @@ public:
     // Says which of a mesh's coordinate sets serves each scene-wide slot (-1 for none).
     void setMeshUvSlots(uint32_t mesh, const int32_t slots[UV_SLOT_COUNT]);
     uint32_t addTexture(const TextureDesc& texture);
+    // A grid of densities for a fog; returns its index for Material::volumeGrid.
+    uint32_t addGrid(const GridDesc& grid);
+    // Frees a grid no current material uses; its index may be handed out again.
+    void removeGrid(uint32_t grid);
     // Frees a texture no current material layer uses; its index may be handed out again.
     void removeTexture(uint32_t texture);
     void setMaterials(const Material* materials, size_t count, const Layer* layers = nullptr, size_t layerCount = 0,
