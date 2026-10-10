@@ -233,6 +233,72 @@ def written(kind,values,write):
     return WRITTEN[key]
 
 
+def fur_entries(scene,item,mesh,polygons,points,warnings):
+    """The fur of a mesh that wears one of Modo's Fur materials, as curve geometry: one for each Fur material that is
+    on any of its polygons."""
+    import lx,lxu.utils
+    from . import fur
+    from .host import channel,world_matrix
+    try:layers=list(scene.items('furMaterial'))
+    except (LookupError,RuntimeError,TypeError):return []
+    made=[]
+    for layer in layers:
+        mask=layer.parent if layer.parent is not None and layer.parent.type=='mask' else None
+        if not channel(layer,'enable',1) or (mask is not None and not channel(mask,'enable',1)):continue
+        wanted=''
+        if mask is not None:
+            # Which polygons the group is for: those of a material tag, of chosen items, or all.
+            if channel(mask,'ptyp','') not in ('Material',''):continue
+            wanted=channel(mask,'ptag','') or ''
+            if wanted=='(all)':wanted=''
+            try:targets=list(mask.itemGraph('shadeLoc').forward())
+            except (LookupError,RuntimeError,AttributeError):targets=[]
+            if targets and all(target.id!=item.id for target in targets):continue
+        tags=lx.object.StringTag(polygons);places={};faces=[]
+        for i in range(mesh.PolygonCount()):
+            polygons.SelectByIndex(i)
+            if lxu.utils.decodeID4(polygons.Type()) not in ('FACE','SUBD','PSUB') or polygons.VertexCount()<3:continue
+            if wanted and strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)!=wanted:continue
+            corners=[]
+            for v in range(polygons.VertexCount()):
+                point=polygons.VertexByIndex(v)
+                if point not in places:
+                    points.Select(point);places[point]=tuple(points.Pos())
+                corners.append(point)
+            faces.append((corners,strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)))
+        if not faces:continue
+        # The surface's normal at each point: its faces' normals together, so fur on a round thing stands out all round.
+        normals={}
+        for corners,_ in faces:
+            x=y=z=0.0
+            for k,point in enumerate(corners):
+                a,b=places[point],places[corners[(k+1)%len(corners)]]
+                x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1])
+            for point in corners:
+                held=normals.get(point,(0.0,0.0,0.0));normals[point]=(held[0]+x,held[1]+y,held[2]+z)
+        for point,(x,y,z) in normals.items():
+            size=math.sqrt(x*x+y*y+z*z) or 1.0;normals[point]=(x/size,y/size,z/size)
+        triangles=[(places[c[0]],places[c[k]],places[c[k+1]],normals[c[0]],normals[c[k]],normals[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+        # Each fibre takes the material of the polygon it stands on.
+        worn=[tag for c,tag in faces for k in range(1,len(c)-1)]
+        read=lambda key,layer=layer:layer.channel(key).get()
+        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read))
+        left=fur.unread(read)
+        if left:warnings.append('Fur on %s is grown without %s, which the plugin does not read from a Fur material.'%(item.name,', '.join(left)))
+        if asked>len(strands):
+            warnings.append('Fur on %s: Modo would grow %s fibres; %s are grown, each wider, to cover the surface as well.'%(item.name,format(asked,','),format(len(strands),',')))
+        if not strands:continue
+        shape=dict(root=root,tip=tip,envelope=1.0,samples=8,uv=True,round=False,basis=0)
+        kept=(item.id+'|fur|'+layer.id,item.name,root,tip,wanted,tuple(world_matrix(item)))
+        held=BATCHED.get(kept)
+        if held is None or held[0] is not strands:
+            if len(BATCHED)>=8:BATCHED.pop(next(iter(BATCHED)))
+            held=BATCHED[kept]=(strands,batches(item.id+'|fur|'+layer.id,item.name,[(strand,worn[at],None) for strand,at in zip(strands,stands)],shape,'',world_matrix(item)))
+        # The fur is its mesh's, for what lights it and what it is called.
+        made+=[dict(entry,source_item=item.id) for entry in held[1]]
+    return made
+
+
 def collect(scene,warnings,controls):
     import lx,modo,lxu.utils
     from .host import render_visible,world_matrix,first_map
@@ -284,6 +350,8 @@ def collect(scene,warnings,controls):
             for entry in made:
                 if carried:entry['attributes']=carried
             result+=made
+        try:result+=fur_entries(scene,item,mesh,polygons,points,warnings)
+        except (LookupError,RuntimeError,TypeError,AttributeError,ValueError) as exc:warnings.append('Fur on %s could not be read: %s'%(item.name,exc))
         if not mesh.PolygonCount() or point_ids or settings.get('points'):
             vertices=[];stable=[];id_name=settings.get('point_id_map','')
             id_map=first_map(mesh,lx.symbol.i_VMAP_WEIGHT,id_name) if id_name else None

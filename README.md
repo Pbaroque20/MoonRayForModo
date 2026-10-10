@@ -48,6 +48,7 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **Light path presets**, and a plain message when an expression is mistyped.
 - **Cast no shadow onto chosen objects**, per object, in Light Links, Emitters and Volumes.
 - **OpenPBR and glTF materials** import from MaterialX files.
+- **Modo's Fur material** grows fur in MoonRay and in the preview: its spacing, length, width, taper, bend and jitter are read. Curls, clumps, kink, frizz, guides and maps are not yet.
 
 ## Known issues
 
