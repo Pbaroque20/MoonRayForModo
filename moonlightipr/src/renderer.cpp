@@ -190,6 +190,29 @@ DeviceMaterial toDevice(const Material& m) {
     return d;
 }
 
+// MoonRay's HairUtil: a roughness as the variance of a lobe along the fibre and as the width of one around it,
+// and what turns a hair colour into absorption.
+DeviceHair toDeviceHair(const Material& m) {
+    DeviceHair d{};
+    for (int i = 0; i < 4; ++i) {
+        const float r = std::clamp(m.hairRoughness[i], 0.01f, 0.999f);
+        const float root = 0.726f * r + 0.812f * r * r + 3.7f * std::pow(r, 20.0f);
+        d.variance[i] = root * root;
+        const float shift = std::clamp(m.hairOffset[i], -10.0f, 10.0f) * 3.14159265358979323846f / 180.0f;
+        d.sinShift[i] = std::sin(shift);
+        d.cosShift[i] = std::cos(shift);
+    }
+    std::copy(m.hairTint, m.hairTint + 9, d.tint);
+    const float a = std::clamp(m.hairAzimuthalRoughness, 0.01f, 0.999999f);
+    d.azimuthal = std::max(0.626657069f * (0.265f * a + 1.194f * a * a + 5.372f * std::pow(a, 22.0f)), 0.05f);
+    d.absorption = 5.969f - 0.215f * a + 2.532f * a * a - 10.73f * a * a * a + 5.574f * a * a * a * a + 0.245f * a * a * a * a * a;
+    d.eta = std::max(m.ior, 1.0001f);
+    d.saturation = m.hairSaturation;
+    d.lobes = m.hairLobes & 15;
+    d.cylinder = m.hairFresnel != 0;
+    return d;
+}
+
 }
 
 struct Renderer::Impl {
@@ -207,7 +230,7 @@ struct Renderer::Impl {
     std::vector<int32_t> distantTextures;
     std::vector<Instance> instances;
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
-    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, albedoTables, instanceInput, instanceAccel, accelTemp;
+    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, albedoTables, instanceInput, instanceAccel, accelTemp;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
 
@@ -775,6 +798,15 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
                             const int32_t* tiles, size_t tileCount) {
     std::vector<DeviceMaterial> table(count);
     std::transform(materials, materials + count, table.begin(), toDevice);
+    std::vector<DeviceHair> hairs;
+    for (size_t i = 0; i < count; ++i) {
+        if (!materials[i].hair) continue;
+        table[i].flags |= MATERIAL_HAIR;
+        table[i].hair = unsigned(hairs.size());
+        hairs.push_back(toDeviceHair(materials[i]));
+    }
+    impl->hairTable.upload(hairs);
+    impl->params.hairs = impl->hairTable.ptr;
     // Layers and textures are followed on the GPU without checks, so settle them here.
     for (const DeviceMaterial& material : table)
         if (size_t(material.layerStart) + material.layerCount > layerCount) throw std::runtime_error("MoonLightIPR material refers to missing layers");

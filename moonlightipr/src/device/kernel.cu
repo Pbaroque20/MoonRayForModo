@@ -27,6 +27,7 @@ struct Hit {
     int light;                  // the mesh light this surface belongs to, or -1
     int valid;
     int curve;                  // the hit is on a curve, which curveTangent runs along
+    unsigned hair;              // with MATERIAL_HAIR, the material's entry among the hairs
     float3 curveTangent;
 };
 
@@ -758,6 +759,202 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
     return radiance;
 }
 
+// ---- Hair --------------------------------------------------------------------------------------
+// A fibre's four ways of scattering light, as MoonRay's HairMaterial has them: its formulas are those of d'Eon et
+// al. 2011 and Chiang et al. 2016, taken here from MoonRay's HairUtil, HairState and BsdfHairLobes.
+
+ML_INLINE float besselI0(float x) {
+    float sum = 0.0f, x2i = 1.0f, factorial = 1.0f, fours = 1.0f;
+    for (int i = 0; i < 10; ++i) {
+        if (i > 1) factorial *= float(i);
+        sum += x2i / fours / factorial / factorial;
+        x2i *= x * x;
+        fours *= 4.0f;
+    }
+    return sum;
+}
+ML_INLINE float logBesselI0(float x) {
+    if (x > 12.0f) {
+        const float inverse = 1.0f / x;
+        return x + 0.5f * (-logf(2.0f * ML_PI) + logf(inverse + 0.125f * inverse));
+    }
+    return logf(besselI0(x));
+}
+// How light spreads along the fibre.
+ML_INLINE float hairLongitudinal(float variance, float sinI, float cosI, float sinO, float cosO) {
+    if (variance < 1e-6f) return 0.0f;
+    const float inverse = 1.0f / variance, b = sinI * sinO * inverse, x = cosI * cosO * inverse;
+    if (variance <= 0.1f) return expf(logBesselI0(x) - b - inverse + 0.6931f + logf(0.5f * inverse));
+    return 0.5f * inverse * expf(-b) * besselI0(x) / sinhf(inverse);
+}
+ML_INLINE float logisticCdf(float x, float s) { return 1.0f / (1.0f + expf(-x / s)); }
+// A logistic curve cut off at half a turn either side, which is how light passing through spreads around the fibre.
+ML_INLINE float trimmedLogistic(float x, float s) {
+    const float r = expf(-fabsf(x) / s);
+    return r / (s * (1.0f + r) * (1.0f + r)) / (logisticCdf(ML_PI, s) - logisticCdf(-ML_PI, s));
+}
+ML_INLINE float sampleTrimmedLogistic(float u, float s) {
+    const float low = logisticCdf(-ML_PI, s), value = u * (logisticCdf(ML_PI, s) - low) + low;
+    return value > 0.0f ? clamp(-s * logf(1.0f / value - 1.0f), -ML_PI, ML_PI) : -ML_PI;
+}
+
+// The fibre at a hit, seen from wo: its frame, how far off its middle the ray struck, what a pass through it
+// absorbs, and how the four lobes share the samples.
+struct Fibre {
+    float3 along, facing, across;
+    float sinO, cosO, thetaO, cosGamma;
+    float3 through;
+    float share[4];
+    const DeviceHair* hair;
+};
+
+ML_INLINE float fibreFresnel(const Fibre& fibre, float cosine) {
+    return fresnel(fibre.hair->cylinder ? cosine * fibre.cosGamma : cosine, 1.0f, fibre.hair->eta);
+}
+// What is left of the light on each of the four ways out, before its spread: Fresnel and absorption.
+ML_INLINE void fibreAttenuation(const Fibre& fibre, float f, float3* out) {
+    const DeviceHair& hair = *fibre.hair;
+    const float3 t = fibre.through;
+    const float pass = (1.0f - f) * (1.0f - f);
+    out[0] = (hair.lobes & HAIR_R) ? vec(hair.tint) * f : vec(0.0f);
+    out[1] = (hair.lobes & HAIR_TT) ? vec(hair.tint + 3) * t * pass : vec(0.0f);
+    out[2] = (hair.lobes & HAIR_TRT) ? vec(hair.tint + 6) * t * t * (pass * f) : vec(0.0f);
+    const float3 rest = make_float3(clamp(1.0f - f * t.x, 1e-6f, 1.0f), clamp(1.0f - f * t.y, 1e-6f, 1.0f), clamp(1.0f - f * t.z, 1e-6f, 1.0f));
+    out[3] = (hair.lobes & HAIR_TRRT) ? make_float3(t.x * t.x * t.x / rest.x, t.y * t.y * t.y / rest.y, t.z * t.z * t.z / rest.z) * (pass * f * f) : vec(0.0f);
+}
+
+ML_INLINE Fibre fibreFrom(const Hit& hit, const DeviceHair& hair, float3 wo) {
+    Fibre fibre;
+    fibre.hair = &hair;
+    fibre.along = hit.curveTangent;
+    fibre.sinO = clamp(dot(wo, fibre.along), -1.0f, 1.0f);
+    fibre.cosO = sqrtf(fmaxf(0.0f, 1.0f - fibre.sinO * fibre.sinO));
+    fibre.thetaO = asinf(fibre.sinO);
+    // The fibre's normal is turned to face the viewer, as MoonRay turns it.
+    const float3 facing = wo - fibre.along * fibre.sinO;
+    fibre.facing = dot(facing, facing) > 1e-12f ? normalize(facing) : Frame(fibre.along).t;
+    fibre.across = cross(fibre.facing, fibre.along);
+    // How far off the fibre's middle the ray struck, from the way its surface faces there.
+    fibre.cosGamma = clamp(fabsf(dot(hit.ns, fibre.facing)), 0.0f, 1.0f);
+    const float h = sqrtf(fmaxf(0.0f, 1.0f - fibre.cosGamma * fibre.cosGamma));
+    // The fibre's colour as what it absorbs (Chiang et al. 2016), and what one pass through it leaves.
+    const float3 colour = hit.albedo;
+    const float3 logs = make_float3(logf(clamp(colour.x, 1e-6f, 1.0f)), logf(clamp(colour.y, 1e-6f, 1.0f)), logf(clamp(colour.z, 1e-6f, 1.0f))) * (1.0f / hair.absorption);
+    const float3 sigma = logs * logs;
+    float cosGammaT = 0.0f;
+    if (fibre.cosO > 1e-6f) {
+        const float etaP = sqrtf(fmaxf(0.0f, hair.eta * hair.eta - fibre.sinO * fibre.sinO)) / fibre.cosO;
+        const float sinGammaT = h / etaP;
+        cosGammaT = sqrtf(fmaxf(0.0f, 1.0f - sinGammaT * sinGammaT));
+    }
+    const float sinT = fibre.sinO / hair.eta, cosT = sqrtf(fmaxf(0.0f, 1.0f - sinT * sinT));
+    fibre.through = vec(1.0f);
+    if (cosT > 1e-6f) {
+        const float path = 2.0f * cosGammaT / cosT;
+        fibre.through = make_float3(expf(-sigma.x * path), expf(-sigma.y * path), expf(-sigma.z * path));
+    }
+    float3 left[4];
+    fibreAttenuation(fibre, fibreFresnel(fibre, fibre.cosO), left);
+    float total = 0.0f;
+    for (int i = 0; i < 4; ++i) total += fibre.share[i] = luminance(left[i]);
+    for (int i = 0; i < 4; ++i) fibre.share[i] = total > 0.0f ? fibre.share[i] / total : ((hair.lobes >> i) & 1) ? 1.0f : 0.0f;
+    if (!(total > 0.0f)) {
+        float shown = 0.0f;
+        for (int i = 0; i < 4; ++i) shown += fibre.share[i];
+        for (int i = 0; i < 4; ++i) fibre.share[i] = shown > 0.0f ? fibre.share[i] / shown : 0.0f;
+    }
+    return fibre;
+}
+
+// bsdf * cosine towards wi, and the density with which fibreSample would have chosen it.
+ML_INLINE float3 fibreEval(const Fibre& fibre, float3 wi, float& pdf) {
+    const DeviceHair& hair = *fibre.hair;
+    pdf = 0.0f;
+    const float sinI = dot(wi, fibre.along);
+    if (fabsf(sinI) >= 1.0f - 1e-6f) return vec(0.0f);
+    const float cosI = sqrtf(fmaxf(0.0f, 1.0f - sinI * sinI));
+    const float3 flat = wi - fibre.along * sinI;
+    const float phi = acosf(clamp(dot(flat, fibre.facing) / fmaxf(length(flat), 1e-12f), -1.0f, 1.0f));
+    const float f = fibreFresnel(fibre, cosf(0.5f * fabsf(fibre.thetaO - asinf(sinI))));
+    float3 left[4];
+    fibreAttenuation(fibre, f, left);
+    // Around the fibre: reflections spread as a quarter of the cosine of half the angle, light passing through as a
+    // logistic curve about straight on, and what is left evenly.
+    const float spread[4] = {fmaxf(0.0f, 0.25f * cosf(0.5f * phi)), trimmedLogistic(ML_PI - phi, hair.azimuthal),
+                             fmaxf(0.0f, 0.25f * cosf(0.5f * phi)), 1.0f / (2.0f * ML_PI)};
+    float3 value = vec(0.0f);
+    for (int i = 0; i < 4; ++i) {
+        if (!((hair.lobes >> i) & 1)) continue;
+        const float sinShifted = sinI * hair.cosShift[i] + cosI * hair.sinShift[i];
+        const float cosShifted = fabsf(cosI * hair.cosShift[i] - sinI * hair.sinShift[i]);
+        const float m = hairLongitudinal(hair.variance[i], sinShifted, cosShifted, fibre.sinO, fibre.cosO);
+        value += left[i] * (m * spread[i]);
+        pdf += fibre.share[i] * m * spread[i];
+    }
+    return value;
+}
+
+// A direction drawn from one of the four lobes; false if none can be.
+ML_INLINE bool fibreSample(const Fibre& fibre, unsigned& seed, float3& wi) {
+    const DeviceHair& hair = *fibre.hair;
+    const float pick = rnd(seed);
+    int lobe = 0;
+    float running = fibre.share[0];
+    while (lobe < 3 && pick >= running) running += fibre.share[++lobe];
+    if (fibre.share[lobe] <= 0.0f) return false;
+    // Along the fibre (the derivation of pbrt, steadier where the lobe is narrow), then tilted back by the scales.
+    const float u = fmaxf(rnd(seed), 1e-5f), variance = hair.variance[lobe];
+    const float cosine = 1.0f + variance * logf(u + (1.0f - u) * expf(-2.0f / variance));
+    const float sine = sqrtf(fmaxf(0.0f, 1.0f - cosine * cosine));
+    float sinI = -cosine * fibre.sinO + sine * cosf(2.0f * ML_PI * rnd(seed)) * fibre.cosO;
+    float cosI = sqrtf(fmaxf(0.0f, 1.0f - sinI * sinI));
+    const float sinShifted = clamp(sinI * hair.cosShift[lobe] - cosI * hair.sinShift[lobe], -1.0f, 1.0f);
+    cosI = fabsf(cosI * hair.cosShift[lobe] + sinI * hair.sinShift[lobe]);
+    sinI = sinShifted;
+    // Around it.
+    const float v = rnd(seed);
+    const float phi = lobe == 1 ? sampleTrimmedLogistic(v, hair.azimuthal) + ML_PI
+                    : lobe == 3 ? ML_PI * (2.0f * v - 1.0f) : 2.0f * asinf(clamp(2.0f * v - 1.0f, -1.0f, 1.0f));
+    wi = normalize(fibre.along * sinI + (fibre.facing * cosf(phi) + fibre.across * sinf(phi)) * cosI);
+    return true;
+}
+
+// Next event estimation on a fibre, which light reaches from every side.
+ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weight, bool lit, unsigned& seed) {
+    const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
+    const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
+    float3 radiance = vec(0.0f);
+    float pdf;
+    if (!params.envPortal) {
+        float lightPdf;
+        const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
+        if (lightPdf > 0.0f) {
+            const float3 f = fibreEval(fibre, toLight, pdf);
+            if (maxComponent(f) > 0.0f && visible(offsetOrigin(p, ng, toLight), toLight, seed))
+                radiance += clampSample(weight * f * envRadiance(toLight) * (powerHeuristic(lightPdf, pdf) / lightPdf), lit);
+        }
+    }
+    for (unsigned i = 0; i < params.distantLightCount; ++i) {
+        const DeviceDistantLight& light = distantLights[i];
+        const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
+        const float3 f = fibreEval(fibre, toSun, pdf);
+        if (maxComponent(f) > 0.0f && visible(offsetOrigin(p, ng, toSun), toSun, seed))
+            radiance += clampSample(weight * f * distantRadiance(light, toSun) * (powerHeuristic(distantPdf(light), pdf) / distantPdf(light)), lit);
+    }
+    const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
+    const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
+    for (unsigned i = firstLight; i < lastLight; ++i) {
+        float3 toLamp, emitted;
+        float distance, lampPdf;
+        if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
+        if (params.lightPick) lampPdf *= lights[i].pick;
+        const float3 f = fibreEval(fibre, toLamp, pdf);
+        if (maxComponent(f) > 0.0f && visible(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f))
+            radiance += clampSample(weight * f * emitted * (powerHeuristic(lampPdf, pdf) / lampPdf), lit);
+    }
+    return radiance;
+}
+
 // Burley's normalized diffusion, MoonRay's default subsurface model: how wide the profile of a
 // channel is for its albedo and mean free path, and the profile's shape at a distance.
 ML_INLINE float profileWidth(float albedo, float radius) {
@@ -944,6 +1141,29 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const float survive = clamp(maxComponent(throughput), 0.05f, 0.95f);
             if (rnd(seed) >= survive) break;
             throughput *= vec(1.0f / survive);
+        }
+
+        if (hit.curve && (hit.flags & MATERIAL_HAIR)) {
+            // A hair fibre scatters light all round itself, so nothing here asks which side the light is on.
+            const Fibre fibre = fibreFrom(hit, reinterpret_cast<const DeviceHair*>(params.hairs)[hit.hair], -direction);
+            if (camera) {
+                guideAlbedo = hit.albedo;
+                guideNormal = make_float3(dot(hit.ns, normalize(vec(params.cameraU))), dot(hit.ns, normalize(vec(params.cameraV))),
+                                          -dot(hit.ns, normalize(vec(params.cameraW))));
+            }
+            radiance += fibreLight(fibre, hit.p, hit.ng, throughput, roughDepth >= 1, seed);
+            float3 wi;
+            if (depth >= params.maxDepth || !fibreSample(fibre, seed, wi)) break;
+            const float3 f = fibreEval(fibre, wi, bsdfPdf);
+            if (bsdfPdf <= 0.0f || maxComponent(f) <= 0.0f) break;
+            direction = wi;
+            lightWeight = bounceWeight = f * (1.0f / bsdfPdf);
+            bounces = true;
+            sharp = false;
+            clampFound = roughDepth >= 1;
+            ++roughDepth;
+            origin = offsetOrigin(hit.p, hit.ng, direction);
+            continue;
         }
 
         // Shade the side the ray arrived on, and keep the shading normal on that side.
@@ -1411,6 +1631,7 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     hit->specular = material.specular;
     hit->transmissionIor = material.transmissionIor;
     hit->flags = material.flags;
+    hit->hair = material.hair;
     hit->abbe = material.abbe;
     hit->absorptionDistance = material.absorptionDistance;
     slots.normal = slots.bump = UV_SLOTS;

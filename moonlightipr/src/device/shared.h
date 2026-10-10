@@ -23,6 +23,7 @@ const unsigned LAYER_GROUP_BEGIN = 32, LAYER_GROUP_END = 33, LAYER_MASK_BASE = 4
 const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE = 4, MATERIAL_HAS_BUMP = 8,
                MATERIAL_BECKMANN = 16,  // the specular lobe is Beckmann, as for material stacks, not GGX
                MATERIAL_CONDUCTOR = 32, // a metal reflects as DwaBaseMaterial's does, not by Schlick's curve
+               MATERIAL_HAIR = 64,      // on a curve, the strand scatters light as a hair fibre does
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -89,7 +90,24 @@ struct DeviceMaterial {
     float absorptionDistance;   // depth of a solid at which light has its transmission colour; 0 for none
     float abbe;                 // Abbe number of a dispersive solid; 0 for none
     float specular;             // weight of the dielectric's reflection
-    unsigned pad;
+    unsigned hair;              // with MATERIAL_HAIR, this material's entry in LaunchParams::hairs
+};
+
+// A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
+// inside it (TRT), and everything after that (TRRT). The fibre's colour is the material's own.
+const unsigned HAIR_R = 1, HAIR_TT = 2, HAIR_TRT = 4, HAIR_TRRT = 8;
+struct DeviceHair {
+    float variance[4];          // how far each of the four spreads along the fibre
+    float sinShift[4];          // and how far the fibre's scales tilt it towards the root
+    float cosShift[4];
+    float tint[9];              // of R, TT and TRT
+    float azimuthal;            // how far TT spreads around the fibre
+    float absorption;           // what turns the fibre's colour into what it absorbs, from that spread
+    float eta;
+    float saturation;           // of light passing straight through
+    unsigned lobes;             // which of the four are shown
+    unsigned cylinder;          // the Fresnel term knows how far off the fibre's middle the light struck
+    unsigned pad[2];
 };
 
 struct DeviceMesh {
@@ -181,6 +199,7 @@ struct LaunchParams {
     DevicePtr materials;    // DeviceMaterial
     DevicePtr layers;       // DeviceLayer, indexed from DeviceMaterial::layerStart
     DevicePtr albedo2;      // float, two ALBEDO_TABLE runs: GGX, then Beckmann
+    DevicePtr hairs;        // DeviceHair, indexed by DeviceMaterial::hair
 
     // Latitude-longitude environment with a piecewise-constant sampling distribution.
     DevicePtr envPixels;        // float[4], envWidth * envHeight; what lights the scene

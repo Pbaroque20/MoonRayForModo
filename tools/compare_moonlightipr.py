@@ -240,6 +240,27 @@ def sky_image(folder):
     return str(path)
 
 
+def tuft():
+    """A head of hair: strands that leave a ball and fall, each a line through nine points."""
+    import random
+    chance = random.Random(7)
+    vertices, counts = [], []
+    for _ in range(2500):
+        # Where on the upper part of the ball the strand grows from, and the way it leaves.
+        z, turn = chance.uniform(-.1, 1.0), chance.uniform(0, 2 * math.pi)
+        ring = math.sqrt(1 - z * z)
+        out = [ring * math.cos(turn), z, ring * math.sin(turn)]
+        point, way = [.9 * out[0], 1.6 + .9 * out[1], .9 * out[2]], [v + chance.uniform(-.15, .15) for v in out]
+        for step in range(9):
+            vertices.append(list(point))
+            way = [way[0] * .8, way[1] * .8 - .35, way[2] * .8]
+            length = math.sqrt(sum(v * v for v in way)) or 1.0
+            point = [p + .16 * v / length for p, v in zip(point, way)]
+        counts.append(9)
+    return {'kind': 'curves', 'identity': 'head|curves|hair', 'source_item': 'head', 'name': 'Head', 'material': 'hair', 'curve_type': 0,
+            'matrix': fixture.placed(0, 0, 0), 'vertices': vertices, 'counts': counts, 'radius': .012}
+
+
 def scenes(folder):
     base = fixture.snapshot()
     base.update(lights=[], environments=[], render_settings={'sampling_mode': 0, 'max_depth': 4})
@@ -347,6 +368,13 @@ def scenes(folder):
             {'kind': 'curves', 'identity': 'rods|curves|red', 'source_item': 'rods', 'name': 'Rods', 'material': 'red', 'curve_type': 0,
              'matrix': fixture.placed(0, 0, 1.6), 'radius': .08,
              'vertices': [[-2.5 + i, .08 + .6 * j, .3 * j] for i in range(6) for j in range(3)], 'counts': [3] * 6}]),
+        # Hair: a head of strands in MoonRay's hair material, dark and fair, lit from in front and from behind.
+        **{'hair_' + name: dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='rim', kind='SphereLight', intensity=120.0, radius=.3, matrix=fixture.placed(1.5, 3.0, -4.0))], _environment=.3,
+               meshes=[base['meshes'][0]], materials=dict(base['materials'], hair={
+                   'color': [.5, .5, .5], 'roughness': .4, 'native_shader': 'HairMaterial_v3', 'native_parameters': dict(values, hair_color=colour)}),
+               extra_geometry=[tuft()])
+           for name, colour, values in (('dark', [.25, .12, .05], {}), ('fair', [.85, .7, .45], {'primary_specular_roughness': .3}))},
         'uniform_sky': dict(base, _environment=1.0),
         'gradient_sky': dict(base, environments=fixture.snapshot()['environments']),
         'sphere_light': dict(base, lights=[dict(lamp, kind='SphereLight', intensity=60.0, radius=.4, matrix=fixture.placed(-1, 5, 3))]),

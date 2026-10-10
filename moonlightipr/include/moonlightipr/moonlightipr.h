@@ -56,6 +56,18 @@ struct Material {
     // How much of the dielectric's reflection there is, as DwaBaseMaterial's specular: 1 is all of it.
     // The coat and a metal are not weighted.
     float specularWeight = 1.0f;
+    // On curves, a hair fibre as MoonRay's HairMaterial, in place of all the above but baseColor (the hair's colour),
+    // its layers, emission and ior. The four lobes are light reflected off the fibre, passed through it, reflected
+    // once inside it, and the rest: each has a roughness along the fibre and an offset in degrees from the tilt of
+    // its scales, and the first three a tint. hairLobes has a bit for each that is shown, from 1.
+    bool hair = false;
+    float hairRoughness[4] = {0.5f, 0.25f, 1.0f, 1.0f};
+    float hairOffset[4] = {-3.0f, -1.5f, -4.5f, 0.0f};
+    float hairTint[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+    float hairAzimuthalRoughness = 1.0f;    // how far light passing through spreads around the fibre
+    float hairSaturation = 1.0f;
+    uint32_t hairLobes = 15;
+    uint32_t hairFresnel = 1;               // 0 by the angle along the fibre alone; otherwise as a cylinder
 };
 
 // An image on the GPU. Pixels are RGBA, top row first: bytes, or floats when floatData is set.

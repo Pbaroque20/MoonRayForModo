@@ -251,6 +251,17 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         material.layerStart = in.value<uint32_t>();
         material.layerCount = in.value<uint32_t>();
         material.tangentSlot = in.value<uint32_t>();
+        if (materialFlags & 64) {
+            // A hair fibre's four lobes follow.
+            material.hair = true;
+            in.floats(material.hairRoughness, 4);
+            in.floats(material.hairOffset, 4);
+            in.floats(material.hairTint, 9);
+            material.hairAzimuthalRoughness = in.value<float>();
+            material.hairSaturation = in.value<float>();
+            material.hairLobes = in.value<uint32_t>();
+            material.hairFresnel = in.value<uint32_t>();
+        }
     }
     std::vector<Layer> layers(in.value<uint32_t>());
     for (Layer& layer : layers) {

@@ -28,7 +28,7 @@ FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'm
           'coatRough': (0, 1), 'dissolve': (0, 1), 'aniso': (-1, 1), 'subsAmt': (0, 1), 'subsCol': None}
 LAYER_GROUP_BEGIN, LAYER_GROUP_END, LAYER_MASK_BASE, MASK_REGISTERS, GROUP_DEPTH = 32, 33, 40, 4, 4
 LAYER_MASKED, LAYER_MASK_SHIFT = 1 << 11, 12
-MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN, MATERIAL_CONDUCTOR = 1, 2, 16, 32
+MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN, MATERIAL_CONDUCTOR, MATERIAL_HAIR = 1, 2, 16, 32, 64
 LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
@@ -81,7 +81,9 @@ def native_surface(shader, parameters, note):
     default where the user has not set it. note(what) records a lobe that is left out.
     """
     from . import node_defaults, shader_library
-    if shader not in ('DwaBaseMaterial', 'DwaMetalMaterial', 'DwaSolidDielectricMaterial', 'DwaRefractiveMaterial', 'DwaEmissiveMaterial'):
+    if shader in ('HairMaterial_v3', 'HairDiffuseMaterial'):
+        return hair_surface(shader, parameters, note)
+    if shader not in ('DwaBaseMaterial', 'DwaMetalMaterial', 'DwaSolidDielectricMaterial', 'DwaRefractiveMaterial', 'DwaEmissiveMaterial', 'DwaSkinMaterial'):
         return None
     attributes = shader_library.catalog()[shader]['attributes']
     def get(key, missing):
@@ -117,6 +119,13 @@ def native_surface(shader, parameters, note):
             note(label)
     if float(get('iridescence', 0.0)) > 0:
         note('iridescence')
+    coat, coat_roughness = (float(get('clearcoat', 1.0)) if get('show_clearcoat', False) else 0.0), float(get('clearcoat_roughness', .1))
+    if shader == 'DwaSkinMaterial':
+        # Skin's moisture is a clear layer over it, which is what the coat is.
+        coat = float(get('moisture_mask', 1.0)) if get('show_moisture', False) else 0.0
+        coat_roughness = float(get('moisture_roughness', .25))
+        if any(float(v) > 0 for v in get('diffuse_transmission_color', black)):
+            note('light passing through thin skin (diffuse transmission)')
     return {
         'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': color, 'raw_color': color, 'diffuse_amount': 1.0,
         'roughness': roughness, 'metallic': metallic, 'ior': ior,
@@ -125,7 +134,7 @@ def native_surface(shader, parameters, note):
         'transmission': transmission, 'transmission_color': get('transmission_color', white),
         'refraction_roughness': float(get('independent_transmission_roughness', .5)) if get('use_independent_transmission_roughness', False) else roughness,
         'transmission_ior': float(get('independent_transmission_refractive_index', 1.5)) if get('use_independent_transmission_refractive_index', False) else ior,
-        'clearcoat': float(get('clearcoat', 1.0)) if get('show_clearcoat', False) else 0.0, 'clearcoat_roughness': float(get('clearcoat_roughness', .1)),
+        'clearcoat': coat, 'clearcoat_roughness': coat_roughness,
         'emission': emission, 'raw_emission': emission, 'emission_amount': 1.0, 'presence': float(get('presence', 1.0)),
         'anisotropy': float(get('anisotropy', 0.0)), 'thin_geometry': bool(get('thin_geometry', False)),
         'subsurface_amount': 1.0 if radius > 0 else 0.0, 'subsurface_distance': radius, 'subsurface_color': get('scattering_color', white),
@@ -135,9 +144,55 @@ def native_surface(shader, parameters, note):
         '_beckmann': get('specular_model', 1) == 0}
 
 
+def hair_surface(shader, parameters, note):
+    """MoonRay's hair materials as what MoonLightIPR draws on curves: HairMaterial_v3 as a fibre with its four
+    lobes, each with MoonRay's own rule for its roughness; HairDiffuseMaterial as its colour, lit as a matte strand.
+    On a mesh either is its colour alone."""
+    from . import node_defaults, shader_library
+    attributes = shader_library.catalog()[shader]['attributes']
+    def get(key, missing):
+        if key in parameters:
+            return parameters[key]
+        try:
+            return node_defaults.value(attributes[key]) if key in attributes else missing
+        except ValueError:
+            return missing
+    black, white = [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]
+    colour = get('hair_color', white)
+    emission = get('emission', white) if get('show_emission', False) else black
+    surface = {'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': colour, 'raw_color': colour, 'diffuse_amount': 1.0,
+               'roughness': 1.0, 'metallic': 0.0, 'specular_amount': 0.0, '_specular_weight': 0.0, 'emission': emission, 'raw_emission': emission,
+               'emission_amount': 1.0, 'presence': float(get('presence', 1.0)), 'ior': float(get('refractive_index', 1.45))}
+    if shader == 'HairDiffuseMaterial':
+        if get('use_independent_front_and_back_hair_color', False):
+            note('separate front and back hair colours')
+        return surface
+    rough = float(get('primary_specular_roughness', .5))
+    # MoonRay: light passing through is half as rough as the reflection, the reflection from inside twice as rough and
+    # what comes after four times, unless a lobe is given a roughness of its own.
+    through = float(get('independent_transmission_roughness', .1)) if get('use_independent_transmission_roughness', False) else .5 * rough
+    inside = float(get('independent_secondary_specular_roughness', .4)) if get('use_independent_secondary_specular_roughness', False) else 2 * rough
+    shown = ((1 if get('show_primary_specular', True) else 0) | (2 if get('show_transmission', True) else 0)
+             | (4 if get('show_secondary_specular', True) else 0) | (8 if get('show_multiple_scattering', True) else 0))
+    if get('show_hair_glint', False):
+        note('hair glints')
+    if float(get('direct_transmission_saturation', 1.0)) != 1.0:
+        note('the saturation of light passing straight through hair')
+    kind = int(get('fresnel_type', 1))
+    if kind == 2:
+        note('layered cuticles, shown as a plain fibre')
+    surface['_hair'] = {'roughness': [rough, through, inside, 4 * rough],
+                        'offset': [float(get('primary_specular_offset', -3.0)), float(get('transmission_offset', -1.5)),
+                                   float(get('secondary_specular_offset', -4.5)), 0.0],
+                        'tint': list(get('primary_specular_tint', white)) + list(get('transmission_tint', white)) + list(get('secondary_specular_tint', white)),
+                        'azimuthal': float(get('transmission_azimuthal_roughness', 1.0)),
+                        'saturation': float(get('direct_transmission_saturation', 1.0)), 'lobes': shown, 'fresnel': 0 if kind == 0 else 1}
+    return surface
+
+
 # The inputs of a native material that an image can be wired to in the graph editor, and the
 # channel each one is. An input with a switch only counts while its lobe is switched on.
-GRAPH_INPUTS = {'albedo': 'diffCol', 'roughness': 'rough', 'metallic': 'metallic', 'emission': 'lumiCol',
+GRAPH_INPUTS = {'albedo': 'diffCol', 'hair_color': 'diffCol', 'roughness': 'rough', 'metallic': 'metallic', 'emission': 'lumiCol',
                 'transmission': 'tranAmt', 'transmission_color': 'tranCol', 'clearcoat': 'coatAmt',
                 'clearcoat_roughness': 'coatRough', 'anisotropy': 'aniso', 'scattering_color': 'subsCol',
                 'input_normal': 'normal', 'presence': 'dissolve'}
@@ -871,4 +926,13 @@ class Compiler:
                   + [radius, depth, max(0.0, float(source.get('dispersion_abbe', 0))) if dwa else 0.0, min(1.0, max(0.0, weight))])
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Material %s contains a non-finite number' % name)
-        return struct.pack('<33f4I', *values, flags, start, len(self.layers) - start, UV_SLOTS if tangent_slot is None else tangent_slot)
+        record = struct.pack('<33f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0), start, len(self.layers) - start,
+                             UV_SLOTS if tangent_slot is None else tangent_slot)
+        fibre = source.get('_hair')
+        if fibre:
+            # A hair fibre's four lobes, for where the material is on curves.
+            numbers = [float(v) for v in fibre['roughness'] + fibre['offset'] + fibre['tint'] + [fibre['azimuthal'], fibre['saturation']]]
+            if not all(math.isfinite(v) for v in numbers):
+                raise ValueError('Material %s contains a non-finite number' % name)
+            record += struct.pack('<19f2I', *numbers, fibre['lobes'], fibre['fresnel'])
+        return record
