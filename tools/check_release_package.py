@@ -2,7 +2,7 @@
 
 Usage: check_release_package.py <version> [folder to unpack into]
 Checks that the two ZIPs merge into one kit with what it needs, that MoonRay renders from the unpacked runtime in GPU
-and CPU modes with a bare environment, that the scene reader and the MoonLightIPR session start, that the kit finds its
+and CPU modes with a bare environment, that the scene reader, the VDB reader and the MoonLightIPR session start, that the kit finds its
 own runtime, and that the unpacked kit writes a scene MoonRay accepts for a mesh one part of which holds a volume."""
 import json
 import os
@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-NEED = ['index.cfg', 'layout.cfg', 'bin/MoonRayGeometry.lx', 'runtime/moonray.exe', 'runtime/modo_rdl_import.exe', 'runtime/denoise.exe', 'runtime/oiiotool.exe',
+NEED = ['index.cfg', 'layout.cfg', 'bin/MoonRayGeometry.lx', 'runtime/moonray.exe', 'runtime/modo_rdl_import.exe', 'runtime/modo_vdb_grid.exe', 'runtime/denoise.exe', 'runtime/oiiotool.exe',
         'runtime/moonlightipr/moonlightipr_session.exe', 'runtime/moonlightipr/MoonLightIPRKernel.ptx', 'runtime/moonlightipr/cudart64_12.dll', 'runtime/shaders/OptixGPUPrograms.ptx',
         'python/moonray_modo/mesh_reader.py', 'python/moonray_modo/primitive_attributes.py', 'python/moonray_modo/rdl_import.py', 'INSTALLATION.md', 'LICENSE.txt']
 VOLUME = '''
@@ -77,6 +77,12 @@ def main():
     done = subprocess.run([str(runtime / 'modo_rdl_import.exe'), 'sphere.rdla', str(runtime)], cwd=str(work), env=dict(bare, PATH=str(runtime) + ';' + bare['PATH']), capture_output=True, timeout=120)
     at = done.stdout.rfind(b'@@MODO_RDL_JSON')
     check('the scene reader reads a scene', done.returncode == 0 and at >= 0 and len(json.loads(done.stdout[at + 15:])['objects']) > 0)
+    # What reads a VDB file for MoonLightIPR: it writes a small grid of its own, then reads it back as a block.
+    reads = dict(bare, PATH=str(runtime) + ';' + bare['PATH'])
+    made = subprocess.run([str(runtime / 'modo_vdb_grid.exe'), '--ball', 'ball.vdb'], cwd=str(work), env=reads, capture_output=True, timeout=120)
+    done = subprocess.run([str(runtime / 'modo_vdb_grid.exe'), 'ball.vdb', 'density', '32', 'ball.mlv'], cwd=str(work), env=reads, capture_output=True, timeout=120)
+    check('the VDB reader reads a grid', made.returncode == 0 and done.returncode == 0 and (work / 'ball.mlv').is_file() and (work / 'ball.mlv').read_bytes()[:4] == b'MLV1',
+          (made.stderr + done.stderr).decode(errors='replace').strip()[-200:])
     session = subprocess.Popen([str(runtime / 'moonlightipr' / 'moonlightipr_session.exe'), str(runtime / 'moonlightipr' / 'MoonLightIPRKernel.ptx')], cwd=str(work),
                                env=dict(bare, PATH=str(runtime / 'moonlightipr') + ';' + bare['PATH']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(6)

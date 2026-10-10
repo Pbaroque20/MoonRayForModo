@@ -1,6 +1,6 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.3.50.2**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
+These instructions are for **0.3.51**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
 
 ## Requirements
 
@@ -10,7 +10,7 @@ These instructions are for **0.3.50.2**, **Modo 16.1v9**, and **Windows x64**. T
 
 ## Download and install
 
-1. Open the [0.3.50.2 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.2). Download **MoonRayForModo-0.3.50.2-kit.zip** and **MoonRayForModo-0.3.50.2-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
+1. Open the [0.3.51 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51). Download **MoonRayForModo-0.3.51-kit.zip** and **MoonRayForModo-0.3.51-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
 2. Save your scene and close all Modo instances.
 3. Extract both ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders. The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, and `runtime/moonray.exe`.
 4. In Windows Explorer, enter `%APPDATA%\Luxology\Kits`. Create the `Kits` folder if needed. If a `MoonRayForModo` folder already exists, move it to a backup location **outside Kits**; do not merge a new release into the old installation.
