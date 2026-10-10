@@ -77,7 +77,7 @@ def grown(scene,item,strands,settings,warnings):
                              settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'])
     children,adrift=GROWN[key]
     if adrift:
-        warnings.append('Hair on %s: %d of %d strands found no scalp within reach and were left on their guides. Draw the guides from the surface, or widen the clusters less.'%(item.name,adrift,len(children)))
+        warnings.append('Hair on %s: %d of %d guides %s too far from the scalp, and the hair of %s grows from the guide itself. Start each guide on the surface.'%(item.name,adrift,len(guides),'starts' if adrift==1 else 'start','it' if adrift==1 else 'them'))
     # Each strand keeps its guide's material, and goes back into the mesh's own space, where its curves are.
     per=max(1,settings['count']);grown_strands=[]
     for index,child in enumerate(children):

@@ -86,7 +86,7 @@ class Hair(unittest.TestCase):
         scalp = hair.Scalp(dome())
         far = [[(5.0, 5.0 + .1 * j, 5.0) for j in range(4)]]
         strands, adrift = hair.grow(far, scalp, hair.CLUSTERS, count=6, width=.05, seed=1)
-        self.assertEqual(adrift, 6)
+        self.assertEqual(adrift, len(far))
         for strand in strands:
             self.assertEqual(tuple(strand[0]), (5.0, 5.0, 5.0))
 

@@ -217,7 +217,7 @@ def neighbours(roots, count=2):
 
 
 def grow(guides, scalp, mode=CLUSTERS, count=20, width=.01, clump=.5, length_variation=.1, seed=1):
-    """The strands that grow from a set of guides: (strands, how many roots could not be put on the scalp).
+    """The strands that grow from a set of guides: (strands, how many guides start too far from the scalp to be put on it).
 
     guides are lists of points, root first, in the scalp's own space; width is the radius of a
     cluster at its root; clump is how far the strands of a cluster have closed on their guide by
@@ -239,6 +239,10 @@ def grow(guides, scalp, mode=CLUSTERS, count=20, width=.01, clump=.5, length_var
             span += max(math.sqrt(dot(sub(roots[other], root), sub(roots[other], root))) for other in near[index])
         patch = scalp.around(root, span) if scalp is not None else None
         placed = scalp.nearest_among(root, patch, width * REACH) if scalp is not None else None
+        # A guide is adrift where its own root is off the scalp. A strand of a guide that is on it can still miss, at
+        # the scalp's edge, and keeps its guide's root; that is not counted, there being nothing to put right.
+        if scalp is not None and placed is None:
+            adrift += 1
         normal = placed[1] if placed else unit(sub(guide[1], guide[0]))
         helper = (1.0, 0.0, 0.0) if abs(normal[0]) < .9 else (0.0, 1.0, 0.0)
         across = unit(cross(normal, helper))
@@ -275,8 +279,6 @@ def grow(guides, scalp, mode=CLUSTERS, count=20, width=.01, clump=.5, length_var
             landed = scalp.nearest_among(start, patch, width * REACH) if scalp is not None else None
             if landed is None:
                 # No surface within reach: the strand keeps its guide's root rather than hang in the air.
-                if scalp is not None:
-                    adrift += 1
                 base, spread = root, (0.0, 0.0, 0.0)
                 body = [sub(p, root) for p in guide]
             else:

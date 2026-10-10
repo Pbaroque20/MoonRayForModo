@@ -60,3 +60,7 @@ def words(matrix):
     for name,values,rest in (('Move',held[0],0.0),('Turn',held[1],0.0),('Size',held[2],1.0)):
         if any(abs(v-rest)>1e-6 for v in values):said.append(name+' '+' '.join('%.4g'%(v+0.0) for v in values))
     return ', '.join(said) or 'Not moved, turned or sized'
+
+def numbers(attribute):
+    """How many numbers a vector attribute is, each of which a form shows as a field of its own; 0 for any other kind."""
+    return {'Vec2f':2,'Vec3f':3,'Vec4f':4}.get(attribute['type'],0)

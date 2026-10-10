@@ -120,6 +120,96 @@ def register():
                 for item,settings in updates:properties.write(item,settings)
         return Attribute
 
+    def part_command(shader,key,spec,part):
+        """One number of a vector attribute, so that a direction is two or three number fields and not a list to type."""
+        default=node_defaults.value(spec)
+        class Part(lxu.command.BasicCommand):
+            def __init__(self):
+                super().__init__()
+                self.dyna_Add('value',lx.symbol.sTYPE_FLOAT)
+                self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+            def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+            def basic_Enable(self,msg):return bool(matching(shader))
+            def arg_UIValueHints(self,index):return Hints(WATCHED)
+            def cmd_Query(self,index,query):
+                values=lx.object.ValueArray(query)
+                for item in matching(shader):
+                    held=properties.read(item).get('native_parameters',{}).get(key) or default
+                    values.AddFloat(float(held[part]))
+            def basic_Execute(self,msg,flags):
+                items=matching(shader)
+                if not items:raise ValueError('Select a '+shader+' material')
+                number=float(self.dyna_Float(0));updates=[]
+                for item in items:
+                    settings=properties.read(item);parameters=settings.setdefault('native_parameters',{})
+                    value=[float(v) for v in (parameters.get(key) or default)];value[part]=number
+                    value=shader_library.typed(value,spec)
+                    # A value back at MoonRay's own default is not kept.
+                    if value==default:value=None
+                    graph=settings.get('node_graph');root=graph['nodes'][graph['root']] if graph else None
+                    if value is None:parameters.pop(key,None)
+                    else:parameters[key]=value
+                    if root is not None:
+                        # The graph editor shows the same material; keep its output node in step.
+                        if value is None:root.setdefault('parameters',{}).pop(key,None)
+                        else:root.setdefault('parameters',{})[key]=value
+                        root.setdefault('inputs',{}).pop(key,None)
+                    updates.append((item,settings))
+                for item,settings in updates:properties.write(item,settings)
+        return Part
+
+    def overridden():
+        items=selected()
+        return items if items and all(material_override.enabled(properties.read(item)) for item in items) else []
+
+    # How a material's polygons are smoothed, which the assign dialog sets when the material is made.
+    SMOOTHING=(('modo','As Modo\'s Material Says'),('flat','Flat'),('angle','Smooth Within the Angle'))
+    class Smoothing(lxu.command.BasicCommand):
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('value',lx.symbol.sTYPE_INTEGER)
+            self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Enable(self,msg):return bool(overridden())
+        def arg_UIValueHints(self,index):return Hints(WATCHED,SMOOTHING)
+        def cmd_Query(self,index,query):
+            values=lx.object.ValueArray(query)
+            for item in overridden():
+                held=properties.read(item).get('smoothing')
+                values.AddInt(0 if held is None else 2 if held else 1)
+        def basic_Execute(self,msg,flags):
+            index=self.dyna_Int(0)
+            if not 0<=index<3:raise ValueError('Invalid choice')
+            updates=[]
+            for item in overridden():
+                settings=properties.read(item)
+                if index==0:settings.pop('smoothing',None)
+                else:
+                    settings['smoothing']=index==2;settings.setdefault('smoothing_angle',40.0)
+                updates.append((item,settings))
+            for item,settings in updates:properties.write(item,settings)
+    class SmoothingAngle(lxu.command.BasicCommand):
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('value',lx.symbol.sTYPE_FLOAT)
+            self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Enable(self,msg):
+            items=overridden()
+            return bool(items) and all(properties.read(item).get('smoothing') for item in items)
+        def arg_UIValueHints(self,index):return Hints(WATCHED)
+        def cmd_Query(self,index,query):
+            values=lx.object.ValueArray(query)
+            for item in overridden():values.AddFloat(float(properties.read(item).get('smoothing_angle',40.0)))
+        def basic_Execute(self,msg,flags):
+            angle=max(0.0,min(180.0,float(self.dyna_Float(0))));updates=[]
+            for item in overridden():
+                settings=properties.read(item);settings['smoothing_angle']=angle
+                updates.append((item,settings))
+            for item,settings in updates:properties.write(item,settings)
+    lx.bless(Smoothing,'moonray.material.smoothing')
+    lx.bless(SmoothingAngle,'moonray.material.smoothing_angle')
+
     def image_command(shader,key):
         """The image on one of a material's inputs: none, the one it has, or a new one to load.
         The image is a node wired to the input in the material's graph, which is what the graph
@@ -205,6 +295,7 @@ def register():
             # Connections to other materials keep the graph editor's named inputs.
             if spec['type']=='SceneObject*':continue
             lx.bless(command(shader,key,spec),'moonray.material.attr%d_%d'%(i,j))
+            for part in range(ramps.numbers(spec)):lx.bless(part_command(shader,key,spec,part),'moonray.material.attr%d_%d_%d'%(i,j,part))
 
 
 # A fault here must not keep the rest of the kit from loading.
