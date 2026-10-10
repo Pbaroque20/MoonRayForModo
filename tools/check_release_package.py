@@ -2,7 +2,7 @@
 
 Usage: check_release_package.py <version> [folder to unpack into]
 Checks that the two ZIPs merge into one kit with what it needs, that MoonRay renders from the unpacked runtime in GPU
-and CPU modes with a bare environment, that the scene reader, the VDB reader and the MoonLightIPR session start, that the kit finds its
+and CPU modes with a bare environment, that the scene reader, the VDB reader, the hair grower and the MoonLightIPR session start, that the kit finds its
 own runtime, and that the unpacked kit writes a scene MoonRay accepts for a mesh one part of which holds a volume."""
 import json
 import os
@@ -83,6 +83,11 @@ def main():
     done = subprocess.run([str(runtime / 'modo_vdb_grid.exe'), 'ball.vdb', 'density', '32', 'ball.mlv'], cwd=str(work), env=reads, capture_output=True, timeout=120)
     check('the VDB reader reads a grid', made.returncode == 0 and done.returncode == 0 and (work / 'ball.mlv').is_file() and (work / 'ball.mlv').read_bytes()[:4] == b'MLV1',
           (made.stderr + done.stderr).decode(errors='replace').strip()[-200:])
+    # What grows hair: from the unpacked kit's own module, with the unpacked runtime's program.
+    grown = subprocess.run([sys.executable, '-c', 'import sys;sys.path.insert(0,sys.argv[1]);from moonray_modo import hair_native;'
+                            'made=hair_native.grow([[(0,0,0),(0,.1,0),(0,.2,0)]],None,0,25,.01,.5,.1,1,None,sys.argv[2]);print(len(made[0]) if made else "none")',
+                            str(kit / 'python'), str(runtime)], env=dict(os.environ, MOONRAY_MODO_RUNTIME=''), capture_output=True, text=True, timeout=120)
+    check('the hair grower grows hair', grown.stdout.strip() == '25', grown.stdout.strip() or grown.stderr.strip()[-200:])
     session = subprocess.Popen([str(runtime / 'moonlightipr' / 'moonlightipr_session.exe'), str(runtime / 'moonlightipr' / 'MoonLightIPRKernel.ptx')], cwd=str(work),
                                env=dict(bare, PATH=str(runtime / 'moonlightipr') + ';' + bare['PATH']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(6)
