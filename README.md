@@ -86,6 +86,28 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, and cached beauty denoising (OptiX or Open Image Denoise).
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library, and RDL scene import.
 
+## Known issues in 0.3.50.2
+
+Fixed on the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR), coming in 0.3.51:
+
+- The GPU preview engine is shown as "MoonLight"; its name is MoonLightIPR.
+- A box or other hard-edged mesh is smoothed all over, because Modo's smoothing angle is not read.
+- Blinn and Ashikhmin materials do not match Modo's highlights.
+- Hair switched on with its first settings looks like one thick rod per guide, and a scene with dense hair takes seconds to re-render.
+- MoonLightIPR draws hair and curves as polygon tubes with a plain material, draws no fog or VDB volumes, and puts pictures on rect lights only.
+- The sun's disc in a physical sky has the wrong colour and ignores Disc In-Scatter.
+- Dragging the sun or an environment light re-renders all the way through the drag.
+- A large material graph opens zoomed far out and will not zoom in.
+- A mistyped light path expression fails the render with no plain message.
+
+Still open:
+
+- Very smooth highlights (roughness under about 0.2) are dimmer than Modo's.
+- Under Principled, Modo's diffuse gets brighter with roughness and MoonRay's does not.
+- MoonLightIPR leaves out rod, barn door, cookie and VDB light filters, and shows no motion blur while it follows edits.
+- Opening a large RDL scene's files takes minutes, with no progress shown.
+- Tested on one machine (RTX 3090) only.
+
 ## Limitations
 
 - **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU; they have been exercised on an RTX 3090 only.
@@ -108,6 +130,16 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Progress while a large RDL scene's files are being opened.
 - Light linking, and the remaining Shader Tree effects and masks.
 - Broader validation: other GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.
+
+**From MoonRay's reference documentation** (things MoonRay does that the plugin has no control for yet)
+
+- **Deep images**: deep EXR output and its settings.
+- **Light sets, shadow sets, shadow receiver sets and trace sets**: which lights light, and which objects shadow, what.
+- **Display filters**: MoonRay's post-render filters (blend, colour correct, convolution, depth of field, halftone, ramp, toon and the rest). Only the image filter is in the Windows build.
+- **Render settings not in the form**: volume quality and depth, presence and hair depth, sample and roughness clamping, pixel filter, texture blur and texture cache size, Russian roulette, frame-locked noise.
+- **Texture baking** with the bake camera as a workflow, not only as an item.
+- **Arras**: rendering one frame across several machines.
+- **Alembic and USD geometry procedurals**, which the Windows build does not include.
 
 **Production readiness:** this is an experimental development build, not a production-certified release. It has been exercised on one machine. Each release note says what was and was not checked.
 
