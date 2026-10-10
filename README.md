@@ -6,7 +6,7 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in a release yet.
 
-## New preview features for 0.3.51
+## Unreleased preview features for 0.3.51
 
 **In the MoonLightIPR preview**
 
