@@ -959,5 +959,10 @@ class Compiler:
             rows = [float(v) for v in fog.get('rows') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]]
             if len(rows) != 12 or not all(math.isfinite(v) for v in rows):
                 raise ValueError('Material %s has an invalid volume transform' % name)
-            record += struct.pack('<10fi12f', *numbers, self.grid(fog['grid']) if fog.get('grid') else -1, *rows)
+            # And the grid of the light it gives off, where it has one, with the rows into that grid's own cube.
+            glow = [float(v) for v in fog.get('glow_rows') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]]
+            if len(glow) != 12 or not all(math.isfinite(v) for v in glow):
+                raise ValueError('Material %s has an invalid volume transform' % name)
+            record += struct.pack('<10fi12fi12f', *numbers, self.grid(fog['grid']) if fog.get('grid') else -1, *rows,
+                                  self.grid(fog['glow']) if fog.get('glow') and fog.get('grid') else -1, *glow)
         return record

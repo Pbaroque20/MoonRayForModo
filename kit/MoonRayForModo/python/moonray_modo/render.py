@@ -245,6 +245,11 @@ class Renderer(QtCore.QObject):
             self.cpu_fallback=False
         if self.cpu_fallback and mode in ('auto','xpu'):
             mode='vectorized'
+        # A VDB volume that gives off light stops this build of MoonRay in its vector and GPU modes; scalar draws it.
+        if mode!='scalar' and any(entry.get('kind')=='vdb' and entry.get('emission_grid') and float(entry.get('emission',1))>0
+                                  for entry in request['snapshot'].get('extra_geometry',[])):
+            mode='scalar'
+            request['snapshot'].setdefault('warnings',[]).append("A VDB volume with an emission grid is rendered in MoonRay's scalar mode, which is slower: its vector and GPU modes stop on such a volume in this build.")
         self.backend_status={'auto':'Auto requested (XPU → Vector → Scalar)','xpu':'XPU requested','vectorized':'Vector requested','vector':'Vector requested','scalar':'Scalar requested'}[mode]
         self.buffer_key = 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')

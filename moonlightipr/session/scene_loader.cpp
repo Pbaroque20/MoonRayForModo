@@ -230,10 +230,12 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             std::ifstream source(file, std::ios::binary);
             const std::vector<char> data((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>());
             GridDesc desc;
-            if (data.size() < 84 || std::memcmp(data.data(), "MLV1", 4) != 0) throw std::runtime_error("Cannot read MoonLightIPR grid: " + file);
+            if (data.size() < 84 || (std::memcmp(data.data(), "MLV1", 4) != 0 && std::memcmp(data.data(), "MLV4", 4) != 0))
+                throw std::runtime_error("Cannot read MoonLightIPR grid: " + file);
+            desc.channels = data[3] == '4' ? 4 : 1;
             std::memcpy(desc.counts, data.data() + 4, 12);
             std::memcpy(&desc.peak, data.data() + 16, 4);
-            const size_t count = size_t(desc.counts[0]) * desc.counts[1] * desc.counts[2];
+            const size_t count = size_t(desc.counts[0]) * desc.counts[1] * desc.counts[2] * desc.channels;
             if (!count || count > (data.size() - 84) / 4) throw std::runtime_error("MoonLightIPR grid is truncated: " + file);
             std::vector<float> values(count);
             std::memcpy(values.data(), data.data() + 84, count * 4);
@@ -307,6 +309,10 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             if (grid >= int32_t(gridIndices.size())) throw std::runtime_error("MoonLightIPR scene volume refers to a missing grid");
             material.volumeGrid = grid < 0 ? -1 : int32_t(gridIndices[grid]);
             in.floats(material.volumeRows, 12);
+            const int32_t glow = in.value<int32_t>();
+            if (glow >= int32_t(gridIndices.size())) throw std::runtime_error("MoonLightIPR scene volume refers to a missing grid");
+            material.volumeGlowGrid = glow < 0 ? -1 : int32_t(gridIndices[glow]);
+            in.floats(material.volumeGlowRows, 12);
         }
     }
     std::vector<Layer> layers(in.value<uint32_t>());

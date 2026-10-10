@@ -109,6 +109,8 @@ struct DeviceVolume {
     float peak;                 // the grid's largest value
     unsigned long long grid;    // a 3D texture of densities, or 0 for an even fog
     float rows[12];             // scene to the grid's unit cube, three rows of (x, y, z, offset)
+    unsigned long long glow;    // a 3D texture of how much light the fog gives off, times emission; or 0
+    float glowRows[12];         // scene to that grid's own unit cube
 };
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
@@ -233,6 +235,8 @@ struct LaunchParams {
     DevicePtr albedo2;      // float, two ALBEDO_TABLE runs: GGX, then Beckmann
     DevicePtr hairs;        // DeviceHair, indexed by DeviceMaterial::hair
     DevicePtr volumes;      // DeviceVolume, likewise
+    unsigned volumeCount;
+    unsigned volumePad;
 
     // Latitude-longitude environment with a piecewise-constant sampling distribution.
     DevicePtr envPixels;        // float[4], envWidth * envHeight; what lights the scene

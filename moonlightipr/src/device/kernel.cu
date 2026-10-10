@@ -56,6 +56,38 @@ ML_INLINE float fogDensity(const DeviceVolume& fog, float3 p) {
     return tex3D<float>(fog.grid, dot(vec(fog.rows), p) + fog.rows[3], dot(vec(fog.rows + 4), p) + fog.rows[7], dot(vec(fog.rows + 8), p) + fog.rows[11]);
 }
 
+// What the fogs that have grids let through along a ray. Each fills the unit cube its rows take the scene into, so
+// where the ray is inside one is worked out from the cube, and any number of them may lie along the ray or overlap.
+ML_INLINE float3 gridShadow(float3 origin, float3 direction, float distance, unsigned& seed) {
+    float3 through = vec(1.0f);
+    const DeviceVolume* fogs = reinterpret_cast<const DeviceVolume*>(params.volumes);
+    for (unsigned i = 0; i < params.volumeCount; ++i) {
+        const DeviceVolume& fog = fogs[i];
+        if (!fog.grid) continue;
+        float from = 0.0f, to = fminf(distance, 1e12f);
+        for (int axis = 0; axis < 3 && to > from; ++axis) {
+            const float* row = fog.rows + axis * 4;
+            const float o = dot(vec(row), origin) + row[3], d = dot(vec(row), direction);
+            if (fabsf(d) < 1e-12f) {
+                if (o < 0.0f || o > 1.0f) to = -1.0f;
+                continue;
+            }
+            const float a = -o / d, b = (1.0f - o) / d;
+            from = fmaxf(from, fminf(a, b));
+            to = fminf(to, fmaxf(a, b));
+        }
+        if (!(to > from)) continue;
+        // Twenty-four steps along the stretch, each begun at a different place from ray to ray.
+        const int steps = 24;
+        const float step = (to - from) / steps;
+        float thick = 0.0f, at = from + step * rnd(seed);
+        for (int k = 0; k < steps; ++k, at += step) thick += fogDensity(fog, origin + direction * at);
+        thick *= step;
+        through *= make_float3(expf(-thick * fog.extinction[0]), expf(-thick * fog.extinction[1]), expf(-thick * fog.extinction[2]));
+    }
+    return through;
+}
+
 ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float distance = 1e16f) {
     // A fog with a grid is not the same all through, so the any-hit test only notes where the ray goes into it and
     // comes out, and which fog it is; what it stops is added up along that stretch below.
@@ -67,20 +99,8 @@ ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float d
                | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
                0, 1, 1, unoccluded, stream, d0, d1, d2, e0, e1, e2, entered, left, gridded);
     if (!unoccluded) return vec(0.0f);
-    float3 through = vec(1.0f);
-    if (gridded) {
-        const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[gridded - 1];
-        const float from = fmaxf(0.0f, __uint_as_float(entered)), to = fminf(__uint_as_float(left), fminf(distance, 1e12f));
-        if (to > from) {
-            // Twenty-four steps along the stretch, each begun at a different place from ray to ray.
-            const int steps = 24;
-            const float step = (to - from) / steps;
-            float thick = 0.0f, at = from + step * rnd(seed);
-            for (int i = 0; i < steps; ++i, at += step) thick += fogDensity(fog, origin + direction * at);
-            thick *= step;
-            through = make_float3(expf(-thick * fog.extinction[0]), expf(-thick * fog.extinction[1]), expf(-thick * fog.extinction[2]));
-        }
-    }
+    // Asked of every ray where there is any fog at all: one that starts and ends inside a grid crosses no edge of it.
+    const float3 through = params.volumeCount ? gridShadow(origin, direction, distance, seed) : vec(1.0f);
     if (!(d0 | d1 | d2 | e0 | e1 | e2)) return through;
     // A fog entered and never left is one the light itself is in: it is crossed from its edge to the ray's end.
     const float3 inside = make_float3(fmaxf(0.0f, __uint_as_float(e0)), fmaxf(0.0f, __uint_as_float(e1)), fmaxf(0.0f, __uint_as_float(e2)));
@@ -1282,29 +1302,82 @@ extern "C" __global__ void __raygen__moonlightipr() {
     for (unsigned depth = 0;; ++depth) {
         Hit hit;
         traceRadiance(origin, direction, hit, reach);
+        if (params.volumeCount && !probing) {
+            // Fogs as thick as their grids say. Each fills the unit cube its rows take the scene into, so the stretch of
+            // the ray inside each is worked out from the cube, and they may overlap. Steps are drawn as if the fog were
+            // everywhere as thick as all of them at their thickest together, each of which is a real stop only as often
+            // as the fog there is that thick (Woodcock tracking). A fog is taken to stop every colour alike, by the
+            // mean of what it stops.
+            const DeviceVolume* fogs = reinterpret_cast<const DeviceVolume*>(params.volumes);
+            const float limit = hit.valid ? hit.t : 1e30f;
+            float from = 1e30f, to = 0.0f, most = 0.0f;
+            for (unsigned i = 0; i < params.volumeCount; ++i) {
+                const DeviceVolume& fog = fogs[i];
+                if (!fog.grid) continue;
+                float a = 0.0f, b = limit;
+                for (int axis = 0; axis < 3 && b > a; ++axis) {
+                    const float* row = fog.rows + axis * 4;
+                    const float o = dot(vec(row), origin) + row[3], d = dot(vec(row), direction);
+                    if (fabsf(d) < 1e-12f) {
+                        if (o < 0.0f || o > 1.0f) b = -1.0f;
+                        continue;
+                    }
+                    const float near = -o / d, far = (1.0f - o) / d;
+                    a = fmaxf(a, fminf(near, far));
+                    b = fminf(b, fmaxf(near, far));
+                }
+                if (!(b > a)) continue;
+                from = fminf(from, a);
+                to = fmaxf(to, b);
+                most += (fog.extinction[0] + fog.extinction[1] + fog.extinction[2]) * (1.0f / 3.0f) * fog.peak;
+            }
+            if (most > 0.0f && to > from) {
+                bool stopped = false;
+                float at = from, anisotropy = 0.0f;
+                float3 albedo = vec(0.0f);
+                for (int k = 0; k < 1024; ++k) {
+                    at += -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / most;
+                    if (at >= to) break;
+                    const float3 p = origin + direction * at;
+                    float thick = 0.0f;
+                    float3 given = vec(0.0f);
+                    albedo = vec(0.0f);
+                    anisotropy = 0.0f;
+                    for (unsigned i = 0; i < params.volumeCount; ++i) {
+                        const DeviceVolume& fog = fogs[i];
+                        if (!fog.grid) continue;
+                        const float here = (fog.extinction[0] + fog.extinction[1] + fog.extinction[2]) * (1.0f / 3.0f) * fogDensity(fog, p);
+                        thick += here;
+                        albedo += vec(fog.albedo) * here;
+                        anisotropy += fog.anisotropy * here;
+                        if (fog.glow) {
+                            const float4 lit = tex3D<float4>(fog.glow, dot(vec(fog.glowRows), p) + fog.glowRows[3], dot(vec(fog.glowRows + 4), p) + fog.glowRows[7],
+                                                             dot(vec(fog.glowRows + 8), p) + fog.glowRows[11]);
+                            given += vec(fog.emission) * make_float3(lit.x, lit.y, lit.z);
+                        }
+                    }
+                    // The fog's own light, gathered at every step drawn, real stop or not, which is what makes the
+                    // steps add up to all the light given off along the way.
+                    if (given.x + given.y + given.z > 0.0f) radiance += clampSample(throughput * lightWeight * given * (1.0f / most), clampFound);
+                    if (rnd(seed) * most < thick) {
+                        stopped = true;
+                        albedo = albedo * (1.0f / thick);
+                        anisotropy /= thick;
+                        break;
+                    }
+                }
+                if (stopped) {
+                    // Light scatters in fog once: what the lamps send here goes on towards the viewer.
+                    if (bounces)
+                        radiance += fogLight(origin + direction * at, -direction, anisotropy, throughput * bounceWeight * albedo, roughDepth >= 1, seed);
+                    break;
+                }
+            }
+        }
         if (medium >= 0 && !probing) {
             // In fog: how far the light gets before the fog stops it, drawn for one colour chosen evenly.
             const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[medium];
-            if (fog.grid) {
-                // A fog as thick as its grid says: steps drawn as if it were everywhere as thick as at its thickest, each
-                // of which is a real stop only as often as the fog there is that thick (Woodcock tracking). The fog is
-                // taken to stop every colour alike, by the mean of what it stops.
-                const float stopsAt = (fog.extinction[0] + fog.extinction[1] + fog.extinction[2]) * (1.0f / 3.0f), most = stopsAt * fog.peak;
-                const float limit = hit.valid ? hit.t : 1e30f;
-                bool stopped = false;
-                float at = 0.0f;
-                for (int i = 0; most > 0.0f && i < 512; ++i) {
-                    at += -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / most;
-                    if (at >= limit) break;
-                    if (rnd(seed) * fog.peak < fogDensity(fog, origin + direction * at)) { stopped = true; break; }
-                }
-                if (stopped) {
-                    // As in an even fog, light scatters once: what the lamps send here goes on towards the viewer.
-                    if (bounces)
-                        radiance += fogLight(origin + direction * at, -direction, fog.anisotropy, throughput * bounceWeight * vec(fog.albedo), roughDepth >= 1, seed);
-                    break;
-                }
-            } else {
+            {
             const float3 stops = vec(fog.extinction);
             const float limit = hit.valid ? hit.t : 1e30f, choice = rnd(seed);
             const float chosen = choice < 1.0f / 3.0f ? stops.x : choice < 2.0f / 3.0f ? stops.y : stops.z;
@@ -1882,18 +1955,15 @@ extern "C" __global__ void __anyhit__presence() {
     const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[primitive] : instance.material;
     const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
     if (material.flags & MATERIAL_VOLUME) {
+        // A fog with a grid has no edge to meet: every ray works out for itself where it runs through the grid's cube.
+        if (reinterpret_cast<const DeviceVolume*>(params.volumes)[material.hair].grid) {
+            optixIgnoreIntersection();
+            return;
+        }
         // The edge of a fog stops no light itself. A ray looking for a light notes the fog it crosses and goes on; a ray
         // looking for what is there to see takes the edge as its hit, to know it is in fog from there.
         if (!(optixGetRayFlags() & OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT)) return;
         const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[material.hair];
-        if (fog.grid) {
-            // Where the ray goes in and comes out, for the ray's sender to add up the fog between.
-            if (optixIsBackFaceHit()) optixSetPayload_9(__float_as_uint(optixGetRayTmax()));
-            else optixSetPayload_8(__float_as_uint(optixGetRayTmax()));
-            optixSetPayload_10(material.hair + 1);
-            optixIgnoreIntersection();
-            return;
-        }
         const float sign = optixIsBackFaceHit() ? 1.0f : -1.0f, crossed = sign * optixGetRayTmax();
         optixSetPayload_2(__float_as_uint(__uint_as_float(optixGetPayload_2()) + crossed * fog.extinction[0]));
         optixSetPayload_3(__float_as_uint(__uint_as_float(optixGetPayload_3()) + crossed * fog.extinction[1]));

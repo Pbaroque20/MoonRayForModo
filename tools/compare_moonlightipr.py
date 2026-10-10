@@ -420,10 +420,18 @@ def scenes(folder):
                                 ('coloured', {'attenuation_intensity': 1.2, 'attenuation_color': [1.0, .6, .3], 'diffuse_color': [.5, .7, 1.0], 'anisotropy': .4}))},
         # A VDB volume: a ball of fog with a hole in it, thicker toward its middle, from a file MoonRay reads itself.
         **{'vdb_' + name: dict(base, lights=fixture.snapshot()['lights'] + [
-               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3, _exec_mode='scalar' if values.get('_scalar') else 'auto',
                extra_geometry=[dict(values, kind='vdb', identity='smoke|vdb', source_item='smoke', name='Smoke', file=vdb_ball(folder),
                                     matrix=fixture.placed(0, 1.5, 2.5))])
-           for name, values in (('thin', {'density': 1.0}), ('thick', {'density': 6.0, 'volume_color': [.6, .75, 1.0], 'anisotropy': .5}))},
+           for name, values in (('thin', {'density': 1.0}), ('thick', {'density': 6.0, 'volume_color': [.6, .75, 1.0], 'anisotropy': .5}),
+                                # The same ball with the light its emission grid gives off: a glowing core off to one side.
+                                # MoonRay draws a volume that gives off light in its scalar mode only, in this build.
+                                ('glow', {'density': 2.0, 'emission_grid': 'emission', 'emission': 3.0, '_scalar': True}))},
+        # Two balls of fog that overlap, one behind the other from the lamp: each shadows the other and the ground.
+        'vdb_two': dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               extra_geometry=[dict(kind='vdb', identity=name + '|vdb', source_item=name, name=name, file=vdb_ball(folder), density=4.0,
+                                    matrix=fixture.placed(x, 1.5, 2.5)) for name, x in (('near', -.7), ('far', .5))]),
         # A cloud from a VDB file of one's own, named in MOONLIGHTIPR_TEST_VDB, standing over the scene.
         **({'vdb_cloud': dict(base, lights=fixture.snapshot()['lights'], _environment=.6, extra_geometry=[
                {'kind': 'vdb', 'identity': 'cloud|vdb', 'source_item': 'cloud', 'name': 'Cloud', 'file': os.environ['MOONLIGHTIPR_TEST_VDB'],
@@ -444,7 +452,7 @@ def moonray(scene, runtime, folder, name):
     # MoonRay takes minutes per scene on the CPU; keep its image while the scene text is unchanged.
     fresh = source.is_file() and source.read_text(encoding='utf-8') == text and output.with_suffix('.pfm').is_file()
     source.write_text(text, encoding='utf-8')
-    for args in () if fresh else ([str(runtime / 'moonray.exe')] + native.arguments(source, output, 0, 'auto'),
+    for args in () if fresh else ([str(runtime / 'moonray.exe')] + native.arguments(source, output, 0, scene.get('_exec_mode', 'auto')),
                  [str(runtime / 'oiiotool.exe'), str(output), '--ch', 'R,G,B', '-d', 'float', '-o', str(output.with_suffix('.pfm'))]):
         done = subprocess.run(args, env=native.environment(runtime), cwd=str(folder), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               creationflags=subprocess.CREATE_NO_WINDOW)

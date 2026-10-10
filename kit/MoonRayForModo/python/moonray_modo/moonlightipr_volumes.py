@@ -16,7 +16,7 @@ UNIT_CUBE = ([[x, y, z] for x in (0.0, 1.0) for y in (0.0, 1.0) for z in (0.0, 1
              [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4], [1, 5, 7, 3]])
 
 
-def dense(path, grid, runtime):
+def dense(path, grid, runtime, colours=False):
     """The grid of a VDB file as a file the session reads: (file, the transform from the unit cube to the grid's own
     space). Made once for a file as it stands and kept."""
     from . import native
@@ -24,7 +24,7 @@ def dense(path, grid, runtime):
     source = Path(path)
     stat = source.stat()
     runtime = Path(runtime) if runtime else native.default_runtime()
-    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, grid, GRID_CELLS, 'moonlightipr-vdb-v1')).encode()).hexdigest()
+    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, grid, GRID_CELLS, 'moonlightipr-vdb-v2')).encode()).hexdigest()
     target = cache_folder() / (digest + '.mlv')
     if not target.is_file() or not target.stat().st_size:
         tool = runtime / 'modo_vdb_grid.exe'
@@ -39,7 +39,9 @@ def dense(path, grid, runtime):
         staged.replace(target)
     with target.open('rb') as held:
         head = held.read(84)
-    if len(head) < 84 or head[:4] != b'MLV1':
+    if len(head) < 84 or head[:4] != (b'MLV4' if colours else b'MLV1'):
+        if head[:4] in (b'MLV1', b'MLV4'):
+            raise ValueError('grid %s holds %s, where %s are needed' % (grid, 'single numbers' if head[:4] == b'MLV1' else 'colours', 'colours' if colours else 'single numbers'))
         raise ValueError('the grid made from the VDB file is not valid')
     return str(target), list(struct.unpack_from('<16f', head, 20))
 
@@ -64,14 +66,22 @@ def fogs(scene, runtime, warnings):
         except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
             warnings.append('MoonLightIPR does not show volume %s (%s).' % (name, exc))
             continue
-        if entry.get('emission_grid'):
-            warnings.append('MoonLightIPR shows volume %s without the light its emission grid gives off.' % name)
-        world = product(unit, [float(v) for v in (entry.get('matrix') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])])
+        placed = [float(v) for v in (entry.get('matrix') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])]
+        world = product(unit, placed)
+        # The light the fog gives off, from its emission grid, which has a box of its own.
+        glow, glow_rows, given = None, None, max(0.0, float(entry.get('emission', 1)))
+        if entry.get('emission_grid') and given > 0:
+            try:
+                glow, glow_unit = dense(entry['file'], entry['emission_grid'], runtime, True)
+                glow_rows = [v for row in inverse_rows(product(glow_unit, placed)) for v in row]
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                warnings.append('MoonLightIPR shows volume %s without the light its emission grid gives off (%s).' % (name, exc))
         tag = '|vdb|' + str(entry.get('identity', name))
         gain = max(0.0, float(entry.get('density', 1)))
         material = {'color': [0.0, 0.0, 0.0], 'roughness': 1.0, 'metallic': 0, '_volume': {
-            'extinction': [gain] * 3, 'albedo': working_color([float(v) for v in entry.get('volume_color', [1, 1, 1])]), 'emission': [0.0, 0.0, 0.0],
-            'anisotropy': float(entry.get('anisotropy', 0)), 'grid': file, 'rows': [v for row in inverse_rows(world) for v in row]}}
+            'extinction': [gain] * 3, 'albedo': working_color([float(v) for v in entry.get('volume_color', [1, 1, 1])]), 'emission': [given if glow else 0.0] * 3,
+            'anisotropy': float(entry.get('anisotropy', 0)), 'grid': file, 'rows': [v for row in inverse_rows(world) for v in row],
+            'glow': glow, 'glow_rows': glow_rows}}
         mesh = {'name': name, 'identity': tag, 'vertices': UNIT_CUBE[0], 'faces': UNIT_CUBE[1], 'matrix': world, 'material': tag, 'smooth': False}
         made.append((mesh, tag, material))
     return made
