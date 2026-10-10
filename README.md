@@ -11,9 +11,9 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 [Download the packaged 0.3.50.2 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.50](docs/WHATS_NEW_0350.md)
 
-## New preview features
+## New preview features for 0.3.51
 
-*On the `MoonLightIPR` branch, not yet in a release.*
+*Coming in 0.3.51. On the `MoonLightIPR` branch now; not yet released.*
 
 **In the MoonLightIPR preview**
 
