@@ -79,6 +79,8 @@ def look():
             mouse(view, QtCore.QEvent.MouseMove, point)
             QtWidgets.QApplication.processEvents()
             result['probe_' + name] = panel.probe.text()
+            result['swatch_' + name] = [panel.swatch.isVisible(), panel.swatch.styleSheet()[:40]]
+            panel.window().grab().save(str(out / ('probe_%s.png' % name)))
         view.hovered.emit(-1, -1)
         result['probe_off_the_picture'] = panel.probe.text()
         # Each channel, by its button.

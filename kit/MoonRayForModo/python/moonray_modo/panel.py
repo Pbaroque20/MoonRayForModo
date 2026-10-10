@@ -219,6 +219,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # What is under the pointer: its place in the picture and its values.
         self.probe=QtWidgets.QLabel('');self.probe.setEnabled(False)
         self.probe.setToolTip('The pixel under the pointer: its place from the top left, then red, green, blue and alpha.\nLinear values are the render\'s own, before the view transform; display values are what is on screen.')
+        # And its colour as it is on screen, in a small square beside the numbers.
+        self.swatch=QtWidgets.QLabel('');self.swatch.setFixedSize(14,14);self.swatch.setVisible(False)
+        row.addWidget(self.swatch)
         row.addWidget(self.probe)
         self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
         row.addWidget(self.image_info)
@@ -312,7 +315,9 @@ class Panel(Tools, QtWidgets.QWidget):
     def _probe(self,x,y):
         """Say what is under the pointer: the render's own linear values where they are held, else what is on screen."""
         if x<0 or self.preview.image.isNull():
-            self.probe.setText('');return
+            self.probe.setText('');self.swatch.setVisible(False);return
+        shown=QtGui.QColor(self.preview.image.pixel(x,y))
+        self.swatch.setStyleSheet('background-color: %s; border: 1px solid #101010;'%shown.name());self.swatch.setVisible(True)
         import struct
         frame=self.renderer.buffers.displayed or {}
         def linear(key,count):
