@@ -33,7 +33,7 @@ class Hints(lxifc.UIValueHints):
 
 
 def register():
-    from moonray_modo import properties,shader_library,material_override,property_notifications,node_defaults,graph_images
+    from moonray_modo import properties,shader_library,material_override,property_notifications,node_defaults,graph_images,ramps
     from moonray_modo.materials import selected
     TYPES=['']+sorted(shader_library.catalog())
 
@@ -160,6 +160,37 @@ def register():
                 for item,settings in updates:properties.write(item,settings)
         return Image
 
+    def ramp_command(shader,title,keys):
+        """A ramp of the material, opened in the ramp editor: its positions, its colours or values and how each
+        blends to the next are the one thing there, and are written back together."""
+        schema=shader_library.catalog()[shader]['attributes']
+        class Ramp(lxu.command.BasicCommand):
+            def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+            def basic_Enable(self,msg):return bool(matching(shader))
+            def basic_Execute(self,msg,flags):
+                from PySide2 import QtWidgets
+                from moonray_modo.ramp_editor import RampDialog
+                items=matching(shader)
+                if not items:raise ValueError('Select a '+shader+' material')
+                held=properties.read(items[0]).get('native_parameters',{})
+                lists=[held.get(key,node_defaults.value(schema[key])) or [] for key in keys]
+                if len({len(v) for v in lists})!=1:lists=[[],[],[]]
+                dialog=RampDialog(shader+': '+title,lists[0],lists[1],lists[2],schema[keys[1]]['type']=='RgbVector',QtWidgets.QApplication.activeWindow())
+                if dialog.exec_()!=QtWidgets.QDialog.Accepted:return
+                values=[shader_library.typed(value,schema[key]) for key,value in zip(keys,dialog.result())]
+                updates=[]
+                for item in items:
+                    settings=properties.read(item);parameters=settings.setdefault('native_parameters',{})
+                    graph=settings.get('node_graph');root=graph['nodes'][graph['root']] if graph else None
+                    for key,value in zip(keys,values):
+                        parameters[key]=value
+                        if root is not None:
+                            # The graph editor shows the same material; keep its output node in step.
+                            root.setdefault('parameters',{})[key]=value;root.setdefault('inputs',{}).pop(key,None)
+                    updates.append((item,settings))
+                for item,settings in updates:properties.write(item,settings)
+        return Ramp
+
     class Marker(lxu.package.BasicPackage):
         """Carries nothing; a material holds the one named for its shader, which is what the
         shader's form looks for."""
@@ -167,7 +198,9 @@ def register():
         if not shader:continue
         lx.bless(type('Marker'+shader,(Marker,),{}),properties.SHADER_PACKAGE+shader)
         texturable=graph_images.offered(shader)
+        found=ramps.groups(shader_library.catalog()[shader]['attributes'])
         for j,(key,spec) in enumerate(sorted(shader_library.catalog()[shader]['attributes'].items())):
+            if key in found:lx.bless(ramp_command(shader,found[key][0],found[key][1:]),'moonray.material.ramp%d_%d'%(i,j))
             if key in texturable:lx.bless(image_command(shader,key),'moonray.material.map%d_%d'%(i,j))
             # Connections to other materials keep the graph editor's named inputs.
             if spec['type']=='SceneObject*':continue

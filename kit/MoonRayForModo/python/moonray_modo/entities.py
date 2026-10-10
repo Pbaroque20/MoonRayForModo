@@ -2,7 +2,7 @@
 
 An entity is a locator that carries a MoonRay class name and the attributes the user has set,
 in the item's MoonRay tag. Unset attributes keep MoonRay's defaults. This module holds the
-schema, reads the items, writes them into the RDLA scene, and says which of them MoonLight
+schema, reads the items, writes them into the RDLA scene, and says which of them MoonLightIPR
 can show. Only collect() touches Modo.
 """
 import json
@@ -18,7 +18,7 @@ CLASS_KEY, PARAMETERS_KEY = 'entity_class', 'entity_parameters'
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 SIZES = {'Rgb': 3, 'Rgba': 4, 'Vec2f': 2, 'Vec3f': 3, 'Vec4f': 4}
 CONSTRUCTORS = {'Rgb': 'Rgb', 'Rgba': 'Rgba', 'Vec2f': 'Vec2', 'Vec3f': 'Vec3', 'Vec4f': 'Vec4'}
-# The lights MoonLight shows, with the snapshot keys their sizes go under.
+# The lights MoonLightIPR shows, with the snapshot keys their sizes go under.
 PREVIEW_LIGHTS = {'DistantLight': {'angular_extent': 'angle'}, 'SphereLight': {'radius': 'radius'},
                   'RectLight': {'width': 'width', 'height': 'height'}, 'DiskLight': {'radius': 'radius'},
                   'SpotLight': {'lens_radius': 'radius', 'outer_cone_angle': 'cone'},
@@ -462,7 +462,7 @@ def inverse_rows(matrix):
 
 
 def filter_records(entities, names, owner, warnings):
-    """The light filters named on a light, as MoonLight applies them: an intensity scale, a
+    """The light filters named on a light, as MoonLightIPR applies them: an intensity scale, a
     decay over distance, or a colour ramp. The kinds it cannot apply are named in warnings."""
     from .working_space import color as working_color
     records = []
@@ -480,7 +480,7 @@ def filter_records(entities, names, owner, warnings):
             if value(entity, 'invert'):
                 scale = [1 / c if c else c for c in scale]
             if value(entity, 'light_path_selection'):
-                warnings.append('MoonLight applies %s to every light path.' % entity['name'])
+                warnings.append('MoonLightIPR applies %s to every light path.' % entity['name'])
             records.append({'kind': 'intensity', 'scale': scale})
         elif kind == 'DecayLightFilter':
             records.append({'kind': 'decay', 'near': bool(value(entity, 'falloff_near')), 'far': bool(value(entity, 'falloff_far')),
@@ -496,7 +496,7 @@ def filter_records(entities, names, owner, warnings):
                             'density': min(1.0, max(0.0, float(value(entity, 'density')))),
                             'positions': stops, 'colors': colors, 'interpolations': modes})
         else:
-            warnings.append('MoonLight does not apply %s (%s on %s).' % (kind, entity['name'], owner))
+            warnings.append('MoonLightIPR does not apply %s (%s on %s).' % (kind, entity['name'], owner))
     return records
 
 
@@ -508,7 +508,7 @@ def mesh_lights(scene, warnings=None):
     MoonRay's MeshLight emits only from a real mesh, so the item names a Modo mesh. The plugin
     already knows how to make a mesh emit, from its Object controls; this fills those in from
     the item's colour, intensity and exposure and takes the item out of the list, so the rest
-    of the export and MoonLight treat it as any other emitting mesh.
+    of the export and MoonLightIPR treat it as any other emitting mesh.
     """
     lit = [e for e in scene.get('entities', []) if e['class'] == 'MeshLight']
     if not lit:
@@ -716,6 +716,17 @@ def emit_geometry(scene, materials, lines):
             from . import primitive_attributes
             held = primitive_attributes.emit('/modo/entity/%s/attribute' % entity['identity'], [entity['attributes']], lines)
         name, body = block(entities, entity)
+        if entity['parameters'].get('modo_volume') and entity['class'] in ('BoxGeometry', 'SphereGeometry'):
+            # MoonRay fills a mesh with a volume but not its own box or sphere, in which nothing shows. A shape that
+            # holds one is therefore written as the mesh of that shape.
+            from .rdla import matrix
+            vertices, faces = box(value(entity, 'size')) if entity['class'] == 'BoxGeometry' else sphere(float(value(entity, 'radius')))
+            name = 'RdlMeshGeometry(%s)' % string('/modo/entity/' + entity['identity'])
+            body = [name + ' {', '  ["node_xform"] = %s,' % matrix(entity.get('matrix', IDENTITY)),
+                    '  ["vertex_list_0"] = {%s},' % ', '.join('Vec3(%r, %r, %r)' % tuple(float(v) for v in vertex) for vertex in vertices),
+                    '  ["vertices_by_index"] = {%s},' % ', '.join(str(index) for face in faces for index in face),
+                    '  ["face_vertex_count"] = {%s},' % ', '.join(str(len(face)) for face in faces),
+                    '  ["is_subd"] = false,', '}']
         tag = entity['parameters'].get('modo_material', '')
         if tag not in materials:
             tag = ''
@@ -757,10 +768,10 @@ def camera_lines(scene, entity):
     return lines
 
 
-# ---- MoonLight ------------------------------------------------------------------------------
+# ---- MoonLightIPR ------------------------------------------------------------------------------
 
 def camera_projection(entity):
-    """How MoonLight is to look through a MoonRay camera item: a projection and its numbers, as
+    """How MoonLightIPR is to look through a MoonRay camera item: a projection and its numbers, as
     MoonRay works them out, or None for a camera it has no reading of."""
     import math
     name = entity['class']
@@ -799,9 +810,27 @@ def sphere(radius, segments=48, rings=24):
     return vertices, faces
 
 
+def even_fog(entities, name):
+    """The volume of that name as an even fog: what it stops in a unit of distance, what of that it scatters on, what
+    it gives off and which way it scatters. None unless it is a BaseVolume with one value all through, without ramps."""
+    from .working_space import color as working_color
+    found = next((e for e in entities if e['name'] == name and e['class'] == 'BaseVolume'), None)
+    if found is None or value(found, 'use_attenuation_ramp') or value(found, 'use_diffuse_ramp') or found['parameters'].get('densities'):
+        return None
+    white = [1.0, 1.0, 1.0]
+    stops = [float(v) for v in (value(found, 'attenuation_color') or white)]
+    if value(found, 'invert_attenuation_color'):
+        stops = [1.0 - v for v in stops]
+    strength = float(value(found, 'attenuation_intensity')) * float(value(found, 'attenuation_factor'))
+    return {'extinction': [max(0.0, v) * strength for v in working_color(stops)],
+            'albedo': working_color([float(v) for v in (value(found, 'diffuse_color') or white)]),
+            'emission': [v * float(value(found, 'emission_intensity')) for v in working_color([float(v) for v in (value(found, 'emission_color') or [0.0] * 3)])],
+            'anisotropy': float(value(found, 'anisotropy') or 0.0)}
+
+
 def emitting_area(name, light):
-    """What MoonRay divides a normalized light's brightness by: pi times its surface. None for a kind of light this is
-    not worked out for."""
+    """What MoonRay divides a normalized light's brightness by: pi times its surface, or for a distant light the squared
+    sine of its disc's radius. None for a kind of light this is not worked out for."""
     import math
     if name in ('RectLight', 'PortalLight'):
         size = light['width'] * light['height']
@@ -811,18 +840,22 @@ def emitting_area(name, light):
         size = 4 * math.pi * light['radius'] ** 2
     elif name == 'CylinderLight':
         size = 2 * math.pi * light['radius'] * light['height']
+    elif name == 'DistantLight':
+        # MoonRay divides a normalized distant light by the squared sine of its disc's radius, and nothing else.
+        return math.sin(min(math.radians(max(1e-3, light['angle'])) / 2, math.pi / 2)) ** 2
     else:
         return None
     return math.pi * size if size > 1e-12 else None
 
 
 def preview(scene, warnings):
-    """The snapshot with its entities turned into what MoonLight draws: ordinary lights,
+    """The snapshot with its entities turned into what MoonLightIPR draws: ordinary lights,
     environments and meshes. What has no counterpart there is named in warnings."""
     entities = scene.get('entities')
     if not entities:
         return scene
     lights, environments, meshes = list(scene.get('lights', [])), list(scene.get('environments', [])), list(scene.get('meshes', []))
+    materials = dict(scene.get('materials', {}))
     scene = mesh_lights(scene, warnings)
     skipped = {}
     camera = scene['camera']
@@ -848,7 +881,7 @@ def preview(scene, warnings):
                 texture = value(entity, 'texture')
                 if texture:
                     if color != [1.0, 1.0, 1.0]:
-                        warnings.append('MoonLight shows the image of %s without its colour tint.' % label)
+                        warnings.append('MoonLightIPR shows the image of %s without its colour tint.' % label)
                     environments.append(dict(shown, kind='image', name=label, identity=entity['identity'], path=texture, matrix=matrix,
                                              intensity=intensity * sum(color) / 3,
                                              srgb=Path(texture).suffix.lower() not in ('.exr', '.hdr', '.tx')))
@@ -859,34 +892,38 @@ def preview(scene, warnings):
             if name not in PREVIEW_LIGHTS:
                 skipped.setdefault(name, []).append(label)
                 continue
-            if value(entity, 'texture') and name != 'RectLight':
-                warnings.append('MoonLight shows %s without its texture.' % label)
             light = {'kind': name, 'identity': entity['identity'], 'name': label, 'color': color, 'intensity': intensity, 'matrix': matrix,
                      'filters': filters}
-            if name == 'RectLight' and value(entity, 'texture'):
+            if name != 'PortalLight' and value(entity, 'texture'):
                 light['texture'] = value(entity, 'texture')
             if filters and name == 'DistantLight':
-                warnings.append('MoonLight applies only intensity filters to distant light %s.' % label)
+                warnings.append('MoonLightIPR applies only intensity filters to distant light %s.' % label)
             light.update({target: float(value(entity, key)) for key, target in PREVIEW_LIGHTS[name].items()})
-            # MoonLight draws each kind of light the usual way for its kind: its brightness spread over its size, except
+            # MoonLightIPR draws each kind of light the usual way for its kind: its brightness spread over its size, except
             # for a portal. A light set the other way is given the brightness that comes to the same thing.
             usual = name != 'PortalLight'
             if bool(value(entity, 'normalized')) != usual:
                 size = emitting_area(name, light)
                 if size is None:
-                    warnings.append('MoonLight shows %s with the usual normalization for its kind.' % label)
+                    warnings.append('MoonLightIPR shows %s with the usual normalization for its kind.' % label)
                 else:
                     light['intensity'] = intensity * size if usual else intensity / size
             if name == 'SpotLight':
                 light['soft_edge'] = max(0.0, light['cone'] - float(value(entity, 'inner_cone_angle'))) / 2
             lights.append(light)
         elif name in ('BoxGeometry', 'SphereGeometry'):
-            if entity['parameters'].get('modo_volume'):
-                skipped.setdefault('volumes', []).append(label)
-                continue
             vertices, faces = box(value(entity, 'size')) if name == 'BoxGeometry' else sphere(float(value(entity, 'radius')))
             mesh = {'name': label, 'identity': entity['identity'], 'vertices': vertices, 'faces': faces, 'matrix': matrix,
                     'material': entity['parameters'].get('modo_material', ''), 'smooth': name == 'SphereGeometry'}
+            if entity['parameters'].get('modo_volume'):
+                # A shape that holds a fog and has no material is the fog alone, which MoonLightIPR draws when it is
+                # the same all through.
+                fog = even_fog(entities_checked, entity['parameters']['modo_volume'])
+                if fog is None or entity['parameters'].get('modo_material'):
+                    skipped.setdefault('volumes', []).append(label)
+                    continue
+                mesh['material'] = '|volume|' + entity['identity']
+                materials[mesh['material']] = {'color': [0.0, 0.0, 0.0], 'roughness': 1.0, 'metallic': 0, '_volume': fog}
             meshes.append(mesh)
         elif category == 'lightfilter':
             # A filter shows through the lights that name it; what cannot be applied is said there.
@@ -895,7 +932,7 @@ def preview(scene, warnings):
             if entity['parameters'].get('modo_render_camera'):
                 lens = camera_projection(entity)
                 if lens is None:
-                    warnings.append('MoonLight looks through the Modo camera, not %s.' % label)
+                    warnings.append('MoonLightIPR looks through the Modo camera, not %s.' % label)
                 else:
                     # The view is from the item, through its own kind of lens.
                     camera = dict(scene['camera'], matrix=matrix, dof=False, **lens)
@@ -903,5 +940,5 @@ def preview(scene, warnings):
         else:
             skipped.setdefault(name, []).append(label)
     for name, labels in sorted(skipped.items()):
-        warnings.append('MoonLight does not show %s (%s).' % (name, ', '.join(labels[:6]) + (' ...' if len(labels) > 6 else '')))
-    return dict(scene, camera=camera, lights=lights, environments=environments, meshes=meshes, entities=[])
+        warnings.append('MoonLightIPR does not show %s (%s).' % (name, ', '.join(labels[:6]) + (' ...' if len(labels) > 6 else '')))
+    return dict(scene, camera=camera, lights=lights, environments=environments, meshes=meshes, materials=materials, entities=[])

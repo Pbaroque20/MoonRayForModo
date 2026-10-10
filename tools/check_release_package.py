@@ -2,7 +2,7 @@
 
 Usage: check_release_package.py <version> [folder to unpack into]
 Checks that the two ZIPs merge into one kit with what it needs, that MoonRay renders from the unpacked runtime in GPU
-and CPU modes with a bare environment, that the scene reader and the MoonLight session start, that the kit finds its
+and CPU modes with a bare environment, that the scene reader and the MoonLightIPR session start, that the kit finds its
 own runtime, and that the unpacked kit writes a scene MoonRay accepts for a mesh one part of which holds a volume."""
 import json
 import os
@@ -16,14 +16,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NEED = ['index.cfg', 'layout.cfg', 'bin/MoonRayGeometry.lx', 'runtime/moonray.exe', 'runtime/modo_rdl_import.exe', 'runtime/denoise.exe', 'runtime/oiiotool.exe',
-        'runtime/moonlight/moonlight_session.exe', 'runtime/moonlight/MoonLightKernel.ptx', 'runtime/moonlight/cudart64_12.dll', 'runtime/shaders/OptixGPUPrograms.ptx',
+        'runtime/moonlightipr/moonlightipr_session.exe', 'runtime/moonlightipr/MoonLightIPRKernel.ptx', 'runtime/moonlightipr/cudart64_12.dll', 'runtime/shaders/OptixGPUPrograms.ptx',
         'python/moonray_modo/mesh_reader.py', 'python/moonray_modo/primitive_attributes.py', 'python/moonray_modo/rdl_import.py', 'INSTALLATION.md', 'LICENSE.txt']
 VOLUME = '''
 import subprocess, sys
 from pathlib import Path
 kit, tools, out = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
 sys.path[:0] = [tools, str(kit / 'python')]
-import check_moonlight_session as fixture
+import check_moonlightipr_session as fixture
 from moonray_modo import native, rdla
 rt = native.find_runtime(kit / 'runtime')
 base = fixture.snapshot()
@@ -77,8 +77,8 @@ def main():
     done = subprocess.run([str(runtime / 'modo_rdl_import.exe'), 'sphere.rdla', str(runtime)], cwd=str(work), env=dict(bare, PATH=str(runtime) + ';' + bare['PATH']), capture_output=True, timeout=120)
     at = done.stdout.rfind(b'@@MODO_RDL_JSON')
     check('the scene reader reads a scene', done.returncode == 0 and at >= 0 and len(json.loads(done.stdout[at + 15:])['objects']) > 0)
-    session = subprocess.Popen([str(runtime / 'moonlight' / 'moonlight_session.exe'), str(runtime / 'moonlight' / 'MoonLightKernel.ptx')], cwd=str(work),
-                               env=dict(bare, PATH=str(runtime / 'moonlight') + ';' + bare['PATH']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    session = subprocess.Popen([str(runtime / 'moonlightipr' / 'moonlightipr_session.exe'), str(runtime / 'moonlightipr' / 'MoonLightIPRKernel.ptx')], cwd=str(work),
+                               env=dict(bare, PATH=str(runtime / 'moonlightipr') + ';' + bare['PATH']), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(6)
     alive = session.poll() is None
     try:
@@ -87,7 +87,7 @@ def main():
         session.wait(timeout=15)
     except Exception:
         session.kill()
-    check('the MoonLight session starts and quits', alive and session.returncode == 0)
+    check('the MoonLightIPR session starts and quits', alive and session.returncode == 0)
     done = subprocess.run([sys.executable, '-c', 'import sys;sys.path.insert(0,sys.argv[1]);from moonray_modo import native;print(native.default_runtime())', str(kit / 'python')],
                           env=dict(os.environ, MOONRAY_MODO_RUNTIME=''), capture_output=True, text=True)
     check('the kit finds its own runtime', Path(done.stdout.strip() or '.').resolve() == runtime.resolve(), done.stdout.strip())

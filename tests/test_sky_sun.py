@@ -1,0 +1,79 @@
+"""Which edits turn the sun of a physically based sky, and so wait for the mouse button before they are shown."""
+import sys,unittest
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'kit/MoonRayForModo/python'))
+from moonray_modo import incremental
+
+
+class Item:
+    def __init__(self,identity,kind,owners=()):
+        self.id=identity;self.type=kind;self.owners=list(owners)
+    def itemGraph(self,name):
+        owners=self.owners
+        class Graph:
+            def forward(self):return owners
+        return Graph()
+
+
+class Scene:
+    def __init__(self,*items):self.items={item.id:item for item in items}
+    def item(self,identity):return self.items[identity]
+
+
+class SkySun(unittest.TestCase):
+    def setUp(self):
+        self.sun=Item('sun','sunLight');self.lamp=Item('lamp','sunLight')
+        self.scene=Scene(self.sun,self.lamp,Item('turn','rotation',[self.sun]),Item('other','rotation',[self.lamp]))
+        self.sky={'environments':[{'layers':[{'kind':'physical','sun_identity':'sun'}]}]}
+
+    def test_the_sun_of_the_sky_and_its_rotation_wait(self):
+        self.assertTrue(incremental.moves_sky(self.scene,{'sun'},self.sky))
+        self.assertTrue(incremental.moves_sky(self.scene,{'turn'},self.sky))
+
+    def test_another_light_is_followed(self):
+        self.assertFalse(incremental.moves_sky(self.scene,{'lamp'},self.sky))
+        self.assertFalse(incremental.moves_sky(self.scene,{'other'},self.sky))
+
+    def test_a_sky_that_is_not_physical_is_followed(self):
+        plain={'environments':[{'layers':[{'kind':'grad4'}]}]}
+        self.assertFalse(incremental.moves_sky(self.scene,{'sun','turn'},plain))
+        self.assertFalse(incremental.moves_sky(self.scene,{'sun'},None))
+
+
+class Surroundings(unittest.TestCase):
+    def scene(self,direction=(0,1,0),turn=0.0,lamp=1.0):
+        return {'environments':[{'kind':'stack','layers':[{'kind':'physical','sun_identity':'sun','sun_direction':list(direction)}]}],
+                'entities':[{'class':'EnvLight','matrix':[turn]*16},{'class':'RectLight','matrix':[lamp]*16}],
+                'lights':[{'identity':'lamp','intensity':lamp}]}
+
+    def test_a_sun_moved_or_an_environment_light_turned_changes_them(self):
+        base=incremental.surroundings(self.scene())
+        self.assertNotEqual(base,incremental.surroundings(self.scene(direction=(1,0,0))))
+        self.assertNotEqual(base,incremental.surroundings(self.scene(turn=.5)))
+
+    def test_another_light_does_not(self):
+        self.assertEqual(incremental.surroundings(self.scene()),incremental.surroundings(self.scene(lamp=3.0)))
+        self.assertEqual(incremental.surroundings({}),incremental.surroundings({'lights':[1]}))
+
+
+class Disc(unittest.TestCase):
+    def test_the_disc_is_read_from_modos_own_pictures_and_between_them(self):
+        from moonray_modo import daylight
+        high=daylight.disc(30,2.0)
+        for a,b in zip(high,[129.5,112.9,60.1]):self.assertAlmostEqual(a,b,delta=.1)
+        more=daylight.disc(30,2.0,1.0)
+        self.assertTrue(all(m>h for m,h in zip(more,high)))
+        half=daylight.disc(30,2.0,.5)
+        for h,a,b in zip(half,high,more):self.assertAlmostEqual(h,(a+b)/2,delta=.5)
+        # Between two sun heights, and no further than the table goes.
+        between=daylight.disc(25,2.0)
+        self.assertTrue(daylight.disc(20,2.0)[0]<between[0]<high[0])
+        self.assertEqual(daylight.disc(89,2.0),daylight.disc(80,2.0))
+
+    def test_a_clamped_sky_has_a_disc_whose_strongest_part_is_one(self):
+        from moonray_modo import daylight
+        clamped=daylight.disc(30,2.0,0.0,True)
+        self.assertAlmostEqual(max(clamped),1.0);self.assertAlmostEqual(clamped[2],60.06/129.5,delta=.01)
+
+
+if __name__=='__main__':unittest.main()

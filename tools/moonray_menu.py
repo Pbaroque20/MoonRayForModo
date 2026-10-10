@@ -2,7 +2,7 @@
 entries, and plain characters in what the menu and forms display.
 
 The menu lives in layout.cfg beside forms this module does not touch, so it edits the text in
-place rather than writing the file out again. tools/install_moonlight.py applies it to the
+place rather than writing the file out again. tools/install_moonlightipr.py applies it to the
 installed kit; run this file to apply it to the checkout.
 """
 import re

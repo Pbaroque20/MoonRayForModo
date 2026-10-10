@@ -74,7 +74,8 @@ def collect(scene, warnings):
                                      haze=float(channel(sun,'haze',1)),
                                      ground_albedo=rgb(channel(layer,'albedo',.2),'Physical sky ground albedo'))
                         # The solar disc is the sun light itself, seen by the camera; see host.solar_discs.
-                        entry.update(sun_identity=sun.id,solar_disc=max(0.0,float(channel(layer,'disc',1))))
+                        entry.update(sun_identity=sun.id,solar_disc=max(0.0,float(channel(layer,'disc',1))),
+                                     inscatter=min(1.0,max(0.0,float(channel(layer,'inscatter',0)))))
                     if channel(layer,'fogType','none') != 'none':
                         warnings.append('Environment fog is not translated: '+layer.name)
                 elif layer.type=='gradient':

@@ -42,8 +42,8 @@ relicensed under MIT or Apache 2.0. No NVIDIA binaries are committed to this rep
 
 Bundled library examples: unmodified OpenMoonRay/openmoonray testdata, Apache-2.0. See assets/library/examples/LICENSE.txt and SOURCE.txt. Official downloadable scene collections retain their own licenses and are not included in the kit.
 
-## MoonLight
+## MoonLightIPR
 
-MoonLight, the GPU preview engine, is not third-party software: it was created by Raphael Tobar and is
+MoonLightIPR, the GPU preview engine, is not third-party software: it was created by Raphael Tobar and is
 released under this project's MIT License. It is not a DreamWorks Animation product and is not affiliated
 with or endorsed by DreamWorks Animation. It runs on NVIDIA OptiX and CUDA, whose notices are above.

@@ -26,25 +26,25 @@ The scenes are from [MoonRay's published example scenes](https://docs.openmoonra
 ## The graph editor, curves and car paint flakes
 
 - `graph-editor.png`, `graph-editor-materialx.png`: the material graph editor in Modo 16.1v9, with a MoonRay material and with the Car Paint from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all) (MIT License or public domain). The material preview in the editor's corner uses the MoonRay Widget model, whose notice the editor shows.
-- `curves-tubes.jpg`: curves on a mesh rendered as tubes, MoonRay on the left and MoonLight on the right, from `tools/probe_curves.py`.
-- `materialx-flakes.jpg`: the same Car Paint close up, MoonRay on the left and MoonLight on the right, from `tools/render_materialx.py`.
+- `curves-tubes.jpg`: curves on a mesh rendered as tubes, MoonRay on the left and MoonLightIPR on the right, from `tools/probe_curves.py`.
+- `materialx-flakes.jpg`: the same Car Paint close up, MoonRay on the left and MoonLightIPR on the right, from `tools/render_materialx.py`.
 - `materialx-flakes-preview.png`: that material in the preview window with each engine, from `tools/probe_materialx.py`.
 
 ## Others
 
 - `preview-window.png`: the MoonRay Preview window in Modo 16.1v9, rendering The Wooden Staircase (Wig42, CC BY) after import. The yellow squares are the tiles being worked on.
 - `view-transforms.jpg`: one linear render of Modern Hall (NewSee2l035, CC BY) shown three ways: plain sRGB, ACES (sRGB display), and highlight compression + sRGB.
-- `moonlight-*.jpg`: the same scene in MoonRay on the left and MoonLight on the right, from `tools/compare_moonlight.py`. The scenes are built by that script.
+- `moonlightipr-*.jpg`: the same scene in MoonRay on the left and MoonLightIPR on the right, from `tools/compare_moonlightipr.py`. The scenes are built by that script.
 
-## MaterialX materials (`moonlight-materialx-*.jpg`)
+## MaterialX materials (`moonlightipr-materialx-*.jpg`)
 
-Five materials from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all), imported with **Import MaterialX Material** and put on a ball: MoonRay on the left, MoonLight on the right. Car Paint, TH Wood Table, Pale Pink Carrara Marble, Indigo Palm Wallpaper and Fresco Decor Wallpaper. The library publishes its materials under the MIT License or as public domain; four of the five files carry the MIT terms in the file itself. Made by `tools/render_materialx.py`.
+Five materials from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all), imported with **Import MaterialX Material** and put on a ball: MoonRay on the left, MoonLightIPR on the right. Car Paint, TH Wood Table, Pale Pink Carrara Marble, Indigo Palm Wallpaper and Fresco Decor Wallpaper. The library publishes its materials under the MIT License or as public domain; four of the five files carry the MIT terms in the file itself. Made by `tools/render_materialx.py`.
 
-![Car Paint](moonlight-materialx-Car_Paint.jpg)
-![TH Wood Table](moonlight-materialx-TH_Wood_Table.jpg)
-![Pale Pink Carrara Marble](moonlight-materialx-Pale_Pink_Carrara_Marble.jpg)
-![Indigo Palm Wallpaper](moonlight-materialx-Indigo_Palm_Wallpaper.jpg)
-![Fresco Decor Wallpaper](moonlight-materialx-Fresco_Decor_Wallpaper.jpg)
+![Car Paint](moonlightipr-materialx-Car_Paint.jpg)
+![TH Wood Table](moonlightipr-materialx-TH_Wood_Table.jpg)
+![Pale Pink Carrara Marble](moonlightipr-materialx-Pale_Pink_Carrara_Marble.jpg)
+![Indigo Palm Wallpaper](moonlightipr-materialx-Indigo_Palm_Wallpaper.jpg)
+![Fresco Decor Wallpaper](moonlightipr-materialx-Fresco_Decor_Wallpaper.jpg)
 
 ## All ten example scenes
 
@@ -61,6 +61,6 @@ Left of each pair: MoonRay's render from the scene's own files. Right: after imp
 ![Veach, Bidir Room](rdl-veach-bidir.jpg)
 ![Veach, MIS](rdl-veach-mis.jpg)
 
-## MoonLight: subdivision
+## MoonLightIPR: subdivision
 
-![A subdivided cage, in MoonRay and in MoonLight](moonlight-subdivision.jpg)
+![A subdivided cage, in MoonRay and in MoonLightIPR](moonlightipr-subdivision.jpg)

@@ -103,7 +103,11 @@ class GraphView(QtWidgets.QGraphicsView):
         self.rubber=None;self.start_socket=None
     def wheelEvent(self,event):
         factor=1.15 if event.angleDelta().y()>0 else 1/1.15
-        if .2<=self.transform().m11()*factor<=3.0:self.scale(factor,factor)
+        # Zooming in is always allowed up to three times life size, and zooming out down to a twentieth. Framing a
+        # large graph can leave the view smaller than a fifth; held to that as a floor in both directions, the wheel
+        # then did nothing at all.
+        scale=self.transform().m11()*factor
+        if (factor>1 and scale<=3.0) or (factor<1 and scale>=.05):self.scale(factor,factor)
         event.accept()
     def mousePressEvent(self,event):
         # Middle drag pans, and so does Alt with the left button.
@@ -415,19 +419,59 @@ class NameField(QtWidgets.QComboBox):
         self.changed.emit(self.identity,self.key,self.layer,str(self.itemData(index)))
 
 
-def ramp_groups(schema):
-    """The ramps among a node's attributes. MoonRay holds a ramp as three lists that go together:
-    positions, the colours or values at them, and how each blends to the next. Returns
-    {positions key: (label, positions key, values key, interpolations key)}."""
-    found={}
-    for key in schema:
-        if not key.endswith('positions') or not schema[key]['type']=='FloatVector':continue
-        stem=key[:-len('positions')]
-        values=next((stem+word for word in ('colors','values') if stem+word in schema),None)
-        blends=stem+'interpolations'
-        if values is None or blends not in schema:continue
-        found[key]=((stem.replace('_',' ')+'ramp').strip(),key,values,blends)
-    return found
+from .ramps import groups as ramp_groups
+
+
+class MatrixDialog(QtWidgets.QDialog):
+    """A transform as a move, a turn and a size. result() gives its sixteen numbers."""
+    def __init__(self,title,held,parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        grid=QtWidgets.QGridLayout(self);self.spins=[]
+        for column,name in enumerate('XYZ'):
+            head=QtWidgets.QLabel(name);head.setAlignment(QtCore.Qt.AlignCenter);grid.addWidget(head,0,column+1)
+        for row,(name,values,step,tip) in enumerate((('Move',held[0],.1,'Where the projection sits'),('Turn',held[1],5.0,'Degrees about each axis, X first, then Y, then Z'),
+                                                     ('Size',held[2],.1,'How large the projection is along each axis'))):
+            grid.addWidget(QtWidgets.QLabel(name),row+1,0);line=[]
+            for column in range(3):
+                spin=QtWidgets.QDoubleSpinBox();spin.setRange(-1e9,1e9);spin.setDecimals(4);spin.setSingleStep(step);spin.setKeyboardTracking(False)
+                spin.setValue(float(values[column]));spin.setToolTip(tip);spin.setAccessibleName(name+' '+'XYZ'[column])
+                grid.addWidget(spin,row+1,column+1);line.append(spin)
+            self.spins.append(line)
+        reset=QtWidgets.QPushButton('Reset');reset.setAutoDefault(False);reset.clicked.connect(self.reset)
+        buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok|QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject)
+        grid.addWidget(reset,4,0);grid.addWidget(buttons,4,1,1,3)
+    def reset(self):
+        for line,rest in zip(self.spins,(0.0,0.0,1.0)):
+            for spin in line:spin.setValue(rest)
+    def result(self):
+        from .ramps import matrix
+        move,turn,size=[[spin.value() for spin in line] for line in self.spins]
+        # A size of nothing leaves no transform to turn back into these numbers.
+        return matrix(move,turn,[v if abs(v)>1e-9 else 1e-9 for v in size])
+
+
+class MatrixField(QtWidgets.QPushButton):
+    """A transform said in a line; a click opens its move, turn and size."""
+    changed=QtCore.Signal(str,str,int,object)
+    def __init__(self,identity,key,layer,value,parent=None,kind=None):
+        super().__init__(parent)
+        from .ramps import words
+        self.identity,self.key,self.layer,self.value,self.kind=identity,key,layer,list(value),kind
+        self.setAutoDefault(False);self.setDefault(False);self.setFlat(True);self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setAccessibleName(key);self.setText(words(value));self.setToolTip('Click to move, turn or size it.')
+        self.setStyleSheet('QPushButton { text-align: left; padding: 0 4px; color: #000000; border: 1px solid #15171a; border-radius: 3px; }')
+        # The property list is rebuilt once the value has changed; let this click finish first.
+        self.clicked.connect(lambda:QtCore.QTimer.singleShot(0,self.open))
+    def open(self):
+        from .ramps import parts
+        if not isValid(self):return
+        dialog=MatrixDialog((self.kind+': ' if self.kind else '')+self.key.replace('_',' '),parts(self.value),self.window())
+        if dialog.exec_()!=QtWidgets.QDialog.Accepted:return
+        from .ramps import words
+        self.value=dialog.result();self.setText(words(self.value))
+        self.changed.emit(self.identity,self.key,self.layer,list(self.value))
 
 
 class RampField(QtWidgets.QPushButton):

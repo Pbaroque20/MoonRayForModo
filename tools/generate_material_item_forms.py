@@ -19,7 +19,7 @@ catalog = json.loads((kit / 'python/moonray_modo/material_catalog.json').read_te
 for name in ('modo', 'lx', 'lxifc', 'lxu'):
     sys.modules.setdefault(name, types.ModuleType(name))
 sys.path.insert(0, str(kit / 'python'))
-from moonray_modo import graph_images  # noqa: E402
+from moonray_modo import graph_images, ramps  # noqa: E402
 
 config = ET.Element('configuration')
 attributes = ET.SubElement(config, 'atom', type='Attributes')
@@ -65,6 +65,7 @@ def nested(parent, key, label, collapsed):
 
 
 count = 0
+ramp_count = 0
 for i, shader in enumerate([''] + sorted(catalog)):
     if not shader:
         continue
@@ -95,6 +96,8 @@ for i, shader in enumerate([''] + sorted(catalog)):
         made = ET.SubElement(parent, 'list', type='Control', val='cmd moonray.material.map%d_%d ?' % (i, j))
         atom(made, 'Label', plain(spec.get('label', key.replace('_', ' '))) + ' image')
         atom(made, 'Tooltip', 'Load an image for this input, or remove it. It appears as a node in the graph editor')
+    found = ramps.groups(catalog[shader]['attributes'])
+    members = {member: positions for positions, held in found.items() for member in held[1:]}
     for j, (key, spec) in enumerate(sorted(catalog[shader]['attributes'].items())):
         group = plain(spec.get('group', 'Parameters')) or 'Parameters'
         if spec['type'] == 'SceneObject*' and key not in texturable:
@@ -104,6 +107,16 @@ for i, shader in enumerate([''] + sorted(catalog)):
         if spec['type'] == 'SceneObject*':
             # A normal map has no value of its own to edit, only its image.
             chooser(groups[group], key, spec, j)
+            continue
+        if key in members:
+            # A ramp is three lists that go together. They are one button, where its positions would be, that opens
+            # the ramp editor; none of the lists is a row to type numbers into.
+            if key == members[key]:
+                title = ' '.join(word.capitalize() for word in found[key][0].split())
+                made = ET.SubElement(groups[group], 'list', type='Control', val='cmd moonray.material.ramp%d_%d' % (i, j))
+                atom(made, 'Label', 'Edit ' + title + '...')
+                atom(made, 'Tooltip', 'Edit the stops of this ramp: where each is, its colour or value, and how it blends to the next')
+                ramp_count += 1
             continue
         kind = spec['type']
         how = '' if kind in ('Bool', 'Int', 'Long', 'Float', 'Double', 'Rgb', 'String') else 'Type as [x, y, z]'
@@ -126,4 +139,4 @@ for shader in sorted(catalog):
     atom(ET.SubElement(names, 'hash', type='Item', key='material.dw.%s@en_US' % shader), 'UserName', shader)
 ET.indent(config)
 ET.ElementTree(config).write(str(kit / 'material_forms.cfg'), encoding='utf-8', xml_declaration=True)
-print('Generated forms for', len(catalog), 'native material types,', count, 'attributes')
+print('Generated forms for', len(catalog), 'native material types,', count, 'attributes,', ramp_count, 'ramps')

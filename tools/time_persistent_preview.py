@@ -16,7 +16,7 @@ root = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(root / 'tools'), str(root / 'kit/MoonRayForModo/python')]
 from moonray_modo import native, rdla
 from moonray_modo.scene_delta import difference
-import check_moonlight_session as fixture
+import check_moonlightipr_session as fixture
 
 SAID = ('executing an xpu render', 'gpu: setup complete', 'falling back to cpu', 'executing a vectorized render', 'gpu:')
 

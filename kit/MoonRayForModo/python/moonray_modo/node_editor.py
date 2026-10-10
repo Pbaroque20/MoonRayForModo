@@ -11,7 +11,8 @@ import os
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes,materialx,properties,shader_library,node_defaults
-from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,RampField,ramp_groups,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
+from .ramps import parts as ramps_parts
+from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,RampField,MatrixField,ramp_groups,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
                            TEXT,TEXT_PORT,TEXT_DIM,GRID,MENU_STYLE,curve,file_parameter,tint_value)
 import lx
 
@@ -306,7 +307,7 @@ class Editor(QtWidgets.QDialog):
         self.canvas.selectionChanged.connect(self.inspect);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
         for button in self.findChildren(QtWidgets.QPushButton):
             button.setAutoDefault(False);button.setDefault(False)
-        self.rebuild();self.frame(everything=True)
+        self.rebuild();self.frame_output()
         self.live=True
     def fill_materials(self):
         """List the scene's graph materials, with this one chosen."""
@@ -608,6 +609,19 @@ class Editor(QtWidgets.QDialog):
         # A small graph is not blown up to fill the window.
         scale=self.view.transform().m11()
         if scale>1.0:self.view.scale(1.0/scale,1.0/scale)
+    def frame_output(self):
+        """Show the graph from its output node, at a size its text can be read at. A small graph is shown whole; a large
+        one, such as an imported MaterialX material, is too small to read when all of it is fitted in, so the view opens
+        on the output and what feeds it, and the user zooms out from there."""
+        if not self.items:return
+        self.frame(everything=True)
+        if self.view.transform().m11()>=.6:return
+        output=self.items.get(self.graph.get('root'))
+        if output is None:return
+        self.view.resetTransform()
+        # The output sits at the right of what feeds it: leave it a third of the way in from that side.
+        centre=output.sceneBoundingRect().center()
+        self.view.centerOn(centre.x()-self.view.viewport().width()/6.0,centre.y())
     def snap_selected(self):
         """Settle moved nodes onto the grid."""
         if not self.snap.isChecked():return
@@ -940,6 +954,11 @@ class Editor(QtWidgets.QDialog):
                 elif spec['type']=='String':
                     field=TextField(identity,key,layer,spec,value,hint(key,spec),self.table,kind=node['type'],connected=connected)
                     field.changed.connect(self.object_changed);field.browse.connect(self.choose_node_file);self.place_field(row,cell,field)
+                elif spec['type'] in ('Mat4f','Mat4d') and ramps_parts(value) is not None:
+                    # A transform is a move, a turn and a size, not sixteen numbers to type.
+                    cell.setText('');cell.setData(QtCore.Qt.DecorationRole,None)
+                    field=MatrixField(identity,key,layer,value,self.table,kind=node['type'])
+                    field.changed.connect(self.object_changed);self.place_field(row,cell,field)
                 else:
                     # Lists and the like are typed as they are stored; say what that looks like.
                     cell.setToolTip('Double-click to edit. A list is typed in brackets, for example ["a", "b"] or [1.0, 2.0].')
@@ -1019,7 +1038,7 @@ class Editor(QtWidgets.QDialog):
     def import_file(self):
         path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Import MaterialX','','MaterialX (*.mtlx)')
         if path:
-            try: graph=materialx.read(path);before=copy.deepcopy(self.graph);self.graph=graph;self.remember(before);self.rebuild();self.frame()
+            try: graph=materialx.read(path);before=copy.deepcopy(self.graph);self.graph=graph;self.remember(before);self.rebuild();self.frame_output()
             except (ValueError,OSError) as exc: self.error(exc)
     def export_file(self):
         path,_=QtWidgets.QFileDialog.getSaveFileName(self,'Export MoonRay MaterialX definitions','','MaterialX (*.mtlx)')

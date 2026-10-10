@@ -1,4 +1,4 @@
-"""Render a MaterialX file on a ball, in MoonRay and in MoonLight, as the plugin would import it.
+"""Render a MaterialX file on a ball, in MoonRay and in MoonLightIPR, as the plugin would import it.
 
 Usage: render_materialx.py <moonray-runtime> <file.mtlx> [uv repeat] [camera distance, 1 for the whole ball]"""
 import math
@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import check_moonlight_session as fixture
-import compare_moonlight as compare
+import check_moonlightipr_session as fixture
+import compare_moonlightipr as compare
 from moonray_modo import coordinates, materialx, native, nodes
 
 
@@ -55,14 +55,14 @@ def main():
     session.runtime = runtime
     try:
         try:
-            preview, warnings = compare.moonlight(scene, session, name)
+            preview, warnings = compare.moonlightipr(scene, session, name)
             a, b = compare.blocks(reference), compare.blocks(preview)
             ratios = sorted(y / x for x, y in zip(a, b) if x > 1e-3)
-            print('MoonLight/MoonRay brightness %.3f, %d%% of tiles within 10%%' % (sum(b) / max(sum(a), 1e-12), 100 * sum(.9 <= r <= 1.1 for r in ratios) / len(ratios)))
+            print('MoonLightIPR/MoonRay brightness %.3f, %d%% of tiles within 10%%' % (sum(b) / max(sum(a), 1e-12), 100 * sum(.9 <= r <= 1.1 for r in ratios) / len(ratios)))
             for warning in warnings:
-                print('  MoonLight:', warning)
+                print('  MoonLightIPR:', warning)
         except Exception as exc:
-            print('MoonLight could not show it:', str(exc)[:300])
+            print('MoonLightIPR could not show it:', str(exc)[:300])
             preview = [0.0] * len(reference)
         compare.write_ppm(folder / (name + '.ppm'), reference, preview)
         print('picture:', folder / (name + '.ppm'))

@@ -35,6 +35,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.changes=Changes();self._geometry_cache=None;self._last_time=None;self._live_settings=None;self._asset_signature=[];self._asset_scene={};self._last_full_capture=0
         self.last_digest = None
         self._pending_preview=False
+        self._surroundings=None
         self._rendering=False
         # IPR is a choice of how Render behaves; following is Render having been pressed with it on.
         self._following=False
@@ -92,6 +93,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # What the user last chose from the list themselves, as against what the panel showed for them.
         self._buffer_picked=None
         self.buffer.activated.connect(lambda index:setattr(self,'_buffer_picked',self.buffer.itemData(index)))
+        self._limit_buffers()
         self.preview_engine.currentIndexChanged.connect(self._engine_changed)
         self.preview_engine.currentIndexChanged.connect(self._preview_changed)
         self.ipr_mode.toggled.connect(self._ipr_changed)
@@ -113,11 +115,11 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.ipr_mode)
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
-        self.preview_engine.addItem('MoonLight', 'moonlight')
+        self.preview_engine.addItem('MoonLightIPR', 'moonlightipr')
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(self.preferences.get('preview_engine'))))
         self.preview_engine.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.preview_engine.setMinimumWidth(130)
-        self.preview_engine.setToolTip('MoonLight is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
+        self.preview_engine.setToolTip('MoonLightIPR is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
         self.camera=QtWidgets.QComboBox();self.camera.setMinimumWidth(150)
@@ -346,11 +348,21 @@ class Panel(Tools, QtWidgets.QWidget):
         while self.buffer.count()>base:self.buffer.removeItem(self.buffer.count()-1)
         for label,name in names:self.buffer.addItem(label,name)
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
+        self._limit_buffers()
 
     def _engine_changed(self,index):
         self.preferences.set('preview_engine',self.preview_engine.currentData())
-        # MoonLight follows edits as they happen, so look for them more often.
-        self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlight' else 150)
+        # MoonLightIPR follows edits as they happen, so look for them more often.
+        self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlightipr' else 150)
+        self._limit_buffers()
+
+    def _limit_buffers(self):
+        """MoonLightIPR makes one picture, which its own denoiser has already cleaned: the list then holds that alone,
+        under the name Denoised Beauty. The other buffers are MoonRay's."""
+        only=self.preview_engine.currentData()=='moonlightipr'
+        self.buffer.setItemText(0,'Denoised Beauty' if only else 'Beauty')
+        for row in range(1,self.buffer.count()):self.buffer.view().setRowHidden(row,only)
+        if only and self.buffer.currentIndex()!=0:self.buffer.setCurrentIndex(0)
 
     def _engine_notices(self,messages):
         """Add what the preview engine left out to the notices of the scene it is showing."""
@@ -435,7 +447,7 @@ class Panel(Tools, QtWidgets.QWidget):
         return self._configure_snapshot(capture_current(values['surface']==2))
 
     def _capture_preview(self):
-        if self.preview_engine.currentData()!='moonlight' or not self.preferences.get('preview_motion'):return self._capture()
+        if self.preview_engine.currentData()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
         from .animation import capture_current
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
         # Stepping through the shutter is not an edit for IPR to follow.
@@ -506,6 +518,9 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
+        if not output:
+            from .incremental import surroundings
+            self._surroundings=surroundings(scene)
         self._set_rendering(True)
         self._ipr_refine_scene=scene if not output else None
         values=self._settings_values();get=self.preferences.get
@@ -513,7 +528,7 @@ class Panel(Tools, QtWidgets.QWidget):
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
         engine='moonray' if output else self.preview_engine.currentData()
-        # MoonLight accumulates at full preview size; the IPR quality limits are for MoonRay.
+        # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
         if self._following and not output and engine=='moonray':
             from .ipr import prepare
             scene,width,height=prepare(scene,width,height,values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'))
@@ -610,8 +625,8 @@ class Panel(Tools, QtWidgets.QWidget):
         if self.disposed or not self._following:return
         from .interaction import dragging
         held=dragging()
-        # MoonLight is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
-        if held and self.preview_engine.currentData()!='moonlight':self.release_timer.start();return
+        # MoonLightIPR is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
+        if held and self.preview_engine.currentData()!='moonlightipr':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         try:
@@ -635,6 +650,11 @@ class Panel(Tools, QtWidgets.QWidget):
             if reuse:
                 from .incremental import classify
                 reuse=classify(modo.Scene(),items,self._geometry_cache)
+            if held and reuse is True:
+                # A physically based sky is painted again for every place its sun is put, which a drag cannot keep
+                # up with: the sun of such a sky is shown where it was let go.
+                from .incremental import moves_sky
+                if moves_sky(modo.Scene(),items,self._geometry_cache):reuse=False
             if held and reuse not in (True,'transforms','materials'):
                 # Modo reports some drags as they happen (the transform tool) and others only on
                 # release (viewport navigation). Of those it reports, only light, transform and
@@ -643,6 +663,12 @@ class Panel(Tools, QtWidgets.QWidget):
                 self.changes.full=self.changes.full or full;self.changes.items.update(items)
                 self.release_timer.start();return
             scene = self._capture(reuse)
+            if held:
+                # Whatever was dragged, if it changed what lights the scene from all around (an environment, one of
+                # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
+                from .incremental import surroundings
+                if self._surroundings is not None and surroundings(scene)!=self._surroundings:
+                    self.changes.items.update(items);self.release_timer.start();return
             self._last_time=time;self._live_settings=settings
             if self._digest(scene) != self.last_digest:self._submit(scene)
         except Exception as exc:

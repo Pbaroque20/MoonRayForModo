@@ -6,9 +6,11 @@ parts of it in everyday use; where something was only checked by script, or not 
 notes below say so. The notes were written as the work went, so a later entry sometimes
 overtakes an earlier one; where it does, the earlier one says so.
 
-## MoonLight, a GPU preview engine
+## MoonLightIPR, a GPU preview engine
 
-MoonLight is a small OptiX path tracer that previews the scene on an NVIDIA GPU. It
+*0.3.50.1 and 0.3.50.2 show this engine as "MoonLight". It is MoonLightIPR from the next version on, in the plugin and in the source, so that it is not taken for Moonlight, DreamWorks' renderer before MoonRay.*
+
+MoonLightIPR is a small OptiX path tracer that previews the scene on an NVIDIA GPU. It
 approximates MoonRay: one fixed material model stands in for MoonRay's shaders, and output
 renders always use MoonRay. Choose it in the preview window's engine popup.
 
@@ -21,10 +23,10 @@ imported MaterialX graphs as their nodes say (both added later in this version; 
 MaterialX below). Volumes and the remaining light filters are not shown; the Notices list in
 the preview window says what a render left out.
 
-[moonlight/README.md](../moonlight/README.md) has the comparisons with MoonRay and the build steps.
+[moonlightipr/README.md](../moonlightipr/README.md) has the comparisons with MoonRay and the build steps.
 
-![Many lights, in MoonRay and in MoonLight](images/moonlight-many_lights.jpg)
-*MoonRay on the left, MoonLight on the right: nine sphere and rect lights of different power.*
+![Many lights, in MoonRay and in MoonLightIPR](images/moonlightipr-many_lights.jpg)
+*MoonRay on the left, MoonLightIPR on the right: nine sphere and rect lights of different power.*
 
 ## MoonRay's own items
 
@@ -75,6 +77,20 @@ PView was removed: Modo cannot host an external renderer there.
   MoonShine Material Override layer is no longer offered in the menus; override layers in
   existing scenes keep working.
 
+- After 0.3.50.2: **with polygons selected, a material goes on those polygons only.** In polygon
+  mode, Assign MoonShine Material to Mesh (and Import MaterialX Material) gives the material to
+  the selected polygons and leaves the rest of the mesh wearing what it had; several materials
+  can share a mesh this way. With nothing selected there, or in item mode, the whole mesh takes
+  it as before.
+
+- After 0.3.50.2: **assigning a material asks what Modo's own Polygon Set Material asks.** A
+  name (the material's kind unless one is typed, told apart if taken), the kind of MoonRay
+  material, a colour, and how its polygons are smoothed: flat, or smooth where neighbours meet
+  within an angle, 40 degrees to begin with as in Modo. The name is also the polygon tag. A
+  material that says how its polygons are smoothed is followed by both engines; one that does
+  not leaves the mesh smoothed as before. The object's own MoonRay overrides, and normals a mesh
+  brings itself, come first. There is no control for the angle after assignment yet.
+
 ## The material graph editor
 
 - A window of its own that does not block Modo, so it can stay open on another monitor. Save
@@ -105,7 +121,7 @@ PView was removed: Modo cannot host an external renderer there.
 - The controls are on the mesh's MoonRay tab, under its object overrides: whether curves
   render, the width at root and tip, the envelope between them, samples per bend for splines,
   and UVs that run along each strand by length.
-- MoonLight draws the same curves, as tubes of polygons.
+- MoonLightIPR draws the same curves, as tubes of polygons.
 - Curves can be guides that hair is grown from. On the object overrides: the mesh the hair
   grows on, strands per guide, the width of a cluster and how far it closes toward its tip,
   variation in length, and a seed. Hair grows around each guide, as locks, or between guides,
@@ -136,7 +152,7 @@ PView was removed: Modo cannot host an external renderer there.
   renders it.
 - Modo's Fresnel setting is followed: at none, a material reflects the same at every angle, as
   it does in Modo; at full it rises toward the edge as Modo's does.
-- MoonLight weights its specular layer as MoonRay does, so the two agree on Modo's materials
+- MoonLightIPR weights its specular layer as MoonRay does, so the two agree on Modo's materials
   and on a MoonRay material whose specular is below 1 (scene format MLSA).
 - A standard material's highlight has the shape of Modo's own (GGX) unless it is stretched by
   anisotropy. Roughness then means the same in both: highlights agree to about 1% from
@@ -157,13 +173,13 @@ PView was removed: Modo cannot host an external renderer there.
 - An imported material has controls of its own: the numbers and colours its file names (a
   paint colour, a UV scale, a roughness range) and its images, each chosen once however many
   nodes read it. They are the graph editor's properties while no node is selected.
-- MoonLight shows such materials as their nodes say: UVs that nodes move, turn or scale, and
+- MoonLightIPR shows such materials as their nodes say: UVs that nodes move, turn or scale, and
   arithmetic between images (one blended into another through a third, an image brought into
   a range, masks taken away) at the images' own sharpness. A wood, a marble, two wallpapers
   and a car paint from a library agree with MoonRay on 72 to 100% of the picture.
-- MoonLight's denoiser keeps more of a texture. It is given the light without the surface
+- MoonLightIPR's denoiser keeps more of a texture. It is given the light without the surface
   colour, so a printed pattern is not its to smooth, and as samples gather a growing share of
-  the picture's own detail is kept beside it. `tools/check_moonlight_denoise.py` measures it.
+  the picture's own detail is kept beside it. `tools/check_moonlightipr_denoise.py` measures it.
 - Import RDL Scene brings a MoonRay scene in whole. Meshes keep their transforms and are
   instanced, not copied, however deeply the scene's instancers nest; curves come in as curves;
   lights, light filters, volumes, MoonRay's own shapes and its other cameras become MoonRay
@@ -223,11 +239,11 @@ PView was removed: Modo cannot host an external renderer there.
   mesh and for minutes on a dense one, each time the preview read the scene.
 - IPR no longer reads the whole scene again every 15 seconds unless asked to, in the preview's
   preferences. It is for procedural items that do not announce their changes.
-  ![A marble from a MaterialX library, in MoonRay and in MoonLight](images/moonlight-materialx-Pale_Pink_Carrara_Marble.jpg)
-  ![A wood from a MaterialX library, in MoonRay and in MoonLight](images/moonlight-materialx-TH_Wood_Table.jpg)
+  ![A marble from a MaterialX library, in MoonRay and in MoonLightIPR](images/moonlightipr-materialx-Pale_Pink_Carrara_Marble.jpg)
+  ![A wood from a MaterialX library, in MoonRay and in MoonLightIPR](images/moonlightipr-materialx-TH_Wood_Table.jpg)
 
   *Pale Pink Carrara Marble and TH Wood Table from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all), imported and rendered in
-  MoonRay (left) and MoonLight (right).*
+  MoonRay (left) and MoonLightIPR (right).*
 - A MoonRay material set to metal now renders as one. Its metallic setting never reached
   MoonRay before.
 
@@ -245,9 +261,9 @@ PView was removed: Modo cannot host an external renderer there.
 - A reflective material (30% and up) with Fresnel at full rises less toward the edge in MoonRay.
 - Modo's separate reflection amount, with Match Specular off, is not followed.
 - A spot light matches Modo on its axis and dims off it by the cosine of the angle.
-- Curves in MoonLight are tubes of four or eight sides, not true curves.
+- Curves in MoonLightIPR are tubes of four or eight sides, not true curves.
 
-- Curves and hair wear the ordinary surface shader in MoonLight; there is no hair shading model
+- Curves and hair wear the ordinary surface shader in MoonLightIPR; there is no hair shading model
   or skin there yet, and no volumes.
 - An RDL import leaves out motion, values that differ face by face, subdivision creases,
   authored normals and light linking, and names each in its report. Opening a large scene's
@@ -259,4 +275,4 @@ PView was removed: Modo cannot host an external renderer there.
 - The import's progress bar and Stop button were not watched in the dialog.
 - The sections of the Render item's form all start expanded.
 - The package was run from an empty folder with a bare environment, on the machine that built
-  it. It was not installed on a clean machine, and XPU and MoonLight were run on one GPU.
+  it. It was not installed on a clean machine, and XPU and MoonLightIPR were run on one GPU.

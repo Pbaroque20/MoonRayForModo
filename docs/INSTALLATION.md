@@ -25,7 +25,7 @@ Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration 
 ![The MoonRay Preview window](images/preview-window.png)
 
 - Open **MoonRay > Render Setup**. **Render** starts a preview; with **IPR** ticked it keeps following the scene until Stop. The preview can dock as a Modo custom viewport; it does not populate Modo's built-in Render View slots.
-- Choose the preview engine beside IPR: **MoonRay**, or **MoonLight** for an approximate GPU preview that follows edits as they are made (NVIDIA GPU required). Output renders always use MoonRay.
+- Choose the preview engine beside IPR: **MoonRay**, or **MoonLightIPR** for an approximate GPU preview that follows edits as they are made (NVIDIA GPU required). Output renders always use MoonRay.
 - Render settings are on the Render item's **MoonRay** tab and under **MoonRay > Render Settings**: sampling, depths, denoising, view transform (ACES by default) and outputs.
 - To give a mesh a MoonRay material, select it and choose **MoonRay > Assign MoonShine Material to Mesh**, or add one from the Shader Tree's **Add Layer** list. Its form has **Open Graph**.
 - **MoonRay > Import MaterialX Material...** and **MoonRay > Import MoonRay Scene (RDL)...** bring in materials and whole MoonRay scenes. For a scene kept as `scene.rdlb` and `scene.rdla`, choose either file.

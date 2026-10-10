@@ -33,6 +33,8 @@ def emit(scene,meshes,environment,lines):
         if kind=='DistantLight':attrs['angular_extent']=number(light.get('angle',.5))
         # A sun that shows in the sky as a disc.
         if light.get('camera_visible'):attrs['visible_in_camera']='1'
+        # A sun whose disc is drawn apart leaves mirrors to that disc, so that they show it once.
+        if kind=='DistantLight' and light.get('disc'):attrs.update(visible_mirror_reflection='false',visible_mirror_transmission='false')
         if kind in ('SphereLight','DiskLight','CylinderLight'):attrs['radius']=number(max(.001,light.get('radius',.05)))
         if kind=='CylinderLight':attrs['height']=number(light.get('height',1))
         if kind in ('RectLight','PortalLight'):attrs.update(width=number(light.get('width',1)),height=number(light.get('height',1)))
@@ -57,6 +59,16 @@ def emit(scene,meshes,environment,lines):
         lines.append('table.insert(lights, %s {'%ref)
         lines.extend('  [%s] = %s,'%(string(k),v) for k,v in attrs.items())
         lines.append('})')
+        if kind=='DistantLight' and light.get('disc'):
+            # The sun's disc as the camera sees it: a light of its own, which lights nothing and is seen by the camera and in
+            # mirrors alone (MoonRay shows the camera no light that mirrors may not see), of the colour Modo's renderer gives the disc rather than the colour the sun lights the scene with.
+            seen='DistantLight(%s)'%string(name+'/disc');refs[identity].append(seen)
+            shown=dict(node_xform=attrs['node_xform'],color=vector(working_color(light['disc']['radiance']),'Rgb'),intensity='1',normalized='false',
+                       angular_extent=number(light['disc']['angle']),visible_in_camera='1')
+            shown.update(('visible_'+way,'false') for way in ('diffuse_reflection','diffuse_transmission','glossy_reflection','glossy_transmission'))
+            lines.append('table.insert(lights, %s {'%seen)
+            lines.extend('  [%s] = %s,'%(string(k),v) for k,v in shown.items())
+            lines.append('})')
     for index,mesh in enumerate(meshes):
         identity=owner(mesh);settings=objects.get(identity,{})
         if not settings.get('mesh_light'):continue

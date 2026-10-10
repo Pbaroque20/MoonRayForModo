@@ -5,7 +5,7 @@ Builds one scene holding an item of each class in entity_catalog.json, with refe
 them where a class has any (light filters on a light, a portal's environment, a volume in a
 box), renders it small through a fisheye camera item, and fails on any MoonRay error. Classes
 that cannot work without a file on disk are exported alone to confirm they are at least
-recognised. Run outside Modo. Output goes to build/moonlight/entities.
+recognised. Run outside Modo. Output goes to build/moonlightipr/entities.
 """
 import os
 import pathlib
@@ -15,7 +15,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'tools'), str(ROOT / 'kit/MoonRayForModo/python')]
 from moonray_modo import entities, native, rdla
-import check_moonlight_session as fixture
+import check_moonlightipr_session as fixture
 
 NEEDS_FILE = ('VdbGeometry', 'VdbVolume', 'VdbLightFilter', 'CookieLightFilter', 'CookieLightFilter_v2')
 
