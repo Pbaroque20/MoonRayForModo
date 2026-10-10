@@ -68,6 +68,15 @@ struct Material {
     float hairSaturation = 1.0f;
     uint32_t hairLobes = 15;
     uint32_t hairFresnel = 1;               // 0 by the angle along the fibre alone; otherwise as a cylinder
+    // An even fog filling a closed mesh, as MoonRay's BaseVolume with constant values, in place of a surface: the
+    // mesh itself is not seen. How much light the fog stops in a unit of distance, how much of that is scattered
+    // on, what it gives off, and which way it scatters (-1 back, 0 evenly, 1 on). Light scatters in it once. A
+    // camera inside the fog does not see it.
+    bool volume = false;
+    float volumeExtinction[3] = {1, 1, 1};
+    float volumeAlbedo[3] = {1, 1, 1};
+    float volumeEmission[3] = {0, 0, 0};
+    float volumeAnisotropy = 0.0f;
 };
 
 // An image on the GPU. Pixels are RGBA, top row first: bytes, or floats when floatData is set.

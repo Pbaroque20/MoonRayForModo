@@ -24,6 +24,7 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                MATERIAL_BECKMANN = 16,  // the specular lobe is Beckmann, as for material stacks, not GGX
                MATERIAL_CONDUCTOR = 32, // a metal reflects as DwaBaseMaterial's does, not by Schlick's curve
                MATERIAL_HAIR = 64,      // on a curve, the strand scatters light as a hair fibre does
+               MATERIAL_VOLUME = 128,   // the surface is only the edge of a fog that fills the shape
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -90,7 +91,18 @@ struct DeviceMaterial {
     float absorptionDistance;   // depth of a solid at which light has its transmission colour; 0 for none
     float abbe;                 // Abbe number of a dispersive solid; 0 for none
     float specular;             // weight of the dielectric's reflection
-    unsigned hair;              // with MATERIAL_HAIR, this material's entry in LaunchParams::hairs
+    unsigned hair;              // with MATERIAL_HAIR, this material's entry in LaunchParams::hairs; with MATERIAL_VOLUME, in volumes
+};
+
+// An even fog, as MoonRay's BaseVolume with constant values: how much light it stops in a unit of distance, how
+// much of what it stops is scattered on rather than absorbed, what it gives off, and which way it scatters.
+struct DeviceVolume {
+    float extinction[3];
+    float anisotropy;           // -1 back the way the light came, 0 evenly, 1 straight on
+    float albedo[3];
+    float pad0;
+    float emission[3];
+    float pad1;
 };
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
@@ -200,6 +212,7 @@ struct LaunchParams {
     DevicePtr layers;       // DeviceLayer, indexed from DeviceMaterial::layerStart
     DevicePtr albedo2;      // float, two ALBEDO_TABLE runs: GGX, then Beckmann
     DevicePtr hairs;        // DeviceHair, indexed by DeviceMaterial::hair
+    DevicePtr volumes;      // DeviceVolume, likewise
 
     // Latitude-longitude environment with a piecewise-constant sampling distribution.
     DevicePtr envPixels;        // float[4], envWidth * envHeight; what lights the scene
@@ -232,7 +245,7 @@ struct LaunchParams {
     unsigned maxDiffuseDepth;   // of those, how many may leave a diffuse lobe
     unsigned maxGlossyDepth;    // and how many a specular lobe
     float sampleClamp;      // largest value of one light sample after the first bounce; 0 is unlimited
-    unsigned presence;      // some material can be partly absent, so rays must run the any-hit test
+    unsigned presence;      // some material can be partly absent or is a fog's edge, so rays must run the any-hit test
 
     unsigned long long traversable;
 

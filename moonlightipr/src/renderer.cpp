@@ -230,7 +230,7 @@ struct Renderer::Impl {
     std::vector<int32_t> distantTextures;
     std::vector<Instance> instances;
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
-    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, albedoTables, instanceInput, instanceAccel, accelTemp;
+    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, volumeTable, albedoTables, instanceInput, instanceAccel, accelTemp;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
 
@@ -264,7 +264,8 @@ struct Renderer::Impl {
         moduleOptions.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
         OptixPipelineCompileOptions pipelineOptions = {};
         pipelineOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-        pipelineOptions.numPayloadValues = 2;
+        // Two words carry a radiance ray's hit record; a ray looking for a light uses all eight to add up the fog it crosses.
+        pipelineOptions.numPayloadValues = 8;
         pipelineOptions.numAttributeValues = 2;
         pipelineOptions.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
         pipelineOptions.pipelineLaunchParamsVariableName = "params";
@@ -345,8 +346,9 @@ struct Renderer::Impl {
 
     // refit moves an existing structure to the vertices now in the mesh's buffer.
     void buildMesh(Mesh& mesh, size_t vertexCount, size_t triangleCount, bool refit = false) {
-        // Rays switch the any-hit test off themselves unless the scene has a partly absent material.
-        const unsigned flags = OPTIX_GEOMETRY_FLAG_NONE;
+        // Rays switch the any-hit test off themselves unless the scene has a partly absent material or a fog, whose
+        // edges must each be counted once.
+        const unsigned flags = OPTIX_GEOMETRY_FLAG_REQUIRE_SINGLE_ANYHIT_CALL;
         OptixBuildInput input = {};
         input.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
         input.triangleArray.vertexBuffers = &mesh.positions.ptr;
@@ -807,6 +809,22 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
     }
     impl->hairTable.upload(hairs);
     impl->params.hairs = impl->hairTable.ptr;
+    std::vector<DeviceVolume> volumes;
+    for (size_t i = 0; i < count; ++i) {
+        if (!materials[i].volume) continue;
+        DeviceVolume fog{};
+        for (int c = 0; c < 3; ++c) {
+            fog.extinction[c] = std::max(materials[i].volumeExtinction[c], 0.0f);
+            fog.albedo[c] = std::clamp(materials[i].volumeAlbedo[c], 0.0f, 1.0f);
+            fog.emission[c] = std::max(materials[i].volumeEmission[c], 0.0f);
+        }
+        fog.anisotropy = std::clamp(materials[i].volumeAnisotropy, -0.99f, 0.99f);
+        table[i].flags = (table[i].flags & ~MATERIAL_HAIR) | MATERIAL_VOLUME;
+        table[i].hair = unsigned(volumes.size());
+        volumes.push_back(fog);
+    }
+    impl->volumeTable.upload(volumes);
+    impl->params.volumes = impl->volumeTable.ptr;
     // Layers and textures are followed on the GPU without checks, so settle them here.
     for (const DeviceMaterial& material : table)
         if (size_t(material.layerStart) + material.layerCount > layerCount) throw std::runtime_error("MoonLightIPR material refers to missing layers");
@@ -875,7 +893,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         for (unsigned i = 0; i < material.layerCount; ++i)
             if (layerTable[material.layerStart + i].channel == CHANNEL_DISSOLVE) material.flags |= MATERIAL_HAS_PRESENCE;
             else if (layerTable[material.layerStart + i].channel == CHANNEL_BUMP && material.bumpStrength != 0.0f) material.flags |= MATERIAL_HAS_BUMP;
-        if (material.flags & MATERIAL_HAS_PRESENCE) impl->params.presence = 1;
+        if (material.flags & (MATERIAL_HAS_PRESENCE | MATERIAL_VOLUME)) impl->params.presence = 1;
     }
     impl->layerTable.upload(layerTable);
     impl->params.layers = impl->layerTable.ptr;

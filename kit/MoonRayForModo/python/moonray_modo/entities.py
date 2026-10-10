@@ -716,6 +716,17 @@ def emit_geometry(scene, materials, lines):
             from . import primitive_attributes
             held = primitive_attributes.emit('/modo/entity/%s/attribute' % entity['identity'], [entity['attributes']], lines)
         name, body = block(entities, entity)
+        if entity['parameters'].get('modo_volume') and entity['class'] in ('BoxGeometry', 'SphereGeometry'):
+            # MoonRay fills a mesh with a volume but not its own box or sphere, in which nothing shows. A shape that
+            # holds one is therefore written as the mesh of that shape.
+            from .rdla import matrix
+            vertices, faces = box(value(entity, 'size')) if entity['class'] == 'BoxGeometry' else sphere(float(value(entity, 'radius')))
+            name = 'RdlMeshGeometry(%s)' % string('/modo/entity/' + entity['identity'])
+            body = [name + ' {', '  ["node_xform"] = %s,' % matrix(entity.get('matrix', IDENTITY)),
+                    '  ["vertex_list_0"] = {%s},' % ', '.join('Vec3(%r, %r, %r)' % tuple(float(v) for v in vertex) for vertex in vertices),
+                    '  ["vertices_by_index"] = {%s},' % ', '.join(str(index) for face in faces for index in face),
+                    '  ["face_vertex_count"] = {%s},' % ', '.join(str(len(face)) for face in faces),
+                    '  ["is_subd"] = false,', '}']
         tag = entity['parameters'].get('modo_material', '')
         if tag not in materials:
             tag = ''
@@ -799,6 +810,24 @@ def sphere(radius, segments=48, rings=24):
     return vertices, faces
 
 
+def even_fog(entities, name):
+    """The volume of that name as an even fog: what it stops in a unit of distance, what of that it scatters on, what
+    it gives off and which way it scatters. None unless it is a BaseVolume with one value all through, without ramps."""
+    from .working_space import color as working_color
+    found = next((e for e in entities if e['name'] == name and e['class'] == 'BaseVolume'), None)
+    if found is None or value(found, 'use_attenuation_ramp') or value(found, 'use_diffuse_ramp') or found['parameters'].get('densities'):
+        return None
+    white = [1.0, 1.0, 1.0]
+    stops = [float(v) for v in (value(found, 'attenuation_color') or white)]
+    if value(found, 'invert_attenuation_color'):
+        stops = [1.0 - v for v in stops]
+    strength = float(value(found, 'attenuation_intensity')) * float(value(found, 'attenuation_factor'))
+    return {'extinction': [max(0.0, v) * strength for v in working_color(stops)],
+            'albedo': working_color([float(v) for v in (value(found, 'diffuse_color') or white)]),
+            'emission': [v * float(value(found, 'emission_intensity')) for v in working_color([float(v) for v in (value(found, 'emission_color') or [0.0] * 3)])],
+            'anisotropy': float(value(found, 'anisotropy') or 0.0)}
+
+
 def emitting_area(name, light):
     """What MoonRay divides a normalized light's brightness by: pi times its surface, or for a distant light the squared
     sine of its disc's radius. None for a kind of light this is not worked out for."""
@@ -826,6 +855,7 @@ def preview(scene, warnings):
     if not entities:
         return scene
     lights, environments, meshes = list(scene.get('lights', [])), list(scene.get('environments', [])), list(scene.get('meshes', []))
+    materials = dict(scene.get('materials', {}))
     scene = mesh_lights(scene, warnings)
     skipped = {}
     camera = scene['camera']
@@ -882,12 +912,18 @@ def preview(scene, warnings):
                 light['soft_edge'] = max(0.0, light['cone'] - float(value(entity, 'inner_cone_angle'))) / 2
             lights.append(light)
         elif name in ('BoxGeometry', 'SphereGeometry'):
-            if entity['parameters'].get('modo_volume'):
-                skipped.setdefault('volumes', []).append(label)
-                continue
             vertices, faces = box(value(entity, 'size')) if name == 'BoxGeometry' else sphere(float(value(entity, 'radius')))
             mesh = {'name': label, 'identity': entity['identity'], 'vertices': vertices, 'faces': faces, 'matrix': matrix,
                     'material': entity['parameters'].get('modo_material', ''), 'smooth': name == 'SphereGeometry'}
+            if entity['parameters'].get('modo_volume'):
+                # A shape that holds a fog and has no material is the fog alone, which MoonLightIPR draws when it is
+                # the same all through.
+                fog = even_fog(entities_checked, entity['parameters']['modo_volume'])
+                if fog is None or entity['parameters'].get('modo_material'):
+                    skipped.setdefault('volumes', []).append(label)
+                    continue
+                mesh['material'] = '|volume|' + entity['identity']
+                materials[mesh['material']] = {'color': [0.0, 0.0, 0.0], 'roughness': 1.0, 'metallic': 0, '_volume': fog}
             meshes.append(mesh)
         elif category == 'lightfilter':
             # A filter shows through the lights that name it; what cannot be applied is said there.
@@ -905,4 +941,4 @@ def preview(scene, warnings):
             skipped.setdefault(name, []).append(label)
     for name, labels in sorted(skipped.items()):
         warnings.append('MoonLightIPR does not show %s (%s).' % (name, ', '.join(labels[:6]) + (' ...' if len(labels) > 6 else '')))
-    return dict(scene, camera=camera, lights=lights, environments=environments, meshes=meshes, entities=[])
+    return dict(scene, camera=camera, lights=lights, environments=environments, meshes=meshes, materials=materials, entities=[])

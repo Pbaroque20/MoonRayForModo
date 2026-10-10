@@ -29,8 +29,9 @@ build to an installed kit during development.
 - It draws Modo's standard and Principled materials, MoonRay's Dwa surface materials,
   material stacks from the Shader Tree, imported MaterialX graphs, MoonRay's own light
   items, curves and hair, subdivision surfaces, depth of field and motion blur.
-- It does not draw volumes, has no hair shading model (hair wears the ordinary surface
-  shader), and produces beauty only: other buffers and Cryptomatte need MoonRay.
+- It shades hair as MoonRay's hair material does, reads MoonRay's skin material, draws curves as
+  curves and draws an even fog in a MoonRay box or sphere shape. VDB volumes it does not draw.
+- It produces beauty only: other buffers and Cryptomatte need MoonRay.
 - Agreement with MoonRay is measured, scene by scene, further down. It is close on
   lights and plain materials and looser on layered materials and glass.
 - It has been run on one GPU, an RTX 3090.
@@ -289,14 +290,37 @@ Everything else is reported in the packer's warnings rather than dropped silentl
 the alpha of baked procedural layers, layers on channels the shader lacks (specular
 colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), light filters other than intensity, decay and colour ramp,
 moving lights during the shutter,
-volumes, film offset and the render region. Orthographic cameras are refused.
+VDB volumes, film offset and the render region. Orthographic cameras are refused.
 
 Added to what is translated since the table was written:
 
-- **Curves** (a mesh's curves, splines and line polygons, and hair grown from guides): tubes
-  of polygons, eight sides or four, capped, with the object's width, taper and UVs. They are
-  not true curves, and they wear the ordinary surface shader.
-  ![Curves as tubes](../docs/images/moonlightipr-curves.jpg)
+- **Curves** (a mesh's curves, splines and line polygons, and hair grown from guides): true
+  curves on the GPU, with the object's width and taper and each strand's UV. The line through a
+  strand's points is round straight segments with rounded joints; B-spline and Bezier strands are
+  round cubic segments. MoonRay's default is a flat ribbon facing the ray, so a thick strand's
+  shading differs across its width.
+  ![Curves, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-curves.jpg)
+- **Hair**: on curves, `HairMaterial_v3` is a hair fibre with MoonRay's four lobes (light
+  reflected off the fibre, passed through it, reflected once inside it, and the rest), by the
+  formulas of MoonRay's own hair code and its rules for each lobe's roughness and offset. Hair
+  colour can be textured. Glints, the saturation of direct transmission and layered cuticles
+  are reported as left out. `HairDiffuseMaterial` is its colour on a matte strand. Measured on
+  a head of 2,500 strands: brightness 1.02 of MoonRay's, 77% (dark) and 80% (fair) of tiles
+  within a tenth.
+  ![Hair, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-hair_dark.jpg)
+- **Skin**: `DwaSkinMaterial` is read as itself: albedo, scattering beneath the surface, and
+  moisture as a clear coat. Brightness 0.98, 98% of tiles within a tenth.
+- **Volumes**: a `BaseVolume` with constant values, on a MoonRay box or sphere shape that has
+  no material, is an even fog: it dims and tints what is behind it, scatters the lights' light
+  once (MoonRay's default) with its anisotropy, glows with its emission, and thins shadows.
+  Brightness 1.03 to 1.04, 80 to 89% of tiles within a tenth. Not drawn: VDB volumes, volumes
+  with ramps, a volume inside a shape that also has a surface material, and fog seen from a
+  camera inside it.
+  ![Fog, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-fog_coloured.jpg)
+- **Pictures on lights**: sphere, disk, spot, cylinder and distant lights show their texture as
+  rect lights did, each laid out as MoonRay lays it (91 to 95% of tiles within a tenth). A
+  distant light with `normalized` off is as bright as MoonRay makes it (98%).
+  ![A picture on a sphere light](../docs/images/moonlightipr-textured_spherelight.jpg)
 - **Imported MaterialX graphs**: UVs that nodes move, turn or scale, and arithmetic between
   images (one blended into another through a third, an image brought into a range, masks
   taken away), as a layer stack at the images' own sharpness.
@@ -399,11 +423,9 @@ recapture, which waits for release. Why it was classified so was not established
 
 ## Not done yet
 
-- A hair shading model, then skin: hair and curves wear the ordinary surface shader.
-- True curve primitives in place of tubes of polygons.
-- Non-normalized distant lights; textures on lights other than rect lights.
+- VDB volumes, volumes with ramps, and fog seen from inside it; hair glints.
 - The layer features listed above as reported; rod, barn door, cookie, VDB and combined
-  light filters; volumes.
+  light filters.
 - Motion blur during IPR updates, moving lights, and a comparison of motion blur with MoonRay.
 - A test of OCIO colour spaces, and of UDIM against a MoonRay that loads the tiles.
 - Comparison against MoonRay on scenes captured from Modo. The comparisons above use

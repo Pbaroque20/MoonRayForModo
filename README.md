@@ -87,7 +87,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 ## Limitations
 
 - **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU; they have been exercised on an RTX 3090 only.
-- **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; it has no volumes, no hair shading model, no subsurface scattering, and shows curves as tubes of polygons. Some light filters and textures on lights other than rect lights are left out; it lists what it leaves out in the preview's notices.
+- **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; it draws only even fog (no VDB volumes), and its hair, skin and curves follow MoonRay's closely but not exactly. Some light filters and textures on lights other than rect lights are left out; it lists what it leaves out in the preview's notices.
 - **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are not calibrated, anisotropy is untested, rough environment reflections come out dimmer in MoonRay, and remaining Shader Tree effects, some masks and light linking are not translated.
 - **MaterialX is a supported subset**: Standard Surface graphs made of images, arithmetic and UV transforms. OpenPBR and glTF surfaces, and nodes outside that subset, are not read.
 - **RDL import leaves some things out**, and names each in its report: motion (the scene comes in as it stands at shutter open), values that differ face by face or point by point, subdivision creases, authored normals, light linking and shadow sets, instancing from point files, and classes the plugin has no item for. Per-item values an imported scene brings render correctly but have no form in Modo yet. Opening a large scene's files takes minutes before the import proper begins.
@@ -97,7 +97,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 
 ## Still to implement
 
-- A hair shading model and skin (subsurface) in MoonLightIPR, and volumes there.
+- VDB volumes, volumes with ramps and hair glints in MoonLightIPR.
 - One-click outputs for indirect diffuse and specular, shadows, albedo, subsurface and motion vectors.
 - OpenPBR and glTF MaterialX surfaces.
 - Per-face and per-point values (primitive attributes) on meshes, and a form for editing the values items carry.

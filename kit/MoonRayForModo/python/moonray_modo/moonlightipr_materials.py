@@ -28,7 +28,7 @@ FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'm
           'coatRough': (0, 1), 'dissolve': (0, 1), 'aniso': (-1, 1), 'subsAmt': (0, 1), 'subsCol': None}
 LAYER_GROUP_BEGIN, LAYER_GROUP_END, LAYER_MASK_BASE, MASK_REGISTERS, GROUP_DEPTH = 32, 33, 40, 4, 4
 LAYER_MASKED, LAYER_MASK_SHIFT = 1 << 11, 12
-MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN, MATERIAL_CONDUCTOR, MATERIAL_HAIR = 1, 2, 16, 32, 64
+MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN, MATERIAL_CONDUCTOR, MATERIAL_HAIR, MATERIAL_VOLUME = 1, 2, 16, 32, 64, 128
 LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
@@ -926,7 +926,8 @@ class Compiler:
                   + [radius, depth, max(0.0, float(source.get('dispersion_abbe', 0))) if dwa else 0.0, min(1.0, max(0.0, weight))])
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Material %s contains a non-finite number' % name)
-        record = struct.pack('<33f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0), start, len(self.layers) - start,
+        fog = material.get('_volume')
+        record = struct.pack('<33f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
                              UV_SLOTS if tangent_slot is None else tangent_slot)
         fibre = source.get('_hair')
         if fibre:
@@ -935,4 +936,10 @@ class Compiler:
             if not all(math.isfinite(v) for v in numbers):
                 raise ValueError('Material %s contains a non-finite number' % name)
             record += struct.pack('<19f2I', *numbers, fibre['lobes'], fibre['fresnel'])
+        if fog:
+            # An even fog in place of a surface: what it stops, what of that it scatters on, what it gives off, and which way.
+            numbers = [float(v) for v in list(fog['extinction']) + list(fog['albedo']) + list(fog['emission']) + [fog['anisotropy']]]
+            if not all(math.isfinite(v) for v in numbers):
+                raise ValueError('Material %s contains a non-finite number' % name)
+            record += struct.pack('<10f', *numbers)
         return record

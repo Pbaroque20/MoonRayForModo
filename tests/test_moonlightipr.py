@@ -103,7 +103,8 @@ class EntityTests(unittest.TestCase):
         self.assertNotIn('PerspectiveCamera("/modo/camera")',text)
         self.assertIn('["light_filters"] = {RodLightFilter("/modo/entity/rod")}',text)
         self.assertIn('table.insert(lights, SpotLight("/modo/entity/key"))',text)
-        self.assertIn('table.insert(assignments, {BoxGeometry("/modo/entity/box"), "", materials["red"], lightSet, BaseVolume("/modo/entity/fog")})',text)
+        # MoonRay fills a mesh with a volume but not its own box, so a box that holds one goes as a mesh.
+        self.assertIn('table.insert(assignments, {RdlMeshGeometry("/modo/entity/box"), "", materials["red"], lightSet, BaseVolume("/modo/entity/fog")})',text)
         self.assertLess(text.index('table.insert(lights, EnvLight("/modo/entity/env"))'),text.index('local lightSet'))
         # A volume shader has no place, so it must not be given a transform.
         self.assertNotIn('node_xform',text[text.index('BaseVolume("/modo/entity/fog") {'):text.index('BoxGeometry("/modo/entity/box") {')])

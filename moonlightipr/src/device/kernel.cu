@@ -44,14 +44,22 @@ ML_INLINE void traceRadiance(float3 origin, float3 direction, Hit& hit, float di
 }
 
 // The second payload word gives the any-hit test of a partly absent surface its own random stream.
-ML_INLINE bool visible(float3 origin, float3 direction, unsigned& seed, float distance = 1e16f) {
-    unsigned unoccluded = 0, stream = seed;
+// It returns what is left of the light: nothing behind a surface, and behind fog what the fog lets through. The any-hit
+// test adds up, in the other six payload words, the fog crossed: the distance to each edge it leaves less the distance
+// to each it enters, times how much that fog stops, and how much the fogs entered and not left stop.
+ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float distance = 1e16f) {
+    unsigned unoccluded = 0, stream = seed, d0 = 0, d1 = 0, d2 = 0, e0 = 0, e1 = 0, e2 = 0;
     rnd(seed);
     optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(255),
                (params.presence ? OPTIX_RAY_FLAG_NONE : OPTIX_RAY_FLAG_DISABLE_ANYHIT)
                | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
-               0, 1, 1, unoccluded, stream);
-    return unoccluded != 0;
+               0, 1, 1, unoccluded, stream, d0, d1, d2, e0, e1, e2);
+    if (!unoccluded) return vec(0.0f);
+    if (!(d0 | d1 | d2 | e0 | e1 | e2)) return vec(1.0f);
+    // A fog entered and never left is one the light itself is in: it is crossed from its edge to the ray's end.
+    const float3 inside = make_float3(fmaxf(0.0f, __uint_as_float(e0)), fmaxf(0.0f, __uint_as_float(e1)), fmaxf(0.0f, __uint_as_float(e2)));
+    const float3 depth = make_float3(__uint_as_float(d0), __uint_as_float(d1), __uint_as_float(d2)) + inside * fminf(distance, 1e12f);
+    return make_float3(expf(-fmaxf(0.0f, depth.x)), expf(-fmaxf(0.0f, depth.y)), expf(-fmaxf(0.0f, depth.z)));
 }
 
 // Moves a ray origin off the surface, towards the side the ray leaves from.
@@ -727,8 +735,8 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         if (lightPdf > 0.0f && dot(ng, toLight) > 0.0f) {
             const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLight));
             const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-            if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(p, ng, toLight), toLight, seed))
-                radiance += clampSample(weight * (e.diffuse + e.specular) * envRadiance(toLight)
+            if (maxComponent(e.diffuse + e.specular) > 0.0f)
+                radiance += clampSample(weight * (e.diffuse + e.specular) * envRadiance(toLight) * shadow(offsetOrigin(p, ng, toLight), toLight, seed)
                                         * (powerHeuristic(lightPdf, pdf) / lightPdf), lit);
         }
     }
@@ -738,8 +746,8 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         if (dot(ng, toSun) <= 0.0f) continue;
         const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toSun));
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-        if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(p, ng, toSun), toSun, seed))
-            radiance += clampSample(weight * (e.diffuse + e.specular) * distantRadiance(light, toSun)
+        if (maxComponent(e.diffuse + e.specular) > 0.0f)
+            radiance += clampSample(weight * (e.diffuse + e.specular) * distantRadiance(light, toSun) * shadow(offsetOrigin(p, ng, toSun), toSun, seed)
                                     * (powerHeuristic(distantPdf(light), pdf) / distantPdf(light)), lit);
     }
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
@@ -752,8 +760,8 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         if (params.lightPick) lampPdf *= lights[i].pick;
         const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLamp));
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-        if (maxComponent(e.diffuse + e.specular) > 0.0f && visible(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f))
-            radiance += clampSample(weight * (e.diffuse + e.specular) * emitted
+        if (maxComponent(e.diffuse + e.specular) > 0.0f)
+            radiance += clampSample(weight * (e.diffuse + e.specular) * emitted * shadow(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f)
                                     * (powerHeuristic(lampPdf, pdf) / lampPdf), lit);
     }
     return radiance;
@@ -930,16 +938,18 @@ ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weig
         const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
         if (lightPdf > 0.0f) {
             const float3 f = fibreEval(fibre, toLight, pdf);
-            if (maxComponent(f) > 0.0f && visible(offsetOrigin(p, ng, toLight), toLight, seed))
-                radiance += clampSample(weight * f * envRadiance(toLight) * (powerHeuristic(lightPdf, pdf) / lightPdf), lit);
+            if (maxComponent(f) > 0.0f)
+                radiance += clampSample(weight * f * envRadiance(toLight) * shadow(offsetOrigin(p, ng, toLight), toLight, seed)
+                                        * (powerHeuristic(lightPdf, pdf) / lightPdf), lit);
         }
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
         const DeviceDistantLight& light = distantLights[i];
         const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
         const float3 f = fibreEval(fibre, toSun, pdf);
-        if (maxComponent(f) > 0.0f && visible(offsetOrigin(p, ng, toSun), toSun, seed))
-            radiance += clampSample(weight * f * distantRadiance(light, toSun) * (powerHeuristic(distantPdf(light), pdf) / distantPdf(light)), lit);
+        if (maxComponent(f) > 0.0f)
+            radiance += clampSample(weight * f * distantRadiance(light, toSun) * shadow(offsetOrigin(p, ng, toSun), toSun, seed)
+                                    * (powerHeuristic(distantPdf(light), pdf) / distantPdf(light)), lit);
     }
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
@@ -949,8 +959,45 @@ ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weig
         if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
         if (params.lightPick) lampPdf *= lights[i].pick;
         const float3 f = fibreEval(fibre, toLamp, pdf);
-        if (maxComponent(f) > 0.0f && visible(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f))
-            radiance += clampSample(weight * f * emitted * (powerHeuristic(lampPdf, pdf) / lampPdf), lit);
+        if (maxComponent(f) > 0.0f)
+            radiance += clampSample(weight * f * emitted * shadow(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f)
+                                    * (powerHeuristic(lampPdf, pdf) / lampPdf), lit);
+    }
+    return radiance;
+}
+
+ML_INLINE float average(float3 c) { return (c.x + c.y + c.z) * (1.0f / 3.0f); }
+
+// ---- Fog ---------------------------------------------------------------------------------------
+// How much of the light arriving along one direction a fog sends on along another (Henyey and Greenstein).
+ML_INLINE float phase(float cosine, float g) {
+    const float denominator = 1.0f + g * g - 2.0f * g * cosine;
+    return (1.0f - g * g) / (4.0f * ML_PI * denominator * sqrtf(fmaxf(denominator, 1e-12f)));
+}
+// The light every lamp sends to a point in fog and on along wo, the way back to the viewer.
+ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit, unsigned& seed) {
+    const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
+    const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
+    float3 radiance = vec(0.0f);
+    if (!params.envPortal) {
+        float lightPdf;
+        const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
+        if (lightPdf > 0.0f)
+            radiance += clampSample(weight * envRadiance(toLight) * shadow(p, toLight, seed) * (phase(-dot(wo, toLight), g) / lightPdf), lit);
+    }
+    for (unsigned i = 0; i < params.distantLightCount; ++i) {
+        const DeviceDistantLight& light = distantLights[i];
+        const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
+        radiance += clampSample(weight * distantRadiance(light, toSun) * shadow(p, toSun, seed) * (phase(-dot(wo, toSun), g) / distantPdf(light)), lit);
+    }
+    const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
+    const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
+    for (unsigned i = firstLight; i < lastLight; ++i) {
+        float3 toLamp, emitted;
+        float distance, lampPdf;
+        if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
+        if (params.lightPick) lampPdf *= lights[i].pick;
+        radiance += clampSample(weight * emitted * shadow(p, toLamp, seed, distance * 0.999f) * (phase(-dot(wo, toLamp), g) / lampPdf), lit);
     }
     return radiance;
 }
@@ -1061,10 +1108,39 @@ extern "C" __global__ void __raygen__moonlightipr() {
     bool probing = false;
     float reach = 1e16f;
     unsigned entryInstance = 0;
+    // The fog the ray is in, as its entry among the volumes, and how many edges of fog the path has crossed.
+    int medium = -1;
+    unsigned crossings = 0;
 
     for (unsigned depth = 0;; ++depth) {
         Hit hit;
         traceRadiance(origin, direction, hit, reach);
+        if (medium >= 0 && !probing) {
+            // In fog: how far the light gets before the fog stops it, drawn for one colour chosen evenly.
+            const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[medium];
+            const float3 stops = vec(fog.extinction);
+            const float limit = hit.valid ? hit.t : 1e30f, choice = rnd(seed);
+            const float chosen = choice < 1.0f / 3.0f ? stops.x : choice < 2.0f / 3.0f ? stops.y : stops.z;
+            const float reached = chosen > 0.0f ? -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / chosen : 1e30f;
+            const float far = fminf(reached, limit);
+            const float3 left = make_float3(expf(-stops.x * far), expf(-stops.y * far), expf(-stops.z * far));
+            if (reached < limit) {
+                // Stopped: here the fog gives off its own light and sends the lamps' on towards the viewer. As in
+                // MoonRay by default, light scatters in fog once, so the path ends here.
+                const float density = average(stops * left);
+                if (!(density > 0.0f)) break;
+                radiance += clampSample(throughput * lightWeight * vec(fog.emission) * left * (1.0f / density), clampFound);
+                if (bounces)
+                    radiance += fogLight(origin + direction * reached, -direction, fog.anisotropy,
+                                         throughput * bounceWeight * stops * vec(fog.albedo) * left * (1.0f / density), roughDepth >= 1, seed);
+                break;
+            }
+            // Not stopped before the next surface: what the other colours make of having got this far.
+            const float chance = average(left);
+            if (!(chance > 0.0f)) break;
+            lightWeight *= left * (1.0f / chance);
+            bounceWeight *= left * (1.0f / chance);
+        }
         const bool emerged = probing;
         if (emerged) {
             // The probe looked straight down the normal of where the light went in. Failing to find
@@ -1116,6 +1192,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
                                             * ((sharp || camera) ? 1.0f : powerHeuristic(bsdfPdf, distantPdf(light))), clampFound);
             }
             break;
+        }
+        if ((hit.flags & MATERIAL_VOLUME) && !emerged) {
+            // The edge of a fog: nothing is there to see. The ray goes on, into the fog through a face that looks
+            // outwards and out of it through one that looks inwards.
+            if (++crossings > 64) break;
+            medium = dot(hit.ng, direction) < 0.0f ? int(hit.hair) : -1;
+            origin = offsetOrigin(hit.p, hit.ng, direction);
+            --depth;    // crossing an edge is not a bounce
+            continue;
         }
         // A mesh light is the surface just hit; it emits from both faces.
         if (!camera && !emerged && hit.light >= 0) {
@@ -1371,7 +1456,6 @@ ML_INLINE float3 blendColor(float3 below, float3 value, unsigned mode, float alp
     }
     return lerp(below, mixed, clamp(alpha, 0.0f, 1.0f));
 }
-ML_INLINE float average(float3 c) { return (c.x + c.y + c.z) * (1.0f / 3.0f); }
 
 // The curves the plugin puts on a layer's value. Gamma is MoonRay's ColorCorrectGammaMap, bias its
 // RemapMap (which also clamps), and gain the plugin's own ModoTextureMap curve.
@@ -1588,6 +1672,21 @@ extern "C" __global__ void __anyhit__presence() {
     const unsigned primitive = optixGetPrimitiveIndex();
     const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[primitive] : instance.material;
     const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
+    if (material.flags & MATERIAL_VOLUME) {
+        // The edge of a fog stops no light itself. A ray looking for a light notes the fog it crosses and goes on; a ray
+        // looking for what is there to see takes the edge as its hit, to know it is in fog from there.
+        if (!(optixGetRayFlags() & OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT)) return;
+        const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[material.hair];
+        const float sign = optixIsBackFaceHit() ? 1.0f : -1.0f, crossed = sign * optixGetRayTmax();
+        optixSetPayload_2(__float_as_uint(__uint_as_float(optixGetPayload_2()) + crossed * fog.extinction[0]));
+        optixSetPayload_3(__float_as_uint(__uint_as_float(optixGetPayload_3()) + crossed * fog.extinction[1]));
+        optixSetPayload_4(__float_as_uint(__uint_as_float(optixGetPayload_4()) + crossed * fog.extinction[2]));
+        optixSetPayload_5(__float_as_uint(__uint_as_float(optixGetPayload_5()) - sign * fog.extinction[0]));
+        optixSetPayload_6(__float_as_uint(__uint_as_float(optixGetPayload_6()) - sign * fog.extinction[1]));
+        optixSetPayload_7(__float_as_uint(__uint_as_float(optixGetPayload_7()) - sign * fog.extinction[2]));
+        optixIgnoreIntersection();
+        return;
+    }
     if (!(material.flags & MATERIAL_HAS_PRESENCE)) return;
     float3 channel[CHANNEL_COUNT];
     channel[CHANNEL_DISSOLVE] = vec(material.dissolve);

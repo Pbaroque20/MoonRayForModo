@@ -262,6 +262,14 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             material.hairLobes = in.value<uint32_t>();
             material.hairFresnel = in.value<uint32_t>();
         }
+        if (materialFlags & 128) {
+            // An even fog in place of a surface.
+            material.volume = true;
+            in.floats(material.volumeExtinction, 3);
+            in.floats(material.volumeAlbedo, 3);
+            in.floats(material.volumeEmission, 3);
+            material.volumeAnisotropy = in.value<float>();
+        }
     }
     std::vector<Layer> layers(in.value<uint32_t>());
     for (Layer& layer : layers) {

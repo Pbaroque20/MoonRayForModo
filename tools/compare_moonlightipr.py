@@ -375,6 +375,14 @@ def scenes(folder):
                    'color': [.5, .5, .5], 'roughness': .4, 'native_shader': 'HairMaterial_v3', 'native_parameters': dict(values, hair_color=colour)}),
                extra_geometry=[tuft()])
            for name, colour, values in (('dark', [.25, .12, .05], {}), ('fair', [.85, .7, .45], {'primary_specular_roughness': .3}))},
+        # Fog: a block of it between the camera and the scene, lit by the sun and a lamp, thin and thick and coloured.
+        **{'fog_' + name: dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               entities=[{'identity': 'v_fog', 'name': 'Mist', 'class': 'BaseVolume', 'parameters': values},
+                         {'identity': 'g_block', 'name': 'Cloud', 'class': 'BoxGeometry', 'matrix': fixture.placed(0, 1.6, 2.5),
+                          'parameters': {'size': [2.6, 2.6, 2.6], 'modo_volume': 'Mist'}}])
+           for name, values in (('thin', {'attenuation_intensity': .4}), ('thick', {'attenuation_intensity': 2.5}),
+                                ('coloured', {'attenuation_intensity': 1.2, 'attenuation_color': [1.0, .6, .3], 'diffuse_color': [.5, .7, 1.0], 'anisotropy': .4}))},
         'uniform_sky': dict(base, _environment=1.0),
         'gradient_sky': dict(base, environments=fixture.snapshot()['environments']),
         'sphere_light': dict(base, lights=[dict(lamp, kind='SphereLight', intensity=60.0, radius=.4, matrix=fixture.placed(-1, 5, 3))]),
