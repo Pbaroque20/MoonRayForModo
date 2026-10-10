@@ -83,33 +83,40 @@ def grown(scene,item,strands,settings,warnings):
                  packed('d',[settings['mode'],settings['count'],settings['width'],settings['clump'],settings['length'],settings['seed']])):
         held.update(part.tobytes());held.update(b'|')
     key=held.digest()
-    if key not in GROWN:
-        if len(GROWN)>=8:GROWN.pop(next(iter(GROWN)))
-        # The scalp's grid is kept by its triangles: a guide moved, or a setting changed, leaves the scalp as it was.
-        surface=None
-        if triangles:
-            shape=hashlib.sha1(packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles))).tobytes()).digest()
-            if shape not in SCALPS:
-                if len(SCALPS)>=4:SCALPS.pop(next(iter(SCALPS)))
-                SCALPS[shape]=hair.Scalp(triangles)
-            surface=SCALPS[shape]
-        GROWN[key]=hair.grow(guides,surface,settings['mode'],settings['count'],
-                             settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'])
-    children,adrift=GROWN[key]
-    if adrift:
-        warnings.append('Hair on %s: %d of %d guides %s too far from the scalp, and the hair of %s grows from the guide itself. Start each guide on the surface.'%(item.name,adrift,len(guides),'starts' if adrift==1 else 'start','it' if adrift==1 else 'them'))
     # Each strand keeps its guide's material, and goes back into the mesh's own space, where its curves are.
     placed=(key,tuple(float(v) for v in matrix),tuple(tag for _,tag,_ in strands),bool(settings['guides']))
     if placed not in PLACED:
         if len(PLACED)>=8:PLACED.pop(next(iter(PLACED)))
-        per=max(1,settings['count']);grown_strands=[]
-        # The matrix written out: this runs once for every point of every strand.
-        a,b,c,_,d,e,f,_,g,h,i,_,x,y,z,_=(float(v) for v in back)
-        for index,child in enumerate(children):
-            tag=strands[min(len(strands)-1,index//per)][1]
-            grown_strands.append(([[p[0]*a+p[1]*d+p[2]*g+x,p[0]*b+p[1]*e+p[2]*h+y,p[0]*c+p[1]*f+p[2]*i+z] for p in child],tag,None))
-        PLACED[placed]=(list(strands) if settings['guides'] else [])+grown_strands
-    return PLACED[placed]
+        # The runtime's own program grows the same hair many times faster, and puts it back in the mesh's space itself.
+        from . import hair_native
+        fast=hair_native.grow(guides,triangles,settings['mode'],settings['count'],settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'],
+                              [float(v) for v in back])
+        if fast is not None:
+            local,adrift=fast
+        else:
+            if key not in GROWN:
+                if len(GROWN)>=8:GROWN.pop(next(iter(GROWN)))
+                # The scalp's grid is kept by its triangles: a guide moved, or a setting changed, leaves the scalp as it was.
+                surface=None
+                if triangles:
+                    shape=hashlib.sha1(packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles))).tobytes()).digest()
+                    if shape not in SCALPS:
+                        if len(SCALPS)>=4:SCALPS.pop(next(iter(SCALPS)))
+                        SCALPS[shape]=hair.Scalp(triangles)
+                    surface=SCALPS[shape]
+                GROWN[key]=hair.grow(guides,surface,settings['mode'],settings['count'],
+                                     settings['width']/2000.0,settings['clump'],settings['length'],settings['seed'])
+            children,adrift=GROWN[key]
+            # The matrix written out: this runs once for every point of every strand.
+            a,b,c,_,d,e,f,_,g,h,i,_,x,y,z,_=(float(v) for v in back)
+            local=[[[p[0]*a+p[1]*d+p[2]*g+x,p[0]*b+p[1]*e+p[2]*h+y,p[0]*c+p[1]*f+p[2]*i+z] for p in child] for child in children]
+        per=max(1,settings['count'])
+        grown_strands=[(child,strands[min(len(strands)-1,index//per)][1],None) for index,child in enumerate(local)]
+        PLACED[placed]=((list(strands) if settings['guides'] else [])+grown_strands,adrift)
+    made,adrift=PLACED[placed]
+    if adrift:
+        warnings.append('Hair on %s: %d of %d guides %s too far from the scalp, and the hair of %s grows from the guide itself. Start each guide on the surface.'%(item.name,adrift,len(guides),'starts' if adrift==1 else 'start','it' if adrift==1 else 'them'))
+    return made
 
 
 def polylines(mesh,polygons,points,id_tag,item):

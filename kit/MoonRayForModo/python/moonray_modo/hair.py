@@ -122,9 +122,10 @@ class Scalp:
             for y in range(low[1], high[1] + 1):
                 for z in range(low[2], high[2] + 1):
                     found.update(self.cells.get((x, y, z), ()))
-        # Nearest first, with how far each is, so that a search from close by can stop early.
+        # Nearest first, with how far each is, so that a search from close by can stop early. Of two as near, the
+        # earlier in the mesh comes first: the order must not hang on how a set happens to hold them.
         distances = {index: math.sqrt(dot(sub(self.middles[index], point), sub(self.middles[index], point))) for index in found}
-        ordered = sorted(found, key=distances.__getitem__)
+        ordered = sorted(found, key=lambda index: (distances[index], index))
         return ordered, [distances[index] for index in ordered], point
 
     def nearest_among(self, point, patch, reach):
