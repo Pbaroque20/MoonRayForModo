@@ -37,6 +37,12 @@ class Controls(QtWidgets.QDialog):
                     for name,identity in [('All environments','__environment__')]+[(i.name+' (environment)',i.id) for i in scene.items('environment',superType=False)]+[(i.name,i.id) for i in lights]+[(i.name+' (mesh emitter)',i.id) for i in objects if i.type=='mesh']:
                         row=QtWidgets.QListWidgetItem(name,w);row.setData(QtCore.Qt.UserRole,identity);row.setFlags(row.flags()|QtCore.Qt.ItemIsUserCheckable);row.setCheckState(QtCore.Qt.Unchecked)
                     form.addRow(label,w)
+                # MoonRay's shadow receiver set: what this object's shadow does not fall on.
+                w=QtWidgets.QListWidget();w.setMaximumHeight(120);self.lists['shadow_receivers']=w
+                w.setToolTip('This object casts no shadow onto the objects ticked here. It still shadows everything else, and they are still shadowed by everything else.')
+                for item in sorted((i for i in objects if i.type in ('mesh','meshInst')),key=lambda i:i.name.casefold()):
+                    row=QtWidgets.QListWidgetItem(item.name,w);row.setData(QtCore.Qt.UserRole,item.id);row.setFlags(row.flags()|QtCore.Qt.ItemIsUserCheckable);row.setCheckState(QtCore.Qt.Unchecked)
+                form.addRow('Cast no shadow onto these objects',w)
                 field('motion_topology','Changing topology during shutter','choice','strict',choices=[('Require stable topology','strict'),('Frame-time geometry; no deformation blur','freeze'),('Frame-time points / strands with velocities','velocity')])
                 field('point_id_map','Persistent point ID weight map','text','')
                 field('strand_id_tag','Persistent strand ID tag (4 characters)','text','')

@@ -338,14 +338,25 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["attenuation_color"] = %s,' % attenuation,
                       '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
                       '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
-    lines += ['local function assign(g, part, tag, owner)',
+    lines += ['local objectShadowReceiverSets = {}',
+              'local function assign(g, part, tag, owner)',
               '  local a = {g, part, materials[tag], objectLightSets[owner] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
               '  if objectShadowSets[owner] then table.insert(a, objectShadowSets[owner]) end',
+              '  if objectShadowReceiverSets[owner] then table.insert(a, objectShadowReceiverSets[owner]) end',
               '  if displacements[tag] then table.insert(a, displacements[tag]) end',
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
               '  table.insert(assignments, a)', 'end']
     from . import geometry
     render_meshes = apart(render_meshes, {tag for tag, medium in media.items() if medium is not None})
+    # The objects an object casts no shadow onto, as MoonRay's shadow receiver set: the meshes of those objects, which
+    # are known by their place among the meshes about to be written.
+    for identity, settings in sorted((scene.get('production', {}).get('objects', {})).items()):
+        spared = set(settings.get('shadow_receivers') or [])
+        found = [place for place, held in enumerate(render_meshes) if held.get('faces') and 'instances' not in held
+                 and (held.get('source_item') or str(held.get('identity', '')).split('|')[0]) in spared]
+        if found:
+            lines.append('objectShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (string(identity), string('/modo/shadowReceivers/' + identity),
+                                                                                    array('RdlMeshGeometry("/modo/mesh/%d")' % place for place in found)))
     for index, mesh in enumerate(render_meshes):
         vertices = mesh['vertices']
         faces = mesh['faces']

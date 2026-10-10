@@ -487,6 +487,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if samples < 1:
         raise ValueError('MoonLightIPR needs at least one sample')
     warnings = []
+    # Which lights light an object, and whose shadows fall where, are MoonRay's to work out.
+    if any(held.get('link_enabled') or held.get('shadow_exclude') or held.get('shadow_receivers')
+           for held in (scene.get('production') or {}).get('objects', {}).values() if isinstance(held, dict)):
+        warnings.append('MoonLightIPR lights and shadows every object alike: light links and the shadows objects are set not to cast show in MoonRay only.')
     # MoonRay's own items arrive beside the Modo ones; draw those that have a counterpart here.
     from .entities import preview as preview_entities, replaces_environment
     if replaces_environment(scene):
