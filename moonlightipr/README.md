@@ -1,6 +1,6 @@
 # MoonLightIPR (experimental)
 
-*Updated October 9, 2026, for MoonRay for Modo 0.3.50.1. Sections that record a check keep the date it was made.*
+*Updated October 10, 2026. Releases 0.3.50.1 and 0.3.50.2 hold an earlier MoonLightIPR; what is described as added since is on the `MoonLightIPR` branch. Sections that record a check keep the date it was made.*
 
 Created by Raphael Tobar. Released under the [MIT License](LICENSE). MoonLightIPR is not a DreamWorks
 Animation product and is not affiliated with, sponsored by or endorsed by DreamWorks Animation;
@@ -13,7 +13,7 @@ MoonRay; the two are otherwise unrelated. Releases 0.3.50.1 and 0.3.50.2 showed 
 "MoonLight" and shipped it in a `moonlight` folder; the full name is used from then on so that
 the one is not taken for the other.
 
-MoonLightIPR is a small standalone OptiX path tracer intended as an interactive preview
+MoonLightIPR (it echoes DreamWorks' earlier rasterizer MoonLight) is a small standalone OptiX path tracer intended as an interactive preview
 engine beside MoonRay. It does not touch MoonRay's renderer. It is an approximation:
 one fixed uber-shader replaces MoonRay's materials, and final frames always come from
 MoonRay. It ships in the 0.3.50.1 release, in the runtime's `moonlightipr` folder, and is
@@ -331,6 +331,11 @@ Added to what is translated since the table was written:
   cylinder and distant lights are sampled where their picture is bright, which takes the noise
   out of a mostly dark picture; sphere and spot lights are sampled evenly.
   ![A picture on a sphere light](../docs/images/moonlightipr-textured_spherelight.jpg)
+- **Modo's shading models**: a Blinn or Ashikhmin material is a Beckmann highlight at the roughness and
+  strength that came closest to Modo's own renders, and a rough GTR one is weakened as Modo's is
+  (`tools/probe_shading_models.py`, `tools/check_shading_models.py`). Against Modo a highlight alone
+  is as bright to within one or two per cent for Blinn from a roughness of 0.2, Ashikhmin from 0.35
+  and GTR from 0.7; smoother highlights stay dimmer than Modo's.
 - **Imported MaterialX graphs**: UVs that nodes move, turn or scale, and arithmetic between
   images (one blended into another through a third, an image brought into a range, masks
   taken away), as a layer stack at the images' own sharpness.

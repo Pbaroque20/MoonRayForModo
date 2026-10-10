@@ -11,16 +11,27 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 [Download the packaged 0.3.50.2 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.50](docs/WHATS_NEW_0350.md)
 
+**Since 0.3.50.2, on the `MoonLightIPR` branch and not yet in a release:**
+
+- **MoonLightIPR draws more of what MoonRay draws**: hair as hair (MoonRay's hair material with its four lobes, glints and cuticles), MoonRay's skin material with light passing through thin parts, curves as true curves lit as MoonRay's ribbons or as round tubes, even fog in a MoonRay box or sphere, and a picture on every kind of light, sampled where it is bright.
+- **Modo's shading models**: Blinn and Ashikhmin highlights, and rough GTR, are matched to Modo's own renders by measurement, in MoonRay and in MoonLightIPR.
+- **The sun's disc of a physical sky** is drawn in Modo's own colour, with Disc In-Scatter, and no longer in the colour the sun lights the scene with.
+- **Assigning a MoonRay material** goes on the selected polygons when polygons are selected, and asks for a name, a kind, a colour and a smoothing angle, as Modo's own Set Material does.
+- **Graph editor and forms**: a large imported graph opens on its output and zooms from any size; a material's ramps open in the ramp editor from its properties; a projection's matrix is a move, a turn and a size.
+- **Preview**: with MoonLightIPR the buffer list holds its one picture, Denoised Beauty; a drag that changes the environment (a sky's sun, an environment light) is shown when the mouse button comes up.
+- **Light path expressions** have their own entry in the MoonRay menu and sit under Advanced in the render settings.
+- **Fixes to what MoonRay is given**: a MoonRay shape that holds a volume is written as a mesh, which MoonRay fills where it left its own box and sphere empty; hair with glints carries the number of each strand's own that MoonRay needs.
+
 ![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
 
 ## New in 0.3.50
 
-- **MoonLightIPR** (echoing MoonRay's previous rasterization renderer MoonLight), an approximate NVIDIA GPU preview engine, chosen in the preview window. It follows edits as they are made; output renders still use MoonRay. See [moonlightipr/README.md](moonlightipr/README.md).
+- **MoonLightIPR** (it echoes DreamWorks' earlier rasterizer MoonLight), an approximate NVIDIA GPU preview engine, chosen in the preview window. It follows edits as they are made; output renders still use MoonRay. See [moonlightipr/README.md](moonlightipr/README.md).
 - **MoonRay-specific items, added from the MoonRay menu**: 30 of MoonRay's own lights, light filters, cameras, shapes and volumes as Modo items (dwEnvLight, dwRectLight, dwSpotLight and the rest), each with its own properties form and a viewport proxy, for what Modo has no item for. VDB volumes load from a file.
 - **Import MoonRay Scene (RDL)**: a MoonRay scene comes in whole. Meshes keep their transforms and are instanced, curves come in as curves, lights and other MoonRay objects become MoonRay items, materials keep their graphs, and the scene's settings and outputs go to the render settings. A scene in two files (`scene.rdlb` and `scene.rdla`) is read as one. All ten of MoonRay's published example scenes re-render as the same picture after a trip through Modo.
 - **MaterialX import**: a `.mtlx` material becomes a material of its own kind in the Shader Tree, with controls for the values and images its file names.
-- **Curves and hair**: a mesh's curves render as tubes or ribbons, with width, taper and UVs along the length; hair can be grown from guide curves, held to a scalp mesh.
+- **Curves and hair**: a mesh's curves render as tubes or ribbons, with width, taper and UVs along the length; hair can be grown from guide curves, held to a scalp mesh. (In the releases MoonLightIPR draws them as tubes of polygons; on the branch they are true curves.)
 - **Modo parity for lights, daylight and standard materials**: Modo's lights, physically based daylight (with its sun disc) and the standard material's specular, roughness and Fresnel are translated by measurement against Modo's own renderer.
 - **A leaner preview window**: one toolbar with a single Render/Stop button, IPR, engine, buffer, exposure, region and a focus picker; render settings on the Render item; one-click Cryptomatte; a working time estimate.
 - **MoonRay materials on objects, in place of material overrides**: select a mesh and assign a MoonRay material to it. Each is a material of its own kind with its own properties form. The separate MoonShine and MaterialX override layers of earlier versions are no longer offered; scenes that hold them still load and render.
@@ -87,7 +98,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 ## Limitations
 
 - **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU; they have been exercised on an RTX 3090 only.
-- **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; it draws only even fog (no VDB volumes), and its hair, skin and curves follow MoonRay's closely but not exactly. Some light filters and textures on lights other than rect lights are left out; it lists what it leaves out in the preview's notices.
+- **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all. Its hair, skin and curves follow MoonRay's closely but not exactly; it draws only even fog (no VDB volumes, no volumes with ramps, none seen from inside); light beneath a surface is looked for down the surface's normal only; and rod, barn door, cookie and VDB light filters are left out. It lists what it leaves out in the preview's notices. The 0.3.50.2 release has none of the hair, skin, fog or true curves, and a picture on rect lights only.
 - **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is not remapped. A Modo material's smoothing angle is not read, so a box Modo draws with flat faces is smoothed unless the MoonRay material settings say otherwise. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy is untested, rough environment reflections come out dimmer in MoonRay, and remaining Shader Tree effects, some masks and light linking are not translated.
 - **MaterialX is a supported subset**: Standard Surface graphs made of images, arithmetic and UV transforms. OpenPBR and glTF surfaces, and nodes outside that subset, are not read.
 - **RDL import leaves some things out**, and names each in its report: motion (the scene comes in as it stands at shutter open), values that differ face by face or point by point, subdivision creases, authored normals, light linking and shadow sets, instancing from point files, and classes the plugin has no item for. Per-item values an imported scene brings render correctly but have no form in Modo yet. Opening a large scene's files takes minutes before the import proper begins.
@@ -97,7 +108,8 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 
 ## Still to implement
 
-- VDB volumes and volumes with ramps in MoonLightIPR.
+- VDB volumes and volumes with ramps in MoonLightIPR; rod, barn door, cookie and VDB light filters there; subsurface light found across a surface.
+- More of Modo's material: its smoothing angle, the Principled model's diffuse (which brightens with roughness in Modo), smooth highlights under every model, and a roughness driven by an image under Blinn and Ashikhmin.
 - One-click outputs for indirect diffuse and specular, shadows, albedo, subsurface and motion vectors.
 - OpenPBR and glTF MaterialX surfaces.
 - Per-face and per-point values (primitive attributes) on meshes, and a form for editing the values items carry.
