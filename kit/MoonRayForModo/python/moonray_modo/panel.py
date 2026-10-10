@@ -465,6 +465,8 @@ class Panel(Tools, QtWidgets.QWidget):
         attach_geometry(scene,values['production'])
         scene['custom_aovs']=values['custom_aovs']
         scene['recovery']=values['recovery']
+        # Kept out of a scene that does not ask for it, so that a checkpoint saved before still matches.
+        if values['deep']['enabled']:scene['deep']=values['deep']
         scene['preview_buffer'] = values['preview_buffer']
         scene['execution_mode'] = values['execution_mode']
         scene['denoising'] = values['denoising']

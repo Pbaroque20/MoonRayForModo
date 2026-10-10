@@ -14,6 +14,11 @@ MOONLIGHTIPR_STATUS = 'MoonLightIPR (GPU preview, approximate)'
 MOONLIGHTIPR_SAMPLES = 256
 
 
+def deep_beside(path):
+    """Where the deep EXR of a render goes: beside it, under its name."""
+    path=Path(path);return path.with_name(path.stem+'.deep.exr')
+
+
 class Renderer(QtCore.QObject):
     notices = QtCore.Signal(object)
     buckets = QtCore.Signal(object)
@@ -267,6 +272,12 @@ class Renderer(QtCore.QObject):
                 self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
                 raise ValueError('The selected runtime has no XPU GPU program/CUDA runtime. Choose the XPU runtime or CPU mode.')
+            snapshot.pop('_deep_file',None);self.deep_path=None
+            if request['output'] and (snapshot.get('deep') or {}).get('enabled'):
+                if snapshot.get('_recovery') or (snapshot.get('recovery') or {}).get('enabled'):
+                    snapshot.setdefault('warnings',[]).append('A deep EXR is not written while checkpoints are being saved; turn one of the two off.')
+                else:
+                    self.deep_path=self.current_base.with_suffix('.deep.exr');snapshot['_deep_file']=self.deep_path.as_posix()
             if request['output']:
                 from .recovery import prepare as prepare_recovery
                 snapshot['_recovery']=prepare_recovery(snapshot,request['output'],request['width'],request['height'],self.sample_grid,request['environment'],request['runtime'])
@@ -453,6 +464,9 @@ class Renderer(QtCore.QObject):
             destination = Path(self.active['output'])
             try:
                 if not self.original_published: self._publish(self.image_path,destination)
+                deep=getattr(self,'deep_path',None)
+                if deep is not None and deep.is_file():self._publish(deep,deep_beside(destination))
+                self.deep_path=None
             except OSError as exc:
                 self.failed.emit('Cannot save render: '+str(exc));return
             self.finished.emit(str(destination))

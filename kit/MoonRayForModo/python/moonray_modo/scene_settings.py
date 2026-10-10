@@ -17,6 +17,8 @@ DEFAULTS = {
     # A new scene outputs the object Cryptomatte, so the first render already has the mattes to look at.
     'custom_aovs': [{'name': 'crypto_object', 'kind': 'cryptomatte', 'category': 'object', 'depth': 6, 'precision': 0, 'filter': 0, 'part': '', 'expression': ''}], 'aovs': ['alpha'],
     'recovery': {'enabled': False, 'resume': True, 'minutes': 1.0},
+    # A deep EXR written beside the render: every surface and volume a pixel sees, each at its own depth.
+    'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
     'denoising': {'engine': 'off', 'preview': True, 'final': True},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
 }
@@ -30,7 +32,7 @@ def complete(stored):
     for key in DEFAULTS:
         if key in stored:
             held = copy.deepcopy(stored[key])
-            if isinstance(DEFAULTS[key], dict) and key in ('recovery', 'denoising'):
+            if isinstance(DEFAULTS[key], dict) and key in ('recovery', 'denoising', 'deep'):
                 result[key].update(held if isinstance(held, dict) else {})
             else:
                 result[key] = held
@@ -66,6 +68,7 @@ BACKGROUNDS = [('Scene environment', 'environment'), ('Black', 'black'), ('Solid
 SURFACES = [('As modeled', 0), ('Smooth subdivision', 1), ('Modo evaluated geometry', 2)]
 VIEWS = [('ACES (sRGB display)', 'aces'), ('sRGB', 'srgb'), ('Highlight compression + sRGB', 'reinhard'), ('Raw linear', 'raw'), ('OCIO display / view', 'ocio')]
 LUT_SPACES = [('After display transform', 'display'), ('Scene-linear, before view', 'linear')]
+DEEP_FORMATS = [('OpenEXR 2', 0), ('OpenDCX 2', 1)]
 MODES = [('Auto (XPU, Vector, Scalar)', 'auto'), ('XPU (NVIDIA GPU + CPU)', 'xpu'), ('Vector (CPU / AVX)', 'vectorized'), ('Scalar (CPU)', 'scalar')]
 
 # (group, starts collapsed, fields). A field of kind 'button' runs a command instead, and one of
@@ -164,6 +167,11 @@ GROUPS = [
     ]),
     ('Output Renders', True, [
         field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in Render EXR and animations'),
+        field('deep', ('deep', 'enabled'), 'bool', 'Save a Deep EXR', 'Written beside the render as name.deep.exr: every surface and volume a pixel sees, each at its own depth, for deep compositing'),
+        field('deep_format', ('deep', 'format'), 'choice', 'Deep Format', 'OpenEXR 2 opens everywhere. OpenDCX adds per-sample coverage masks, for compositors that read them', choices=DEEP_FORMATS),
+        field('deep_curvature', ('deep', 'curvature'), 'float', 'Deep Curvature Tolerance', 'Degrees a surface may curve within a pixel before it is split into more deep samples', 0.0, 180.0),
+        field('deep_z', ('deep', 'z'), 'float', 'Deep Depth Tolerance', 'How far a surface may run in depth within a pixel before it is split', 0.0, 1000000.0),
+        field('deep_volume', ('deep', 'volume'), 'int', 'Deep Volume Detail', 'Lower makes smaller files for volumes', 1, 1000),
         field('checkpoint', ('recovery', 'enabled'), 'bool', 'Save Checkpoints'),
         field('checkpoint_resume', ('recovery', 'resume'), 'bool', 'Resume Matching Checkpoint'),
         field('checkpoint_minutes', ('recovery', 'minutes'), 'float', 'Checkpoint Interval', 'Minutes', 0.1, 1440.0),

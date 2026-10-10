@@ -495,6 +495,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lines.append('  [%s] = %s,' % (string(key), number(value)))
         if key=='batch_tile_order':
             lines.extend('  [%s] = %s,'%(string(name),number(value)) for name in ('progressive_tile_order','checkpoint_tile_order'))
+    deep=scene.get('_deep_file') if output_file else None
+    if deep:
+        held=scene.get('deep') or {}
+        lines += ['  ["deep_format"] = %d,'%(1 if int(held.get('format',0))==1 else 0),
+                  '  ["deep_curvature_tolerance"] = %s,'%number(max(0.0,min(180.0,float(held.get('curvature',45.0))))),
+                  '  ["deep_z_tolerance"] = %s,'%number(max(0.0,float(held.get('z',2.0)))),
+                  '  ["deep_vol_compression_res"] = %d,'%max(1,min(1000,int(held.get('volume',10))))]
     recovery=scene.get('_recovery') if output_file else None
     if recovery:
         lines += ['  ["checkpoint_active"] = true,','  ["resumable_output"] = true,','  ["checkpoint_bg_write"] = false,',
@@ -556,6 +563,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value))
                       for attr, value in attributes.items()]
             lines.append('}')
+    if deep:
+        # The beauty again, as a deep image in a file of its own: a deep and a flat image cannot share one.
+        lines += ['RenderOutput("/modo/deep/beauty") {','  ["file_name"] = %s,'%string(str(deep)),'  ["output_type"] = "deep",','  ["result"] = 0,','}']
     preview_files=scene.get('preview_buffer_files',{})
     if not preview_files and scene.get('preview_buffer_file'):
         preview_files={scene.get('preview_buffer','beauty'):scene['preview_buffer_file']}
