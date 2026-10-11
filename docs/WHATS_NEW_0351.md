@@ -58,6 +58,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 - **One-click outputs** gain indirect diffuse and glossy, mirror reflections, subsurface, diffuse without shadows, albedo and motion vectors.
 - **Light path expressions** have presets, and an expression typed wrong is marked as you type, with what is wrong.
 - **Cast no shadow onto chosen objects**: for each object, in Light Links, Emitters and Volumes.
+- **Subsurface Neighbours** in a MoonRay material's properties: tick the objects whose surfaces should join in its subsurface light, so that no seam shows where two objects of one body meet (MoonRay's sss trace set). MoonRay only; the MoonLightIPR preview says so.
 - **MoonRay light items can be linked**: they are listed with Modo's lights in an object's Light Links.
 - **Imported MoonRay scenes keep their light, shadow and shadow receiver sets**, as each mesh's Light Links. Sets that differ between the parts of one shape, and light filter sets, are not carried and are named.
 - **OpenPBR and glTF surfaces** import from MaterialX files.

@@ -146,6 +146,8 @@ def material_values(material):
                                 'specular_fresnel':float(channel(material,'specFres',1)),
                                 'reflection_fresnel':float(channel(material,'reflFres',1)),
                                 'thin_geometry': settings.get('thin_geometry',False),
+                                # The objects whose surfaces join in this material's subsurface light: MoonRay's sss trace set.
+                                'sss_trace_set': sorted(str(v) for v in (settings.get('sss_trace_set') or [])),
                                 # Where a material says how its polygons are smoothed: 0 for flat, otherwise the angle within which
                                 # neighbours are smoothed together. None leaves the mesh to be smoothed as it otherwise would be.
                                 'smoothing_angle': (float(settings.get('smoothing_angle',40.0)) if settings['smoothing'] else 0.0) if settings.get('smoothing') is not None else None,

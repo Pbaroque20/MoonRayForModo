@@ -357,6 +357,18 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if found:
             lines.append('objectShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (string(identity), string('/modo/shadowReceivers/' + identity),
                                                                                     array('RdlMeshGeometry("/modo/mesh/%d")' % place for place in found)))
+    # The objects that join in a material's subsurface light, as MoonRay's trace set on the material: by default only
+    # the surface wearing the material does, which leaves a seam where two objects of one body meet.
+    from .shader_library import catalog as shader_catalog
+    for tag, material in sorted((scene.get('materials') or {}).items()):
+        joined = set(material.get('sss_trace_set') or []) if isinstance(material, dict) else set()
+        if not joined or 'sss_trace_set' not in shader_catalog().get(material.get('native_shader') or '', {}).get('attributes', {}):
+            continue
+        found = [place for place, held in enumerate(render_meshes) if held.get('faces') and 'instances' not in held
+                 and (held.get('source_item') or str(held.get('identity', '')).split('|')[0]) in joined]
+        if found:
+            lines.append('materials[%s] { ["sss_trace_set"] = TraceSet(%s)(%s) }' % (string(tag), string('/modo/traceSet/' + tag),
+                         array('{RdlMeshGeometry("/modo/mesh/%d"), ""}' % place for place in found)))
     for index, mesh in enumerate(render_meshes):
         vertices = mesh['vertices']
         faces = mesh['faces']

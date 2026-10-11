@@ -96,6 +96,11 @@ for i, shader in enumerate([''] + sorted(catalog)):
     made = ET.SubElement(smoothing, 'list', type='Control', val='cmd moonray.material.smoothing_angle ?')
     atom(made, 'Label', 'Angle (degrees)')
     atom(made, 'Tooltip', 'Edges sharper than this stay sharp. 180 smooths everything')
+    if 'sss_trace_set' in catalog[shader]['attributes']:
+        # MoonRay's sss trace set: the objects that join in this material's subsurface light.
+        made = ET.SubElement(form, 'list', type='Control', val='cmd moonray.material.neighbours')
+        atom(made, 'Label', 'Subsurface Neighbours...')
+        atom(made, 'Tooltip', 'Choose the objects whose surfaces join in this material\'s subsurface light, so that no seam shows where two objects of one body meet')
     groups = {}
     texturable = graph_images.offered(shader)
 
