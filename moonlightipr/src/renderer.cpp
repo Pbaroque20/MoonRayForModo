@@ -556,6 +556,18 @@ struct Renderer::Impl {
         params.lensAngle = camera.bladeAngle;
         params.cameraProjection = camera.projection <= 2 ? camera.projection : 0;
         std::copy(camera.projectionValues, camera.projectionValues + 4, params.cameraProjectionValues);
+        // Rows count upward from the picture's foot; the region's top and bottom are measured from its head.
+        const auto edge = [](float fraction, unsigned size) { return unsigned(std::lround(std::clamp(fraction, 0.0f, 1.0f) * float(size))); };
+        params.draft = camera.draft <= 2 ? camera.draft : 0;
+        params.region[0] = edge(camera.region[0], params.width);
+        params.region[2] = edge(camera.region[2], params.width);
+        params.region[1] = edge(1.0f - camera.region[3], params.height);
+        params.region[3] = edge(1.0f - camera.region[1], params.height);
+        if (params.region[2] <= params.region[0] || params.region[3] <= params.region[1]) {
+            params.region[0] = params.region[1] = 0;
+            params.region[2] = params.width;
+            params.region[3] = params.height;
+        }
     }
 
     // Material indices are followed on the GPU without bounds checks, so reject bad ones here.
@@ -674,6 +686,7 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     // MoonRay's defaults, including its sample_clamping_value.
     impl->params.maxDepth = 4;
     impl->params.maxDiffuseDepth = impl->params.maxGlossyDepth = 2;
+    impl->params.maxVolumeDepth = 1;
     impl->params.sampleClamp = 10.0f;
     std::vector<float> albedo = albedoTable(false);
     const std::vector<float> beckmann = albedoTable(true);
@@ -1190,6 +1203,7 @@ void Renderer::setLights(const Light* lights, size_t count) {
             std::copy(in.rows, in.rows + 12, filter.rows);
             std::copy(in.more, in.more + 12, filter.b);
             if (in.kind == LightFilter::Cookie) filter.texture = object(in.texture);
+            if (in.ramp >= 0 && (in.kind == LightFilter::Rod || in.kind == LightFilter::Vdb)) filter.ramp = object(in.ramp);
             if (in.kind == LightFilter::Vdb) {
                 if (in.texture < 0 || size_t(in.texture) >= impl->grids.size() || !impl->grids[in.texture] || impl->gridPeaks[in.texture] < 0.0f)
                     throw std::runtime_error("MoonLightIPR light filter refers to a missing grid");
@@ -1223,6 +1237,8 @@ void Renderer::setLights(const Light* lights, size_t count) {
             if (!(total > 0.0) || !std::isfinite(total)) throw std::runtime_error("MoonLightIPR mesh light has no area");
             for (size_t t = 0; t < light.triangleCount; ++t) triangles[triangleStart[i] + t * 10 + 9] /= float(total);
             triangles.back() = 1.0f;
+            // A mesh light has no cone; the number says instead whether the camera sees the surface shining.
+            out.pad = light.outerConeDegrees > 0.5f ? 1u : 0u;
             out.area = float(total);
             out.triangleCount = uint32_t(light.triangleCount);
             continue;
@@ -1331,7 +1347,8 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     impl->restart();
 }
 
-void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t glossyBounces) {
+void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t glossyBounces, uint32_t volumeBounces) {
+    impl->params.maxVolumeDepth = volumeBounces;
     impl->params.maxDepth = bounces;
     impl->params.maxDiffuseDepth = diffuseBounces;
     impl->params.maxGlossyDepth = glossyBounces;

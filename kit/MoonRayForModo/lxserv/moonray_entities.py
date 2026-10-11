@@ -190,7 +190,7 @@ def register():
         while label in taken:
             count+=1;label='%s %d'%(entities.display(name),count)
         item=scene.addItem(entities.item_type(name),name=label)
-        for key,value in entities.STARTING.get(name,{}).items():
+        for key,value in entities.starting(name).items():
             try:item.channel(entities.CHANNEL_PREFIX+key).set(value)
             except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
         return item.name
@@ -446,7 +446,7 @@ def register():
             scene=modo.Scene()
             item=scene.addItem(entities.item_type(name),name=entities.display(name))
             # MoonRay's own starting values make some items do nothing visible; begin with ones that show.
-            for key,value in entities.STARTING.get(name,{}).items():
+            for key,value in entities.starting(name).items():
                 try:item.channel(entities.CHANNEL_PREFIX+key).set(value)
                 except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
             if name=='VdbGeometry':

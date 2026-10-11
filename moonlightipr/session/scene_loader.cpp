@@ -170,6 +170,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     settings.width = in.value<uint32_t>();
     settings.height = in.value<uint32_t>();
     const uint32_t maxDepth = in.value<uint32_t>(), maxDiffuseDepth = in.value<uint32_t>(), maxGlossyDepth = in.value<uint32_t>();
+    const uint32_t maxVolumeDepth = in.value<uint32_t>();
     settings.targetSamples = in.value<uint32_t>();
     const uint32_t sceneFlags = in.value<uint32_t>();
     settings.denoise = (sceneFlags & SCENE_DENOISE) != 0;
@@ -187,6 +188,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     camera.bladeAngle = in.value<float>();
     camera.projection = in.value<uint32_t>();
     in.floats(camera.projectionValues, 4);
+    in.floats(camera.region, 4);
+    camera.draft = in.value<uint32_t>();
     // With motion blur, the camera again as it is when the shutter closes.
     Camera cameraClose = camera;
     if (sceneFlags & SCENE_MOTION) {
@@ -431,6 +434,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 filter.texture = image(named);
             }
             in.floats(filter.more, 12);
+            filter.ramp = image(in.value<int32_t>());
         }
         light.filters = lightFilters[l].data();
         light.filterCount = lightFilters[l].size();
@@ -624,7 +628,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         renderer.setEnvironment(environment);
         environmentHash = environmentNow;
     }
-    renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth);
+    renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth, maxVolumeDepth);
     if (settings.width != renderer.width() || settings.height != renderer.height()) renderer.resize(settings.width, settings.height);
     renderer.setCamera(camera);
     renderer.setCameraMotion(sceneFlags & SCENE_MOTION ? &cameraClose : nullptr);

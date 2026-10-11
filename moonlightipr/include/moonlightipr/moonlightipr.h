@@ -238,6 +238,7 @@ struct LightFilter {
     int32_t texture = -1;   // ramp: a 257 x 1 image of its colours from begin to end. Cookie: its picture. VDB: a grid from addGrid
     // Rod, barn door and cookie: the rest of what they are, as shared.h says of DeviceFilter::b.
     float more[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    int32_t ramp = -1;      // rod: a 257 x 1 image of how its edge fades. VDB: of what its densities are remapped to
 };
 
 // A sphere, rectangle, disc, spot, cylinder, portal or mesh light, as MoonRay's lights of the
@@ -283,6 +284,12 @@ struct Camera {
     // then the longitude as scale and offset over the picture's height and width.
     uint32_t projection = 0;
     float projectionValues[4] = {0, 0, 0, 0};
+    // The part of the picture to render, as fractions of it: left, top, right, bottom. The rest is black.
+    float region[4] = {0, 0, 1, 1};
+    // Draft: 0 for none; 1 draws what is outside the region as lines, in place of black; 2 draws the whole picture
+    // so. The lines are where one surface ends against another or turns a corner, as the camera sees them: white
+    // on black, for whoever shows the picture to ink as it likes.
+    uint32_t draft = 0;
 };
 
 // Every setter restarts accumulation. Errors are reported as std::runtime_error.
@@ -330,7 +337,7 @@ public:
     void resize(uint32_t width, uint32_t height);
     // Total bounces, and of those how many may leave a diffuse and a specular lobe, as
     // MoonRay's max_depth, max_diffuse_depth and max_glossy_depth.
-    void setMaxDepth(uint32_t bounces, uint32_t diffuseBounces = 2, uint32_t glossyBounces = 2);
+    void setMaxDepth(uint32_t bounces, uint32_t diffuseBounces = 2, uint32_t glossyBounces = 2, uint32_t volumeBounces = 1);
 
     // Adds one sample per pixel to the accumulated image.
     void render();

@@ -9,6 +9,10 @@ class Controls(QtWidgets.QDialog):
         self.values=copy.deepcopy(values);self.values.setdefault('objects',{});self.values.setdefault('lights',{})
         self.current={};self.fields={};self.selectors={};self.lists={};layout=QtWidgets.QVBoxLayout(self);tabs=QtWidgets.QTabWidget();layout.addWidget(tabs)
         scene=modo.Scene();lights=list(scene.items('light'));objects=list(scene.items('locator'));known={i.id for i in objects}
+        # MoonRay light items are lights to link too. A mesh light is its mesh, listed as a mesh emitter.
+        from . import entities
+        lights+=[i for i in objects if i.type.startswith(entities.TYPE_PREFIX) and i.type!=entities.item_type('MeshLight')
+                 and entities.catalog().get(i.type[len(entities.TYPE_PREFIX):],{}).get('category')=='light']
         for kind in ('mesh','meshInst','replicator','volume'):
             for item in scene.items(kind,superType=False):
                 if item.id not in known:objects.append(item);known.add(item.id)

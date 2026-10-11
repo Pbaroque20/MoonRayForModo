@@ -141,6 +141,15 @@ class Session(QtCore.QObject):
         elif not self.closed:
             self.failed.emit('MoonLightIPR exited (0x%08X). Refresh to start a new session; see Render Log.' % (code & 0xffffffff))
 
+    def finish(self):
+        """Stop sampling and have what is rendered so far sent as the finished picture. Returns whether there is a
+        render under way to finish; if there is, ready is reported as at the end of any render."""
+        self.latest = None
+        if not self.running() or self.stopping or self.closed or self.current is None or self.sent is not None:
+            return False
+        self.process.write(('finish %d\n' % self.current).encode('utf-8'))
+        return True
+
     def stop(self):
         """Stop sampling but keep the process and its loaded meshes, so the next preview starts at once."""
         self.latest = None; self.current = None

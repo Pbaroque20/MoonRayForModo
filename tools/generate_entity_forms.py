@@ -88,6 +88,26 @@ def nested(parent, key, label, collapsed=0, menu=False):
     return sheet(key, label)
 
 
+def ganged(parent, key, label):
+    """A run of number fields that Modo links with its own gang button, as it does a transform's scale: with the
+    button on, changing one changes the others with it, in proportion or to the same value."""
+    place = ET.SubElement(parent, 'list', type='Control', val='sub ' + key)
+    atom(place, 'Label', label)
+    atom(place, 'ShowLabel', 0)
+    atom(place, 'Style', 'gang')
+    atom(place, 'StartCollapsed', 0)
+    atom(place, 'Hash', key)
+    result = ET.SubElement(attributes, 'hash', type='Sheet', key=key)
+    atom(result, 'Label', label)
+    atom(result, 'ShowLabel', 0)
+    atom(result, 'Style', 'gang')
+    return result
+
+
+# The sizes of a thing that are changed together: its width and height, and its depth where it has one.
+SIZES = ('width', 'height', 'depth')
+
+
 # The menu: a submenu per kind of object. layout.cfg places this sheet in the kit's MoonRay menu.
 menu = sheet('MoonRayEntityMenu:sheet', 'Add MoonRay Item')
 categories = {}
@@ -148,6 +168,16 @@ for i, name in enumerate(sorted(catalog)):
             control(groups[group], 'moonray.entity.append%d_%d ?' % (i, j), 'add ' + one,
                     'Attach a %s: one already in the scene, or a new one made here' % one)
             control(groups[group], 'moonray.entity.remove%d_%d ?' % (i, j), 'attached ' + label, 'What is attached. Choose one to detach it; the item stays in the scene')
+        elif key in SIZES and all(side in catalog[name]['attributes'] for side in SIZES[:2]):
+            # Width and height (and depth) stand together under Modo's gang button, to be scaled as one.
+            if 'sizes' not in groups:
+                groups['sizes'] = ganged(groups[group], 'MoonRayEntity_%s_sizes:sheet' % name, 'Size')
+                # All of them now, in the order they are spoken of rather than that of the alphabet.
+                held = {k: c for k, c, _, _, _ in entities.channels(name)}
+                for side in SIZES:
+                    if side in held:
+                        about = catalog[name]['attributes'][side]
+                        control(groups['sizes'], 'item.channel %s$%s ?' % (entities.item_type(name), held[side]), about.get('label', side), brief(about.get('comment', '')))
         else:
             control(groups[group], channel_control, label, tip)
 ET.indent(config)

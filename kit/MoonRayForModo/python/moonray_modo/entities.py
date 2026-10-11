@@ -94,6 +94,19 @@ def validate(name, parameters):
     return result
 
 
+def starting(name):
+    """What a newly added item of a class starts with: the values above, with a light's intensity as the MoonRay page
+    of Modo's Preferences has it."""
+    held = dict(STARTING.get(name, {}))
+    if 'intensity' in held:
+        try:
+            from .preferences import Preferences
+            held['intensity'] = max(0.0, float(Preferences().get('light_intensity')))
+        except Exception:
+            pass
+    return held
+
+
 def item_type(name):
     return TYPE_PREFIX + name
 
@@ -496,11 +509,10 @@ def filter_records(entities, names, owner, warnings):
                             'density': min(1.0, max(0.0, float(value(entity, 'density')))),
                             'positions': stops, 'colors': colors, 'interpolations': modes})
         elif kind == 'RodLightFilter':
-            if entity['parameters'].get('ramp_in_distances'):
-                warnings.append('MoonLightIPR fades %s evenly over its edge, not by its own ramp.' % entity['name'])
             records.append(rod_record(entity.get('matrix', IDENTITY), *(float(value(entity, key)) for key in ('width', 'height', 'depth', 'radius', 'edge')),
                                       [c * float(value(entity, 'intensity')) for c in working_color(value(entity, 'color'))],
-                                      float(value(entity, 'density')), bool(value(entity, 'invert'))))
+                                      float(value(entity, 'density')), bool(value(entity, 'invert')),
+                                      ramp_lists(entity, 'ramp_in_distances', 'ramp_out_distances', 'ramp_interpolation_types', None)))
         elif kind == 'BarnDoorLightFilter':
             if int(value(entity, 'pre_barn_mode')) != 2:
                 warnings.append('MoonLightIPR leaves out what %s does to light before it reaches the doors.' % entity['name'])
@@ -515,31 +527,50 @@ def filter_records(entities, names, owner, warnings):
         elif kind == 'VdbLightFilter':
             if not value(entity, 'vdb_map'):
                 continue
-            if float(value(entity, 'blur_value')) > 0 or entity['parameters'].get('density_remap_inputs') or value(entity, 'density_rescale_enable'):
-                warnings.append('MoonLightIPR shows %s without its blur and its density remap.' % entity['name'])
+            # What its densities are remapped to: MoonRay's ramp, stretched to the ranges given where that is asked.
+            remap = ramp_lists(entity, 'density_remap_inputs', 'density_remap_outputs', 'density_remap_interpolation_types', None)
+            if remap is not None and value(entity, 'density_rescale_enable'):
+                low, high = float(value(entity, 'density_remap_input_min')), float(value(entity, 'density_remap_input_max'))
+                out_low, out_high = float(value(entity, 'density_remap_output_min')), float(value(entity, 'density_remap_output_max'))
+                if low >= high:
+                    low, high = 0.0, 1.0
+                if out_low >= out_high:
+                    out_low, out_high = 0.0, 1.0
+                remap = [[v * (high - low) + low for v in remap[0]], [v * (out_high - out_low) + out_low for v in remap[1]], remap[2]]
             records.append({'kind': 'vdb', 'file': str(value(entity, 'vdb_map')), 'grid': str(value(entity, 'density_grid_name') or ''), 'matrix': entity.get('matrix', IDENTITY),
-                            'tint': working_color(value(entity, 'color_tint')), 'invert': bool(value(entity, 'invert_density'))})
+                            'tint': working_color(value(entity, 'color_tint')), 'invert': bool(value(entity, 'invert_density')), 'remap': remap,
+                            'blur': max(0.0, float(value(entity, 'blur_value'))), 'round': int(value(entity, 'blur_type')) == 1})
         elif kind == 'CookieLightFilter_v2':
-            if entity['parameters'].get('projector'):
-                warnings.append('MoonLightIPR does not apply %s, which is thrown from a camera item (%s on %s).' % (kind, entity['name'], owner))
-                continue
-            if any(float(value(entity, key)) > 0 for key in ('blur_near_value', 'blur_mid_value', 'blur_far_value')):
-                warnings.append('MoonLightIPR shows %s without its blur.' % entity['name'])
             if not value(entity, 'texture'):
                 continue
-            records.append(cookie_record(entity.get('matrix', IDENTITY), str(value(entity, 'texture')), float(value(entity, 'projector_focal')),
-                                         float(value(entity, 'projector_film_width_aperture')), float(value(entity, 'projector_pixel_aspect_ratio')),
-                                         float(value(entity, 'density')), bool(value(entity, 'invert')), int(value(entity, 'outside_projection')),
-                                         int(value(entity, 'projector_type')) == 1))
+            # Thrown from its own place, or from a camera item's: that camera's place, focal length and film.
+            placed, focal, film, aspect, flat = (entity.get('matrix', IDENTITY), float(value(entity, 'projector_focal')), float(value(entity, 'projector_film_width_aperture')),
+                                                 float(value(entity, 'projector_pixel_aspect_ratio')), int(value(entity, 'projector_type')) == 1)
+            named = entity['parameters'].get('projector')
+            if named:
+                cameras = [e for e in entities if named in (e['name'], e['identity']) and e['class'] in ('PerspectiveCamera', 'OrthographicCamera')]
+                if len(cameras) != 1:
+                    warnings.append('MoonLightIPR does not apply %s: its projector %s is not one perspective or orthographic camera item (%s on %s).' % (kind, named, entity['name'], owner))
+                    continue
+                camera = cameras[0]
+                placed, flat = camera.get('matrix', IDENTITY), camera['class'] == 'OrthographicCamera'
+                film = float(value(camera, 'film_width_aperture'))
+                if not flat:
+                    focal = float(value(camera, 'focal'))
+                aspect = float(value(camera, 'pixel_aspect_ratio') or 1.0)
+            records.append(cookie_record(placed, str(value(entity, 'texture')), focal, film, aspect,
+                                         float(value(entity, 'density')), bool(value(entity, 'invert')), int(value(entity, 'outside_projection')), flat,
+                                         [float(value(entity, key)) for key in ('blur_near_distance', 'blur_midpoint', 'blur_far_distance', 'blur_near_value', 'blur_mid_value', 'blur_far_value')],
+                                         int(value(entity, 'blur_type')) == 1))
         else:
             warnings.append('MoonLightIPR does not apply %s (%s on %s).' % (kind, entity['name'], owner))
     return records
 
 
-def rod_record(matrix, width, height, depth, radius, edge, color, density, invert):
+def rod_record(matrix, width, height, depth, radius, edge, color, density, invert, fade=None):
     """MoonRay's RodLightFilter: a box with rounded corners, in whose own space a point's distance from it is taken."""
     return {'kind': 'rod', 'rows': inverse_rows(matrix), 'corner': [abs(width) / 2, abs(height) / 2, abs(depth) / 2], 'radius': radius, 'edge': max(0.0, edge),
-            'color': [float(c) for c in color], 'density': min(1.0, max(0.0, density)), 'invert': invert}
+            'color': [float(c) for c in color], 'density': min(1.0, max(0.0, density)), 'invert': invert, 'fade': fade}
 
 
 # MoonRay turns a barn door half way round its x axis, as it does its lights: the doors then face the way the light shines.
@@ -584,7 +615,7 @@ def barn_rows(record, light_matrix):
     return turned
 
 
-def cookie_record(matrix, texture, focal, film, aspect, density, invert, outside, orthographic):
+def cookie_record(matrix, texture, focal, film, aspect, density, invert, outside, orthographic, blur=None, round_blur=False):
     """MoonRay's CookieLightFilter_v2 thrown from its own place: rows give a point's place across the picture, up
     it, and what both are divided by. The projector looks along its own -z."""
     rows = inverse_rows(matrix)
@@ -601,7 +632,8 @@ def cookie_record(matrix, texture, focal, film, aspect, density, invert, outside
         made = [[scale * a - .5 * c for a, c in zip(rows[0], rows[2])], [scale * aspect * b - .5 * c for b, c in zip(rows[1], rows[2])], [-v for v in rows[2]]]
         front = None
     return {'kind': 'cookie', 'rows': made, 'front': front, 'texture': texture, 'density': min(1.0, max(0.0, density)), 'invert': invert,
-            'white': outside == 1, 'edgeless': outside == 2}
+            'white': outside == 1, 'edgeless': outside == 2, 'place': [float(v) for v in matrix[12:15]], 'blur': blur or [0.0, .5, 1.0, 0.0, 0.0, 0.0],
+            'round': round_blur}
 
 
 # ---- Mesh lights -------------------------------------------------------------------------------
@@ -632,7 +664,9 @@ def mesh_lights(scene, warnings=None):
         if entity['parameters'].get('light_filters') or entity['parameters'].get('map_shader'):
             warnings.append('Mesh light %s is exported without its light filters and map shader.' % label)
         owner = owners.pop()
+        # The mesh is seen shining unless the item's Visible in Camera is forced off (0).
         objects[owner] = dict(objects.get(owner, {}), mesh_light=True, light_color=value(entity, 'color'),
+                              light_seen=int(value(entity, 'visible_in_camera')) != 0,
                               light_intensity=float(value(entity, 'intensity')) * 2 ** float(value(entity, 'exposure')))
     production['objects'] = objects
     return dict(scene, production=production, entities=[e for e in scene['entities'] if e['class'] != 'MeshLight'])
@@ -792,9 +826,16 @@ def block(entities, entity, extra=()):
     return name, lines + ['}']
 
 
-def emit_lights(scene, lines):
-    """Light filters, then the lights that may use them, into the scene's light table."""
+def emit_lights(scene, lines, refs=None):
+    """Light filters, then the lights that may use them, into the scene's light table. refs, where given, is told
+    each light by its item, for an object's Light Links to name it."""
     entities = checked(scene)
+    # A camera a filter throws its picture from is written too: named only, MoonRay would stand a camera of its own
+    # making at the middle of the scene.
+    thrown = {entity['parameters'].get('projector') for entity in entities if catalog()[entity['class']]['category'] == 'lightfilter'} - {None, ''}
+    for entity in entities:
+        if catalog()[entity['class']]['category'] == 'camera' and thrown & {entity['name'], entity['identity']}:
+            lines += block(entities, entity)[1]
     for entity in entities:
         if catalog()[entity['class']]['category'] == 'lightfilter':
             lines += block(entities, entity)[1]
@@ -802,6 +843,8 @@ def emit_lights(scene, lines):
         if catalog()[entity['class']]['category'] == 'light':
             name, body = block(entities, entity)
             lines += body + ['table.insert(lights, %s)' % name]
+            if refs is not None:
+                refs.setdefault(entity['identity'], []).append(name)
 
 
 def emit_geometry(scene, materials, lines):

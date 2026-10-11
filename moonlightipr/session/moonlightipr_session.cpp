@@ -6,6 +6,7 @@
 // Commands arrive on standard input, one per line:
 //   scene <generation> <path>   load a packed scene and restart accumulation
 //   pause                       stop sampling but keep everything loaded
+//   finish <generation>         stop sampling and send what is rendered so far as the finished picture
 //   quit
 // Events leave on standard output, in the form the MoonRay session already uses:
 //   @@MODO_SESSION APPLIED <generation>    the scene is loaded
@@ -79,6 +80,16 @@ int main(int argc, char** argv) {
         ModoSharedImage sharedImage;
         std::vector<float> pixels;
 
+        // The scene last applied, for a finish to send as it stands.
+        moonlightipr::SceneSettings lastSettings;
+        std::string lastGeneration;
+        auto send = [&](const moonlightipr::SceneSettings& settings, const std::string& generation) {
+            if (!sharedImage.ready()) return false;
+            if (settings.denoise) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+            return sharedImage.publish(generation, "beauty", settings.width, settings.height,
+                [&](size_t i, float* rgb) { rgb[0] = pixels[i * 3]; rgb[1] = pixels[i * 3 + 1]; rgb[2] = pixels[i * 3 + 2]; });
+        };
+
         for (;;) {
             std::istringstream command(commands.next());
             std::string verb, generation, path;
@@ -86,6 +97,15 @@ int main(int argc, char** argv) {
             std::getline(command >> std::ws, path);     // a path may contain spaces
             if (verb == "quit") return 0;
             if (verb == "pause") continue;      // stop sampling; the loaded scene stays for the next one
+            if (verb == "finish") {
+                // Stopped by the user, who wants what there is: sent whole, and reported as done.
+                if (!lastGeneration.empty() && generation == lastGeneration && renderer.sampleCount() > 0) {
+                    while (!commands.waiting() && !send(lastSettings, generation))
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    if (!commands.waiting()) event("DONE", generation);
+                }
+                continue;
+            }
             if (verb != "scene" || generation.empty() || path.empty()) {
                 std::cerr << "MoonLightIPR ignored an unknown command" << std::endl;
                 continue;
@@ -99,6 +119,8 @@ int main(int argc, char** argv) {
                 continue;
             }
             event("APPLIED", generation);
+            lastSettings = settings;
+            lastGeneration = generation;
 
             pixels.resize(size_t(settings.width) * settings.height * 3);
             auto lastFrame = std::chrono::steady_clock::now();

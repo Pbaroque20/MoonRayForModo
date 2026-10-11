@@ -19,7 +19,7 @@ DEFAULTS = {
     'recovery': {'enabled': False, 'resume': True, 'minutes': 1.0},
     # A deep EXR written beside the render: every surface and volume a pixel sees, each at its own depth.
     'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
-    'denoising': {'engine': 'off', 'preview': True, 'final': True},
+    'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
 }
 
@@ -125,6 +125,7 @@ GROUPS = [
         field('denoiser', ('denoising', 'engine'), 'choice', 'Denoiser', '', choices=DENOISERS),
         field('denoise_preview', ('denoising', 'preview'), 'bool', 'Denoise Preview'),
         field('denoise_final', ('denoising', 'final'), 'bool', 'Save Denoised EXR', 'Written beside the original EXR, which is kept'),
+        field('denoise_safe', ('denoising', 'safe'), 'bool', 'Safe Denoising', 'Stop a MoonRay render at any time and keep it: the picture so far is saved every few seconds, and on Stop it is finished and denoised as a whole render is'),
     ]),
     ('Lighting', True, [
         field('light_multiplier', ('light_multiplier',), 'float', 'Light Multiplier', 'Scales every Modo light', 0.0, 10000.0),

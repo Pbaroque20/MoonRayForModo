@@ -6,6 +6,7 @@ preferences.py; output renders, exports and the scene dialogs are in panel_tools
 """
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import host, options, properties, scene_settings
+import functools
 import lx
 from .render import Renderer
 from .viewer import Preview
@@ -65,6 +66,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.customContextMenuRequested.connect(lambda point:self._image_menu(point).exec_(self.preview.mapToGlobal(point)))
         self.preview.installEventFilter(self)
         self.preview.start_requested.connect(self.start_render)
+        self.preview.region_drawn.connect(self._region_drawn)
+        self.preview.hovered.connect(self._probe)
+        self.preview.set_gamma(self.preferences.get('display_gamma'))
         self.preview.set_worker_overlay(self.preferences.get('worker_tiles'))
         self.preview.set_show_buckets(self.preferences.get('show_buckets'))
         layout.addWidget(self.preview, 1)
@@ -85,6 +89,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.image_ready.connect(self._image)
         self.renderer.image_object.connect(self._image)
         self.renderer.finished.connect(self._finished)
+        self.renderer.stopped.connect(self._stopped_plain)
         self.renderer.notices.connect(self._engine_notices)
         self._engine_changed(0)
         self._poll()
@@ -98,32 +103,31 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_engine.currentIndexChanged.connect(self._preview_changed)
         self.ipr_mode.toggled.connect(self._ipr_changed)
         self.poll_timer.start()
+        # Where the preferences ask for it, a preview starts as the window opens.
+        if self.preferences.get('render_on_open'):QtCore.QTimer.singleShot(800,lambda:None if self.disposed or self._rendering or self._following else self.start_render())
 
     # The window's own controls
 
     def _toolbar(self):
-        row = QtWidgets.QHBoxLayout();row.setSpacing(6)
+        row = QtWidgets.QHBoxLayout();row.setSpacing(4)
         self.start = QtWidgets.QPushButton('Render')
         self.start.setToolTip(RENDER_TIP)
-        self.start.setMinimumWidth(72)
         # One button: it starts a preview, and while one runs or IPR is watching, it stops it.
         self.start.clicked.connect(self._render_or_stop)
         row.addWidget(self.start)
-        self.ipr_mode=QtWidgets.QCheckBox('IPR')
-        self.ipr_mode.setToolTip('With IPR on, Render keeps following the scene as it is edited, until Stop.')
+        # Called Live, so that it is not taken for the MoonLightIPR engine in the list beside it.
+        self.ipr_mode=QtWidgets.QCheckBox('Live')
+        self.ipr_mode.setToolTip('With Live on, Render keeps following the scene as it is edited, until Stop.')
         self.ipr_mode.setChecked(self.preferences.get('ipr'))
         row.addWidget(self.ipr_mode)
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
         self.preview_engine.addItem('MoonLightIPR', 'moonlightipr')
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(self.preferences.get('preview_engine'))))
-        self.preview_engine.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
-        self.preview_engine.setMinimumWidth(130)
         self.preview_engine.setToolTip('MoonLightIPR is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
-        self.camera=QtWidgets.QComboBox();self.camera.setMinimumWidth(150)
-        self.camera.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.camera=QtWidgets.QComboBox()
         self.camera.setToolTip('The camera the scene is rendered through. MoonRay camera items are added from MoonRay > Add MoonRay Item.')
         self.camera.activated.connect(self._camera_chosen)
         row.addWidget(self.camera)
@@ -133,14 +137,51 @@ class Panel(Tools, QtWidgets.QWidget):
         for key,(label,attributes,channel) in options.AOVS.items():
             self.buffer.addItem(label,key)
         self.buffer.setToolTip('The render buffer shown. Switching does not restart the render.')
-        row.addWidget(self.buffer,1)
+        row.addWidget(self.buffer)
+        row.addSpacing(5)
+        # Exposure and gamma: each a button that puts it back as it was, and its value beside it.
+        reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click to put it back to 0.')
+        reset.clicked.connect(lambda:self.exposure.setValue(0.0));row.addWidget(reset)
         self.exposure=QtWidgets.QDoubleSpinBox();self.exposure.setRange(-20,20);self.exposure.setSingleStep(.25)
-        self.exposure.setPrefix('EV ');self.exposure.setKeyboardTracking(False)
+        self.exposure.setKeyboardTracking(False)
         self.exposure.setToolTip('Display exposure in stops. The rendered values are not changed.')
         self.exposure.valueChanged.connect(lambda value:self.display_timer.start())
         row.addWidget(self.exposure)
-        self.region_enabled=QtWidgets.QCheckBox('Region')
-        self.region_enabled.setToolTip('Render only the region set in the Render item\'s MoonRay properties.')
+        reset=QtWidgets.QToolButton();reset.setText('Gamma');reset.setToolTip('Viewing gamma. Click to put it back to 1.')
+        reset.clicked.connect(lambda:self.gamma.setValue(1.0));row.addWidget(reset)
+        self.gamma=QtWidgets.QDoubleSpinBox();self.gamma.setRange(.1,5.0);self.gamma.setSingleStep(.05);self.gamma.setDecimals(2)
+        self.gamma.setValue(self.preferences.get('display_gamma'))
+        self.gamma.setToolTip('A gamma for looking at the picture, after its view transform: above 1 lifts the shadows, below 1 deepens them.\nIt is kept with this window, not with the scene, and changes neither the render nor a saved EXR.')
+        self.gamma.valueChanged.connect(self._gamma_changed)
+        row.addWidget(self.gamma)
+        row.addSpacing(5)
+        # One channel of the picture at a time: its red, green or blue as greys, or its alpha. A button pressed is
+        # lit in its own colour; pressed again it goes out and the whole picture is back.
+        self.channels={}
+        for key,label,lit,ink,tip in (('r','R','#c0392b','#ffffff','Show the red channel alone, as greys. Click again for the whole picture.'),
+                                      ('g','G','#2e9e4f','#ffffff','Show the green channel alone, as greys. Click again for the whole picture.'),
+                                      ('b','B','#2f6fd0','#ffffff','Show the blue channel alone, as greys. Click again for the whole picture.'),
+                                      ('a','A','#e8e8e8','#101010','Show the alpha channel. Click again for the whole picture.')):
+            button=QtWidgets.QToolButton();button.setText(label);button.setCheckable(True);button.setToolTip(tip)
+            button.setStyleSheet('QToolButton:checked { background-color: %s; color: %s; border: 1px solid %s; border-radius: 3px; }'%(lit,ink,lit))
+            button.clicked.connect(functools.partial(self._channel_clicked,key))
+            self.channels[key]=button;row.addWidget(button)
+        self._before_alpha=None
+        row.addSpacing(5)
+        # Draft: the scene as plain lines, which costs nothing to show, for a region to be drawn on and rendered.
+        self.draft=QtWidgets.QToolButton();self.draft.setText('Draft');self.draft.setCheckable(True)
+        self.draft.setStyleSheet('QToolButton:checked { background-color: #b7a6d9; color: #101010; border: 1px solid #b7a6d9; border-radius: 3px; }')
+        self.draft.setToolTip('Show the scene as simple outlines, drawn by MoonLightIPR on the graphics card, and render nothing until a region is drawn with Region: then only that region is rendered, by the engine chosen, among the lines.')
+        self.draft.toggled.connect(self._draft_toggled)
+        self._draft_image=None;self._draft_render=None;self._draft_engine=False;self._draft_size=(0,0);self._draft_fine=(0,0)
+        # The last whole frame shown and the last region rendered, to put back without rendering; and whether
+        # pictures the engine goes on sending are kept off the view until something is rendered anew.
+        self._whole=None;self._part=None;self._held=False
+        row.addWidget(self.draft)
+        # A button as the channels' are: lit while only a region is rendered and a drag in the picture draws it.
+        self.region_enabled=QtWidgets.QToolButton();self.region_enabled.setText('Region');self.region_enabled.setCheckable(True)
+        self.region_enabled.setStyleSheet('QToolButton:checked { background-color: #e08a1e; color: #101010; border: 1px solid #e08a1e; border-radius: 3px; }')
+        self.region_enabled.setToolTip('Render only a region of the frame: drag in the picture to draw it. Click again for the whole frame.')
         self.region_enabled.toggled.connect(self._region_toggled)
         row.addWidget(self.region_enabled)
         self.focus_pick=QtWidgets.QToolButton();self.focus_pick.setText('Focus');self.focus_pick.setCheckable(True)
@@ -149,9 +190,27 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.focus_pick)
         gear=self.options_button=QtWidgets.QToolButton();gear.setText('Options');gear.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         gear.setMenu(self._options_menu())
-        # Room for the menu arrow beside the word, which it otherwise covers.
-        gear.setMinimumWidth(gear.fontMetrics().horizontalAdvance('Options')+40)
+        # Everything stands together from the left, in groups; what room is over is at the right.
+        row.addSpacing(5)
         row.addWidget(gear)
+        row.addStretch(1)
+        # One height for everything in the row, and no more width than each needs: a button is as wide as its word,
+        # a channel's is square, and the lists give way first when the window is narrow.
+        high=24
+        def wide(widget,text,room=14):return widget.fontMetrics().horizontalAdvance(text)+room
+        for i in range(row.count()):
+            widget=row.itemAt(i).widget()
+            if widget is None:continue
+            widget.setFixedHeight(high)
+            if isinstance(widget,QtWidgets.QToolButton):
+                widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text()))
+            elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
+        self.start.setFixedWidth(wide(self.start,'Render',36))
+        # Room for the menu arrow beside the word, which it otherwise covers.
+        gear.setFixedWidth(wide(gear,'Options',34))
+        for combo,least,most in ((self.preview_engine,96,124),(self.camera,96,170),(self.buffer,96,150)):
+            combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+            combo.setMinimumWidth(least);combo.setMaximumWidth(most)
         return row
 
     def _options_menu(self):
@@ -198,22 +257,51 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
+        # The outputs of the last finished MoonRay preview, each as a picture of its own. MoonLightIPR has the one.
+        batch=menu.addAction('Export AOVs as Images...',self.export_buffers)
+        batch.setEnabled(self.preview_engine.currentData()!='moonlightipr')
+        if not batch.isEnabled():batch.setToolTip('MoonLightIPR renders the one picture; choose MoonRay for its outputs.')
+        if getattr(self,'_continuable',None) is not None and not self._rendering:
+            # Continue is what the button offers; this is the other choice. It throws the stopped render away, so it
+            # stands last and apart, and asks before it does.
+            menu.addSeparator()
+            menu.addAction('Render from the Start...',self._render_afresh)
+        menu.setToolTipsVisible(True)
         return menu
 
     def _status_line(self):
+        # Three cells of one width, as a table of one row: the probe, the status, and the picture's details. What is
+        # written in one never moves another.
         row=QtWidgets.QHBoxLayout();row.setSpacing(10)
+        cells=[]
+        for _ in range(3):
+            cell=QtWidgets.QWidget();cell.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
+            inside=QtWidgets.QHBoxLayout(cell);inside.setContentsMargins(0,0,0,0);inside.setSpacing(8)
+            row.addWidget(cell,1);cells.append(inside)
+        left,middle,right=cells
         self.status = QtWidgets.QLabel('Ready')
         # A long message is cut short rather than widening the window.
         self.status.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
-        row.addWidget(self.status,1)
+        # What is under the pointer: its place in the picture and its values, at the row's left end.
+        self.probe=QtWidgets.QLabel('');self.probe.setTextFormat(QtCore.Qt.RichText)
+        self.probe.setToolTip('The pixel under the pointer: its place from the top left, then red, green, blue and alpha.\nLinear values are the render\'s own, before the view transform; display values are what is on screen.')
+        # And its colour as it is on screen, in a small square beside the numbers.
+        self.swatch=QtWidgets.QLabel('');self.swatch.setFixedSize(14,14);self.swatch.setVisible(False)
+        left.addWidget(self.swatch)
+        left.addWidget(self.probe)
+        left.addStretch(1)
+        # The status is in the middle of the row, between the probe and the picture's details.
+        self.status.setAlignment(QtCore.Qt.AlignCenter)
+        middle.addWidget(self.status,1)
         self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
-        row.addWidget(self.image_info)
+        right.addStretch(1)
+        right.addWidget(self.image_info)
         self.render_timing=QtWidgets.QLabel('');self.render_timing.setEnabled(False)
-        row.addWidget(self.render_timing)
+        right.addWidget(self.render_timing)
         self.notice_toggle=QtWidgets.QToolButton();self.notice_toggle.setText('Notices (0)');self.notice_toggle.setCheckable(True);self.notice_toggle.setAutoRaise(True)
         self.notice_toggle.setToolTip('What the renderer could not carry over from the scene')
         self.notice_toggle.toggled.connect(lambda visible:self.warnings.setVisible(visible))
-        row.addWidget(self.notice_toggle)
+        right.addWidget(self.notice_toggle)
         return row
 
     def _focus_armed(self,armed):
@@ -271,10 +359,130 @@ class Panel(Tools, QtWidgets.QWidget):
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
 
-    def _region_toggled(self,enabled):
-        if enabled==self._settings_values()['region_enabled']:return
-        self._store(region_enabled=bool(enabled))
+    def _gamma_changed(self,value):
+        self.preferences.set('display_gamma',float(value))
+        self.preview.set_gamma(value)
+
+    def _channel_clicked(self,key,*_):
+        """A channel's button pressed: lit, it shows that channel; pressed again, the whole picture."""
+        self._channel_chosen(key if self.channels[key].isChecked() else 'rgb')
+
+    def _channel_chosen(self,channel):
+        """One colour is the picture's own channel shown as greys; alpha is the render's alpha output, shown in the
+        picture's place; 'rgb' is the whole picture again."""
+        if channel=='a':
+            index=self.buffer.findData('alpha')
+            if index<0 or self.buffer.view().isRowHidden(index):
+                self.status.setText('This engine gives the preview no alpha; choose MoonRay to see it.')
+                channel='rgb'
+            elif self.buffer.currentData()!='alpha':
+                self._before_alpha=self.buffer.currentData()
+        # Only the one chosen is lit.
+        for key,button in self.channels.items():button.setChecked(key==channel)
+        if channel=='a':
+            self.buffer.setCurrentIndex(self.buffer.findData('alpha'));self.preview.set_channel('rgb');return
+        if self._before_alpha is not None and self.buffer.currentData()=='alpha':
+            self.buffer.setCurrentIndex(max(0,self.buffer.findData(self._before_alpha)))
+        self._before_alpha=None
+        self.preview.set_channel(channel)
+
+    def _region_drawn(self,left,top,right,bottom):
+        """A rectangle dragged in the picture is the region to render."""
+        region=[round(min(1.0,max(0.0,v)),4) for v in (left,top,right,bottom)]
+        if region[2]-region[0]<.005 or region[3]-region[1]<.005:return
+        self._store(region=region,region_enabled=True)
+        self.preview.set_region(region,True)
+        self.status.setText('Region set: %d%% to %d%% across, %d%% to %d%% down.'%(region[0]*100,region[2]*100,region[1]*100,region[3]*100))
         if self._following:self.preview_timer.start()
+        # In draft, drawing the region is asking for it to be rendered.
+        elif self.draft.isChecked():self.render_once()
+
+    def _draft_toggled(self,enabled):
+        """Draft on: lines in place of a render, and the whole frame kept in view. Off: the render again."""
+        from . import draft
+        self.preview.whole=bool(enabled)
+        self.preview.paper=draft.PAPER if enabled else None
+        if enabled:
+            if self._following:self.preview_timer.start()
+            else:self.render_once()
+            return
+        self._draft_image=self._draft_render=None;self._draft_engine=False;self.preview.nominal=None
+        if self._whole is not None:
+            # A render made before is shown again as it was; nothing is rendered until the scene changes.
+            self._paste();self.preview.fit()
+            self.status.setText('Draft off.');return
+        self.preview.fit()
+        if self._following:self.preview_timer.start()
+        else:self.status.setText('Draft off. Press Render for the picture.')
+
+    def _draft_region(self):
+        values=self._settings_values()
+        region=values['region'] if values['region_enabled'] else None
+        return tuple(region) if region and tuple(region)!=(0.0,0.0,1.0,1.0) else None
+
+    def _draft_show(self):
+        """The lines, with the last render of the region now set laid on them."""
+        from . import draft
+        region=self._draft_region()
+        rendered=self._draft_render[1] if self._draft_render and self._draft_render[0]==region else None
+        self.preview.set_image(draft.over(self._draft_image,rendered,region))
+        self.image_info.setText('%d x %d | Draft'%self._draft_size)
+
+    def _probe(self,x,y):
+        """Say what is under the pointer: the render's own linear values where they are held, else what is on screen."""
+        if x<0 or self.preview.image.isNull():
+            self.probe.setText('');self.swatch.setVisible(False);return
+        # A draft is drawn finer than it is spoken of: the place given is found again in the picture as it is drawn.
+        named=self.preview.nominal or (self.preview.image.width(),self.preview.image.height())
+        shown=QtGui.QColor(self.preview.image.pixel(min(self.preview.image.width()-1,x*self.preview.image.width()//named[0]),min(self.preview.image.height()-1,y*self.preview.image.height()//named[1])))
+        self.swatch.setStyleSheet('background-color: %s; border: 1px solid #101010;'%shown.name());self.swatch.setVisible(True)
+        import struct
+        frame=self.renderer.buffers.displayed or {}
+        def linear(key,count):
+            # A buffer held in memory is rows of three floats, the bottom row first.
+            held=(frame.get('linear') or {}).get(key) or ((self.renderer.buffers.progressive_frames.get(key) or {}).get('linear') or {}).get(key)
+            if not held or (held[0],held[1])!=(self.preview.image.width(),self.preview.image.height()):return None
+            try:return struct.unpack_from('<3f',held[2],((held[1]-1-y)*held[0]+x)*12)[:count]
+            except struct.error:return None
+        values=linear(frame.get('key','beauty'),3)
+        alpha=linear('alpha',1)
+        kind='linear'
+        if values is None:
+            values,kind=(shown.redF(),shown.greenF(),shown.blueF()),'display'
+        # Each value in its own colour: red, green, blue, and alpha in white.
+        parts=['<span style="color:#8a8f99">%d, %d</span>'%(x,y)]
+        parts+=['<span style="color:%s">%s&nbsp;%.4f</span>'%(ink,name,value) for name,ink,value in zip('RGB',('#ff5f52','#55d27a','#5b9bff'),values)]
+        if alpha:parts.append('<span style="color:#ffffff">A&nbsp;%.4f</span>'%alpha[0])
+        parts.append('<span style="color:#8a8f99">%s</span>'%kind)
+        self.probe.setText('&nbsp;&nbsp;'.join(parts))
+
+    def _region_toggled(self,enabled):
+        # Switched on, the button only readies the drag: nothing is rendered anew until a region is drawn.
+        # Switched off, the region is forgotten, so that the next one is drawn from nothing.
+        self._region_armed=bool(enabled)
+        self.preview.set_region(None,enabled)
+        if enabled or not self._settings_values()['region_enabled']:return
+        self._store(region=[0.0,0.0,1.0,1.0],region_enabled=False)
+        self._settled()
+        if self.draft.isChecked():
+            # The lines are drawn over where the region was, which costs nothing.
+            if self._following:self.preview_timer.start()
+            else:self.render_once()
+        # Nothing is rendered for it: the whole frame as it last was comes back, with the region as it was rendered.
+        else:self._paste()
+
+    def _settled(self):
+        """Take the scene's settings as they now are for seen, so that following does not render for them."""
+        self._live_settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
+
+    def _paste(self):
+        """Show the last whole frame with the last region rendered laid in it, and keep it until something is rendered."""
+        from . import draft
+        self._held=True
+        whole,part=self._whole,self._part
+        if whole is None:return
+        self.preview.set_image(draft.over(whole,part[1],part[0]) if part is not None and part[1].size()==whole.size() else whole)
+        self.image_info.setText('%d x %d'%(whole.width(),whole.height()))
 
     def _camera_chosen(self,index):
         try:lx.eval('moonray.camera %d'%index)
@@ -332,7 +540,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self._sync_output_menu(values['custom_aovs'])
         if not self.display_timer.isActive():
             blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker
-        blocker=QtCore.QSignalBlocker(self.region_enabled);self.region_enabled.setChecked(values['region_enabled']);del blocker
+        # The button is lit by a region being rendered, or by its being ready for one to be drawn.
+        armed=values['region_enabled'] or getattr(self,'_region_armed',False)
+        blocker=QtCore.QSignalBlocker(self.region_enabled);self.region_enabled.setChecked(armed);del blocker
+        self.preview.set_region(values['region'] if values['region_enabled'] else None,armed)
         if previous is None:return
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
@@ -374,6 +585,8 @@ class Panel(Tools, QtWidgets.QWidget):
         text='\n\n'.join(unique)
         if text!=self.warnings.toPlainText():self.warnings.setPlainText(text)
         self.notice_toggle.setText('Notices (%d)'%len(unique))
+        # Where the preferences ask for it, the notices open by themselves when there is something to read.
+        if unique and not self.notice_toggle.isChecked() and self.preferences.get('notices_open'):self.notice_toggle.setChecked(True)
 
     def _ipr_changed(self,enabled):
         self.preferences.set('ipr',bool(enabled))
@@ -495,6 +708,9 @@ class Panel(Tools, QtWidgets.QWidget):
             mesh['subdivision_level'] = values['subdivision_level']
         if values['surface'] == 1:
             scene['warnings'].append('Smooth subdivision rounds all exported meshes, including sharp edges.')
+        # A mesh light with no mesh, or a name several meshes share, lights nothing in either engine: say so.
+        from . import entities
+        entities.mesh_lights(scene,scene['warnings'])
         self._set_notices(scene['warnings'])
         return scene
 
@@ -515,11 +731,24 @@ class Panel(Tools, QtWidgets.QWidget):
         """Keep the Render button saying what pressing it will do."""
         self._rendering=bool(rendering)
         active=self._rendering or self._following
-        self.start.setText('Stop' if active else 'Render')
-        self.start.setToolTip(STOP_TIP if active else RENDER_TIP)
+        again=not active and getattr(self,'_continuable',None) is not None
+        self.start.setText('Stop' if active else 'Continue' if again else 'Render')
+        self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
+                              'Right-click the picture for Render from the Start.' if again else RENDER_TIP)
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
+        if not output:
+            self._held=False;self._draft_engine=self._draft_lines=False
+            region_pass,self._draft_pass=getattr(self,'_draft_pass',False),False
+            if not region_pass:self._draft_then=None
+        if not output and self.draft.isChecked() and not region_pass:
+            # The draft is always MoonLightIPR's: outlines of what the camera sees first, found on the graphics
+            # card at no cost however heavy the scene, and drawn finer than the preview. The lines are drawn
+            # first, over the whole frame; the engine chosen then renders the region at the preview's own size,
+            # and that is laid on them.
+            self._draft_engine=self._draft_lines=True
+            self._draft_then=scene if self._draft_region() else None
         if not output:
             from .incremental import surroundings
             self._surroundings=surroundings(scene)
@@ -529,7 +758,20 @@ class Panel(Tools, QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
-        engine='moonray' if output else self.preview_engine.currentData()
+        if self._draft_engine:scene=dict(scene,_draft=2)
+        if not output and self.draft.isChecked():
+            # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
+            self._draft_size=(width,height);self.preview.nominal=(width,height)
+        engine='moonray' if output else 'moonlightipr' if self._draft_engine else self.preview_engine.currentData()
+        # Continue: the same scene as the render that was stopped and kept, taken up where it stood.
+        resume=bool(not output and not refining and engine=='moonray' and getattr(self,'_continuable',None) is not None and self._continuable==original_digest)
+        if not output:self._continuable=None
+        if self._draft_engine:
+            # The draft is drawn finer than the preview, as many pixels as the view has and half as many again, so
+            # that its lines are as clean as a drawing's and stay so when looked at closely.
+            fine=min(3200,max(2*width,int(1.5*self.preview.width()*self.preview.devicePixelRatioF())))
+            height=max(16,round(height*fine/width));width=fine
+            self._draft_fine=(width,height)
         # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
         if self._following and not output and engine=='moonray':
             from .ipr import prepare
@@ -539,7 +781,8 @@ class Panel(Tools, QtWidgets.QWidget):
             scene=refine(scene)
         self.renderer.timeout_seconds = values['timeout']*60
         self.renderer.submit(scene, self.runtime_path(), width, height, (4 if refining else 1) if scene.get('_ipr') and not output else values['samples'],
-                             values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine)
+                             values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine, resume=resume)
+        if resume:self.status.setText('Continuing the stopped render.')
         self.last_digest = original_digest
 
     def _digest(self, scene):
@@ -684,9 +927,46 @@ class Panel(Tools, QtWidgets.QWidget):
             self.sequence.stop()
         self._following=False;self.timer.stop()
         self.preview.set_show_buckets(self.show_buckets.isChecked())
+        # A preview stopped by hand is taken as finished where it stands: the picture so far is kept, and what
+        # follows a finished render, the denoiser among it, follows this.
+        rendering=self._rendering and not self._output_busy()
+        if rendering and self.renderer.settle():
+            self.status.setText('Stopping: finishing with what is rendered.');return
+        # MoonRay under Safe Denoising: the picture it last saved is finished with, a preview or an output alike.
+        if self._rendering and not (self.sequence is not None and self.sequence.running) and self.renderer.settle_moonray():
+            self.status.setText('Stopping: keeping what is rendered.');return
         self.renderer.stop()
         self._set_rendering(False)
         self.status.setText('Stopped.')
+        if rendering:self._settle_stopped()
+
+    def _render_afresh(self):
+        """Let go of the stopped render and render the scene from the start, once the user has said so."""
+        asked=QtWidgets.QMessageBox.question(self,'Render from the Start','The render that was stopped is kept, and Continue would take it up where it stood. '
+                                             'Render from the start instead? What was rendered so far is let go of.',
+                                             QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.Cancel,QtWidgets.QMessageBox.Cancel)
+        if asked!=QtWidgets.QMessageBox.Yes:return
+        self._continuable=None
+        self._set_rendering(self._rendering)
+        self.start_render()
+
+    def _stopped_plain(self):
+        """A render stopped before MoonRay had saved anything of it."""
+        self._continuable=self.last_digest if getattr(self.renderer,'resumable',None) else None
+        self._set_rendering(False)
+        self.status.setText('Stopped before anything of the render was saved.')
+
+    def _settle_stopped(self):
+        """After MoonRay is stopped: the last pass it finished is the picture, and is denoised if that is asked for.
+        A pass cut short leaves nothing of its own; MoonRay hands over a picture only when a pass ends."""
+        engine=self._preview_denoiser()
+        frame=self.renderer.buffers.frame
+        if engine=='off' or not frame or frame.get('snapshot',{}).get('_ipr'):return
+        if not all(key in frame.get('files',{}) for key in ('beauty','denoise_albedo','denoise_normal')):return
+        self.renderer.buffers.denoiser.request(engine)
+        if self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
+            self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty'))
+        self.status.setText('Stopped. The last finished pass is kept and denoised.')
 
     def _failed(self, message):
         self.refine_timer.stop()
@@ -698,8 +978,29 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _image(self, path):
         try:
+            if self._held:return
+            if self.draft.isChecked():
+                from . import draft
+                frame=path if isinstance(path,QtGui.QImage) else QtGui.QImage(str(path))
+                if frame.isNull():raise ValueError('MoonRay output could not be decoded as an image.')
+                # The lines and the region's render come one after the other, and the last picture of the one may
+                # arrive after the other has begun: they are told apart by size, the lines being drawn finer.
+                if (frame.width(),frame.height())==self._draft_fine:
+                    self._draft_image=draft.inked(frame,None)
+                else:
+                    region=self._draft_region()
+                    if region is None:return
+                    self._draft_render=(region,frame.copy());self._part=self._draft_render
+                if self._draft_image is not None:self._draft_show()
+                return
             if isinstance(path,QtGui.QImage):self.preview.set_image(path)
             else:self.preview.load(path)
+            # Kept, to be put back when Region or Draft is switched off, without rendering.
+            if not self.draft.isChecked():
+                region=self._draft_region()
+                # Copies of their own: the picture shown may rest on memory the renderer takes back.
+                if region:self._part=(region,self.preview.image.copy())
+                else:self._whole=self.preview.image.copy();self._part=None
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
@@ -719,9 +1020,18 @@ class Panel(Tools, QtWidgets.QWidget):
         self.render_timing.setText(label.replace(' · ',' | '))
 
     def _finished(self, output):
+        if not output and getattr(self,'_draft_then',None) is not None and self.draft.isChecked():
+            # The draft's lines are drawn: now the region, by the engine chosen.
+            scene,self._draft_then=self._draft_then,None
+            self._draft_pass=True
+            try:self._submit(scene)
+            except Exception as exc:self._failed(str(exc))
+            return
+        # A preview stopped under Safe Denoising can be taken up again while the scene stays as it was.
+        self._continuable=self.last_digest if not output and getattr(self.renderer,'resumable',None) else None
         self._set_rendering(False)
         self.status.setToolTip('')
-        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Done'))
+        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Stopped and kept. Continue takes the render up again.' if self._continuable else 'Done'))
         if not output:
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)

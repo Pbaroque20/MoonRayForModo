@@ -82,29 +82,31 @@ OBJECT = {
 }
 CURVE_BASES = [('The line itself', 0), ('Bezier control points', 1), ('B-spline control points', 2)]
 HAIR_MODES = [('Around each guide (locks)', 0), ('Between guides (fur)', 1)]
+# In the order the preview's buffer list and the form show them: what the surface is and how it is lit first (colour,
+# diffuse, glossy, reflection, refraction, subsurface, emission, and diffuse without shadows for a shadow pass), then
+# the environment, then what is for compositing and checking.
 AOVS = {
-    'environment_background': ('Environment background', {'result':8,'lpe':"C<L.'modo_environment'>"}, 'environment_background'),
+    'albedo': ('Albedo', {'result': 7, 'material_aov': 'albedo'}, 'albedo'),
+    'diffuse_direct': ('Direct diffuse', {'result': 8, 'lpe': 'diffuse'}, 'diffuse_direct'),
+    'indirect_diffuse': ('Indirect diffuse', {'result': 8, 'lpe': 'C<RD>[DSG]+[<L.>O]'}, 'indirect_diffuse'),
+    'glossy_direct': ('Direct glossy', {'result': 8, 'lpe': 'glossy'}, 'glossy_direct'),
+    'indirect_glossy': ('Indirect glossy', {'result': 8, 'lpe': 'C<RG>[DSG]+[<L.>O]'}, 'indirect_glossy'),
+    'mirror_reflection': ('Mirror reflections', {'result': 8, 'lpe': 'reflection'}, 'mirror_reflection'),
+    'transmission': ('Refraction / transmission', {'result': 8, 'lpe': 'C<T.>.*[<L.>O]'}, 'transmission'),
+    'subsurface': ('Subsurface and translucency', {'result': 8, 'lpe': 'translucent'}, 'subsurface'),
+    'emission': ('Emission', {'result': 8, 'lpe': 'emission'}, 'emission'),
+    'unshadowed_diffuse': ('Diffuse without shadows (shadow pass)', {'result': 8, 'lpe': 'unoccluded;CD[<L.>O]'}, 'unshadowed_diffuse'),
     'environment_lighting': ('Environment lighting', {'result':8,'lpe':"C.+<L.'modo_environment'>"}, 'environment_lighting'),
-    'sample_count': ('Sample count', {'result': 11}, 'sample_count'),
+    'environment_background': ('Environment background', {'result':8,'lpe':"C<L.'modo_environment'>"}, 'environment_background'),
     'alpha': ('Alpha', {'result': 1}, 'alpha'),
     'depth': ('Camera depth', {'result': 2}, 'depth'),
     'normal': ('Shading normal', {'result': 3, 'state_variable': 2}, 'normal'),
     'geometric_normal': ('Geometric normal', {'result': 3, 'state_variable': 1}, 'geometric_normal'),
     'position': ('World position', {'result': 3, 'state_variable': 10}, 'position'),
     'uv': ('UV coordinates', {'result': 3, 'state_variable': 3}, 'uv'),
-    'wireframe': ('Wireframe', {'result': 6}, 'wireframe'),
-    'diffuse_direct': ('Direct diffuse', {'result': 8, 'lpe': 'diffuse'}, 'diffuse_direct'),
-    'glossy_direct': ('Direct glossy', {'result': 8, 'lpe': 'glossy'}, 'glossy_direct'),
-    'emission': ('Emission', {'result': 8, 'lpe': 'emission'}, 'emission'),
-    'transmission': ('Refraction / transmission', {'result': 8, 'lpe': 'C<T.>.*[<L.>O]'}, 'transmission'),
-    'indirect_diffuse': ('Indirect diffuse', {'result': 8, 'lpe': 'C<RD>[DSG]+[<L.>O]'}, 'indirect_diffuse'),
-    'indirect_glossy': ('Indirect glossy', {'result': 8, 'lpe': 'C<RG>[DSG]+[<L.>O]'}, 'indirect_glossy'),
-    'mirror_reflection': ('Mirror reflections', {'result': 8, 'lpe': 'reflection'}, 'mirror_reflection'),
-    'subsurface': ('Subsurface and translucency', {'result': 8, 'lpe': 'translucent'}, 'subsurface'),
-    # Beside direct diffuse, this is a shadow pass: divide one by the other, or take one from the other.
-    'unshadowed_diffuse': ('Diffuse without shadows', {'result': 8, 'lpe': 'unoccluded;CD[<L.>O]'}, 'unshadowed_diffuse'),
-    'albedo': ('Albedo', {'result': 7, 'material_aov': 'albedo'}, 'albedo'),
     'motion_vectors': ('Motion vectors', {'result': 3, 'state_variable': 12}, 'motion_vectors'),
+    'wireframe': ('Wireframe', {'result': 6}, 'wireframe'),
+    'sample_count': ('Sample count', {'result': 11}, 'sample_count'),
 }
 
 

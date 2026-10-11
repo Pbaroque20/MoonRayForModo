@@ -2,8 +2,10 @@
 from pathlib import Path
 ENGINES=('off','optix','oidn_cpu')
 def settings(value):
-    result={'engine':value.get('engine','off'),'preview':value.get('preview',True),'final':value.get('final',True)}
-    if result['engine'] not in ENGINES or type(result['preview']) is not bool or type(result['final']) is not bool:
+    # safe: MoonRay saves its picture every few seconds as it renders, so that a render stopped by hand is kept and
+    # denoised as a finished one is.
+    result={'engine':value.get('engine','off'),'preview':value.get('preview',True),'final':value.get('final',True),'safe':value.get('safe',False)}
+    if result['engine'] not in ENGINES or type(result['preview']) is not bool or type(result['final']) is not bool or type(result['safe']) is not bool:
         raise ValueError('Invalid denoising settings')
     return result
 
@@ -15,6 +17,10 @@ def enabled(snapshot,final=False,linear=False):
 def guides_required(snapshot,final=False,linear=False):
     if snapshot.get('_ipr') and not final:return False
     return enabled(snapshot,final,linear) or (not final and not linear)
+
+# How often a safe render saves its picture, in minutes, and what a saved picture is called beside the file it is of.
+SAFE_MINUTES=.05
+def safe_name(path):return str(path)+'.safe.exr'
 
 def sidecar(path):
     path=Path(path);return path.with_name(path.stem+'.denoised.exr')

@@ -281,17 +281,17 @@ running session leaves out the data of meshes it already holds.
 | Sphere, rect, disk and spot lights | The same shapes, one-sided where MoonRay's are, with its default normalization (`color * intensity / (pi * area)`) and the spot's focal-plane falloff with the ease-in-out curve. They light the scene and show in reflections but not to the camera |
 | Cylinder lights | The side of a cylinder along local Y, sampled evenly, with the same normalization |
 | Portal lights | A rectangle that shows the lighting environment times its own colour and intensity (MoonRay does not normalize a portal); the environment then lights the scene only through portals. All lighting environments pass through; MoonRay wants one chosen |
-| Mesh lights (Object controls) | The object's triangles emit from both faces, chosen by area, normalized by the total area; the object stays visible with its material. Up to 50,000 triangles, not instanced |
+| Mesh lights (Object controls) | The object's triangles emit from both faces, chosen by area, normalized by the total area; the object is seen shining, as MoonRay shows a light that is visible to the camera, unless that is switched off. Up to 50,000 triangles, not instanced |
 | Depth of field, f-stop, focus distance, iris blades and rotation | MoonRay's lens: radius from the focal length and f-stop, a disc or a polygon |
 | A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. The panel captures such a snapshot for Render Preview when **System > Motion blur in MoonLightIPR previews** is on; IPR updates stay sharp |
 | Working colour space | The same conversion `rdla.py` applies to colours |
-| MoonRay items (`entities`, from **MoonRay > Add MoonRay Item**) | `dwEnvLight` becomes a constant or image environment, and can replace Modo's own; distant, sphere, rect, disk, spot, cylinder and portal lights become the lights above; a rect light's texture is shown across it; `dwBoxGeometry` and `dwSphereGeometry` become meshes; a `dwMeshLight` makes the Modo mesh it names emit. Intensity, decay and colour ramp light filters are applied (also those set in Lighting controls). Rod, barn door, cookie, VDB and combine filters, textures on other lights, volumes, VDB shapes and camera items are named in the notices. Compared with MoonRay: an environment, a sphere light, a box and a ball 1.014 (96% of tiles within 10%); decay, tint and ramp filters 1.009 (97%); a textured rect light 1.014 (93%); a mesh light item 1.014 (85%) |
+| MoonRay items (`entities`, from **MoonRay > Add MoonRay Item**) | `dwEnvLight` becomes a constant or image environment, and can replace Modo's own; distant, sphere, rect, disk, spot, cylinder and portal lights become the lights above; a rect light's texture is shown across it; `dwBoxGeometry` and `dwSphereGeometry` become meshes; a `dwMeshLight` makes the Modo mesh it names emit. Intensity, decay, colour ramp, rod, barn door, cookie and VDB light filters are applied (also those set in Lighting controls), and textures on every kind of light. Combine filters and what else has no counterpart are named in the notices. Compared with MoonRay: an environment, a sphere light, a box and a ball 1.014 (96% of tiles within 10%); decay, tint and ramp filters 1.009 (97%); a textured rect light 1.014 (93%); a mesh light item 1.014 (85%) |
 
 Everything else is reported in the packer's warnings rather than dropped silently:
 the alpha of baked procedural layers, layers on channels the shader lacks (specular
-colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), light filters other than intensity, decay and colour ramp,
-moving lights during the shutter,
-film offset and the render region. Orthographic cameras are refused.
+colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), combine light filters,
+moving lights during the shutter
+and film offset. A render region is rendered alone, with the rest left black. Orthographic cameras are refused.
 
 Added to what is translated since the table was written:
 

@@ -357,6 +357,18 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if found:
             lines.append('objectShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (string(identity), string('/modo/shadowReceivers/' + identity),
                                                                                     array('RdlMeshGeometry("/modo/mesh/%d")' % place for place in found)))
+    # The objects that join in a material's subsurface light, as MoonRay's trace set on the material: by default only
+    # the surface wearing the material does, which leaves a seam where two objects of one body meet.
+    from .shader_library import catalog as shader_catalog
+    for tag, material in sorted((scene.get('materials') or {}).items()):
+        joined = set(material.get('sss_trace_set') or []) if isinstance(material, dict) else set()
+        if not joined or 'sss_trace_set' not in shader_catalog().get(material.get('native_shader') or '', {}).get('attributes', {}):
+            continue
+        found = [place for place, held in enumerate(render_meshes) if held.get('faces') and 'instances' not in held
+                 and (held.get('source_item') or str(held.get('identity', '')).split('|')[0]) in joined]
+        if found:
+            lines.append('materials[%s] { ["sss_trace_set"] = TraceSet(%s)(%s) }' % (string(tag), string('/modo/traceSet/' + tag),
+                         array('{RdlMeshGeometry("/modo/mesh/%d"), ""}' % place for place in found)))
     for index, mesh in enumerate(render_meshes):
         vertices = mesh['vertices']
         faces = mesh['faces']
@@ -431,6 +443,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     raise ValueError('Invalid subdivision crease')
             lines += ['    ["subd_crease_indices"] = %s,' % array(str(v) for edge in creases for v in edge[:2]),
                       '    ["subd_crease_sharpnesses"] = %s,' % array(number(edge[2]) for edge in creases)]
+        emitting = scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{})
+        if emitting.get('mesh_light') and emitting.get('light_seen', True):
+            # A mesh light that is seen is the light itself, which lies exactly on the mesh: were the mesh seen too, each
+            # ray would find one or the other by chance, and the light would come out blotched with the mesh's own grey.
+            # So the mesh is seen by nothing, and still casts its shadow in other lights.
+            mesh = dict(mesh, visibility=[False, False, False, False, False, (mesh.get('visibility') or [True] * 6)[5]])
         if 'visibility' in mesh:
             camera_v, indirect, reflection, refraction, subscatter, shadow = mesh['visibility']
             for attribute, value in [('visible_in_camera', camera_v), ('visible_shadow', shadow),
@@ -518,6 +536,20 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         lines += ['  ["checkpoint_active"] = true,','  ["resumable_output"] = true,','  ["checkpoint_bg_write"] = false,',
                   '  ["checkpoint_interval"] = %s,'%number(recovery['minutes']),
                   '  ["resume_render"] = %s,'%('true' if recovery['resume'] else 'false')]
+    # Safe denoising: the picture so far is saved every few seconds, beside each file MoonRay is to write, so that
+    # a render stopped by hand has a whole picture to be finished with.
+    safe = None if recovery else scene.get('_safe')
+    if safe:
+        # What is saved can be taken up again: MoonRay is told to save what it needs for that, and, where this render
+        # is one being continued, to begin from what was saved of it before.
+        lines += ['  ["checkpoint_active"] = true,', '  ["checkpoint_bg_write"] = false,', '  ["checkpoint_interval"] = %s,' % number(safe['minutes']),
+                  '  ["resumable_output"] = true,', '  ["resume_render"] = %s,' % ('true' if safe.get('resume') else 'false')]
+    def kept(path):
+        from .denoising import safe_name
+        if not safe:
+            return []
+        before = (safe.get('resume') or {}).get(str(path))
+        return ['  ["checkpoint_file_name"] = %s,' % string(safe_name(path))] + (['  ["resume_file_name"] = %s,' % string(str(before))] if before else [])
     region = scene.get('region')
     if region is not None:
         if len(region) != 4 or any(not math.isfinite(float(v)) for v in region):
@@ -567,7 +599,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             attributes=dict(attributes,**recovery_attributes(recovery))
             attributes=dict(channel_format=0,**attributes) if 'channel_format' not in attributes else attributes
             lines += ['RenderOutput(%s) {' % string('/modo/aov/' + key),
-                      '  ["file_name"] = %s,' % string(str(output_file)),
+                      '  ["file_name"] = %s,' % string(str(output_file)), *kept(output_file),
                       *(['  ["channel_name"] = %s,' % string(channel)] if 'channel_name' not in attributes else []),
                       '  ["exr_header_attributes"] = Metadata('+string(metadata_path)+'),',
                       '  ["compression"] = 1,']
@@ -586,7 +618,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             if key not in available:raise ValueError('Unknown preview buffer')
             if not path:raise ValueError('Missing preview buffer output path')
             lines += ['RenderOutput(%s) {'%string('/modo/preview/'+key),
-                      '  ["file_name"] = %s,'%string(str(path)),
+                      '  ["file_name"] = %s,'%string(str(path)), *kept(path),
                       '  ["channel_format"] = 0,', '  ["compression"] = 1,']
             attributes={k:v for k,v in available[key].items() if k!='channel_format'}
             for attr,value in attributes.items():
@@ -598,9 +630,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             from .recovery import attributes as recovery_attributes
             attributes.update(recovery_attributes(recovery,key))
         lines += ['RenderOutput(%s) {' % string('/modo/denoise/'+key),
-                  '  ["file_name"] = %s,' % string(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
+                  '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
+    if safe and safe.get('data'):
+        # What MoonRay needs beside the pictures themselves to take a render up again: how much each pixel has had,
+        # the halves of the beauty and the alpha it compares, and the alpha. Kept in a file of their own, so that
+        # nothing the user asked for is added to.
+        for name, result in (('weight', 11), ('beauty_aux', 12), ('alpha_aux', 14), ('alpha', 1)):
+            lines += ['RenderOutput(%s) {' % string('/modo/safe/' + name), '  ["file_name"] = %s,' % string(safe['data']), *kept(safe['data']),
+                      '  ["channel_name"] = %s,' % string(name), '  ["channel_format"] = 0,', '  ["compression"] = 1,', '  ["result"] = %d,' % result, '}']
     if entity_camera and entity_camera['class'] == 'BakeCamera':
         from .bake import resolve
         resolve(lines, render_meshes)

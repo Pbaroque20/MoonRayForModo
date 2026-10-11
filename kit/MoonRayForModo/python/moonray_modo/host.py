@@ -66,6 +66,43 @@ def render_visible(item):
     return True
 
 
+def unworn(scene, result, warnings):
+    """Say where a MoonRay material is on nothing: it sits in a group for a material tag that no polygon being
+    rendered carries, as happens when a material is dragged into another group after being assigned. It then renders
+    nowhere, whatever images it has, and nothing else says so."""
+    from . import properties
+    data = result.get('_evaluated_data')
+    if data:
+        carried = {surface.get('source_material', surface.get('material')) for surface in data.get('surfaces', [])}
+    else:
+        carried = set()
+        for mesh in result.get('meshes', []):
+            carried.update(mesh.get('face_materials') or [mesh.get('material', '')])
+    carried.discard(None)
+    if not carried:
+        return
+    for mask in scene.items('mask', superType=False):
+        try:
+            tag = channel(mask, 'ptag', '') or ''
+            if not tag or tag == '(all)' or tag in carried or channel(mask, 'ptyp', '') not in ('Material', '') or not channel(mask, 'enable', 1):
+                continue
+            for child in mask.children():
+                if child.type == 'advancedMaterial' and properties.read(child).get('native_shader') and channel(child, 'enable', 1):
+                    named = sorted(tag for tag in carried if tag)
+                    if not named:
+                        # Modo's own account of the surfaces names no tag where no group took them: the meshes are asked.
+                        found = set()
+                        for mesh in scene.items('mesh', superType=False):
+                            polygons = mesh.geometry.polygons
+                            found.update(polygons[index].materialTag for index in range(0, len(polygons), max(1, len(polygons) // 2000)))
+                        named = sorted(tag for tag in found if tag)
+                    warnings.append('Material %s is on nothing: its group is for the material tag %s, which no polygon carries. The polygons are tagged %s. '
+                                    "Set the group's Polygon Tag to that, or assign the material again."
+                                    % (child.name, tag, ', '.join(named[:4]) + (' and others' if len(named) > 4 else '') if named else 'with no material'))
+        except (LookupError, RuntimeError, AttributeError, TypeError):
+            continue
+
+
 def image_layers(scene, materials, warnings, baked_effects=()):
     from .layers import collect
     collect(scene, materials, warnings, baked_effects=baked_effects)
@@ -109,6 +146,8 @@ def material_values(material):
                                 'specular_fresnel':float(channel(material,'specFres',1)),
                                 'reflection_fresnel':float(channel(material,'reflFres',1)),
                                 'thin_geometry': settings.get('thin_geometry',False),
+                                # The objects whose surfaces join in this material's subsurface light: MoonRay's sss trace set.
+                                'sss_trace_set': sorted(str(v) for v in (settings.get('sss_trace_set') or [])),
                                 # Where a material says how its polygons are smoothed: 0 for flat, otherwise the angle within which
                                 # neighbours are smoothed together. None leaves the mesh to be smoothed as it otherwise would be.
                                 'smoothing_angle': (float(settings.get('smoothing_angle',40.0)) if settings['smoothing'] else 0.0) if settings.get('smoothing') is not None else None,
@@ -125,6 +164,7 @@ def material_values(material):
                                 'shading_model': model, '_beckmann': beckmann, '_specular_strength': lobe_strength,
                                 'emission_amount': float(channel(material, 'radiance', 0)),
                                 'roughness': lobe_roughness,
+                                'raw_roughness': float(channel(material, 'rough', .4)),
                                 'diffuse_roughness': float(channel(material, 'diffRough', 0)),
                                 'subsurface_amount': min(1,max(0,float(channel(material,'subsAmt',0)))),
                                 'subsurface_distance': max(0,float(channel(material,'subsDist',0))),
@@ -555,8 +595,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     from .environments import collect as collect_environments
     result['environments'] = collect_environments(scene, warnings)
     solar_discs(result)
-    from .extra_geometry import collect as collect_extra
-    result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None and not dirty_meshes and not (evaluated_geometry and refresh_materials) else result.get('extra_geometry',[]) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
+    from .extra_geometry import collect as collect_extra,furs as furs_extra
+    result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None and not dirty_meshes and not (evaluated_geometry and refresh_materials) else result.get('extra_geometry',[])+furs_extra(scene,warnings,result['meshes']) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
     from .scene_references import capture as capture_references
     result['scene_references']=capture_references(scene,result)
     result['time']=lx.service.Selection().GetTime();result['fps']=float(scene.fps);result['frame']=round(result['time']*result['fps'])
@@ -584,5 +624,6 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         warnings.append("Smoothed all over rather than within their material's smoothing angle, having more than %d polygons: %s. "
                         'Set a smoothing angle in the MoonRay material settings to hold it.'
                         % (SMOOTHING_ANGLE_FACES, ', '.join(smoothed_whole[:6]) + (' ...' if len(smoothed_whole) > 6 else '')))
+    unworn(scene, result, warnings)
     result['warnings'] = sorted(set(warnings))
     return result

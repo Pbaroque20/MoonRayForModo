@@ -186,24 +186,37 @@ def control_filters(settings, light, scene, warnings):
     return records
 
 
+def scalar_ramp(compiler, lists):
+    """A ramp of numbers as an image the session reads, 257 across its own stops' span: (image, low, high)."""
+    from .entities import ramp_eval
+    low, high = min(lists[0]), max(lists[0])
+    if not high > low:
+        high = low + 1.0
+    steps = [i / (RAMP_SAMPLES - 1) for i in range(RAMP_SAMPLES)]
+    values = [float(ramp_eval(lists[0], lists[1], lists[2], low + (high - low) * x)) for x in steps]
+    return compiler.ramp({'positions': steps, 'colors': [[v, v, v] for v in values]}, exact=True), low, high
+
+
 def packed_filters(records, compiler, light_matrix=None, warnings=None):
     """Decay and ramp filters as the session reads them; a ramp's colours go into a small image."""
     from .entities import ramp_eval
     parts = []
     for record in records:
         if record['kind'] == 'decay':
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_DECAY, (FILTER_NEAR if record['near'] else 0) | (FILTER_FAR if record['far'] else 0),
-                                     *record['distances'], *([0.0] * 12), -1, *([0.0] * 12)))
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_DECAY, (FILTER_NEAR if record['near'] else 0) | (FILTER_FAR if record['far'] else 0),
+                                     *record['distances'], *([0.0] * 12), -1, *([0.0] * 12), -1))
         elif record['kind'] == 'rod':
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_ROD, 1 if record['invert'] else 0, *record['corner'], record['radius'],
+            # Its own way of fading over its edge: from 0 at the box to 1 at the edge's end.
+            fade = scalar_ramp(compiler, record['fade'])[0] if record.get('fade') else -1
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_ROD, 1 if record['invert'] else 0, *record['corner'], record['radius'],
                                      *(v for row in record['rows'] for v in row), -1,
-                                     record['edge'], record['density'], *record['color'], *([0.0] * 7)))
+                                     record['edge'], record['density'], *record['color'], *([0.0] * 7), fade))
         elif record['kind'] == 'barn':
             from .entities import barn_rows
             rows = barn_rows(record, light_matrix or IDENTITY)
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_BARN, (1 if record['invert'] else 0) | (2 if record['orthographic'] else 0) | (4 if record['physical'] else 0),
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_BARN, (1 if record['invert'] else 0) | (2 if record['orthographic'] else 0) | (4 if record['physical'] else 0),
                                      *record['low'], *record['high'], *(v for row in rows for v in row), -1,
-                                     record['radius'], *record['edges'], record['focal'], *record['color'], record['density'], 0.0, 0.0))
+                                     record['radius'], *record['edges'], record['focal'], *record['color'], record['density'], 0.0, 0.0, -1))
         elif record['kind'] == 'vdb':
             import subprocess
             from .entities import inverse_rows
@@ -215,8 +228,12 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
                     warnings.append('MoonLightIPR leaves out a VDB light filter whose grid it cannot read (%s).' % exc)
                 continue
             rows = inverse_rows(product(unit, [float(v) for v in record['matrix']]))
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_VDB, 1 if record['invert'] else 0, 0.0, 0.0, 0.0, 0.0, *(v for row in rows for v in row),
-                                     compiler.grid(file), *record['tint'], *([0.0] * 9)))
+            remap, low, high = scalar_ramp(compiler, record['remap']) if record.get('remap') else (-1, 0.0, 1.0)
+            # A blur is so far in the filter's own space; how much of the grid's cube that is along each of its axes.
+            spans = [1.0 / (math.sqrt(sum(v * v for v in unit[axis * 4:axis * 4 + 3])) or 1.0) for axis in range(3)]
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_VDB, (1 if record['invert'] else 0) | (8 if record.get('round') else 0), low, high, 0.0, 0.0,
+                                     *(v for row in rows for v in row), compiler.grid(file), *record['tint'], float(record.get('blur', 0.0)), *spans,
+                                     *([0.0] * 5), remap))
         elif record['kind'] == 'cookie':
             import subprocess
             try:
@@ -227,8 +244,10 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
                 continue
             if record['front'] is not None and warnings is not None:
                 warnings.append('MoonLightIPR throws an orthographic cookie behind its projector as well as in front.')
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_COOKIE, (1 if record['invert'] else 0) | (2 if record['white'] else 0) | (4 if record['edgeless'] else 0),
-                                     0.0, 0.0, 0.0, 0.0, *(v for row in record['rows'] for v in row), picture, record['density'], *([0.0] * 11)))
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_COOKIE, (1 if record['invert'] else 0) | (2 if record['white'] else 0) | (4 if record['edgeless'] else 0)
+                                     | (8 if record.get('round') else 0),
+                                     0.0, 0.0, 0.0, 0.0, *(v for row in record['rows'] for v in row), picture, record['density'], *record['place'], *record['blur'],
+                                     0.0, 0.0, -1))
         elif record['kind'] == 'ramp':
             # The ramp over its own 0 to 1, which the session stretches from begin to end.
             steps = [i / (RAMP_SAMPLES - 1) for i in range(RAMP_SAMPLES)]
@@ -237,8 +256,8 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
             rows = record['rows'] or [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
             flags = ((FILTER_DIRECTIONAL if record['directional'] else 0) | (FILTER_MIRROR if record['mirror'] else 0)
                      | (FILTER_PLACED if record['rows'] else 0))
-            parts.append(struct.pack('<2I4f12fi12f', FILTER_RAMP, flags, record['begin'], record['end'], record['intensity'], record['density'],
-                                     *(v for row in rows for v in row), texture, *([0.0] * 12)))
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_RAMP, flags, record['begin'], record['end'], record['intensity'], record['density'],
+                                     *(v for row in rows for v in row), texture, *([0.0] * 12), -1))
     return struct.pack('<I', len(parts)) + b''.join(parts)
 
 
@@ -347,7 +366,9 @@ def emitter(mesh, settings, warnings):
             _emitters.clear()
         cached = _emitters[signature] = (struct.pack('<I', triangles) + corners.tobytes(), area)
     # MoonRay divides by the area, so the light gives the same power at any size.
-    return (struct.pack('<I20fiI', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, 0)
+    # A mesh light has no cone: the number says instead whether the camera sees the surface shining.
+    seen = 1.0 if settings.get('light_seen', True) else 0.0
+    return (struct.pack('<I20fiI', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [seen, 0.0]), -1, 0)
             + cached[0])
 
 
@@ -530,6 +551,9 @@ def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=
 
 def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     from . import geometry, options
+    if scene.get('_draft') == 2:
+        # A draft's lines are as clean after a few passes as after hundreds, and there is nothing in them to denoise.
+        samples, denoise = min(samples, 12), False
     from .moonlightipr_materials import Compiler
     from .working_space import TO_AP1, enabled as working_enabled
     if not 16 <= width <= 16384 or not 16 <= height <= 16384:
@@ -541,6 +565,14 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if any(held.get('link_enabled') or held.get('shadow_exclude') or held.get('shadow_receivers')
            for held in (scene.get('production') or {}).get('objects', {}).values() if isinstance(held, dict)):
         warnings.append('MoonLightIPR lights and shadows every object alike: light links and the shadows objects are set not to cast show in MoonRay only.')
+    from .shading_models import curve
+    for held in (scene.get('materials') or {}).values():
+        rows = (held.get('material_stack') or [held]) if isinstance(held, dict) else []
+        if any(isinstance(row, dict) and curve(row.get('shading_model')) and any(layer.get('effect') == 'rough' for layer in row.get('layers') or []) for row in rows):
+            warnings.append('MoonLightIPR shows a roughness that an image drives as the image gives it; for a Blinn or Ashikhmin material MoonRay takes it through the curve that matches Modo, so the highlight differs there.')
+            break
+    if any(isinstance(held, dict) and held.get('sss_trace_set') for held in (scene.get('materials') or {}).values()):
+        warnings.append('MoonLightIPR does not join neighbouring objects in subsurface light: a material\'s subsurface neighbours show in MoonRay only.')
     # MoonRay's own items arrive beside the Modo ones; draw those that have a counterpart here.
     from .entities import preview as preview_entities, replaces_environment
     if replaces_environment(scene):
@@ -552,8 +584,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         raise ValueError('MoonLightIPR previews perspective, fisheye and spherical cameras only')
     if camera['focal_mm'] <= 0 or camera['film_mm'] <= 0:
         raise ValueError('Camera focal length and film width must be positive')
-    if camera.get('region') or scene.get('region'):
-        warnings.append('MoonLightIPR ignores the render region.')
+    # The part of the picture to render: left, top, right, bottom, as fractions. The rest is black.
+    region = [float(v) for v in (scene.get('region') or camera.get('region') or [0, 0, 1, 1])]
+    if len(region) != 4 or not all(math.isfinite(v) for v in region) or region[2] <= region[0] or region[3] <= region[1]:
+        region = [0.0, 0.0, 1.0, 1.0]
     # MoonRay's lens: the f-stop gives its diameter from the focal length, in metres.
     lens = [0.0, 1.0, 0, 0.0]
     if camera.get('dof'):
@@ -578,14 +612,16 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if motion and camera.get('focal_mm_close', camera['focal_mm']) <= 0:
         raise ValueError('Camera focal length must be positive at both shutter endpoints')
     settings = options.render_values(scene.get('render_settings', {}))
-    depths = [min(8, settings[key]) for key in ('max_depth', 'max_diffuse_depth', 'max_glossy_depth')]
+    depths = [min(8, settings[key]) for key in ('max_depth', 'max_diffuse_depth', 'max_glossy_depth', 'max_volume_depth')]
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
-    parts = [b'MLSA', struct.pack('<7I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSA', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
              struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
-             struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])])]
+             struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])]),
+             # Draft: 1 draws what is outside the region as lines, 2 the whole picture.
+             struct.pack('<4fI', *region, int(scene.get('_draft') or 0))]
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))

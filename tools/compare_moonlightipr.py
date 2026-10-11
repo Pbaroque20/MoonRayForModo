@@ -229,7 +229,10 @@ def textured(folder):
     # And as Shader Tree layers over the same native material, which leaves only the route the image takes.
     native_layer_maps = lobes(dict(native('ball', 'DwaBaseMaterial', roughness=.5), layers=[layer('nb', 'diffCol', 'colour', True)]),
                               dict(native('cube', 'DwaBaseMaterial', roughness=.5), layers=[layer('nc', 'diffCol', 'colour', True), layer('nr', 'rough', 'roughness', False)]))
-    return {'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    # A Blinn material whose roughness an image drives: the image goes through the curve measured for Blinn.
+    blinn = dict(stacked, materials=dict(layered, ball={'material_stack': [row('ball', [.8, .8, .8], .36, [layer('b3', 'rough', 'roughness', False)],
+                                                                              shading_model='blinn', raw_roughness=.35, _beckmann=True, _specular_strength=.52)]}))
+    return {'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
@@ -352,6 +355,28 @@ def scenes(folder):
              'parameters': {'texture': quarters_image(folder), 'projector_focal': 40.0, 'projector_film_width_aperture': 24.0}},
             {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
              'parameters': {'intensity': 160.0, 'width': .4, 'height': .4, 'light_filters': ['Slide']}}]),
+        # The same filters with what each can be told besides: a rod that fades over its edge by a ramp of its own, a
+        # cookie thrown from a camera item and blurred with distance, and a VDB filter blurred and its densities remapped.
+        'filter_rod_ramp': dict(base, _environment=.15, entities=[
+            {'identity': 'f_rod', 'name': 'Rod', 'class': 'RodLightFilter', 'matrix': fixture.placed(.9, .6, .4),
+             'parameters': {'width': 1.2, 'height': 1.6, 'depth': 1.2, 'radius': .1, 'edge': 1.4, 'color': [1.0, .15, .1],
+                            'ramp_in_distances': [0.0, .3, .6, 1.0], 'ramp_out_distances': [0.0, .9, .2, 1.0], 'ramp_interpolation_types': [1, 1, 1, 1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 90.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Rod']}}]),
+        'filter_cookie_blur': dict(base, _environment=.15, _exec_mode='scalar', entities=[
+            {'identity': 'c_slide', 'name': 'Lantern', 'class': 'PerspectiveCamera', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'focal': 45.0, 'film_width_aperture': 24.0}},
+            {'identity': 'f_cookie', 'name': 'Slide', 'class': 'CookieLightFilter_v2', 'matrix': fixture.placed(0, 0, 0),
+             'parameters': {'texture': quarters_image(folder), 'projector': 'Lantern', 'blur_near_distance': 4.0, 'blur_midpoint': 6.0, 'blur_far_distance': 8.0,
+                            'blur_near_value': 0.0, 'blur_mid_value': .04, 'blur_far_value': .15}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 160.0, 'width': .4, 'height': .4, 'light_filters': ['Slide']}}]),
+        'filter_vdb_remap': dict(base, _environment=.15, entities=[
+            {'identity': 'f_vdb', 'name': 'Gobo', 'class': 'VdbLightFilter', 'matrix': fixture.placed(.4, .6, .3, 1.6),
+             'parameters': {'vdb_map': vdb_ball(folder), 'density_grid_name': 'density', 'vdb_interpolation_type': 1, 'color_tint': [.1, .3, .9], 'blur_value': .25,
+                            'density_remap_inputs': [0.0, .3, 1.0], 'density_remap_outputs': [1.0, 0.0, .8], 'density_remap_interpolation_types': [1, 1, 1]}},
+            {'identity': 'l_key', 'name': 'Key', 'class': 'RectLight', 'matrix': aimed([-2, 5, 4], [0, .5, 0]),
+             'parameters': {'intensity': 90.0, 'width': 1.5, 'height': 1.0, 'light_filters': ['Gobo']}}]),
         # A VDB light filter: the ball of fog as a grid that lets light through where it is full and none where it is empty.
         'filter_vdb': dict(base, _environment=.15, entities=[
             {'identity': 'f_vdb', 'name': 'Gobo', 'class': 'VdbLightFilter', 'matrix': fixture.placed(.4, .6, .3, 1.6),
@@ -456,6 +481,13 @@ def scenes(folder):
                           'parameters': {'size': [2.6, 2.6, 2.6], 'modo_volume': 'Mist'}}])
            for name, values in (('thin', {'attenuation_intensity': .4}), ('thick', {'attenuation_intensity': 2.5}),
                                 ('coloured', {'attenuation_intensity': 1.2, 'attenuation_color': [1.0, .6, .3], 'diffuse_color': [.5, .7, 1.0], 'anisotropy': .4}))},
+        # The thick block again with light let scatter in it three times.
+        'fog_bounces': dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               render_settings=dict(base['render_settings'], max_volume_depth=3),
+               entities=[{'identity': 'v_fog', 'name': 'Mist', 'class': 'BaseVolume', 'parameters': {'attenuation_intensity': 2.5}},
+                         {'identity': 'g_block', 'name': 'Cloud', 'class': 'BoxGeometry', 'matrix': fixture.placed(0, 1.6, 2.5),
+                          'parameters': {'size': [2.6, 2.6, 2.6], 'modo_volume': 'Mist'}}]),
         # A VDB volume: a ball of fog with a hole in it, thicker toward its middle, from a file MoonRay reads itself.
         **{'vdb_' + name: dict(base, lights=fixture.snapshot()['lights'] + [
                dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3, _exec_mode='scalar' if values.get('_scalar') else 'auto',
@@ -465,6 +497,12 @@ def scenes(folder):
                                 # The same ball with the light its emission grid gives off: a glowing core off to one side.
                                 # MoonRay draws a volume that gives off light in its scalar mode only, in this build.
                                 ('glow', {'density': 2.0, 'emission_grid': 'emission', 'emission': 3.0, '_scalar': True}))},
+        # The thick ball again with light let scatter in it four times, which is what brightens a cloud from inside.
+        'vdb_bounces': dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,
+               render_settings=dict(base['render_settings'], max_volume_depth=4),
+               extra_geometry=[dict(kind='vdb', identity='smoke|vdb', source_item='smoke', name='Smoke', file=vdb_ball(folder), density=6.0,
+                                    matrix=fixture.placed(0, 1.5, 2.5))]),
         # Two balls of fog that overlap, one behind the other from the lamp: each shadows the other and the ground.
         'vdb_two': dict(base, lights=fixture.snapshot()['lights'] + [
                dict(lamp, identity='side', kind='SphereLight', intensity=80.0, radius=.3, matrix=fixture.placed(-3.0, 2.5, 2.5))], _environment=.3,

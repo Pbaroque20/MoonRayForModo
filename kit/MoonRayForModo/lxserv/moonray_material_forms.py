@@ -207,6 +207,37 @@ def register():
                 settings=properties.read(item);settings['smoothing_angle']=angle
                 updates.append((item,settings))
             for item,settings in updates:properties.write(item,settings)
+    class Neighbours(lxu.command.BasicCommand):
+        """Choose the objects whose surfaces join in the selected materials' subsurface light: MoonRay's sss trace set."""
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Enable(self,msg):return bool(overridden())
+        def basic_Execute(self,msg,flags):
+            import modo
+            from PySide2 import QtCore,QtWidgets
+            items=overridden()
+            if not items:return
+            held=set(properties.read(items[0]).get('sss_trace_set') or [])
+            dialog=QtWidgets.QDialog();dialog.setWindowTitle('Subsurface neighbours');dialog.resize(360,420)
+            layout=QtWidgets.QVBoxLayout(dialog)
+            note=QtWidgets.QLabel('Light that scatters beneath this material\'s surface is gathered from the surface wearing it alone, which leaves a seam where two objects of one body meet. '
+                                  'Tick the objects that should join in: the one wearing the material and those it meets.')
+            note.setWordWrap(True);layout.addWidget(note)
+            listed=QtWidgets.QListWidget();layout.addWidget(listed,1)
+            for mesh in sorted(modo.Scene().items('mesh',superType=False),key=lambda i:i.name.casefold()):
+                row=QtWidgets.QListWidgetItem(mesh.name,listed);row.setData(QtCore.Qt.UserRole,mesh.id)
+                row.setFlags(row.flags()|QtCore.Qt.ItemIsUserCheckable);row.setCheckState(QtCore.Qt.Checked if mesh.id in held else QtCore.Qt.Unchecked)
+            buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok|QtWidgets.QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);layout.addWidget(buttons)
+            if dialog.exec_()!=QtWidgets.QDialog.Accepted:return
+            chosen=[listed.item(i).data(QtCore.Qt.UserRole) for i in range(listed.count()) if listed.item(i).checkState()==QtCore.Qt.Checked]
+            updates=[]
+            for item in items:
+                settings=properties.read(item)
+                if chosen:settings['sss_trace_set']=chosen
+                else:settings.pop('sss_trace_set',None)
+                updates.append((item,settings))
+            for item,settings in updates:properties.write(item,settings)
+    lx.bless(Neighbours,'moonray.material.neighbours')
     lx.bless(Smoothing,'moonray.material.smoothing')
     lx.bless(SmoothingAngle,'moonray.material.smoothing_angle')
 

@@ -32,8 +32,12 @@ def choose(target='',taken=()):
         while chosen in taken:
             count+=1;chosen='%s %d'%(wanted,count)
         return chosen
-    kind=QtWidgets.QComboBox();kind.addItems(names);kind.setCurrentText('DwaBaseMaterial')
-    name=QtWidgets.QLineEdit(unused('DwaBaseMaterial'));name.selectAll()
+    # What the dialog starts with is set on the MoonRay page of Modo's Preferences.
+    from .preferences import Preferences
+    usual=Preferences()
+    first=usual.get('assign/shader') if usual.get('assign/shader') in names else 'DwaBaseMaterial'
+    kind=QtWidgets.QComboBox();kind.addItems(names);kind.setCurrentText(first)
+    name=QtWidgets.QLineEdit(unused(first));name.selectAll()
     # The name follows the kind until the user types one of their own.
     own=[False]
     name.textEdited.connect(lambda text:own.__setitem__(0,True))
@@ -50,9 +54,9 @@ def choose(target='',taken=()):
         has=colour_attribute(text) is not None
         swatch.setEnabled(has);swatch.setToolTip('' if has else 'This kind of material has no single colour to set here.')
     kind.currentTextChanged.connect(kind_changed)
-    smoothing=QtWidgets.QCheckBox('Smooth across edges');smoothing.setChecked(True)
+    smoothing=QtWidgets.QCheckBox('Smooth across edges');smoothing.setChecked(usual.get('assign/smooth'))
     smoothing.setToolTip('Off, every polygon of this material is flat. On, neighbouring polygons are smoothed together\nwhere the angle between them is within the angle below.')
-    angle=QtWidgets.QDoubleSpinBox();angle.setRange(0.0,180.0);angle.setDecimals(1);angle.setSuffix(' \u00b0');angle.setValue(40.0)
+    angle=QtWidgets.QDoubleSpinBox();angle.setRange(0.0,180.0);angle.setDecimals(1);angle.setSuffix(' \u00b0');angle.setValue(usual.get('assign/angle'))
     angle.setToolTip('Edges sharper than this stay sharp. 40 is what Modo gives a new material; 180 smooths everything,\nwhich is what MoonRay does when it is left to itself.')
     follow=QtWidgets.QCheckBox('Let this material say how its polygons are smoothed');follow.setChecked(True)
     follow.setToolTip('Off, the mesh is smoothed as before: everywhere, or as its MoonRay object overrides say.')
