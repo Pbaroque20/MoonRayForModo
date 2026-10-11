@@ -282,10 +282,25 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
         # Each fibre takes the material of the polygon it stands on.
         worn=[tag for c,tag in faces for k in range(1,len(c)-1)]
         read=lambda key,layer=layer:layer.channel(key).get()
-        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read))
+        # The weight maps the Fur material names, which vary the fur across the surface: a point with no weight has none.
+        varied={}
+        for key,what in fur.WEIGHTS.items():
+            try:named=read(key)
+            except Exception:named=''
+            if not named:continue
+            try:
+                maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_WEIGHT,named);map_id=maps.ID()
+                storage=lx.object.storage('f',1);weights={}
+                for point in places:
+                    points.Select(point)
+                    weights[point]=float(storage.get()[0]) if points.MapEvaluate(map_id,storage) else 0.0
+            except (LookupError,RuntimeError,TypeError):
+                warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
+            varied[what]=[(weights[c[0]],weights[c[k]],weights[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read),varied)
         left=fur.unread(read)
         if left:warnings.append('Fur on %s is grown without %s, which the plugin does not read from a Fur material.'%(item.name,', '.join(left)))
-        if asked>len(strands):
+        if asked>fur.MOST:
             warnings.append('Fur on %s: Modo would grow %s fibres; %s are grown, each wider, to cover the surface as well.'%(item.name,format(asked,','),format(len(strands),',')))
         if not strands:continue
         shape=dict(root=root,tip=tip,envelope=1.0,samples=8,uv=True,round=False,basis=0)
@@ -296,6 +311,29 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
             held=BATCHED[kept]=(strands,batches(item.id+'|fur|'+layer.id,item.name,[(strand,worn[at],None) for strand,at in zip(strands,stands)],shape,'',world_matrix(item)))
         # The fur is its mesh's, for what lights it and what it is called.
         made+=[dict(entry,source_item=item.id) for entry in held[1]]
+    return made
+
+
+def furs(scene,warnings,meshes):
+    """The fur of every mesh that wears a Fur material, for a scene whose surfaces Modo itself worked out (it does
+    so where a material group is tied to an item): Modo hands over the surfaces and not the fibres. A mesh that
+    comes out of that in one material of its own has its fur in it, which is how the fur of an item's own group is
+    coloured."""
+    import lx,modo
+    from .host import render_visible
+    worn={}
+    for mesh in meshes:worn.setdefault(mesh.get('source_item') or str(mesh.get('identity','')).split('|')[0],set()).add(mesh.get('material',''))
+    made=[]
+    for item in scene.items('mesh',superType=False):
+        if not render_visible(item):continue
+        mesh=modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item,'deformed')
+        polygons=lx.object.Polygon(mesh.PolygonAccessor());points=lx.object.Point(mesh.PointAccessor())
+        # Its own: the materials no other item is in. Modo names them itself here, not after the polygons' tags.
+        own=worn.get(item.id,set())
+        alone=own-set().union(*[used for other,used in worn.items() if other!=item.id]) or own
+        for entry in fur_entries(scene,item,mesh,polygons,points,warnings):
+            if len(alone)==1:entry['material']=next(iter(alone))
+            made.append(entry)
     return made
 
 
