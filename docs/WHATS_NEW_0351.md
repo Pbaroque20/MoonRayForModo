@@ -1,5 +1,12 @@
 # What's new in 0.3.51
 
+**0.3.51.2** is 0.3.51.1 with fixes to renders that did not refresh:
+
+- **A render could show an old picture after a stop under Safe Denoising.** If MoonRay came to the end of its pass by itself, or a new render was started, while a stop was still waiting for MoonRay's save, the next render to finish was taken for a stopped one: its picture was replaced by an older save, or it was reported as stopped. A stop now ends with the render it was asked of.
+- **A safe render shows its progress.** With Safe Denoising on, the view stood still until a pass ended, most noticeably after Continue. Each of MoonRay's saves, every few seconds, is now shown as it is made.
+- **The view is cleared when a render is begun by hand**, so that an old picture is never mistaken for the new one. A render that is continued keeps its picture, and the view keeps its zoom.
+- Render from the Start is now **Restart Render...**, and asks: Are you sure you want to restart render? Current progress will be lost.
+
 **0.3.51.1** is 0.3.51 with fixes to Draft and Stop:
 
 - Switching **Draft** off when nothing had been rendered before left the outlines on the dark ground, and the raw line picture (white on black) could then be shown as if it were a render, most easily by changing the engine. The window now shows no picture until one is rendered, and a draft's lines are never taken for a render.
@@ -62,7 +69,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 ## More of MoonRay
 
 - **Safe Denoising** (Render item > MoonRay > Denoising): stop a MoonRay render at any time and keep it. While it renders, MoonRay saves the whole picture every few seconds; on Stop the last save is taken as the finished render, with all its buffers, and denoised if a denoiser is on. Stop waits for the save in progress, a few seconds at most. It works for previews with Live off and for output renders; a render stopped in its first seconds has nothing saved yet.
-- **Continue**: after a MoonRay preview is stopped under Safe Denoising, the Render button reads Continue and takes the render up where it stood, as long as the scene has not changed; if it has, the scene is rendered from the start. Render from the Start, last in the picture's right-click menu, lets the stopped render go after asking.
+- **Continue**: after a MoonRay preview is stopped under Safe Denoising, the Render button reads Continue and takes the render up where it stood, as long as the scene has not changed; if it has, the scene is rendered from the start. Restart Render, last in the picture's right-click menu, lets the stopped render go after asking.
 
 ![A MoonRay preview stopped part way, kept and denoised, with Continue on offer](images/safe-denoising.png)
 *A MoonRay preview stopped part way under Safe Denoising: kept, denoised, and ready to continue.*

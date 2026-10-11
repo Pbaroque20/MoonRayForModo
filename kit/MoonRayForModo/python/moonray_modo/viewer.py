@@ -47,8 +47,11 @@ class _PreviewBody:
     def set_image(self,image):
         if image.isNull():
             raise ValueError('MoonRay output could not be decoded as an image.')
-        if image.size() != self.image.size():
+        # The view is set to the picture anew only when its size is another than the last picture's: a view cleared
+        # for a new render keeps how it was being looked at.
+        if (image.width(), image.height()) != getattr(self, '_sized', None):
             self.fit()
+        self._sized = (image.width(), image.height())
         # Beauty includes camera-visible environment RGB even where coverage
         # alpha is zero. Display RGB without compositing over the widget; keep
         # the renderer output and its alpha channel untouched on disk.
@@ -62,7 +65,7 @@ class _PreviewBody:
         self.image = QtGui.QImage()
         self._single = None
         self._curved = None
-        self.fit()
+        self.update()
 
     def set_channel(self, channel):
         """Show all of the picture ('rgb') or one of its channels ('r', 'g', 'b') as greys."""
