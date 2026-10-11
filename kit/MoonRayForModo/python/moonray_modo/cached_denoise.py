@@ -26,10 +26,23 @@ class CachedDenoise(QtCore.QObject):
         try:
             self.directory=tempfile.TemporaryDirectory(prefix='MoonRayDenoise-')
             root=Path(self.directory.name);files=frame['files'];guides={}
+            before=[];oiio=Path(frame['runtime'])/'oiiotool.exe';takes=frame.get('takes',{})
             for key in ('beauty','denoise_albedo','denoise_normal'):
-                shutil.copyfile(str(files[key]),str(root/(key+'.exr')))
+                target=root/(key+'.exr')
+                if len(takes.get(key,()))==3:
+                    # Kept from a pass in progress, in three takes: the middle value of each pixel is what stands,
+                    # so that a pixel caught while MoonRay was adding to it leaves no mark.
+                    a,b,c=[root/('%s-%d.pfm'%(key,index)) for index in range(3)]
+                    for source,held in zip(takes[key],(a,b,c)):shutil.copyfile(str(source),str(held))
+                    before.append((oiio,[str(a),str(b),'--min',str(a),str(b),'--max',str(c),'--min','--max','-d','float','-o',str(target)],target))
+                elif Path(files[key]).suffix.lower()!='.exr':
+                    held=root/(key+'-held'+Path(files[key]).suffix)
+                    shutil.copyfile(str(files[key]),str(held))
+                    before.append((oiio,[str(held),'-d','float','-o',str(target)],target))
+                else:shutil.copyfile(str(files[key]),str(target))
+            beauty=root/'beauty.exr'
             guides={key:str(root/('denoise_'+key+'.exr')) for key in ('albedo','normal')}
-            self.jobs=denoising.jobs(frame['runtime'],root/'beauty.exr',root/'result',engine,guides)
+            self.jobs=before+denoising.jobs(frame['runtime'],beauty,root/'result',engine,guides)
             self.result=self.jobs[-1][2];self.job=(frame,engine)
             env=QtCore.QProcessEnvironment()
             for key,value in native.environment(frame['runtime']).items():env.insert(key,value)

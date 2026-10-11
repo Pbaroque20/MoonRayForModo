@@ -20,6 +20,11 @@ def guides_required(snapshot,final=False,linear=False):
 
 # How often a safe render saves its picture, in minutes, and what a saved picture is called beside the file it is of.
 SAFE_MINUTES=.05
+def safe_minutes(files,width,height):
+    """How often MoonRay is to save a safe render, in minutes. MoonRay stops rendering while it saves, and a save
+    takes about a quarter of a second for each file and million pixels: every three seconds where that is little,
+    and otherwise seldom enough that saving takes about a sixth of the time, up to every two minutes."""
+    return max(SAFE_MINUTES,min(2.0,.25*files*width*height/1e6*5/60))
 def safe_name(path):return str(path)+'.safe.exr'
 
 def sidecar(path):

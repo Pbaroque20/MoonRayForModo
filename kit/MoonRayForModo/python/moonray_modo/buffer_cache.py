@@ -59,6 +59,33 @@ class BufferCache(QtCore.QObject):
         self.selected.emit(key)
         self._request()
 
+    def forget(self):
+        """Let go of the last render's pictures: a render begun afresh shows nothing of the one before."""
+        self.frame=None;self.progressive=None;self.progressive_frames.clear();self.progressive_scene=None;self.displayed=None
+        self.serial+=1;self._prune()
+
+    def keep(self,pictures,runtime,snapshot,backend):
+        """Make pictures handed over in memory the kept frame: a render stopped part way, with its beauty and the
+        denoiser's guides as they stood. Each buffer's name has its takes, (width, height, float RGB pixels), one
+        after another; the last is the one shown, and all are kept for the denoiser to take the middle of."""
+        folder=self.root/uuid.uuid4().hex;folder.mkdir();files={};takes={}
+        try:
+            for key,taken in pictures.items():
+                takes[key]=[]
+                for index,(width,height,pixels) in enumerate(taken):
+                    if len(pixels)!=width*height*12 or (width,height)!=taken[0][:2]:raise ValueError('Invalid shared image size')
+                    path=folder/('%s-%d.pfm'%(key,index))
+                    with path.open('wb') as stream:stream.write(('PF\n%d %d\n-1.0\n'%(width,height)).encode('ascii'));stream.write(pixels)
+                    takes[key].append(path)
+                files[key]=takes[key][-1]
+        except (OSError,ValueError,IndexError):
+            shutil.rmtree(folder,ignore_errors=True);return False
+        self.frame={'folder':folder,'files':files,'takes':takes,'linear':{key:taken[-1] for key,taken in pictures.items()},
+                    'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':False}
+        self.progressive=None;self.progressive_frames.clear();self.progressive_scene=None
+        self.serial+=1;self._request();self._prune()
+        return True
+
     def busy(self):
         """True while a display conversion is running; publish_memory drops frames meanwhile."""
         return self.worker is not None or self.process.state()!=QtCore.QProcess.NotRunning
@@ -107,36 +134,41 @@ class BufferCache(QtCore.QObject):
         self._start()
 
     def _start(self):
-        frame=self.progressive_frames.get(self.key,self.frame)
-        if frame is None or (self.key not in frame['files'] and self.key not in frame.get('linear',{})):
-            self.notice.emit('Enable a Beauty denoiser and Denoise beauty preview to process the completed pass.' if self.key=='denoised_beauty' else 'Selected output will be available after a preview with these outputs completes.');return
-        signature=hashlib.sha256(json.dumps([self.key,self.display,frame.get('denoise_engine') if self.key=='denoised_beauty' else None],sort_keys=True).encode('utf-8')).hexdigest()
+        key=self.key
+        if key=='denoised_beauty' and key not in self.progressive_frames and 'beauty' in self.progressive_frames:
+            # While a render goes on there is no denoised picture of it yet: the beauty as it comes on is shown,
+            # not the denoised picture of the render before.
+            key='beauty'
+        frame=self.progressive_frames.get(key,self.frame)
+        if frame is None or (key not in frame['files'] and key not in frame.get('linear',{})):
+            self.notice.emit('Enable a Beauty denoiser and Denoise beauty preview to process the completed pass.' if key=='denoised_beauty' else 'Selected output will be available after a preview with these outputs completes.');return
+        signature=hashlib.sha256(json.dumps([key,self.display,frame.get('denoise_engine') if key=='denoised_beauty' else None],sort_keys=True).encode('utf-8')).hexdigest()
         destination=frame['folder']/(signature+'.png')
-        self.job=dict(frame=frame,key=self.key,serial=self.serial,destination=destination)
+        self.job=dict(frame=frame,key=key,serial=self.serial,destination=destination)
         if destination.is_file():self._show();self.job=None;self._prune();return
         try:
             display=dict(self.display,working_space=frame['snapshot'].get('asset_settings',{}).get('working_space','rec709'))
             if display['working_space']=='acescg' and display.get('view')=='ocio' and display.get('source')=='Linear Rec.709 (sRGB)':display['source']='ACEScg'
-            kind=outputs.display_kind(frame['snapshot'],self.key)
+            kind=outputs.display_kind(frame['snapshot'],key)
             from .display_stream import available
             if kind=='cryptomatte' and not available(frame['runtime']):
                 raise ValueError('Cryptomatte ID display requires the updated native display processor')
             if available(frame['runtime']):
                 from .memory_display import Worker
-                width,height,pixels=frame.get('linear',{}).get(self.key,(0,0,None))
-                self.worker=Worker(pixels,width,height,kind,display,frame['runtime'],self,source=frame['files'].get(self.key) if pixels is None else None)
+                width,height,pixels=frame.get('linear',{}).get(key,(0,0,None))
+                self.worker=Worker(pixels,width,height,kind,display,frame['runtime'],self,source=frame['files'].get(key) if pixels is None else None)
                 self.worker.finished.connect(self._memory_finished);self.worker.start();return
-            if self.key in frame.get('linear',{}):
+            if key in frame.get('linear',{}):
                 from .memory_display import supported,Worker
-                width,height,pixels=frame['linear'][self.key]
+                width,height,pixels=frame['linear'][key]
                 if not frame.get('memory_display_failed') and supported(kind,display,frame['runtime']):
                     self.worker=Worker(pixels,width,height,kind,display,frame['runtime'],self)
                     self.worker.finished.connect(self._memory_finished);self.worker.start();return
-                if self.key not in frame['files']:
-                    path=frame['folder']/(self.key+'.pfm')
+                if key not in frame['files']:
+                    path=frame['folder']/(key+'.pfm')
                     with path.open('wb') as stream:stream.write(('PF\n%d %d\n-1.0\n'%(width,height)).encode('ascii'));stream.write(pixels)
-                    frame['files'][self.key]=path
-            args=conversion(kind,frame['files'][self.key],destination,display)
+                    frame['files'][key]=path
+            args=conversion(kind,frame['files'][key],destination,display)
             env=QtCore.QProcessEnvironment()
             for key,value in native.environment(frame['runtime']).items():env.insert(key,value)
             self.process.setProcessEnvironment(env)
