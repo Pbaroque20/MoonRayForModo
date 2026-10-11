@@ -1,6 +1,6 @@
 # Dreamworks' MoonRay for Modo
 
-<img width="1920" height="1080" alt="cheetah_capture" src="https://github.com/user-attachments/assets/f77b904e-9248-4d34-b4e1-967e988881ff" />
+<img width="1292" height="939" alt="cheetah_capture1" src="https://github.com/user-attachments/assets/9d630bb7-9103-42b4-8e8c-f249c7d47490" />
 <p align="right">Paper Cheetah 3D Model (created by Raphael Tobar/Genoma)</p><br>
 
 MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Modo 16.1v9 on Windows**, running natively without WSL. Developed by Raphael Tobar w/ AI-Assistance.
