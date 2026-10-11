@@ -14,6 +14,7 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **Region** is a button: press it and drag a rectangle in the picture.
 - **R, G, B, A** channel buttons, a **colour probe** under the pointer, and **EV** and **Gamma** with one-click resets.
 - **Export AOVs as Images** from the picture's right-click menu.
+- **MoonRay's crest** in the window before the first render; click it to start one.
 
 ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png)
 *Draft, with a region rendered among the lines.*
@@ -36,7 +37,7 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 
 **Closer to Modo**
 
-- **Blinn and Ashikhmin materials** now match Modo's highlights.
+- **Blinn and Ashikhmin materials** now match Modo's highlights, also where an image drives the roughness (in MoonRay).
 - **The sun's disc** in a physical sky has Modo's colour and follows Disc In-Scatter.
 
 **Working faster**
@@ -59,6 +60,8 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **More one-click outputs**: indirect diffuse and glossy, reflections, subsurface, diffuse without shadows, albedo, motion vectors.
 - **Light path presets**, and a plain message when an expression is mistyped.
 - **Cast no shadow onto chosen objects**, per object, in Light Links, Emitters and Volumes.
+- **MoonRay light items can be linked**, and imported MoonRay scenes keep their light, shadow and shadow receiver sets.
+- **Subsurface Neighbours** in a material's properties: the objects that share its subsurface light, so no seam shows where they meet.
 - **OpenPBR and glTF materials** import from MaterialX files.
 - **Modo's Fur material** grows fur in MoonRay and in the preview, with its curls, clumps, kink, frizz, strays and weight maps. Guides are not read yet.
 
