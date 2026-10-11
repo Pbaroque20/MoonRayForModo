@@ -41,6 +41,7 @@ class Renderer(QtCore.QObject):
     finished = QtCore.Signal(str)
     # A render stopped by hand that had nothing saved to finish with.
     stopped = QtCore.Signal()
+    kept = QtCore.Signal(bool)
     progress = QtCore.Signal(int,str)
 
     def __init__(self, parent=None):
@@ -62,7 +63,7 @@ class Renderer(QtCore.QObject):
         self.session_files={}
         self.session.failed.connect(self.failed.emit)
         self.session.status.connect(self.status.emit)
-        self.session_serial=0
+        self.session_serial=0;self.gather=None
         self.using_session=False
         # Approximate GPU preview; final frames never use it.
         self.moonlightipr=MoonLightIPRSession(self)
@@ -155,7 +156,7 @@ class Renderer(QtCore.QObject):
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         # A stop that was still waiting for MoonRay to save is over: this render is not one being stopped.
-        self.settling=False;self.settle_wanted=None
+        self.settling=False;self.settle_wanted=None;self.gather=None
         if not request['persistent']:self.session.stop()
         # One renderer at a time holds the GPU and the scene.
         if not moonlightipr:self.moonlightipr.release()
@@ -188,6 +189,33 @@ class Renderer(QtCore.QObject):
         self.pending = None
         return True
 
+    def keep_progress(self):
+        """Before a MoonRay preview is stopped: have MoonRay, kept loaded, hand over the beauty and the denoiser's
+        two guides as they stand, so that a render stopped part way is kept and can be denoised. Returns whether
+        that is under way; `kept` then tells how it went, with the render stopped."""
+        if (self.closed or self.canceled or not self.active or self.active.get('output') or getattr(self,'using_moonlightipr',False)
+                or not getattr(self,'using_session',False) or self.active['snapshot'].get('_ipr') or getattr(self,'phase','')!='render'
+                or not getattr(self,'denoise_guides',None) or getattr(self,'gather',None) is not None or self.buffers.progressive is None):
+            return False
+        # Each is taken three times over: a pixel MoonRay is adding to as its picture is taken is caught part way,
+        # too dark or too light, and the denoiser would smear it into a blotch. Of three takes the middle value of
+        # each pixel is used, which no one such pixel spoils. The beauty is asked for last, so as to be the newest.
+        self.gather=gather={'want':['denoise_albedo']*3+['denoise_normal']*3+['beauty']*3,'got':{}}
+        self.pending=None
+        self.session.select_view(gather['want'][0])
+        QtCore.QTimer.singleShot(8000,lambda:self._gathered(gather,False))
+        return True
+
+    def _gathered(self,gather,whole):
+        if getattr(self,'gather',None) is not gather:return
+        self.gather=None
+        done=False
+        if whole and not self.closed and not self.canceled and self.active:
+            done=self.buffers.keep(gather['got'],self.active['runtime'],self.active['snapshot'],self.backend_status)
+        self.session.select_view('beauty')
+        if not self.closed:
+            self.stop();self.kept.emit(done)
+
     def settle_moonray(self):
         """Stop MoonRay where it stands and finish with the picture it last saved, where safe denoising had it save
         one. Returns whether that is under way: the render then ends as any other does, or reports stopped if
@@ -196,13 +224,14 @@ class Renderer(QtCore.QObject):
                 or not getattr(self,'safe_files',None) or getattr(self,'phase','')!='render' or self.process.state()==QtCore.QProcess.NotRunning):
             return False
         self.settling=True;self.pending=None;self.watchdog.stop()
-        # MoonRay is not ended at once: it may be part way through saving, and a file cut short is no picture. It is
-        # ended the moment it has next reported every file saved, which also gives the newest picture there can be;
-        # or after a wait, should that report not come.
-        self.settle_wanted={Path(denoising.safe_name(path)).name for path in self.safe_files};self.settle_tail=''
+        # MoonRay may be part way through saving, and a file cut short is no picture. Between saves, with a whole
+        # save made, it is ended at once and that save is the render. Part way through one, or before the first,
+        # it is ended the moment the save is whole; or after a wait, should that not come.
+        self.settle_wanted=set()
         # The wait is for this stop alone: a later one is not cut short by it.
         self.settle_serial=serial=getattr(self,'settle_serial',0)+1
-        QtCore.QTimer.singleShot(12000,lambda:self._settle_now() if self.settle_serial==serial else None)
+        between=getattr(self,'safe_whole',False) and not getattr(self,'safe_written',None)
+        QtCore.QTimer.singleShot(0 if between else 20000,lambda:self._settle_now() if self.settle_serial==serial else None)
         return True
 
     def _settle_now(self):
@@ -240,7 +269,7 @@ class Renderer(QtCore.QObject):
         return True
 
     def stop(self):
-        self.settling=False;self.settle_wanted=None
+        self.settling=False;self.settle_wanted=None;self.gather=None
         self._progress_end(False)
         self.watchdog.stop()
         self.pending = None
@@ -375,8 +404,10 @@ class Renderer(QtCore.QObject):
             self.safe_files=[];snapshot.pop('_safe',None)
             if denoising.settings(snapshot.get('denoising',{}))['safe'] and not snapshot.get('_ipr') and not snapshot.get('_recovery') and not request.get('linear_preview'):
                 data=self.current_base.with_suffix('.resume-data.exr')
-                snapshot['_safe']={'minutes':denoising.SAFE_MINUTES,'data':str(data)}
+                snapshot['_safe']={'data':str(data)}
+                self.safe_written=set();self.safe_whole=False;self.safe_tail=''
                 self.safe_files=([Path(self.image_path)] if request['output'] else [Path(path) for path in self.preview_files.values()])+[Path(path) for path in self.denoise_guides.values()]+[data]
+                snapshot['_safe']['minutes']=self.safe_minutes=denoising.safe_minutes(len(self.safe_files),request['width'],request['height'])
                 if request.get('resume') and getattr(self,'resumable',None):
                     # Each file is taken up from what was saved of it, known by the end of its name.
                     held={path:self.resumable.get(self._safe_key(path)) for path in self.safe_files}
@@ -450,24 +481,28 @@ class Renderer(QtCore.QObject):
         self.bucket_partial=self.bucket_partial[-65536:]
 
         self.log = (self.log + text)[-65536:]
-        if self.phase=='render' and getattr(self,'safe_files',None) and self.active and not self.active.get('output') and not self.closed and not self.canceled:
-            # A safe render is a MoonRay of its own, which shows nothing until a pass ends. Each time it reports the
-            # beauty saved, that save is shown, so that the picture is seen to come on every few seconds.
+        if self.phase=='render' and getattr(self,'safe_files',None) and self.active and not self.closed and not self.canceled:
+            # A safe render's saves are followed as MoonRay reports them: which files of the save now being made
+            # are written, and whether a whole save has been made yet.
             self.safe_tail=(getattr(self,'safe_tail','')+text)[-32768:]
             lines=self.safe_tail.splitlines(True)
             self.safe_tail=lines.pop() if lines and not lines[-1].endswith('\n') else ''
+            names={Path(denoising.safe_name(path)).name for path in self.safe_files};whole=False
+            for line in lines:
+                if not line.startswith('Wrote: '):continue
+                name=Path(line[7:].strip()).name
+                if name not in names:continue
+                self.safe_written.add(name)
+                if self.safe_written>=names:
+                    self.safe_written=set();self.safe_whole=whole=True
             saved=Path(denoising.safe_name(self.buffer_path))
-            if any(line.startswith('Wrote: ') and Path(line[7:].strip()).name==saved.name for line in lines) and saved.is_file():
+            if whole and not self.active.get('output') and not getattr(self,'settling',False) and saved.is_file():
+                # A safe render is a MoonRay of its own, which shows nothing until a pass ends: each save of the
+                # beauty is shown as it is made, so that the picture is seen to come on.
                 try:self.buffers.publish({'beauty':str(saved)},self.active['runtime'],self.active['snapshot'],self.backend_status,partial=True)
                 except (ValueError,OSError):pass
-        if getattr(self,'settling',False) and getattr(self,'settle_wanted',None):
-            # Waiting to stop: each file MoonRay reports saved is ticked off, and when none is left it is ended.
-            self.settle_tail=(self.settle_tail+text)[-32768:]
-            lines=self.settle_tail.splitlines(True)
-            self.settle_tail=lines.pop() if lines and not lines[-1].endswith('\n') else ''
-            for line in lines:
-                if line.startswith('Wrote: '):self.settle_wanted.discard(Path(line[7:].strip()).name)
-            if not self.settle_wanted:self._settle_now()
+            # Waiting to stop: it is ended the moment the save it was making is whole.
+            if whole and getattr(self,'settling',False) and getattr(self,'settle_wanted',None) is not None:self._settle_now()
         if self.phase=='render':
             if self.progress_state: self.progress_state.feed(text)
             self.backend_log=(self.backend_log+text)[-16384:]
@@ -507,6 +542,14 @@ class Renderer(QtCore.QObject):
     def _persistent_memory(self,packet):
         serial,key,width,height,pixels=packet
         if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
+        gather=self.gather
+        if gather is not None:
+            # Being stopped: the pictures asked for are taken as they come, one after another, and not shown.
+            if key==gather['want'][0]:
+                gather['got'].setdefault(key,[]).append((width,height,pixels));gather['want'].pop(0)
+                if gather['want'] and gather['want'][0]!=key:self.session.select_view(gather['want'][0])
+                if not gather['want']:self._gathered(gather,True)
+            return
         try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
 

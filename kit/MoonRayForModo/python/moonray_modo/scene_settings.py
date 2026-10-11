@@ -125,7 +125,7 @@ GROUPS = [
         field('denoiser', ('denoising', 'engine'), 'choice', 'Denoiser', '', choices=DENOISERS),
         field('denoise_preview', ('denoising', 'preview'), 'bool', 'Denoise Preview'),
         field('denoise_final', ('denoising', 'final'), 'bool', 'Save Denoised EXR', 'Written beside the original EXR, which is kept'),
-        field('denoise_safe', ('denoising', 'safe'), 'bool', 'Safe Denoising', 'Stop a MoonRay render at any time and keep it: the picture so far is saved every few seconds, and on Stop it is finished and denoised as a whole render is'),
+        field('denoise_safe', ('denoising', 'safe'), 'bool', 'Safe Denoising', 'Keep every buffer of a MoonRay render stopped by hand, and let Continue take it up again: the picture so far is saved as it renders, every few seconds where that is quick and less often for a large picture with many buffers. With this off, Stop still keeps the beauty and denoises it'),
     ]),
     ('Lighting', True, [
         field('light_multiplier', ('light_multiplier',), 'float', 'Light Multiplier', 'Scales every Modo light', 0.0, 10000.0),

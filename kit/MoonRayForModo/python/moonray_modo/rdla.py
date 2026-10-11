@@ -629,7 +629,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if recovery:
             from .recovery import attributes as recovery_attributes
             attributes.update(recovery_attributes(recovery,key))
-        lines += ['RenderOutput(%s) {' % string('/modo/denoise/'+key),
+        # In a preview a guide is named as the buffers are, so that MoonRay kept loaded can hand it over as it
+        # stands when the render is stopped part way.
+        lines += ['RenderOutput(%s) {' % string(('/modo/denoise/' if output_file else '/modo/preview/denoise_')+key),
                   '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')

@@ -1,5 +1,16 @@
 # What's new in 0.3.51
 
+**0.3.51.3** is 0.3.51.2 with Safe Denoising no longer holding a render back:
+
+- **A safe render keeps pace with a normal one.** MoonRay stops rendering while it saves, and a heavy scene's save is long: with 26 buffers at 1920 x 900, each save took about ten seconds, and at a save every three seconds most of the render's time went to saving. Saves are now spaced by how much there is to write: every three seconds for a small picture, up to every two minutes for a large one with many buffers. The view under Safe Denoising is brought up to date at each save, so on a heavy scene it changes less often than a normal render's does.
+- **Stop keeps the picture with Safe Denoising off too.** A normal MoonRay preview stopped by hand (Live off, a denoiser on) is kept as it stood and denoised, at no cost while it renders. Only the beauty and its denoised picture are kept; the other buffers come with a render that finishes. Safe Denoising is now only needed for **Continue**, and to keep every buffer of a stopped render.
+
+![A MoonRay preview stopped part way with Safe Denoising off, kept and denoised](images/stop-keeps-picture.png)
+*Stopped after 25 seconds with Safe Denoising off: kept and denoised.*
+
+- **A new render starts from an empty view, whatever buffer is shown.** With Denoised Beauty chosen, the last render's denoised picture stayed up while the new one rendered, which looked like a render that had stopped improving. The beauty is now shown as it comes on, and the denoised picture takes its place when it is ready.
+- A stop under Safe Denoising ends at once when MoonRay is between saves, and waits only for a save that is being written.
+
 **0.3.51.2** is 0.3.51.1 with fixes to renders that did not refresh:
 
 - **A render could show an old picture after a stop under Safe Denoising.** If MoonRay came to the end of its pass by itself, or a new render was started, while a stop was still waiting for MoonRay's save, the next render to finish was taken for a stopped one: its picture was replaced by an older save, or it was reported as stopped. A stop now ends with the render it was asked of.

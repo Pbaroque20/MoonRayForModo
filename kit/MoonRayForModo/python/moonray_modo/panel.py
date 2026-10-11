@@ -90,6 +90,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.image_object.connect(self._image)
         self.renderer.finished.connect(self._finished)
         self.renderer.stopped.connect(self._stopped_plain)
+        self.renderer.kept.connect(self._kept)
         self.renderer.notices.connect(self._engine_notices)
         self._engine_changed(0)
         self._poll()
@@ -775,6 +776,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self._clear_first=False
             if not resume and not self.draft.isChecked():
                 self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
+                self.renderer.buffers.forget()
         if self._draft_engine:
             # The draft is drawn finer than the preview, as many pixels as the view has and half as many again, so
             # that its lines are as clean as a drawing's and stay so when looked at closely.
@@ -946,6 +948,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonRay under Safe Denoising: the picture it last saved is finished with, a preview or an output alike.
         if self._rendering and not (self.sequence is not None and self.sequence.running) and self.renderer.settle_moonray():
             self.status.setText('Stopping: keeping what is rendered.');self._await_settle(30000);return
+        # MoonRay kept loaded hands over the picture as it stands, with what the denoiser needs, and is then stopped.
+        if rendering and not self.draft.isChecked() and self.renderer.keep_progress():
+            self.status.setText('Stopping: keeping what is rendered.');self._await_settle(12000);return
         self.renderer.stop()
         self._set_rendering(False)
         self.status.setText('Stopped.')
@@ -978,7 +983,15 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Stopped.')
         QtCore.QTimer.singleShot(wait,late)
 
-    def _settle_stopped(self):
+    def _kept(self,done):
+        """MoonRay has been stopped, having handed over the picture as it stood (or not, if it could not)."""
+        if self.disposed:return
+        self._settle_token=None
+        self._set_rendering(False)
+        self.status.setText('Stopped. The picture is kept as it stood.' if done else 'Stopped.')
+        self._settle_stopped(done)
+
+    def _settle_stopped(self,standing=False):
         """After MoonRay is stopped: the last pass it finished is the picture, and is denoised if that is asked for.
         A pass cut short leaves nothing of its own; MoonRay hands over a picture only when a pass ends."""
         engine=self._preview_denoiser()
@@ -988,7 +1001,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.buffers.denoiser.request(engine)
         if self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty'))
-        self.status.setText('Stopped. The last finished pass is kept and denoised.')
+        self.status.setText('Stopped. The picture as it stood is kept and denoised.' if standing else 'Stopped. The last finished pass is kept and denoised.')
 
     def _failed(self, message):
         self.refine_timer.stop()
