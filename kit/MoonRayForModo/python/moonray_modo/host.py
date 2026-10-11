@@ -66,6 +66,43 @@ def render_visible(item):
     return True
 
 
+def unworn(scene, result, warnings):
+    """Say where a MoonRay material is on nothing: it sits in a group for a material tag that no polygon being
+    rendered carries, as happens when a material is dragged into another group after being assigned. It then renders
+    nowhere, whatever images it has, and nothing else says so."""
+    from . import properties
+    data = result.get('_evaluated_data')
+    if data:
+        carried = {surface.get('source_material', surface.get('material')) for surface in data.get('surfaces', [])}
+    else:
+        carried = set()
+        for mesh in result.get('meshes', []):
+            carried.update(mesh.get('face_materials') or [mesh.get('material', '')])
+    carried.discard(None)
+    if not carried:
+        return
+    for mask in scene.items('mask', superType=False):
+        try:
+            tag = channel(mask, 'ptag', '') or ''
+            if not tag or tag == '(all)' or tag in carried or channel(mask, 'ptyp', '') not in ('Material', '') or not channel(mask, 'enable', 1):
+                continue
+            for child in mask.children():
+                if child.type == 'advancedMaterial' and properties.read(child).get('native_shader') and channel(child, 'enable', 1):
+                    named = sorted(tag for tag in carried if tag)
+                    if not named:
+                        # Modo's own account of the surfaces names no tag where no group took them: the meshes are asked.
+                        found = set()
+                        for mesh in scene.items('mesh', superType=False):
+                            polygons = mesh.geometry.polygons
+                            found.update(polygons[index].materialTag for index in range(0, len(polygons), max(1, len(polygons) // 2000)))
+                        named = sorted(tag for tag in found if tag)
+                    warnings.append('Material %s is on nothing: its group is for the material tag %s, which no polygon carries. The polygons are tagged %s. '
+                                    "Set the group's Polygon Tag to that, or assign the material again."
+                                    % (child.name, tag, ', '.join(named[:4]) + (' and others' if len(named) > 4 else '') if named else 'with no material'))
+        except (LookupError, RuntimeError, AttributeError, TypeError):
+            continue
+
+
 def image_layers(scene, materials, warnings, baked_effects=()):
     from .layers import collect
     collect(scene, materials, warnings, baked_effects=baked_effects)
@@ -584,5 +621,6 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         warnings.append("Smoothed all over rather than within their material's smoothing angle, having more than %d polygons: %s. "
                         'Set a smoothing angle in the MoonRay material settings to hold it.'
                         % (SMOOTHING_ANGLE_FACES, ', '.join(smoothed_whole[:6]) + (' ...' if len(smoothed_whole) > 6 else '')))
+    unworn(scene, result, warnings)
     result['warnings'] = sorted(set(warnings))
     return result
