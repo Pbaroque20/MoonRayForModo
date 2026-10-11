@@ -73,6 +73,8 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 
 ## Working faster
 
+- **MoonRay's materials are in the Shader Tree's Add Layer list**, under Custom Materials, with MaterialX Material beside them.
+- **A MoonRay page in Modo's Preferences**, with an option to have the M key open MoonRay's Assign Material in place of Modo's own. It takes effect the next time Modo starts.
 - Assign a MoonRay material to **selected polygons**, with a name, type, colour and smoothing angle.
 - Direction inputs of a material (shading tangent, thread direction) are **number fields**.
 - **Ramps** open in the ramp editor from a material's properties.

@@ -8,6 +8,8 @@ TAG = 'MRAY'
 # A native MoonRay material added from the Shader Tree's Add Layer list is an item of a type
 # named for its shader; one assigned to a mesh is an advancedMaterial that records its shader.
 LAYER_PREFIX = 'material.dw.'
+# The Add Layer entries that stand for those materials in the Shader Tree's list, and become them when chosen.
+ENTRY_PREFIX = 'material.moonrayAdd'
 # A material brought in from a MaterialX file: a type of its own in the Shader Tree, to tell it from the rest.
 MATERIALX_TYPE = 'material.mtlx'
 MATERIAL_TYPES = ('advancedMaterial', 'material.moonrayMoonShine', 'material.moonrayMaterialX')

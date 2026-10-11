@@ -153,12 +153,16 @@ for i, shader in enumerate([''] + sorted(catalog)):
 # Where the layer types sit in the Shader Tree's Add Layer list, and what they are called.
 categories = ET.SubElement(ET.SubElement(config, 'atom', type='Categories'), 'hash', type='Category', key='itemtype:textureLayer')
 for shader in sorted(catalog):
-    ET.SubElement(categories, 'hash', type='C', key='material.dw.' + shader).text = 'dwMaterials'
+    # Modo's own category for materials that are not its standard one: Add Layer > Custom Materials.
+    ET.SubElement(categories, 'hash', type='C', key='material.dw.' + shader).text = 'custMaterials'
+    # The entry the list shows for it, which becomes the material when it is chosen.
+    ET.SubElement(categories, 'hash', type='C', key='material.moonrayAdd' + shader).text = 'custMaterials'
 table = ET.SubElement(ET.SubElement(config, 'atom', type='Messages'), 'hash', type='Table', key='itemtype:textureLayer:category.en_US')
-ET.SubElement(table, 'hash', type='T', key='dwMaterials').text = 'MoonRay Materials'
+ET.SubElement(table, 'hash', type='T', key='custMaterials').text = 'Custom Materials'
 names = ET.SubElement(config, 'atom', type='CommandHelp')
 for shader in sorted(catalog):
     atom(ET.SubElement(names, 'hash', type='Item', key='material.dw.%s@en_US' % shader), 'UserName', shader)
+    atom(ET.SubElement(names, 'hash', type='Item', key='material.moonrayAdd%s@en_US' % shader), 'UserName', shader)
 ET.indent(config)
 ET.ElementTree(config).write(str(kit / 'material_forms.cfg'), encoding='utf-8', xml_declaration=True)
 print('Generated forms for', len(catalog), 'native material types,', count, 'attributes,', ramp_count, 'ramps')

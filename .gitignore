@@ -15,3 +15,4 @@ backups/
 tools/probe_config.cfg.bak
 *.log
 kit/MoonRayForModo/bin/
+kit/MoonRayForModo/moonray_keys.cfg
