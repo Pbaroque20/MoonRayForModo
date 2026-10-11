@@ -8,6 +8,16 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 
 ## Unreleased preview features for 0.3.51
 
+**The preview window**
+
+- **Draft**: the scene as clean outlines, with nothing rendered until you drag a **Region**. Then only that part is rendered, among the lines.
+- **Region** is a button: press it and drag a rectangle in the picture.
+- **R, G, B, A** channel buttons, a **colour probe** under the pointer, and **EV** and **Gamma** with one-click resets.
+- **Export AOVs as Images** from the picture's right-click menu.
+
+![Draft with a region rendered among the lines](docs/images/preview-draft-region.png)
+*Draft, with a region rendered among the lines.*
+
 **In the MoonLightIPR preview**
 
 - **Hair** shaded as hair, with MoonRay's hair material.
@@ -16,6 +26,7 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **Fog** inside a MoonRay box or sphere, and **VDB clouds and smoke** from a file, with their own glow. VDB volumes can overlap.
 - **Rod, barn door, cookie and VDB light filters**, on MoonRay lights and on Modo lights.
 - **Textures on every kind of light**, not only rect lights.
+- **Render region**, and **mesh lights seen glowing**.
 
 ![Hair, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-hair_dark.jpg)
 *Hair in MoonRay (left) and in the MoonLightIPR preview (right).*
@@ -48,7 +59,10 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **Light path presets**, and a plain message when an expression is mistyped.
 - **Cast no shadow onto chosen objects**, per object, in Light Links, Emitters and Volumes.
 - **OpenPBR and glTF materials** import from MaterialX files.
-- **Modo's Fur material** grows fur in MoonRay and in the preview: its spacing, length, width, taper, bend and jitter are read. Curls, clumps, kink, frizz, guides and maps are not yet.
+- **Modo's Fur material** grows fur in MoonRay and in the preview, with its curls, clumps, kink, frizz, strays and weight maps. Guides are not read yet.
+
+![Modo's Fur material with curls, clumps and a weight map](docs/images/fur-extras.jpg)
+*Modo's Fur material in MoonRay: curls, clumps with kink, and fur thinned by a weight map.*
 
 ## Known issues
 
@@ -65,6 +79,7 @@ Every known issue, and what is still to implement, is in the [issue tracker](htt
 
 - [How MoonLightIPR works, what it draws and how closely it matches MoonRay](moonlightipr/README.md)
 - [The plugin's main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo), with the full feature list, limitations and installation
+- [Everything coming in 0.3.51](docs/WHATS_NEW_0351.md)
 - [What was new in 0.3.50](docs/WHATS_NEW_0350.md)
 
 Developed by Raphael Tobar with AI assistance. MoonLightIPR is under the [MIT License](moonlightipr/LICENSE) and is not affiliated with DreamWorks Animation; see [moonlightipr/NOTICE.md](moonlightipr/NOTICE.md). Plugin licensing is in [LICENSE](LICENSE).
