@@ -81,7 +81,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 ## Working faster
 
 - **The asset library shows pictures of things to use.** Saved materials, models, scenes, pictures, volumes and MaterialX files stand in a grid by kind; the one chosen is shown large with a line saying what it is, and one button, or a double-click, puts it to use. The lists of node types and download links are gone from it.
-- **MoonRay Content**: MoonRay's example scenes come with the release as a separate download. Unpacked into Documents, they are listed in the asset library with a picture each.
+- **MoonRay Content**: MoonRay's ten example scenes come with the release as a third ZIP, `content.zip`. Its MoonRayForModo folder is merged with the kit's, as the runtime's is, and the scenes are then listed in the asset library with a picture each.
 
 ![The asset library with MoonRay's example scenes](images/asset-library.png)
 *The asset library, showing MoonRay's example scenes from the content download.*

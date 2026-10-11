@@ -53,7 +53,7 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **MoonRay's materials in the Shader Tree's Add Layer list**, under Custom Materials.
 - **A MoonRay page in Modo's Preferences**, including having the M key open MoonRay's Assign Material.
 - **The asset library shows pictures** of saved materials, models, scenes and textures, each with one button for what it is for.
-- **MoonRay Content**: MoonRay's example scenes as a download that goes with the release.
+- **MoonRay Content**: MoonRay's example scenes as a third ZIP of the release, merged into the kit folder.
 - **Graph editor**: big graphs open on the output node and zoom freely.
 - **Ramps** open in the ramp editor straight from a material's properties.
 - **Light Path Expressions** has its own entry in the MoonRay menu and under Advanced in the render settings.

@@ -5,9 +5,6 @@ from . import shader_library
 CATEGORIES={'.rdla':'Example scenes','.rdlb':'Example scenes','.lxo':'Modo scenes','.usd':'USD / models','.usda':'USD / models','.usdc':'USD / models','.obj':'Models','.fbx':'Models','.abc':'Models','.vdb':'Volumes','.mtlx':'MaterialX','.exr':'Textures / environments','.hdr':'Textures / environments','.tx':'Textures / environments','.png':'Textures / environments','.jpg':'Textures / environments','.jpeg':'Textures / environments','.tif':'Textures / environments','.tiff':'Textures / environments','.cube':'Color / LUT','.3dl':'Color / LUT'}
 SOURCE='https://docs.openmoonray.org/getting-started/test-scenes/'
 def bundled():return Path(__file__).resolve().parents[2]/'assets/library'
-def content():
- """Where the content that goes with a release is looked for without being added: MoonRay Content, in Documents."""
- return [folder for folder in (Path.home()/'Documents'/'MoonRay Content',) if folder.is_dir()]
 def builtins():
  rows=[]
  for shader,schema in sorted(shader_library.catalog().items()):
