@@ -443,6 +443,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     raise ValueError('Invalid subdivision crease')
             lines += ['    ["subd_crease_indices"] = %s,' % array(str(v) for edge in creases for v in edge[:2]),
                       '    ["subd_crease_sharpnesses"] = %s,' % array(number(edge[2]) for edge in creases)]
+        emitting = scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{})
+        if emitting.get('mesh_light') and emitting.get('light_seen', True):
+            # A mesh light that is seen is the light itself, which lies exactly on the mesh: were the mesh seen too, each
+            # ray would find one or the other by chance, and the light would come out blotched with the mesh's own grey.
+            # So the mesh is seen by nothing, and still casts its shadow in other lights.
+            mesh = dict(mesh, visibility=[False, False, False, False, False, (mesh.get('visibility') or [True] * 6)[5]])
         if 'visibility' in mesh:
             camera_v, indirect, reflection, refraction, subscatter, shadow = mesh['visibility']
             for attribute, value in [('visible_in_camera', camera_v), ('visible_shadow', shadow),

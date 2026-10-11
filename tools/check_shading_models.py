@@ -25,6 +25,10 @@ SCALE = fixture.WIDTH // WIDTH
 assert fixture.WIDTH == WIDTH * SCALE and fixture.HEIGHT == HEIGHT * SCALE
 
 
+# With fit, the cases to fit where any are named after it; all of them otherwise.
+ONLY = set(sys.argv[3:])
+
+
 def modo_picture(runtime, name):
     source = next(FOLDER.glob('modo_%s.*.exr' % name))
     target = FOLDER / ('modo_%s.pfm' % name)
@@ -93,9 +97,12 @@ def main():
                 print(case['name'], case['error'])
                 continue
             theirs = modo_picture(runtime, case['name'])
-            picture = drawn(session, dict(scene, materials=case['materials']))
+            # As the plugin translates the model today, not as it did when Modo's pictures were taken.
+            from moonray_modo.shading_models import translated
+            rough, strength, beckmann = translated(case['model'], case['roughness'])
+            picture = drawn(session, with_material(scene, case['materials'], roughness=rough, _specular_strength=strength, _beckmann=beckmann))
             line = "%-22s now %.3f apart, %.3f of Modo's brightness" % (case['name'], apart(theirs, picture), sum(tiles(picture)) / max(sum(tiles(theirs)), 1e-9))
-            if fit and case['look'] == 'gloss' and case['model'] != 'principled':
+            if fit and case['look'] == 'gloss' and case['model'] != 'principled' and (not ONLY or case['name'] in ONLY):
                 best = None
                 for beckmann in (False, True):
                     # Every tenth of roughness, then every fiftieth about the best of those.
@@ -111,8 +118,10 @@ def main():
                         best = fine
                 # Then how strong: Modo's pictures hold light that has bounced from one thing to another, which a weaker
                 # highlight dims at every bounce, so the strength that makes the picture as bright is searched for.
-                low, high, strength = 0.0, 1.0, 1.0
-                if best[3] > 1.0:
+                # A very smooth highlight is the other way about: Modo's is brighter than a lobe that keeps all the light,
+                # so the strength is looked for above 1 as well.
+                low, high, strength = (0.0, 1.0, 1.0) if best[3] > 1.0 else (1.0, 8.0, 1.0)
+                if abs(best[3] - 1.0) > .02:
                     for _ in range(7):
                         strength = (low + high) / 2
                         picture = drawn(session, with_material(scene, case['materials'], roughness=best[2], _beckmann=best[1], _specular_strength=strength))

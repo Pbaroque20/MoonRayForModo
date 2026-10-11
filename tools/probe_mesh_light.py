@@ -69,7 +69,7 @@ def add_lamp():
 
 try:
     scene = modo.Scene()
-    for name, values in (('Ground', dict(cenY=-.05, sizeX=8, sizeY=.1, sizeZ=8)), ('Slab', dict(cenY=2.0, sizeX=1.5, sizeY=.05, sizeZ=1.5))):
+    for name, values in (('Ground', dict(cenY=-.05, sizeX=8, sizeY=.1, sizeZ=8)), ('Slab', dict(cenY=1.2, sizeX=.8, sizeY=.8, sizeZ=.8))):
         lx.eval('select.typeFrom item')
         lx.eval('item.create mesh')
         lx.eval('tool.set prim.cube on')
@@ -97,6 +97,9 @@ def begin(name, change, then, wait):
         panel = panel_widget()
         held.setdefault('stored', panel.preferences.store.value('runtime', ''))
         held.setdefault('engine', panel.preview_engine.currentData())
+        # The test follows the scene, whatever the window was last left at; it is put back at the end.
+        held.setdefault('live', panel.ipr_mode.isChecked())
+        panel.ipr_mode.setChecked(True)
         panel.preferences.set('runtime', str(root / 'runtime/steady-0350-pool'))
         if panel.start.text() == 'Stop':
             panel.start.click()
@@ -173,6 +176,7 @@ def last():
             panel.start.click()
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(held['engine']))
         panel.preferences.store.setValue('runtime', held['stored'])
+        panel.ipr_mode.setChecked(held['live'])
     except Exception:
         result['last_error'] = traceback.format_exc()
     save()

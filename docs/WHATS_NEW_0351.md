@@ -36,6 +36,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 ## Closer to Modo
 
 - **Blinn and Ashikhmin materials** match Modo's highlights from a roughness of about 0.2 up. A roughness that an image drives is adjusted the same way in MoonRay; the MoonLightIPR preview shows it unadjusted and says so.
+- **Smooth GTR highlights** are wider, as Modo draws them: at a roughness of 0.1 the highlight was a third as bright as Modo's and is now about three quarters.
 - **Smoothing** follows a Modo material's smoothing angle, so a box keeps its hard edges. A MoonRay material has its own Smoothing control in its properties.
 - **Modo's Fur material** grows fur: its spacing, length, width, taper, bend and jitter are read, and so are its curls and waves, clumps, kink, frizz and strays. Weight maps for density, length, clumping, curling and bending are followed. Fur also grows where the material group is tied to an item rather than to a material tag. Guides, the vector map and the width map are not read yet, and a scene that uses them is told so.
 
@@ -63,7 +64,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 - **Imported MoonRay scenes keep their light, shadow and shadow receiver sets**, as each mesh's Light Links. Sets that differ between the parts of one shape, and light filter sets, are not carried and are named.
 - **OpenPBR and glTF surfaces** import from MaterialX files.
 - **A BakeCamera item** can bake a Modo mesh.
-- **A mesh light is seen glowing.** The mesh a MeshLight item names shows as a lit surface as well as lighting the scene, unless the item's Visible in Camera is forced off. A mesh light with no mesh chosen says so in Notices.
+- **A mesh light is seen glowing.** The mesh a MeshLight item names shows as a lit surface as well as lighting the scene, unless the item's Visible in Camera is forced off. While it is seen, the mesh's own surface is hidden beneath it, so the light renders clean. A mesh light with no mesh chosen says so in Notices.
 
 ![A slab made a mesh light, glowing and lighting the ground](images/mesh-light-glow.jpg)
 *A slab chosen as a mesh light, in MoonRay's live preview.*

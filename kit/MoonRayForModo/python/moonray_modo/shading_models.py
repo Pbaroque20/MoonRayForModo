@@ -16,7 +16,8 @@ same roughnesses by a ramp, in MoonRay; its highlight keeps the strength worked 
 MEASURED = {
     'blinn': [(.1, .20, .301), (.2, .28, .363), (.35, .36, .520), (.5, .36, .590), (.7, .38, .598), (.9, .50, .730)],
     'ashikhmin': [(.1, .22, 1.0), (.2, .28, 1.0), (.35, .38, .855), (.5, .44, .809), (.7, .48, .785), (.9, .50, .770)],
-    'gtr': [(.1, .10, 1.0), (.5, .50, 1.0), (.7, .70, .848), (.9, .90, .762)],
+    # A smooth GTR highlight in Modo is wider than MoonRay's lobe at the same roughness, and so brighter over the picture.
+    'gtr': [(.1, .16, 1.0), (.2, .22, 1.0), (.35, .36, 1.0), (.5, .50, 1.0), (.7, .70, .848), (.9, .90, .762)],
 }
 # The models whose highlight is MoonRay's Beckmann lobe; the others are its GGX.
 BECKMANN = ('blinn', 'ashikhmin')

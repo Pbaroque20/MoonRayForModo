@@ -9,8 +9,10 @@ class ShadingModels(unittest.TestCase):
     def test_gtr_and_principled_pass_as_they_are(self):
         for model in ('principled','something else'):
             self.assertEqual(shading_models.translated(model,.37),(.37,1.0,False))
-        found=shading_models.translated('gtr',.37)
-        self.assertAlmostEqual(found[0],.37);self.assertEqual(found[1:],(1.0,False))
+        # GTR is MoonRay's own lobe at its own roughness from the middle up, and wider where it is smooth.
+        found=shading_models.translated('gtr',.6)
+        self.assertAlmostEqual(found[0],.6);self.assertEqual(found[1:],(1.0,False))
+        self.assertAlmostEqual(shading_models.translated('gtr',.1)[0],.16)
         self.assertLess(shading_models.translated('gtr',.9)[1],1.0)
 
     def test_blinn_and_ashikhmin_are_beckmann_at_the_measured_values(self):
@@ -35,9 +37,9 @@ class ShadingModels(unittest.TestCase):
         # The curve runs from nothing, through what was measured, to wholly rough; GTR needs none.
         self.assertEqual(shading_models.curve('blinn')[:3], [(0.0, 0.0), (.1, .20), (.2, .28)])
         self.assertEqual(shading_models.curve('blinn')[-1][0], 1.0)
-        self.assertIsNone(shading_models.curve('gtr'))
+        self.assertEqual(shading_models.curve('gtr')[1], (.1, .16))
         self.assertIsNone(shading_models.curve('principled'))
-        for model, ramped in (('blinn', True), ('ashikhmin', True), ('gtr', False)):
+        for model, ramped in (('blinn', True), ('ashikhmin', True), ('gtr', True), ('principled', False)):
             material = {'color': [1] * 3, 'roughness': .36, 'raw_roughness': .35, 'shading_model': model, 'standard_material': True,
                         'layers': [{'kind': 'imageMap', 'effect': 'rough', 'path': 'rough.png', 'image_channel': 'red'}]}
             lines = []
