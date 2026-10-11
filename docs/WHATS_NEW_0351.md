@@ -1,5 +1,13 @@
 # What's new in 0.3.51
 
+**0.3.51.1** is 0.3.51 with fixes to Draft and Stop:
+
+- Switching **Draft** off when nothing had been rendered before left the outlines on the dark ground, and the raw line picture (white on black) could then be shown as if it were a render, most easily by changing the engine. The window now shows no picture until one is rendered, and a draft's lines are never taken for a render.
+- **Stop** during a draft's lines no longer goes on to render its region, and a render asked to finish with what it has is stopped outright if it does not answer, so the window is never left waiting.
+- In Draft with no region, the status line says again to press Region and drag.
+
+Only the kit changed; the runtime and the content are the same as in 0.3.51.
+
 What changed since 0.3.50.2. Most of it was checked two ways: MoonLightIPR's picture set beside MoonRay's on small test scenes, and the plugin driven by scripts in a separate test copy of Modo 16.1v9. All of it was done on one machine (RTX 3090).
 
 The GPU preview engine is called **MoonLightIPR** from this version on (it was shown as "MoonLight" in 0.3.50), echoing DreamWorks' earlier rasterizer MoonLight.

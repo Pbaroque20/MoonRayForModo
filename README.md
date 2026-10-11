@@ -7,9 +7,9 @@ MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Mo
 
 The plugin includes CPU and XPU rendering, a dockable live preview with a second GPU preview engine, native MoonRay materials with a graph editor, Shader Tree translation, MoonRay's own lights and other items, MaterialX and RDL scene import, AOVs, and denoising.
 
-**Current version: 0.3.51 — experimental development build.**
+**Current version: 0.3.51.1 — experimental development build.** It is 0.3.51 with fixes to Draft and Stop in the preview window.
 
-[Download 0.3.51: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.51](docs/WHATS_NEW_0351.md)
+[Download 0.3.51.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.51](docs/WHATS_NEW_0351.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -136,7 +136,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.3.51
+## Known issues in 0.3.51.1
 
 The ones you are most likely to meet:
 
