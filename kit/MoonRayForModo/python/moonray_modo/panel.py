@@ -411,7 +411,9 @@ class Panel(Tools, QtWidgets.QWidget):
             # A render made before is shown again as it was; nothing is rendered until the scene changes.
             self._paste();self.preview.fit()
             self.status.setText('Draft off.');return
-        self.preview.fit()
+        # Nothing was rendered before the draft: the lines are not left standing as though they were a render.
+        self._held=True
+        self.preview.clear();self.image_info.setText('')
         if self._following:self.preview_timer.start()
         else:self.status.setText('Draft off. Press Render for the picture.')
 
@@ -478,9 +480,9 @@ class Panel(Tools, QtWidgets.QWidget):
     def _paste(self):
         """Show the last whole frame with the last region rendered laid in it, and keep it until something is rendered."""
         from . import draft
-        self._held=True
         whole,part=self._whole,self._part
         if whole is None:return
+        self._held=True
         self.preview.set_image(draft.over(whole,part[1],part[0]) if part is not None and part[1].size()==whole.size() else whole)
         self.image_info.setText('%d x %d'%(whole.width(),whole.height()))
 
@@ -742,6 +744,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self._held=False;self._draft_engine=self._draft_lines=False
             region_pass,self._draft_pass=getattr(self,'_draft_pass',False),False
             if not region_pass:self._draft_then=None
+        if not output and not self.draft.isChecked():self._draft_fine=(0,0)
         if not output and self.draft.isChecked() and not region_pass:
             # The draft is always MoonLightIPR's: outlines of what the camera sees first, found on the graphics
             # card at no cost however heavy the scene, and drawn finer than the preview. The lines are drawn
@@ -926,15 +929,17 @@ class Panel(Tools, QtWidgets.QWidget):
         if self.sequence is not None:
             self.sequence.stop()
         self._following=False;self.timer.stop()
+        # A draft's region is not gone on to once its lines have been stopped.
+        self._draft_then=None;self._draft_pass=False
         self.preview.set_show_buckets(self.show_buckets.isChecked())
         # A preview stopped by hand is taken as finished where it stands: the picture so far is kept, and what
         # follows a finished render, the denoiser among it, follows this.
         rendering=self._rendering and not self._output_busy()
         if rendering and self.renderer.settle():
-            self.status.setText('Stopping: finishing with what is rendered.');return
+            self.status.setText('Stopping: finishing with what is rendered.');self._await_settle(5000);return
         # MoonRay under Safe Denoising: the picture it last saved is finished with, a preview or an output alike.
         if self._rendering and not (self.sequence is not None and self.sequence.running) and self.renderer.settle_moonray():
-            self.status.setText('Stopping: keeping what is rendered.');return
+            self.status.setText('Stopping: keeping what is rendered.');self._await_settle(30000);return
         self.renderer.stop()
         self._set_rendering(False)
         self.status.setText('Stopped.')
@@ -952,9 +957,21 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _stopped_plain(self):
         """A render stopped before MoonRay had saved anything of it."""
+        self._settle_token=None
         self._continuable=self.last_digest if getattr(self.renderer,'resumable',None) else None
         self._set_rendering(False)
         self.status.setText('Stopped before anything of the render was saved.')
+
+    def _await_settle(self,wait):
+        """A render asked to finish with what it has is given so long to say that it has; past that it is stopped
+        outright, so that the window is never left waiting."""
+        self._settle_token=token=object()
+        def late():
+            if self.disposed or getattr(self,'_settle_token',None) is not token or not self._rendering:return
+            self._settle_token=None
+            self.renderer.stop();self._set_rendering(False)
+            self.status.setText('Stopped.')
+        QtCore.QTimer.singleShot(wait,late)
 
     def _settle_stopped(self):
         """After MoonRay is stopped: the last pass it finished is the picture, and is denoised if that is asked for.
@@ -993,6 +1010,11 @@ class Panel(Tools, QtWidgets.QWidget):
                     self._draft_render=(region,frame.copy());self._part=self._draft_render
                 if self._draft_image is not None:self._draft_show()
                 return
+            if self._draft_fine!=(0,0):
+                # Draft is off, and its lines may still arrive or be shown again by a change of buffer or engine: they
+                # are known by their size, and are not a render to show or to keep.
+                late=path if isinstance(path,QtGui.QImage) else QtGui.QImage(str(path))
+                if (late.width(),late.height())==self._draft_fine:return
             if isinstance(path,QtGui.QImage):self.preview.set_image(path)
             else:self.preview.load(path)
             # Kept, to be put back when Region or Draft is switched off, without rendering.
@@ -1027,11 +1049,13 @@ class Panel(Tools, QtWidgets.QWidget):
             try:self._submit(scene)
             except Exception as exc:self._failed(str(exc))
             return
+        self._settle_token=None
         # A preview stopped under Safe Denoising can be taken up again while the scene stays as it was.
         self._continuable=self.last_digest if not output and getattr(self.renderer,'resumable',None) else None
         self._set_rendering(False)
         self.status.setToolTip('')
-        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Stopped and kept. Continue takes the render up again.' if self._continuable else 'Done'))
+        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Stopped and kept. Continue takes the render up again.' if self._continuable
+                             else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))
         if not output:
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)

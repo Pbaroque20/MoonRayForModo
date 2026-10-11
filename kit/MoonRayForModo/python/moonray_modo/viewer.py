@@ -57,6 +57,13 @@ class _PreviewBody:
         self._curved = None
         self.update()
 
+    def clear(self):
+        """Show no picture, as before the first render."""
+        self.image = QtGui.QImage()
+        self._single = None
+        self._curved = None
+        self.fit()
+
     def set_channel(self, channel):
         """Show all of the picture ('rgb') or one of its channels ('r', 'g', 'b') as greys."""
         self.channel = channel if channel in ('r', 'g', 'b') else 'rgb'
