@@ -9,7 +9,7 @@ The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/r
 ## Built since 0.3.51.3
 
 - **What Modo hides is hidden.** An item with its eye off no longer renders (in MoonRay or MoonLightIPR) unless its Render setting says Yes.
-- **Three engines, no Live box.** **MoonRay** renders the picture once, in full. **MoonRay LS** (low sample) and **MoonLightIPR** are realtime: each follows the scene from the moment it is chosen, and the button reads **Realtime On**; press it to switch realtime off.
+- **Three engines, no Live box.** **MoonRay** renders the picture once, in full. **MoonRay LS** (low sample) and **MoonLightIPR** are realtime: each follows the scene from the moment it is chosen, and the button reads **RT On** and stays pressed in; press it to switch realtime off.
 - **Safe Denoising shows the render as it comes on**, like any other render, instead of only at each save. This needs the MoonRay of the next runtime. A stop keeps the last save, and the window says how long before the stop that was.
 - **Two lines under the picture**: the status on its own line, then the pointer's values, the render's timing and the picture's size.
 - **Tile outlines are pastel blue and fade out** when MoonRay is done with a tile, instead of vanishing at once.

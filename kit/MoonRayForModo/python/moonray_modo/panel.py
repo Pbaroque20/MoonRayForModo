@@ -117,8 +117,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self.start.setToolTip(RENDER_TIP)
         # One button: it starts a preview, and while one runs or IPR is watching, it stops it.
         self.start.clicked.connect(self._render_or_stop)
+        # Pressed in, as it is while realtime is on, it is lit in Modo's own orange, so that on is told from off at a glance.
+        self.start.setStyleSheet('QPushButton:checked{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}')
         row.addWidget(self.start)
-        # Called Live, so that it is not taken for the MoonLightIPR engine in the list beside it.
         # Three ways to preview. MoonRay renders the picture once, in full. The other two are realtime: they follow
         # the scene as it is edited. Whether the window is following is kept in a switch of its own, which is not
         # shown: the choice of engine sets it.
@@ -217,7 +218,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text()))
             elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
         # Wide enough for the longest thing it says.
-        self.start.setFixedWidth(wide(self.start,'Realtime Off',24))
+        self.start.setFixedWidth(wide(self.start,'Continue',28))
         # Room for the menu arrow beside the word, which it otherwise covers.
         gear.setFixedWidth(wide(gear,'Options',34))
         for combo,least,most in ((self.preview_engine,96,124),(self.camera,96,170),(self.buffer,96,150)):
@@ -771,10 +772,13 @@ class Panel(Tools, QtWidgets.QWidget):
         again=not active and getattr(self,'_continuable',None) is not None
         if self._live():
             # A realtime engine is switched on and off, not started and stopped.
-            self.start.setText('Realtime On' if active else 'Realtime Off')
-            self.start.setToolTip('The preview is following the scene as you edit it. Press to switch it off.' if active
-                                  else 'The preview is not following the scene. Press to switch it on.')
+            # RT for realtime. While it is on the button stays pressed in, as a switch that is on does.
+            self.start.setText('RT On' if active else 'RT Off')
+            self.start.setCheckable(True);self.start.setChecked(active)
+            self.start.setToolTip('Realtime is on: the preview follows the scene as you edit it. Press to switch it off.' if active
+                                  else 'Realtime is off: the preview is not following the scene. Press to switch it on.')
             return
+        self.start.setChecked(False);self.start.setCheckable(False)
         self.start.setText('Stop' if active else 'Continue' if again else 'Render')
         self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)

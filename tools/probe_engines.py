@@ -28,7 +28,7 @@ def panel_widget():
 
 def note(name):
     panel = panel_widget()
-    result['steps'].append({'step': name, 'engine': panel.preview_engine.currentText(), 'button': panel.start.text(), 'following': panel._following,
+    result['steps'].append({'step': name, 'engine': panel.preview_engine.currentText(), 'button': panel.start.text(), 'pressed': panel.start.isChecked(), 'following': panel._following,
                             'rendering': panel._rendering, 'status': panel.status.text(), 'timing': panel.render_timing.text(), 'info': panel.image_info.text(),
                             'picture': not panel.preview.image.isNull(), 'live_box_shown': panel.ipr_mode.isVisible(),
                             'engines': [panel.preview_engine.itemText(i) for i in range(panel.preview_engine.count())]})
