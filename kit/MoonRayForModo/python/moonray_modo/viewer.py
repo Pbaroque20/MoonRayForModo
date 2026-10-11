@@ -31,6 +31,8 @@ class _PreviewBody:
         # The draft's paper: two colours the whole view is filled with, head to foot, under a picture that is then
         # lines with nothing between them. None for the ordinary dark surround.
         self.paper = None
+        # The size the picture is spoken of at, where it is drawn finer than it is rendered: a draft's. None for its own.
+        self.nominal = None
         self._drawing = None
         self.setMouseTracking(True)
         self.setMinimumSize(256, 192)
@@ -111,9 +113,10 @@ class _PreviewBody:
         area = self.image_rect()
         if self.image.isNull() or area.width() <= 0 or not area.contains(QtCore.QPointF(point)):
             return None
-        x = int((point.x() - area.left()) / area.width() * self.image.width())
-        y = int((point.y() - area.top()) / area.height() * self.image.height())
-        return min(self.image.width() - 1, max(0, x)), min(self.image.height() - 1, max(0, y))
+        width, height = self.nominal or (self.image.width(), self.image.height())
+        x = int((point.x() - area.left()) / area.width() * width)
+        y = int((point.y() - area.top()) / area.height() * height)
+        return min(width - 1, max(0, x)), min(height - 1, max(0, y))
 
     def fit(self):
         """Fill the view with the picture, or with the region of it that is rendered."""
@@ -202,7 +205,8 @@ class _PreviewBody:
                     if self._drawing is not None and area.width() > 0:
                         # How many pixels of the picture the rectangle takes in, written by the pointer.
                         kept = box.intersected(area)
-                        text = '%d x %d' % (round(kept.width() / area.width() * self.image.width()), round(kept.height() / area.height() * self.image.height()))
+                        width, height = self.nominal or (self.image.width(), self.image.height())
+                        text = '%d x %d' % (round(kept.width() / area.width() * width), round(kept.height() / area.height() * height))
                         at = QtCore.QPointF(self._drawing[1]) + QtCore.QPointF(14, 18)
                         plate = QtCore.QRectF(painter.fontMetrics().boundingRect(text)).adjusted(-5, -3, 5, 3)
                         plate.moveTopLeft(QtCore.QPointF(min(at.x(), self.width() - plate.width() - 2), min(at.y(), self.height() - plate.height() - 2)))
