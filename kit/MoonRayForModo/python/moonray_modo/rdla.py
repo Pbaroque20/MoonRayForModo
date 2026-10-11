@@ -536,6 +536,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         lines += ['  ["checkpoint_active"] = true,','  ["resumable_output"] = true,','  ["checkpoint_bg_write"] = false,',
                   '  ["checkpoint_interval"] = %s,'%number(recovery['minutes']),
                   '  ["resume_render"] = %s,'%('true' if recovery['resume'] else 'false')]
+    # Safe denoising: the picture so far is saved every few seconds, beside each file MoonRay is to write, so that
+    # a render stopped by hand has a whole picture to be finished with.
+    safe = None if recovery else scene.get('_safe')
+    if safe:
+        lines += ['  ["checkpoint_active"] = true,', '  ["checkpoint_bg_write"] = false,', '  ["checkpoint_interval"] = %s,' % number(safe['minutes'])]
+    def kept(path):
+        from .denoising import safe_name
+        return ['  ["checkpoint_file_name"] = %s,' % string(safe_name(path))] if safe else []
     region = scene.get('region')
     if region is not None:
         if len(region) != 4 or any(not math.isfinite(float(v)) for v in region):
@@ -585,7 +593,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             attributes=dict(attributes,**recovery_attributes(recovery))
             attributes=dict(channel_format=0,**attributes) if 'channel_format' not in attributes else attributes
             lines += ['RenderOutput(%s) {' % string('/modo/aov/' + key),
-                      '  ["file_name"] = %s,' % string(str(output_file)),
+                      '  ["file_name"] = %s,' % string(str(output_file)), *kept(output_file),
                       *(['  ["channel_name"] = %s,' % string(channel)] if 'channel_name' not in attributes else []),
                       '  ["exr_header_attributes"] = Metadata('+string(metadata_path)+'),',
                       '  ["compression"] = 1,']
@@ -604,7 +612,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             if key not in available:raise ValueError('Unknown preview buffer')
             if not path:raise ValueError('Missing preview buffer output path')
             lines += ['RenderOutput(%s) {'%string('/modo/preview/'+key),
-                      '  ["file_name"] = %s,'%string(str(path)),
+                      '  ["file_name"] = %s,'%string(str(path)), *kept(path),
                       '  ["channel_format"] = 0,', '  ["compression"] = 1,']
             attributes={k:v for k,v in available[key].items() if k!='channel_format'}
             for attr,value in attributes.items():
@@ -616,7 +624,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             from .recovery import attributes as recovery_attributes
             attributes.update(recovery_attributes(recovery,key))
         lines += ['RenderOutput(%s) {' % string('/modo/denoise/'+key),
-                  '  ["file_name"] = %s,' % string(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
+                  '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
     if entity_camera and entity_camera['class'] == 'BakeCamera':

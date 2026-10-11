@@ -89,6 +89,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.image_ready.connect(self._image)
         self.renderer.image_object.connect(self._image)
         self.renderer.finished.connect(self._finished)
+        self.renderer.stopped.connect(self._stopped_plain)
         self.renderer.notices.connect(self._engine_notices)
         self._engine_changed(0)
         self._poll()
@@ -915,9 +916,35 @@ class Panel(Tools, QtWidgets.QWidget):
             self.sequence.stop()
         self._following=False;self.timer.stop()
         self.preview.set_show_buckets(self.show_buckets.isChecked())
+        # A preview stopped by hand is taken as finished where it stands: the picture so far is kept, and what
+        # follows a finished render, the denoiser among it, follows this.
+        rendering=self._rendering and not self._output_busy()
+        if rendering and self.renderer.settle():
+            self.status.setText('Stopping: finishing with what is rendered.');return
+        # MoonRay under Safe Denoising: the picture it last saved is finished with, a preview or an output alike.
+        if self._rendering and not (self.sequence is not None and self.sequence.running) and self.renderer.settle_moonray():
+            self.status.setText('Stopping: keeping what is rendered.');return
         self.renderer.stop()
         self._set_rendering(False)
         self.status.setText('Stopped.')
+        if rendering:self._settle_stopped()
+
+    def _stopped_plain(self):
+        """A render stopped before MoonRay had saved anything of it."""
+        self._set_rendering(False)
+        self.status.setText('Stopped before anything of the render was saved.')
+
+    def _settle_stopped(self):
+        """After MoonRay is stopped: the last pass it finished is the picture, and is denoised if that is asked for.
+        A pass cut short leaves nothing of its own; MoonRay hands over a picture only when a pass ends."""
+        engine=self._preview_denoiser()
+        frame=self.renderer.buffers.frame
+        if engine=='off' or not frame or frame.get('snapshot',{}).get('_ipr'):return
+        if not all(key in frame.get('files',{}) for key in ('beauty','denoise_albedo','denoise_normal')):return
+        self.renderer.buffers.denoiser.request(engine)
+        if self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
+            self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty'))
+        self.status.setText('Stopped. The last finished pass is kept and denoised.')
 
     def _failed(self, message):
         self.refine_timer.stop()
