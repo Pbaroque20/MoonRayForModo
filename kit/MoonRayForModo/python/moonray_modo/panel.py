@@ -166,6 +166,13 @@ class Panel(Tools, QtWidgets.QWidget):
             button.clicked.connect(functools.partial(self._channel_clicked,key))
             self.channels[key]=button;row.addWidget(button)
         self._before_alpha=None
+        # Draft: the scene as plain lines, which costs nothing to show, for a region to be drawn on and rendered.
+        self.draft=QtWidgets.QToolButton();self.draft.setText('Draft');self.draft.setCheckable(True)
+        self.draft.setStyleSheet('QToolButton:checked { background-color: #b7a6d9; color: #101010; border: 1px solid #b7a6d9; border-radius: 3px; }')
+        self.draft.setToolTip('Show the scene as simple lines and render nothing, until a region is drawn with Region: then only that region is rendered, on the lines.')
+        self.draft.toggled.connect(self._draft_toggled)
+        self._draft_image=None;self._draft_render=None
+        row.addWidget(self.draft)
         # A button as the channels' are: lit while only a region is rendered and a drag in the picture draws it.
         self.region_enabled=QtWidgets.QToolButton();self.region_enabled.setText('Region');self.region_enabled.setCheckable(True)
         self.region_enabled.setStyleSheet('QToolButton:checked { background-color: #e08a1e; color: #101010; border: 1px solid #e08a1e; border-radius: 3px; }')
@@ -347,6 +354,31 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_region(region,True)
         self.status.setText('Region set: %d%% to %d%% across, %d%% to %d%% down.'%(region[0]*100,region[2]*100,region[1]*100,region[3]*100))
         if self._following:self.preview_timer.start()
+        # In draft, drawing the region is asking for it to be rendered.
+        elif self.draft.isChecked():self.render_once()
+
+    def _draft_toggled(self,enabled):
+        """Draft on: lines in place of a render, and the whole frame kept in view. Off: the render again."""
+        self.preview.whole=bool(enabled)
+        if not enabled:
+            self._draft_image=self._draft_render=None
+            self.preview.fit()
+        if self._following:self.preview_timer.start()
+        elif enabled:self.render_once()
+        else:self.status.setText('Draft off. Press Render for the picture.')
+
+    def _draft_region(self):
+        values=self._settings_values()
+        region=values['region'] if values['region_enabled'] else None
+        return tuple(region) if region and tuple(region)!=(0.0,0.0,1.0,1.0) else None
+
+    def _draft_show(self):
+        """The lines, with the last render of the region now set laid on them."""
+        from . import draft
+        region=self._draft_region()
+        rendered=self._draft_render[1] if self._draft_render and self._draft_render[0]==region else None
+        self.preview.set_image(draft.over(self._draft_image,rendered,region))
+        self.image_info.setText('%d x %d | Draft'%(self._draft_image.width(),self._draft_image.height()))
 
     def _probe(self,x,y):
         """Say what is under the pointer: the render's own linear values where they are held, else what is on screen."""
@@ -633,6 +665,16 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
+        if not output and self.draft.isChecked():
+            # Draft: the lines are drawn anew, and only a region, where one is set, goes on to be rendered.
+            from . import draft
+            self._draft_image=draft.picture(scene,*self._dimensions(scene,False))
+            self._draft_show()
+            if self._draft_region() is None:
+                self.last_digest=self._digest(scene)
+                self.renderer.stop();self._set_rendering(False)
+                self.status.setText('Draft: press Region and drag in the picture to render that part.')
+                return
         if not output:
             from .incremental import surroundings
             self._surroundings=surroundings(scene)
@@ -811,6 +853,12 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _image(self, path):
         try:
+            if self.draft.isChecked() and self._draft_image is not None:
+                # In draft the render is seen inside its region only, on the lines.
+                rendered=path if isinstance(path,QtGui.QImage) else QtGui.QImage(str(path))
+                if rendered.isNull():raise ValueError('MoonRay output could not be decoded as an image.')
+                self._draft_render=(self._draft_region(),rendered)
+                self._draft_show();return
             if isinstance(path,QtGui.QImage):self.preview.set_image(path)
             else:self.preview.load(path)
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}

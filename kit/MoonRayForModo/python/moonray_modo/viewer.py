@@ -26,6 +26,8 @@ class _PreviewBody:
         # whether a drag of the left button draws a new one, in place of moving the picture.
         self.region = None
         self.region_tool = False
+        # Whether the whole frame stays in view when a region is set, as it does over the draft's lines.
+        self.whole = False
         self._drawing = None
         self.setMouseTracking(True)
         self.setMinimumSize(256, 192)
@@ -115,7 +117,7 @@ class _PreviewBody:
         self.zoom = 1.0
         self.pan = QtCore.QPointF()
         region = getattr(self, 'region', None)
-        if region and tuple(region) != (0.0, 0.0, 1.0, 1.0) and not self.image.isNull() and self.width() > 0 and self.height() > 0:
+        if region and not getattr(self, 'whole', False) and tuple(region) != (0.0, 0.0, 1.0, 1.0) and not self.image.isNull() and self.width() > 0 and self.height() > 0:
             left, top, right, bottom = region
             wide, high = self.image.width() * (right - left), self.image.height() * (bottom - top)
             if wide > 0 and high > 0:
