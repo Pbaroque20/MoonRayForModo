@@ -19,6 +19,13 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png)
 *Draft, with a region rendered among the lines.*
 
+**Rendering with MoonRay**
+
+- **Safe Denoising**: stop a MoonRay render at any time and keep it, denoised. **Continue** then takes it up where it stood.
+
+![A MoonRay preview stopped part way, kept and denoised](docs/images/safe-denoising.png)
+*Stopped part way, kept and denoised, with Continue on offer.*
+
 **In the MoonLightIPR preview**
 
 - **Hair** shaded as hair, with MoonRay's hair material.
@@ -43,6 +50,10 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 **Working faster**
 
 - **Assign a MoonRay material to selected polygons**, with a name, type, colour and smoothing angle.
+- **MoonRay's materials in the Shader Tree's Add Layer list**, under Custom Materials.
+- **A MoonRay page in Modo's Preferences**, including having the M key open MoonRay's Assign Material.
+- **The asset library shows pictures** of saved materials, models, scenes and textures, each with one button for what it is for.
+- **MoonRay Content**: MoonRay's example scenes as a download that goes with the release.
 - **Graph editor**: big graphs open on the output node and zoom freely.
 - **Ramps** open in the ramp editor straight from a material's properties.
 - **Light Path Expressions** has its own entry in the MoonRay menu and under Advanced in the render settings.
