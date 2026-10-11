@@ -16,6 +16,10 @@ out = root / 'test-results/draft'
 out.mkdir(parents=True, exist_ok=True)
 result = {}
 held = {}
+# The engine chosen in the window: the draft's lines are MoonLightIPR's whichever it is.
+chosen = out / 'engine.txt'
+ENGINE = chosen.read_text().strip() if chosen.is_file() else 'moonlightipr'
+result['engine'] = ENGINE
 
 
 def mouse(widget, kind, point, button=QtCore.Qt.NoButton, held_buttons=QtCore.Qt.NoButton):
@@ -64,14 +68,14 @@ def start():
         held['engine'] = panel.preview_engine.currentData()
         panel.preferences.set('runtime', str(root / 'runtime/steady-0350-pool'))
         panel.window().resize(1000, 700)
-        panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonlightipr'))
+        panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(ENGINE))
         QtWidgets.QApplication.processEvents()
         if panel.start.text() == 'Render':
             panel.start.click()
     except Exception:
         result['start_error'] = traceback.format_exc()
     save()
-    QtCore.QTimer.singleShot(20000, draft_on)
+    QtCore.QTimer.singleShot(20000 if ENGINE == 'moonlightipr' else 60000, draft_on)
 
 
 def draft_on():
@@ -87,18 +91,11 @@ def draft_on():
 
 def region():
     try:
-        import time
-        from moonray_modo import draft
         panel = panel_widget()
         view = panel.preview
         result['draft'] = {'status': panel.status.text(), 'info': panel.image_info.text(), 'corner': colour(view, .02, .03), 'foot': colour(view, .02, .97),
                            'button': panel.start.text(), 'engine_running': panel._rendering}
-        began = time.perf_counter()
-        scene = panel._capture()
-        found = draft.segments(scene, 640, 360)
-        result['lines'] = {'count': len(found), 'seconds': round(time.perf_counter() - began, 3),
-                           'per_mesh': [[m['name'], len(m['faces']), len(draft.lines(m)[1])] for m in scene['meshes']]}
-        panel.window().grab().save(str(out / 'draft.png'))
+        panel.window().grab().save(str(out / ('draft_%s.png' % ENGINE)))
         panel.region_enabled.click()
         QtWidgets.QApplication.processEvents()
         area = view.image_rect()
@@ -110,7 +107,7 @@ def region():
     except Exception:
         result['region_error'] = traceback.format_exc()
     save()
-    QtCore.QTimer.singleShot(15000, look)
+    QtCore.QTimer.singleShot(15000 if ENGINE == 'moonlightipr' else 70000, look)
 
 
 def look():
@@ -119,7 +116,7 @@ def look():
         view = panel.preview
         result['with_region'] = {'status': panel.status.text(), 'info': panel.image_info.text(), 'zoom': view.zoom, 'outside': colour(view, .02, .03),
                                  'inside': colour(view, .3, .8), 'region': view.region}
-        panel.window().grab().save(str(out / 'draft_region.png'))
+        panel.window().grab().save(str(out / ('draft_region_%s.png' % ENGINE)))
         before = [panel.region_enabled.isChecked(), panel.draft.isChecked()]
         panel.region_enabled.click()
         between = [panel.region_enabled.isChecked(), panel.draft.isChecked()]

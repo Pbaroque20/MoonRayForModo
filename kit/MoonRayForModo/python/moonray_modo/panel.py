@@ -168,7 +168,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # Draft: the scene as plain lines, which costs nothing to show, for a region to be drawn on and rendered.
         self.draft=QtWidgets.QToolButton();self.draft.setText('Draft');self.draft.setCheckable(True)
         self.draft.setStyleSheet('QToolButton:checked { background-color: #b7a6d9; color: #101010; border: 1px solid #b7a6d9; border-radius: 3px; }')
-        self.draft.setToolTip('Show the scene as simple lines and render nothing, until a region is drawn with Region: then only that region is rendered, on the lines.')
+        self.draft.setToolTip('Show the scene as simple outlines, drawn by MoonLightIPR on the graphics card, and render nothing until a region is drawn with Region: then only that region is rendered, by the engine chosen, among the lines.')
         self.draft.toggled.connect(self._draft_toggled)
         self._draft_image=None;self._draft_render=None;self._draft_engine=False
         # The last whole frame shown and the last region rendered, to put back without rendering; and whether
@@ -724,21 +724,19 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
-        if not output:self._held=False;self._draft_engine=False
-        if not output and self.draft.isChecked() and self.preview_engine.currentData()=='moonlightipr':
-            # MoonLightIPR draws the draft itself, on the graphics card: outlines of what the camera sees first,
-            # at no cost however heavy the scene, and the region rendered among them in the same pass.
+        if not output:
+            self._held=False;self._draft_engine=self._draft_lines=False
+            region_pass,self._draft_pass=getattr(self,'_draft_pass',False),False
+            if not region_pass:self._draft_then=None
+        if not output and self.draft.isChecked() and not region_pass:
+            # The draft is always MoonLightIPR's: outlines of what the camera sees first, found on the graphics
+            # card at no cost however heavy the scene. With MoonLightIPR chosen the region is rendered among them
+            # in the same pass. With MoonRay chosen the lines are drawn first, over the whole frame, and MoonRay
+            # then renders the region, which is laid on them.
             self._draft_engine=True;self._draft_image=None
-        elif not output and self.draft.isChecked():
-            # Draft: the lines are drawn anew, and only a region, where one is set, goes on to be rendered.
-            from . import draft
-            self._draft_image=draft.picture(scene,*self._dimensions(scene,False))
-            self._draft_show()
-            if self._draft_region() is None:
-                self.last_digest=self._digest(scene)
-                self.renderer.stop();self._set_rendering(False)
-                self.status.setText('Draft: press Region and drag in the picture to render that part.')
-                return
+            if self.preview_engine.currentData()!='moonlightipr':
+                self._draft_lines=True
+                self._draft_then=scene if self._draft_region() else None
         if not output:
             from .incremental import surroundings
             self._surroundings=surroundings(scene)
@@ -748,8 +746,13 @@ class Panel(Tools, QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
-        if self._draft_engine:scene=dict(scene,_draft=1 if self._draft_region() else 2)
-        engine='moonray' if output else self.preview_engine.currentData()
+        if self._draft_engine:scene=dict(scene,_draft=1 if self._draft_region() and not self._draft_lines else 2)
+        engine='moonray' if output else 'moonlightipr' if self._draft_engine else self.preview_engine.currentData()
+        if self._draft_engine:
+            # The draft is drawn finer than the preview, as many pixels as the view has and half as many again, so
+            # that its lines are as clean as a drawing's and stay so when looked at closely.
+            fine=min(3200,max(2*width,int(1.5*self.preview.width()*self.preview.devicePixelRatioF())))
+            height=max(16,round(height*fine/width));width=fine
         # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
         if self._following and not output and engine=='moonray':
             from .ipr import prepare
@@ -923,23 +926,27 @@ class Panel(Tools, QtWidgets.QWidget):
                 from . import draft
                 frame=path if isinstance(path,QtGui.QImage) else QtGui.QImage(str(path))
                 if frame.isNull():raise ValueError('MoonRay output could not be decoded as an image.')
-                region=self._draft_region()
-                if region:self._part=(region,frame)
-                self.preview.set_image(draft.inked(frame,region))
+                region=None if self._draft_lines else self._draft_region()
+                if region:self._part=(region,frame.copy())
+                made=draft.inked(frame,region)
+                # Lines alone are kept, for MoonRay's region to be laid on.
+                if self._draft_lines:self._draft_image=made;self._draft_render=None
+                self.preview.set_image(made)
                 self.image_info.setText('%d x %d | Draft'%(frame.width(),frame.height()));return
             if self.draft.isChecked() and self._draft_image is not None:
                 # In draft the render is seen inside its region only, on the lines.
                 rendered=path if isinstance(path,QtGui.QImage) else QtGui.QImage(str(path))
                 if rendered.isNull():raise ValueError('MoonRay output could not be decoded as an image.')
-                self._draft_render=(self._draft_region(),rendered);self._part=self._draft_render
+                self._draft_render=(self._draft_region(),rendered.copy());self._part=self._draft_render
                 self._draft_show();return
             if isinstance(path,QtGui.QImage):self.preview.set_image(path)
             else:self.preview.load(path)
             # Kept, to be put back when Region or Draft is switched off, without rendering.
             if not self.draft.isChecked():
                 region=self._draft_region()
-                if region:self._part=(region,QtGui.QImage(self.preview.image))
-                else:self._whole=QtGui.QImage(self.preview.image);self._part=None
+                # Copies of their own: the picture shown may rest on memory the renderer takes back.
+                if region:self._part=(region,self.preview.image.copy())
+                else:self._whole=self.preview.image.copy();self._part=None
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
@@ -959,6 +966,13 @@ class Panel(Tools, QtWidgets.QWidget):
         self.render_timing.setText(label.replace(' · ',' | '))
 
     def _finished(self, output):
+        if not output and getattr(self,'_draft_then',None) is not None and self.draft.isChecked():
+            # The draft's lines are drawn: now the region, by the engine chosen.
+            scene,self._draft_then=self._draft_then,None
+            self._draft_pass=True
+            try:self._submit(scene)
+            except Exception as exc:self._failed(str(exc))
+            return
         self._set_rendering(False)
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Done'))

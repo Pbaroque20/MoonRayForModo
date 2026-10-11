@@ -1349,8 +1349,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
         const float3 from = vec(params.cameraOrigin), u = vec(params.cameraU), v = vec(params.cameraV), w = vec(params.cameraW);
         Hit here, beside, above;
         traceRadiance(from, normalize(u * sx + v * sy + w), here, 1e16f);
-        traceRadiance(from, normalize(u * (sx + 2.0f / params.width) + v * sy + w), beside, 1e16f);
-        traceRadiance(from, normalize(u * sx + v * (sy + 2.0f / params.height) + w), above, 1e16f);
+        // A line is as wide on the picture whatever its size: about a thousandth of its width, a pixel at least.
+        const float apart = 2.0f * fmaxf(1.0f, float(params.width) / 1100.0f);
+        traceRadiance(from, normalize(u * (sx + apart / params.width) + v * sy + w), beside, 1e16f);
+        traceRadiance(from, normalize(u * sx + v * (sy + apart / params.height) + w), above, 1e16f);
         const float line = draftEdge(here, beside) || draftEdge(here, above) ? 1.0f : 0.0f;
         const float weight = 1.0f / float(params.sample + 1);
         float4* beauty = reinterpret_cast<float4*>(params.beauty) + pixel;
