@@ -100,11 +100,45 @@ def last():
                                 'timing': panel.render_timing.text()}
         result['log'] = [line[:200] for line in str(getattr(panel.renderer, 'log', '')).splitlines() if line.strip() and not line.startswith('@@') and 'Rendering [' not in line][-25:]
         panel.window().grab().save(str(out / 'stopped.png'))
+        # Continue: the button now offers to take the render up again.
+        result['offered'] = panel.start.text()
+        panel.start.click()
+        result['continuing'] = [panel.status.text(), panel.start.text()]
+        save()
+        QtCore.QTimer.singleShot(22000, resumed)
+        return
+    except Exception:
+        result['last_error'] = traceback.format_exc()
+    save()
+    lx.eval('!app.quit')
+
+
+def resumed():
+    try:
+        panel = panel_widget()
+        log = str(getattr(panel.renderer, 'log', ''))
+        result['resumed'] = {'status': panel.status.text(), 'timing': panel.render_timing.text(), 'took_up': 'resume render initial information' in log,
+                             'fell_back': 'Fall back on standard rendering' in log, 'read': log.count('.exr') if 'read resume files' in log else 0,
+                             'said': [line[:150] for line in log.splitlines() if 'rror' in line or 'progressCheckpointTileSamples' in line][:6]}
+        # Stopped again, to see that it can be kept a second time.
+        panel.start.click()
+    except Exception:
+        result['resumed_error'] = traceback.format_exc()
+    save()
+    QtCore.QTimer.singleShot(30000, finish)
+
+
+def finish():
+    try:
+        panel = panel_widget()
+        frame = panel.renderer.buffers.frame or {}
+        result['second_stop'] = {'status': panel.status.text(), 'button': panel.start.text(), 'denoised': 'denoised_beauty' in frame.get('files', {}), 'timing': panel.render_timing.text()}
+        panel.window().grab().save(str(out / 'continued.png'))
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(held['engine']))
         panel.preferences.store.setValue('runtime', held['stored'])
         panel.ipr_mode.setChecked(held['live'])
     except Exception:
-        result['last_error'] = traceback.format_exc()
+        result['finish_error'] = traceback.format_exc()
     save()
     lx.eval('!app.quit')
 

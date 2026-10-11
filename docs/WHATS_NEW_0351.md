@@ -54,6 +54,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 ## More of MoonRay
 
 - **Safe Denoising** (Render item > MoonRay > Denoising): stop a MoonRay render at any time and keep it. While it renders, MoonRay saves the whole picture every few seconds; on Stop the last save is taken as the finished render, with all its buffers, and denoised if a denoiser is on. Stop waits for the save in progress, a few seconds at most. It works for previews with Live off and for output renders; a render stopped in its first seconds has nothing saved yet.
+- **Continue**: after a MoonRay preview is stopped under Safe Denoising, the Render button reads Continue and takes the render up where it stood, as long as the scene has not changed; if it has, the scene is rendered from the start. Render from the Start, last in the picture's right-click menu, lets the stopped render go after asking.
 - **Stop keeps a MoonLightIPR preview** as finished too: the picture so far is sent whole and the window says Done.
 - **Bake Selected Mesh to Texture** in the MoonRay menu renders the lighting on a mesh into a picture laid out by its UVs.
 - **Deep EXR**: Save a Deep EXR, under Output Renders, writes `name.deep.exr` beside a render.

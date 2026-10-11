@@ -540,10 +540,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     # a render stopped by hand has a whole picture to be finished with.
     safe = None if recovery else scene.get('_safe')
     if safe:
-        lines += ['  ["checkpoint_active"] = true,', '  ["checkpoint_bg_write"] = false,', '  ["checkpoint_interval"] = %s,' % number(safe['minutes'])]
+        # What is saved can be taken up again: MoonRay is told to save what it needs for that, and, where this render
+        # is one being continued, to begin from what was saved of it before.
+        lines += ['  ["checkpoint_active"] = true,', '  ["checkpoint_bg_write"] = false,', '  ["checkpoint_interval"] = %s,' % number(safe['minutes']),
+                  '  ["resumable_output"] = true,', '  ["resume_render"] = %s,' % ('true' if safe.get('resume') else 'false')]
     def kept(path):
         from .denoising import safe_name
-        return ['  ["checkpoint_file_name"] = %s,' % string(safe_name(path))] if safe else []
+        if not safe:
+            return []
+        before = (safe.get('resume') or {}).get(str(path))
+        return ['  ["checkpoint_file_name"] = %s,' % string(safe_name(path))] + (['  ["resume_file_name"] = %s,' % string(str(before))] if before else [])
     region = scene.get('region')
     if region is not None:
         if len(region) != 4 or any(not math.isfinite(float(v)) for v in region):
@@ -627,6 +633,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                   '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
+    if safe and safe.get('data'):
+        # What MoonRay needs beside the pictures themselves to take a render up again: how much each pixel has had,
+        # the halves of the beauty and the alpha it compares, and the alpha. Kept in a file of their own, so that
+        # nothing the user asked for is added to.
+        for name, result in (('weight', 11), ('beauty_aux', 12), ('alpha_aux', 14), ('alpha', 1)):
+            lines += ['RenderOutput(%s) {' % string('/modo/safe/' + name), '  ["file_name"] = %s,' % string(safe['data']), *kept(safe['data']),
+                      '  ["channel_name"] = %s,' % string(name), '  ["channel_format"] = 0,', '  ["compression"] = 1,', '  ["result"] = %d,' % result, '}']
     if entity_camera and entity_camera['class'] == 'BakeCamera':
         from .bake import resolve
         resolve(lines, render_meshes)

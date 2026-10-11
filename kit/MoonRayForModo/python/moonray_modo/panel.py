@@ -261,6 +261,11 @@ class Panel(Tools, QtWidgets.QWidget):
         batch=menu.addAction('Export AOVs as Images...',self.export_buffers)
         batch.setEnabled(self.preview_engine.currentData()!='moonlightipr')
         if not batch.isEnabled():batch.setToolTip('MoonLightIPR renders the one picture; choose MoonRay for its outputs.')
+        if getattr(self,'_continuable',None) is not None and not self._rendering:
+            # Continue is what the button offers; this is the other choice. It throws the stopped render away, so it
+            # stands last and apart, and asks before it does.
+            menu.addSeparator()
+            menu.addAction('Render from the Start...',self._render_afresh)
         menu.setToolTipsVisible(True)
         return menu
 
@@ -726,8 +731,10 @@ class Panel(Tools, QtWidgets.QWidget):
         """Keep the Render button saying what pressing it will do."""
         self._rendering=bool(rendering)
         active=self._rendering or self._following
-        self.start.setText('Stop' if active else 'Render')
-        self.start.setToolTip(STOP_TIP if active else RENDER_TIP)
+        again=not active and getattr(self,'_continuable',None) is not None
+        self.start.setText('Stop' if active else 'Continue' if again else 'Render')
+        self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
+                              'Right-click the picture for Render from the Start.' if again else RENDER_TIP)
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
@@ -756,6 +763,9 @@ class Panel(Tools, QtWidgets.QWidget):
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
             self._draft_size=(width,height);self.preview.nominal=(width,height)
         engine='moonray' if output else 'moonlightipr' if self._draft_engine else self.preview_engine.currentData()
+        # Continue: the same scene as the render that was stopped and kept, taken up where it stood.
+        resume=bool(not output and not refining and engine=='moonray' and getattr(self,'_continuable',None) is not None and self._continuable==original_digest)
+        if not output:self._continuable=None
         if self._draft_engine:
             # The draft is drawn finer than the preview, as many pixels as the view has and half as many again, so
             # that its lines are as clean as a drawing's and stay so when looked at closely.
@@ -771,7 +781,8 @@ class Panel(Tools, QtWidgets.QWidget):
             scene=refine(scene)
         self.renderer.timeout_seconds = values['timeout']*60
         self.renderer.submit(scene, self.runtime_path(), width, height, (4 if refining else 1) if scene.get('_ipr') and not output else values['samples'],
-                             values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine)
+                             values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine, resume=resume)
+        if resume:self.status.setText('Continuing the stopped render.')
         self.last_digest = original_digest
 
     def _digest(self, scene):
@@ -929,8 +940,19 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText('Stopped.')
         if rendering:self._settle_stopped()
 
+    def _render_afresh(self):
+        """Let go of the stopped render and render the scene from the start, once the user has said so."""
+        asked=QtWidgets.QMessageBox.question(self,'Render from the Start','The render that was stopped is kept, and Continue would take it up where it stood. '
+                                             'Render from the start instead? What was rendered so far is let go of.',
+                                             QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.Cancel,QtWidgets.QMessageBox.Cancel)
+        if asked!=QtWidgets.QMessageBox.Yes:return
+        self._continuable=None
+        self._set_rendering(self._rendering)
+        self.start_render()
+
     def _stopped_plain(self):
         """A render stopped before MoonRay had saved anything of it."""
+        self._continuable=self.last_digest if getattr(self.renderer,'resumable',None) else None
         self._set_rendering(False)
         self.status.setText('Stopped before anything of the render was saved.')
 
@@ -1005,9 +1027,11 @@ class Panel(Tools, QtWidgets.QWidget):
             try:self._submit(scene)
             except Exception as exc:self._failed(str(exc))
             return
+        # A preview stopped under Safe Denoising can be taken up again while the scene stays as it was.
+        self._continuable=self.last_digest if not output and getattr(self.renderer,'resumable',None) else None
         self._set_rendering(False)
         self.status.setToolTip('')
-        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Done'))
+        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Stopped and kept. Continue takes the render up again.' if self._continuable else 'Done'))
         if not output:
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)
