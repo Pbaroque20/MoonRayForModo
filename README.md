@@ -4,7 +4,7 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 **MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and follows your edits as you make them. Final renders always come from MoonRay.
 
-The current release is [0.3.51.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.1), which holds everything below. What is built here next will be listed as it comes.
+The current release is [0.3.51.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.1), which holds everything below. 0.3.51.2, with fixes to renders that did not refresh, is being prepared here. What is built here next will be listed as it comes.
 
 ## Released in 0.3.51
 

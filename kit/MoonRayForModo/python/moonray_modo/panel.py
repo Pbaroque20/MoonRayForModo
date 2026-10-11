@@ -265,7 +265,7 @@ class Panel(Tools, QtWidgets.QWidget):
             # Continue is what the button offers; this is the other choice. It throws the stopped render away, so it
             # stands last and apart, and asks before it does.
             menu.addSeparator()
-            menu.addAction('Render from the Start...',self._render_afresh)
+            menu.addAction('Restart Render...',self._render_afresh)
         menu.setToolTipsVisible(True)
         return menu
 
@@ -727,6 +727,8 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._output_busy():
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
         if self.ipr_mode.isChecked():self._follow(True)
+        # A render begun by hand begins from an empty view, unless it turns out to be one continued.
+        self._clear_first=True
         self.render_once()
 
     def _set_rendering(self,rendering):
@@ -736,7 +738,7 @@ class Panel(Tools, QtWidgets.QWidget):
         again=not active and getattr(self,'_continuable',None) is not None
         self.start.setText('Stop' if active else 'Continue' if again else 'Render')
         self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
-                              'Right-click the picture for Render from the Start.' if again else RENDER_TIP)
+                              'Right-click the picture for Restart Render.' if again else RENDER_TIP)
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
@@ -769,6 +771,10 @@ class Panel(Tools, QtWidgets.QWidget):
         # Continue: the same scene as the render that was stopped and kept, taken up where it stood.
         resume=bool(not output and not refining and engine=='moonray' and getattr(self,'_continuable',None) is not None and self._continuable==original_digest)
         if not output:self._continuable=None
+        if not output and getattr(self,'_clear_first',False):
+            self._clear_first=False
+            if not resume and not self.draft.isChecked():
+                self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
         if self._draft_engine:
             # The draft is drawn finer than the preview, as many pixels as the view has and half as many again, so
             # that its lines are as clean as a drawing's and stay so when looked at closely.
@@ -947,8 +953,7 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _render_afresh(self):
         """Let go of the stopped render and render the scene from the start, once the user has said so."""
-        asked=QtWidgets.QMessageBox.question(self,'Render from the Start','The render that was stopped is kept, and Continue would take it up where it stood. '
-                                             'Render from the start instead? What was rendered so far is let go of.',
+        asked=QtWidgets.QMessageBox.question(self,'Restart Render','Are you sure you want to restart render? Current progress will be lost.',
                                              QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.Cancel,QtWidgets.QMessageBox.Cancel)
         if asked!=QtWidgets.QMessageBox.Yes:return
         self._continuable=None

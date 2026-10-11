@@ -76,8 +76,12 @@ def watch():
         # The long pass is the last one: nothing is left to follow it.
         if panel._rendering and not panel.renderer.passes and getattr(panel.renderer, 'phase', '') == 'render':
             held['long'] = held.get('long', 0) + 1
-        if held.get('long', 0) >= 10 or held['ticks'] > 150:
+            # How many different pictures the view has shown during the long pass: it should come on, not stand still.
+            held.setdefault('seen', set()).add(panel.preview.image.cacheKey())
+        if held.get('long', 0) >= 14 or held['ticks'] > 150:
+            result['pictures_during_long_pass'] = len(held.get('seen', ()))
             result['before_stop'] = [text, panel.render_timing.text(), held['ticks'], [p.name for p in panel.renderer.safe_files][:4]]
+            result['buffer_before_stop'] = [panel.buffer.currentData(), panel._buffer_picked]
             panel.start.click()
             result['at_stop'] = [panel.status.text(), panel.start.text()]
             save()
@@ -95,6 +99,7 @@ def last():
     try:
         panel = panel_widget()
         frame = panel.renderer.buffers.frame or {}
+        result['buffer_state'] = [panel._preview_denoiser(), panel.buffer.currentData(), panel._buffer_picked, panel.buffer.findData('denoised_beauty'), panel.buffer.count()]
         result['after_stop'] = {'status': panel.status.text(), 'button': panel.start.text(), 'rendering': panel._rendering, 'buffer': panel.buffer.currentText(),
                                 'denoised': 'denoised_beauty' in frame.get('files', {}), 'files': len(frame.get('files', {})), 'notices': panel.warnings.toPlainText()[:200],
                                 'timing': panel.render_timing.text()}

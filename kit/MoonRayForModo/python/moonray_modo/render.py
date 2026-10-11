@@ -154,6 +154,8 @@ class Renderer(QtCore.QObject):
                                        and not denoising.settings(snapshot.get('denoising',{}))['safe']))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
+        # A stop that was still waiting for MoonRay to save is over: this render is not one being stopped.
+        self.settling=False;self.settle_wanted=None
         if not request['persistent']:self.session.stop()
         # One renderer at a time holds the GPU and the scene.
         if not moonlightipr:self.moonlightipr.release()
@@ -198,7 +200,9 @@ class Renderer(QtCore.QObject):
         # ended the moment it has next reported every file saved, which also gives the newest picture there can be;
         # or after a wait, should that report not come.
         self.settle_wanted={Path(denoising.safe_name(path)).name for path in self.safe_files};self.settle_tail=''
-        QtCore.QTimer.singleShot(12000,self._settle_now)
+        # The wait is for this stop alone: a later one is not cut short by it.
+        self.settle_serial=serial=getattr(self,'settle_serial',0)+1
+        QtCore.QTimer.singleShot(12000,lambda:self._settle_now() if self.settle_serial==serial else None)
         return True
 
     def _settle_now(self):
@@ -236,6 +240,7 @@ class Renderer(QtCore.QObject):
         return True
 
     def stop(self):
+        self.settling=False;self.settle_wanted=None
         self._progress_end(False)
         self.watchdog.stop()
         self.pending = None
@@ -445,6 +450,16 @@ class Renderer(QtCore.QObject):
         self.bucket_partial=self.bucket_partial[-65536:]
 
         self.log = (self.log + text)[-65536:]
+        if self.phase=='render' and getattr(self,'safe_files',None) and self.active and not self.active.get('output') and not self.closed and not self.canceled:
+            # A safe render is a MoonRay of its own, which shows nothing until a pass ends. Each time it reports the
+            # beauty saved, that save is shown, so that the picture is seen to come on every few seconds.
+            self.safe_tail=(getattr(self,'safe_tail','')+text)[-32768:]
+            lines=self.safe_tail.splitlines(True)
+            self.safe_tail=lines.pop() if lines and not lines[-1].endswith('\n') else ''
+            saved=Path(denoising.safe_name(self.buffer_path))
+            if any(line.startswith('Wrote: ') and Path(line[7:].strip()).name==saved.name for line in lines) and saved.is_file():
+                try:self.buffers.publish({'beauty':str(saved)},self.active['runtime'],self.active['snapshot'],self.backend_status,partial=True)
+                except (ValueError,OSError):pass
         if getattr(self,'settling',False) and getattr(self,'settle_wanted',None):
             # Waiting to stop: each file MoonRay reports saved is ticked off, and when none is left it is ended.
             self.settle_tail=(self.settle_tail+text)[-32768:]
@@ -521,8 +536,12 @@ class Renderer(QtCore.QObject):
             return
         if getattr(self,'settling',False):
             # Stopped by hand under safe denoising: what MoonRay last saved is the render, and it ends as one.
-            self.settling=False
-            if self._promote_safe():
+            self.settling=False;self.settle_wanted=None
+            if code==0 and exit_status==QtCore.QProcess.NormalExit:
+                # MoonRay came to the end of its pass by itself while the stop was waiting: its own files are the
+                # render, whole, and nothing saved part way is put in their place. No further pass follows.
+                self.passes=[]
+            elif self._promote_safe():
                 code,exit_status=0,QtCore.QProcess.NormalExit;self.passes=[]
             else:
                 self.resumable=getattr(self,'resumable_before',None)
