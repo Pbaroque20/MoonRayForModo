@@ -10,8 +10,8 @@ class ShadingModels(unittest.TestCase):
         for model in ('principled','something else'):
             self.assertEqual(shading_models.translated(model,.37),(.37,1.0,False))
         # GTR is MoonRay's own lobe at its own roughness from the middle up, and wider where it is smooth.
-        found=shading_models.translated('gtr',.6)
-        self.assertAlmostEqual(found[0],.6);self.assertEqual(found[1:],(1.0,False))
+        found=shading_models.translated('gtr',.5)
+        self.assertAlmostEqual(found[0],.5);self.assertEqual(found[1:],(1.0,False))
         self.assertAlmostEqual(shading_models.translated('gtr',.1)[0],.16)
         self.assertLess(shading_models.translated('gtr',.9)[1],1.0)
 
