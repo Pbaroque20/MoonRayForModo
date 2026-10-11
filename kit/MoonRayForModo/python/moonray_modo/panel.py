@@ -106,10 +106,9 @@ class Panel(Tools, QtWidgets.QWidget):
     # The window's own controls
 
     def _toolbar(self):
-        row = QtWidgets.QHBoxLayout();row.setSpacing(6)
+        row = QtWidgets.QHBoxLayout();row.setSpacing(4)
         self.start = QtWidgets.QPushButton('Render')
         self.start.setToolTip(RENDER_TIP)
-        self.start.setMinimumWidth(72)
         # One button: it starts a preview, and while one runs or IPR is watching, it stops it.
         self.start.clicked.connect(self._render_or_stop)
         row.addWidget(self.start)
@@ -122,13 +121,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_engine.addItem('MoonRay', 'moonray')
         self.preview_engine.addItem('MoonLightIPR', 'moonlightipr')
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(self.preferences.get('preview_engine'))))
-        self.preview_engine.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
-        self.preview_engine.setMinimumWidth(130)
         self.preview_engine.setToolTip('MoonLightIPR is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
-        self.camera=QtWidgets.QComboBox();self.camera.setMinimumWidth(150)
-        self.camera.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.camera=QtWidgets.QComboBox()
         self.camera.setToolTip('The camera the scene is rendered through. MoonRay camera items are added from MoonRay > Add MoonRay Item.')
         self.camera.activated.connect(self._camera_chosen)
         row.addWidget(self.camera)
@@ -138,7 +134,7 @@ class Panel(Tools, QtWidgets.QWidget):
         for key,(label,attributes,channel) in options.AOVS.items():
             self.buffer.addItem(label,key)
         self.buffer.setToolTip('The render buffer shown. Switching does not restart the render.')
-        row.addWidget(self.buffer,1)
+        row.addWidget(self.buffer)
         # Exposure and gamma: each a button that puts it back as it was, and its value beside it.
         reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click to put it back to 0.')
         reset.clicked.connect(lambda:self.exposure.setValue(0.0));row.addWidget(reset)
@@ -185,9 +181,25 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.focus_pick)
         gear=self.options_button=QtWidgets.QToolButton();gear.setText('Options');gear.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         gear.setMenu(self._options_menu())
-        # Room for the menu arrow beside the word, which it otherwise covers.
-        gear.setMinimumWidth(gear.fontMetrics().horizontalAdvance('Options')+40)
+        row.addStretch(1)
         row.addWidget(gear)
+        # One height for everything in the row, and no more width than each needs: a button is as wide as its word,
+        # a channel's is square, and the lists give way first when the window is narrow.
+        high=24
+        def wide(widget,text,room=14):return widget.fontMetrics().horizontalAdvance(text)+room
+        for i in range(row.count()):
+            widget=row.itemAt(i).widget()
+            if widget is None:continue
+            widget.setFixedHeight(high)
+            if isinstance(widget,QtWidgets.QToolButton):
+                widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text()))
+            elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
+        self.start.setFixedWidth(wide(self.start,'Render',22))
+        # Room for the menu arrow beside the word, which it otherwise covers.
+        gear.setFixedWidth(wide(gear,'Options',34))
+        for combo,least,most in ((self.preview_engine,96,124),(self.camera,96,170),(self.buffer,96,150)):
+            combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+            combo.setMinimumWidth(least);combo.setMaximumWidth(most)
         return row
 
     def _options_menu(self):
@@ -242,26 +254,38 @@ class Panel(Tools, QtWidgets.QWidget):
         return menu
 
     def _status_line(self):
+        # Three cells of one width, as a table of one row: the probe, the status, and the picture's details. What is
+        # written in one never moves another.
         row=QtWidgets.QHBoxLayout();row.setSpacing(10)
+        cells=[]
+        for _ in range(3):
+            cell=QtWidgets.QWidget();cell.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
+            inside=QtWidgets.QHBoxLayout(cell);inside.setContentsMargins(0,0,0,0);inside.setSpacing(8)
+            row.addWidget(cell,1);cells.append(inside)
+        left,middle,right=cells
         self.status = QtWidgets.QLabel('Ready')
         # A long message is cut short rather than widening the window.
         self.status.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
-        row.addWidget(self.status,1)
-        # What is under the pointer: its place in the picture and its values.
+        # What is under the pointer: its place in the picture and its values, at the row's left end.
         self.probe=QtWidgets.QLabel('');self.probe.setTextFormat(QtCore.Qt.RichText)
         self.probe.setToolTip('The pixel under the pointer: its place from the top left, then red, green, blue and alpha.\nLinear values are the render\'s own, before the view transform; display values are what is on screen.')
         # And its colour as it is on screen, in a small square beside the numbers.
         self.swatch=QtWidgets.QLabel('');self.swatch.setFixedSize(14,14);self.swatch.setVisible(False)
-        row.addWidget(self.swatch)
-        row.addWidget(self.probe)
+        left.addWidget(self.swatch)
+        left.addWidget(self.probe)
+        left.addStretch(1)
+        # The status is in the middle of the row, between the probe and the picture's details.
+        self.status.setAlignment(QtCore.Qt.AlignCenter)
+        middle.addWidget(self.status,1)
         self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
-        row.addWidget(self.image_info)
+        right.addStretch(1)
+        right.addWidget(self.image_info)
         self.render_timing=QtWidgets.QLabel('');self.render_timing.setEnabled(False)
-        row.addWidget(self.render_timing)
+        right.addWidget(self.render_timing)
         self.notice_toggle=QtWidgets.QToolButton();self.notice_toggle.setText('Notices (0)');self.notice_toggle.setCheckable(True);self.notice_toggle.setAutoRaise(True)
         self.notice_toggle.setToolTip('What the renderer could not carry over from the scene')
         self.notice_toggle.toggled.connect(lambda visible:self.warnings.setVisible(visible))
-        row.addWidget(self.notice_toggle)
+        right.addWidget(self.notice_toggle)
         return row
 
     def _focus_armed(self,armed):
@@ -359,8 +383,12 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _draft_toggled(self,enabled):
         """Draft on: lines in place of a render, and the whole frame kept in view. Off: the render again."""
+        from . import draft
         self.preview.whole=bool(enabled)
+        self.preview.paper=draft.PAPER if enabled else None
         if not enabled:
+            # What was last rendered is shown again, where there is any.
+            if self._draft_render:self.preview.set_image(self._draft_render[1])
             self._draft_image=self._draft_render=None
             self.preview.fit()
         if self._following:self.preview_timer.start()

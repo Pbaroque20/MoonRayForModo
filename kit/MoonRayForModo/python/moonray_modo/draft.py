@@ -9,8 +9,9 @@ import math
 
 from PySide2 import QtCore, QtGui
 
-# The paper, from its head to its foot, and the ink.
-PAPER = ('#f5f2ec', '#cfd0d4')
+# The paper, from the head of the view to its foot, and the ink. The paper is the view's own: it stays where it is
+# while the picture is moved and magnified over it, and the picture holds the lines alone.
+PAPER = ('#f5f2ec', '#b4b6bc')
 INK = '#a08467'
 # A mesh of this many edges or fewer is drawn whole; past it, by its corners, of which this many at most.
 WHOLE, MOST = 1500, 6000
@@ -146,13 +147,10 @@ def segments(scene, width, height):
 
 def picture(scene, width, height):
     """The draft picture of a snapshot, of the size given."""
-    image = QtGui.QImage(int(width), int(height), QtGui.QImage.Format_RGB32)
+    image = QtGui.QImage(int(width), int(height), QtGui.QImage.Format_ARGB32)
+    image.fill(QtCore.Qt.transparent)
     painter = QtGui.QPainter(image)
     try:
-        paper = QtGui.QLinearGradient(0, 0, 0, height)
-        paper.setColorAt(0.0, QtGui.QColor(PAPER[0]))
-        paper.setColorAt(1.0, QtGui.QColor(PAPER[1]))
-        painter.fillRect(image.rect(), paper)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         pen = QtGui.QPen(QtGui.QColor(INK))
         pen.setWidthF(max(1.0, width / 900.0))

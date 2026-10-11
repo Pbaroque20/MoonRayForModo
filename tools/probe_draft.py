@@ -120,8 +120,11 @@ def look():
         result['with_region'] = {'status': panel.status.text(), 'info': panel.image_info.text(), 'zoom': view.zoom, 'outside': colour(view, .02, .03),
                                  'inside': colour(view, .3, .8), 'region': view.region}
         panel.window().grab().save(str(out / 'draft_region.png'))
+        before = [panel.region_enabled.isChecked(), panel.draft.isChecked()]
         panel.region_enabled.click()
+        between = [panel.region_enabled.isChecked(), panel.draft.isChecked()]
         panel.draft.click()
+        result['switched_off'] = [before, between, [panel.region_enabled.isChecked(), panel.draft.isChecked()]]
     except Exception:
         result['look_error'] = traceback.format_exc()
     save()

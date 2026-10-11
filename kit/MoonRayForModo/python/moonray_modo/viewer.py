@@ -28,6 +28,9 @@ class _PreviewBody:
         self.region_tool = False
         # Whether the whole frame stays in view when a region is set, as it does over the draft's lines.
         self.whole = False
+        # The draft's paper: two colours the whole view is filled with, head to foot, under a picture that is then
+        # lines with nothing between them. None for the ordinary dark surround.
+        self.paper = None
         self._drawing = None
         self.setMouseTracking(True)
         self.setMinimumSize(256, 192)
@@ -47,7 +50,7 @@ class _PreviewBody:
         # Beauty includes camera-visible environment RGB even where coverage
         # alpha is zero. Display RGB without compositing over the widget; keep
         # the renderer output and its alpha channel untouched on disk.
-        self.image = image.convertToFormat(QtGui.QImage.Format_RGB32)
+        self.image = image.convertToFormat(QtGui.QImage.Format_ARGB32 if self.paper else QtGui.QImage.Format_RGB32)
         self._single = None
         self._curved = None
         self.update()
@@ -74,7 +77,7 @@ class _PreviewBody:
                 # Every byte of the picture through one table: its colours, and a spare byte that stays as it is.
                 table = bytes(min(255, int(round(255.0 * (value / 255.0) ** (1.0 / self.gamma)))) for value in range(256))
                 data = bytes(self.image.constBits())[:self.image.width() * self.image.height() * 4].translate(table)
-                self._curved = (data, QtGui.QImage(data, self.image.width(), self.image.height(), self.image.width() * 4, QtGui.QImage.Format_RGB32))
+                self._curved = (data, QtGui.QImage(data, self.image.width(), self.image.height(), self.image.width() * 4, self.image.format()))
             except (TypeError, ValueError, RuntimeError):
                 return self.image
         return self._curved[1]
@@ -167,7 +170,13 @@ class _PreviewBody:
         # context and framebuffer; no dependency on Modo's external-render queue.
         painter = QtGui.QPainter(self)
         try:
-            painter.fillRect(self.rect(), QtGui.QColor('#191b20'))
+            if self.paper:
+                paper = QtGui.QLinearGradient(0, 0, 0, self.height())
+                paper.setColorAt(0.0, QtGui.QColor(self.paper[0]))
+                paper.setColorAt(1.0, QtGui.QColor(self.paper[1]))
+                painter.fillRect(self.rect(), paper)
+            else:
+                painter.fillRect(self.rect(), QtGui.QColor('#191b20'))
             if self.image.isNull():
                 painter.setPen(QtGui.QColor('#b9bec9'))
                 painter.drawText(self.rect(), QtCore.Qt.AlignCenter, 'Rendering…' if self.buckets else 'Click here to render the scene.')
