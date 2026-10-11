@@ -74,6 +74,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 - Large material graphs open on their output node and zoom freely.
 - Dragging the sun or an environment light updates the preview when you let go.
 - **Opening a large MoonRay scene** shows how far it has come.
+- **A material that is on nothing says so.** A MoonRay material dragged into another group after being assigned sits under a polygon tag its polygons no longer carry, and renders nowhere, images and all. Notices now names the material, the group's tag and the tag the polygons carry, and how to put it right.
 
 ## Known in this build
 

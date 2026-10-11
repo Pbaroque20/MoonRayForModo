@@ -49,6 +49,7 @@ The current release is 0.3.50.2. What is below is coming in 0.3.51 and is not in
 - **Dense hair** grows and re-renders several times faster.
 - **Smoothing** follows Modo's smoothing angle, and can be changed in a MoonRay material's properties.
 - **Opening a large MoonRay scene** shows how far it has come.
+- **A material that is on nothing says so** in Notices, with the polygon tag to set.
 
 **More of MoonRay**
 
