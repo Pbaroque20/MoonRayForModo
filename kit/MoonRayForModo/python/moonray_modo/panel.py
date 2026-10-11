@@ -102,6 +102,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_engine.currentIndexChanged.connect(self._preview_changed)
         self.ipr_mode.toggled.connect(self._ipr_changed)
         self.poll_timer.start()
+        # Where the preferences ask for it, a preview starts as the window opens.
+        if self.preferences.get('render_on_open'):QtCore.QTimer.singleShot(800,lambda:None if self.disposed or self._rendering or self._following else self.start_render())
 
     # The window's own controls
 
@@ -577,6 +579,8 @@ class Panel(Tools, QtWidgets.QWidget):
         text='\n\n'.join(unique)
         if text!=self.warnings.toPlainText():self.warnings.setPlainText(text)
         self.notice_toggle.setText('Notices (%d)'%len(unique))
+        # Where the preferences ask for it, the notices open by themselves when there is something to read.
+        if unique and not self.notice_toggle.isChecked() and self.preferences.get('notices_open'):self.notice_toggle.setChecked(True)
 
     def _ipr_changed(self,enabled):
         self.preferences.set('ipr',bool(enabled))

@@ -10,12 +10,23 @@ from PySide2 import QtCore, QtGui
 # while the picture is moved and magnified over it, and the picture holds the lines alone.
 PAPER = ('#f5f2ec', '#b4b6bc')
 INK = '#a08467'
+# The inks to choose from on the MoonRay page of Modo's Preferences.
+INKS = {'tan': INK, 'purple': '#9f8fc9', 'grey': '#7c8088'}
+
+
+def ink():
+    """The ink chosen in the preferences."""
+    try:
+        from .preferences import Preferences
+        return INKS.get(Preferences().get('draft/ink'), INK)
+    except Exception:
+        return INK
 
 def inked(frame, region):
     """MoonLightIPR's own draft made into the picture shown: its lines, which it sends white on black, in ink with
     nothing between them, and inside the region (left, top, right, bottom as fractions) what it rendered there."""
     made = QtGui.QImage(frame.size(), QtGui.QImage.Format_ARGB32)
-    made.fill(QtGui.QColor(INK))
+    made.fill(QtGui.QColor(ink()))
     made.setAlphaChannel(frame.convertToFormat(QtGui.QImage.Format_Grayscale8))
     if region:
         left, top, right, bottom = region

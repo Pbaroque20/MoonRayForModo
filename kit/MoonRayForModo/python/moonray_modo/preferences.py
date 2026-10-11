@@ -9,6 +9,10 @@ KEYS = {
     'persistent_preview': (True, bool), 'capture_safety': (False, bool), 'preview_motion': (False, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
+    # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
+    # preview starts as its window opens, how bright a new MoonRay light is, and whether notices open by themselves.
+    'assign/shader': ('DwaBaseMaterial', str), 'assign/smooth': (True, bool), 'assign/angle': (40.0, float),
+    'draft/ink': ('tan', str), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (160, int), 'ipr/samples': (1, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
 }
 

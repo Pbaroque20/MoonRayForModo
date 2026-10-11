@@ -94,6 +94,19 @@ def validate(name, parameters):
     return result
 
 
+def starting(name):
+    """What a newly added item of a class starts with: the values above, with a light's intensity as the MoonRay page
+    of Modo's Preferences has it."""
+    held = dict(STARTING.get(name, {}))
+    if 'intensity' in held:
+        try:
+            from .preferences import Preferences
+            held['intensity'] = max(0.0, float(Preferences().get('light_intensity')))
+        except Exception:
+            pass
+    return held
+
+
 def item_type(name):
     return TYPE_PREFIX + name
 
