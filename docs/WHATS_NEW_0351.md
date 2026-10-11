@@ -60,6 +60,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 - **Light path expressions** have presets, and an expression typed wrong is marked as you type, with what is wrong.
 - **Cast no shadow onto chosen objects**: for each object, in Light Links, Emitters and Volumes.
 - **Subsurface Neighbours** in a MoonRay material's properties: tick the objects whose surfaces should join in its subsurface light, so that no seam shows where two objects of one body meet (MoonRay's sss trace set). MoonRay only; the MoonLightIPR preview says so.
+- **Width and height scale together**: on a rect light, a portal light and a rod filter they stand under Modo's own link button, with its proportional and equal modes, as a transform's scale does.
 - **MoonRay light items can be linked**: they are listed with Modo's lights in an object's Light Links.
 - **Imported MoonRay scenes keep their light, shadow and shadow receiver sets**, as each mesh's Light Links. Sets that differ between the parts of one shape, and light filter sets, are not carried and are named.
 - **OpenPBR and glTF surfaces** import from MaterialX files.
@@ -88,7 +89,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 ## Known in this build
 
 - A VDB volume that gives off light, and a light with a cookie filter, render in MoonRay's slower scalar mode. MoonRay's vector and GPU modes do not draw them rightly in this Windows build; the plugin switches for you and says so.
-- Very smooth highlights (roughness under about 0.2) are dimmer than Modo's.
+- Very smooth highlights (roughness under about 0.2) are still dimmer than Modo's: about three quarters as bright under GTR, and less under Blinn and Ashikhmin.
 - Hair in MoonLightIPR is close to MoonRay's but not exact.
 - Draft shows meshes and curves as the camera sees them through an ordinary lens; a fisheye or spherical camera's draft does not line up with its render.
 - A MeshLight item added from Modo's own Add Item list starts at an intensity of 1, which is nearly dark. Added from MoonRay > Add MoonRay Item it starts at 50.
