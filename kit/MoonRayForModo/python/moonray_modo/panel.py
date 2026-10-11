@@ -224,6 +224,11 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
+        # The outputs of the last finished MoonRay preview, each as a picture of its own. MoonLightIPR has the one.
+        batch=menu.addAction('Export AOVs as Images...',self.export_buffers)
+        batch.setEnabled(self.preview_engine.currentData()!='moonlightipr')
+        if not batch.isEnabled():batch.setToolTip('MoonLightIPR renders the one picture; choose MoonRay for its outputs.')
+        menu.setToolTipsVisible(True)
         return menu
 
     def _status_line(self):

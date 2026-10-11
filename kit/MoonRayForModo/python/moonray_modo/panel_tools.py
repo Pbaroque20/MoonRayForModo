@@ -251,6 +251,112 @@ class Tools:
         if path:
             self.status.setText('Saved ' + path if self.preview.image.save(path, 'PNG') else 'Could not save the preview image.')
 
+    def buffer_names(self, frame):
+        """The outputs a finished preview holds, as (key, what it is called), in the buffer list's order."""
+        from . import options
+        held = frame.get('files', {})
+        named = {'beauty': 'Beauty', 'denoised_beauty': 'Denoised Beauty', 'denoise_albedo': 'Denoiser albedo', 'denoise_normal': 'Denoiser normal'}
+        named.update({key: label for key, (label, _, _) in options.AOVS.items()})
+        order = ['beauty', 'denoised_beauty'] + list(options.AOVS)
+        keys = [key for key in order if key in held] + sorted(key for key in held if key not in order)
+        return [(key, named.get(key, key)) for key in keys]
+
+    def export_buffers(self):
+        """Save chosen outputs of the last finished preview, each as an image file of its own."""
+        import shutil
+        import subprocess
+        from . import native, outputs
+        from .buffers import conversion
+        frame = self.renderer.buffers.frame
+        if self.preview_engine.currentData() == 'moonlightipr':
+            self.status.setText('MoonLightIPR renders the one picture; choose MoonRay to export its outputs.')
+            return
+        if not frame or not frame.get('files'):
+            self.status.setText('Let a MoonRay preview finish first; its outputs are what is exported.')
+            return
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle('Export AOVs as images')
+        dialog.resize(380, 460)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        note = QtWidgets.QLabel('The outputs of the last finished preview. Tick the ones to save; each becomes a file named after it.\n'
+                                'Outputs are ticked for rendering in the Render item\'s MoonRay properties, under Outputs (AOVs).')
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        listed = QtWidgets.QListWidget()
+        for key, label in self.buffer_names(frame):
+            row = QtWidgets.QListWidgetItem(label, listed)
+            row.setData(QtCore.Qt.UserRole, key)
+            row.setFlags(row.flags() | QtCore.Qt.ItemIsUserCheckable)
+            row.setCheckState(QtCore.Qt.Checked)
+        layout.addWidget(listed, 1)
+        ticks = QtWidgets.QHBoxLayout()
+        for text, state in (('All', QtCore.Qt.Checked), ('None', QtCore.Qt.Unchecked)):
+            button = QtWidgets.QPushButton(text)
+            button.clicked.connect(lambda checked=False, s=state: [listed.item(i).setCheckState(s) for i in range(listed.count())])
+            ticks.addWidget(button)
+        ticks.addStretch(1)
+        layout.addLayout(ticks)
+        form = QtWidgets.QFormLayout()
+        kind = QtWidgets.QComboBox()
+        kind.addItem('PNG, as shown in the preview', 'png')
+        kind.addItem('OpenEXR, the render\'s own linear values', 'exr')
+        kind.setCurrentIndex(max(0, kind.findData(self.settings.value('output/aov_format', 'png'))))
+        form.addRow('Format', kind)
+        prefix = QtWidgets.QLineEdit(str(self.settings.value('output/aov_prefix', 'preview')))
+        prefix.setToolTip('What each file\'s name starts with: preview gives preview_albedo.png, preview_alpha.png and so on.')
+        form.addRow('Name', prefix)
+        layout.addLayout(form)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        chosen = [listed.item(i).data(QtCore.Qt.UserRole) for i in range(listed.count()) if listed.item(i).checkState() == QtCore.Qt.Checked]
+        if not chosen:
+            return
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Folder for the exported AOVs', str(self.settings.value('output/aovs', '')))
+        if not folder:
+            return
+        self.settings.setValue('output/aovs', folder)
+        self.settings.setValue('output/aov_format', kind.currentData())
+        self.settings.setValue('output/aov_prefix', prefix.text())
+        saved, failed = self.write_buffers(frame, chosen, Path(folder), prefix.text().strip(), kind.currentData())
+        self.status.setText('Exported %d AOV%s to %s' % (len(saved), '' if len(saved) == 1 else 's', folder) + ('; could not write %s' % ', '.join(failed) if failed else ''))
+
+    def write_buffers(self, frame, keys, folder, prefix, kind):
+        """Write a preview's outputs into a folder as PNG, shown as the preview shows them, or as their own EXR.
+        Returns (the files written, the outputs that could not be)."""
+        import shutil
+        import subprocess
+        from . import native, outputs
+        from .buffers import conversion
+        from .display import values as display_values
+        values = self._settings_values()
+        display = display_values(dict(values['display'], working_space=frame['snapshot'].get('asset_settings', {}).get('working_space', 'rec709')))
+        saved, failed = [], []
+        for key in keys:
+            source = frame['files'].get(key)
+            target = Path(folder) / ('%s%s.%s' % (prefix + '_' if prefix else '', key, kind))
+            try:
+                if source is None or not Path(source).is_file():
+                    raise OSError('not held')
+                if kind == 'exr' and Path(source).suffix.lower() == '.exr':
+                    shutil.copyfile(str(source), str(target))
+                else:
+                    shown = outputs.display_kind(frame['snapshot'], key)
+                    if shown == 'cryptomatte':
+                        raise OSError('an ID matte is exported as OpenEXR only')
+                    args = [str(source), '-o', str(target)] if kind == 'exr' else conversion(shown, source, target, display)
+                    done = subprocess.run([str(Path(frame['runtime']) / 'oiiotool.exe')] + args, env=native.environment(frame['runtime']), capture_output=True,
+                                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
+                    if done.returncode or not target.is_file():
+                        raise OSError((done.stdout + done.stderr).decode(errors='replace')[-200:])
+                saved.append(str(target))
+            except (OSError, ValueError, subprocess.SubprocessError):
+                failed.append(key)
+        return saved, failed
+
     def show_log(self):
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle('MoonRay render log')
