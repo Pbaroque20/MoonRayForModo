@@ -188,6 +188,9 @@ struct Instance {
     // Row-major 3x4 object-to-world transform.
     float transform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     int32_t light = -1;     // the mesh light whose triangles are this instance's surface
+    // Which rays find the instance, a bit for each kind: 1 the camera's, 2 light scattered diffusely, 4 reflections,
+    // 8 light passing through a surface, 16 shadows.
+    uint32_t visibility = 255;
     // Where the instance is when the shutter closes, if it moves.
     bool moves = false;
     float closeTransform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};

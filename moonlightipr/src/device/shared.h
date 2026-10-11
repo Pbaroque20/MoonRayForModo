@@ -17,6 +17,8 @@ const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 
                CHANNEL_COUNT = 22;
 // Rows that are not a channel: the start and end of a group, whose rows are blended as one
 // over what was there before it, and a mask written to a register for a later row to use.
+// The kinds of ray an instance can be hidden from, as bits of its visibility mask.
+const unsigned SEEN_CAMERA = 1, SEEN_DIFFUSE = 2, SEEN_REFLECTED = 4, SEEN_THROUGH = 8, SEEN_SHADOW = 16, SEEN_ALL = 255;
 const unsigned LAYER_GROUP_BEGIN = 32, LAYER_GROUP_END = 33, LAYER_MASK_BASE = 40, MASK_REGISTERS = 4, GROUP_DEPTH = 4;
 // Thin sheets pass light straight through; the coat of a material stack takes its reflection
 // out of the layers beneath; and only materials that can be partly absent need the any-hit test.
@@ -305,6 +307,7 @@ struct LaunchParams {
     float cameraProjectionValues[4];
     unsigned region[4];     // the pixels to render: from column, from row, to column, to row; the rest are black
     unsigned draft;         // 0 none, 1 lines outside the region, 2 lines everywhere
+    unsigned mixedVisibility;   // some instance is hidden from one kind of ray and not from another
 };
 
 }

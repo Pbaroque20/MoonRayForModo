@@ -549,6 +549,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         instance.material = in.value<uint32_t>();
         instance.light = in.value<int32_t>();
         if (instance.light >= int32_t(localLights.size())) throw std::runtime_error("MoonLightIPR scene instance refers to a missing light");
+        instance.visibility = in.value<uint32_t>();
         in.floats(instance.transform, 12);
         if (sceneFlags & SCENE_MOTION) {
             in.floats(instance.closeTransform, 12);

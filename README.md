@@ -6,6 +6,14 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.3), which holds everything below. What is built here next will be listed as it comes.
 
+## Built since 0.3.51.3
+
+- **What Modo hides is hidden.** An item with its eye off no longer renders (in MoonRay or MoonLightIPR) unless its Render setting says Yes.
+- **MoonLightIPR follows a surface's visibility to each kind of ray**: seen by the camera, by indirect light, in reflections, in refractions, and whether it casts shadows, as MoonRay does. Set these on a Shader with Surfaces set to Evaluated.
+
+![An object that only casts its shadow, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-seen_shadow_only.jpg)
+*Two balls hidden from everything but shadows: MoonRay (left) and MoonLightIPR (right).*
+
 ## Released in 0.3.51
 
 **The preview window**

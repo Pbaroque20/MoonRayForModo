@@ -56,12 +56,19 @@ def corner_values(polygons, map_id, count, dimension):
 
 
 def render_visible(item):
+    """Whether Modo would render the item. Render: Yes or No settles it, for the item and what is under it. Left at
+    Default, an item renders as it is shown: not with its eye off, nor under a parent hidden with its children."""
+    own = True
     while item is not None:
         value = channel(item, 'render', 'default')
         if value in ('off', 'no', False):
             return False
         if value in ('on', 'yes'):
             return True
+        shown = channel(item, 'visible', 'default')
+        if shown == 'allOff' or (own and shown in ('off', 'no', False)):
+            return False
+        own = False
         item = item.parent
     return True
 

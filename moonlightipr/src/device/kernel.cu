@@ -38,11 +38,12 @@ ML_INLINE Hit* hitPayload() {
     return reinterpret_cast<Hit*>((static_cast<unsigned long long>(optixGetPayload_0()) << 32) | optixGetPayload_1());
 }
 
-ML_INLINE void traceRadiance(float3 origin, float3 direction, Hit& hit, float distance = 1e16f) {
+// seen: the kind of ray this is, which finds only what is visible to its kind.
+ML_INLINE void traceRadiance(float3 origin, float3 direction, Hit& hit, float distance = 1e16f, unsigned seen = SEEN_ALL) {
     const unsigned long long address = reinterpret_cast<unsigned long long>(&hit);
     unsigned p0 = unsigned(address >> 32), p1 = unsigned(address);
     hit.valid = 0;
-    optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(255),
+    optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(seen),
                params.presence ? OPTIX_RAY_FLAG_NONE : OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0, p0, p1);
 }
 
@@ -96,7 +97,7 @@ ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float d
     unsigned unoccluded = 0, stream = seed, d0 = 0, d1 = 0, d2 = 0, e0 = 0, e1 = 0, e2 = 0;
     unsigned entered = __float_as_uint(0.0f), left = __float_as_uint(1e30f), gridded = 0;
     rnd(seed);
-    optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(255),
+    optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(SEEN_SHADOW),
                (params.presence ? OPTIX_RAY_FLAG_NONE : OPTIX_RAY_FLAG_DISABLE_ANYHIT)
                | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
                0, 1, 1, unoccluded, stream, d0, d1, d2, e0, e1, e2, entered, left, gridded);
@@ -1348,11 +1349,11 @@ extern "C" __global__ void __raygen__moonlightipr() {
         const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
         const float3 from = vec(params.cameraOrigin), u = vec(params.cameraU), v = vec(params.cameraV), w = vec(params.cameraW);
         Hit here, beside, above;
-        traceRadiance(from, normalize(u * sx + v * sy + w), here, 1e16f);
+        traceRadiance(from, normalize(u * sx + v * sy + w), here, 1e16f, SEEN_CAMERA);
         // A line is as wide on the picture whatever its size: about a thousandth of its width, a pixel at least.
         const float apart = 2.0f * fmaxf(1.0f, float(params.width) / 1100.0f);
-        traceRadiance(from, normalize(u * (sx + apart / params.width) + v * sy + w), beside, 1e16f);
-        traceRadiance(from, normalize(u * sx + v * (sy + apart / params.height) + w), above, 1e16f);
+        traceRadiance(from, normalize(u * (sx + apart / params.width) + v * sy + w), beside, 1e16f, SEEN_CAMERA);
+        traceRadiance(from, normalize(u * sx + v * (sy + apart / params.height) + w), above, 1e16f, SEEN_CAMERA);
         const float line = draftEdge(here, beside) || draftEdge(here, above) ? 1.0f : 0.0f;
         const float weight = 1.0f / float(params.sample + 1);
         float4* beauty = reinterpret_cast<float4*>(params.beauty) + pixel;
@@ -1463,13 +1464,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
     bool probing = false;
     float reach = 1e16f;
     unsigned entryInstance = 0;
+    // The kind of ray being followed, which finds only what is visible to its kind.
+    unsigned seen = SEEN_CAMERA;
     // The fog the ray is in, as its entry among the volumes, and how many edges of fog the path has crossed.
     int medium = -1;
     unsigned crossings = 0;
 
     for (unsigned depth = 0;; ++depth) {
         Hit hit;
-        traceRadiance(origin, direction, hit, reach);
+        traceRadiance(origin, direction, hit, reach, seen);
         if (params.volumeCount && !probing) {
             // Fogs as thick as their grids say. Each fills the unit cube its rows take the scene into, so the stretch of
             // the ray inside each is worked out from the cube, and they may overlap. Steps are drawn as if the fog were
@@ -1597,7 +1600,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 for (unsigned order = 1; bounces && thickness > 0.0f && order < params.maxVolumeDepth; ++order) {
                     const float step = -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / thickness;
                     Hit met;
-                    traceRadiance(here, way, met, step);
+                    traceRadiance(here, way, met, step, SEEN_DIFFUSE);
                     if (met.valid) break;
                     here = here + way * step;
                     carried = carried * stops * vec(fog.albedo) * (1.0f / thickness);
@@ -1643,14 +1646,27 @@ extern "C" __global__ void __raygen__moonlightipr() {
             reach = 1e16f;
         }
         const bool camera = depth == 0 && !emerged;
+        // How far light is found along a scattered ray. Light that a scattered ray comes upon is light sampled a
+        // second way, and what stands between is a shadow: so it is what casts shadows that stops it, which may
+        // not be what the ray itself goes on to meet. MoonRay draws the same line.
+        bool lightBlocked = hit.valid != 0;
+        float lightReach = hit.valid ? hit.t : 1e30f;
+        if (params.mixedVisibility && !camera && !emerged && !sharp) {
+            Hit blocker;
+            traceRadiance(origin, direction, blocker, 1e16f, SEEN_SHADOW);
+            if ((blocker.valid != 0) != (hit.valid != 0) || (blocker.valid && blocker.instance != hit.instance)) {
+                lightBlocked = blocker.valid != 0;
+                lightReach = blocker.valid ? blocker.t : 1e30f;
+            }
+        }
         for (unsigned i = 0; !camera && !emerged && i < params.lightCount; ++i) {
             float pdf;
             float3 emitted;
-            if (hitLight(lights[i], origin, direction, hit.valid ? hit.t : 1e30f, pdf, emitted))
+            if (hitLight(lights[i], origin, direction, lightReach, pdf, emitted))
                 radiance += clampSample(throughput * lightWeight * emitted
                                         * (sharp ? 1.0f : powerHeuristic(bsdfPdf, params.lightPick ? pdf * lights[i].pick : pdf)), clampFound);
         }
-        if (!hit.valid) {
+        if (!lightBlocked) {
             // Camera rays see the background, which may differ from what lights the scene;
             // later bounces share the lighting environment with light sampling.
             const float3 sky = camera ? envLookup(reinterpret_cast<const float4*>(params.envBackground), params.envBackgroundRotation, direction)
@@ -1671,8 +1687,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     radiance += clampSample(throughput * lightWeight * distantRadiance(light, direction)
                                             * ((sharp || camera) ? 1.0f : powerHeuristic(bsdfPdf, distantPdf(light, direction))), clampFound);
             }
-            break;
         }
+        if (!hit.valid) break;
         if ((hit.flags & MATERIAL_VOLUME) && !emerged) {
             // The edge of a fog: nothing is there to see. The ray goes on, into the fog through a face that looks
             // outwards and out of it through one that looks inwards.
@@ -1730,6 +1746,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const float3 f = fibreEval(fibre, wi, bsdfPdf);
             if (bsdfPdf <= 0.0f || maxComponent(f) <= 0.0f) break;
             direction = wi;
+            seen = SEEN_DIFFUSE;
             lightWeight = bounceWeight = f * (1.0f / bsdfPdf);
             bounces = true;
             sharp = false;
@@ -1789,8 +1806,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
             float3 wi;
             const bool mirrored = rnd(seed) < fresnel(dot(wo, h), surface.transmissionIor, 1.0f);
             if (mirrored) tint = vec(1.0f);
-            if (mirrored || !refractThrough(wo, h, ior, 1.0f, wi)) wi = reflectAbout(wo, h);
+            const bool kept = mirrored || !refractThrough(wo, h, ior, 1.0f, wi);   // thrown back inside
+            if (kept) wi = reflectAbout(wo, h);
             direction = frame.toWorld(wi);
+            seen = kept ? SEEN_REFLECTED : SEEN_THROUGH;
             lightWeight = bounceWeight = tint;
             sharp = true;
             clampFound = roughDepth >= 1;
@@ -1831,6 +1850,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 if (!refractThrough(wo, h, 1.0f, ior, wi)) wi = reflectAbout(wo, h);
             }
             direction = frame.toWorld(wi);
+            seen = SEEN_THROUGH;
             // Chosen in proportion to its share of the light, so only the tint remains.
             lightWeight = bounceWeight = surface.transmissionColor * tint;
             sharp = true;
@@ -1860,6 +1880,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             entryInstance = hit.instance;
             origin = hit.p + (frame.t * cosf(phi) + frame.b * sinf(phi)) * r + ns * r;
             direction = -ns;
+            seen = SEEN_ALL;
             reach = 2.0f * r;
             probing = true;
             --depth;    // coming out again is not a bounce
@@ -1890,6 +1911,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
         clampFound = roughDepth >= 1;
         ++roughDepth;
         if (glossy) ++glossyDepth; else ++diffuseDepth;
+        // Light through a rough surface is diffuse light; off its shine, a reflection.
+        seen = glossy ? SEEN_REFLECTED : SEEN_DIFFUSE;
         origin = offsetOrigin(hit.p, ng, direction);
     }
     if (!finite(radiance)) radiance = vec(0.0f);

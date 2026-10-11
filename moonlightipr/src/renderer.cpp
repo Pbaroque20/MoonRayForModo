@@ -475,17 +475,20 @@ struct Renderer::Impl {
     void buildInstances(float time = 0.0f) {
         std::vector<OptixInstance> input(instances.size());
         std::vector<DeviceInstance> table(instances.size());
+        bool mixed = false;
         for (size_t i = 0; i < instances.size(); ++i) {
             for (int k = 0; k < 12; ++k)
                 input[i].transform[k] = instances[i].moves ? instances[i].transform[k] + (instances[i].closeTransform[k] - instances[i].transform[k]) * time
                                                            : instances[i].transform[k];
             input[i].instanceId = unsigned(i);
             input[i].sbtOffset = meshes[instances[i].mesh]->curves ? (meshes[instances[i].mesh]->linear ? 2 : 1) : 0;
-            input[i].visibilityMask = 255;
+            input[i].visibilityMask = instances[i].visibility & 255u;
+            if ((instances[i].visibility & 31u) != 31u) mixed = true;
             input[i].flags = OPTIX_INSTANCE_FLAG_NONE;
             input[i].traversableHandle = meshes[instances[i].mesh]->handle;
             table[i] = {instances[i].mesh, instances[i].material, instances[i].light, 0};
         }
+        params.mixedVisibility = mixed ? 1 : 0;
         instanceTable.upload(table);
         params.instances = instanceTable.ptr;
         params.traversable = 0;     // tracing an empty scene always misses

@@ -372,6 +372,17 @@ def emitter(mesh, settings, warnings):
             + cached[0])
 
 
+def seen_by(item):
+    """The rays that find a mesh or a set of curves, as the engine's bits: 1 the camera's, 2 light scattered
+    diffusely, 4 reflections, 8 light passing through a surface, 16 shadows. Modo's visibility is in MoonRay's
+    order: camera, indirect, reflection, refraction, subsurface, shadow."""
+    visibility = item.get('visibility')
+    if not visibility:
+        return 255
+    camera, indirect, reflection, refraction, _, shadow = (list(visibility) + [True] * 6)[:6]
+    return (1 if camera else 0) | (2 if indirect else 0) | (4 if reflection else 0) | (8 if refraction else 0) | (16 if shadow else 0)
+
+
 def cage_payload(mesh, material_index, slots, warnings):
     """A subdivision surface as its control cage, which the session refines.
 
@@ -685,8 +696,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         ending = (mesh.get('instances_close') or opening) if 'instances' in mesh else [mesh.get('matrix_close', opening[0])]
         if len(ending) != len(opening):
             raise ValueError('Instance shutter transforms of %s must match' % mesh['name'])
+        # A fog's box is found by every ray, and so is a mesh light, which is the light itself.
+        seen = 255 if light >= 0 or mesh.get('volume') else seen_by(mesh)
         for placement, later in zip(opening, ending):
-            instances.append(struct.pack('<2Ii12f', order[key], material, light, *transform(placement))
+            instances.append(struct.pack('<2IiI12f', order[key], material, light, seen, *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
     # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
     from .moonlightipr_curves import payload as curve_payload
@@ -712,7 +725,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             meshes.append(head if key in known else head + payload)
         used.add(key)
         placement = transform(entry.get('matrix') or IDENTITY)
-        instances.append(struct.pack('<2Ii12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, *placement)
+        instances.append(struct.pack('<2IiI12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, seen_by(entry), *placement)
                          + (struct.pack('<12f', *transform(entry.get('matrix_close') or entry.get('matrix') or IDENTITY)) if motion else b''))
     if any(entry.get('kind') not in ('curves', 'vdb') for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points.')
