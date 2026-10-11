@@ -164,6 +164,7 @@ def material_values(material):
                                 'shading_model': model, '_beckmann': beckmann, '_specular_strength': lobe_strength,
                                 'emission_amount': float(channel(material, 'radiance', 0)),
                                 'roughness': lobe_roughness,
+                                'raw_roughness': float(channel(material, 'rough', .4)),
                                 'diffuse_roughness': float(channel(material, 'diffRough', 0)),
                                 'subsurface_amount': min(1,max(0,float(channel(material,'subsAmt',0)))),
                                 'subsurface_distance': max(0,float(channel(material,'subsDist',0))),

@@ -181,8 +181,12 @@ class _PreviewBody:
             else:
                 painter.fillRect(self.rect(), QtGui.QColor('#191b20'))
             if self.image.isNull():
-                painter.setPen(QtGui.QColor('#b9bec9'))
-                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, 'Rendering…' if self.buckets else 'Click here to render the scene.')
+                # No picture yet: MoonRay's crest, half seen through, which a click on the view starts a render from.
+                # Words take its place while a first render is on its way, and where the crest cannot be drawn.
+                from . import crest
+                if self.buckets or not crest.draw(painter, QtCore.QRectF(self.rect())):
+                    painter.setPen(QtGui.QColor('#b9bec9'))
+                    painter.drawText(self.rect(), QtCore.Qt.AlignCenter, 'Rendering…' if self.buckets else 'Click here to render the scene.')
             else:
                 painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
                 painter.drawImage(self.image_rect(), self.shown())

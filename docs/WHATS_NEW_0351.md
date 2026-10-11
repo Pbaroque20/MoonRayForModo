@@ -35,7 +35,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 
 ## Closer to Modo
 
-- **Blinn and Ashikhmin materials** match Modo's highlights from a roughness of about 0.2 up.
+- **Blinn and Ashikhmin materials** match Modo's highlights from a roughness of about 0.2 up. A roughness that an image drives is adjusted the same way in MoonRay; the MoonLightIPR preview shows it unadjusted and says so.
 - **Smoothing** follows a Modo material's smoothing angle, so a box keeps its hard edges. A MoonRay material has its own Smoothing control in its properties.
 - **Modo's Fur material** grows fur: its spacing, length, width, taper, bend and jitter are read, and so are its curls and waves, clumps, kink, frizz and strays. Weight maps for density, length, clumping, curling and bending are followed. Fur also grows where the material group is tied to an item rather than to a material tag. Guides, the vector map and the width map are not read yet, and a scene that uses them is told so.
 
@@ -77,6 +77,7 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 - Large material graphs open on their output node and zoom freely.
 - Dragging the sun or an environment light updates the preview when you let go.
 - **Opening a large MoonRay scene** shows how far it has come.
+- **MoonRay's crest** stands in the preview window before the first render, in place of the words; a click on it still starts one.
 - **A material that is on nothing says so.** A MoonRay material dragged into another group after being assigned sits under a polygon tag its polygons no longer carry, and renders nowhere, images and all. Notices now names the material, the group's tag and the tag the polygons carry, and how to put it right.
 
 ## Known in this build

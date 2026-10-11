@@ -28,4 +28,27 @@ class ShadingModels(unittest.TestCase):
         self.assertTrue(all(0<shading_models.translated(m,r/20)[1]<=1 for m in shading_models.MEASURED for r in range(21)))
 
 
+    def test_a_roughness_an_image_drives_goes_through_the_same_curve(self):
+        from unittest.mock import patch
+        from moonray_modo import moonshine
+        from moonray_modo.graph import bindings
+        # The curve runs from nothing, through what was measured, to wholly rough; GTR needs none.
+        self.assertEqual(shading_models.curve('blinn')[:3], [(0.0, 0.0), (.1, .20), (.2, .28)])
+        self.assertEqual(shading_models.curve('blinn')[-1][0], 1.0)
+        self.assertIsNone(shading_models.curve('gtr'))
+        self.assertIsNone(shading_models.curve('principled'))
+        for model, ramped in (('blinn', True), ('ashikhmin', True), ('gtr', False)):
+            material = {'color': [1] * 3, 'roughness': .36, 'raw_roughness': .35, 'shading_model': model, 'standard_material': True,
+                        'layers': [{'kind': 'imageMap', 'effect': 'rough', 'path': 'rough.png', 'image_channel': 'red'}]}
+            lines = []
+            with patch('moonray_modo.textures.prepare', return_value='rough.tx'):
+                found = bindings(material, 0, lines)
+                moonshine.emit(material, 'tag', 0, found, lines)
+            text = ' '.join(lines)
+            self.assertEqual('RampMap("/modo/roughness/0")' in text, ramped, model)
+            if ramped:
+                self.assertIn('["ramp_type"] = 8', text)
+                self.assertIn('["roughness"] = bind(RampMap("/modo/roughness/0"), 1)', text)
+
+
 if __name__=='__main__':unittest.main()

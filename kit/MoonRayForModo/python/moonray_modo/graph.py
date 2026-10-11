@@ -239,7 +239,9 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
 
 
 def defaults_for(material):
-    defaults = {**{key:0 for key in textures.INTERNAL_EFFECTS}, 'diffCol':material.get('color',[.5,.5,.5]), 'rough':material.get('roughness',.4),
+    defaults = {**{key:0 for key in textures.INTERNAL_EFFECTS}, 'diffCol':material.get('color',[.5,.5,.5]),
+        # Modo's own roughness, where the material's has been turned into that of MoonRay's lobe: the layers over it are Modo's too.
+        'rough':material.get('raw_roughness',material.get('roughness',.4)),
         'metallic':material.get('metallic',0),'specCol':material.get('specular',[.04]*3),
         'lumiCol':material.get('emission',[0]*3),'coatAmt':material.get('clearcoat',0),
         'coatRough':material.get('clearcoat_roughness',.01),'tranAmt':material.get('transmission',0),
