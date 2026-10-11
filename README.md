@@ -9,6 +9,7 @@ The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/r
 ## Built since 0.3.51.3
 
 - **What Modo hides is hidden.** An item with its eye off no longer renders (in MoonRay or MoonLightIPR) unless its Render setting says Yes.
+- **Tile outlines fade out** as MoonRay leaves them, instead of vanishing at once.
 - **MoonLightIPR follows a surface's visibility to each kind of ray**: seen by the camera, by indirect light, in reflections, in refractions, and whether it casts shadows, as MoonRay does. Set these on a Shader with Surfaces set to Evaluated.
 
 ![An object that only casts its shadow, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-seen_shadow_only.jpg)

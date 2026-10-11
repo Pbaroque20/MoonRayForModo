@@ -13,6 +13,12 @@ class _PreviewBody:
         self.bucket_timeout=QtCore.QTimer(self)
         self.bucket_timeout.setSingleShot(True)
         self.bucket_timeout.timeout.connect(lambda:self.set_buckets(None))
+        # Outlines that MoonRay has left, each with when it was left: they fade out over FADE seconds instead of
+        # going all at once.
+        self._fading={}
+        self._fade_clock=QtCore.QElapsedTimer();self._fade_clock.start()
+        self._fade_timer=QtCore.QTimer(self);self._fade_timer.setInterval(33)
+        self._fade_timer.timeout.connect(self._fade_step)
         self.zoom = 1.0
         self.pan = QtCore.QPointF()
         self._drag = None
@@ -150,16 +156,45 @@ class _PreviewBody:
             scale=min(self.width()/self.image.width(),self.height()/self.image.height())
             if scale>0:self.zoom=1./scale;self.pan=QtCore.QPointF();self.update()
 
+    FADE=.45
+
+    def _outlines(self):
+        """The outlines now being shown: the workers' own where there are any, else the tiles'."""
+        return self.workers if self.show_workers and self.workers is not None else self.buckets
+
+    def _retire(self,before):
+        """Set fading the outlines that were shown and are no longer."""
+        after=self._outlines()
+        if not before or not self.show_buckets:return
+        _,width,height,rectangles=before
+        kept=set(after[3]) if after and after[1:3]==(width,height) else set()
+        now=self._fade_clock.elapsed()/1000.
+        for rectangle in rectangles:
+            if rectangle not in kept:self._fading[(width,height,rectangle)]=now
+        for key in [key for key in self._fading if key[:2]==(width,height) and key[2] in kept]:del self._fading[key]
+        if len(self._fading)>2048:self._fading=dict(list(self._fading.items())[-2048:])
+        if self._fading and not self._fade_timer.isActive():self._fade_timer.start()
+
+    def _fade_step(self):
+        now=self._fade_clock.elapsed()/1000.
+        self._fading={key:left for key,left in self._fading.items() if now-left<self.FADE}
+        if not self._fading:self._fade_timer.stop()
+        self.update()
+
     @QtCore.Slot(object)
     def set_buckets(self,packet):
+        before=self._outlines()
         self.buckets=packet
         if packet is None:self.workers=None
         if packet:self.bucket_timeout.start(1500)
         else:self.bucket_timeout.stop()
+        self._retire(before)
         self.update()
 
     def set_workers(self,packet):
+        before=self._outlines()
         self.workers=packet
+        self._retire(before)
         self.update()
 
     def set_worker_overlay(self,enabled):
@@ -168,6 +203,7 @@ class _PreviewBody:
 
     def set_show_buckets(self,enabled):
         self.show_buckets=enabled
+        if not enabled:self._fading={}
         self.update()
 
     def image_rect(self):
@@ -228,17 +264,23 @@ class _PreviewBody:
                         painter.fillRect(plate, QtGui.QColor(0, 0, 0, 190))
                         painter.setPen(QtGui.QColor(255, 255, 255))
                         painter.drawText(plate, QtCore.Qt.AlignCenter, text)
-            overlay=self.workers if self.show_workers and self.workers is not None else self.buckets
-            if (self.show_buckets and overlay and
-                    (self.image.isNull() or (self.image.width(),self.image.height())==overlay[1:3])):
-                _,width,height,rectangles=overlay
+            overlay=self._outlines()
+            # Each outline with how strongly it is drawn: those MoonRay is at in full, those it has left fading.
+            drawn=[]
+            if self.show_buckets and overlay:drawn+=[(overlay[1],overlay[2],rectangle,1.0) for rectangle in overlay[3]]
+            if self.show_buckets and self._fading:
+                now=self._fade_clock.elapsed()/1000.
+                drawn+=[(width,height,rectangle,1.0-(now-left)/self.FADE) for (width,height,rectangle),left in self._fading.items()]
+            painter.setBrush(QtCore.Qt.NoBrush)
+            for width,height,(x0,y0,x1,y1),strength in drawn:
+                if strength<=0 or not (self.image.isNull() or (self.image.width(),self.image.height())==(width,height)):continue
                 scale=min(self.width()/width,self.height()/height)*self.zoom
                 left=(self.width()-width*scale)/2+self.pan.x()
                 top=(self.height()-height*scale)/2+self.pan.y()
-                pen=QtGui.QPen(QtGui.QColor('#ffd166'));pen.setWidthF(1.0)
-                painter.setPen(pen);painter.setBrush(QtCore.Qt.NoBrush)
-                for x0,y0,x1,y1 in rectangles:
-                    painter.drawRect(QtCore.QRectF(left+x0*scale,top+(height-y1)*scale,(x1-x0)*scale,(y1-y0)*scale))
+                colour=QtGui.QColor('#ffd166');colour.setAlphaF(min(1.0,strength))
+                pen=QtGui.QPen(colour);pen.setWidthF(1.0)
+                painter.setPen(pen)
+                painter.drawRect(QtCore.QRectF(left+x0*scale,top+(height-y1)*scale,(x1-x0)*scale,(y1-y0)*scale))
         finally:
             painter.end()
 
