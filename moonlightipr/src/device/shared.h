@@ -303,6 +303,7 @@ struct LaunchParams {
     float lensAngle;
     unsigned cameraProjection;      // 0 perspective, 1 fisheye, 2 spherical
     float cameraProjectionValues[4];
+    unsigned region[4];     // the pixels to render: from column, from row, to column, to row; the rest are black
 };
 
 }

@@ -366,7 +366,9 @@ def emitter(mesh, settings, warnings):
             _emitters.clear()
         cached = _emitters[signature] = (struct.pack('<I', triangles) + corners.tobytes(), area)
     # MoonRay divides by the area, so the light gives the same power at any size.
-    return (struct.pack('<I20fiI', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, 0)
+    # A mesh light has no cone: the number says instead whether the camera sees the surface shining.
+    seen = 1.0 if settings.get('light_seen', True) else 0.0
+    return (struct.pack('<I20fiI', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [seen, 0.0]), -1, 0)
             + cached[0])
 
 
@@ -571,8 +573,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         raise ValueError('MoonLightIPR previews perspective, fisheye and spherical cameras only')
     if camera['focal_mm'] <= 0 or camera['film_mm'] <= 0:
         raise ValueError('Camera focal length and film width must be positive')
-    if camera.get('region') or scene.get('region'):
-        warnings.append('MoonLightIPR ignores the render region.')
+    # The part of the picture to render: left, top, right, bottom, as fractions. The rest is black.
+    region = [float(v) for v in (scene.get('region') or camera.get('region') or [0, 0, 1, 1])]
+    if len(region) != 4 or not all(math.isfinite(v) for v in region) or region[2] <= region[0] or region[3] <= region[1]:
+        region = [0.0, 0.0, 1.0, 1.0]
     # MoonRay's lens: the f-stop gives its diameter from the focal length, in metres.
     lens = [0.0, 1.0, 0, 0.0]
     if camera.get('dof'):
@@ -604,7 +608,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
              struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
-             struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])])]
+             struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])]),
+             struct.pack('<4f', *region)]
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))

@@ -113,8 +113,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # One button: it starts a preview, and while one runs or IPR is watching, it stops it.
         self.start.clicked.connect(self._render_or_stop)
         row.addWidget(self.start)
-        self.ipr_mode=QtWidgets.QCheckBox('IPR')
-        self.ipr_mode.setToolTip('With IPR on, Render keeps following the scene as it is edited, until Stop.')
+        # Called Live, so that it is not taken for the MoonLightIPR engine in the list beside it.
+        self.ipr_mode=QtWidgets.QCheckBox('Live')
+        self.ipr_mode.setToolTip('With Live on, Render keeps following the scene as it is edited, until Stop.')
         self.ipr_mode.setChecked(self.preferences.get('ipr'))
         row.addWidget(self.ipr_mode)
         self.preview_engine=QtWidgets.QComboBox()
@@ -165,8 +166,10 @@ class Panel(Tools, QtWidgets.QWidget):
             button.clicked.connect(functools.partial(self._channel_clicked,key))
             self.channels[key]=button;row.addWidget(button)
         self._before_alpha=None
-        self.region_enabled=QtWidgets.QCheckBox('Region')
-        self.region_enabled.setToolTip('Render only a region of the frame. While this is on, drag with the left button in the picture to draw the region.\nThe middle button still moves the picture. Its numbers are also in the Render item\'s MoonRay properties.')
+        # A button as the channels' are: lit while only a region is rendered and a drag in the picture draws it.
+        self.region_enabled=QtWidgets.QToolButton();self.region_enabled.setText('Region');self.region_enabled.setCheckable(True)
+        self.region_enabled.setStyleSheet('QToolButton:checked { background-color: #e08a1e; color: #101010; border: 1px solid #e08a1e; border-radius: 3px; }')
+        self.region_enabled.setToolTip('Render only a region of the frame: drag in the picture to draw it. Click again for the whole frame.')
         self.region_enabled.toggled.connect(self._region_toggled)
         row.addWidget(self.region_enabled)
         self.focus_pick=QtWidgets.QToolButton();self.focus_pick.setText('Focus');self.focus_pick.setCheckable(True)
@@ -372,9 +375,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.probe.setText('&nbsp;&nbsp;'.join(parts))
 
     def _region_toggled(self,enabled):
-        self.preview.set_region(self._settings_values()['region'] if enabled else None,enabled)
-        if enabled==self._settings_values()['region_enabled']:return
-        self._store(region_enabled=bool(enabled))
+        # Switched on, the button only readies the drag: nothing is rendered anew until a region is drawn.
+        # Switched off, the region is forgotten, so that the next one is drawn from nothing.
+        self._region_armed=bool(enabled)
+        self.preview.set_region(None,enabled)
+        if enabled or not self._settings_values()['region_enabled']:return
+        self._store(region=[0.0,0.0,1.0,1.0],region_enabled=False)
         if self._following:self.preview_timer.start()
 
     def _camera_chosen(self,index):
@@ -433,8 +439,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self._sync_output_menu(values['custom_aovs'])
         if not self.display_timer.isActive():
             blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker
-        blocker=QtCore.QSignalBlocker(self.region_enabled);self.region_enabled.setChecked(values['region_enabled']);del blocker
-        self.preview.set_region(values['region'] if values['region_enabled'] else None,values['region_enabled'])
+        # The button is lit by a region being rendered, or by its being ready for one to be drawn.
+        armed=values['region_enabled'] or getattr(self,'_region_armed',False)
+        blocker=QtCore.QSignalBlocker(self.region_enabled);self.region_enabled.setChecked(armed);del blocker
+        self.preview.set_region(values['region'] if values['region_enabled'] else None,armed)
         if previous is None:return
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
@@ -597,6 +605,9 @@ class Panel(Tools, QtWidgets.QWidget):
             mesh['subdivision_level'] = values['subdivision_level']
         if values['surface'] == 1:
             scene['warnings'].append('Smooth subdivision rounds all exported meshes, including sharp edges.')
+        # A mesh light with no mesh, or a name several meshes share, lights nothing in either engine: say so.
+        from . import entities
+        entities.mesh_lights(scene,scene['warnings'])
         self._set_notices(scene['warnings'])
         return scene
 

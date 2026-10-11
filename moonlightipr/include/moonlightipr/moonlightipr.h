@@ -284,6 +284,8 @@ struct Camera {
     // then the longitude as scale and offset over the picture's height and width.
     uint32_t projection = 0;
     float projectionValues[4] = {0, 0, 0, 0};
+    // The part of the picture to render, as fractions of it: left, top, right, bottom. The rest is black.
+    float region[4] = {0, 0, 1, 1};
 };
 
 // Every setter restarts accumulation. Errors are reported as std::runtime_error.

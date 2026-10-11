@@ -651,7 +651,9 @@ def mesh_lights(scene, warnings=None):
         if entity['parameters'].get('light_filters') or entity['parameters'].get('map_shader'):
             warnings.append('Mesh light %s is exported without its light filters and map shader.' % label)
         owner = owners.pop()
+        # The mesh is seen shining unless the item's Visible in Camera is forced off (0).
         objects[owner] = dict(objects.get(owner, {}), mesh_light=True, light_color=value(entity, 'color'),
+                              light_seen=int(value(entity, 'visible_in_camera')) != 0,
                               light_intensity=float(value(entity, 'intensity')) * 2 ** float(value(entity, 'exposure')))
     production['objects'] = objects
     return dict(scene, production=production, entities=[e for e in scene['entities'] if e['class'] != 'MeshLight'])

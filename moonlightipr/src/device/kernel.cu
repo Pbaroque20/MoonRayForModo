@@ -1327,6 +1327,13 @@ ML_INLINE float profileShape(float r, float width) {
 extern "C" __global__ void __raygen__moonlightipr() {
     const uint3 index = optixGetLaunchIndex();
     const unsigned pixel = index.y * params.width + index.x;
+    if (index.x < params.region[0] || index.x >= params.region[2] || index.y < params.region[1] || index.y >= params.region[3]) {
+        // Outside the region being rendered there is no picture: black, as MoonRay leaves it.
+        reinterpret_cast<float4*>(params.beauty)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
+        reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
     unsigned seed = tea(pixel, params.sample);
 
     const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
@@ -1640,6 +1647,14 @@ extern "C" __global__ void __raygen__moonlightipr() {
             continue;
         }
         // A mesh light is the surface just hit; it emits from both faces.
+        if (camera && !emerged && hit.light >= 0 && lights[hit.light].pad) {
+            // Seen by the camera, it is the light itself that is seen, as MoonRay shows a light it is told to show.
+            const float3 shining = vec(lights[hit.light].radiance);
+            radiance += throughput * shining;
+            guideAlbedo = make_float3(fminf(shining.x, 1.0f), fminf(shining.y, 1.0f), fminf(shining.z, 1.0f));
+            guideNormal = -direction;
+            break;
+        }
         if (!camera && !emerged && hit.light >= 0) {
             const DeviceLight& light = lights[hit.light];
             const float cosine = fabsf(dot(direction, hit.ng));

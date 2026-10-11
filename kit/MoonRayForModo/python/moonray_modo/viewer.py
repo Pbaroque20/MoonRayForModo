@@ -30,7 +30,6 @@ class _PreviewBody:
         self.setMouseTracking(True)
         self.setMinimumSize(256, 192)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        self.setToolTip('Click empty preview to render. Wheel: zoom. Middle drag: pan. Double-click: fit image.\nWith Region on, drag with the left button to draw the region to render.')
 
     @QtCore.Slot(str)
     def load(self, path):
@@ -94,8 +93,12 @@ class _PreviewBody:
 
     def set_region(self, region, tool):
         """Show the region that is rendered, or none; and say whether a left drag draws a new one."""
+        before = self.region
         self.region = tuple(region) if region else None
         self.region_tool = bool(tool)
+        # The view follows: onto a region newly set, and back to the whole frame when there is none.
+        if self.region != before:
+            self.fit()
         self.update()
 
     def pixel_at(self, point):
@@ -108,8 +111,20 @@ class _PreviewBody:
         return min(self.image.width() - 1, max(0, x)), min(self.image.height() - 1, max(0, y))
 
     def fit(self):
+        """Fill the view with the picture, or with the region of it that is rendered."""
         self.zoom = 1.0
         self.pan = QtCore.QPointF()
+        region = getattr(self, 'region', None)
+        if region and tuple(region) != (0.0, 0.0, 1.0, 1.0) and not self.image.isNull() and self.width() > 0 and self.height() > 0:
+            left, top, right, bottom = region
+            wide, high = self.image.width() * (right - left), self.image.height() * (bottom - top)
+            if wide > 0 and high > 0:
+                whole = min(self.width() / self.image.width(), self.height() / self.image.height())
+                # A little room is left around it, so that its edge is seen.
+                scale = min(32.0 * whole, .94 * min(self.width() / wide, self.height() / high))
+                self.zoom = scale / whole
+                self.pan = QtCore.QPointF(-((left + right) / 2 - .5) * self.image.width() * scale,
+                                          -((top + bottom) / 2 - .5) * self.image.height() * scale)
         self.update()
 
     def actual_size(self):
@@ -173,6 +188,16 @@ class _PreviewBody:
                     painter.setPen(pen)
                     painter.setBrush(QtCore.Qt.NoBrush)
                     painter.drawRect(box)
+                    if self._drawing is not None and area.width() > 0:
+                        # How many pixels of the picture the rectangle takes in, written by the pointer.
+                        kept = box.intersected(area)
+                        text = '%d x %d' % (round(kept.width() / area.width() * self.image.width()), round(kept.height() / area.height() * self.image.height()))
+                        at = QtCore.QPointF(self._drawing[1]) + QtCore.QPointF(14, 18)
+                        plate = QtCore.QRectF(painter.fontMetrics().boundingRect(text)).adjusted(-5, -3, 5, 3)
+                        plate.moveTopLeft(QtCore.QPointF(min(at.x(), self.width() - plate.width() - 2), min(at.y(), self.height() - plate.height() - 2)))
+                        painter.fillRect(plate, QtGui.QColor(0, 0, 0, 190))
+                        painter.setPen(QtGui.QColor(255, 255, 255))
+                        painter.drawText(plate, QtCore.Qt.AlignCenter, text)
             overlay=self.workers if self.show_workers and self.workers is not None else self.buckets
             if (self.show_buckets and overlay and
                     (self.image.isNull() or (self.image.width(),self.image.height())==overlay[1:3])):

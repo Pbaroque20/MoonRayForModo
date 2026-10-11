@@ -131,6 +131,8 @@ def look():
         result['region_shown'] = view.region
         result['status'] = panel.status.text()
         result['form_agrees'] = [lx.eval('moonray.render.region_left ?'), lx.eval('moonray.render.region_bottom ?')]
+        # The block is moved aside: only inside the region may the picture follow it.
+        result['fitted_to_region'] = [round(view.zoom, 3), round(view.pan.x(), 1), round(view.pan.y(), 1)]
     except Exception:
         result['look_error'] = traceback.format_exc()
     save()
@@ -142,6 +144,17 @@ def finish():
         panel = panel_widget()
         panel.window().grab().save(str(out / 'window.png'))
         result['after_region'] = [panel.status.text(), panel.image_info.text()]
+        # Switched off, the view is the whole frame's again.
+        panel.region_enabled.click()
+        QtWidgets.QApplication.processEvents()
+        result['region_off'] = [panel.region_enabled.isChecked(), panel.preview.zoom, panel.preview.region]
+        # And on again, it does not come back as it was drawn before.
+        panel.region_enabled.click()
+        QtWidgets.QApplication.processEvents()
+        from moonray_modo import properties, scene_settings
+        again = scene_settings.complete(properties.scene_settings())
+        result['region_on_again'] = [panel.preview.region, panel.preview.region_tool, again['region_enabled'], again['region'], panel.preview.zoom]
+        panel.region_enabled.click()
         if panel.start.text() == 'Stop':
             panel.start.click()
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(held['engine']))

@@ -556,6 +556,17 @@ struct Renderer::Impl {
         params.lensAngle = camera.bladeAngle;
         params.cameraProjection = camera.projection <= 2 ? camera.projection : 0;
         std::copy(camera.projectionValues, camera.projectionValues + 4, params.cameraProjectionValues);
+        // Rows count upward from the picture's foot; the region's top and bottom are measured from its head.
+        const auto edge = [](float fraction, unsigned size) { return unsigned(std::lround(std::clamp(fraction, 0.0f, 1.0f) * float(size))); };
+        params.region[0] = edge(camera.region[0], params.width);
+        params.region[2] = edge(camera.region[2], params.width);
+        params.region[1] = edge(1.0f - camera.region[3], params.height);
+        params.region[3] = edge(1.0f - camera.region[1], params.height);
+        if (params.region[2] <= params.region[0] || params.region[3] <= params.region[1]) {
+            params.region[0] = params.region[1] = 0;
+            params.region[2] = params.width;
+            params.region[3] = params.height;
+        }
     }
 
     // Material indices are followed on the GPU without bounds checks, so reject bad ones here.
@@ -1225,6 +1236,8 @@ void Renderer::setLights(const Light* lights, size_t count) {
             if (!(total > 0.0) || !std::isfinite(total)) throw std::runtime_error("MoonLightIPR mesh light has no area");
             for (size_t t = 0; t < light.triangleCount; ++t) triangles[triangleStart[i] + t * 10 + 9] /= float(total);
             triangles.back() = 1.0f;
+            // A mesh light has no cone; the number says instead whether the camera sees the surface shining.
+            out.pad = light.outerConeDegrees > 0.5f ? 1u : 0u;
             out.area = float(total);
             out.triangleCount = uint32_t(light.triangleCount);
             continue;
