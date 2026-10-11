@@ -7,7 +7,7 @@ MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Mo
 
 The plugin includes CPU and XPU rendering, a dockable live preview with a second GPU preview engine, native MoonRay materials with a graph editor, Shader Tree translation, MoonRay's own lights and other items, MaterialX and RDL scene import, AOVs, and denoising.
 
-**Current version: 0.3.51.3 — experimental development build.** It is 0.3.51 with fixes to Draft, to Stop, to renders that did not refresh, and to Safe Denoising, which no longer slows a render.
+**Current version: 0.3.51.3 — experimental development build.** It is 0.3.51 with fixes to Draft, to Stop, to renders that did not refresh, and to Safe Denoising, which held heavy renders back.
 
 [Download 0.3.51.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.3) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.51](docs/WHATS_NEW_0351.md)
 
