@@ -1324,10 +1324,44 @@ ML_INLINE float profileShape(float r, float width) {
     return (expf(-r / width) + expf(-r / (3.0f * width))) / width;
 }
 
+// Whether two neighbouring rays of a draft found things that an outline runs between: one of them nothing, two
+// different objects, a corner, or one part of an object in front of another.
+ML_INLINE bool draftEdge(const Hit& a, const Hit& b) {
+    if (a.valid != b.valid) return true;
+    if (!a.valid) return false;
+    if (a.instance != b.instance) return true;
+    if (a.curve || b.curve) return false;
+    if (fabsf(dot(a.ng, b.ng)) < 0.82f) return true;
+    return fabsf(dot(b.p - a.p, a.ng)) > 0.03f * fminf(a.t, b.t);
+}
+
 extern "C" __global__ void __raygen__moonlightipr() {
     const uint3 index = optixGetLaunchIndex();
     const unsigned pixel = index.y * params.width + index.x;
-    if (index.x < params.region[0] || index.x >= params.region[2] || index.y < params.region[1] || index.y >= params.region[3]) {
+    const bool beyond = index.x < params.region[0] || index.x >= params.region[2] || index.y < params.region[1] || index.y >= params.region[3];
+    if (params.draft == 2 || (params.draft == 1 && beyond)) {
+        // Draft: three rays, to here and to the pixels beside and above, and a line where what they find parts.
+        // Nothing is lit or shaded, so it costs next to nothing however heavy the scene, and what is behind the
+        // nearest surface is not drawn.
+        unsigned seed = tea(pixel, params.sample);
+        const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
+        const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
+        const float3 from = vec(params.cameraOrigin), u = vec(params.cameraU), v = vec(params.cameraV), w = vec(params.cameraW);
+        Hit here, beside, above;
+        traceRadiance(from, normalize(u * sx + v * sy + w), here, 1e16f);
+        traceRadiance(from, normalize(u * (sx + 2.0f / params.width) + v * sy + w), beside, 1e16f);
+        traceRadiance(from, normalize(u * sx + v * (sy + 2.0f / params.height) + w), above, 1e16f);
+        const float line = draftEdge(here, beside) || draftEdge(here, above) ? 1.0f : 0.0f;
+        const float weight = 1.0f / float(params.sample + 1);
+        float4* beauty = reinterpret_cast<float4*>(params.beauty) + pixel;
+        const float kept = beauty->x + (line - beauty->x) * weight;
+        *beauty = make_float4(kept, kept, kept, 1.0f);
+        // The denoiser is shown the lines as they are, so that it leaves them alone.
+        reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(kept, kept, kept, 1.0f);
+        reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
+    if (beyond) {
         // Outside the region being rendered there is no picture: black, as MoonRay leaves it.
         reinterpret_cast<float4*>(params.beauty)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
         reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);

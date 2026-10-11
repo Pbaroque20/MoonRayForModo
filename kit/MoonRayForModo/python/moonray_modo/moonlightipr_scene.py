@@ -609,7 +609,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
              struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
              struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])]),
-             struct.pack('<4f', *region)]
+             # Draft: 1 draws what is outside the region as lines, 2 the whole picture.
+             struct.pack('<4fI', *region, int(scene.get('_draft') or 0))]
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))

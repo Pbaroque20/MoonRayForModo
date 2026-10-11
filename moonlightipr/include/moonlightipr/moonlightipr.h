@@ -286,6 +286,10 @@ struct Camera {
     float projectionValues[4] = {0, 0, 0, 0};
     // The part of the picture to render, as fractions of it: left, top, right, bottom. The rest is black.
     float region[4] = {0, 0, 1, 1};
+    // Draft: 0 for none; 1 draws what is outside the region as lines, in place of black; 2 draws the whole picture
+    // so. The lines are where one surface ends against another or turns a corner, as the camera sees them: white
+    // on black, for whoever shows the picture to ink as it likes.
+    uint32_t draft = 0;
 };
 
 // Every setter restarts accumulation. Errors are reported as std::runtime_error.

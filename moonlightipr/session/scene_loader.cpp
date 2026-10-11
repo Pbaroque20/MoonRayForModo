@@ -189,6 +189,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     camera.projection = in.value<uint32_t>();
     in.floats(camera.projectionValues, 4);
     in.floats(camera.region, 4);
+    camera.draft = in.value<uint32_t>();
     // With motion blur, the camera again as it is when the shutter closes.
     Camera cameraClose = camera;
     if (sceneFlags & SCENE_MOTION) {

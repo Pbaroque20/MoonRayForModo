@@ -135,6 +135,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self.buffer.addItem(label,key)
         self.buffer.setToolTip('The render buffer shown. Switching does not restart the render.')
         row.addWidget(self.buffer)
+        row.addSpacing(5)
         # Exposure and gamma: each a button that puts it back as it was, and its value beside it.
         reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click to put it back to 0.')
         reset.clicked.connect(lambda:self.exposure.setValue(0.0));row.addWidget(reset)
@@ -150,6 +151,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.gamma.setToolTip('A gamma for looking at the picture, after its view transform: above 1 lifts the shadows, below 1 deepens them.\nIt is kept with this window, not with the scene, and changes neither the render nor a saved EXR.')
         self.gamma.valueChanged.connect(self._gamma_changed)
         row.addWidget(self.gamma)
+        row.addSpacing(5)
         # One channel of the picture at a time: its red, green or blue as greys, or its alpha. A button pressed is
         # lit in its own colour; pressed again it goes out and the whole picture is back.
         self.channels={}
@@ -162,12 +164,16 @@ class Panel(Tools, QtWidgets.QWidget):
             button.clicked.connect(functools.partial(self._channel_clicked,key))
             self.channels[key]=button;row.addWidget(button)
         self._before_alpha=None
+        row.addSpacing(5)
         # Draft: the scene as plain lines, which costs nothing to show, for a region to be drawn on and rendered.
         self.draft=QtWidgets.QToolButton();self.draft.setText('Draft');self.draft.setCheckable(True)
         self.draft.setStyleSheet('QToolButton:checked { background-color: #b7a6d9; color: #101010; border: 1px solid #b7a6d9; border-radius: 3px; }')
         self.draft.setToolTip('Show the scene as simple lines and render nothing, until a region is drawn with Region: then only that region is rendered, on the lines.')
         self.draft.toggled.connect(self._draft_toggled)
-        self._draft_image=None;self._draft_render=None
+        self._draft_image=None;self._draft_render=None;self._draft_engine=False
+        # The last whole frame shown and the last region rendered, to put back without rendering; and whether
+        # pictures the engine goes on sending are kept off the view until something is rendered anew.
+        self._whole=None;self._part=None;self._held=False
         row.addWidget(self.draft)
         # A button as the channels' are: lit while only a region is rendered and a drag in the picture draws it.
         self.region_enabled=QtWidgets.QToolButton();self.region_enabled.setText('Region');self.region_enabled.setCheckable(True)
@@ -181,8 +187,10 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.focus_pick)
         gear=self.options_button=QtWidgets.QToolButton();gear.setText('Options');gear.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         gear.setMenu(self._options_menu())
-        row.addStretch(1)
+        # Everything stands together from the left, in groups; what room is over is at the right.
+        row.addSpacing(5)
         row.addWidget(gear)
+        row.addStretch(1)
         # One height for everything in the row, and no more width than each needs: a button is as wide as its word,
         # a channel's is square, and the lists give way first when the window is narrow.
         high=24
@@ -194,7 +202,7 @@ class Panel(Tools, QtWidgets.QWidget):
             if isinstance(widget,QtWidgets.QToolButton):
                 widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text()))
             elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
-        self.start.setFixedWidth(wide(self.start,'Render',22))
+        self.start.setFixedWidth(wide(self.start,'Render',36))
         # Room for the menu arrow beside the word, which it otherwise covers.
         gear.setFixedWidth(wide(gear,'Options',34))
         for combo,least,most in ((self.preview_engine,96,124),(self.camera,96,170),(self.buffer,96,150)):
@@ -386,13 +394,17 @@ class Panel(Tools, QtWidgets.QWidget):
         from . import draft
         self.preview.whole=bool(enabled)
         self.preview.paper=draft.PAPER if enabled else None
-        if not enabled:
-            # What was last rendered is shown again, where there is any.
-            if self._draft_render:self.preview.set_image(self._draft_render[1])
-            self._draft_image=self._draft_render=None
-            self.preview.fit()
+        if enabled:
+            if self._following:self.preview_timer.start()
+            else:self.render_once()
+            return
+        self._draft_image=self._draft_render=None;self._draft_engine=False
+        if self._whole is not None:
+            # A render made before is shown again as it was; nothing is rendered until the scene changes.
+            self._paste();self.preview.fit()
+            self.status.setText('Draft off.');return
+        self.preview.fit()
         if self._following:self.preview_timer.start()
-        elif enabled:self.render_once()
         else:self.status.setText('Draft off. Press Render for the picture.')
 
     def _draft_region(self):
@@ -441,7 +453,26 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_region(None,enabled)
         if enabled or not self._settings_values()['region_enabled']:return
         self._store(region=[0.0,0.0,1.0,1.0],region_enabled=False)
-        if self._following:self.preview_timer.start()
+        self._settled()
+        if self.draft.isChecked():
+            # The lines are drawn over where the region was, which costs nothing.
+            if self._following:self.preview_timer.start()
+            else:self.render_once()
+        # Nothing is rendered for it: the whole frame as it last was comes back, with the region as it was rendered.
+        else:self._paste()
+
+    def _settled(self):
+        """Take the scene's settings as they now are for seen, so that following does not render for them."""
+        self._live_settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
+
+    def _paste(self):
+        """Show the last whole frame with the last region rendered laid in it, and keep it until something is rendered."""
+        from . import draft
+        self._held=True
+        whole,part=self._whole,self._part
+        if whole is None:return
+        self.preview.set_image(draft.over(whole,part[1],part[0]) if part is not None and part[1].size()==whole.size() else whole)
+        self.image_info.setText('%d x %d'%(whole.width(),whole.height()))
 
     def _camera_chosen(self,index):
         try:lx.eval('moonray.camera %d'%index)
@@ -693,7 +724,12 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
-        if not output and self.draft.isChecked():
+        if not output:self._held=False;self._draft_engine=False
+        if not output and self.draft.isChecked() and self.preview_engine.currentData()=='moonlightipr':
+            # MoonLightIPR draws the draft itself, on the graphics card: outlines of what the camera sees first,
+            # at no cost however heavy the scene, and the region rendered among them in the same pass.
+            self._draft_engine=True;self._draft_image=None
+        elif not output and self.draft.isChecked():
             # Draft: the lines are drawn anew, and only a region, where one is set, goes on to be rendered.
             from . import draft
             self._draft_image=draft.picture(scene,*self._dimensions(scene,False))
@@ -712,6 +748,7 @@ class Panel(Tools, QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
+        if self._draft_engine:scene=dict(scene,_draft=1 if self._draft_region() else 2)
         engine='moonray' if output else self.preview_engine.currentData()
         # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
         if self._following and not output and engine=='moonray':
@@ -881,14 +918,28 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _image(self, path):
         try:
+            if self._held:return
+            if self.draft.isChecked() and self._draft_engine:
+                from . import draft
+                frame=path if isinstance(path,QtGui.QImage) else QtGui.QImage(str(path))
+                if frame.isNull():raise ValueError('MoonRay output could not be decoded as an image.')
+                region=self._draft_region()
+                if region:self._part=(region,frame)
+                self.preview.set_image(draft.inked(frame,region))
+                self.image_info.setText('%d x %d | Draft'%(frame.width(),frame.height()));return
             if self.draft.isChecked() and self._draft_image is not None:
                 # In draft the render is seen inside its region only, on the lines.
                 rendered=path if isinstance(path,QtGui.QImage) else QtGui.QImage(str(path))
                 if rendered.isNull():raise ValueError('MoonRay output could not be decoded as an image.')
-                self._draft_render=(self._draft_region(),rendered)
+                self._draft_render=(self._draft_region(),rendered);self._part=self._draft_render
                 self._draft_show();return
             if isinstance(path,QtGui.QImage):self.preview.set_image(path)
             else:self.preview.load(path)
+            # Kept, to be put back when Region or Draft is switched off, without rendering.
+            if not self.draft.isChecked():
+                region=self._draft_region()
+                if region:self._part=(region,QtGui.QImage(self.preview.image))
+                else:self._whole=QtGui.QImage(self.preview.image);self._part=None
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())

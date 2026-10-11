@@ -16,9 +16,9 @@ INK = '#a08467'
 # A mesh of this many edges or fewer is drawn whole; past it, by its corners, of which this many at most.
 WHOLE, MOST = 1500, 6000
 # Past this many polygons a mesh is not read at all: it is its box.
-READ = 400000
+READ = 150000
 # Up to this many polygons a dense mesh is given its rim as well.
-RIMMED = 60000
+RIMMED = 20000
 # The turn between two polygons, as a cosine, past which their edge is a corner (about 28 degrees).
 CORNER = .88
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -159,6 +159,24 @@ def picture(scene, width, height):
     finally:
         painter.end()
     return image
+
+
+def inked(frame, region):
+    """MoonLightIPR's own draft made into the picture shown: its lines, which it sends white on black, in ink with
+    nothing between them, and inside the region (left, top, right, bottom as fractions) what it rendered there."""
+    made = QtGui.QImage(frame.size(), QtGui.QImage.Format_ARGB32)
+    made.fill(QtGui.QColor(INK))
+    made.setAlphaChannel(frame.convertToFormat(QtGui.QImage.Format_Grayscale8))
+    if region:
+        left, top, right, bottom = region
+        part = QtCore.QRectF(left * frame.width(), top * frame.height(), (right - left) * frame.width(), (bottom - top) * frame.height())
+        painter = QtGui.QPainter(made)
+        try:
+            painter.setCompositionMode(QtGui.QPainter.CompositionMode_Source)
+            painter.drawImage(part, frame.convertToFormat(QtGui.QImage.Format_ARGB32), part)
+        finally:
+            painter.end()
+    return made
 
 
 def over(draft, rendered, region):

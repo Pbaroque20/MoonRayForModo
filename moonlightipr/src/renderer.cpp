@@ -558,6 +558,7 @@ struct Renderer::Impl {
         std::copy(camera.projectionValues, camera.projectionValues + 4, params.cameraProjectionValues);
         // Rows count upward from the picture's foot; the region's top and bottom are measured from its head.
         const auto edge = [](float fraction, unsigned size) { return unsigned(std::lround(std::clamp(fraction, 0.0f, 1.0f) * float(size))); };
+        params.draft = camera.draft <= 2 ? camera.draft : 0;
         params.region[0] = edge(camera.region[0], params.width);
         params.region[2] = edge(camera.region[2], params.width);
         params.region[1] = edge(1.0f - camera.region[3], params.height);

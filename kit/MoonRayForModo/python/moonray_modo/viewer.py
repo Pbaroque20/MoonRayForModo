@@ -261,7 +261,8 @@ class _PreviewBody:
 
     def mouseReleaseEvent(self, event):
         if self._drawing is not None:
-            area, drawn = self.image_rect(), QtCore.QRectF(QtCore.QPointF(self._drawing[0]), QtCore.QPointF(self._drawing[1])).normalized()
+            # The rectangle ends where the button came up.
+            area, drawn = self.image_rect(), QtCore.QRectF(QtCore.QPointF(self._drawing[0]), QtCore.QPointF(event.pos())).normalized()
             self._drawing = None
             self.unsetCursor()
             kept = drawn.intersected(area)
