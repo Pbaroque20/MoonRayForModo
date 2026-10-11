@@ -32,7 +32,7 @@ def outline(name):
     for y in range(0, image.height(), 1):
         for x in range(0, image.width(), 3):
             c = image.pixelColor(x, y)
-            yellow = c.red() - c.blue()
+            yellow = c.blue() - c.red()   # the outline's blue: more blue than red
             if yellow > 12:
                 count += 1
                 strongest = max(strongest, yellow)
@@ -60,7 +60,13 @@ def part():
     outline('one_fading')
     result['fading_then'] = len(preview()._fading)
     preview().set_buckets(None)
-    QtCore.QTimer.singleShot(200, half)
+    QtCore.QTimer.singleShot(350, held)
+
+
+def held():
+    # Left, but not yet long enough to be done with: still at full strength.
+    outline('held')
+    QtCore.QTimer.singleShot(600, half)
 
 
 def half():

@@ -156,6 +156,10 @@ class _PreviewBody:
             scale=min(self.width()/self.image.width(),self.height()/self.image.height())
             if scale>0:self.zoom=1./scale;self.pan=QtCore.QPointF();self.update()
 
+    # MoonRay comes back to a tile many times as a picture comes on, and between its visits the tile is not in what
+    # it reports. An outline it has left therefore stands for HOLD seconds, in case it is come back to, and only
+    # then fades, over FADE seconds: so an outline fades when its tile is done with, not each time it is left.
+    HOLD=.7
     FADE=.45
 
     def _outlines(self):
@@ -177,7 +181,7 @@ class _PreviewBody:
 
     def _fade_step(self):
         now=self._fade_clock.elapsed()/1000.
-        self._fading={key:left for key,left in self._fading.items() if now-left<self.FADE}
+        self._fading={key:left for key,left in self._fading.items() if now-left<self.HOLD+self.FADE}
         if not self._fading:self._fade_timer.stop()
         self.update()
 
@@ -270,14 +274,14 @@ class _PreviewBody:
             if self.show_buckets and overlay:drawn+=[(overlay[1],overlay[2],rectangle,1.0) for rectangle in overlay[3]]
             if self.show_buckets and self._fading:
                 now=self._fade_clock.elapsed()/1000.
-                drawn+=[(width,height,rectangle,1.0-(now-left)/self.FADE) for (width,height,rectangle),left in self._fading.items()]
+                drawn+=[(width,height,rectangle,1.0-max(0.0,now-left-self.HOLD)/self.FADE) for (width,height,rectangle),left in self._fading.items()]
             painter.setBrush(QtCore.Qt.NoBrush)
             for width,height,(x0,y0,x1,y1),strength in drawn:
                 if strength<=0 or not (self.image.isNull() or (self.image.width(),self.image.height())==(width,height)):continue
                 scale=min(self.width()/width,self.height()/height)*self.zoom
                 left=(self.width()-width*scale)/2+self.pan.x()
                 top=(self.height()-height*scale)/2+self.pan.y()
-                colour=QtGui.QColor('#ffd166');colour.setAlphaF(min(1.0,strength))
+                colour=QtGui.QColor('#a9cdf2');colour.setAlphaF(min(1.0,strength))
                 pen=QtGui.QPen(colour);pen.setWidthF(1.0)
                 painter.setPen(pen)
                 painter.drawRect(QtCore.QRectF(left+x0*scale,top+(height-y1)*scale,(x1-x0)*scale,(y1-y0)*scale))

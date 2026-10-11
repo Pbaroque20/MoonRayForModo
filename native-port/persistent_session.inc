@@ -43,6 +43,15 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
         bool complete = false;
         bool requireReload = false;
         if (!waiting()) {
+            {
+                // A scene that asks for its picture to be saved as it renders, or to be taken up from a
+                // save, is rendered the way that does so. Its picture is shown as it comes on all the same.
+                const auto& vars = context->getSceneContext().getSceneVariables();
+                const bool saves = vars.get(scene_rdl2::rdl2::SceneVariables::sCheckpointActive) ||
+                                   vars.get(scene_rdl2::rdl2::SceneVariables::sResumeRender);
+                context->setRenderMode(saves ? rndr::RenderMode::PROGRESS_CHECKPOINT : rndr::RenderMode::PROGRESSIVE);
+                if (saves) std::cout << "Modo session: saving the picture as it renders" << std::endl;
+            }
             const auto prep = context->startFrame();
             if (prep == rndr::RenderContext::RP_RESULT::FINISHED) {
                 auto driver = rndr::getRenderDriver();

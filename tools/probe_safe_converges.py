@@ -86,7 +86,7 @@ def first():
         held['stored'] = panel.preferences.store.value('runtime', '')
         held['engine'] = panel.preview_engine.currentData()
         held['live'] = panel.ipr_mode.isChecked()
-        panel.preferences.set('runtime', str(root / 'runtime/steady-0350-pool'))
+        panel.preferences.set('runtime', str(root / os.environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-0350-pool')))
         panel.ipr_mode.setChecked(False)
         if panel.start.text() == 'Stop':
             panel.start.click()
@@ -145,6 +145,7 @@ def watch():
             run['pictures'] = len(held['seen'])
             run['saves'] = held['saves']
             run['files'] = len(files)
+            run['timing_before_stop'] = panel.render_timing.text()
             run['ended'] = [now, panel.status.text(), panel.render_timing.text(), panel.start.text(), panel.buffer.currentData(), panel._buffer_picked]
             run['interval'] = getattr(panel.renderer, 'safe_minutes', None) if RUNS[len(result['runs']) - 1][1] else None
             if panel._rendering:
@@ -170,6 +171,8 @@ def stopped():
         run = result['runs'][held['name']]
         frame = panel.renderer.buffers.frame or {}
         run['kept'] = {'status': panel.status.text(), 'button': panel.start.text(), 'buffer': panel.buffer.currentData(), 'rendering': panel._rendering,
+                       'info': panel.image_info.text(), 'loaded': bool(getattr(panel.renderer, 'using_session', False)), 'behind': getattr(panel.renderer, 'kept_behind', None),
+                       'saving': 'saving the picture as it renders' in str(getattr(panel.renderer, 'log', '')),
                        'files': sorted(frame.get('files', {}))[:6], 'denoised': 'denoised_beauty' in frame.get('files', {}), 'timing': panel.render_timing.text()}
         shown = panel.preview.image.copy()
         held['shown'] = shown

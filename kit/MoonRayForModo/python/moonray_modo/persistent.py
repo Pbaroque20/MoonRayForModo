@@ -16,6 +16,13 @@ def supported(runtime):
     except (OSError,ValueError,TypeError):return False
 
 
+def saves(runtime):
+    """Whether this runtime's MoonRay, kept loaded, can save its picture as it renders and take a render up from a
+    save: what Safe Denoising and Continue need, with the picture still shown as it comes on."""
+    try:return bool(json.loads((Path(runtime)/'modo-session.json').read_text(encoding='utf-8')).get('saves'))
+    except (OSError,ValueError,TypeError,AttributeError):return False
+
+
 class Session(QtCore.QObject):
     output=QtCore.Signal(str)
     ready=QtCore.Signal(int)

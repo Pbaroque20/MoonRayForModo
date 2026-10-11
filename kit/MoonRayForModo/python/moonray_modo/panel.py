@@ -105,7 +105,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self.ipr_mode.toggled.connect(self._ipr_changed)
         self.poll_timer.start()
         # Where the preferences ask for it, a preview starts as the window opens.
-        if self.preferences.get('render_on_open'):QtCore.QTimer.singleShot(800,lambda:None if self.disposed or self._rendering or self._following else self.start_render())
+        # A realtime engine is on from the moment the window opens, as it is from the moment it is chosen.
+        if self.preferences.get('render_on_open') or self._live():QtCore.QTimer.singleShot(800,lambda:None if self.disposed or self._rendering or self._following else self.start_render())
+        self._set_rendering(self._rendering)
 
     # The window's own controls
 
@@ -117,15 +119,23 @@ class Panel(Tools, QtWidgets.QWidget):
         self.start.clicked.connect(self._render_or_stop)
         row.addWidget(self.start)
         # Called Live, so that it is not taken for the MoonLightIPR engine in the list beside it.
-        self.ipr_mode=QtWidgets.QCheckBox('Live')
-        self.ipr_mode.setToolTip('With Live on, Render keeps following the scene as it is edited, until Stop.')
-        self.ipr_mode.setChecked(self.preferences.get('ipr'))
-        row.addWidget(self.ipr_mode)
+        # Three ways to preview. MoonRay renders the picture once, in full. The other two are realtime: they follow
+        # the scene as it is edited. Whether the window is following is kept in a switch of its own, which is not
+        # shown: the choice of engine sets it.
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
+        self.preview_engine.addItem('MoonRay LS', 'moonray_ls')
         self.preview_engine.addItem('MoonLightIPR', 'moonlightipr')
-        self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(self.preferences.get('preview_engine'))))
-        self.preview_engine.setToolTip('MoonLightIPR is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
+        stored=self.preferences.get('preview_engine')
+        # From before there were three: MoonRay with Live ticked is MoonRay LS.
+        if stored=='moonray' and self.preferences.get('ipr'):stored='moonray_ls'
+        self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(stored)))
+        self.preview_engine.setToolTip('MoonRay: the full render, once, as an output render would be.\n'
+                                       'MoonRay LS (low sample): MoonRay following the scene as you edit it, at fewer samples and a smaller size.\n'
+                                       'MoonLightIPR: a fast GPU preview that follows the scene and approximates materials and lighting; Notices lists what it leaves out.\n'
+                                       'Output renders always use MoonRay.')
+        self.ipr_mode=QtWidgets.QCheckBox('Live',self);self.ipr_mode.hide()
+        self.ipr_mode.setChecked(self._live())
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
         self.camera=QtWidgets.QComboBox()
@@ -206,7 +216,8 @@ class Panel(Tools, QtWidgets.QWidget):
             if isinstance(widget,QtWidgets.QToolButton):
                 widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text()))
             elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
-        self.start.setFixedWidth(wide(self.start,'Render',36))
+        # Wide enough for the longest thing it says.
+        self.start.setFixedWidth(wide(self.start,'Realtime Off',24))
         # Room for the menu arrow beside the word, which it otherwise covers.
         gear.setFixedWidth(wide(gear,'Options',34))
         for combo,least,most in ((self.preview_engine,96,124),(self.camera,96,170),(self.buffer,96,150)):
@@ -260,7 +271,7 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Save Image...',self.save_preview)
         # The outputs of the last finished MoonRay preview, each as a picture of its own. MoonLightIPR has the one.
         batch=menu.addAction('Export AOVs as Images...',self.export_buffers)
-        batch.setEnabled(self.preview_engine.currentData()!='moonlightipr')
+        batch.setEnabled(self._engine()!='moonlightipr')
         if not batch.isEnabled():batch.setToolTip('MoonLightIPR renders the one picture; choose MoonRay for its outputs.')
         if getattr(self,'_continuable',None) is not None and not self._rendering:
             # Continue is what the button offers; this is the other choice. It throws the stopped render away, so it
@@ -271,8 +282,10 @@ class Panel(Tools, QtWidgets.QWidget):
         return menu
 
     def _status_line(self):
-        # Three cells of one width, as a table of one row: the probe, the status, and the picture's details. What is
-        # written in one never moves another.
+        # Two lines. The first is the status, across the whole window, so that a long message is read whole. The
+        # second is three cells of one width, as a table of one row: the probe, how the render is getting on, and the
+        # picture's details. What is written in one never moves another.
+        lines=QtWidgets.QVBoxLayout();lines.setSpacing(2);lines.setContentsMargins(0,0,0,0)
         row=QtWidgets.QHBoxLayout();row.setSpacing(10)
         cells=[]
         for _ in range(3):
@@ -291,19 +304,22 @@ class Panel(Tools, QtWidgets.QWidget):
         left.addWidget(self.swatch)
         left.addWidget(self.probe)
         left.addStretch(1)
-        # The status is in the middle of the row, between the probe and the picture's details.
         self.status.setAlignment(QtCore.Qt.AlignCenter)
-        middle.addWidget(self.status,1)
+        lines.addWidget(self.status)
+        lines.addLayout(row)
+        # How the render is getting on is in the middle of the second line, between the probe and the picture's details.
+        self.render_timing=QtWidgets.QLabel('');self.render_timing.setEnabled(False)
+        self.render_timing.setAlignment(QtCore.Qt.AlignCenter)
+        self.render_timing.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
+        middle.addWidget(self.render_timing,1)
         self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
         right.addStretch(1)
         right.addWidget(self.image_info)
-        self.render_timing=QtWidgets.QLabel('');self.render_timing.setEnabled(False)
-        right.addWidget(self.render_timing)
         self.notice_toggle=QtWidgets.QToolButton();self.notice_toggle.setText('Notices (0)');self.notice_toggle.setCheckable(True);self.notice_toggle.setAutoRaise(True)
         self.notice_toggle.setToolTip('What the renderer could not carry over from the scene')
         self.notice_toggle.toggled.connect(lambda visible:self.warnings.setVisible(visible))
         right.addWidget(self.notice_toggle)
-        return row
+        return lines
 
     def _focus_armed(self,armed):
         if armed:
@@ -564,16 +580,32 @@ class Panel(Tools, QtWidgets.QWidget):
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
         self._limit_buffers()
 
+    def _engine(self):
+        """The renderer behind the engine chosen: MoonRay LS is MoonRay."""
+        chosen=self.preview_engine.currentData()
+        return 'moonray' if chosen=='moonray_ls' else chosen
+
+    def _live(self):
+        """Whether the engine chosen is a realtime one, which follows the scene as it is edited."""
+        return self.preview_engine.currentData()!='moonray'
+
     def _engine_changed(self,index):
         self.preferences.set('preview_engine',self.preview_engine.currentData())
+        live=self._live()
+        if self.ipr_mode.isChecked()!=live:self.ipr_mode.setChecked(live)
+        if not self.disposed and not self._output_busy():
+            # A realtime engine is on from the moment it is chosen; MoonRay waits for Render.
+            if live and not self._following:QtCore.QTimer.singleShot(0,lambda:None if self.disposed or self._following or not self._live() else self.start_render())
+            elif not live and (self._following or self._rendering):self.stop()
+        self._set_rendering(self._rendering)
         # MoonLightIPR follows edits as they happen, so look for them more often.
-        self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlightipr' else 150)
+        self.timer.setInterval(60 if self._engine()=='moonlightipr' else 150)
         self._limit_buffers()
 
     def _limit_buffers(self):
         """MoonLightIPR makes one picture, which its own denoiser has already cleaned: the list then holds that alone,
         under the name Denoised Beauty. The other buffers are MoonRay's."""
-        only=self.preview_engine.currentData()=='moonlightipr'
+        only=self._engine()=='moonlightipr'
         self.buffer.setItemText(0,'Denoised Beauty' if only else 'Beauty')
         for row in range(1,self.buffer.count()):self.buffer.view().setRowHidden(row,only)
         if only and self.buffer.currentIndex()!=0:self.buffer.setCurrentIndex(0)
@@ -598,7 +630,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # Turned on during a preview: carry on from it.
                 self._follow(True)
                 self.status.setText('Following the scene.')
-            else:self.status.setText('IPR on: Render will follow the scene until Stop.')
+            else:self.status.setText('Realtime: the preview follows the scene.')
         else:
             was=self._following
             self._follow(False)
@@ -663,7 +695,7 @@ class Panel(Tools, QtWidgets.QWidget):
         return self._configure_snapshot(capture_current(values['surface']==2))
 
     def _capture_preview(self):
-        if self.preview_engine.currentData()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
+        if self._engine()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
         from .animation import capture_current
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
         # Stepping through the shutter is not an edit for IPR to follow.
@@ -737,6 +769,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self._rendering=bool(rendering)
         active=self._rendering or self._following
         again=not active and getattr(self,'_continuable',None) is not None
+        if self._live():
+            # A realtime engine is switched on and off, not started and stopped.
+            self.start.setText('Realtime On' if active else 'Realtime Off')
+            self.start.setToolTip('The preview is following the scene as you edit it. Press to switch it off.' if active
+                                  else 'The preview is not following the scene. Press to switch it on.')
+            return
         self.start.setText('Stop' if active else 'Continue' if again else 'Render')
         self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)
@@ -768,10 +806,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if not output and self.draft.isChecked():
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
             self._draft_size=(width,height);self.preview.nominal=(width,height)
-        engine='moonray' if output else 'moonlightipr' if self._draft_engine else self.preview_engine.currentData()
+        engine='moonray' if output else 'moonlightipr' if self._draft_engine else self._engine()
         # Continue: the same scene as the render that was stopped and kept, taken up where it stood.
         resume=bool(not output and not refining and engine=='moonray' and getattr(self,'_continuable',None) is not None and self._continuable==original_digest)
-        if not output:self._continuable=None
+        if not output:self._continuable=None;self._kept_note=''
         if not output and getattr(self,'_clear_first',False):
             self._clear_first=False
             if not resume and not self.draft.isChecked():
@@ -799,7 +837,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _digest(self, scene):
         render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising')}
         stored=self._settings_values();get=self.preferences.get
-        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), self.preview_engine.currentData()]
+        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), self._engine()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
         from .scene_digest import digest
         return digest(*values)
@@ -834,7 +872,7 @@ class Panel(Tools, QtWidgets.QWidget):
         category=next((c for c,_ in CRYPTOMATTES if key=='crypto_'+c),None)
         entries=list(stored['custom_aovs'])
         if category is None or any(v['name']==key for v in entries):return False
-        if self.preview_engine.currentData()!='moonray':
+        if self._engine()!='moonray':
             self.status.setText('Cryptomatte needs the MoonRay engine.');return True
         from . import native,outputs
         if not native.supports_crypto_categories(self.runtime_path()):
@@ -882,7 +920,7 @@ class Panel(Tools, QtWidgets.QWidget):
         from .interaction import dragging
         held=dragging()
         # MoonLightIPR is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
-        if held and self.preview_engine.currentData()!='moonlightipr':self.release_timer.start();return
+        if held and self._engine()!='moonlightipr':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         try:
@@ -1048,6 +1086,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 settings=snapshot['render_settings']
                 text+=' | IPR '+('1 SPP' if settings['max_adaptive_samples']==1 else '%d-%d SPP'%(settings['min_adaptive_samples'],settings['max_adaptive_samples']))
             self.image_info.setText(text)
+            self._image_note()
             self.image_info.setToolTip(str(frame.get('backend',self.renderer.backend_status)))
         except ValueError as exc:
             self.status.setText('Cannot display cached preview: '+str(exc))
@@ -1057,7 +1096,32 @@ class Panel(Tools, QtWidgets.QWidget):
             label='Frame %d (%d/%d) | %s'%(self.sequence.frame,len(self.sequence.completed)+1,self.sequence.total,label)
         self.render_progress.setRange(0,0 if value<0 else 100)
         if value>=0: self.render_progress.setValue(value)
+        # Under Safe Denoising: how long ago MoonRay last saved, which is what a stop now would keep.
+        saved=getattr(self.renderer,'saved_at',None)
+        if (self._rendering and saved is not None and getattr(self.renderer,'safe_files',None) and not getattr(self.renderer,'settling',False)
+                and not label.startswith(('Complete','Stopped'))):
+            import time
+            from .progress import duration
+            label+=' · Saved %s ago'%duration(time.monotonic()-saved)
         self.render_timing.setText(label.replace(' · ',' | '))
+
+    def _kept_status(self):
+        """What to say of a render stopped under Safe Denoising: it is kept as MoonRay last saved it, which may be
+        some way behind what was on screen at the stop. The picture's own line says so for as long as it is shown."""
+        from .progress import duration
+        behind=getattr(self.renderer,'kept_behind',None)
+        if behind is None or behind<1.5:
+            self._kept_note='';return 'Stopped and kept. Continue takes the render up again.'
+        self._kept_note='as saved %s before the stop'%duration(behind)
+        self._image_note()
+        return 'Stopped: the picture is the last save, %s before the stop. Continue takes it up from there.'%duration(behind)
+
+    def _image_note(self):
+        """Mark the picture's line where the picture is not what was last on screen."""
+        note=getattr(self,'_kept_note','')
+        text=self.image_info.text().split(' | as saved ')[0]
+        if text:self.image_info.setText(text+(' | '+note if note else ''))
+        self.image_info.setStyleSheet('QLabel,QLabel:disabled{color:#ffd166;}' if note else '')
 
     def _finished(self, output):
         if not output and getattr(self,'_draft_then',None) is not None and self.draft.isChecked():
@@ -1072,7 +1136,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self._continuable=self.last_digest if not output and getattr(self.renderer,'resumable',None) else None
         self._set_rendering(False)
         self.status.setToolTip('')
-        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Stopped and kept. Continue takes the render up again.' if self._continuable
+        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
                              else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))
         if not output:
             engine=self._preview_denoiser()

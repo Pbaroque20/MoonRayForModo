@@ -34,7 +34,7 @@ def main():
     shutil.copy2(executable,target/'moonray.exe')
     manifest['moonray.exe']={'source':str(executable),'sha256':digest(executable)}
     capability=target/'modo-session.json';value=json.loads(capability.read_text(encoding='utf-8'))
-    value.update(progressive_preview=True,executable_sha256=digest(executable));capability.write_text(json.dumps(value,indent=2),encoding='utf-8')
+    value.update(progressive_preview=True,executable_sha256=digest(executable),saves=b'Modo session: saving the picture as it renders' in executable.read_bytes());capability.write_text(json.dumps(value,indent=2),encoding='utf-8')
     manifest[capability.name]={'source':str(capability),'sha256':digest(capability)}
     crypto=target/'modo-crypto-categories.json'
     if crypto.exists():
