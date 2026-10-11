@@ -126,12 +126,17 @@ class Browser(QtWidgets.QDialog):
  def refresh(self):
   self.timer.stop();self.painter.stop();self.list.clear();self.rows=[];self.waiting=[]
   self.category.blockSignals(True);self.category.clear();self.category.addItem('Everything');self.category.setCurrentRow(0);self.category.blockSignals(False)
-  self.iterator=library.scan([library.bundled()]+self.roots);self.timer.start();self.status.setText('Looking through the library...')
+  self.iterator=library.scan([library.bundled()]+[str(folder) for folder in library.content()]+self.roots);self.timer.start();self.status.setText('Looking through the library...')
  def add_rows(self,rows):
   from .asset_import import action
   for row in rows:
    # Only what there is something to do with.
    if not action(row.get('path','')) in PURPOSES:continue
+   # A MoonRay scene is two files of one name that belong together: it is shown once, by the one that is read last.
+   held=Path(row.get('path',''))
+   if held.suffix.lower()=='.rdlb' and held.with_suffix('.rdla').is_file():continue
+   # And where every scene's file is called scene, each in a folder of its own, it is called by its folder.
+   if row['name'].casefold() in ('scene','main','untitled'):row=dict(row,name=held.parent.name.replace('_',' ').replace('-',' ').capitalize())
    # A saved material is called by its name, without the ending its file has.
    if row['name'].endswith('.moonmat'):row=dict(row,name=row['name'][:-len('.moonmat')])
    self.rows.append(row);item=QtWidgets.QListWidgetItem(row['name']);item.setData(QtCore.Qt.UserRole,row);item.setToolTip(row.get('path',''))

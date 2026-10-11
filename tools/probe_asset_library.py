@@ -45,6 +45,36 @@ def look():
     except Exception:
         result['look_error'] = traceback.format_exc()
     (out / 'report.json').write_text(json.dumps(result, indent=1, default=str))
+    try:
+        # MoonRay's example scenes, as the content that goes with a release holds them: shown from where they are
+        # kept here, without the folder being remembered.
+        from moonray_modo import asset_browser
+        window = asset_browser._dialog
+        window.roots = window.roots + [str(root / 'downloads/moonray-example-scenes/scenes')]
+        window.refresh()
+    except Exception:
+        result['content_error'] = traceback.format_exc()
+    QtCore.QTimer.singleShot(9000, content)
+
+
+def content():
+    try:
+        from moonray_modo import asset_browser
+        window = asset_browser._dialog
+        found = window.category.findItems('Example scenes', QtCore.Qt.MatchExactly)
+        window.category.setCurrentItem(found[0])
+        QtWidgets.QApplication.processEvents()
+        shown = [window.list.item(i) for i in range(window.list.count()) if not window.list.item(i).isHidden()]
+        result['content'] = sorted(item.text() for item in shown)
+        bedroom = next(item for item in shown if item.text() == 'Bedroom')
+        window.list.setCurrentItem(bedroom)
+        window.list.scrollToItem(bedroom)
+        QtWidgets.QApplication.processEvents()
+        result['bedroom'] = [window.title.text(), window.use.text()]
+        window.grab().save(str(out / 'library_content.png'))
+    except Exception:
+        result['content_error'] = traceback.format_exc()
+    (out / 'report.json').write_text(json.dumps(result, indent=1, default=str))
     lx.eval('!app.quit')
 
 

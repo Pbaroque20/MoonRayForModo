@@ -73,6 +73,12 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 
 ## Working faster
 
+- **The asset library shows pictures of things to use.** Saved materials, models, scenes, pictures, volumes and MaterialX files stand in a grid by kind; the one chosen is shown large with a line saying what it is, and one button, or a double-click, puts it to use. The lists of node types and download links are gone from it.
+- **MoonRay Content**: MoonRay's example scenes come with the release as a separate download. Unpacked into Documents, they are listed in the asset library with a picture each.
+
+![The asset library with MoonRay's example scenes](images/asset-library.png)
+*The asset library, showing MoonRay's example scenes from the content download.*
+
 - **MoonRay's materials are in the Shader Tree's Add Layer list**, under Custom Materials, with MaterialX Material beside them.
 - **A MoonRay page in Modo's Preferences** (System > Preferences). On it: have the M key open MoonRay's Assign Material in place of Modo's own (from the next time Modo starts); what Assign Material starts with (type, smoothing, angle); the preview engine, Live, and whether a preview starts as its window opens; opening Notices when there are any; the colour of a draft's lines; how bright a new MoonRay light is; and the runtime folder.
 - Assign a MoonRay material to **selected polygons**, with a name, type, colour and smoothing angle.
