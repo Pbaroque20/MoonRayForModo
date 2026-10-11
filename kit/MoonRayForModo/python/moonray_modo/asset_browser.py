@@ -126,7 +126,8 @@ class Browser(QtWidgets.QDialog):
  def refresh(self):
   self.timer.stop();self.painter.stop();self.list.clear();self.rows=[];self.waiting=[]
   self.category.blockSignals(True);self.category.clear();self.category.addItem('Everything');self.category.setCurrentRow(0);self.category.blockSignals(False)
-  self.iterator=library.scan([library.bundled()]+[str(folder) for folder in library.content()]+self.roots);self.timer.start();self.status.setText('Looking through the library...')
+  # The kit's own library holds what came with it, the example scenes of the content download among it.
+  self.iterator=library.scan([library.bundled()]+self.roots);self.timer.start();self.status.setText('Looking through the library...')
  def add_rows(self,rows):
   from .asset_import import action
   for row in rows:

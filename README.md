@@ -7,16 +7,66 @@ MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Mo
 
 The plugin includes CPU and XPU rendering, a dockable live preview with a second GPU preview engine, native MoonRay materials with a graph editor, Shader Tree translation, MoonRay's own lights and other items, MaterialX and RDL scene import, AOVs, and denoising.
 
-**Current version: 0.3.50.2 — experimental development build.** It is 0.3.50.1 with one fix: a glass material with an absorption depth on one part of a mesh of several parts no longer stops MoonRay as the render begins.
+**Current version: 0.3.51 — experimental development build.**
 
-[Download the packaged 0.3.50.2 kit and Windows runtime](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.50.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.50](docs/WHATS_NEW_0350.md)
+[Download 0.3.51: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.51](docs/WHATS_NEW_0351.md)
 
-The next version's preview features are being built on the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
+Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
 ![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
 
-## New in 0.3.50
+## New in 0.3.51
+
+The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
+
+**The preview window**
+
+- **Draft**: the scene as clean outlines, with nothing rendered until you press **Region** and drag. Then only that part is rendered, among the lines.
+- **Region** is a button you drag with; **R, G, B, A** show one channel; a **colour probe** follows the pointer; **EV** and **Gamma** reset with a click.
+- **Export AOVs as Images** from the picture's right-click menu.
+
+![Draft with a region rendered among the lines](docs/images/preview-draft-region.png)
+*Draft, with a region rendered among the lines.*
+
+**Rendering with MoonRay**
+
+- **Safe Denoising**: stop a MoonRay render at any time and keep it, denoised. **Continue** then takes it up where it stood.
+- **Bake Selected Mesh to Texture**, **deep EXR** output, more render settings and one-click outputs, and **light path presets**.
+- **Mesh lights** are seen glowing; MoonRay light items can be **linked**; an object can cast **no shadow onto chosen objects**.
+
+![A MoonRay preview stopped part way, kept and denoised](docs/images/safe-denoising.png)
+*Stopped part way, kept and denoised, with Continue on offer.*
+
+**The MoonLightIPR preview** (echoing DreamWorks' earlier rasterizer MoonLight; it was shown as "MoonLight" in 0.3.50)
+
+- **Hair, skin and curves** shaded with MoonRay's own materials; **fog and VDB clouds**, with their glow.
+- **Rod, barn door, cookie and VDB light filters**, textures on every kind of light, and **render regions**.
+
+![Hair, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-hair_dark.jpg)
+*Hair in MoonRay (left) and in the MoonLightIPR preview (right).*
+
+**Materials and scenes**
+
+- **Modo's Fur material** grows fur, with its curls, clumps, kink, frizz and weight maps.
+- **Blinn and Ashikhmin** highlights match Modo's, and a material's **smoothing angle** is followed.
+- **MoonRay's materials in the Shader Tree's Add Layer list**; assign one to **selected polygons**; **OpenPBR and glTF** surfaces from MaterialX.
+- **Imported MoonRay scenes** keep their light, shadow and shadow receiver sets.
+
+![Modo's Fur material with curls, clumps and a weight map](docs/images/fur-extras.jpg)
+*Modo's Fur material in MoonRay: curls, clumps with kink, and fur thinned by a weight map.*
+
+**Working with the plugin**
+
+- **The asset library shows pictures** of things to use, each with one button for what it is for.
+- **MoonRay Content**: MoonRay's ten example scenes, as a third ZIP of the release that merges into the kit.
+- **A MoonRay page in Modo's Preferences**, including having the M key open MoonRay's Assign Material.
+- **Dense hair** grows and re-renders several times faster.
+
+![The asset library with MoonRay's example scenes](docs/images/asset-library.png)
+*The asset library, showing MoonRay's example scenes.*
+
+## From 0.3.50
 
 - **MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight), an approximate NVIDIA GPU preview engine, chosen in the preview window. It follows edits as they are made; output renders still use MoonRay. See [moonlightipr/README.md](moonlightipr/README.md).
 - **MoonRay-specific items, added from the MoonRay menu**: 30 of MoonRay's own lights, light filters, cameras, shapes and volumes as Modo items (dwEnvLight, dwRectLight, dwSpotLight and the rest), each with its own properties form and a viewport proxy, for what Modo has no item for. VDB volumes load from a file.
@@ -79,60 +129,47 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 ## Currently implemented
 
 - Native Windows rendering: CPU/AVX and NVIDIA XPU, with XPU → Vector → Scalar fallback.
-- Interactive preview: dockable window, IPR, progressive updates, persistent renderer sessions, worker-tile/bucket overlays, and the MoonLightIPR GPU engine.
+- Interactive preview: dockable window, live updates, draft and region rendering, a colour probe, worker-tile/bucket overlays, and the MoonLightIPR GPU engine.
 - Materials: native MoonRay materials with their own forms, a visual node editor, material preview, and MaterialX import.
 - Modo scene translation: standard and Principled materials, image textures, normal/bump maps, procedurals, lights, daylight, environments, subdivisions, instances, replicators, curves and hair—with the limits below.
 - MoonRay items: lights, light filters, cameras, analytic shapes and volumes with their own properties.
-- Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, and cached beauty denoising (OptiX or Open Image Denoise).
-- Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library, and RDL scene import.
+- Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
+- Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.3.50.2
+## Known issues in 0.3.51
 
-Fixed on the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR), coming in 0.3.51:
+The ones you are most likely to meet:
 
-- The GPU preview engine is shown as "MoonLight"; its name is MoonLightIPR.
-- A box or other hard-edged mesh is smoothed all over, because Modo's smoothing angle is not read.
-- Blinn and Ashikhmin materials do not match Modo's highlights.
-- Hair switched on with its first settings looks like one thick rod per guide, and a scene with dense hair takes seconds to re-render.
-- MoonLightIPR draws hair and curves as polygon tubes with a plain material, draws no fog or VDB volumes, and puts pictures on rect lights only.
-- The sun's disc in a physical sky has the wrong colour and ignores Disc In-Scatter.
-- Dragging the sun or an environment light re-renders all the way through the drag.
-- A large material graph opens zoomed far out and will not zoom in.
-- A mistyped light path expression fails the render with no plain message.
-
-Still open, among others:
-
-- Very smooth highlights (roughness under about 0.2) are dimmer than Modo's.
+- Very smooth highlights (roughness under about 0.2) are dimmer than Modo's: about three quarters as bright under GTR, less under Blinn and Ashikhmin.
 - Under Principled, Modo's diffuse gets brighter with roughness and MoonRay's does not.
-- MoonLightIPR leaves out rod, barn door, cookie and VDB light filters.
-- Opening a large RDL scene's files takes minutes, with no progress shown.
+- Hair in MoonLightIPR is close to MoonRay's but not exact.
+- A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode; the plugin switches for you and says so.
+- Draft assumes an ordinary lens: a fisheye or spherical camera's draft does not line up with its render.
 
 Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
 
 ## Limitations
 
 - **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU; they have been exercised on an RTX 3090 only.
-- **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all. Its hair, skin and curves follow MoonRay's closely but not exactly; it draws only even fog (no VDB volumes, no volumes with ramps, none seen from inside); light beneath a surface is looked for down the surface's normal only; and rod, barn door, cookie and VDB light filters are left out. It lists what it leaves out in the preview's notices. The 0.3.50.2 release has none of the hair, skin, fog or true curves, and a picture on rect lights only.
+- **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; [moonlightipr/README.md](moonlightipr/README.md) says how closely, scene by scene, and what it leaves out.
 - **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is not remapped. A Modo material's smoothing angle is not read, so a box Modo draws with flat faces is smoothed unless the MoonRay material settings say otherwise. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy is untested, rough environment reflections come out dimmer in MoonRay, and remaining Shader Tree effects, some masks and light linking are not translated.
-- **MaterialX is a supported subset**: Standard Surface graphs made of images, arithmetic and UV transforms. OpenPBR and glTF surfaces, and nodes outside that subset, are not read.
-- **RDL import leaves some things out**, and names each in its report: motion (the scene comes in as it stands at shutter open), values that differ face by face or point by point, subdivision creases, authored normals, light linking and shadow sets, instancing from point files, and classes the plugin has no item for. Per-item values an imported scene brings render correctly but have no form in Modo yet. Opening a large scene's files takes minutes before the import proper begins.
+- **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, arithmetic and UV transforms. Nodes outside that subset are not read.
+- **RDL import leaves some things out**, and names each in its report: motion (the scene comes in as it stands at shutter open), values that differ face by face or point by point, subdivision creases, authored normals and light filter sets.
 - **Geometry**: some instancing, motion, subdivision, UV-projection and normal-map cases differ from Modo. A mesh that mixes polygon kinds or needs per-polygon projection is read the slower way.
 - **Cryptomatte**: volume coverage is unfinished; ID previews are not an interactive matte-selection tool.
-- **Preview**: some edits still need the whole scene read again; with a denoiser on, the denoised view is off while IPR follows the scene.
+- **Preview**: some edits still need the whole scene read again; with a denoiser on, the denoised view is off while Live follows the scene. Safe Denoising and Continue are for MoonRay with Live off.
 
 ## Still to implement
 
-- VDB volumes and volumes with ramps in MoonLightIPR; rod, barn door, cookie and VDB light filters there; subsurface light found across a surface.
-- More of Modo's material: its smoothing angle, the Principled model's diffuse (which brightens with roughness in Modo), smooth highlights under every model, and a roughness driven by an image under Blinn and Ashikhmin.
-- One-click outputs for indirect diffuse and specular, shadows, albedo, subsurface and motion vectors.
-- OpenPBR and glTF MaterialX surfaces.
-- Per-face and per-point values (primitive attributes) on meshes, and a form for editing the values items carry.
+- Fur guides, and the fur vector and width maps.
+- More of Modo's material: the Principled model's diffuse (which brightens with roughness in Modo) and smooth highlights under every model.
+- Per-face and per-point values (primitive attributes) with a form for editing them.
 - Motion from imported RDL scenes as Modo animation; subdivision creases and authored normals on import.
-- Progress while a large RDL scene's files are being opened.
-- Light linking, and the remaining Shader Tree effects and masks.
+- Motion blur while the preview follows edits; the remaining Shader Tree effects and masks.
+- Modo 17.1 on Windows, then macOS.
 - Broader validation: other GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.
 
-Each of these, and what MoonRay documents that the plugin has no control for yet (deep images, light and shadow sets, display filters, texture baking, Arras and more), is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues).
+Each of these, and what MoonRay documents that the plugin has no control for yet (display filters, Alembic and USD procedurals, Arras and more), is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues).
 
 **Production readiness:** this is an experimental development build, not a production-certified release. It has been exercised on one machine. Each release note says what was and was not checked.
 
