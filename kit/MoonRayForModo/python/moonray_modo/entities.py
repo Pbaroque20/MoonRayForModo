@@ -813,8 +813,9 @@ def block(entities, entity, extra=()):
     return name, lines + ['}']
 
 
-def emit_lights(scene, lines):
-    """Light filters, then the lights that may use them, into the scene's light table."""
+def emit_lights(scene, lines, refs=None):
+    """Light filters, then the lights that may use them, into the scene's light table. refs, where given, is told
+    each light by its item, for an object's Light Links to name it."""
     entities = checked(scene)
     # A camera a filter throws its picture from is written too: named only, MoonRay would stand a camera of its own
     # making at the middle of the scene.
@@ -829,6 +830,8 @@ def emit_lights(scene, lines):
         if catalog()[entity['class']]['category'] == 'light':
             name, body = block(entities, entity)
             lines += body + ['table.insert(lights, %s)' % name]
+            if refs is not None:
+                refs.setdefault(entity['identity'], []).append(name)
 
 
 def emit_geometry(scene, materials, lines):

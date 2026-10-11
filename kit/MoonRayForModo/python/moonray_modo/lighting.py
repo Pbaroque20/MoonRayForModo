@@ -80,13 +80,16 @@ def emit(scene,meshes,environment,lines):
             # Seen by the camera, the mesh looks as it is: a surface giving off light. MoonRay's own default hides every light.
             1 if settings.get('light_seen',True) else 0))
     from .entities import emit_lights
-    emit_lights(scene,lines)
+    # MoonRay light items may be named in an object's Light Links as Modo's lights are.
+    items={}
+    emit_lights(scene,lines,items)
     lines += ['local lightSet = LightSet("/modo/lightSet")(lights)','local objectLightSets = {}','local objectShadowSets = {}']
     for identity,settings in sorted(objects.items()):
         def selected(key):
-            keys=settings.get(key,[]);missing=[k for k in keys if k not in refs]
+            known=dict(items,**refs)
+            keys=settings.get(key,[]);missing=[k for k in keys if k not in known]
             if missing:raise ValueError('Linked light is missing or disabled: '+', '.join(missing))
-            return list(dict.fromkeys(ref for k in keys for ref in refs[k]))
+            return list(dict.fromkeys(ref for k in keys for ref in known[k]))
         if settings.get('link_enabled'):
             lines.append('objectLightSets[%s] = LightSet(%s)(%s)'%(string(identity),string('/modo/links/'+identity),array(selected('lights'))))
         if settings.get('shadow_exclude'):

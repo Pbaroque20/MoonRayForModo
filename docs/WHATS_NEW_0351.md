@@ -58,6 +58,8 @@ How closely each matches MoonRay is in [moonlightipr/README.md](../moonlightipr/
 - **One-click outputs** gain indirect diffuse and glossy, mirror reflections, subsurface, diffuse without shadows, albedo and motion vectors.
 - **Light path expressions** have presets, and an expression typed wrong is marked as you type, with what is wrong.
 - **Cast no shadow onto chosen objects**: for each object, in Light Links, Emitters and Volumes.
+- **MoonRay light items can be linked**: they are listed with Modo's lights in an object's Light Links.
+- **Imported MoonRay scenes keep their light, shadow and shadow receiver sets**, as each mesh's Light Links. Sets that differ between the parts of one shape, and light filter sets, are not carried and are named.
 - **OpenPBR and glTF surfaces** import from MaterialX files.
 - **A BakeCamera item** can bake a Modo mesh.
 - **A mesh light is seen glowing.** The mesh a MeshLight item names shows as a lit surface as well as lighting the scene, unless the item's Visible in Camera is forced off. A mesh light with no mesh chosen says so in Notices.

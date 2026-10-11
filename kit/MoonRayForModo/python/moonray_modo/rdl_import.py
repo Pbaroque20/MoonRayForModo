@@ -194,13 +194,20 @@ def plan(document, path):
             ('surface', 'surface_shaders'), ('displacement', 'displacements'), ('volume', 'volume_shaders'), ('lights', 'lightsets'),
             ('shadows', 'shadowsets'), ('filters', 'lightfiltersets'), ('receivers', 'shadowreceiversets'))}
     all_lights = {name for name, record in objects.items() if catalog.get(record['type'], {}).get('category') == 'light'}
+    # What lights each shape, which lights it casts no shadow for, and what its shadow does not fall on: MoonRay's
+    # light set, shadow set and shadow receiver set, which become the item's Light Links in MoonRay's scene controls.
+    # These are kept for a whole item, so a shape whose parts differ takes what its first part has.
+    sets = {}
     for (geometry, part), row in assigned.items():
         members = set(objects.get(row['lights'], {}).get('attributes', {}).get('lights', [])) if row['lights'] else set()
-        if all_lights and row['lights'] and members != all_lights:
-            warnings.append('Light linking is not imported: %s is lit by %d of the %d lights.' % (short(geometry) + (' / ' + part if part else ''), len(members), len(all_lights)))
-        for key, what in (('shadows', 'shadow set'), ('filters', 'light filter set'), ('receivers', 'shadow receiver set')):
-            if row[key]:
-                warnings.append('%s: its %s is not imported.' % (short(geometry), what))
+        own = (tuple(sorted(members)) if all_lights and row['lights'] and members != all_lights else None,
+               tuple(sorted(set(objects.get(row['shadows'], {}).get('attributes', {}).get('lights', [])))) if row['shadows'] else (),
+               tuple(sorted(set(objects.get(row['receivers'], {}).get('attributes', {}).get('geometries', [])))) if row['receivers'] else ())
+        if geometry in sets and sets[geometry] != own:
+            warnings.append('%s: its parts are lit or shadowed differently from one another; the whole item takes what its first part has.' % short(geometry))
+        sets.setdefault(geometry, own)
+        if row['filters']:
+            warnings.append('%s: its light filter set is not imported.' % short(geometry))
 
     def material(geometry, part, owner=None):
         """The key of the material a part of a shape is rendered with, made on first use; None for no material."""
@@ -606,8 +613,17 @@ def plan(document, path):
         settings['custom_aovs'] = custom
     if scene.get('motion_steps') and len(scene['motion_steps']) > 1 and any('close' in v for v in objects.values()):
         warnings.append('The scene is imported as it stands at shutter open; Modo holds its motion as animation, which RDL does not carry.')
+    links = []
+    for geometry, (lit, unshadowed, spared) in sets.items():
+        if lit is None and not unshadowed and not spared:
+            continue
+        def lights(names):
+            # A mesh light is its mesh, not an item of its own to tick.
+            return [label(name) for name in names if name in objects and objects[name]['type'] != 'MeshLight']
+        links.append({'geometry': mesh.made.get(geometry), 'named': short(geometry), 'lights': None if lit is None else lights(lit),
+                      'shadows': lights(unshadowed), 'receivers': [mesh.made[name] for name in spared if name in mesh.made]})
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
-                settings=settings, warnings=list(dict.fromkeys(warnings)), source=str(path))
+                settings=settings, links=links, warnings=list(dict.fromkeys(warnings)), source=str(path))
 
 
 def summary(data):
@@ -646,6 +662,8 @@ def apply(data, alone=True, progress=None):
     from . import entities, materials, options, primitive_attributes, properties, shader_library
     scene = modo.Scene()
     created, warnings, tags, made = [], list(data['warnings']), {}, {}
+    # The MoonRay items made, by name: the lights among them are what light and shadow sets name.
+    brought_in = {}
     previous_camera, previous_selection = scene.renderCamera, list(scene.selected)
 
     def pose(item, raw):
@@ -792,6 +810,7 @@ def apply(data, alone=True, progress=None):
                 warnings.append('%s: the MoonRay item for %s is not available in this Modo' % (record['name'], record['class']))
                 continue
             created.append(item)
+            brought_in[record['name']] = item
             parameters = dict(record['parameters'])
             if record['material'] in tags:
                 parameters['modo_material'] = tags[record['material']]
@@ -843,6 +862,27 @@ def apply(data, alone=True, progress=None):
                     lx.eval('render.camera {%s}' % item.id)
                 except RuntimeError:
                     scene.renderItem.channel('cameraIndex').set(item.index)
+        if data.get('links'):
+            # MoonRay's light, shadow and shadow receiver sets, as each mesh's Light Links.
+            stored = dict(properties.scene_settings())
+            production = dict(stored.get('production') or {})
+            held = dict(production.get('objects') or {})
+            for link in data['links']:
+                item = made.get(link['geometry'])
+                if item is None:
+                    warnings.append('%s: its light and shadow sets are not imported; they are kept for meshes.' % link['named'])
+                    continue
+                entry = dict(held.get(item.id) or {})
+                if link['lights'] is not None:
+                    entry.update(link_enabled=True, lights=[brought_in[name].id for name in link['lights'] if name in brought_in])
+                if link['shadows']:
+                    entry['shadow_exclude'] = [brought_in[name].id for name in link['shadows'] if name in brought_in]
+                if link['receivers']:
+                    entry['shadow_receivers'] = [made[name].id for name in link['receivers'] if name in made]
+                held[item.id] = entry
+            production['objects'] = held
+            stored['production'] = production
+            properties.write(scene.renderItem, stored)
         settings = data['settings']
         if settings:
             stored = dict(properties.scene_settings())
