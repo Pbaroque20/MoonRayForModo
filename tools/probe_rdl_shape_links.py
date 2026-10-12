@@ -12,13 +12,15 @@ try:
  geometry={'vertex_list_0':[[0,0,0],[1,0,0],[0,1,0]],'face_vertex_count':[3],'vertices_by_index':[0,1,2]}
  source={'version':1,'objects':[
  {'name':'vars','type':'SceneVariables','attributes':{'layer':'layer'}},
- {'name':'layer','type':'Layer','attributes':{'geometries':['receiver','emitterMesh','targetShape'],'parts':['','',''],'surface_shaders':['paint',None,'paint'],'lightsets':['onlyEmitter',None,None],'shadowsets':['noEmitterShadow',None,None],'shadowreceiversets':['notOnShape',None,None]}},
+ {'name':'layer','type':'Layer','attributes':{'geometries':['receiver','emitterMesh','targetShape'],'parts':['','',''],'surface_shaders':['paint',None,'paint'],'lightsets':['onlyEmitter',None,None],'shadowsets':['noEmitterShadow',None,None],'shadowreceiversets':['notOnShape',None,None],'lightfiltersets':['filters',None,None]}},
  {'name':'receiver','type':'BoxGeometry','attributes':{'size':[1,1,1]}},
  {'name':'emitterMesh','type':'RdlMeshGeometry','attributes':geometry},
  {'name':'emitter','type':'MeshLight','attributes':{'geometry':'emitterMesh'}},
  {'name':'paint','type':'DwaBaseMaterial','attributes':{}},
  {'name':'other','type':'RectLight','attributes':{}},
  {'name':'onlyEmitter','type':'LightSet','attributes':{'lights':['emitter']}},
+ {'name':'tint','type':'IntensityLightFilter','attributes':{'color':[1,.5,.2]}},
+ {'name':'filters','type':'LightFilterSet','attributes':{'lightfilters':['tint']}},
  {'name':'targetShape','type':'SphereGeometry','attributes':{'radius':1}},
  {'name':'notOnShape','type':'ShadowReceiverSet','attributes':{'geometries':['targetShape']}},
  {'name':'noEmitterShadow','type':'ShadowSet','attributes':{'lights':['emitter']}}]}
@@ -29,6 +31,7 @@ try:
  emitter_id=meshes[link['lights'][0]].id
  assert held['link_enabled'] and held['lights']==[emitter_id] and held['shadow_exclude']==[emitter_id],held
  assert held['shadow_receivers']==[meshes[link['receivers'][0]].id],held
+ assert held['light_filters']==[meshes[link['filters'][0]].id],held
  light=next(i for i in modo.Scene().items() if i.type=='moonray.MeshLight')
  assert light.channel('mr_geometry').get()==emitter_id,'Emitter geometry reference lost'
  assert 'is left out' not in result['import'],result['import']
