@@ -1,5 +1,5 @@
 """Portable native material graphs, dependencies and original texture assets."""
-import copy,hashlib,json,shutil,uuid
+import copy,hashlib,json,os,shutil,uuid
 from pathlib import Path
 from . import nodes,shader_library
 from .file_inputs import file_parameter
@@ -88,18 +88,21 @@ def save(root_id,lookup,destination):
  staging=destination.with_name(destination.name+'.partial-'+uuid.uuid4().hex);staging.mkdir();(staging/'assets').mkdir()
  copied={}
  def collect_file(original):
-  if original in copied:return copied[original]
+  # Match the cache key to the asset folder identity, including Windows case aliases.
+  source_path=Path(original).resolve()
+  identity=os.path.normcase(str(source_path))
+  if identity in copied:return copied[identity]
   from .textures import source_tiles
-  tiles=source_tiles(original)
+  tiles=source_tiles(str(source_path))
   if not tiles:raise ValueError('Missing material asset: '+original)
-  token=hashlib.sha256(str(Path(original).resolve()).encode()).hexdigest()[:20]
+  token=hashlib.sha256(identity.encode()).hexdigest()[:20]
   folder=staging/'assets'/token;folder.mkdir()
   for source in tiles.values():
    source=Path(source);target=folder/source.name;shutil.copy2(str(source),str(target))
    checksum=digest(target)
    if checksum!=digest(source):raise ValueError('Asset changed during collection: '+str(source))
    data['assets'].append({'file':target.relative_to(staging).as_posix(),'sha256':checksum})
-  copied[original]=(folder/Path(original).name).relative_to(staging).as_posix();return copied[original]
+  copied[identity]=(folder/source_path.name).relative_to(staging).as_posix();return copied[identity]
  for entry in materials.values():files(entry['settings'],collect_file)
  (staging/'material.moonmat.json').write_text(json.dumps(data,indent=2),encoding='utf-8')
  (staging/'README.txt').write_text('Assign material.moonmat.json through MoonRay Asset Library. All graph and referenced-material assets are relative to this folder. Native Modo Shader Tree texture layers outside these graphs are not part of this bundle. Source asset licenses still apply.\n',encoding='utf-8')

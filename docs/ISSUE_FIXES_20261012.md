@@ -177,3 +177,10 @@ Validation: three patch-application checks pass. The actual patched selection bl
 The geometry library was rebuilt in an isolated test directory from a patched source copy and the existing native object files. The shared upstream source/build outputs were not modified, and input object hashes were checked after linking. A separate copy of steady-0351-tiles received only the candidate geometry DLL.
 
 The original negative-index fixture completed normally in that candidate (previously 0xC0000409). Its 64x64 scalar alpha matches the valid-index control exactly, with nonzero coverage. tools/build_instance_index_candidate.py and tools/check_negative_instance_runtime.py reproduce the candidate build and check. The source patch is now validated for this fixture; installed/downloaded runtimes remain unchanged and need a future rebuilt release. #100 remains open until that runtime is distributed.
+
+
+## Portable material texture path aliases
+
+Saving a material graph failed with FileExistsError when two image nodes named the same source through different path spellings. The copy cache now uses the same resolved, case-normalized identity as its asset folder. UDIM aliases share one asset set; distinct source folders with matching filenames remain separate.
+
+Validation: the alias/relocation regression failed before the fix. Both new bundle-path checks and 26 existing compatibility checks pass afterward, including relocation, tamper rejection, disabled overrides and graph dependencies. These are file/graph checks, not rendered thumbnail validation; #50 remains open. No kit or runtime was installed.
