@@ -84,25 +84,28 @@ def emit(scene,meshes,environment,lines):
     items={}
     emit_lights(scene,lines,items)
     lines += ['local lightSet = LightSet("/modo/lightSet")(lights)','local objectLightSets = {}','local objectShadowSets = {}','local objectLightFilterSets = {}']
-    for identity,settings in sorted(objects.items()):
-        def selected(key):
-            known=dict(items,**refs)
-            keys=settings.get(key,[]);missing=[k for k in keys if k not in known]
-            if missing:raise ValueError('Linked light is missing or disabled: '+', '.join(missing))
-            return list(dict.fromkeys(ref for k in keys for ref in known[k]))
-        if settings.get('link_enabled'):
-            lines.append('objectLightSets[%s] = LightSet(%s)(%s)'%(string(identity),string('/modo/links/'+identity),array(selected('lights'))))
-        if settings.get('shadow_exclude'):
-            lines.append('objectShadowSets[%s] = ShadowSet(%s)(%s)'%(string(identity),string('/modo/shadows/'+identity),array(selected('shadow_exclude'))))
-
     from . import entities
-    for identity, settings in sorted(objects.items()):
-        if settings.get('light_filters'):
-            known_entities = entities.checked(scene)
-            filters = [entities.reference(known_entities, name, 'LIGHTFILTER', identity + '.light_filters')
-                       for name in dict.fromkeys(settings['light_filters'])]
-            lines.append('objectLightFilterSets[%s] = LightFilterSet(%s)(%s)' %
-                         (string(identity), string('/modo/lightFilters/' + identity), array(filters)))
+    known_entities = entities.checked(scene)
+    known = dict(items, **refs)
+    material_links = {tag: value.get('rdl_layer_links', {}) for tag, value in scene.get('materials', {}).items()}
+    lines += ['local materialLightSets = {}', 'local materialShadowSets = {}', 'local materialLightFilterSets = {}']
+    for prefix, records in (('object', objects), ('material', material_links)):
+        for identity, settings in sorted(records.items()):
+            def selected(key):
+                keys=settings.get(key,[]);missing=[k for k in keys if k not in known]
+                if missing:raise ValueError('Linked light is missing or disabled: '+', '.join(missing))
+                return list(dict.fromkeys(ref for k in keys for ref in known[k]))
+            if settings.get('link_enabled'):
+                lines.append('%sLightSets[%s] = LightSet(%s)(%s)' %
+                             (prefix, string(identity), string('/modo/links/' + ('material/' if prefix == 'material' else '') + identity), array(selected('lights'))))
+            if settings.get('shadow_exclude'):
+                lines.append('%sShadowSets[%s] = ShadowSet(%s)(%s)' %
+                             (prefix, string(identity), string('/modo/shadows/' + ('material/' if prefix == 'material' else '') + identity), array(selected('shadow_exclude'))))
+            if settings.get('light_filters'):
+                filters = [entities.reference(known_entities, name, 'LIGHTFILTER', identity + '.light_filters')
+                           for name in dict.fromkeys(settings['light_filters'])]
+                lines.append('%sLightFilterSets[%s] = LightFilterSet(%s)(%s)' %
+                             (prefix, string(identity), string('/modo/lightFilters/' + ('material/' if prefix == 'material' else '') + identity), array(filters)))
 
     from .native_light_links import emit as emit_native_links
     emit_native_links(scene,meshes,refs,environment_refs,lines)

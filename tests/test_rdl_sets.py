@@ -122,10 +122,25 @@ class Sets(unittest.TestCase):
                'production':{'objects':{'mesh':{'light_filters':['tint']}}}}
         text=rdla.scene_text(value)
         self.assertIn('objectLightFilterSets["mesh"] = LightFilterSet("/modo/lightFilters/mesh")({IntensityLightFilter("/modo/entity/tint")})',text)
-        self.assertIn('table.insert(a, objectLightFilterSets[owner])',text)
+        self.assertIn('table.insert(a, objectLightFilterSets[owner] or materialLightFilterSets[tag])',text)
         value['entities']=[]
         with self.assertRaisesRegex(ValueError,'not a MoonRay item of the right kind'):
             rdla.scene_text(value)
+
+    def test_same_material_on_differently_lit_mesh_parts(self):
+        source=scene({'geometries':['/geo/wall','/geo/wall','/geo/floor'], 'parts':['left','right',''],
+                      'surface_shaders':['paint','paint','paint'], 'lightsets':['keyOnly','both','both'],
+                      'shadowsets':['noFillShadow',None,None]})
+        source['objects'][2]['attributes'].update(vertex_list_0=[[0,0,0],[1,0,0],[1,1,0],[0,1,0]],
+            face_vertex_count=[3,3],vertices_by_index=[0,1,2,0,2,3],part_list=['left','right'],
+            part_face_count_list=[1,1],part_face_indices=[0,1])
+        data=rdl_import.plan(source,'test.rdla')
+        mesh=next(m for m in data['meshes'] if len(m['faces'])==2)
+        self.assertEqual(len(set(mesh['tags'])),2)
+        self.assertEqual(len(mesh['vertices']),4)
+        self.assertEqual(len(data['links']),1)
+        self.assertEqual(data['links'][0]['material'],mesh['tags'][0])
+        self.assertFalse(any('first' in w for w in data['warnings']))
 
     def test_a_scene_lit_by_all_its_lights_has_no_links(self):
         self.assertEqual(rdl_import.plan(scene({'lightsets': ['both', 'both']}), 'test.rdla')['links'], [])
