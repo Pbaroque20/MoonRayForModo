@@ -213,7 +213,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
-    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('mesh_light')}))
+    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('light_filters') or v.get('mesh_light')}))
     multi_crypto=crypto and cryptomatte.multiple(scene)
     if multi_crypto and not scene.get('_crypto_categories'):
         raise ValueError('Multiple Cryptomatte categories require a matching category-enabled runtime')
@@ -338,11 +338,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["attenuation_color"] = %s,' % attenuation,
                       '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
                       '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
-    lines += ['local objectShadowReceiverSets = {}',
+    lines += ['local objectShadowReceiverSets = {}', 'local materialShadowReceiverSets = {}',
               'local function assign(g, part, tag, owner)',
-              '  local a = {g, part, materials[tag], objectLightSets[owner] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
-              '  if objectShadowSets[owner] then table.insert(a, objectShadowSets[owner]) end',
-              '  if objectShadowReceiverSets[owner] then table.insert(a, objectShadowReceiverSets[owner]) end',
+              '  local a = {g, part, materials[tag], objectLightSets[owner] or materialLightSets[tag] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
+              '  if objectLightFilterSets[owner] or materialLightFilterSets[tag] then table.insert(a, objectLightFilterSets[owner] or materialLightFilterSets[tag]) end',
+              '  if objectShadowSets[owner] or materialShadowSets[tag] then table.insert(a, objectShadowSets[owner] or materialShadowSets[tag]) end',
+              '  if objectShadowReceiverSets[owner] or materialShadowReceiverSets[tag] then table.insert(a, objectShadowReceiverSets[owner] or materialShadowReceiverSets[tag]) end',
               '  if displacements[tag] then table.insert(a, displacements[tag]) end',
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
               '  table.insert(assignments, a)', 'end']
@@ -350,13 +351,17 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     render_meshes = apart(render_meshes, {tag for tag, medium in media.items() if medium is not None})
     # The objects an object casts no shadow onto, as MoonRay's shadow receiver set: the meshes of those objects, which
     # are known by their place among the meshes about to be written.
-    for identity, settings in sorted((scene.get('production', {}).get('objects', {})).items()):
+    receiver_records = [('object', identity, settings) for identity, settings in sorted(scene.get('production', {}).get('objects', {}).items())]
+    receiver_records += [('material', tag, value.get('rdl_layer_links', {})) for tag, value in sorted(scene.get('materials', {}).items())]
+    for prefix, identity, settings in receiver_records:
         spared = set(settings.get('shadow_receivers') or [])
         found = [place for place, held in enumerate(render_meshes) if held.get('faces') and 'instances' not in held
                  and (held.get('source_item') or str(held.get('identity', '')).split('|')[0]) in spared]
-        if found:
-            lines.append('objectShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (string(identity), string('/modo/shadowReceivers/' + identity),
-                                                                                    array('RdlMeshGeometry("/modo/mesh/%d")' % place for place in found)))
+        receivers = ['RdlMeshGeometry("/modo/mesh/%d")' % place for place in found]
+        receivers += entities.shadow_receiver_references(scene, spared)
+        if receivers:
+            lines.append('%sShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (prefix, string(identity), string('/modo/shadowReceivers/' + ('material/' if prefix == 'material' else '') + identity),
+                                                                                    array(receivers)))
     # The objects that join in a material's subsurface light, as MoonRay's trace set on the material: by default only
     # the surface wearing the material does, which leaves a seam where two objects of one body meet.
     from .shader_library import catalog as shader_catalog
@@ -444,11 +449,15 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lines += ['    ["subd_crease_indices"] = %s,' % array(str(v) for edge in creases for v in edge[:2]),
                       '    ["subd_crease_sharpnesses"] = %s,' % array(number(edge[2]) for edge in creases)]
         emitting = scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{})
-        if emitting.get('mesh_light') and emitting.get('light_seen', True):
+        if emitting.get('mesh_light') and lighting.mesh_camera(emitting)[0]:
             # A mesh light that is seen is the light itself, which lies exactly on the mesh: were the mesh seen too, each
             # ray would find one or the other by chance, and the light would come out blotched with the mesh's own grey.
             # So the mesh is seen by nothing, and still casts its shadow in other lights.
             mesh = dict(mesh, visibility=[False, False, False, False, False, (mesh.get('visibility') or [True] * 6)[5]])
+        elif emitting.get('mesh_light') and not lighting.mesh_camera(emitting)[1]:
+            visibility = list(mesh.get('visibility') or [True] * 6)
+            visibility[0] = False
+            mesh = dict(mesh, visibility=visibility)
         if 'visibility' in mesh:
             camera_v, indirect, reflection, refraction, subscatter, shadow = mesh['visibility']
             for attribute, value in [('visible_in_camera', camera_v), ('visible_shadow', shadow),

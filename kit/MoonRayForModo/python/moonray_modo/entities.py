@@ -847,6 +847,24 @@ def emit_lights(scene, lines, refs=None):
                 refs.setdefault(entity['identity'], []).append(name)
 
 
+def shadow_receiver_references(scene, identities):
+    """References to the actual exported geometry for native receiver targets."""
+    from .rdla import string
+    result = []
+    if not identities:
+        return result
+    for entity in checked(scene):
+        if entity['identity'] not in identities or catalog()[entity['class']]['category'] != 'geometry':
+            continue
+        kind = entity['class']
+        if entity['parameters'].get('modo_volume') and kind in ('BoxGeometry', 'SphereGeometry'):
+            kind = 'RdlMeshGeometry'
+        result.append('%s(%s)' % (kind, string('/modo/entity/' + entity['identity'])))
+        if entity.get('attributes'):
+            result.append('RdlInstancerGeometry(%s)' % string('/modo/entity/%s/holder' % entity['identity']))
+    return result
+
+
 def emit_geometry(scene, materials, lines):
     """Volume shaders, then the shapes, each assigned its material and whatever fills it."""
     from .rdla import string
@@ -878,7 +896,7 @@ def emit_geometry(scene, materials, lines):
         if tag not in materials:
             tag = ''
         owner=string(entity['identity'])
-        linked_light='(objectLightSets[%s] or lightSet)' % owner
+        linked_light='(objectLightSets[%s] or materialLightSets[%s] or lightSet)' % (owner,string(tag))
         parts = [name, '""', 'materials[%s]' % string(tag), linked_light]
         if entity['parameters'].get('modo_volume') and not entity['parameters'].get('modo_material'):
             # A shape that holds a volume and was given no material is the volume alone: with the scene's
@@ -887,8 +905,9 @@ def emit_geometry(scene, materials, lines):
         if entity['parameters'].get('modo_volume'):
             parts.append(reference(entities, entity['parameters']['modo_volume'], 'VOLUME', entity['name'] + '.volume'))
         lines += body + ['table.insert(geometries, %s)' % name, 'table.insert(assignments, {%s})' % ', '.join(parts)]
-        for table in ('objectShadowSets','objectShadowReceiverSets'):
-            lines.append('if %s[%s] then table.insert(assignments[#assignments], %s[%s]) end' % (table,owner,table,owner))
+        for table in ('objectShadowSets','objectShadowReceiverSets','objectLightFilterSets'):
+            linked='(%s[%s] or %s[%s])' % (table,owner,table.replace('object','material',1),string(tag))
+            lines.append('if %s then table.insert(assignments[#assignments], %s) end' % (linked,linked))
         if held:
             # MoonRay's own shapes take such values only from an instancer, so the shape is given one that puts it
             # once where it stands. A shape an instancer repeats is not in the picture a second time on its own.
@@ -897,8 +916,9 @@ def emit_geometry(scene, materials, lines):
                       '  ["use_reference_attributes"] = true,', '  ["xform_list"] = {Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)},',
                       '  ["primitive_attributes"] = {%s},' % ', '.join(held), '}',
                       'table.insert(geometries, %s)' % holder, 'table.insert(assignments, {%s, "", nil, %s})' % (holder,linked_light)]
-            for table in ('objectShadowSets','objectShadowReceiverSets'):
-                lines.append('if %s[%s] then table.insert(assignments[#assignments], %s[%s]) end' % (table,owner,table,owner))
+            for table in ('objectShadowSets','objectShadowReceiverSets','objectLightFilterSets'):
+                linked='(%s[%s] or %s[%s])' % (table,owner,table.replace('object','material',1),string(tag))
+                lines.append('if %s then table.insert(assignments[#assignments], %s) end' % (linked,linked))
 
 
 def render_camera(scene):

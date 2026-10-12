@@ -17,6 +17,23 @@ def scene():
 
 
 class CoreTests(unittest.TestCase):
+    def test_mesh_emitter_can_hide_both_glow_and_surface(self):
+        data=scene();data['meshes'][0]['identity']='emitter'
+        settings={'mesh_light':True,'light_seen':True,'mesh_camera_mode':'hidden','light_intensity':3}
+        data['production']={'objects':{'emitter':settings}}
+        text=rdla.scene_text(data)
+        self.assertIn('["visible_in_camera"] = 0',text)
+        self.assertIn('["visible_in_camera"] = false',text)
+        self.assertIn('["visible_shadow"] = true',text)
+        self.assertIn('["intensity"] = 3',text)
+        settings['mesh_camera_mode']='surface'
+        text=rdla.scene_text(data)
+        self.assertNotIn('["visible_in_camera"] = false',text)
+        settings['mesh_camera_mode']='emitter'
+        text=rdla.scene_text(data)
+        self.assertIn('["visible_in_camera"] = 1',text)
+        self.assertIn('["visible_in_camera"] = false',text)
+
     def test_glass_separates_transmission_and_presence(self):
         data = scene()
         data['materials'] = {'': {'color':[.5,.5,.5], 'transmission':.8, 'presence':.7,

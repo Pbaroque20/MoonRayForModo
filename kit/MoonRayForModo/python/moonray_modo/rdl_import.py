@@ -202,7 +202,8 @@ def authored(record):
     return set(record['authored']) if 'authored' in record else set(record.get('attributes', {}))
 
 
-def plan(document, path):
+def plan(document, path, recover_instancer_materials=False):
+    # Recovery is a developer opt-in; normal/UI imports preserve native source visibility.
     if document.get('version') != 1 or not isinstance(document.get('objects'), list):
         raise ValueError('Invalid RDL conversion document')
     from . import entities, options, outputs, shader_library
@@ -217,15 +218,17 @@ def plan(document, path):
     # Names: every item made is called by the last step of the object's path, told apart where two would match.
     labels, taken = {}, set()
 
+    def unique_name(wanted):
+        count, chosen = 1, wanted
+        while chosen in taken or ',' in chosen:
+            count += 1
+            chosen = '%s %d' % (wanted.replace(',', ' '), count)
+        taken.add(chosen)
+        return chosen
+
     def label(name):
         if name not in labels:
-            wanted, count = short(name), 1
-            chosen = wanted
-            while chosen in taken or ',' in chosen:
-                count += 1
-                chosen = '%s %d' % (wanted.replace(',', ' '), count)
-            taken.add(chosen)
-            labels[name] = chosen
+            labels[name] = unique_name(short(name))
         return labels[name]
 
     # What the layer assigns to each shape and part of a shape.
@@ -242,23 +245,30 @@ def plan(document, path):
     all_lights = {name for name, record in objects.items() if catalog.get(record['type'], {}).get('category') == 'light'}
     # What lights each shape, which lights it casts no shadow for, and what its shadow does not fall on: MoonRay's
     # light set, shadow set and shadow receiver set, which become the item's Light Links in MoonRay's scene controls.
-    # These are kept for a whole item, so a shape whose parts differ takes what its first part has.
-    sets = {}
+    # Uniform sets use object controls; differing mesh parts keep sets on distinct material layers.
+    sets, part_sets, split_sets, material_links = {}, {}, set(), {}
     for (geometry, part), row in assigned.items():
         members = set(objects.get(row['lights'], {}).get('attributes', {}).get('lights', [])) if row['lights'] else set()
         own = (tuple(sorted(members)) if all_lights and row['lights'] and members != all_lights else None,
                tuple(sorted(set(objects.get(row['shadows'], {}).get('attributes', {}).get('lights', [])))) if row['shadows'] else (),
-               tuple(sorted(set(objects.get(row['receivers'], {}).get('attributes', {}).get('geometries', [])))) if row['receivers'] else ())
+               tuple(sorted(set(objects.get(row['receivers'], {}).get('attributes', {}).get('geometries', [])))) if row['receivers'] else (),
+               tuple(sorted(set(objects.get(row['filters'], {}).get('attributes', {}).get('lightfilters', [])))) if row['filters'] else ())
+        part_sets[(geometry, part)] = own
         if geometry in sets and sets[geometry] != own:
-            warnings.append('%s: its parts are lit or shadowed differently from one another; the whole item takes what its first part has.' % short(geometry))
+            if objects.get(geometry, {}).get('type') == 'RdlMeshGeometry':
+                split_sets.add(geometry)
+            else:
+                warnings.append('%s: differing per-part sets on this geometry type are not imported; the first assignment is retained' % short(geometry))
         sets.setdefault(geometry, own)
-        if row['filters']:
-            warnings.append('%s: its light filter set is not imported.' % short(geometry))
+
+    def owners(owner):
+        return owner if isinstance(owner, tuple) else ((owner,) if owner else ())
 
     def material(geometry, part, owner=None):
         """The key of the material a part of a shape is rendered with, made on first use; None for no material."""
         # The shape's own assignment first, then that of the instancer repeating it.
-        rows = [assigned.get(key) for key in ((geometry, part), (geometry, ''), (owner, part), (owner, ''))]
+        pairs = [(name, section) for name in (geometry,) + (owners(owner) if recover_instancer_materials else ()) for section in (part, '')]
+        rows = [assigned.get(key) for key in pairs]
         row = next((r for r in rows if r and r['surface']), None)
         if not row:
             return None
@@ -267,6 +277,13 @@ def plan(document, path):
             warnings.append('%s: its material %s is of a class the plugin has no material for.' % (short(geometry), short(str(surface))))
             return None
         key = surface if not displacement else surface + '|' + displacement
+        assignment = next((pair for pair in pairs if assigned.get(pair) is row), None)
+        if assignment and assignment[0] != geometry:
+            warnings.append('%s: material assigned only to an instancer is imported as an editable fallback; '
+                            'MoonRay ignores that surface assignment, so this changes source visibility' % short(geometry))
+        if assignment and (assignment[0] in split_sets or (owner and (objects.get(geometry, {}).get('type') == 'RdlMeshGeometry' or catalog.get(objects.get(geometry, {}).get('type'), {}).get('category') == 'geometry'))):
+            key += '|links:' + repr(assignment)
+            material_links[key] = (assignment[0], part_sets[assignment])
         if key not in materials:
             try:
                 materials[key] = {'name': short(surface), 'graph': graph(surface, objects, base, warnings, displacement)}
@@ -319,10 +336,11 @@ def plan(document, path):
         return [entry for entry in own if entry['name'] not in names] + list(outer)
 
     def mesh(record, owner=None):
-        """A mesh in its own space, once however many times it is placed. Returns its name in the plan."""
+        """A shared prototype per face-material assignment; return its name in the plan."""
         key = record['name']
-        if key in mesh.made:
-            return mesh.made[key]
+        scope = (key, owner)
+        if scope in mesh.scopes:
+            return mesh.scopes[scope]
         a = record.get('attributes', {})
         vertices, counts, indices = a.get('vertex_list_0', a.get('vertex_list', [])), a.get('face_vertex_count', []), a.get('vertices_by_index', [])
         if not vertices or not counts:
@@ -343,6 +361,10 @@ def plan(document, path):
                     raise ValueError('Invalid material part face index: ' + record['name'])
                 tags[face] = chosen if chosen is not None or (record['name'], part) in assigned else tags[face]
             offset += count
+        cache_key = (key, tuple(tags))
+        if cache_key in mesh.cache:
+            mesh.scopes[scope] = mesh.cache[cache_key]
+            return mesh.cache[cache_key]
         uv = a.get('uv_list', [])
         if uv and len(uv) not in (len(vertices), len(indices)):
             warnings.append(short(record['name']) + ': its UVs are neither one for each point nor one for each corner, and are left out')
@@ -365,12 +387,13 @@ def plan(document, path):
             if len(held) > 1:
                 warnings.append('%s: %s differs from face to face or point to point, which is not imported; only one value for a whole item is' % (short(record['name']), name_))
         note_motion(record)
-        name = label(record['name'])
+        name = label(key) if key not in mesh.made else unique_name(short(key))
         meshes.append({'name': name, 'vertices': vertices, 'faces': faces, 'uv': uv, 'normals': normals, 'tags': tags, 'subd': bool(a.get('is_subd', False)),
                        'matrix': None, 'render': False, 'attributes': [], 'hard_edges':hard_edges, 'hard_corners':hard_corners})
-        mesh.made[key] = name
+        mesh.made.setdefault(key, name)
+        mesh.cache[cache_key] = mesh.scopes[scope] = name
         return name
-    mesh.made = {}
+    mesh.made, mesh.cache, mesh.scopes = {}, {}, {}
 
     def strands(record, matrix, outer=()):
         a = record.get('attributes', {})
@@ -455,7 +478,7 @@ def plan(document, path):
         parameters.pop('primitive_attributes', None)
         if catalog[kind]['category'] == 'geometry':
             made['material'] = material(record['name'], '', owner)
-            volume = volume_of(owner or record['name']) or volume_of(record['name'])
+            volume = next((volume_of(name) for name in owners(owner) + (record['name'],) if volume_of(name)), None)
             if volume and objects[volume]['type'] in catalog:
                 made['volume'] = label(volume)
             elif volume:
@@ -479,7 +502,8 @@ def plan(document, path):
         if depth > 8:
             warnings.append(short(name) + ': instancers nested more than eight deep are not followed')
             return
-        if kind != 'RdlInstancerGeometry' and name not in emitter_geometries and not any(row['surface'] or row['volume'] for (geometry, part), row in assigned.items() if geometry in (name, owner)):
+        if kind != 'RdlInstancerGeometry' and name not in emitter_geometries and not any((row['surface'] and (geometry == name or recover_instancer_materials)) or row['volume']
+                for (geometry, part), row in assigned.items() if geometry in (name,) + owners(owner)):
             # MoonRay leaves out a shape the layer gives no material; brought in, it would be in the picture where it was not.
             warnings.append('%s is given no material by the scene, so MoonRay does not render it; it is not imported.' % short(name))
             return
@@ -490,13 +514,13 @@ def plan(document, path):
         elif kind == 'RdlCurveGeometry':
             strands(dict(record, name=name), matrix, outer) if title == label(name) else warnings.append(short(name) + ': instanced curves are not imported')
         elif kind == 'RdlInstancerGeometry':
-            repeated(record, matrix, title, depth, outer)
+            repeated(record, matrix, title, depth, outer, owner)
         elif kind in catalog and catalog[kind]['category'] == 'geometry':
             entity(record, matrix, title, owner, outer)
         else:
             warnings.append('%s: %s has no counterpart in Modo and is not imported' % (short(name), kind))
 
-    def repeated(record, parent, title, depth, outer=()):
+    def repeated(record, parent, title, depth, outer=(), owner=None):
         a, name = record.get('attributes', {}), record['name']
         references = [r for r in a.get('references', [])]
         if not references:
@@ -522,11 +546,14 @@ def plan(document, path):
         use_indices = len(indices) == len(transforms)
         if indices and not use_indices:
             warnings.append(short(name) + ': ref_indices does not match the instances; the first prototype is used, as MoonRay does')
+        # Per-instance attribute arrays describe the original list, including skipped entries.
+        values, total = carried(record), len(transforms)
         if len(transforms) > INSTANCE_LIMIT:
             warnings.append('%s: only the first %d of its %d instances are imported' % (short(name), INSTANCE_LIMIT, len(transforms)))
             transforms = transforms[:INSTANCE_LIMIT]
-        values, total = carried(record), len(transforms)
-        own = checked_matrix(a.get('node_xform', IDENTITY), name)
+        # A referenced instancer's node transform is already included by its parent
+        # when use_reference_xforms is enabled; otherwise it must stay excluded.
+        own = checked_matrix(a.get('node_xform', IDENTITY), name) if depth == 0 else IDENTITY
         for index, matrix in enumerate(transforms):
             if index in disabled:
                 continue
@@ -537,9 +564,9 @@ def plan(document, path):
             if reference not in objects:
                 continue
             matrix = product(product(matrix, own), parent)
-            if a.get('use_reference_xforms', True):
+            if a.get('use_reference_xforms', False):
                 matrix = product(checked_matrix(objects[reference].get('attributes', {}).get('node_xform', IDENTITY), reference), matrix)
-            place(reference, matrix, '%s %d' % (title, index + 1), name, depth + 1, merged(picked(values, index, total), outer))
+            place(reference, matrix, '%s %d' % (title, index + 1), (name,) + owners(owner), depth + 1, merged(picked(values, index, total), outer))
 
     # A shape an instancer repeats is not in the picture itself, only where the instancer puts it.
     referenced = {name for v in objects.values() if v['type'] == 'RdlInstancerGeometry' for name in v.get('attributes', {}).get('references', [])}
@@ -667,8 +694,26 @@ def plan(document, path):
         warnings.append('The scene is imported as it stands at shutter open; Modo holds its motion as animation, which RDL does not carry.')
     links = []
     native_geometries = {e['name'] for e in items if catalog[e['class']]['category'] == 'geometry'}
-    for geometry, (lit, unshadowed, spared) in sets.items():
-        if lit is None and not unshadowed and not spared:
+    available_filters = {e['name'] for e in items if catalog[e['class']]['category'] == 'lightfilter'}
+    def supported_references(name, seen=()):
+        if name in seen or len(seen) > 8:
+            return False
+        record = objects.get(name, {})
+        kind = record.get('type')
+        if kind == 'RdlInstancerGeometry':
+            refs = record.get('attributes', {}).get('references', [])
+            return bool(refs) and all(supported_references(ref, seen + (name,)) for ref in refs)
+        return kind == 'RdlMeshGeometry' or catalog.get(kind, {}).get('category') == 'geometry'
+
+    # Supported instancer descendants carry their links on scoped material layers.
+    scoped_instancers = {geometry for geometry, own in material_links.values()
+                         if objects.get(geometry, {}).get('type') == 'RdlInstancerGeometry'
+                         and supported_references(geometry)}
+    linked_rows = [(geometry, None, own) for geometry, own in sets.items()
+                   if geometry not in split_sets and geometry not in scoped_instancers]
+    linked_rows += [(geometry, key, own) for key, (geometry, own) in material_links.items() if materials.get(key)]
+    for geometry, material_key, (lit, unshadowed, spared, filters) in linked_rows:
+        if lit is None and not unshadowed and not spared and not filters:
             continue
         def lights(names):
             # A mesh light exports under the emitting mesh's identity, not its light item.
@@ -684,9 +729,19 @@ def plan(document, path):
                 else:target=label(name)
                 if target not in result:result.append(target)
             return result
+        for name in filters:
+            if label(name) not in available_filters:
+                warnings.append('%s: light filter %s has no imported counterpart and is omitted' % (short(geometry), short(name)))
         native_geometry = label(geometry) if label(geometry) in native_geometries else None
-        links.append({'geometry': mesh.made.get(geometry) or native_geometry, 'named': short(geometry), 'lights': None if lit is None else lights(lit),
-                      'shadows': lights(unshadowed), 'receivers': [mesh.made[name] for name in spared if name in mesh.made]})
+        receivers = []
+        for name in spared:
+            targets = [v for (source, tags), v in mesh.cache.items() if source == name]
+            if not targets and label(name) in native_geometries:
+                targets = [label(name)]
+            receivers.extend(target for target in targets if target not in receivers)
+        links.append({'material': material_key, 'geometry': mesh.made.get(geometry) or native_geometry, 'named': short(geometry), 'lights': None if lit is None else lights(lit),
+                      'filters': [label(name) for name in filters if label(name) in available_filters],
+                      'shadows': lights(unshadowed), 'receivers': receivers})
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
                 settings=settings, links=links, warnings=list(dict.fromkeys(warnings)), source=str(path))
 
@@ -728,7 +783,7 @@ def apply(data, alone=True, progress=None):
     scene = modo.Scene()
     created, warnings, tags, made = [], list(data['warnings']), {}, {}
     # The MoonRay items made, by name: the lights among them are what light and shadow sets name.
-    brought_in = {}
+    brought_in, material_items = {}, {}
     previous_camera, previous_selection = scene.renderCamera, list(scene.selected)
 
     def pose(item, raw):
@@ -760,6 +815,7 @@ def apply(data, alone=True, progress=None):
                 layer = scene.addItem('advancedMaterial', name=record['name'])
             created.append(layer)
             layer.setParent(mask, 0)
+            material_items[key] = layer
             properties.write(layer, {'shader': 'DwaBaseMaterial', 'moonshine_override': True, 'native_shader': shader,
                                      'native_parameters': record['graph']['nodes'][record['graph']['root']].get('parameters', {}),
                                      'node_graph': record['graph'], 'node_override': True})
@@ -972,18 +1028,26 @@ def apply(data, alone=True, progress=None):
             held = dict(production.get('objects') or {})
             linked_items=dict(brought_in,**made)
             for link in data['links']:
-                item = linked_items.get(link['geometry'])
+                material_key = link.get('material')
+                item = material_items.get(material_key) if material_key else linked_items.get(link['geometry'])
                 if item is None:
                     warnings.append('%s: its light and shadow sets are not imported because its geometry is unavailable.' % link['named'])
                     continue
-                entry = dict(held.get(item.id) or {})
+                entry = {} if material_key else dict(held.get(item.id) or {})
                 if link['lights'] is not None:
                     entry.update(link_enabled=True, lights=[linked_items[name].id for name in link['lights'] if name in linked_items])
                 if link['shadows']:
                     entry['shadow_exclude'] = [linked_items[name].id for name in link['shadows'] if name in linked_items]
+                if link.get('filters'):
+                    entry['light_filters'] = [linked_items[name].id for name in link['filters'] if name in linked_items]
                 if link['receivers']:
-                    entry['shadow_receivers'] = [made[name].id for name in link['receivers'] if name in made]
-                held[item.id] = entry
+                    entry['shadow_receivers'] = [linked_items[name].id for name in link['receivers'] if name in linked_items]
+                if material_key:
+                    saved = dict(properties.read(item))
+                    saved['rdl_layer_links'] = entry
+                    properties.write(item, saved)
+                else:
+                    held[item.id] = entry
             production['objects'] = held
             stored['production'] = production
             properties.write(scene.renderItem, stored)

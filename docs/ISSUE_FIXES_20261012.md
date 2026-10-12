@@ -32,6 +32,14 @@ Run `tools/check_idle_sessions.py --moonray RUNTIME --moonlight MOONLIGHT_STAGE`
 - **#19, #43, #49, #53, #57, #67, #69:** several reports require host interaction, reproduction, or another machine rather than a speculative code change.
 - Material/lighting parity, motion blur, volumes, import, display filters and distributed rendering remain substantial independent issues; this pass does not claim to resolve the whole backlog.
 
+## Subsurface Neighbours dialog (#26)
+
+`tools/probe_neighbours_dialog.py` passed in an isolated Modo 16.1v9 profile. It exercises the real `moonray.material.neighbours` command: mouse press/release toggles, accepting mesh IDs, restoring checks on reopen, canceling without changes, applying to multiple selected materials, and clearing the stored trace set. Modo exited normally after the probe.
+
+Screenshot inspection found that Modo's host style hid the check indicators. The dialog now gives its list explicit empty/filled indicators; checked and unchecked states were visually inspected after the fix. No global Qt style is changed. The probe writes JSON and screenshots under `MOONRAY_TEST_RESULTS/neighbours-dialog`, or a temporary test directory when unset. Run through `tools/launch_gui_probe.py probe_neighbours_dialog.py --profile NEW_PROFILE --wait --timeout 120`.
+
+This completes #26's remaining dialog check. Renderer comparison and MoonLightIPR support remain tracked in #45; incomplete imported sets remain in #52. No rendering-parity claim is made by this UI test.
+
 ## Material thumbnail precedence (#50, partial)
 
 Saved materials now use sidecar images before falling back to a drawing. For `paint.moonmat.json`, `paint.moonmat.png` (or JPG/JPEG) takes priority over the simpler `paint.png` name. Graph bundles without a supplied image show a labelled Graph tile rather than a misleading plain ball. The selection pane explains the fallback and the expected thumbnail filename.
@@ -73,3 +81,81 @@ All 21 focused RDL tests passed. An isolated Modo 16.1v9 import verified the emi
 Imported native shapes now retain light and shadow-exclusion sets. Exported shapes, volume-only shapes and their primitive-attribute holders use their per-object light/shadow assignments instead of always using the shared light set.
 
 All 22 focused RDL tests passed. An isolated Modo 16.1v9 probe verified a BoxGeometry receiver retains its MeshLight links and exclusions and exited normally. Export assertions cover assignment construction; rendered-lighting equivalence is not claimed. Per-part sets, light-filter sets and native shapes as shadow-receiver targets remain open.
+
+### Native shadow-receiver targets
+
+Native MoonRay shapes can now be retained as excluded shadow-receiver targets during RDL import and scene export. Export uses the actual geometry type, including mesh-converted volume shapes and attribute holder instancers.
+
+Validation: 25 RDL tests and 19 core exporter tests passed; isolated Modo 16.1v9 import/read-back retained a SphereGeometry target. The first host probe omitted the target material assignment and correctly skipped that shape; after correcting the fixture, the check passed. No rendered-shadow comparison is claimed. Per-part and light-filter sets remain open in #52.
+
+### Imported light-filter sets (#52, partial)
+
+RDL LightFilterSet assignments now retain supported filter items and store their IDs on the imported geometry. Meshes and native shapes export the set in their layer assignment. Missing/unsupported imported filters are named in warnings; deleted filter targets cause an explicit export error.
+
+Validation: 27 RDL tests, 19 core exporter tests, 32 CPU-feature tests, 8 production tests, and isolated Modo 16.1v9 import/read-back passed. `tools/check_rdl_link_roundtrip.py RUNTIME` also passed: MoonRay's native reader accepted the exported file and read back all four light/shadow/receiver/filter sets. This is scene-reader validation, not a rendered-lighting comparison. Different sets on individual parts remain open.
+
+### Per-part mesh assignments (#52)
+
+Differently lit/filtered/shadowed RdlMeshGeometry parts now receive distinct imported material layers, even when they share one source shader. Mesh vertices and faces stay intact. Assignment metadata survives direct and evaluated Modo capture; explicit object links retain precedence on export. Non-mesh per-part assignments still report the unsupported case.
+
+Validation: 28 RDL, 19 core, 32 CPU-feature and 8 production unit checks passed. The isolated Modo probe imported two faces sharing a shader with distinct lights and retained their filter/shadow differences. Both direct and evaluated exports passed native MoonRay-reader assignment checks. The first evaluated run lacked the adapter in the isolated kit; copying the installed adapter into the test kit enabled the successful rerun. No installed kit changes or rendered-image equivalence are claimed.
+
+## Mesh emitter camera appearance (#42, native MoonRay)
+
+Objects/geometry now offers a native MoonRay camera-appearance choice: existing emitter settings, emitter, surface only, or hidden while retaining illumination. This works for object emitters and MeshLight items. Hidden surfaces still retain their other visibility and shadow settings. MoonLightIPR support remains open because its exporter/kernel are owned by the concurrent work.
+
+Validation: 20 core, 32 CPU-feature and 8 production tests passed. Native MoonRay reader checks passed all four modes, including unchanged enabled light/intensity and camera visibility. The isolated Modo control saved and restored the hidden choice. Rendered-image comparison is not claimed.
+
+## Native LPE validation (#18)
+
+The output editor can ask the configured MoonRay runtime to check expressions in a disposable one-pixel scalar scene. It runs asynchronously with one thread, a timeout and cancellation on close. Changed expressions invalidate the pending result. Acceptance requires normal process completion and each expected output; matching light paths in the user scene are not claimed. No runtime rebuild is required.
+
+Validation: four validation-unit checks and eight production checks passed. Native execution accepted C.*L and diffuse, and rejected C(L|), which the fast checker misses. The isolated Modo dialog marked the rejected field, discarded stale results and canceled on close. Initial host probes failed to start because new source text had Windows encoding; the corrected UTF-8/ASCII source and final modal probe passed.
+
+## Regression coverage in Modo
+
+The standalone suite passed 280 checks with 16 host/runtime skips. The isolated Modo 16.1v9 runner then passed 29 expanded host/runtime checks with no skips, using steady-0351-tiles. Two stale graph tests now verify the current immediate-save and persistent RGB/swatch behavior while retaining field-lifetime and repaint checks. No production behavior changed. The host runner disables the startup preview controller to keep the checks isolated.
+
+## Shared RDL instance assignments (#52)
+
+Prototype caching now includes the imported face-material assignments. Instancers with different shaders or light sets receive separate prototypes while placements within each assignment remain Modo instances. Mesh-instancer links are retained on material layers; receiver references include all scoped prototype copies. Native-shape/nested instancer assignment parity remains incomplete.
+
+Validation: 30 RDL, 20 core, 32 CPU-feature and 8 production checks passed. The isolated Modo import retained two prototypes and four instances; direct and evaluated capture preserved distinct lights/shadows/filters and both exports passed the native MoonRay scene reader. No rendered-image equivalence is claimed.
+
+## Primitive attribute validation
+
+Boolean text such as "false" no longer becomes true. Non-finite numeric values, malformed containers and fractional integer values are rejected before writing item tags or RDL. Overflow now uses the same ValueError path as other invalid values, so reading a malformed saved tag cannot escape capture error handling. This hardens existing constant/instance attributes; per-face/per-point editing in #22 remains open.
+
+Validation: eight focused attribute checks, 30 RDL checks, 20 core, 32 CPU-feature and eight production tests passed. Valid HDR colors remain accepted. Invalid writes leave the previous item tag untouched.
+
+## Native-shape instancer assignments (#52)
+
+Imported native shapes now retain the owning instancer's material-scoped light, shadow, receiver and filter links. Native shape export uses those material links after explicit object overrides, including primitive-attribute holders. Evaluated capture preserves named materials referenced by native shapes, which do not appear in Modo's evaluated mesh surface list.
+
+Validation: 31 RDL, 20 core, 32 CPU-feature and eight production tests passed. The initial isolated host check exposed the evaluated-capture material loss; the corrected Modo 16.1v9 run passed both direct and evaluated capture. MoonRay's native scene reader confirmed six spheres with two distinct light sets and the expected three shadow/filter assignments. These are assignment checks, not rendered-image comparisons. Nested instancer and non-mesh per-part parity remain open.
+
+## Nested instancer assignment inheritance (#52)
+
+The importer now retains the chain of instancer owners when resolving materials and detecting rendered geometry. A mesh beneath an unassigned inner instancer no longer disappears when its outer instancer supplies the material. The nearest existing assignment retains precedence; distinct outer assignments retain separate scoped prototypes. Native-shape volume lookup also accepts the owner chain.
+
+Validation: the new regression failed before the change (zero imported meshes). After the fix, 32 RDL, 20 core, 32 CPU-feature and eight production tests passed. Isolated Modo 16.1v9 imported two prototypes and six shared instances; direct/evaluated exports passed native-reader checks for distinct lights, shadows and filters. No rendered-image or general nested-transform parity is claimed. Non-mesh per-part and volume-only link cases remain outside this fix.
+
+## Nested transform composition and rendered validation
+
+Referenced instancer node transforms were applied twice and omitted use_reference_xforms was treated as true instead of MoonRay's false default. The importer now includes each enabled reference transform once.
+
+Validation: 34 RDL checks passed. The native scalar renderer produced a 0.02197 mean alpha error between nested and importer-flattened fixtures before the fix; after correction the enabled and disabled reference-transform fixtures both match exactly (zero mean alpha error). Fixtures are 64x64 with two pixel-grid samples, not broad scene-parity validation.
+
+Correction to previous assignment notes: the native render confirms the official RdlInstancerGeometry documentation: a material assigned only to an instancer produces no visible surface. Earlier assignment tests proved editable import/readback, not equivalent source visibility. The current editable fallback is now explicitly warned about in the import report; it remains a known parity limitation. A dedicated fixture records zero coverage for instancer-only material assignment. Documentation: https://docs.openmoonray.org/user-reference/scene-objects/geometry/RdlInstancerGeometry/
+
+## Preserve source visibility on normal RDL imports
+
+Normal/UI imports no longer recover surfaces whose material exists only on an instancer. MoonRay ignores that surface assignment, so such geometry is omitted with the existing no-material notice. The optional plan(..., recover_instancer_materials=True) developer recovery path remains explicit and warns that it changes source visibility. Historical recovery fixtures now opt in and are labelled accordingly; they do not prove native material-inheritance semantics.
+
+Validation: 35 RDL tests pass, including nested mesh/native-shape default omission and explicit recovery. Native scalar fixtures confirm zero source coverage and zero imported meshes for an instancer-only material; enabled/disabled nested-transform fixtures still match exactly. This resolves the specific visibility mismatch identified in the previous audit, not every light-set or volume inheritance case.
+
+## Retained attributes at the instance import limit
+
+Capping an RDL instancer previously caused its per-instance arrays to fail length matching, dropping colors/IDs from every retained placement. Array validation now uses the original placement count while iteration keeps the existing cap. Disabled placements retain their original attribute indices.
+
+Validation: both focused tests failed before the fix. Afterwards 37 RDL and eight primitive-attribute tests passed. Tests temporarily reduce the limit to exercise truncation without allocating a large scene. This is import-plan validation, not a large-scene memory or rendered-color benchmark. Per-face/per-point mesh editing in #22 remains open.
