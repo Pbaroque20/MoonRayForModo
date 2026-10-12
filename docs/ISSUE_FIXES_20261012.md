@@ -133,3 +133,9 @@ Validation: eight focused attribute checks, 30 RDL checks, 20 core, 32 CPU-featu
 Imported native shapes now retain the owning instancer's material-scoped light, shadow, receiver and filter links. Native shape export uses those material links after explicit object overrides, including primitive-attribute holders. Evaluated capture preserves named materials referenced by native shapes, which do not appear in Modo's evaluated mesh surface list.
 
 Validation: 31 RDL, 20 core, 32 CPU-feature and eight production tests passed. The initial isolated host check exposed the evaluated-capture material loss; the corrected Modo 16.1v9 run passed both direct and evaluated capture. MoonRay's native scene reader confirmed six spheres with two distinct light sets and the expected three shadow/filter assignments. These are assignment checks, not rendered-image comparisons. Nested instancer and non-mesh per-part parity remain open.
+
+## Nested instancer assignment inheritance (#52)
+
+The importer now retains the chain of instancer owners when resolving materials and detecting rendered geometry. A mesh beneath an unassigned inner instancer no longer disappears when its outer instancer supplies the material. The nearest existing assignment retains precedence; distinct outer assignments retain separate scoped prototypes. Native-shape volume lookup also accepts the owner chain.
+
+Validation: the new regression failed before the change (zero imported meshes). After the fix, 32 RDL, 20 core, 32 CPU-feature and eight production tests passed. Isolated Modo 16.1v9 imported two prototypes and six shared instances; direct/evaluated exports passed native-reader checks for distinct lights, shadows and filters. No rendered-image or general nested-transform parity is claimed. Non-mesh per-part and volume-only link cases remain outside this fix.

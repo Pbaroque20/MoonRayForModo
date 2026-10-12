@@ -84,6 +84,28 @@ class Sets(unittest.TestCase):
             self.assertIn(table+'["paint"]',text)
         self.assertEqual(text.count('materialLightFilterSets["paint"]'),4)
 
+    def test_nested_instancers_inherit_outer_material_and_light_links(self):
+        source=scene({'geometries':['one','two'], 'lightsets':['keyOnly','both']})
+        source['objects'] += [
+            {'name':'inner','type':'RdlInstancerGeometry','attributes':{'method':2,
+             'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]*2}},
+            *[{'name':name,'type':'RdlInstancerGeometry','attributes':{'method':2,
+               'references':['inner'],'xform_list':[rdl_import.IDENTITY]*2}} for name in ('one','two')]]
+        data=rdl_import.plan(source,'test.rdla')
+        meshes=[m for m in data['meshes'] if m['render']]
+        self.assertEqual(len(meshes),2)
+        self.assertEqual(len(data['instances']),6)
+        self.assertNotEqual(meshes[0]['tags'],meshes[1]['tags'])
+        self.assertFalse(any('wall is given no material' in w for w in data['warnings']))
+        self.assertTrue(all(l['material'] for l in data['links']))
+        # A nearer assignment retains precedence over the inherited outer material.
+        source['objects'][1]['attributes']['geometries'].append('inner')
+        source['objects'][1]['attributes']['surface_shaders'].append('paint')
+        source['objects'][1]['attributes']['lightsets'].append('keyOnly')
+        data=rdl_import.plan(source,'test.rdla')
+        self.assertEqual(len([m for m in data['meshes'] if m['render']]),1)
+        self.assertEqual(len(data['instances']),7)
+
     def test_sets_become_the_links_of_the_meshes_they_are_on(self):
         data = rdl_import.plan(scene({'lightsets': ['keyOnly', 'both'], 'shadowsets': ['noFillShadow', None], 'shadowreceiversets': ['notOnFloor', None]}), 'test.rdla')
         names = {record['name'] for record in data['meshes']}
