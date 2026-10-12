@@ -45,6 +45,62 @@ class Sets(unittest.TestCase):
         self.assertIn(link['receivers'][0], names - {link['geometry']})
         self.assertFalse(any('not imported' in warning for warning in data['warnings']))
 
+    def test_mesh_light_links_use_the_emitting_mesh(self):
+        source=scene({'lightsets':['emitterOnly','both'],'shadowsets':['emitterShadow',None]})
+        source['objects'][1]['attributes']['surface_shaders'][1]=None
+        source['objects'] += [
+            {'name':'emitter','type':'MeshLight','attributes':{'geometry':'/geo/floor'}},
+            {'name':'emitterOnly','type':'LightSet','attributes':{'lights':['emitter']}},
+            {'name':'emitterShadow','type':'ShadowSet','attributes':{'lights':['emitter']}}]
+        data=rdl_import.plan(source,'test.rdla')
+        link=next(link for link in data['links'] if link['shadows'])
+        self.assertEqual(link['lights'],link['shadows'])
+        self.assertEqual(len(link['lights']),1)
+        self.assertIn(link['lights'][0],{m['name'] for m in data['meshes']})
+        self.assertNotEqual(link['geometry'],link['lights'][0])
+        emitter=next(e for e in data['entities'] if e['class']=='MeshLight')
+        self.assertEqual(emitter['parameters']['geometry'],link['lights'][0])
+
+    def test_native_shape_keeps_light_and_shadow_links(self):
+        source=scene({'lightsets':['keyOnly','both'],'shadowsets':['noFillShadow',None]})
+        source['objects'][2].update(type='BoxGeometry',attributes={'size':[1,1,1]})
+        data=rdl_import.plan(source,'test.rdla')
+        shape=next(e for e in data['entities'] if e['class']=='BoxGeometry')
+        link=next(l for l in data['links'] if l['shadows'])
+        self.assertEqual(link['geometry'],shape['name'])
+        from moonray_modo import entities
+        lines=[]
+        entities.emit_geometry({'entities':[{'identity':'shape-id','name':'Box','class':'BoxGeometry','parameters':{'size':[1,1,1]}}]}, {'':{}},lines)
+        text='\n'.join(lines)
+        self.assertIn('objectLightSets["shape-id"] or lightSet',text)
+        self.assertIn('objectShadowSets["shape-id"]',text)
+
+    def test_native_shadow_receiver_is_preserved(self):
+        source=scene({'shadowreceiversets':['notOnFloor',None]})
+        source['objects'][3].update(type='SphereGeometry',attributes={'radius':1})
+        data=rdl_import.plan(source,'test.rdla')
+        target=next(e for e in data['entities'] if e['class']=='SphereGeometry')
+        self.assertEqual(data['links'][0]['receivers'],[target['name']])
+
+    def test_native_receiver_references_match_exported_shapes(self):
+        from moonray_modo import entities
+        shape={'identity':'shape','name':'Shape','class':'BoxGeometry','parameters':{}}
+        self.assertEqual(entities.shadow_receiver_references({'entities':[shape]}, {'shape'}),['BoxGeometry("/modo/entity/shape")'])
+        self.assertEqual(entities.shadow_receiver_references({'entities':[shape]}, {'other'}),[])
+        shape['parameters']['modo_volume']='fog'
+        shape['attributes']=[{'name':'Cd','type':'color','value':[1,0,0]}]
+        refs=entities.shadow_receiver_references({'entities':[shape]}, {'shape'})
+        self.assertEqual(refs,['RdlMeshGeometry("/modo/entity/shape")','RdlInstancerGeometry("/modo/entity/shape/holder")'])
+
+    def test_scene_export_includes_native_shadow_receiver(self):
+        from moonray_modo import rdla
+        value={'camera':{'matrix':rdla.IDENTITY,'focal_mm':50,'film_mm':36},
+               'meshes':[{'identity':'caster','vertices':[[0,0,0],[1,0,0],[0,1,0]],'faces':[[0,1,2]],'material':''}],
+               'entities':[{'identity':'target','name':'Target','class':'SphereGeometry','parameters':{'radius':1}}],
+               'production':{'objects':{'caster':{'shadow_receivers':['target']}}}}
+        text=rdla.scene_text(value)
+        self.assertIn('objectShadowReceiverSets["caster"] = ShadowReceiverSet("/modo/shadowReceivers/caster") { ["geometries"] = {SphereGeometry("/modo/entity/target")} }',text)
+
     def test_a_scene_lit_by_all_its_lights_has_no_links(self):
         self.assertEqual(rdl_import.plan(scene({'lightsets': ['both', 'both']}), 'test.rdla')['links'], [])
         self.assertEqual(rdl_import.plan(scene({}), 'test.rdla')['links'], [])

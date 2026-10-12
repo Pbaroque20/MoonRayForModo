@@ -23,6 +23,21 @@ MEASURED = {
 BECKMANN = ('blinn', 'ashikhmin')
 
 
+def principled_rise(material):
+    """How far a Principled material's highlight is let rise toward the edge, from 0 to 1.
+
+    Modo's Principled model adds its highlight to its diffuse light. MoonRay's layers take from the diffuse what the
+    highlight above it reflects, and a highlight reflects most seen edge on: a rough Principled surface seen at a low
+    angle loses its diffuse light there and, being rough, gives little back. Against Modo's own renders (a ball and a
+    box under one light, tools/check_shading_models.py; a ball in a white sky, tools/probe_fresnel.py) a smooth
+    surface is nearest with the whole rise, which is what shows its surroundings mirrored at a low angle, and a
+    rough one with none. So the rise is whole up to a roughness of 0.2, and falls away to none at 0.6."""
+    if material.get('_principled_rise') is not None:
+        return max(0.0, min(1.0, float(material['_principled_rise'])))
+    roughness = float(material.get('raw_roughness', material.get('roughness', .4)))
+    return max(0.0, min(1.0, (.6 - roughness) / .4))
+
+
 def curve(model):
     """Modo's roughness against MoonRay's for a model, from nothing to wholly rough, as the points of a ramp; None for
     a model whose roughness is MoonRay's own."""

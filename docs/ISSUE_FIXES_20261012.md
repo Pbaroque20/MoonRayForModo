@@ -39,3 +39,51 @@ Run `tools/check_idle_sessions.py --moonray RUNTIME --moonlight MOONLIGHT_STAGE`
 Screenshot inspection found that Modo's host style hid the check indicators. The dialog now gives its list explicit empty/filled indicators; checked and unchecked states were visually inspected after the fix. No global Qt style is changed. The probe writes JSON and screenshots under `MOONRAY_TEST_RESULTS/neighbours-dialog`, or a temporary test directory when unset. Run through `tools/launch_gui_probe.py probe_neighbours_dialog.py --profile NEW_PROFILE --wait --timeout 120`.
 
 This completes #26's remaining dialog check. Renderer comparison and MoonLightIPR support remain tracked in #45; incomplete imported sets remain in #52. No rendering-parity claim is made by this UI test.
+
+## Material thumbnail precedence (#50, partial)
+
+Saved materials now use sidecar images before falling back to a drawing. For `paint.moonmat.json`, `paint.moonmat.png` (or JPG/JPEG) takes priority over the simpler `paint.png` name. Graph bundles without a supplied image show a labelled Graph tile rather than a misleading plain ball. The selection pane explains the fallback and the expected thumbnail filename.
+
+`tools/check_asset_thumbnails.py`: **6 passed** using real Qt image loading offscreen: exact sidecar, simple filename and precedence, graph sidecar, graph placeholder, corrupt-image fallback, and texture-image precedence. Fixtures are PNG-encoded; JPEG codec coverage is not claimed. No host UI launch or renderer change was needed. Automatic generation of rendered material thumbnails remains open in #50.
+
+## Authored RDL mesh normals (#23, partial)
+
+RDL imports now create an editable `RDL Normals` map for authored point or polygon-corner normals. Invalid lengths, nonfinite components and zero vectors produce an explicit warning. Normals requiring a baked shear/mirror transform remain omitted with a warning rather than being stored in the wrong coordinate space.
+
+Validation: 12 focused RDL unit tests passed. `tools/probe_rdl_normals.py` imported two meshes in an isolated Modo 16.1v9 profile and read back every point/corner normal, including different normals at shared vertices. The host exited normally. This checks stored geometry data, not rendered-image equivalence. Motion, subdivision creases and baked-transform normals remain open under #23.
+
+### Baked shear follow-up
+
+Authored normals now survive orientation-preserving shears baked into imported vertices. The normal matrix uses the inverse transpose of the linear transform and normalizes the result; translation does not affect it. Matrix magnitudes are scaled before inversion to retain very small uniform transforms. Mirrored, singular or near-singular transforms still omit normals with an explicit warning.
+
+All 16 focused RDL tests passed, including transformed-tangent perpendicularity, nonuniform scale, translation independence, tiny scale and unsupported transforms. The Modo 16.1v9 read-back probe passed all four meshes: point/corner maps with and without shear. Rendered-image equivalence, mirrored winding, shutter motion and creases are not covered or claimed.
+
+### Reflection follow-up
+
+Mirrored transforms now preserve authored normals as well. When baking a reflection into mesh points, the importer reverses polygon winding while keeping UVs and corner normals associated with their original vertex. Singular/near-singular transforms still omit normals with an explicit warning.
+
+All 17 focused RDL tests passed. The isolated Modo 16.1v9 probe imported six meshes (point/corner normals, ordinary/sheared/mirrored), checked polygon vertex order and every UV/normal value, and exited normally. Shutter motion and subdivision creases remain unresolved under #23. No rendered-image equivalence claim is made.
+
+## Fully sharp RDL subdivision creases (#23, partial)
+
+Import plans validate crease/corner indices, topology and finite nonnegative weights. Fully sharp values (10 or higher) become editable Subdivision edge/corner weights of 1 on Catmull-Clark polygons. Semi-sharp values remain omitted with an explicit notice; their scale conversion is not established.
+
+Twenty focused RDL tests passed. The isolated Modo 16.1v9 probe read back edge/corner weights and Catmull-Clark polygon type and exited normally. An initial candidate crashed when writing edges in the topology-creation edit; the final implementation commits polygons before opening a second edit for edge weights. This failure is resolved in the passing candidate, not hidden. No rendered surface comparison is claimed.
+
+## MeshLight RDL bindings and sets (#52, partial)
+
+MeshLight membership in light and shadow sets now resolves to its emitting mesh rather than being dropped. The importer retains emitter geometry even without a surface material and converts the MeshLight geometry reference to the imported mesh ID. Previously the generic MoonRay-item reference filter discarded that reference too.
+
+All 21 focused RDL tests passed. An isolated Modo 16.1v9 import verified the emitter exists without a material assignment, the MeshLight geometry channel points to it, and receiver light/shadow exclusions contain its ID. Host shutdown was normal. No rendered-lighting comparison was performed. Per-part sets, light-filter sets and assignments on native MoonRay shapes remain open under #52.
+
+## Native MoonRay shape assignments (#52, partial)
+
+Imported native shapes now retain light and shadow-exclusion sets. Exported shapes, volume-only shapes and their primitive-attribute holders use their per-object light/shadow assignments instead of always using the shared light set.
+
+All 22 focused RDL tests passed. An isolated Modo 16.1v9 probe verified a BoxGeometry receiver retains its MeshLight links and exclusions and exited normally. Export assertions cover assignment construction; rendered-lighting equivalence is not claimed. Per-part sets, light-filter sets and native shapes as shadow-receiver targets remain open.
+
+### Native shadow-receiver targets
+
+Native MoonRay shapes can now be retained as excluded shadow-receiver targets during RDL import and scene export. Export uses the actual geometry type, including mesh-converted volume shapes and attribute holder instancers.
+
+Validation: 25 RDL tests and 19 core exporter tests passed; isolated Modo 16.1v9 import/read-back retained a SphereGeometry target. The first host probe omitted the target material assignment and correctly skipped that shape; after correcting the fixture, the check passed. No rendered-shadow comparison is claimed. Per-part and light-filter sets remain open in #52.

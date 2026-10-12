@@ -19,6 +19,11 @@ out.mkdir(parents=True, exist_ok=True)
 result = {'cases': []}
 WIDTH, HEIGHT = 320, 180
 ROUGHNESS = [.1, .2, .35, .5, .7, .9]
+# Only these looks and models, where MOONRAY_PROBE_LOOKS and MOONRAY_PROBE_MODELS name any: the report then goes to a file of its own.
+import os
+LOOKS = [v for v in os.environ.get('MOONRAY_PROBE_LOOKS', '').split(',') if v]
+MODELS = [v for v in os.environ.get('MOONRAY_PROBE_MODELS', '').split(',') if v]
+REPORT = 'report_%s.json' % '_'.join(LOOKS) if LOOKS else 'report.json'
 KEPT = ('diffCol.R', 'diffCol.G', 'diffCol.B', 'diffAmt', 'specAmt', 'reflAmt', 'rough', 'reflFres', 'specFres', 'metallic', 'brdfType', 'aniso',
         'specCol.R', 'specCol.G', 'specCol.B', 'refSpec')
 
@@ -85,10 +90,16 @@ try:
     camera.position.set((2.6, 2.2, 6.0))
     camera.rotation.set((-12.0, 23.0, 0.0), degrees=True)
     written = False
-    for kind in models:
+    for kind in [m for m in models if not MODELS or m in MODELS]:
         for rough in ROUGHNESS:
             for look, values in (('gloss', {'diffAmt': 0.0, 'specAmt': 1.0, 'specFres': 0.0}),
-                                 ('paint', {'diffCol.R': .6, 'diffCol.G': .3, 'diffCol.B': .15, 'diffAmt': 1.0, 'specAmt': .25, 'specFres': 0.0})):
+                                 ('paint', {'diffCol.R': .6, 'diffCol.G': .3, 'diffCol.B': .15, 'diffAmt': 1.0, 'specAmt': .25, 'specFres': 0.0}),
+                                 # The highlight alone at a quarter strength: one that MoonRay can still make
+                                 # stronger, to find how strong Modo's is where it is stronger than a lobe that
+                                 # keeps all the light.
+                                 ('sheen', {'diffAmt': 0.0, 'specAmt': .25, 'specFres': 0.0})):
+                if (LOOKS and look not in LOOKS) or (not LOOKS and look == 'sheen'):
+                    continue
                 name = '%s_%02d_%s' % (kind, round(rough * 100), look)
                 case = {'name': name, 'model': kind, 'roughness': rough, 'look': look}
                 try:
@@ -105,14 +116,14 @@ try:
                     snapshot = host.snapshot()
                     case['warnings'] = snapshot.get('warnings')
                     case['materials'] = snapshot['materials']
-                    if not written:
+                    if not written and not LOOKS:
                         (out / 'scene.json').write_text(json.dumps(snapshot, default=str))
                         written = True
                 except Exception:
                     case['error'] = traceback.format_exc()
                 result['cases'].append(case)
-        (out / 'report.json').write_text(json.dumps(result, indent=1, default=str))
+        (out / REPORT).write_text(json.dumps(result, indent=1, default=str))
 except Exception:
     result['error'] = traceback.format_exc()
-(out / 'report.json').write_text(json.dumps(result, indent=1, default=str))
+(out / REPORT).write_text(json.dumps(result, indent=1, default=str))
 QtCore.QTimer.singleShot(1500, lambda: lx.eval('!app.quit'))

@@ -883,9 +883,10 @@ class Compiler:
                 # As rdla.py gives it to MoonRay: a reflectance whose rise toward the edge is Modo's, weighted back
                 # down to the specular amount.
                 from .moonshine import fresnel_match
+                from .shading_models import principled_rise
                 principled = any(m.get('principled') for m in stack)
                 straight = max(0.0, min(.99, sum(source.get('specular', [.04] * 3)) / 3)) * (.08 if principled else 1.0)
-                rise = 1.0 if principled else max(0.0, min(1.0, max(m.get('specular_fresnel', 1.0) for m in stack)))
+                rise = max(principled_rise(m) for m in stack if m.get('principled')) if principled else max(0.0, min(1.0, max(m.get('specular_fresnel', 1.0) for m in stack)))
                 lobe = fresnel_match(straight, rise) if straight > 0 else 0.0
                 ior = (1 + math.sqrt(lobe)) / (1 - math.sqrt(lobe))
                 weight = straight / lobe if lobe > 0 else 0.0

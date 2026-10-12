@@ -63,5 +63,16 @@ class ShadingModels(unittest.TestCase):
             self.assertEqual(row(model),[0.0]+[to for _,to,_ in rows]+[rows[-1][1]])
         self.assertEqual(list(shading_models.MEASURED),['blinn','ashikhmin','gtr'])
 
+    def test_a_principled_highlight_rises_less_toward_the_edge_as_it_roughens(self):
+        rise=shading_models.principled_rise
+        self.assertEqual(rise({'raw_roughness':.1}),1.0)
+        self.assertAlmostEqual(rise({'raw_roughness':.2}),1.0)
+        self.assertAlmostEqual(rise({'raw_roughness':.4}),.5)
+        self.assertAlmostEqual(rise({'raw_roughness':.6}),0.0)
+        self.assertEqual(rise({'raw_roughness':.9}),0.0)
+        # The lobe's roughness stands in where Modo's own is not carried, and a rise given outright is kept.
+        self.assertAlmostEqual(rise({'roughness':.5}),.25)
+        self.assertEqual(rise({'raw_roughness':.9,'_principled_rise':.7}),.7)
+
 
 if __name__=='__main__':unittest.main()
