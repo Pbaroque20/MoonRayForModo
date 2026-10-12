@@ -451,7 +451,7 @@ Capturing the scene from Modo happens before any of this. As of 0.3.50.1 a mesh 
 polygons or more is read from Modo in one call by the plugin's native adapter: a
 139,000-polygon test went from 4.8 s to 1.4 s. A scene with an imported MaterialX material
 used to stall this step for minutes, which is fixed; the whole scene is also no longer read
-again every 15 seconds while IPR runs unless that is asked for in the preferences.
+again every 15 seconds while IPR runs.
 
 With MoonLightIPR selected the panel looks for changes every 60 ms and no longer waits
 for the mouse button to come up when Modo reports a light, transform or material

@@ -3,7 +3,7 @@ from . import options
 
 
 def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, error=100.0):
-    if width_cap not in (80,160,240) or sample_cap not in (1,4,16):
+    if width_cap not in (80,160,240) or sample_cap not in (1,4,16,32,64):
         raise ValueError('Invalid IPR quality preset')
     if not 0.1<=float(error)<=1000:
         raise ValueError('IPR adaptive error must be between 0.1 and 1000')

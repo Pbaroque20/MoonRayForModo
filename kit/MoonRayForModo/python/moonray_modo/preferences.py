@@ -8,7 +8,7 @@ SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('128
 KEYS = {
     'runtime': ('', str), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
     'idle_release_minutes': (5, int),
-    'persistent_preview': (True, bool), 'capture_safety': (False, bool), 'preview_motion': (False, bool),
+    'persistent_preview': (True, bool), 'preview_motion': (False, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
@@ -16,7 +16,12 @@ KEYS = {
     'assign/shader': ('DwaBaseMaterial', str), 'assign/smooth': (True, bool), 'assign/angle': (40.0, float),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (160, int), 'ipr/samples': (1, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
+    # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
+    'moonlightipr/samples': (256, int),
 }
+# The samples a pixel each realtime engine may be set to stop at.
+LS_SAMPLES = (1, 4, 16, 32, 64)
+MOONLIGHTIPR_SAMPLES = (32, 64, 128, 256)
 
 
 class Preferences:
@@ -92,13 +97,17 @@ class Dialog(QtWidgets.QDialog):
                     'Keeps cached images. The next render reloads its scene; active renders are never interrupted.'))
         form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
                           'Render reads the scene at shutter open and close; IPR updates stay sharp'))
-        form.addRow(check('capture_safety', 'Re-read the scene every 15 seconds while IPR runs',
-                          'Catches edits from procedural items that do not announce their changes. Modo pauses while a large scene is read'))
-        heading = QtWidgets.QLabel('MoonRay IPR quality')
+        heading = QtWidgets.QLabel('MoonLightIPR quality')
+        heading.setStyleSheet('font-weight: bold; margin-top: 8px')
+        form.addRow(heading)
+        form.addRow('Pixel samples', combo('moonlightipr/samples', [('%d per pixel' % v, v) for v in MOONLIGHTIPR_SAMPLES],
+                                            'How many samples a pixel MoonLightIPR gathers in realtime before it rests. Fewer settles sooner and is grainier.'))
+        heading = QtWidgets.QLabel('MoonRay LS quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
         form.addRow('Width limit', combo('ipr/width', [('%d px' % v, v) for v in (80, 160, 240)]))
-        form.addRow('Sample limit', combo('ipr/samples', [('%d per pixel' % v, v) for v in (1, 4, 16)]))
+        form.addRow('Pixel samples', combo('ipr/samples', [('%d per pixel' % v, v) for v in LS_SAMPLES],
+                                            'The most samples a pixel MoonRay LS takes while it follows the scene, and never more than the render settings of the scene give. More is cleaner and slower to answer an edit.'))
         self.error = QtWidgets.QDoubleSpinBox()
         self.error.setRange(.1, 1000)
         self.error.setDecimals(1)
