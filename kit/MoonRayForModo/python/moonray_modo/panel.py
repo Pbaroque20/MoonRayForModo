@@ -951,11 +951,11 @@ class Panel(Tools, QtWidgets.QWidget):
                 self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
                 self.renderer.buffers.forget()
         if self._draft_engine:
-            # A draft is drawn twice. First quickly and small, 320 pixels wide unless Preferences says otherwise, so
+            # A draft is drawn twice. First quickly and small, 640 pixels wide unless Preferences says otherwise, so
             # that it is up at once. Then finely: as many pixels as the view has and half as many again, so that
             # its lines are as clean as a drawing's and stay so when looked at closely. Either is told from the
             # region rendered among the lines by its size, so neither is ever just the size of the preview.
-            if (getattr(self,'_draft_hasty',False) and not self._following):fine=max(64,min(3200,int(self.preferences.get('draft/width') or 320)))
+            if (getattr(self,'_draft_hasty',False) and not self._following):fine=max(64,min(3200,int(self.preferences.get('draft/width') or 640)))
             else:fine=min(3200,max(2*width,int(1.5*self.preview.width()*self.preview.devicePixelRatioF())))
             if fine==width:fine+=2
             height=max(16,round(height*fine/width));width=fine

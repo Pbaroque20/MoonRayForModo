@@ -12,7 +12,7 @@ KEYS = {
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
     # preview starts as its window opens, how bright a new MoonRay light is, and whether notices open by themselves.
     'assign/shader': ('DwaBaseMaterial', str), 'assign/smooth': (True, bool), 'assign/angle': (40.0, float),
-    'draft/ink': ('tan', str), 'draft/width': (320.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
+    'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (160, int), 'ipr/samples': (1, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
 }
 
