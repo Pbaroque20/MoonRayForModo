@@ -529,7 +529,8 @@ class Panel(Tools, QtWidgets.QWidget):
         region=self._draft_region()
         rendered=self._draft_render[1] if self._draft_render and self._draft_render[0]==region else None
         self.preview.set_image(draft.over(self._draft_image,rendered,region))
-        self.image_info.setText('%d x %d | Draft'%self._draft_size)
+        # A draft is not of a size worth naming: it is drawn small and then finely, and is not the render.
+        self.image_info.setText('Draft')
 
     def _probe(self,x,y):
         """Say what is under the pointer: the render's own linear values where they are held, else what is on screen."""
