@@ -217,15 +217,17 @@ def plan(document, path):
     # Names: every item made is called by the last step of the object's path, told apart where two would match.
     labels, taken = {}, set()
 
+    def unique_name(wanted):
+        count, chosen = 1, wanted
+        while chosen in taken or ',' in chosen:
+            count += 1
+            chosen = '%s %d' % (wanted.replace(',', ' '), count)
+        taken.add(chosen)
+        return chosen
+
     def label(name):
         if name not in labels:
-            wanted, count = short(name), 1
-            chosen = wanted
-            while chosen in taken or ',' in chosen:
-                count += 1
-                chosen = '%s %d' % (wanted.replace(',', ' '), count)
-            taken.add(chosen)
-            labels[name] = chosen
+            labels[name] = unique_name(short(name))
         return labels[name]
 
     # What the layer assigns to each shape and part of a shape.
@@ -271,7 +273,7 @@ def plan(document, path):
             return None
         key = surface if not displacement else surface + '|' + displacement
         assignment = next((pair for pair in ((geometry, part), (geometry, ''), (owner, part), (owner, '')) if assigned.get(pair) is row), None)
-        if assignment and assignment[0] in split_sets:
+        if assignment and (assignment[0] in split_sets or (owner and objects.get(geometry, {}).get('type') == 'RdlMeshGeometry')):
             key += '|links:' + repr(assignment)
             material_links[key] = (assignment[0], part_sets[assignment])
         if key not in materials:
@@ -326,10 +328,11 @@ def plan(document, path):
         return [entry for entry in own if entry['name'] not in names] + list(outer)
 
     def mesh(record, owner=None):
-        """A mesh in its own space, once however many times it is placed. Returns its name in the plan."""
+        """A shared prototype per face-material assignment; return its name in the plan."""
         key = record['name']
-        if key in mesh.made:
-            return mesh.made[key]
+        scope = (key, owner)
+        if scope in mesh.scopes:
+            return mesh.scopes[scope]
         a = record.get('attributes', {})
         vertices, counts, indices = a.get('vertex_list_0', a.get('vertex_list', [])), a.get('face_vertex_count', []), a.get('vertices_by_index', [])
         if not vertices or not counts:
@@ -350,6 +353,10 @@ def plan(document, path):
                     raise ValueError('Invalid material part face index: ' + record['name'])
                 tags[face] = chosen if chosen is not None or (record['name'], part) in assigned else tags[face]
             offset += count
+        cache_key = (key, tuple(tags))
+        if cache_key in mesh.cache:
+            mesh.scopes[scope] = mesh.cache[cache_key]
+            return mesh.cache[cache_key]
         uv = a.get('uv_list', [])
         if uv and len(uv) not in (len(vertices), len(indices)):
             warnings.append(short(record['name']) + ': its UVs are neither one for each point nor one for each corner, and are left out')
@@ -372,12 +379,13 @@ def plan(document, path):
             if len(held) > 1:
                 warnings.append('%s: %s differs from face to face or point to point, which is not imported; only one value for a whole item is' % (short(record['name']), name_))
         note_motion(record)
-        name = label(record['name'])
+        name = label(key) if key not in mesh.made else unique_name(short(key))
         meshes.append({'name': name, 'vertices': vertices, 'faces': faces, 'uv': uv, 'normals': normals, 'tags': tags, 'subd': bool(a.get('is_subd', False)),
                        'matrix': None, 'render': False, 'attributes': [], 'hard_edges':hard_edges, 'hard_corners':hard_corners})
-        mesh.made[key] = name
+        mesh.made.setdefault(key, name)
+        mesh.cache[cache_key] = mesh.scopes[scope] = name
         return name
-    mesh.made = {}
+    mesh.made, mesh.cache, mesh.scopes = {}, {}, {}
 
     def strands(record, matrix, outer=()):
         a = record.get('attributes', {})
@@ -675,7 +683,13 @@ def plan(document, path):
     links = []
     native_geometries = {e['name'] for e in items if catalog[e['class']]['category'] == 'geometry'}
     available_filters = {e['name'] for e in items if catalog[e['class']]['category'] == 'lightfilter'}
-    linked_rows = [(geometry, None, own) for geometry, own in sets.items() if geometry not in split_sets]
+    # Direct mesh instancers carry their links on the scoped material layers above.
+    scoped_instancers = {geometry for geometry, own in material_links.values()
+                         if objects.get(geometry, {}).get('type') == 'RdlInstancerGeometry'
+                         and all(objects.get(ref, {}).get('type') == 'RdlMeshGeometry'
+                                 for ref in objects[geometry].get('attributes', {}).get('references', []))}
+    linked_rows = [(geometry, None, own) for geometry, own in sets.items()
+                   if geometry not in split_sets and geometry not in scoped_instancers]
     linked_rows += [(geometry, key, own) for key, (geometry, own) in material_links.items() if materials.get(key)]
     for geometry, material_key, (lit, unshadowed, spared, filters) in linked_rows:
         if lit is None and not unshadowed and not spared and not filters:
@@ -698,9 +712,15 @@ def plan(document, path):
             if label(name) not in available_filters:
                 warnings.append('%s: light filter %s has no imported counterpart and is omitted' % (short(geometry), short(name)))
         native_geometry = label(geometry) if label(geometry) in native_geometries else None
+        receivers = []
+        for name in spared:
+            targets = [v for (source, tags), v in mesh.cache.items() if source == name]
+            if not targets and label(name) in native_geometries:
+                targets = [label(name)]
+            receivers.extend(target for target in targets if target not in receivers)
         links.append({'material': material_key, 'geometry': mesh.made.get(geometry) or native_geometry, 'named': short(geometry), 'lights': None if lit is None else lights(lit),
                       'filters': [label(name) for name in filters if label(name) in available_filters],
-                      'shadows': lights(unshadowed), 'receivers': [mesh.made.get(name) or label(name) for name in spared if name in mesh.made or label(name) in native_geometries]})
+                      'shadows': lights(unshadowed), 'receivers': receivers})
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
                 settings=settings, links=links, warnings=list(dict.fromkeys(warnings)), source=str(path))
 
