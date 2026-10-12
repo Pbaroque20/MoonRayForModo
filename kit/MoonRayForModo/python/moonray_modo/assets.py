@@ -23,7 +23,7 @@ def paths(value):
                 if key not in ('warnings','production','preview_buffer_files','_recovery','vertices','vertices_close','faces','face_materials','uvs','uv_sets','normals','radii','velocities','counts','instances','matrix','matrix_close','position'):visit(child)
         elif isinstance(node,(list,tuple)):
             for child in node:visit(child)
-        elif isinstance(node,str) and (re.match(r'^[A-Za-z]:[/\\]',node) or node.startswith('//')) and Path(node).suffix:found.add(node)
+        elif isinstance(node,str) and (re.match(r'^[A-Za-z]:[/\\]',node) or node.replace('\\','/').startswith('//')) and Path(node).suffix:found.add(node)
     visit(value)
     for settings in value.get('production',{}).get('lights',{}).values() if isinstance(value,dict) else []:
         for key in ('cookie_file','filter_vdb'):visit(settings.get(key,''))
