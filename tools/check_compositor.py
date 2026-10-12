@@ -109,6 +109,10 @@ def main():
         files['flat'] = flat
         f = ('f', 'input', {'buffer': 'flat'}, {})
         expect('blur of an even picture', graph(f, ('x', 'blur', {'radius': 3.0}, {'image': 'f'})), lambda u, v: (.5, .5, .5), places=((32, 16),))
+        # A wide blur is done on the picture made smaller and brought back to size.
+        expect('wide blur of an even picture', graph(f, ('x', 'blur', {'radius': 20.0}, {'image': 'f'})), lambda u, v: (.5, .5, .5), places=((32, 16),))
+        expect('wide glow of an even picture', graph(f, ('x', 'glow', {'threshold': .25, 'radius': 20.0, 'strength': 2.0}, {'image': 'f'})),
+               lambda u, v: (1.0, 1.0, 1.0), places=((32, 16),), tolerance=2e-2)
         expect('glow of an even picture', graph(f, ('x', 'glow', {'threshold': .25, 'radius': 3.0, 'strength': 2.0}, {'image': 'f'})),
                lambda u, v: (1.0, 1.0, 1.0), places=((32, 16),))
         expect('glow under its threshold', graph(f, ('x', 'glow', {'threshold': 1.0, 'radius': 3.0, 'strength': 2.0}, {'image': 'f'})),

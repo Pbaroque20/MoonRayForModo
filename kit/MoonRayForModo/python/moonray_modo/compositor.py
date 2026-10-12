@@ -160,6 +160,22 @@ def _kernel(radius):
     return '%dx%d' % (across, across)
 
 
+# The widest blur done on the picture as it is. The image tool's blur is not done a row and a column at a time: its
+# cost grows with the square of the radius, and a radius of 20 on a 1280 x 720 picture took eight seconds.
+DIRECT = 4.0
+
+
+def _blur(radius):
+    """What blurs the picture on top of the stack by a radius in pixels. A wide blur is done on the picture made
+    smaller, by as much as brings the radius down to DIRECT, and the result made as large as the picture was: the
+    same softness to the eye, in a fraction of a second."""
+    radius = float(radius)
+    if radius <= DIRECT:
+        return ['--blur', _kernel(radius)]
+    return ['--dup', '--resize', '%s%%' % _number(100.0 * DIRECT / radius), '--blur', _kernel(DIRECT),
+            '--resize', '{IMG[1].width}x{IMG[1].height}', '--swap', '--pop']
+
+
 def jobs(graph, files, kinds, folder):
     """What the image tool is to be run with, node after node: [(arguments, the file that run makes)], and the file
     that is the output's picture. files has each buffer's file and kinds what kind of buffer each is. A wired input
@@ -224,7 +240,7 @@ def jobs(graph, files, kinds, folder):
             if float(held['radius']) < 0.25:
                 made[identity] = taken['image']
                 continue
-            args = [str(taken['image']), '--blur', _kernel(held['radius'])]
+            args = [str(taken['image'])] + _blur(held['radius'])
         elif kind == 'glow':
             if taken.get('image') is None:
                 made[identity] = none()
@@ -232,7 +248,7 @@ def jobs(graph, files, kinds, folder):
             image = str(taken['image'])
             args = [image, '--subc', _number(held['threshold']), '--maxc', '0']
             if float(held['radius']) >= 0.25:
-                args += ['--blur', _kernel(held['radius'])]
+                args += _blur(held['radius'])
             args += ['--mulc', _number(held['strength']), image, '--add']
         steps.append((args + ['-d', 'float', '-o', str(target)], target))
         made[identity] = target

@@ -262,6 +262,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.worker_tiles.setChecked(self.preferences.get('worker_tiles'))
         self.worker_tiles.toggled.connect(self._overlay_changed)
         menu.addSeparator()
+        menu.addAction('Compositor...',self.open_compositor)
+        menu.addSeparator()
         menu.addAction('Render EXR...',self.render_final)
         menu.addAction('Render Animation...',self.render_animation)
         menu.addAction('Export Scene...',self.export)
@@ -579,7 +581,7 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _settled(self):
         """Take the scene's settings as they now are for seen, so that following does not render for them."""
-        self._live_settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
+        self._live_settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
 
     def _paste(self):
         """Show the last whole frame with the last region rendered laid in it, and keep it until something is rendered."""
@@ -640,10 +642,12 @@ class Panel(Tools, QtWidgets.QWidget):
         if scene_id!=self._scene_id:
             self._scene_id=scene_id;self._geometry_cache=None;self._shown=None
         self._sync_cameras()
-        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'])
+        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']))
         if watched==self._shown:return
         previous,self._shown=self._shown,watched
         self._sync_output_menu(values['custom_aovs'])
+        # The Composite buffer is made again by the graph as it now is, of the render that is kept.
+        self.renderer.buffers.compositor.request(values['compositor'])
         if not self.display_timer.isActive():
             blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker
         # The button is lit by a region being rendered, or by its being ready for one to be drawn.
@@ -654,17 +658,31 @@ class Panel(Tools, QtWidgets.QWidget):
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
 
+    def open_compositor(self):
+        """The scene's compositor: a graph over the buffers of a finished render, whose output is the Composite buffer."""
+        try:
+            from .compositor_editor import open_editor
+            open_editor(self)
+        except Exception as exc:
+            self.status.setText('Cannot open the compositor: '+str(exc))
+
     def _sync_output_menu(self,custom_aovs):
         names=[(v['name'],v['name']) for v in custom_aovs if v['kind']!='cryptomatte']
         held={v.get('category','object'):v['name'] for v in custom_aovs if v['kind']=='cryptomatte'}
         names+=[(label,held.get(category,'crypto_'+category)) for category,label in CRYPTOMATTES]
+        # The compositor's picture, where the scene has a graph that does something: first after MoonRay's own buffers.
+        from . import compositor
+        if not compositor.trivial(self._settings_values_stored().get('compositor')):names.insert(0,('Composite','composite'))
         if 'asset' in held:names.append(('Cryptomatte: Assets',held['asset']))
         base=2+len(options.AOVS)
         if names==[(self.buffer.itemText(i),self.buffer.itemData(i)) for i in range(base,self.buffer.count())]:return
         key=self.buffer.currentData();blocker=QtCore.QSignalBlocker(self.buffer)
         while self.buffer.count()>base:self.buffer.removeItem(self.buffer.count()-1)
         for label,name in names:self.buffer.addItem(label,name)
+        gone=self.buffer.findData(key)<0
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
+        # The buffer that was shown is no longer in the list (the Composite, its graph emptied): the beauty is shown.
+        if gone:self._buffer_changed(self.buffer.currentIndex())
         self._limit_buffers()
 
     def _engine(self):
@@ -1079,7 +1097,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _capture_key(self):
         """What, beside the scene's own contents, a reading of the scene depends on."""
         import modo
-        settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery')}
+        settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','compositor')}
         return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
                 self.preferences.get('preview_motion'),self.runtime_path())
 
@@ -1122,7 +1140,7 @@ class Panel(Tools, QtWidgets.QWidget):
             if not held and now-self._asset_check_time>=1:
                 self._asset_check_time=now;asset_changed=signature(self._asset_scene)!=self._asset_signature
             full=full or (not held and self.preferences.get('capture_safety') and now-self._last_full_capture>15) or asset_changed
-            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
+            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             if not (full or items or changed):return
             reuse=not full and not changed and bool(items) and self._geometry_cache is not None

@@ -81,6 +81,8 @@ class CachedDenoise(QtCore.QObject):
                 frame['files']['denoised_beauty']=target;frame['denoise_engine']=engine
                 self.cache.serial+=1;self.cache._request()
                 self.cache.notice.emit('Denoised Beauty ready')
+                # A composite that takes the denoised picture can be made now.
+                self.cache.compositor.again()
             except OSError as exc:self.cache.notice.emit('Cannot retain denoised beauty: '+str(exc))
         repeat=self.cache.frame is not frame or self.requested!=engine
         self.cleanup()
