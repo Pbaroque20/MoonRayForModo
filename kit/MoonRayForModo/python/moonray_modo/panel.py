@@ -430,7 +430,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if enabled:
             try:self._draft_time=lx.service.Selection().GetTime()
             except Exception:self._draft_time=None
-            self._draft_hasty=False
+            self._draft_hasty=True
             self.draft_timer.start()
         else:self.draft_timer.stop()
         if enabled:
@@ -461,7 +461,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._following or self.preview_lock.isChecked() or self._output_busy() or not self.changes.registered:return
         try:
             from .interaction import dragging
-            held=dragging()
+            # A drag is waited out, and the scene drawn as it is when the button comes up: what is shown is then always
+            # the outcome of an edit, never something part way through one.
+            if dragging():return
+            held=False
             if not held:self._draft_drag_read=False
             # One picture at a time: the next is begun when this one is shown, so that each is seen and none piles up
             # behind another.
@@ -499,7 +502,9 @@ class Panel(Tools, QtWidgets.QWidget):
                 self._draft_drag_read=True
             self._draft_time=time
             # In the middle of a drag the outlines are drawn in fewer passes, so that more pictures of it are shown.
-            self._draft_hasty=bool(held)
+            # A change is shown first in a quick, small picture, and then, once that is up and nothing more has
+            # changed, in a fine one.
+            self._draft_hasty=True
             self._draft_submit(self._capture(reuse))
         except Exception as exc:
             self._draft_quiet=False
@@ -920,7 +925,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # first, over the whole frame; the engine chosen then renders the region at the preview's own size,
             # and that is laid on them.
             self._draft_engine=self._draft_lines=True
-            self._draft_then=scene if self._draft_region() else None
+            # The region is rendered after the fine picture, not after the quick one before it.
+            self._draft_then=scene if self._draft_region() and not (getattr(self,'_draft_hasty',False) and not self._following) else None
         if not output:
             from .incremental import surroundings
             self._surroundings=surroundings(scene)
@@ -930,7 +936,7 @@ class Panel(Tools, QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
-        if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if getattr(self,'_draft_hasty',False) else 12)
+        if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if (getattr(self,'_draft_hasty',False) and not self._following) else 12)
         if not output and self.draft.isChecked():
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
             self._draft_size=(width,height);self.preview.nominal=(width,height)
@@ -944,9 +950,13 @@ class Panel(Tools, QtWidgets.QWidget):
                 self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
                 self.renderer.buffers.forget()
         if self._draft_engine:
-            # The draft is drawn finer than the preview, as many pixels as the view has and half as many again, so
-            # that its lines are as clean as a drawing's and stay so when looked at closely.
-            fine=min(3200,max(2*width,int(1.5*self.preview.width()*self.preview.devicePixelRatioF())))
+            # A draft is drawn twice. First quickly and small, 320 pixels wide unless Preferences says otherwise, so
+            # that it is up at once. Then finely: as many pixels as the view has and half as many again, so that
+            # its lines are as clean as a drawing's and stay so when looked at closely. Either is told from the
+            # region rendered among the lines by its size, so neither is ever just the size of the preview.
+            if (getattr(self,'_draft_hasty',False) and not self._following):fine=max(64,min(3200,int(self.preferences.get('draft/width') or 320)))
+            else:fine=min(3200,max(2*width,int(1.5*self.preview.width()*self.preview.devicePixelRatioF())))
+            if fine==width:fine+=2
             height=max(16,round(height*fine/width));width=fine
             self._draft_fine=(width,height)
         # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.

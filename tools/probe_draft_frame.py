@@ -35,6 +35,7 @@ def finish():
         image.save(str(out / 'draft.png'))
         frame = view.image_rect()
         colour = lambda x, y: list(image.pixelColor(int(x), int(y)).getRgb()[:3])
+        result['drawn_at'] = list(panel._draft_fine); result['shown'] = [view.image.width(), view.image.height()]
         result.update(status=panel.status.text(), view=[view.width(), view.height()], frame=[round(v) for v in (frame.left(), frame.top(), frame.right(), frame.bottom())],
                       outside_top=colour(view.width() / 2, max(1, frame.top() / 2)), outside_bottom=colour(view.width() / 2, min(view.height() - 2, (frame.bottom() + view.height()) / 2)),
                       inside_top=colour(frame.left() + 6, frame.top() + 6), inside_bottom=colour(frame.left() + 6, frame.bottom() - 6))
@@ -61,10 +62,14 @@ def finish():
 
 
 try:
-    lx.eval('item.create mesh')
-    lx.eval('tool.set prim.cube on')
-    lx.eval('tool.apply')
-    lx.eval('tool.set prim.cube off')
+    import os
+    if os.environ.get('MOONRAY_PROBE_SCENE'):
+        lx.eval('scene.open {%s} normal' % os.environ['MOONRAY_PROBE_SCENE'])
+    else:
+        lx.eval('item.create mesh')
+        lx.eval('tool.set prim.cube on')
+        lx.eval('tool.apply')
+        lx.eval('tool.set prim.cube off')
     lx.eval('moonray.open')
 except Exception:
     result['error'] = traceback.format_exc()

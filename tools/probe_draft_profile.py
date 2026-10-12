@@ -120,6 +120,23 @@ def wait(count):
                                   'pack_and_send': span('submit_begin', 'submit_end'), 'session_asked_to_applied': span('session_asked', 'session_applied'),
                                   'asked_to_first_picture': span('session_asked', 'first_picture'), 'asked_to_last_picture': span('session_asked', 'session_done'),
                                   'last_picture_to_shown': span('session_done', 'shown'), 'whole': span('edit', 'shown'), 'drawn_at': list(panel._draft_fine)})
+        result['redraws'][-1]['first_shown_at'] = list(panel._draft_fine)
+        held['fine_from'] = time.perf_counter()
+        save()
+        QtCore.QTimer.singleShot(10, lambda: refined(count))
+        return
+    QtCore.QTimer.singleShot(10, lambda: wait(count))
+
+
+def refined(count):
+    """After the quick picture: how long until the fine one has taken its place."""
+    panel = panel_widget()
+    waited = time.perf_counter() - held['fine_from']
+    quick = result['redraws'][-1]['first_shown_at']
+    if (list(panel._draft_fine) != quick and not panel._rendering) or waited > 6:
+        result['redraws'][-1].update(fine_after=round(waited, 3), fine_at=list(panel._draft_fine))
+        if count == 4:
+            panel.preview.grab().save(str(out / 'fine.png'))
         save()
         if count < 4:
             QtCore.QTimer.singleShot(1500, lambda: edit(count + 1))
@@ -127,7 +144,7 @@ def wait(count):
             panel.stop()
             lx.eval('!app.quit')
         return
-    QtCore.QTimer.singleShot(10, lambda: wait(count))
+    QtCore.QTimer.singleShot(10, lambda: refined(count))
 
 
 try:
