@@ -165,3 +165,22 @@ Validation: both focused tests failed before the fix. Afterwards 37 RDL and eigh
 Position, scale and quaternion components are now checked for the required count and finite values before matrix construction. Invalid instancers follow the existing import-notice path without losing unrelated geometry. Quaternion normalization scales components first to avoid overflow and silent rotation loss. Zero scales and the existing zero/tiny-quaternion identity fallback remain supported.
 
 Validation: the new malformed-component and large-quaternion cases failed before the fix. All 41 RDL checks pass afterward, including import-plan recovery with an invalid instancer. No new Modo or rendered-image comparison was needed for these pure numeric/input-validation changes. Motion and semi-sharp crease work in #23 remains open.
+
+## Native negative-index candidate (#100, not runtime-validated)
+
+InstanceProceduralLeaf checks only index > maxIndex before accessing ref[index]; a negative index bypasses the guard. A reproducible build-time patch adds the lower bound and follows the existing fallback-to-zero behavior. The shared upstream source and installed runtime have not been changed.
+
+Validation: three patch-application checks pass. The actual patched selection block was extracted from the local upstream source, compiled with warnings as errors, and passed seven boundary values plus disabled-index mode. Initial compiler invocation needed its binary directory on PATH; the checker now supplies it. Full native library rebuild and the #100 render reproducer remain pending, so this candidate must not be merged or treated as a released crash fix yet.
+
+## Native index candidate validated (#100)
+
+The geometry library was rebuilt in an isolated test directory from a patched source copy and the existing native object files. The shared upstream source/build outputs were not modified, and input object hashes were checked after linking. A separate copy of steady-0351-tiles received only the candidate geometry DLL.
+
+The original negative-index fixture completed normally in that candidate (previously 0xC0000409). Its 64x64 scalar alpha matches the valid-index control exactly, with nonzero coverage. tools/build_instance_index_candidate.py and tools/check_negative_instance_runtime.py reproduce the candidate build and check. The source patch is now validated for this fixture; installed/downloaded runtimes remain unchanged and need a future rebuilt release. #100 remains open until that runtime is distributed.
+
+
+## Portable material texture path aliases
+
+Saving a material graph failed with FileExistsError when two image nodes named the same source through different path spellings. The copy cache now uses the same resolved, case-normalized identity as its asset folder. UDIM aliases share one asset set; distinct source folders with matching filenames remain separate.
+
+Validation: the alias/relocation regression failed before the fix. Both new bundle-path checks and 26 existing compatibility checks pass afterward, including relocation, tamper rejection, disabled overrides and graph dependencies. These are file/graph checks, not rendered thumbnail validation; #50 remains open. No kit or runtime was installed.
