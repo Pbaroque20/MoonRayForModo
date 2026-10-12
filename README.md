@@ -4,37 +4,41 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 **MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and follows your edits as you make them. Final renders always come from MoonRay.
 
-The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.3), which holds everything below. What is built here next will be listed as it comes.
+The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.3).
 
 ## Built since 0.3.51.3
 
-Not released yet. The full list, with pictures and what was checked, is in [What's next](docs/WHATS_NEXT.md).
+Not released yet. More detail and pictures are in [What's next](docs/WHATS_NEXT.md).
 
-- **A compositor**: Options > Compositor opens a node graph over the buffers of a finished render (merge, grade, blur, glow). Its result is the **Composite** buffer in the list, and Render EXR writes it beside the EXR. Nothing is rendered again.
-- **Three engines, no Live box**: **MoonRay** for the full render; **MoonRay LS** (low sample) and **MoonLightIPR** follow the scene as you edit it. Those two start switched off; press **RT Off** and it reads **RT On**, lit.
-- **Safe Denoising shows the render as it comes on**, and a stop says how far behind the picture it kept is.
-- **A cleaner live picture**: no dark blocks while MoonRay renders, and none of their marks in a stopped render's denoised picture.
-- **Stop keeps the picture, quickly**: a normal MoonRay render stopped part way is kept and denoised in about a second.
-- **Tile outlines move evenly**, in pastel blue, and fade when a tile is done.
-- **An idle MoonRay rests** instead of keeping a processor core busy, and ends itself if Modo goes away.
-- **What Modo hides is hidden**: an item with its eye off does not render, and MoonLightIPR follows a surface's visibility to the camera, indirect light, reflections, refractions and shadows.
-- **Two lines under the picture**, so the status is read whole.
-- **Denoised Beauty denoises by itself**: choose it in the list and the picture is denoised, with no denoiser to set first. MoonLightIPR always has Beauty and Denoised Beauty.
-- **MoonLightIPR is much nearer to MoonRay** on layered materials, glass, coats and the shadows of see-through things.
-- **Rough Principled materials are no longer dark** seen at a low angle, and a Shader's Cast Shadows switch is followed.
-- **Moving something is followed far faster**: a draft of a 266-mesh scene redraws in 0.3 seconds where it took 1.3.
-- **Draft** follows the scene by itself, has black around the camera's frame and never shows a stale render when switched off; **Render** and **RT** switch it off; **Region** no longer zooms the view.
-- **MoonLightIPR Playblast**: MoonRay > MoonLightIPR Playblast, or Options in the preview window. The animation is rendered on the graphics card, a PNG a frame, and played back when it is done.
-- **Realtime waits out a playing animation**: nothing is rendered while Modo plays, and the frame it stops on is.
-- **Safe Denoising is chosen from the picture's right-click menu** (Off, OptiX, Open Image Denoise), and the foot of the picture reads Safe Denoiser Mode while it is on.
-- **The preview window opens on MoonRay with the crest** and renders nothing until asked.
+**New**
 
-Some of these need the MoonRay of the next runtime, so the next release brings a new runtime ZIP.
+- **Compositor**: a node graph over a finished render's buffers (merge, grade, blur, glow), in Options > Compositor. Nothing is rendered again.
+- **MoonLightIPR Playblast**: renders an animation on the graphics card and plays it back. In the MoonRay menu and the preview's Options.
+- **Three engines**: **MoonRay** for the full render; **MoonRay LS** and **MoonLightIPR** follow your edits once you press **RT Off** to switch realtime on.
+- **Pixel samples per realtime engine**, in the preview's Preferences.
+
+**Faster**
+
+- **Draft** redraws in about a third of a second after a move, where it took over a second, and follows the scene by itself.
+- **Stop keeps the picture**, denoised, in about a second and a half.
+- **An idle MoonRay uses no processor.**
+
+**Better pictures**
+
+- **Denoised Beauty just works**: choose it in the list, with nothing to set up.
+- **Safe Denoising** is on the picture's right-click menu and shows the render as it goes.
+- **No dark blocks** while MoonRay renders.
+- **MoonLightIPR is much closer to MoonRay** on layered materials, glass, coats and see-through shadows.
+- **Rough Principled materials** are no longer dark at low angles.
+- **Hidden items stay hidden**: an item with its eye off does not render, and a Shader's Cast Shadows switch is followed.
+- **Imported MoonRay lights** are no longer far too bright.
+
+Some of these need the next runtime, so the next release brings a new runtime ZIP.
 
 ![The preview window with MoonLightIPR chosen and realtime on](docs/images/preview-engines.png)
-*MoonLightIPR chosen: RT On is lit, and the status has a line to itself.*
+*MoonLightIPR chosen, RT On.*
 
-![The compositor: the nodes to add on the left, the graph, and the selected node's settings](docs/images/compositor-editor.png)
+![The compositor](docs/images/compositor-editor.png)
 *The compositor: the beauty graded, given a glow, and sent to the Composite buffer.*
 
 ## Released in 0.3.51
