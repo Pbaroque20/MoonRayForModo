@@ -302,7 +302,9 @@ def plan(document, path):
             warnings.append(short(record['name']) + ': its UVs are neither one for each point nor one for each corner, and are left out')
             uv = []
         normals = a.get('normal_list', [])
-        if normals and len(normals) not in (len(vertices), len(indices)):
+        if normals and (len(normals) not in (len(vertices), len(indices)) or
+                        any(len(v)!=3 or any(not math.isfinite(x) for x in v) or not any(v) for v in normals)):
+            warnings.append(short(record['name']) + ': invalid authored normals are left out')
             normals = []
         faces, offset = [], 0
         for count in counts:
@@ -709,6 +711,10 @@ def apply(data, alone=True, progress=None):
                 # A place Modo's transform cannot hold is put into the points themselves.
                 vertices_in = [transform(v, record['matrix']) for v in vertices_in]
                 warnings.append(record['name'] + ': its transform shears or mirrors, so it is applied to the points')
+            normals_in=record['normals']
+            if normals_in and record['matrix'] is not None and not keep:
+                normals_in=[]
+                warnings.append(record['name'] + ': authored normals on a baked shear/mirror transform are not imported')
             with item.geometry as geo:
                 # Through the mesh's own accessors: the scripting layer's vertex and polygon objects cost some ten times
                 # as much for each one made, which is minutes for a heavy mesh.
@@ -725,6 +731,13 @@ def apply(data, alone=True, progress=None):
                         point.Select(identity)
                         pair.set((value[0], value[1]))
                         point.SetMapValue(uv, pair)
+                normal_map=None;normal_value=lx.object.storage('f',3)
+                normals_by_point=len(normals_in)==len(vertices)
+                if normals_in:
+                    normal_map=lx.object.MeshMap(mesh.MeshMapAccessor()).New(lx.symbol.i_VMAP_NORMAL,'RDL Normals')
+                    if normals_by_point:
+                        for identity,value in zip(vertices,normals_in):
+                            point.Select(identity);normal_value.set(tuple(value));point.SetMapValue(normal_map,normal_value)
                 kind = lx.symbol.iPTYP_SUBD if record['subd'] else lx.symbol.iPTYP_FACE
                 tagger, uvs, face_tags = lx.object.StringTag(polygon), record['uv'], record['tags']
                 offset, corners, sized = 0, {}, 0
@@ -737,7 +750,7 @@ def apply(data, alone=True, progress=None):
                     storage.set(tuple(vertices[i] for i in face))
                     made_polygon = polygon.New(kind, storage, count, 0)
                     wears = tags.get(face_tags[face_index])
-                    if wears or (uv and not by_point):
+                    if wears or (uv and not by_point) or (normal_map and not normals_by_point):
                         polygon.Select(made_polygon)
                         if wears:
                             tagger.Set(lx.symbol.i_POLYTAG_MATERIAL, wears)
@@ -746,6 +759,10 @@ def apply(data, alone=True, progress=None):
                                 value = uvs[offset + corner]
                                 pair.set((value[0], value[1]))
                                 polygon.SetMapValue(vertices[index], uv, pair)
+                        if normal_map and not normals_by_point:
+                            for corner,index in enumerate(face):
+                                normal_value.set(tuple(normals_in[offset+corner]))
+                                polygon.SetMapValue(vertices[index],normal_map,normal_value)
                     offset += count
                     if progress and not face_index % 20000 and progress(built + face_index, total, record['name']) is False:
                         raise Cancelled()
@@ -757,8 +774,6 @@ def apply(data, alone=True, progress=None):
             if not record['render']:
                 # Only its instances are in the picture, as in the scene it came from.
                 item.channel('render').set('off')
-            if record['normals']:
-                warnings.append(record['name'] + ': its authored normals are left to Modo, which smooths the mesh itself')
         for record in data['instances']:
             source = made.get(record['source'])
             if source is None:
