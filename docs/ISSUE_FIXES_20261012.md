@@ -31,3 +31,9 @@ Run `tools/check_idle_sessions.py --moonray RUNTIME --moonlight MOONLIGHT_STAGE`
 - **#65, #66, #60:** remaining transient dark tiles and the cost/accuracy of stopping a render need runtime investigation and image comparisons. No verified fix is claimed here.
 - **#19, #43, #49, #53, #57, #67, #69:** several reports require host interaction, reproduction, or another machine rather than a speculative code change.
 - Material/lighting parity, motion blur, volumes, import, display filters and distributed rendering remain substantial independent issues; this pass does not claim to resolve the whole backlog.
+
+## Material thumbnail precedence (#50, partial)
+
+Saved materials now use sidecar images before falling back to a drawing. For `paint.moonmat.json`, `paint.moonmat.png` (or JPG/JPEG) takes priority over the simpler `paint.png` name. Graph bundles without a supplied image show a labelled Graph tile rather than a misleading plain ball. The selection pane explains the fallback and the expected thumbnail filename.
+
+`tools/check_asset_thumbnails.py`: **6 passed** using real Qt image loading offscreen: exact sidecar, simple filename and precedence, graph sidecar, graph placeholder, corrupt-image fallback, and texture-image precedence. Fixtures are PNG-encoded; JPEG codec coverage is not claimed. No host UI launch or renderer change was needed. Automatic generation of rendered material thumbnails remains open in #50.
