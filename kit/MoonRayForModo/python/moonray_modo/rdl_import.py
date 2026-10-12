@@ -91,17 +91,30 @@ def product(a, b):
 
 def placed(position, orientation=None, scale=None):
     """The matrix of an instance given as a position, a turn (a quaternion x y z w) and a scale, as MoonRay builds it."""
-    x, y, z, w = orientation or (0.0, 0.0, 0.0, 1.0)
-    length = math.sqrt(x * x + y * y + z * z + w * w)
-    if length < 1e-12:
+    def components(value, count, name):
+        try:
+            values = [float(v) for v in value]
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError('Invalid instance ' + name) from exc
+        if len(values) != count or not all(math.isfinite(v) for v in values):
+            raise ValueError('Invalid instance %s: expected %d finite components' % (name, count))
+        return values
+
+    position = components(position, 3, 'position')
+    sizes = components((1, 1, 1) if scale is None else scale, 3, 'scale')
+    quaternion = components((0, 0, 0, 1) if orientation is None else orientation, 4, 'orientation')
+    largest = max(abs(v) for v in quaternion)
+    scaled = [v / largest for v in quaternion] if largest else [0, 0, 0, 0]
+    length = math.sqrt(sum(v * v for v in scaled))
+    if not largest or (largest < 1e-12 and largest * length < 1e-12):
         x, y, z, w = 0.0, 0.0, 0.0, 1.0
     else:
-        x, y, z, w = x / length, y / length, z / length, w / length
+        x, y, z, w = [v / length for v in scaled]
     rows = [[1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)],
             [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)],
             [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]]
-    sizes = scale or (1.0, 1.0, 1.0)
-    return [value for row, size in zip(rows, sizes) for value in [v * size for v in row] + [0.0]] + list(position) + [1.0]
+    matrix = [value for row, size in zip(rows, sizes) for value in [v * size for v in row] + [0.0]] + position + [1.0]
+    return checked_matrix(matrix, 'instance transform')
 
 
 def followed(points, kind, steps=8):
