@@ -187,7 +187,9 @@ def textured(folder):
                 for row_ in material.get('material_stack', [material]) if row_.get('node_graph')
                 for node in row_['node_graph']['nodes'].values() if node['type'] == 'image'}
         if mesh.get('uvs'):
-            mesh['uv_sets'] = {key: list(mesh['uvs']) for key in keys}
+            # Over the sets the mesh has: the ground's own layer reads one of those, and without it each engine
+            # draws the ground its own way.
+            mesh['uv_sets'] = dict(mesh.get('uv_sets') or {}, **{key: list(mesh['uvs']) for key in keys})
     # Nodes that are not images, which MoonLightIPR has MoonRay bake: a ramp over the ball, and on
     # the cube a checker put through a colour correction.
     def node_graph(identity, extra, wires):
