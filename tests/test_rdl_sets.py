@@ -61,6 +61,29 @@ class Sets(unittest.TestCase):
         self.assertEqual(len(data['instances']),2)
         self.assertNotEqual(meshes[0]['tags'],meshes[1]['tags'])
 
+    def test_native_instancers_keep_distinct_material_links(self):
+        source=scene({'geometries':['one','two'], 'lightsets':['keyOnly','both']})
+        source['objects'][2].update(type='SphereGeometry',attributes={'radius':1})
+        source['objects'] += [
+            {'name':name,'type':'RdlInstancerGeometry','attributes':{
+                'method':2,'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]*2}}
+            for name in ('one','two')]
+        data=rdl_import.plan(source,'test.rdla')
+        shapes=[e for e in data['entities'] if e['class']=='SphereGeometry']
+        self.assertEqual(len(shapes),4)
+        self.assertEqual(len({e['material'] for e in shapes}),2)
+        links=[l for l in data['links'] if l['lights']]
+        self.assertEqual(len(links),1)
+        self.assertEqual(links[0]['material'],shapes[0]['material'])
+        from moonray_modo import entities
+        lines=[]
+        entities.emit_geometry({'entities':[{'identity':'shape-id','name':'S','class':'SphereGeometry',
+            'parameters':{'modo_material':'paint'},'attributes':[{'name':'Cd','type':'color','value':[1,0,0]}]}]}, {'paint':{}},lines)
+        text='\n'.join(lines)
+        for table in ('materialLightSets','materialShadowSets','materialShadowReceiverSets','materialLightFilterSets'):
+            self.assertIn(table+'["paint"]',text)
+        self.assertEqual(text.count('materialLightFilterSets["paint"]'),4)
+
     def test_sets_become_the_links_of_the_meshes_they_are_on(self):
         data = rdl_import.plan(scene({'lightsets': ['keyOnly', 'both'], 'shadowsets': ['noFillShadow', None], 'shadowreceiversets': ['notOnFloor', None]}), 'test.rdla')
         names = {record['name'] for record in data['meshes']}
@@ -104,7 +127,7 @@ class Sets(unittest.TestCase):
         lines=[]
         entities.emit_geometry({'entities':[{'identity':'shape-id','name':'Box','class':'BoxGeometry','parameters':{'size':[1,1,1]}}]}, {'':{}},lines)
         text='\n'.join(lines)
-        self.assertIn('objectLightSets["shape-id"] or lightSet',text)
+        self.assertIn('objectLightSets["shape-id"] or materialLightSets[""] or lightSet',text)
         self.assertIn('objectShadowSets["shape-id"]',text)
 
     def test_native_shadow_receiver_is_preserved(self):
