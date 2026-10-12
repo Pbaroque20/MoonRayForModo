@@ -797,6 +797,12 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _submit(self, scene, output=None, refining=False):
         self.refine_timer.stop()
+        if not output and not refining:
+            # The newest reading of the scene, whichever way it was come by (a render asked for, or an edit
+            # followed): the one that may be used again while nothing changes. Kept only from here, so that it is
+            # never an older one than the picture on screen was made from.
+            try:self._kept_capture=scene;self._kept_key=self._capture_key()
+            except Exception:self._kept_capture=None
         if not output:
             self._held=False;self._draft_engine=self._draft_lines=False
             region_pass,self._draft_pass=getattr(self,'_draft_pass',False),False
@@ -939,7 +945,6 @@ class Panel(Tools, QtWidgets.QWidget):
                 scene=self._capture_preview()
                 # What Modo has told of up to now is in this reading of the scene.
                 self.changes.consume()
-                self._kept_capture=scene;self._kept_key=self._capture_key()
             self._submit(scene)
         except Exception as exc:
             self._failed(str(exc))
@@ -957,6 +962,9 @@ class Panel(Tools, QtWidgets.QWidget):
         None where anything may have changed. Modo's word that nothing has is trusted for a quarter of a minute,
         as it is while a scene is followed, unless the safety re-reading is switched off in the preferences."""
         scene=getattr(self,'_kept_capture',None)
+        # Only while the scene is being followed: the reading kept is then the one the picture on screen was made
+        # from, brought up to date at every edit. With realtime off nothing keeps it so, and the scene is read anew.
+        if not self._following:return None
         if scene is None or not self.changes.registered or self.changes.full or self.changes.items:return None
         import time as clock
         if self.preferences.get('capture_safety') and clock.monotonic()-self._last_full_capture>15:return None
