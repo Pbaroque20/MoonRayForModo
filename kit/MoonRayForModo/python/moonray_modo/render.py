@@ -349,7 +349,7 @@ class Renderer(QtCore.QObject):
         # MoonLightIPR denoises when its denoised beauty was the buffer chosen as the render was asked for, and then
         # has both pictures: the denoised one and the beauty as it is rendered. Which is shown is the buffer chosen.
         self.moonlightipr_denoises=bool(getattr(self,'moonlightipr_wanted',False))
-        self.moonlightipr.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,MOONLIGHTIPR_SAMPLES,
+        self.moonlightipr.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,getattr(self,'moonlightipr_samples',None) or MOONLIGHTIPR_SAMPLES,
                                  denoise=self.moonlightipr_denoises,runtime=request['runtime'])
         self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key!='beauty')
 

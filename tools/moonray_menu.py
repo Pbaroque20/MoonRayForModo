@@ -128,6 +128,17 @@ def rdl_entry(text):
     return text[:end] + eol + '      <list type="Control" val="cmd moonray.rdl.import"><atom type="Label">Import MoonRay Scene (RDL)...</atom></list>' + text[end:]
 
 
+def playblast_entry(text):
+    """MoonLightIPR Playblast in the MoonRay menu, after Render Animation; unchanged if it is there."""
+    anchor = '<list type="Control" val="cmd moonray.page animation">'
+    if 'cmd moonray.page playblast' in text or text.count(anchor) != 1:
+        return text
+    end = text.index('</list>', text.index(anchor)) + len('</list>')
+    eol = '\r\n' if '\r\n' in text else '\n'
+    return (text[:end] + eol + '      <list type="Control" val="cmd moonray.page playblast"><atom type="Label">MoonLightIPR Playblast...</atom>'
+            '<atom type="Hash">MoonRayMenu_playblast:control</atom></list>' + text[end:])
+
+
 def round_control(text):
     """The mesh form's round-curves and curve-basis controls, after the curve UV control; each unchanged if it is there."""
     anchor = '<list type="Control" val="cmd moonray.object.curve_uv ?">'

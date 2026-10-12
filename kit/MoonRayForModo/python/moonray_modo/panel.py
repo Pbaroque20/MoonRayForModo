@@ -26,6 +26,11 @@ def scene_display(stored):
     return values(stored['display'])
 
 
+# How long the scene's time must stand still before a preview that follows the scene renders it: longer than the gap
+# between two frames of an animation played slowly.
+PLAYBACK_REST=0.35
+
+
 class Panel(Tools, QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -271,6 +276,7 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addSeparator()
         menu.addAction('Render EXR...',self.render_final)
         menu.addAction('Render Animation...',self.render_animation)
+        menu.addAction('MoonLightIPR Playblast...',self.render_playblast)
         menu.addAction('Export Scene...',self.export)
         menu.addSeparator()
         menu.addAction('Render Log...',self.show_log)
@@ -494,6 +500,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # One picture at a time: the next is begun when this one is shown, so that each is seen and none piles up
             # behind another.
             if self._rendering:return
+            # Nor is an animation playing in Modo drawn frame by frame: the frame it stops on is.
+            if not self._time_settled():return
             time=lx.service.Selection().GetTime()
             moved=time!=getattr(self,'_draft_time',time)
             if not (self.changes.full or self.changes.items or moved):
@@ -840,6 +848,20 @@ class Panel(Tools, QtWidgets.QWidget):
 
     # Capturing the scene
 
+    def _playblasting(self):
+        """The playblast that is running, if one is."""
+        from .playblast import Playblast
+        return self.sequence if isinstance(self.sequence,Playblast) and self.sequence.running else None
+
+    def _time_settled(self):
+        """Whether the scene's time has stood still for a moment. While Modo plays an animation it has not, and
+        the preview waits: it shows the frame the playing stops on, not each one it passes."""
+        import time as clock
+        time=lx.service.Selection().GetTime();now=clock.monotonic()
+        if time!=getattr(self,'_seen_time',time):self._time_moved=now
+        self._seen_time=time
+        return now-getattr(self,'_time_moved',0.0)>=PLAYBACK_REST
+
     def _dimensions(self, scene, final=False):
         """The size a render is made at. MoonRay, chosen as the engine, renders the picture itself: at the camera's
         resolution, or the scene's where the camera does not override it. The realtime engines are previews, at the
@@ -848,6 +870,9 @@ class Panel(Tools, QtWidgets.QWidget):
         size=self.preferences.get('preview_size')
         if size<=0:size=640
         width = scene_w if final or not self._live() else min(scene_w,size)
+        # A playblast has a width of its own, whichever engine is chosen.
+        blast=None if final else self._playblasting()
+        if blast is not None:width=min(scene_w,blast.width)
         return width, max(16, round(width * scene_h / max(1, scene_w)))
 
     def _capture(self,reuse=False):
@@ -1031,7 +1056,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if not output and self.draft.isChecked():
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
             self._draft_size=(width,height);self.preview.nominal=(width,height)
-        engine='moonray' if output else 'moonlightipr' if self._draft_engine else self._engine()
+        engine='moonray' if output else 'moonlightipr' if self._draft_engine or self._playblasting() is not None else self._engine()
         # Continue: the same scene as the render that was stopped and kept, taken up where it stood.
         resume=bool(not output and not refining and engine=='moonray' and getattr(self,'_continuable',None) is not None and self._continuable==original_digest)
         if not output:self._continuable=None;self._kept_note=''
@@ -1198,6 +1223,9 @@ class Panel(Tools, QtWidgets.QWidget):
         if held and self._engine()!='moonlightipr':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
+        # An animation playing in Modo is not followed frame by frame: the frame it stops on is rendered. A time
+        # dragged by hand is another matter, and is followed as any drag is.
+        if not self._time_settled() and not held:return
         try:
             import modo
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
@@ -1425,7 +1453,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
                              else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))
-        if not output and self._engine()!='moonlightipr':
+        if not output and self._engine()!='moonlightipr' and self._playblasting() is None:
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)
             # With a preview denoiser on, the finished picture shown is the denoised one, unless Beauty was chosen by hand:

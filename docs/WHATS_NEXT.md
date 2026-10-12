@@ -38,6 +38,17 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 ![The preview window with MoonLightIPR chosen and realtime on](images/preview-engines.png)
 *MoonLightIPR chosen: RT On is lit, and the status has a line to itself.*
 
+## MoonLightIPR Playblast
+
+- **A quick look at how an animation moves**: MoonRay > MoonLightIPR Playblast, or Options > MoonLightIPR Playblast in the preview window. Each frame is rendered by MoonLightIPR, whichever engine is chosen, into the preview window and saved as a PNG: name.000001.png and so on.
+- **Its own size and samples.** The frames, the rate, the width and the samples a frame are asked for; they begin at the scene's own range and rate, the preview's width and 32 samples. It is denoised when Denoised Beauty is the buffer chosen in the window.
+- **Played when it is done**, round and round at its rate, in a small window with Pause and a slider. Stop in the preview window ends a playblast part way; the frames done are kept.
+- It is a look, not an output: frames already in the folder are written over, and there is no motion blur. Render Animation is for the pictures themselves.
+
+![The playblast's settings](images/playblast-dialog.png)
+
+- **Realtime waits out a playing animation.** With RT on (or Draft), nothing is rendered while Modo plays: the frame the playing stops on is rendered, once. A time dragged by hand along the timeline is followed as before.
+
 ## The compositor
 
 - **A graph over the buffers of a finished render**, in the same editor as a material's graph: Options > Compositor in the preview window. Down the left are the nodes there are to add: each of the render's buffers, Merge (normal, add, multiply, screen, lighten, darken, difference, with a mix and an optional mask), Grade (exposure, gamma, saturation, tint), Blur and Glow. The graph ends in the Composite node.
