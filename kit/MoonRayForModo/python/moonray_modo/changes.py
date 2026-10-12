@@ -7,6 +7,30 @@ class Changes(lxifc.SceneItemListener):
         try:self.service.AddListener(self);self.registered=True
         except (RuntimeError,LookupError):pass
     def invalidate(self,*args):self.full=True
+    # An item moved for the first time is given a place of its own: Modo adds a transform item and joins it to the
+    # item moved. That is a move like any other, not a change to what the scene holds, and is told of as one: taken
+    # for a change to the scene, it had the whole scene read again in the middle of the first drag of anything.
+    PLACES=('translation','rotation','scale','transform')
+    def _place(self,item):
+        """The identity of a transform item, or None for anything else or where it cannot be told."""
+        try:
+            item=lx.object.Item(item)
+            kinds=getattr(self,'_place_types',None)
+            if kinds is None:
+                scenes=lx.service.Scene();kinds=self._place_types={scenes.ItemTypeLookup(name) for name in self.PLACES}
+            return item.Ident() if item.Type() in kinds else None
+        except (RuntimeError,LookupError,TypeError):return None
+    def placed(self,item,*args):
+        identity=self._place(item)
+        if identity is None:self.full=True
+        else:self.items.add(identity)
+    def joined(self,graph,source,target,*args):
+        try:
+            if lx.object.SceneGraph(graph).Name()!='xfrmCore':self.full=True;return
+        except (RuntimeError,LookupError,TypeError):self.full=True;return
+        for item in (source,target):
+            identity=self._place(item)
+            if identity is not None:self.items.add(identity)
     def sil_ChannelValue(self,action,item,index):
         try:
             item=lx.object.Item(item)
@@ -22,21 +46,23 @@ class Changes(lxifc.SceneItemListener):
     sil_SceneDestroy=invalidate
     sil_SceneClear=invalidate
     sil_ItemPostDelete=invalidate
-    sil_ItemAdd=invalidate
+    sil_ItemAdd=placed
     sil_ItemRemove=invalidate
-    sil_ItemParent=invalidate
-    sil_ItemChild=invalidate
+    sil_ItemParent=placed
+    sil_ItemChild=placed
     sil_ItemAddChannel=invalidate
     sil_ItemName=invalidate
-    sil_SceneFilename=invalidate
+    # Modo tells of the scene's name when the scene is first edited after it was opened or saved (its title gains a
+    # mark), as well as when it is saved under another name. Neither changes what is in it.
+    def sil_SceneFilename(self,*args):pass
     sil_ItemLocal=invalidate
     sil_ItemSource=invalidate
     sil_ItemPackage=invalidate
     sil_ItemTag=invalidate
     sil_ItemRemoveChannel=invalidate
-    sil_LinkAdd=invalidate
+    sil_LinkAdd=joined
     sil_LinkRemAfter=invalidate
-    sil_LinkSet=invalidate
+    sil_LinkSet=joined
     sil_ChanLinkAdd=invalidate
     sil_ChanLinkRemAfter=invalidate
     sil_ChanLinkSet=invalidate

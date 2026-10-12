@@ -24,7 +24,9 @@ def difference(previous, current):
     owner=None
     changes={}
     for old,new in zip(before,after):
-        opened=OBJECT.search(new)
+        # Only a line that ends by opening a block can name an object. The others, a mesh's long lists among them,
+        # are not searched: searching them was nearly all of the time this took.
+        opened=OBJECT.search(new) if new.rstrip().endswith('{') else None
         if opened:
             owner=opened.group(1)
         if old!=new:

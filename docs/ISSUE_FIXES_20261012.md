@@ -212,3 +212,10 @@ Validation: missing-network-asset and change-signature regressions failed before
 Replacing an existing packaged texture copied through its hard link, modifying the shared cache and other packages using that asset. Collecting the same asset twice also failed on Windows. Asset destinations are now published from a verified temporary sibling by replacement, preserving other links. Non-shared copies now verify source consistency too.
 
 Validation: before the fix, replacement corrupted the sibling package in both shared/non-shared modes, repeated collection failed, and changed-copy bytes were accepted. Four focused checks now pass, including copy fallback, locked-output preservation and partial-file cleanup. Six existing compatibility checks and eight production checks also pass (18 total). Real local Windows hard links were used; network fallback is simulated. No user packages, scenes, installed kits or shared checkout files were changed.
+
+
+## LS drag candidate (draft PR #107)
+
+The user supplied a specific handoff authorizing preview-file work on 928f98e and cheetah_moonray.lxo. Isolated branch codex/ls-main-thread-latency moves scene comparison/encoding to SceneWriter, defers LS drag digests, coalesces while the writer runs, and conservatively narrows transform reads. The shared checkout remains untouched.
+
+Paired submitting-tick medians: camera 43.1 to 26.1 ms, mesh 71.5 to 51.0 ms; tick shares 22.9 to 10.5 percent and 27.1 to 17.1 percent. 339 standalone tests with 17 skips; 18 host worker/lifecycle checks pass; direct unfinished-pass keep_progress retains the three required buffers and exits normally. Eight graphical probes report no script exceptions but crash at shutdown, as does the baseline. No real mouse assessment, no installation, no merge. See docs/LS_DRAG_20261012.md and evidence JSON. #107 must remain draft until graphical shutdown validation is resolved; do not count the old stop_finishes probe as valid Stop-button evidence.

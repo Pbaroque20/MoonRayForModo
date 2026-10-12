@@ -38,5 +38,14 @@ class PreviewTitle(unittest.TestCase):
         self.assertEqual(moonray_menu.viewport_title(old), '<atom type="ViewportTitle">MoonRay</atom>')
 
 
+class RdlLoader(unittest.TestCase):
+    def test_the_kit_offers_moonray_scenes_to_file_open(self):
+        text = (ROOT / 'kit/MoonRayForModo/lxserv/moonray_rdl_loader.py').read_text(encoding='utf-8')
+        self.assertIn("lx.symbol.sLOD_DOSPATTERN: '*.rdla;*.rdlb'", text)
+        self.assertIn('lx.symbol.sLOD_CLASSLIST: lx.symbol.a_SCENE', text)
+        # Without a root type Modo fell over as it made the scene.
+        self.assertIn('SetRootType', text)
+
+
 if __name__ == '__main__':
     unittest.main()

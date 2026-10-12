@@ -67,9 +67,9 @@ class Session(QtCore.QObject):
 
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
 
-    def submit(self,text,runtime,threads,mode,generation,bucket_size=0):
+    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None):
         self.idle.cancel()
-        request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size)
+        request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared)
         signature=(str(runtime),threads,mode,bucket_size)
         self.latest=request
         if self.running() and signature!=self.signature:
@@ -78,9 +78,9 @@ class Session(QtCore.QObject):
         if not self.running():self._launch()
         elif self.sent is None:self._dispatch()
 
-    def _write_scene(self,request,suffix,text):
+    def _write_scene(self,request,suffix,text,payload=None):
         if self.scene_memory:
-            payload=text.encode('utf-8')
+            if payload is None:payload=text.encode('utf-8')
             if not 0<len(payload)<=256*1024*1024:raise ValueError('Scene text exceeds the 256 MiB shared-scene limit')
             name='Local\\MoonRayForModoScene_%d_%s'%(os.getpid(),uuid.uuid4().hex)
             mapping=mmap.mmap(-1,len(payload),tagname=name,access=mmap.ACCESS_WRITE)
@@ -88,7 +88,8 @@ class Session(QtCore.QObject):
             self.mappings.setdefault(request['id'],[]).append(mapping)
             return 'modo-memory:%d:%s'%(len(payload),name)
         path=self.root/('%d.%s.rdla'%(request['id'],suffix))
-        path.write_text(text,encoding='utf-8')
+        if payload is None:path.write_text(text,encoding='utf-8')
+        else:path.write_bytes(payload)
         return path
 
     def _release_mappings(self):
@@ -108,7 +109,7 @@ class Session(QtCore.QObject):
         self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'])
         metadata=json.loads((request['runtime']/'modo-session.json').read_text(encoding='utf-8'))
         self.scene_memory=metadata.get('scene_memory',False)
-        scene=self._write_scene(request,'full',request['text'])
+        scene=self._write_scene(request,'full',request['text'],(request.get('prepared') or {}).get('full_bytes'))
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(request['runtime']).items():env.insert(key,value)
         env.insert('MOONRAY_MODO_BUCKETS','1')
@@ -133,9 +134,13 @@ class Session(QtCore.QObject):
     def _dispatch(self):
         request=self.latest
         if not request or (self.applied and request['id']==self.applied['id']):return
-        delta=difference(self.applied['text'],request['text']) if self.applied else None
-        full=self._write_scene(request,'full',request['text'])
-        path=self._write_scene(request,'delta',delta) if delta is not None else full
+        prepared=request.get('prepared')
+        if prepared is not None:
+            # APPLIED may advance while the writer runs. A stale delta is unsafe; use its full scene.
+            delta=prepared['delta'] if prepared['base'] is self.applied else None
+        else:delta=difference(self.applied['text'],request['text']) if self.applied else None
+        full=self._write_scene(request,'full',request['text'],(prepared or {}).get('full_bytes'))
+        path=self._write_scene(request,'delta',delta,(prepared or {}).get('delta_bytes')) if delta is not None else full
         mode='delta' if delta is not None else 'full'
         staged=self.root/'command.tmp'
         command='%d\n%s\n%s\n%s\n'%(request['id'],mode,str(path).replace('\\','/') if not self.scene_memory else str(path),str(full).replace('\\','/') if not self.scene_memory else str(full))
@@ -166,6 +171,7 @@ class Session(QtCore.QObject):
             if self.stopping or self.closed:continue
             if parts[1]=='APPLIED' and self.sent and generation==self.sent['id']:
                 self.applied=self.sent;self.sent=None
+                self.applied.pop('prepared',None)
                 for identity in list(self.mappings):
                     if identity<=generation:
                         for mapping in self.mappings.pop(identity):mapping.close()

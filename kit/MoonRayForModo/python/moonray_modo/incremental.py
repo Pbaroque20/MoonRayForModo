@@ -33,7 +33,8 @@ def classify(scene, identities, cache):
             # Meshes read as Modo evaluates them stand where their items do, when that was found to be so at the
             # time they were read: moving one is then a matter of asking its item where it now is.
             plain=cache.get('_evaluated_data') is None
-            if (plain or cache.get('_item_transforms')) and owners and all(item.type in (('mesh','meshInst') if plain else ('mesh',)) for item in owners):
+            # A light or the camera moved along with them is read again in any case.
+            if (plain or cache.get('_item_transforms')) and owners and all(item.type in LIGHTS or item.type in (('mesh','meshInst') if plain else ('mesh',)) for item in owners):
                 from .coordinates import descriptors
                 if any(d.get('projection','uv')!='uv' for d in descriptors(cache['materials']).values()):return False
                 # A deformer may depend on world transforms. Retain the full path
@@ -69,12 +70,33 @@ def surroundings(snapshot):
     return json.dumps([snapshot.get('environments') or [],lights],sort_keys=True,default=str)
 
 
-def refresh_transforms(scene,snapshot):
+def transform_targets(scene,identities):
+    """Known transform owners and descendants; unknown/instanced dependencies retain the full refresh."""
+    if not identities:return None
+    try:
+        if scene.items('meshInst',superType=False) or scene.items('replicator',superType=False):return None
+        if scene.items('chanModify',superType=True):return None
+        result=set()
+        for identity in identities:
+            item=scene.item(identity)
+            if item.type in LIGHTS:continue
+            if item.type not in ('translation','rotation','scale'):return None
+            owners=list(item.itemGraph('xfrmCore').forward())
+            if not owners:return None
+            for owner in owners:
+                result.add(owner.id)
+                result.update(child.id for child in owner.children(recursive=True))
+        return result
+    except (RuntimeError,LookupError,AttributeError):return None
+
+
+def refresh_transforms(scene,snapshot,identities=None):
     from .host import world_matrix
+    targets=transform_targets(scene,identities)
     for mesh in snapshot['meshes']:
         if 'instances' in mesh:
             mesh['instances']=[world_matrix(scene.item(identity)) for identity in mesh['instance_ids']]
         else:
             identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
-            mesh['matrix']=world_matrix(scene.item(identity))
-    snapshot['extra_geometry']=[dict(item,matrix=world_matrix(scene.item(item.get('source_item') or item['identity'].split('|')[0]))) for item in snapshot.get('extra_geometry',[])]
+            if targets is None or identity in targets:mesh['matrix']=world_matrix(scene.item(identity))
+    snapshot['extra_geometry']=[dict(item,matrix=world_matrix(scene.item(item.get('source_item') or item['identity'].split('|')[0]))) if targets is None or (item.get('source_item') or item['identity'].split('|')[0]) in targets else item for item in snapshot.get('extra_geometry',[])]

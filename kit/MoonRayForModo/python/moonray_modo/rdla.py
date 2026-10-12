@@ -1,5 +1,6 @@
 """Pure Python scene serializer. Does not import or change the Modo scene."""
 import math
+from functools import lru_cache
 from . import options, textures, outputs, __version__
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -13,9 +14,15 @@ def number(value):
 
 
 def string(value):
-    # RDLA is Lua, not JSON; escape UTF-8 bytes, not JSON unicode escapes.
+    return _string(str(value))
+
+
+@lru_cache(maxsize=65536)
+def _string(value):
+    # RDLA is Lua, not JSON; escape UTF-8 bytes, not JSON unicode escapes. The same names are written at every
+    # render of a scene, thousands of them, so each is worked out once.
     out = []
-    for byte in str(value).encode('utf-8'):
+    for byte in value.encode('utf-8'):
         if byte == 34:
             out.append('\\"')
         elif byte == 92:
@@ -154,7 +161,8 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     from .serialization import revision
     from .scene_references import configuration as reference_configuration
     from .working_space import configuration as working_configuration
-    with working_configuration(scene.get('asset_settings',{})),reference_configuration(scene),textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
+    from .serialization import WRITING
+    with WRITING,working_configuration(scene.get('asset_settings',{})),reference_configuration(scene),textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
         return _scene_text(scene,width,height,samples,environment,output_file)
 
 def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
@@ -379,9 +387,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         faces = mesh['faces']
         if not faces:
             continue
-        for face in faces:
-            if len(face) < 3 or any(type(v) is not int or v < 0 or v >= len(vertices) for v in face):
-                raise ValueError('Invalid face in ' + mesh['name'])
+        def checked(faces=faces, vertices=vertices, mesh=mesh):
+            for face in faces:
+                if len(face) < 3 or any(type(v) is not int or v < 0 or v >= len(vertices) for v in face):
+                    raise ValueError('Invalid face in ' + mesh['name'])
+            return ''
+        # Looked over once for as long as the mesh's lists stay the same ones, as their text is written once.
+        from .serialization import array as kept
+        kept('checked:%d' % len(vertices), faces, checked)
         tag = mesh.get('material', '')
         if tag not in materials:
             tag = ''

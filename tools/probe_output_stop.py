@@ -15,7 +15,12 @@ root = pathlib.Path(r'C:\Users\Raphael Tobar\MoonRayForModo')
 out = root / 'test-results/output-stop'
 out.mkdir(parents=True, exist_ok=True)
 for old in out.glob('frame*'):
-    old.unlink()
+    # What is kept beside an output for its denoiser is a folder.
+    if old.is_dir():
+        import shutil
+        shutil.rmtree(str(old))
+    else:
+        old.unlink()
 target = out / 'frame.exr'
 result = {}
 held = {}

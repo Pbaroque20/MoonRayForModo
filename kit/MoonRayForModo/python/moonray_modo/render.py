@@ -31,6 +31,31 @@ def deep_beside(path):
     path=Path(path);return path.with_name(path.stem+'.deep.exr')
 
 
+class SceneWriter(QtCore.QThread):
+    """A snapshot written as MoonRay's scene text away from Modo's own thread, for a scene that is being followed.
+    The snapshot is plain data and writing it asks Modo nothing, so Modo is free to move its view meanwhile."""
+
+    def __init__(self, arguments, path, context, generation, parent=None, applied=None):
+        super().__init__(parent)
+        self.arguments, self.path, self.context, self.generation = arguments, path, context, generation
+        self.outcome = None
+        self.applied, self.prepared = applied, None
+        # Set when something newer was asked for before this was written.
+        self.abandoned = False
+
+    def run(self):
+        try:
+            text = rdla.scene_text(*self.arguments)
+            from .scene_delta import difference
+            delta = difference(self.applied['text'], text) if self.applied else None
+            self.prepared = dict(base=self.applied, delta=delta, full_bytes=text.encode('utf-8'),
+                                 delta_bytes=delta.encode('utf-8') if delta is not None else None)
+            self.path.write_bytes(self.prepared['full_bytes'])
+            self.outcome = (text, '')
+        except Exception as exc:
+            self.outcome = (None, str(exc) or type(exc).__name__)
+
+
 class Renderer(QtCore.QObject):
     notices = QtCore.Signal(object)
     buckets = QtCore.Signal(object)
@@ -62,6 +87,9 @@ class Renderer(QtCore.QObject):
         self.session.memory_image.connect(self._persistent_memory)
         self.session.acknowledged.connect(self._persistent_applied)
         self.session_files={}
+        # Modo ending while a scene is being written: the thread is let finish, not cut off under it.
+        application=QtCore.QCoreApplication.instance()
+        if application is not None:application.aboutToQuit.connect(self._quitting)
         self.session.failed.connect(self.failed.emit)
         self.session.status.connect(self.status.emit)
         self.session_serial=0;self.gather=None
@@ -319,6 +347,10 @@ class Renderer(QtCore.QObject):
     def _begin_pending(self):
         if self.closed or not self.pending:
             return
+        if getattr(self, 'writer', None) is not None:
+            # A scene is being written for the render this one replaces: this one begins when that is done with.
+            self.writer.abandoned = True
+            return
         self.active, self.pending = self.pending, None
         if not self.session.running():
             for path in Path(self.directory.name).iterdir():
@@ -457,10 +489,51 @@ class Renderer(QtCore.QObject):
                 # What was kept is spent on this render: there is something to continue again only if this one is
                 # stopped in its turn. It is held on to in case this one is stopped before it has saved anything.
                 self.resumable_before,self.resumable=getattr(self,'resumable',None),None
-            text = rdla.scene_text(snapshot, request['width'], request['height'],
-                                   self.sample_grid, request['environment'],
-                                   str(self.image_path) if request['output'] else None)
+            arguments = (snapshot, request['width'], request['height'], self.sample_grid, request['environment'],
+                         str(self.image_path) if request['output'] else None)
+            if self.using_session and not request['output']:
+                # A preview by the MoonRay kept loaded, which is what follows a scene: its text is written on a
+                # thread of its own, and the pass goes on from _written when that is done.
+                self.writer = SceneWriter(arguments, scene, (request, snapshot, scene, mode), generation, self, applied=self.session.applied)
+                self.writer.finished.connect(self._written)
+                self.writer.start()
+                return
+            text = rdla.scene_text(*arguments)
             scene.write_text(text, encoding='utf-8')
+        except Exception as exc:
+            self.failed.emit(str(exc));return
+        self._pass_ready(request, snapshot, scene, mode, text)
+
+    def _quitting(self):
+        worker = getattr(self, 'writer', None)
+        if worker is not None:
+            worker.abandoned = True
+            worker.wait(5000)
+
+    def _written(self):
+        worker = getattr(self, 'writer', None)
+        if worker is None:
+            return
+        # finished may arrive while the thread is still unwinding: it is kept until it has ended.
+        if not worker.wait(0):
+            QtCore.QTimer.singleShot(5, self._written);return
+        self.writer = None
+        text, error = worker.outcome or (None, 'The scene was not written')
+        worker.deleteLater()
+        if self.closed:
+            return
+        if worker.abandoned or self.canceled or not self.active or self.active.get('generation') != worker.generation:
+            # Something newer was asked for meanwhile, or the render was stopped: what was asked for takes its turn.
+            if self.pending and self.process.state() == QtCore.QProcess.NotRunning:
+                self._begin_pending()
+            return
+        if error:
+            self.failed.emit(error);return
+        self._pass_ready(*worker.context, text, prepared=worker.prepared)
+
+    def _pass_ready(self, request, snapshot, scene, mode, text, prepared=None):
+        """The pass's scene is written: MoonRay is given it."""
+        try:
             env = QtCore.QProcessEnvironment()
             for key, value in native.environment(request['runtime']).items():
                 env.insert(key, value)
@@ -483,7 +556,7 @@ class Renderer(QtCore.QObject):
                 if self.progress_state:self.progress_state.generation=self.session_serial
                 self.session_files[self.session_serial]=self.current_base
                 self._started()
-                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size)
+                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size,prepared=prepared)
             else:
                 self.process.start()
         except Exception as exc:
@@ -585,7 +658,9 @@ class Renderer(QtCore.QObject):
 
     def _persistent_memory(self,packet):
         serial,key,width,height,pixels=packet
-        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
+        # While a pass's scene is being written, what the loaded MoonRay reports is of the render that pass replaces:
+        # the pass has its files named already and has not been handed over yet.
+        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial or getattr(self,'writer',None) is not None:return
         gather=self.gather
         if gather is not None:
             # Being stopped: the pictures asked for are taken as they come, one after another, and not shown.
@@ -598,12 +673,16 @@ class Renderer(QtCore.QObject):
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
 
     def _persistent_image(self,serial,key,path):
-        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
+        # While a pass's scene is being written, what the loaded MoonRay reports is of the render that pass replaces:
+        # the pass has its files named already and has not been handed over yet.
+        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial or getattr(self,'writer',None) is not None:return
         try:self.buffers.publish({key:path},self.active['runtime'],self.active['snapshot'],self.backend_status,partial=True)
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
 
     def _persistent_ready(self,serial):
-        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial:return
+        # While a pass's scene is being written, what the loaded MoonRay reports is of the render that pass replaces:
+        # the pass has its files named already and has not been handed over yet.
+        if self.closed or self.canceled or not self.using_session or serial!=self.session_serial or getattr(self,'writer',None) is not None:return
         self._exited(0,QtCore.QProcess.NormalExit)
 
     def _error(self, error):
@@ -740,6 +819,8 @@ class Renderer(QtCore.QObject):
             return
         self.closed = True
         self.stop()
+        if getattr(self, 'writer', None) is not None:
+            self.writer.abandoned = True;self.writer.wait(5000)
         self.session.close()
         self.moonlightipr.close()
         self.buffers.close()

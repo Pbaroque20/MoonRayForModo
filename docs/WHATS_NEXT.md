@@ -11,6 +11,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Pixel samples per realtime engine**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64. MoonRay LS can also render as wide as the preview.
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
 - **Safe Denoising on the right-click menu**: Off, OptiX or Open Image Denoise. While it is on, the foot of the picture says Safe Denoiser Mode.
+- **Dragging stays smooth with realtime on.** Following a camera or object drag takes far less of Modo's time, so the viewport keeps up while the preview updates. MoonRay LS now follows a drag too, where it used to wait for you to let go.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
@@ -95,6 +96,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 ## Importing MoonRay scenes
 
+- **File > Open reads MoonRay scenes.** Choose an `.rdla` or `.rdlb` file in Modo's own Open (or Import) and it is brought in by the importer, which shows how far it has come.
 - **Imported lights are no longer far too bright.** Lights left at MoonRay's defaults came in fifty times brighter (seen on the Veach scenes in the asset library). Re-import scenes brought in before this fix.
 
 ## Known gaps
