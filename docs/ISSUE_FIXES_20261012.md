@@ -191,3 +191,10 @@ Validation: the alias/relocation regression failed before the fix. Both new bund
 A failed asset copy or final folder publication left the partially copied textures on disk. Bundle saves now own their staging directory through TemporaryDirectory, cleaning it on failure while publishing successful bundles by rename. Existing destinations, source images, and unrelated partial folders are preserved.
 
 Validation: both injected-failure regressions failed before the fix. Four focused bundle checks and 26 related compatibility checks pass afterward. The copy-failure check also retries and loads the successful bundle. No Modo scene or installed kit was changed.
+
+
+## Windows-host UDIM bundle resolution
+
+Material bundles resolved a literal <UDIM> filename during save and load, bypassing textures.asset_path, which exists for Windows Python versions that reject pattern characters. Both paths now reuse that helper while retaining containment checks and alias deduplication.
+
+Validation: the UDIM regression failed with simulated Windows invalid-filename handling before the fix. All 30 standalone related checks pass. An isolated Modo 16.1v9 profile ran 15 bundle/compatibility checks with no skips and normal scripted shutdown (exit 1). No native renderer or user scene was involved.
