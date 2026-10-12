@@ -37,3 +37,9 @@ Run `tools/check_idle_sessions.py --moonray RUNTIME --moonlight MOONLIGHT_STAGE`
 Saved materials now use sidecar images before falling back to a drawing. For `paint.moonmat.json`, `paint.moonmat.png` (or JPG/JPEG) takes priority over the simpler `paint.png` name. Graph bundles without a supplied image show a labelled Graph tile rather than a misleading plain ball. The selection pane explains the fallback and the expected thumbnail filename.
 
 `tools/check_asset_thumbnails.py`: **6 passed** using real Qt image loading offscreen: exact sidecar, simple filename and precedence, graph sidecar, graph placeholder, corrupt-image fallback, and texture-image precedence. Fixtures are PNG-encoded; JPEG codec coverage is not claimed. No host UI launch or renderer change was needed. Automatic generation of rendered material thumbnails remains open in #50.
+
+## Authored RDL mesh normals (#23, partial)
+
+RDL imports now create an editable `RDL Normals` map for authored point or polygon-corner normals. Invalid lengths, nonfinite components and zero vectors produce an explicit warning. Normals requiring a baked shear/mirror transform remain omitted with a warning rather than being stored in the wrong coordinate space.
+
+Validation: 12 focused RDL unit tests passed. `tools/probe_rdl_normals.py` imported two meshes in an isolated Modo 16.1v9 profile and read back every point/corner normal, including different normals at shared vertices. The host exited normally. This checks stored geometry data, not rendered-image equivalence. Motion, subdivision creases and baked-transform normals remain open under #23.
