@@ -95,6 +95,7 @@ class Sets(unittest.TestCase):
         meshes=[m for m in data['meshes'] if m['render']]
         self.assertEqual(len(meshes),2)
         self.assertEqual(len(data['instances']),6)
+        self.assertTrue(any('changes source visibility' in w for w in data['warnings']))
         self.assertNotEqual(meshes[0]['tags'],meshes[1]['tags'])
         self.assertFalse(any('wall is given no material' in w for w in data['warnings']))
         self.assertTrue(all(l['material'] for l in data['links']))

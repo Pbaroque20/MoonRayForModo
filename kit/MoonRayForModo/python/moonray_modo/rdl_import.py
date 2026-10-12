@@ -277,6 +277,9 @@ def plan(document, path):
             return None
         key = surface if not displacement else surface + '|' + displacement
         assignment = next((pair for pair in pairs if assigned.get(pair) is row), None)
+        if assignment and assignment[0] != geometry:
+            warnings.append('%s: material assigned only to an instancer is imported as an editable fallback; '
+                            'MoonRay ignores that surface assignment, so this changes source visibility' % short(geometry))
         if assignment and (assignment[0] in split_sets or (owner and (objects.get(geometry, {}).get('type') == 'RdlMeshGeometry' or catalog.get(objects.get(geometry, {}).get('type'), {}).get('category') == 'geometry'))):
             key += '|links:' + repr(assignment)
             material_links[key] = (assignment[0], part_sets[assignment])
@@ -545,7 +548,9 @@ def plan(document, path):
             warnings.append('%s: only the first %d of its %d instances are imported' % (short(name), INSTANCE_LIMIT, len(transforms)))
             transforms = transforms[:INSTANCE_LIMIT]
         values, total = carried(record), len(transforms)
-        own = checked_matrix(a.get('node_xform', IDENTITY), name)
+        # A referenced instancer's node transform is already included by its parent
+        # when use_reference_xforms is enabled; otherwise it must stay excluded.
+        own = checked_matrix(a.get('node_xform', IDENTITY), name) if depth == 0 else IDENTITY
         for index, matrix in enumerate(transforms):
             if index in disabled:
                 continue
@@ -556,7 +561,7 @@ def plan(document, path):
             if reference not in objects:
                 continue
             matrix = product(product(matrix, own), parent)
-            if a.get('use_reference_xforms', True):
+            if a.get('use_reference_xforms', False):
                 matrix = product(checked_matrix(objects[reference].get('attributes', {}).get('node_xform', IDENTITY), reference), matrix)
             place(reference, matrix, '%s %d' % (title, index + 1), (name,) + owners(owner), depth + 1, merged(picked(values, index, total), outer))
 
