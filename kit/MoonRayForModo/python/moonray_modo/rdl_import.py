@@ -38,6 +38,31 @@ def transform(point, matrix):
     return [sum(point[j] * matrix[j * 4 + i] for j in range(3)) + matrix[12 + i] for i in range(3)]
 
 
+def transformed_normals(normals, matrix):
+    """Bake a nonsingular, orientation-preserving linear transform into authored normals.
+
+    Points are row vectors. Normals multiply the inverse transpose, not the point
+    matrix, and are normalized afterwards. Reflection/winding is handled separately.
+    """
+    rows=[matrix[i*4:i*4+3] for i in range(3)]
+    scale=max(abs(v) for row in rows for v in row)
+    if not math.isfinite(scale) or scale==0:raise ValueError('singular normal transform')
+    rows=[[v/scale for v in row] for row in rows]
+    def cross(a,b):return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
+    cofactors=[cross(rows[1],rows[2]),cross(rows[2],rows[0]),cross(rows[0],rows[1])]
+    determinant=sum(a*b for a,b in zip(rows[0],cofactors[0]))
+    if not math.isfinite(determinant) or determinant<=1e-12:
+        raise ValueError('mirrored or singular normal transform')
+    result=[]
+    for normal in normals:
+        # The positive scalar divisor is immaterial after normalization.
+        value=[sum(normal[j]*cofactors[j][i] for j in range(3)) for i in range(3)]
+        length=math.sqrt(sum(v*v for v in value))
+        if not math.isfinite(length) or length==0:raise ValueError('invalid transformed normal')
+        result.append([v/length for v in value])
+    return result
+
+
 def product(a, b):
     """a then b, for matrices that move a row vector: the order MoonRay writes them in."""
     return [sum(a[row * 4 + k] * b[k * 4 + col] for k in range(4)) for row in range(4) for col in range(4)]
@@ -713,8 +738,10 @@ def apply(data, alone=True, progress=None):
                 warnings.append(record['name'] + ': its transform shears or mirrors, so it is applied to the points')
             normals_in=record['normals']
             if normals_in and record['matrix'] is not None and not keep:
-                normals_in=[]
-                warnings.append(record['name'] + ': authored normals on a baked shear/mirror transform are not imported')
+                try:normals_in=transformed_normals(normals_in,record['matrix'])
+                except ValueError:
+                    normals_in=[]
+                    warnings.append(record['name'] + ': authored normals on a mirrored or singular transform are not imported')
             with item.geometry as geo:
                 # Through the mesh's own accessors: the scripting layer's vertex and polygon objects cost some ten times
                 # as much for each one made, which is minutes for a heavy mesh.

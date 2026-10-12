@@ -15,4 +15,22 @@ class Normals(unittest.TestCase):
     data=self.plan(values)
     self.assertTrue(any('invalid authored normals' in w for w in data['warnings']))
     self.assertTrue(all(not m['normals'] for m in data['meshes']))
+class NormalTransforms(unittest.TestCase):
+ def test_shear_stays_perpendicular_to_transformed_tangents(self):
+  matrix=[2,1,0,0,0,3,0,0,0,0,4,0,8,9,10,1]
+  normal=rdl_import.transformed_normals([[0,1,0]],matrix)[0]
+  self.assertAlmostEqual(sum(a*b for a,b in zip(normal,[2,1,0])),0)
+  self.assertAlmostEqual(sum(v*v for v in normal),1)
+  self.assertLess(normal[0],0);self.assertGreater(normal[1],0)
+ def test_translation_ignored_and_nonuniform_scale_inverted(self):
+  matrix=[2,0,0,0,0,1,0,0,0,0,1,0,100,200,300,1]
+  normal=rdl_import.transformed_normals([[1,1,0]],matrix)[0]
+  self.assertAlmostEqual(normal[1]/normal[0],2)
+ def test_tiny_uniform_scale_is_not_singular(self):
+  matrix=[1e-20,0,0,0,0,1e-20,0,0,0,0,1e-20,0,0,0,0,1]
+  self.assertEqual(rdl_import.transformed_normals([[0,0,1]],matrix),[[0,0,1]])
+ def test_mirror_and_singular_rejected(self):
+  for scale in (-1,0):
+   matrix=rdl_import.IDENTITY[:];matrix[0]=scale
+   with self.assertRaises(ValueError):rdl_import.transformed_normals([[0,0,1]],matrix)
 if __name__=='__main__':unittest.main()

@@ -12,14 +12,19 @@ try:
  verts=[[0,0,0],[1,0,0],[1,1,0],[0,1,0]];faces=[[0,1,2],[0,2,3]]
  normals={'point':[[0,0,1]]*4,'corner':[[0,0,1]]*3+[[0,1,0]]*3}
  data=dict(meshes=[dict(name=name,vertices=verts,faces=faces,uv=[],normals=values,tags=[None,None],subd=False,matrix=None,render=True,attributes=[]) for name,values in normals.items()],curves=[],instances=[],entities=[],materials={},cameras=[],settings={},links=[],warnings=[],source='test.rdla')
+ shear=[1,1,0,0,0,1,0,0,0,0,1,0,2,0,0,1]
+ for record in list(data['meshes']):
+  baked=dict(record,name=record['name']+' sheared',matrix=shear)
+  data['meshes'].append(baked)
+  normals[baked['name']]=rdl_import.transformed_normals(record['normals'],shear)
  result['import']=rdl_import.apply(data)
  for name,values in normals.items():
   item=next(i for i in modo.Scene().items('mesh') if i.name==name)
   geo=item.geometry;maps=geo.vmaps['RDL Normals'];assert len(maps)==1;nmap=maps[0]
   for f,face in enumerate(geo.polygons):
    for c,v in enumerate(face.vertices):
-    actual=nmap.getNormal(v) if name=='point' else nmap.getNormal(v,face)
-    expected=values[v.index] if name=='point' else values[f*3+c]
+    actual=nmap.getNormal(v) if name.startswith('point') else nmap.getNormal(v,face)
+    expected=values[v.index] if name.startswith('point') else values[f*3+c]
     assert all(abs(a-b)<1e-6 for a,b in zip(actual,expected)),(name,f,c,str(actual),expected)
  result['ok']=True
 except Exception:result['error']=traceback.format_exc()
