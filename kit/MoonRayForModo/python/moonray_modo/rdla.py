@@ -338,12 +338,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["attenuation_color"] = %s,' % attenuation,
                       '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
                       '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
-    lines += ['local objectShadowReceiverSets = {}',
+    lines += ['local objectShadowReceiverSets = {}', 'local materialShadowReceiverSets = {}',
               'local function assign(g, part, tag, owner)',
-              '  local a = {g, part, materials[tag], objectLightSets[owner] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
-              '  if objectLightFilterSets[owner] then table.insert(a, objectLightFilterSets[owner]) end',
-              '  if objectShadowSets[owner] then table.insert(a, objectShadowSets[owner]) end',
-              '  if objectShadowReceiverSets[owner] then table.insert(a, objectShadowReceiverSets[owner]) end',
+              '  local a = {g, part, materials[tag], objectLightSets[owner] or materialLightSets[tag] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
+              '  if objectLightFilterSets[owner] or materialLightFilterSets[tag] then table.insert(a, objectLightFilterSets[owner] or materialLightFilterSets[tag]) end',
+              '  if objectShadowSets[owner] or materialShadowSets[tag] then table.insert(a, objectShadowSets[owner] or materialShadowSets[tag]) end',
+              '  if objectShadowReceiverSets[owner] or materialShadowReceiverSets[tag] then table.insert(a, objectShadowReceiverSets[owner] or materialShadowReceiverSets[tag]) end',
               '  if displacements[tag] then table.insert(a, displacements[tag]) end',
               '  if volumes[tag] then table.insert(a, volumes[tag]) end',
               '  table.insert(assignments, a)', 'end']
@@ -351,14 +351,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     render_meshes = apart(render_meshes, {tag for tag, medium in media.items() if medium is not None})
     # The objects an object casts no shadow onto, as MoonRay's shadow receiver set: the meshes of those objects, which
     # are known by their place among the meshes about to be written.
-    for identity, settings in sorted((scene.get('production', {}).get('objects', {})).items()):
+    receiver_records = [('object', identity, settings) for identity, settings in sorted(scene.get('production', {}).get('objects', {}).items())]
+    receiver_records += [('material', tag, value.get('rdl_layer_links', {})) for tag, value in sorted(scene.get('materials', {}).items())]
+    for prefix, identity, settings in receiver_records:
         spared = set(settings.get('shadow_receivers') or [])
         found = [place for place, held in enumerate(render_meshes) if held.get('faces') and 'instances' not in held
                  and (held.get('source_item') or str(held.get('identity', '')).split('|')[0]) in spared]
         receivers = ['RdlMeshGeometry("/modo/mesh/%d")' % place for place in found]
         receivers += entities.shadow_receiver_references(scene, spared)
         if receivers:
-            lines.append('objectShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (string(identity), string('/modo/shadowReceivers/' + identity),
+            lines.append('%sShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (prefix, string(identity), string('/modo/shadowReceivers/' + ('material/' if prefix == 'material' else '') + identity),
                                                                                     array(receivers)))
     # The objects that join in a material's subsurface light, as MoonRay's trace set on the material: by default only
     # the surface wearing the material does, which leaves a seam where two objects of one body meet.

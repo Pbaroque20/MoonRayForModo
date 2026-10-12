@@ -154,6 +154,7 @@ def material_values(material):
                                 'reflection_fresnel':float(channel(material,'reflFres',1)),
                                 'thin_geometry': settings.get('thin_geometry',False),
                                 # The objects whose surfaces join in this material's subsurface light: MoonRay's sss trace set.
+                                'rdl_layer_links': settings.get('rdl_layer_links', {}),
                                 'sss_trace_set': sorted(str(v) for v in (settings.get('sss_trace_set') or [])),
                                 # Where a material says how its polygons are smoothed: 0 for flat, otherwise the angle within which
                                 # neighbours are smoothed together. None leaves the mesh to be smoothed as it otherwise would be.

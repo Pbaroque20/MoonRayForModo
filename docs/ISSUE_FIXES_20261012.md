@@ -93,3 +93,9 @@ Validation: 25 RDL tests and 19 core exporter tests passed; isolated Modo 16.1v9
 RDL LightFilterSet assignments now retain supported filter items and store their IDs on the imported geometry. Meshes and native shapes export the set in their layer assignment. Missing/unsupported imported filters are named in warnings; deleted filter targets cause an explicit export error.
 
 Validation: 27 RDL tests, 19 core exporter tests, 32 CPU-feature tests, 8 production tests, and isolated Modo 16.1v9 import/read-back passed. `tools/check_rdl_link_roundtrip.py RUNTIME` also passed: MoonRay's native reader accepted the exported file and read back all four light/shadow/receiver/filter sets. This is scene-reader validation, not a rendered-lighting comparison. Different sets on individual parts remain open.
+
+### Per-part mesh assignments (#52)
+
+Differently lit/filtered/shadowed RdlMeshGeometry parts now receive distinct imported material layers, even when they share one source shader. Mesh vertices and faces stay intact. Assignment metadata survives direct and evaluated Modo capture; explicit object links retain precedence on export. Non-mesh per-part assignments still report the unsupported case.
+
+Validation: 28 RDL, 19 core, 32 CPU-feature and 8 production unit checks passed. The isolated Modo probe imported two faces sharing a shader with distinct lights and retained their filter/shadow differences. Both direct and evaluated exports passed native MoonRay-reader assignment checks. The first evaluated run lacked the adapter in the isolated kit; copying the installed adapter into the test kit enabled the successful rerun. No installed kit changes or rendered-image equivalence are claimed.

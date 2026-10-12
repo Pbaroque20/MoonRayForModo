@@ -242,16 +242,20 @@ def plan(document, path):
     all_lights = {name for name, record in objects.items() if catalog.get(record['type'], {}).get('category') == 'light'}
     # What lights each shape, which lights it casts no shadow for, and what its shadow does not fall on: MoonRay's
     # light set, shadow set and shadow receiver set, which become the item's Light Links in MoonRay's scene controls.
-    # These are kept for a whole item, so a shape whose parts differ takes what its first part has.
-    sets = {}
+    # Uniform sets use object controls; differing mesh parts keep sets on distinct material layers.
+    sets, part_sets, split_sets, material_links = {}, {}, set(), {}
     for (geometry, part), row in assigned.items():
         members = set(objects.get(row['lights'], {}).get('attributes', {}).get('lights', [])) if row['lights'] else set()
         own = (tuple(sorted(members)) if all_lights and row['lights'] and members != all_lights else None,
                tuple(sorted(set(objects.get(row['shadows'], {}).get('attributes', {}).get('lights', [])))) if row['shadows'] else (),
                tuple(sorted(set(objects.get(row['receivers'], {}).get('attributes', {}).get('geometries', [])))) if row['receivers'] else (),
                tuple(sorted(set(objects.get(row['filters'], {}).get('attributes', {}).get('lightfilters', [])))) if row['filters'] else ())
+        part_sets[(geometry, part)] = own
         if geometry in sets and sets[geometry] != own:
-            warnings.append('%s: its parts are lit, filtered or shadowed differently from one another; the whole item takes what its first part has.' % short(geometry))
+            if objects.get(geometry, {}).get('type') == 'RdlMeshGeometry':
+                split_sets.add(geometry)
+            else:
+                warnings.append('%s: differing per-part sets on this geometry type are not imported; the first assignment is retained' % short(geometry))
         sets.setdefault(geometry, own)
 
     def material(geometry, part, owner=None):
@@ -266,6 +270,10 @@ def plan(document, path):
             warnings.append('%s: its material %s is of a class the plugin has no material for.' % (short(geometry), short(str(surface))))
             return None
         key = surface if not displacement else surface + '|' + displacement
+        assignment = next((pair for pair in ((geometry, part), (geometry, ''), (owner, part), (owner, '')) if assigned.get(pair) is row), None)
+        if assignment and assignment[0] in split_sets:
+            key += '|links:' + repr(assignment)
+            material_links[key] = (assignment[0], part_sets[assignment])
         if key not in materials:
             try:
                 materials[key] = {'name': short(surface), 'graph': graph(surface, objects, base, warnings, displacement)}
@@ -667,7 +675,9 @@ def plan(document, path):
     links = []
     native_geometries = {e['name'] for e in items if catalog[e['class']]['category'] == 'geometry'}
     available_filters = {e['name'] for e in items if catalog[e['class']]['category'] == 'lightfilter'}
-    for geometry, (lit, unshadowed, spared, filters) in sets.items():
+    linked_rows = [(geometry, None, own) for geometry, own in sets.items() if geometry not in split_sets]
+    linked_rows += [(geometry, key, own) for key, (geometry, own) in material_links.items() if materials.get(key)]
+    for geometry, material_key, (lit, unshadowed, spared, filters) in linked_rows:
         if lit is None and not unshadowed and not spared and not filters:
             continue
         def lights(names):
@@ -688,7 +698,7 @@ def plan(document, path):
             if label(name) not in available_filters:
                 warnings.append('%s: light filter %s has no imported counterpart and is omitted' % (short(geometry), short(name)))
         native_geometry = label(geometry) if label(geometry) in native_geometries else None
-        links.append({'geometry': mesh.made.get(geometry) or native_geometry, 'named': short(geometry), 'lights': None if lit is None else lights(lit),
+        links.append({'material': material_key, 'geometry': mesh.made.get(geometry) or native_geometry, 'named': short(geometry), 'lights': None if lit is None else lights(lit),
                       'filters': [label(name) for name in filters if label(name) in available_filters],
                       'shadows': lights(unshadowed), 'receivers': [mesh.made.get(name) or label(name) for name in spared if name in mesh.made or label(name) in native_geometries]})
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
@@ -732,7 +742,7 @@ def apply(data, alone=True, progress=None):
     scene = modo.Scene()
     created, warnings, tags, made = [], list(data['warnings']), {}, {}
     # The MoonRay items made, by name: the lights among them are what light and shadow sets name.
-    brought_in = {}
+    brought_in, material_items = {}, {}
     previous_camera, previous_selection = scene.renderCamera, list(scene.selected)
 
     def pose(item, raw):
@@ -764,6 +774,7 @@ def apply(data, alone=True, progress=None):
                 layer = scene.addItem('advancedMaterial', name=record['name'])
             created.append(layer)
             layer.setParent(mask, 0)
+            material_items[key] = layer
             properties.write(layer, {'shader': 'DwaBaseMaterial', 'moonshine_override': True, 'native_shader': shader,
                                      'native_parameters': record['graph']['nodes'][record['graph']['root']].get('parameters', {}),
                                      'node_graph': record['graph'], 'node_override': True})
@@ -976,11 +987,12 @@ def apply(data, alone=True, progress=None):
             held = dict(production.get('objects') or {})
             linked_items=dict(brought_in,**made)
             for link in data['links']:
-                item = linked_items.get(link['geometry'])
+                material_key = link.get('material')
+                item = material_items.get(material_key) if material_key else linked_items.get(link['geometry'])
                 if item is None:
                     warnings.append('%s: its light and shadow sets are not imported because its geometry is unavailable.' % link['named'])
                     continue
-                entry = dict(held.get(item.id) or {})
+                entry = {} if material_key else dict(held.get(item.id) or {})
                 if link['lights'] is not None:
                     entry.update(link_enabled=True, lights=[linked_items[name].id for name in link['lights'] if name in linked_items])
                 if link['shadows']:
@@ -989,7 +1001,12 @@ def apply(data, alone=True, progress=None):
                     entry['light_filters'] = [linked_items[name].id for name in link['filters'] if name in linked_items]
                 if link['receivers']:
                     entry['shadow_receivers'] = [linked_items[name].id for name in link['receivers'] if name in linked_items]
-                held[item.id] = entry
+                if material_key:
+                    saved = dict(properties.read(item))
+                    saved['rdl_layer_links'] = entry
+                    properties.write(item, saved)
+                else:
+                    held[item.id] = entry
             production['objects'] = held
             stored['production'] = production
             properties.write(scene.renderItem, stored)
