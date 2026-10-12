@@ -67,7 +67,8 @@ class Panel(Tools, QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self);layout.setContentsMargins(4,4,4,4);layout.setSpacing(3)
         layout.addLayout(self._toolbar())
         self.preview = Preview()
-        # A line in the corner of the picture for a mode worth knowing of. It takes no clicks: they go to the picture.
+        # A line at the foot of the picture, in the middle, for a mode worth knowing of. It takes no clicks: they go
+        # to the picture.
         self.hud=QtWidgets.QLabel(self.preview)
         self.hud.setStyleSheet('QLabel{color:#f2e3c4;background-color:rgba(20,22,26,170);border-radius:3px;padding:3px 7px;font-weight:bold;}')
         self.hud.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);self.hud.hide()
@@ -283,8 +284,8 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
         menu.addSeparator()
-        hud=QtWidgets.QAction('Show Mode in the Corner',menu);hud.setCheckable(True);hud.setChecked(bool(self.preferences.get('hud')))
-        hud.setToolTip('A line in the top left of the picture for a mode worth knowing of, such as Safe Denoising')
+        hud=QtWidgets.QAction('Show Mode on the Picture',menu);hud.setCheckable(True);hud.setChecked(bool(self.preferences.get('hud')))
+        hud.setToolTip('A line at the foot of the picture for a mode worth knowing of, such as Safe Denoising')
         hud.toggled.connect(self._hud_toggled);menu.addAction(hud)
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
@@ -348,6 +349,8 @@ class Panel(Tools, QtWidgets.QWidget):
         else:self.preview.unsetCursor()
 
     def eventFilter(self,watched,event):
+        # The mode's line keeps its place at the foot of the picture as the picture is made larger or smaller.
+        if watched is self.preview and event.type()==QtCore.QEvent.Resize and hasattr(self,'hud') and self.hud.isVisible():self._hud_place()
         # While Focus is armed, the next click in the image picks instead of panning.
         if watched is self.preview and self.focus_pick.isChecked() and event.type()==QtCore.QEvent.MouseButtonPress and event.button()==QtCore.Qt.LeftButton:
             point=event.pos()
@@ -671,7 +674,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preferences.set('hud',bool(shown));self._hud_update()
 
     def _hud_words(self):
-        """The modes worth saying in the corner of the picture: each a line."""
+        """The modes worth saying at the foot of the picture: each a line."""
         words=[]
         try:
             values=self._settings_values()
@@ -686,7 +689,11 @@ class Panel(Tools, QtWidgets.QWidget):
         text='\n'.join(words)
         if text!=self.hud.text():self.hud.setText(text);self.hud.adjustSize()
         self.hud.setVisible(bool(words))
-        if words:self.hud.move(10,10);self.hud.raise_()
+        if words:self._hud_place();self.hud.raise_()
+
+    def _hud_place(self):
+        """At the foot of the picture, in the middle."""
+        self.hud.move(max(0,(self.preview.width()-self.hud.width())//2),max(0,self.preview.height()-self.hud.height()-12))
 
     def open_compositor(self):
         """The scene's compositor: a graph over the buffers of a finished render, whose output is the Composite buffer."""
