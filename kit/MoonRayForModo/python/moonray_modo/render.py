@@ -365,6 +365,8 @@ class Renderer(QtCore.QObject):
         adaptive=options.render_values(self.active['snapshot'].get('render_settings',{}))['sampling_mode']==2
         # A render taken up again goes straight on with its long pass.
         self.passes = [target] if self.active['output'] or self.active.get('resume') or adaptive or self.active['snapshot'].get('_ipr_refined') else sorted(set([1, min(2, target), target]))
+        # The estimate of the time left is of the whole render: it is told what passes there are, by their samples.
+        self.progress_state.plan([side*side for side in self.passes],adaptive)
         self.log = ''
         self.bucket_partial = ''
         self._begin_pass(self.active['generation'])

@@ -58,6 +58,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 ## Rendering with MoonRay
 
+- **A steadier time left.** One countdown for the whole render, where it used to start over with each of MoonRay's passes and jump about. With adaptive sampling a time is shown only when MoonRay's own figure can be trusted; otherwise the window says how many tiles have finished.
 - **Stop keeps the picture.** A render stopped part way is kept and denoised in about a second and a half *(0.4 runtime)*.
 - **Safe Denoising shows the render as it goes**, like any other render *(0.4 runtime)*. A stop tells you how far behind the kept picture is.
 - **No dark blocks** in the live picture *(0.4 runtime)*.
@@ -103,6 +104,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - A rare small dark tile can still appear in the live picture under Safe Denoising.
 - Scenes with instances, replicators or deformers are still re-read whole when an item moves.
+- An adaptive render often has no time-left figure: MoonRay reports only how many tiles have finished, and most finish near the end.
 - MoonRay LS is more interactive during a drag but not yet as fluid as MoonLightIPR on heavy scenes.
 - Very smooth highlights, and rough Principled highlights, are still dimmer than Modo's.
 - Hair in MoonLightIPR is close to MoonRay's, with the top of a tuft a little brighter.

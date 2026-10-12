@@ -8,7 +8,7 @@ now=[0.];p=Progress(lambda:now[0])
 p.feed('GPU utilization = 90%\nRendering [ 10')
 assert p.percent is None
 p.feed('%]\n');now[0]=10;p.feed('Rendering [ 20%]\n')
-assert p.percent==20 and '~1m 20s' in p.display()[1]
+assert p.percent==20 and 'About 1m 20s left' in p.display()[1]
 assert p.display('denoise')[0]==-1
 p.reset_pass();assert p.percent is None
 assert execution_status('Executing an XPU render since execution mode was set to auto.\nGPU: Setup complete\nGPU initialization failed, falling back to CPU vector mode') .startswith('Vector active')

@@ -23,6 +23,7 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 - **Dragging with realtime on is much smoother**, and MoonRay LS now follows a drag where it used to wait for you to let go.
 - **Draft** redraws in about a third of a second after a move, where it took over a second, and follows the scene by itself.
 - **Stop keeps the picture**, denoised, in about a second and a half.
+- **A steadier time-left estimate**: one countdown for the whole render.
 - **An idle MoonRay uses no processor.**
 
 **Better pictures**
