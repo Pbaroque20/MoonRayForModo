@@ -215,6 +215,13 @@ def stopped():
         if not shown.isNull():
             shown.save(str(out / ('%s-shown-%s.png' % (held['name'], os.environ.get('MOONRAY_MODO_STOP_TAKES', '5')))))
         run['stop_took'] = held.get('stop_took')
+        # What was kept, each buffer as a file of its own, to see which a mark is in.
+        import shutil
+        for key, path in (frame.get('files') or {}).items():
+            try:
+                shutil.copyfile(str(path), str(out / ('%s-kept-%s%s' % (held['name'], key, pathlib.Path(str(path)).suffix))))
+            except Exception as exc:
+                run.setdefault('kept_copy_errors', []).append(str(exc)[:80])
         panel.window().grab().save(str(out / (held['name'] + '-stopped.png')))
         # The beauty itself, apart from the denoiser, is what the runs are compared by.
         panel.buffer.setCurrentIndex(panel.buffer.findData('beauty'))
