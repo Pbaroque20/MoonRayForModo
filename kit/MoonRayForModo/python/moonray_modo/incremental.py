@@ -2,13 +2,22 @@
 LIGHTS={'camera','sunLight','pointLight','areaLight','spotLight','lightMaterial','environment','envMaterial'}
 MATERIALS={'advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','imageMap','constant','checker','noise','grid','dots','gradient','videoStill'}
 
+def deformers(scene):
+    """Whether the scene has anything that deforms a mesh. Where Modo cannot be asked, it is taken to have."""
+    for kind in ('deform',):
+        try:
+            if scene.items(kind,superType=True):return True
+        except (RuntimeError,LookupError,AttributeError):return True
+    return False
+
+
 def classify(scene, identities, cache):
     # A native material added from Add Layer has a type of its own; it is a material like the rest.
     types={'advancedMaterial' if kind.startswith('material.dw.') or kind=='material.mtlx' else kind for kind in (scene.item(identity).type for identity in identities)}
     if 'mesh' in types and types<=LIGHTS|{'mesh'}:
         if cache.get('_evaluated_data') is None and not cache.get('extra_geometry'):
             try:
-                if not scene.items('deformer',superType=True) and not scene.items('meshInst',superType=False) and not scene.items('replicator',superType=False):
+                if not deformers(scene) and not scene.items('meshInst',superType=False) and not scene.items('replicator',superType=False):
                     return {'dirty_meshes':{identity for identity in identities if scene.item(identity).type=='mesh'}}
             except (RuntimeError,LookupError,AttributeError):pass
         return False
@@ -21,12 +30,15 @@ def classify(scene, identities, cache):
                 item=scene.item(identity)
                 if item.type not in LIGHTS:owners.extend(item.itemGraph('xfrmCore').forward())
             if owners and all(item.type in LIGHTS for item in owners):return True
-            if cache.get('_evaluated_data') is None and owners and all(item.type in ('mesh','meshInst') for item in owners):
+            # Meshes read as Modo evaluates them stand where their items do, when that was found to be so at the
+            # time they were read: moving one is then a matter of asking its item where it now is.
+            plain=cache.get('_evaluated_data') is None
+            if (plain or cache.get('_item_transforms')) and owners and all(item.type in (('mesh','meshInst') if plain else ('mesh',)) for item in owners):
                 from .coordinates import descriptors
                 if any(d.get('projection','uv')!='uv' for d in descriptors(cache['materials']).values()):return False
                 # A deformer may depend on world transforms. Retain the full path
                 # whenever the scene declares one, even for an unrelated mesh.
-                if scene.items('deformer',superType=True):return False
+                if deformers(scene):return False
                 return 'transforms'
         except (RuntimeError,LookupError,AttributeError):return False
     # Texture locators can change baked coordinate data; mesh/deformer changes can

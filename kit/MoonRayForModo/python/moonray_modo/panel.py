@@ -462,9 +462,21 @@ class Panel(Tools, QtWidgets.QWidget):
             # A drag is waited out: the scene is read once the button is up.
             if dragging():return
             time=lx.service.Selection().GetTime()
-            if not (self.changes.full or self.changes.items or time!=getattr(self,'_draft_time',time)):return
+            moved=time!=getattr(self,'_draft_time',time)
+            if not (self.changes.full or self.changes.items or moved):return
             self._draft_time=time
-            self.render_once()
+            if self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
+                self.render_once();return
+            # Reading every mesh out of Modo again is most of what a redraw takes (a second of 1.3 on a scene of 266
+            # meshes), and most edits leave the meshes as they are. As when a scene is followed, only what the
+            # edit touched is read again: where things stand, a material, the meshes named, or all of it.
+            import modo
+            full,items=self.changes.consume()
+            reuse=not full and not moved and bool(items) and self._geometry_cache is not None and modo.Scene().renderItem.id==self._scene_id
+            if reuse:
+                from .incremental import classify
+                reuse=classify(modo.Scene(),items,self._geometry_cache)
+            self._submit(self._capture(reuse))
         except Exception as exc:
             self.status.setText('Draft could not follow the scene: '+str(exc))
 
@@ -726,14 +738,36 @@ class Panel(Tools, QtWidgets.QWidget):
         import copy,time
         full_capture=scene.pop('_full_capture',not reuse)
         if not reuse or reuse in ('materials','transforms') or isinstance(reuse,dict):
+            # What was found of the meshes when they were last read whole holds while they are only moved or shaded anew.
+            stand=self._geometry_cache.get('_item_transforms') if self._geometry_cache is not None and reuse in ('materials','transforms') else None
             self._geometry_cache=dict(scene,meshes=[dict(m) for m in scene['meshes']],materials=copy.deepcopy(scene['materials']),native_materials=copy.deepcopy(scene.get('native_materials',{})))
+            if stand:self._geometry_cache['_item_transforms']=True
         if full_capture or isinstance(reuse,dict):self._last_full_capture=time.monotonic()
+        if full_capture and self._geometry_cache is not None and scene.get('_evaluated_data') is not None:
+            # Whether each evaluated mesh stands where its item does, which lets a later move of an item be followed
+            # without evaluating every mesh again. Not so for copies Modo generates, which are no item's.
+            self._geometry_cache['_item_transforms']=self._stand_with_items(modo.Scene(),scene)
         scene.pop('_evaluated_data',None)
         scene['_geometry_revision']=str(id(self))+':'+str(self._last_full_capture)
         configured=self._configure_snapshot(scene)
         from .assets import signature
         self._asset_scene=configured;self._asset_signature=signature(configured)
         return configured
+
+    def _stand_with_items(self,document,scene):
+        from .host import world_matrix
+        try:
+            if document.items('replicator',superType=False) or document.items('meshInst',superType=False):return False
+            if scene.get('extra_geometry'):return False
+            where={}
+            for mesh in scene['meshes']:
+                if 'instances' in mesh:return False
+                identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
+                if identity not in where:where[identity]=world_matrix(document.item(identity))
+                held=mesh.get('matrix')
+                if not held or len(held)!=16 or any(abs(a-b)>1e-5*max(1.0,abs(b)) for a,b in zip(held,where[identity])):return False
+            return bool(where)
+        except Exception:return False
 
     def _capture_output(self):
         values=self._settings_values()
