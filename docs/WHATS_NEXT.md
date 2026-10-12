@@ -25,11 +25,22 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 - **Region leaves the view alone.** Setting or clearing a region no longer zooms the view, and a picture of another size and the same shape is looked at just as the last was. Zooming in is yours to do.
 - **MoonLightIPR has Beauty and Denoised Beauty.** With the scene's denoiser on for previews, MoonLightIPR denoises and its buffer list offers both. It shows Beauty, the picture as it is rendered, until you choose Denoised Beauty. The change is at once: MoonLightIPR holds both and nothing is rendered again. With the denoiser off it renders the beauty alone, and the list holds only Beauty. In a test, the denoised picture's grain measured 0.42 against the beauty's 0.61, and going back to Beauty gave the picture as it was.
 - **Each engine renders at its own size.** MoonRay, chosen as the engine, renders at the camera's resolution, or the scene's where the camera does not override it; it used to render at the preview size. MoonRay LS and MoonLightIPR are previews, at the realtime preview size (640 pixels wide unless changed in the window's Options) and never wider. The option to preview at scene resolution is gone. Tried on a 1280 x 720 scene and with a camera override of 800 x 400: MoonRay rendered each at that size, and MoonLightIPR at 640 wide both times.
+- **Render and RT switch Draft off.** With Draft on, pressing Render with MoonRay, or switching realtime on, takes Draft off first and gives the picture itself.
+- **Denoised Beauty denoises of itself.** Chosen in the list with no denoiser set in the scene, a finished MoonRay render is denoised there and then, with the graphics card's denoiser (OptiX), or Open Image Denoise where that will not run, and is left as it is where neither will. MoonLightIPR always lists Denoised Beauty, and denoises when it is the buffer chosen, whatever the scene's denoiser is set to.
+- **The mode is said in the corner of the picture.** With Safe Denoising on, the top left of the picture reads Safe Denoiser Mode. Right-click the picture, Show Mode in the Corner, to have it or not.
 - **Two lines under the picture.** The status has a line to itself, so a long message is read whole. Below it are the values under the pointer, how the render is getting on, and the picture's size.
 - **Tile outlines move evenly.** They are pastel blue. An outline eases in, stands for as long as MoonRay keeps coming back to its tile, and fades when the tile is done with. MoonRay now tells of its tiles on a clock of their own: about eighteen times a second reach the window where four did, and no gap is longer than 150 ms where there were gaps of half a second *(next runtime)*.
 
 ![The preview window with MoonLightIPR chosen and realtime on](images/preview-engines.png)
 *MoonLightIPR chosen: RT On is lit, and the status has a line to itself.*
+
+## The compositor
+
+- **A graph over the buffers of a finished render**, in the same editor as a material's graph: Options > Compositor in the preview window. Down the left are the nodes there are to add: each of the render's buffers, Merge (normal, add, multiply, screen, lighten, darken, difference, with a mix and an optional mask), Grade (exposure, gamma, saturation, tint), Blur and Glow. The graph ends in the Composite node.
+- **Composite is a buffer in the list**, beside Beauty and Denoised Beauty, while the scene has a graph that does something. It is chosen by hand. It is made when a MoonRay render finishes, or is stopped and kept, and again whenever the graph is edited, from the buffers the window has kept: nothing is rendered again.
+- **The graph is kept with the scene**, and Modo's undo undoes an edit to it.
+- **Render EXR and animations write name.composite.exr** beside the EXR, as the denoised copy is written.
+- Not in this first version: the composite while a render is still going, mattes picked from a Cryptomatte, MoonLightIPR (which has only its beauty to give), and MoonRay's own display filters.
 
 ## Rendering with MoonRay
 

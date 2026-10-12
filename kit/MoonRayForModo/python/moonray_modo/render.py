@@ -141,6 +141,9 @@ class Renderer(QtCore.QObject):
             raise ValueError('Unknown preview engine')
         runtime = native.find_runtime(runtime)
         moonlightipr = engine=='moonlightipr' and not output and not linear_preview
+        # MoonLightIPR denoises when its denoised beauty is the buffer chosen in the window, with its own denoiser.
+        # (The window says so before it hands the scene over: a scene read earlier and used again says what was
+        # chosen when it was read.)
         # MoonLightIPR produces beauty only.
         if moonlightipr:snapshot=dict(snapshot,preview_buffer='beauty')
         if not output and not linear_preview:
@@ -343,13 +346,12 @@ class Renderer(QtCore.QObject):
             self.failed.emit('This runtime has no MoonLightIPR GPU preview (expected in '+str(directory)+'). Choose MoonRay as the preview engine.');return
         self.status.emit('Rendering · '+self.backend_status)
         self.moonlightipr_serial+=1
-        # MoonLightIPR denoises where the scene's denoiser is on for previews, and then has both pictures: the
-        # denoised one and the beauty as it is rendered. Which is shown is the buffer chosen in the window.
-        chosen=denoising.settings(request['snapshot'].get('denoising',{}))
-        self.moonlightipr_denoises=chosen['engine']!='off' and chosen['preview']
+        # MoonLightIPR denoises when its denoised beauty was the buffer chosen as the render was asked for, and then
+        # has both pictures: the denoised one and the beauty as it is rendered. Which is shown is the buffer chosen.
+        self.moonlightipr_denoises=bool(getattr(self,'moonlightipr_wanted',False))
         self.moonlightipr.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,MOONLIGHTIPR_SAMPLES,
                                  denoise=self.moonlightipr_denoises,runtime=request['runtime'])
-        self.moonlightipr.view(self.buffers.key!='beauty')
+        self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key!='beauty')
 
     def _moonlightipr_memory(self,packet):
         if self.closed or self.canceled or not self.using_moonlightipr or packet[0]!=self.moonlightipr_serial:return

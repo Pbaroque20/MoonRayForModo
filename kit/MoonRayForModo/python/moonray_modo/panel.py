@@ -67,6 +67,10 @@ class Panel(Tools, QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self);layout.setContentsMargins(4,4,4,4);layout.setSpacing(3)
         layout.addLayout(self._toolbar())
         self.preview = Preview()
+        # A line in the corner of the picture for a mode worth knowing of. It takes no clicks: they go to the picture.
+        self.hud=QtWidgets.QLabel(self.preview)
+        self.hud.setStyleSheet('QLabel{color:#f2e3c4;background-color:rgba(20,22,26,170);border-radius:3px;padding:3px 7px;font-weight:bold;}')
+        self.hud.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);self.hud.hide()
         self.preview.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.preview.customContextMenuRequested.connect(lambda point:self._image_menu(point).exec_(self.preview.mapToGlobal(point)))
         self.preview.installEventFilter(self)
@@ -278,6 +282,10 @@ class Panel(Tools, QtWidgets.QWidget):
             menu.addSeparator()
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
+        menu.addSeparator()
+        hud=QtWidgets.QAction('Show Mode in the Corner',menu);hud.setCheckable(True);hud.setChecked(bool(self.preferences.get('hud')))
+        hud.setToolTip('A line in the top left of the picture for a mode worth knowing of, such as Safe Denoising')
+        hud.toggled.connect(self._hud_toggled);menu.addAction(hud)
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
@@ -642,6 +650,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if scene_id!=self._scene_id:
             self._scene_id=scene_id;self._geometry_cache=None;self._shown=None
         self._sync_cameras()
+        self._hud_update()
         watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']))
         if watched==self._shown:return
         previous,self._shown=self._shown,watched
@@ -657,6 +666,27 @@ class Panel(Tools, QtWidgets.QWidget):
         if previous is None:return
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
+
+    def _hud_toggled(self,shown):
+        self.preferences.set('hud',bool(shown));self._hud_update()
+
+    def _hud_words(self):
+        """The modes worth saying in the corner of the picture: each a line."""
+        words=[]
+        try:
+            values=self._settings_values()
+            if self._engine()=='moonray' and not self._live() and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
+                words.append('Safe Denoiser Mode')
+        except Exception:pass
+        return words
+
+    def _hud_update(self):
+        if self.disposed or not hasattr(self,'hud'):return
+        words=self._hud_words() if self.preferences.get('hud') else []
+        text='\n'.join(words)
+        if text!=self.hud.text():self.hud.setText(text);self.hud.adjustSize()
+        self.hud.setVisible(bool(words))
+        if words:self.hud.move(10,10);self.hud.raise_()
 
     def open_compositor(self):
         """The scene's compositor: a graph over the buffers of a finished render, whose output is the Composite buffer."""
@@ -711,9 +741,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self._limit_buffers()
 
     def _limit_buffers(self):
-        """MoonLightIPR makes the beauty and, where the scene's denoiser is on for previews, a denoised beauty: the
-        list then holds those. It shows the beauty unless the denoised one is chosen by hand. The other buffers are
-        MoonRay's."""
+        """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty: the list then holds those two.
+        It shows the beauty unless the denoised one is chosen by hand, and choosing it is what has MoonLightIPR
+        denoise. The other buffers are MoonRay's."""
         only=self._engine()=='moonlightipr'
         denoises=self._moonlightipr_denoises()
         self.buffer.setItemText(0,'Beauty')
@@ -727,10 +757,9 @@ class Panel(Tools, QtWidgets.QWidget):
         if shown!=wanted:self.buffer.setCurrentIndex(self.buffer.findData(wanted))
 
     def _moonlightipr_denoises(self):
-        """Whether the scene's denoiser is on for previews, which is when MoonLightIPR denoises."""
-        try:chosen=self._settings_values()['denoising']
-        except Exception:return False
-        return chosen.get('engine','off')!='off' and bool(chosen.get('preview',True))
+        """Whether MoonLightIPR's list has the denoised beauty in it: always. It denoises with the graphics card's own
+        denoiser, whatever the scene's denoiser is set to, when that buffer is the one chosen."""
+        return True
 
     def _engine_notices(self,messages):
         """Add what the preview engine left out to the notices of the scene it is showing."""
@@ -909,6 +938,8 @@ class Panel(Tools, QtWidgets.QWidget):
         """What the Render button does: one render, or with IPR on, a render that keeps following."""
         if self._output_busy():
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
+        # Render, or realtime switched on, is asking for the picture itself: Draft, where it is on, goes off first.
+        if self.draft.isChecked():self.draft.setChecked(False)
         if self.ipr_mode.isChecked():self._follow(True)
         # A render begun by hand begins from an empty view, unless it turns out to be one continued.
         self._clear_first=True
@@ -934,6 +965,8 @@ class Panel(Tools, QtWidgets.QWidget):
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)
 
     def _submit(self, scene, output=None, refining=False):
+        # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
+        self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
         # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
         # a draft's lines is of the same redraw; anything else asked for is not.
         asked=getattr(self,'_draft_quiet_asked',False);self._draft_quiet_asked=False
@@ -1013,16 +1046,19 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _preview_denoiser(self):
         denoising=self._settings_values()['denoising']
-        return denoising['engine'] if denoising['preview'] and not self._following else 'off'
+        if self._following:return 'off'
+        if denoising['engine']!='off' and denoising['preview']:return denoising['engine']
+        # The scene asks for none, and the denoised beauty is chosen in the list all the same: it is denoised with
+        # the graphics card's denoiser, or the processor's where that will not run.
+        return 'auto' if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' else 'off'
 
     def _denoising_changed(self,*args):
         if self.disposed:return
         engine=self._preview_denoiser()
         self._buffer_picked=None
         if self._engine()=='moonlightipr':
-            # MoonLightIPR denoises for itself: its list of buffers follows the setting, and so does its render.
+            # MoonLightIPR denoises for itself, when its denoised picture is chosen: the scene's setting is MoonRay's.
             self._limit_buffers()
-            if self._following or self._rendering:self.render_once()
             return
         self.renderer.buffers.denoiser.request(engine)
         self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' else 'denoised_beauty'))
@@ -1037,7 +1073,14 @@ class Panel(Tools, QtWidgets.QWidget):
             from .display import values
             stored=self._settings_values();key=self.buffer.currentData()
             if self._add_cryptomatte(key,stored):return
+            if key=='denoised_beauty' and self._engine()!='moonlightipr':
+                # Chosen with no denoiser set in the scene: the kept render is denoised now.
+                engine=self._preview_denoiser()
+                if engine=='auto':self.renderer.buffers.denoiser.request(engine)
             self.renderer.buffers.select(key,values(stored['display']))
+            if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
+                # MoonLightIPR has not been denoising: it renders again, denoising this time.
+                if self._following or self._rendering or not self.preview.image.isNull():self.render_once()
             if not self._rendering and any(v['name']==key and v['kind']=='cryptomatte' for v in stored['custom_aovs']):
                 self.status.setText('Cryptomatte: each color is one ID. The EXR holds the mattes.')
         except Exception as exc:
