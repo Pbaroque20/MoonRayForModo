@@ -97,6 +97,14 @@ try:
         from moonray_modo import host, moonlightipr_scene
         scene = host.snapshot(evaluated_geometry=True)
         result['meshes_seen_by'] = sorted({moonlightipr_scene.seen_by(m) for m in scene['meshes']})
+        result['meshes_visibility'] = sorted({str(m.get('visibility')) for m in scene['meshes']})
+        # Cast Shadows alone: seen by everything, casting no shadow. Then back on.
+        shaders[0].channel('visCam').set(1)
+        scene = host.snapshot(evaluated_geometry=True)
+        result['shadow_off_only'] = sorted({str(m.get('visibility')) for m in scene['meshes']})
+        shaders[0].channel('shadCast').set(1)
+        scene = host.snapshot(evaluated_geometry=True)
+        result['shadow_back_on'] = sorted({str(m.get('visibility')) for m in scene['meshes']})
 except Exception:
     result['error'] = traceback.format_exc()
 (out / 'report.json').write_text(json.dumps(result, indent=1, default=str))

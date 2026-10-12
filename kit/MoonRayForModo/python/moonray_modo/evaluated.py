@@ -126,15 +126,50 @@ def capture(time, path=None, displaced=True):
         raise ValueError('Modo evaluated geometry: ' + data['error'])
     return data
 
+def casts_shadow(scene, layers, known):
+    """Whether the Shader over a surface has Cast Shadows on. Modo's own six switches for a surface have none for
+    shadows (the last is for occlusion rays), so the Shader is asked: of those among the surface's layers, the one
+    highest in the Shader Tree, which is the one Modo goes by."""
+    if layers not in known:
+        if 'order' not in known:
+            order = known['order'] = {}
+
+            def walk(item):
+                for child in item.children():
+                    walk(child)
+                    order[child.id] = len(order)
+            try:
+                walk(scene.renderItem)
+            except Exception:
+                pass
+        cast, best = True, -1
+        for identity in layers:
+            try:
+                layer = scene.item(identity)
+                if layer.type != 'defaultShader':
+                    continue
+                place = known['order'].get(layer.id, 0)
+                if place > best:
+                    best, cast = place, bool(layer.channel('shadCast').get())
+            except Exception:
+                continue
+        known[layers] = cast
+    return known[layers]
+
+
 def meshes(data, materials, warnings, scene=None):
     """Group identical evaluated prototypes while retaining per-surface transforms."""
     groups = {}
     settings_cache = {}
+    shadows = {}
     from . import options
     if scene is not None:
         from . import properties
     for surface in data['surfaces']:
         visibility = tuple(bool(v) for v in surface['visibility'])
+        if scene is not None:
+            # The sixth is what shadow rays go by; Modo's own sixth, for occlusion rays, is not that.
+            visibility = visibility[:5] + (casts_shadow(scene, tuple(surface['layers']), shadows),)
         if not any(visibility):
             continue
         tag = surface['material']

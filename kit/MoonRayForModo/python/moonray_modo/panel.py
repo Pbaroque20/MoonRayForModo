@@ -148,6 +148,8 @@ class Panel(Tools, QtWidgets.QWidget):
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
         self.camera=QtWidgets.QComboBox()
         self.camera.setToolTip('The camera the scene is rendered through. MoonRay camera items are added from MoonRay > Add MoonRay Item.')
+        # A long camera name is cut short in a narrow window: the whole of it is in the tip.
+        self.camera.currentTextChanged.connect(lambda text:self.camera.setToolTip((text+'\n' if text else '')+'The camera the scene is rendered through. MoonRay camera items are added from MoonRay > Add MoonRay Item.'))
         self.camera.activated.connect(self._camera_chosen)
         row.addWidget(self.camera)
         self.buffer = QtWidgets.QComboBox()

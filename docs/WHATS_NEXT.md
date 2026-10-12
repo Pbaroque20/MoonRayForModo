@@ -53,6 +53,7 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 
 - **An item with its eye off no longer renders**, in MoonRay or MoonLightIPR. Left at Render: Default, an item renders as it is shown; Render: Yes or No still settles it either way. A parent hides its children only when it is set to hide them with it.
 - **MoonLightIPR follows a surface's visibility to each kind of ray**: seen by the camera, by indirect light, in reflections, in refractions, and whether it casts shadows. Light that a scattered ray comes upon is stopped by what casts shadows, as in MoonRay. On four test scenes (hidden from the camera; casting no shadow; seen by the camera only; casting its shadow only), 96 to 100% of the picture is within 10% of MoonRay's. These settings reach the renderer with Surfaces set to Evaluated.
+- **A Shader's Cast Shadows switch is followed**, in MoonRay and MoonLightIPR. Modo's own switches for a surface have none for shadows, and the plugin took Visible to Occlusion Rays for it; it now asks the Shader over the surface. Read from a Shader item in Modo: Cast Shadows off, and the surface comes through as seen by everything and casting no shadow.
 
 ![Four cubes, of which the two with their eye off or Render: No are not rendered](images/visibility-eye.png)
 *Four cubes in a row. The second has its eye off and the third is set to Render: No: neither is rendered. The fourth has its eye off but Render: Yes.*
@@ -71,11 +72,12 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 - **A light with its eye off** is left out, and comes back when set to Render: Yes. Environments have no eye of their own to follow.
 - **A Shader set not to be seen by the camera** reaches the renderer through the Shader item in Modo.
 - **A stop of a normal render** takes 3.6 to 4.7 seconds. Taking the picture three times over in place of five did not make it reliably quicker, so five it stays.
+- **A safe render stopped after its first picture and before its first save** (8 seconds in, two balls) keeps the picture as it stands and denoises it; stopped at 18 seconds it keeps the last save, 6 seconds old. Both times the window ends on Denoised Beauty. Stopped at 2 seconds, before any picture has come, there is nothing to keep and it says so.
+- **A finished preview stays finished**: for a minute after it ends nothing renders again, with the denoiser on, under each of the three engines on two balls and under the realtime engines on the cheetah.
 - **A release package** made from this work (the kit, the next runtime and the geometry reader) passes the release check. Nothing was published.
 
 ## Known gaps
 
-- **A Shader's Cast Shadows switch does not reach the renderer.** Modo hands over six switches for a surface, and Cast Shadows is not among them; the plugin takes Visible to Occlusion Rays for it. A surface with Cast Shadows off still casts its shadow; and, going by the code, one hidden from occlusion rays would cast none (not rendered to see).
 - The rare small dark tile in the live picture under Safe Denoising (0.08% of the worst picture on the cheetah) is still there.
 - A scene with instances, replicators or deformers still reads everything when an item moves.
 - The tile outlines were measured (how often they are told of, and that they ease and fade) and not watched by eye during a long render.
