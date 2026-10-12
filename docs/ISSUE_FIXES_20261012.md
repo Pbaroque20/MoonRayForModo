@@ -20,7 +20,9 @@ The user authorized tests on 12 October. Follow-up checks used a separate checko
 
 Reproduce the host check with `MOONRAY_TEST_RESULTS` set to an output folder and `MOONRAY_TEST_KIT` set to the absolute `test-results/PROFILE/Configs/MoonRayForModo` path, then run `tools/launch_gui_probe.py probe_content_library.py --kit-source UNPACKED_KIT --profile PROFILE --wait --timeout 120`. Use a fresh profile. Read `content-library/report.json`: a normal Modo exit alone does not establish probe success.
 
-#72 still needs real renderer-process/GPU-memory verification. #51 now has both headless installation/discovery and host library-window coverage. No claim of full production validation is made.
+- `tools/check_idle_sessions.py`: **passed with real MoonRay XPU and MoonLightIPR processes**, three 64x64 renders per engine. Each returned a 49,152-byte progressive RGB frame. Manual release and an accelerated idle timeout exited the child; subsequent submissions launched distinct processes and completed. Pending work refused release, no failure signal fired, and MoonRay logged successful GPU setup. Used `runtime/steady-0351-tiles` and `build/moonlightipr/stage` from the main project. The test ages the idle timestamp instead of waiting one minute; the separate timer unit checks cover elapsed-time behavior.
+
+Run `tools/check_idle_sessions.py --moonray RUNTIME --moonlight MOONLIGHT_STAGE` with a PySide2-capable Python. Reports and native logs default to `test-results/idle-sessions`. This validates actual process teardown/restart, not a measurement of the driver's VRAM accounting, automatic memory-pressure detection, or the preview's cached-image UI. Those are not claimed. #51 has both headless installation/discovery and host library-window coverage. No claim of full production validation is made.
 
 ## Remaining priorities
 
@@ -29,3 +31,9 @@ Reproduce the host check with `MOONRAY_TEST_RESULTS` set to an output folder and
 - **#65, #66, #60:** remaining transient dark tiles and the cost/accuracy of stopping a render need runtime investigation and image comparisons. No verified fix is claimed here.
 - **#19, #43, #49, #53, #57, #67, #69:** several reports require host interaction, reproduction, or another machine rather than a speculative code change.
 - Material/lighting parity, motion blur, volumes, import, display filters and distributed rendering remain substantial independent issues; this pass does not claim to resolve the whole backlog.
+
+## Material thumbnail precedence (#50, partial)
+
+Saved materials now use sidecar images before falling back to a drawing. For `paint.moonmat.json`, `paint.moonmat.png` (or JPG/JPEG) takes priority over the simpler `paint.png` name. Graph bundles without a supplied image show a labelled Graph tile rather than a misleading plain ball. The selection pane explains the fallback and the expected thumbnail filename.
+
+`tools/check_asset_thumbnails.py`: **6 passed** using real Qt image loading offscreen: exact sidecar, simple filename and precedence, graph sidecar, graph placeholder, corrupt-image fallback, and texture-image precedence. Fixtures are PNG-encoded; JPEG codec coverage is not claimed. No host UI launch or renderer change was needed. Automatic generation of rendered material thumbnails remains open in #50.
