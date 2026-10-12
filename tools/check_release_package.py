@@ -1,9 +1,11 @@
 """Unpack a packaged release into an empty folder and run it from there, with nothing of this machine on the path.
 
 Usage: check_release_package.py <version> [folder to unpack into]
-Checks that the two ZIPs merge into one kit with what it needs, that MoonRay renders from the unpacked runtime in GPU
+Pass --no-render to check packaging and asset discovery without starting a renderer.
+Checks that the three ZIPs merge into one kit with what it needs, that MoonRay renders from the unpacked runtime in GPU
 and CPU modes with a bare environment, that the scene reader, the VDB reader, the hair grower and the MoonLightIPR session start, that the kit finds its
 own runtime, and that the unpacked kit writes a scene MoonRay accepts for a mesh one part of which holds a volume."""
+import argparse
 import json
 import os
 import shutil
@@ -39,15 +41,56 @@ print(hex(done.returncode & 0xffffffff), (out / 'volume.exr').is_file())
 '''
 
 
+def unpack(archive_path, destination):
+    """Extract only relative kit paths; an archive cannot escape the disposable installation."""
+    with zipfile.ZipFile(archive_path) as archive:
+        for info in archive.infolist():
+            name=info.filename
+            path=Path(name)
+            if (path.is_absolute() or '..' in path.parts or ':' in name or '\\' in name
+                    or not path.parts or path.parts[0]!='MoonRayForModo'
+                    or (info.external_attr >> 16) & 0o170000 == 0o120000):
+                raise ValueError('Unsafe release entry: '+name)
+            (destination/path).resolve().relative_to(destination.resolve())
+        bad=archive.testzip()
+        if bad:raise ValueError('Corrupt archive member: '+bad)
+        archive.extractall(destination)
+        return [info.filename for info in archive.infolist() if not info.is_dir()]
+
+
+LIBRARY = r"""
+import json,sys
+from pathlib import Path
+kit=Path(sys.argv[1]);sys.path.insert(0,str(kit/'python'))
+from moonray_modo import asset_library
+folder=asset_library.bundled()
+entries=[row for batch in asset_library.scan([folder]) for row in batch]
+scenes=folder/'MoonRay scenes'
+assert scenes.is_dir(), 'Content archive was not merged into the kit'
+expected=sorted(scenes.glob('*/scene.rdla'))
+assert expected, 'Content archive has no example scenes'
+indexed={str(Path(row['path']).resolve()) for row in entries if row.get('path')}
+for scene in expected:
+    assert str(scene.resolve()) in indexed, 'Library did not find '+str(scene)
+    assert scene.with_suffix('.rdlb').is_file(), 'Missing paired scene.rdlb: '+str(scene)
+    assert (scene.parent/'LICENSE.txt').is_file(), 'Missing scene license: '+str(scene)
+print(json.dumps({'scenes':len(expected),'indexed_assets':len(entries),'library':str(folder)}))
+"""
+
+
 def main():
-    version = sys.argv[1]
-    root = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(tempfile.mkdtemp(prefix='MoonRayForModo-release-check-'))
-    if root.exists():
-        shutil.rmtree(root)
-    kits = root / 'Kits'
-    kits.mkdir(parents=True)
-    for name in ('MoonRayForModo-%s-kit.zip' % version, 'MoonRayForModo-%s-windows-runtime.zip' % version):
-        zipfile.ZipFile(ROOT / 'dist' / ('release-' + version) / name).extractall(kits)
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('version')
+    parser.add_argument('folder',nargs='?',type=Path)
+    parser.add_argument('--no-render',action='store_true')
+    args=parser.parse_args();version=args.version
+    root=args.folder.resolve() if args.folder else Path(tempfile.mkdtemp(prefix='MoonRayForModo-release-check-'))
+    if root.exists() and any(root.iterdir()):
+        raise ValueError('Choose an empty or new check folder; existing files are never removed: '+str(root))
+    kits=root/'Kits';kits.mkdir(parents=True)
+    release=ROOT/'dist'/('release-'+version)
+    for suffix in ('kit','windows-runtime','content'):
+        unpack(release/('MoonRayForModo-%s-%s.zip'%(version,suffix)),kits)
     kit = kits / 'MoonRayForModo'
     runtime = kit / 'runtime'
     failed = []
@@ -62,6 +105,13 @@ def main():
     held = (kit / 'index.cfg').read_text(encoding='utf-8').split('<configuration', 1)[1].split('version="', 1)[1].split('"', 1)[0]
     check('the kit says it is %s' % version, held == version, held)
     check('Import MoonRay Scene is in the menu', 'moonray.rdl.import' in (kit / 'layout.cfg').read_text(encoding='utf-8'))
+    # Import the installed kit's own library code: not the development tree or the original downloads.
+    found=subprocess.run([sys.executable,'-c',LIBRARY,str(kit)],capture_output=True,text=True,timeout=120)
+    check('the merged content appears in the asset library',found.returncode==0,found.stdout.strip() or found.stderr.strip()[-500:])
+    if args.no_render:
+        print('Packaging checks only; no render or Modo UI tests run. Unpacked in',root)
+        if failed:raise SystemExit('%d check(s) failed'%len(failed))
+        return
     # A bare environment: nothing of this machine's toolchain or project on the path.
     bare = {key: os.environ[key] for key in ('SystemRoot', 'SystemDrive', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE') if key in os.environ}
     bare['PATH'] = os.path.join(os.environ['SystemRoot'], 'System32')

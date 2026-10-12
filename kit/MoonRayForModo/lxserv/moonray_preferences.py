@@ -144,3 +144,24 @@ lx.bless(number('draft/width',64.0,3200.0),'moonray.pref.draftWidth')
 lx.bless(number('light_intensity',0.0,1e9),'moonray.pref.lightIntensity')
 lx.bless(RuntimeFolder,'moonray.pref.runtime')
 lx.bless(RuntimeBrowse,'moonray.pref.runtimeBrowse')
+
+
+class ReleaseIdleRenderers(lxu.command.BasicCommand):
+    """Free completed sessions only; never interrupt sampling or queued work."""
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Enable(self, msg): return True
+    def basic_Execute(self, msg, flags):
+        from PySide2 import QtWidgets
+        from moonray_modo.render import Renderer
+        released = 0
+        seen = set()
+        for widget in QtWidgets.QApplication.allWidgets():
+            renderer = getattr(widget, 'renderer', None)
+            if not isinstance(renderer, Renderer) or id(renderer) in seen: continue
+            seen.add(id(renderer))
+            for session in (renderer.session, renderer.moonlightipr):
+                released += int(session.idle.release_now())
+        lx.out('MoonRay: released %d idle renderer session(s); active renders were left running.' % released)
+
+lx.bless(choice('idle_release_minutes', ((0,'Never'),(1,'After 1 minute'),(5,'After 5 minutes'),(15,'After 15 minutes'),(30,'After 30 minutes'))),'moonray.pref.idleRelease')
+lx.bless(ReleaseIdleRenderers,'moonray.releaseIdle')
