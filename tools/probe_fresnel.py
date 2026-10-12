@@ -27,7 +27,14 @@ CASES = [('diffuse_colour', {'diffAmt': 1.0}), ('diffuse_half', {'diffAmt': .5})
          ('diffuse_spec_fresnel', {'diffAmt': 1.0, 'specAmt': .04, 'specFres': 1.0, 'rough': .4}),
          ('diffuse_spec_030', {'diffAmt': 1.0, 'specAmt': .3, 'rough': .3}),
          ('blinn_030', {'specAmt': .3, 'brdfType': 'blinn', 'rough': .3}), ('gtr_030', {'specAmt': .3, 'rough': .3}),
-         ('aniso_030', {'specAmt': .3, 'rough': .3, 'aniso': .7})]
+         ('aniso_030', {'specAmt': .3, 'rough': .3, 'aniso': .7}),
+         # Modo's Principled model: its highlight alone on black at three roughnesses, then over a colour.
+         *[('principled_gloss_%02d' % round(r * 100), {'brdfType': 'principled', 'specAmt': 1.0, 'rough': r, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0}) for r in (.1, .35, .7)],
+         *[('principled_paint_%02d' % round(r * 100), {'brdfType': 'principled', 'specAmt': .25, 'rough': r, 'diffAmt': 1.0}) for r in (.1, .35, .7)]]
+# Only the cases named in MOONRAY_PROBE_CASES, where any are: the others' pictures are kept as they are.
+import os
+if os.environ.get('MOONRAY_PROBE_CASES'):
+    CASES = [case for case in CASES if any(case[0].startswith(name) for name in os.environ['MOONRAY_PROBE_CASES'].split(','))]
 
 
 def channels(item):
@@ -91,5 +98,5 @@ try:
         result['cases'].append(case)
 except Exception:
     result['error'] = traceback.format_exc()
-(out / 'report.json').write_text(json.dumps(result, indent=1, default=str))
+(out / ('report_%s.json' % os.environ['MOONRAY_PROBE_CASES'].replace(',', '_') if os.environ.get('MOONRAY_PROBE_CASES') else 'report.json')).write_text(json.dumps(result, indent=1, default=str))
 QtCore.QTimer.singleShot(1500, lambda: lx.eval('!app.quit'))

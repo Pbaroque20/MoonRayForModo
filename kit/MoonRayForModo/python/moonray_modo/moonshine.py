@@ -70,7 +70,7 @@ def mapped(material,effect):
 
 def emit(material, tag, index, bindings, lines):
     from .rdla import string, number, vector
-    from .shading_models import curve
+    from .shading_models import curve,principled_rise
     from .material_settings import values
     controls = values(material)
     sss_weight = bindings.get('subsurfaceAmount')
@@ -164,7 +164,7 @@ def emit(material, tag, index, bindings, lines):
             # Under Modo's Principled model the specular amount is a share of 8% seen straight on, as measured
             # against Modo, and it always rises toward the edge.
             straight=most*(.08 if principled else 1.0)
-            rise=1.0 if principled else max(0.0,min(1.0,max(m.get('specular_fresnel',1.0) for m in stack)))
+            rise=max(principled_rise(m) for m in stack if m.get('principled')) if principled else max(0.0,min(1.0,max(m.get('specular_fresnel',1.0) for m in stack)))
             lobe=fresnel_match(straight,rise)
             root=math.sqrt(lobe)
             path='/modo/fresnel/'+str(index)
