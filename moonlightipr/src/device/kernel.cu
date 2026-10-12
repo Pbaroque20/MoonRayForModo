@@ -768,9 +768,22 @@ ML_INLINE float3 specularFresnel(const Surface& s, float cosine) {
     if (s.metallic <= 0.0f) return vec(s.specular * dielectricFresnel(cosine, s.ior));
     return lerp(vec(s.specular * dielectricFresnel(cosine, s.ior)), s.conductor ? conductorFresnel(s.albedo, cosine) : schlick(s.albedo, cosine), s.metallic);
 }
-// What reaches the lobes under the coat.
+// What reaches the lobes under the coat, and comes out of it again. MoonRay's clearcoat bends light (its
+// clearcoat_bending, on unless switched off), and what is under such a coat is dimmed twice: by what the coat reflects
+// of the light going in, in proportion to how much coat there is, and by what it turns back of the light coming out,
+// which is the whole of a dielectric's reflection as soon as there is any coat at all (UnderClearcoatBsdfLobe).
 ML_INLINE float underCoat(const Surface& s, float3 wo) {
-    return s.coatDims ? 1.0f - s.coat * dielectricFresnel(wo.z, s.ior) : 1.0f;
+    if (!s.coatDims) return 1.0f;
+    const float reflected = dielectricFresnel(wo.z, s.ior);
+    return (1.0f - s.coat * reflected) * (s.coat > 0.0f ? 1.0f - reflected : 1.0f);
+}
+// The light the coat turns back goes down to what is under it again, and some of that comes out at the next try, and
+// so on: MoonRay adds the series up, by the share of light the lobe beneath sends back.
+ML_INLINE float3 coatBounces(const Surface& s, float3 wo, float3 albedo) {
+    if (!s.coatDims || s.coat <= 0.0f) return vec(1.0f);
+    const float reflected = dielectricFresnel(wo.z, s.ior);
+    return make_float3(1.0f / fmaxf(1.0f - reflected * albedo.x, 0.01f), 1.0f / fmaxf(1.0f - reflected * albedo.y, 0.01f),
+                       1.0f / fmaxf(1.0f - reflected * albedo.z, 0.01f));
 }
 // What the dielectric lets through to whatever is beneath it. MoonRay evaluates this on the
 // view direction and blends towards normal incidence as the lobe above gets rougher.
@@ -779,7 +792,8 @@ ML_INLINE float entering(const Surface& s, float3 wo) {
     return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo);
 }
 ML_INLINE float3 diffuseColor(const Surface& s, float3 wo) {
-    return s.albedo * s.frontKeep * (entering(s, wo) * (1.0f - s.transmission) * s.diffuseScale);
+    const float3 colour = s.albedo * s.frontKeep;
+    return colour * coatBounces(s, wo, colour) * (entering(s, wo) * (1.0f - s.transmission) * s.diffuseScale);
 }
 // Diffuse light that comes out of the far side of something thin, as DwaBaseMaterial's diffuse transmission.
 ML_INLINE float3 backColor(const Surface& s, float3 wo) {
@@ -1831,7 +1845,9 @@ extern "C" __global__ void __raygen__moonlightipr() {
             if (kept) wi = reflectAbout(wo, h);
             direction = frame.toWorld(wi);
             seen = kept ? SEEN_REFLECTED : SEEN_THROUGH;
-            lightWeight = bounceWeight = tint;
+            // MoonRay's material tints the light at every crossing of the surface, in as out: its transmission colour
+            // is the colour of the lobe itself. Light thrown back inside is not tinted.
+            lightWeight = bounceWeight = kept ? tint : tint * surface.transmissionColor;
             sharp = true;
             clampFound = roughDepth >= params.sampleClampDepth;
             origin = offsetOrigin(hit.p, ng, direction);

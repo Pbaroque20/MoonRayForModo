@@ -122,7 +122,7 @@ Three more scenes cover textures and the two ways a material reaches MoonRay:
 | Textures on plain materials (`UsdPreviewSurface`): colour, roughness and normal maps | 1.000 | 98% |
 | Material stacks without textures (`DwaBaseMaterial`) | 0.995 | 91% |
 | Material stacks with layers (`DwaBaseMaterial`): multiply blend, a half-opaque material row | 1.001 | 98% |
-| A glass ball and a clearcoated cube under a sun and sky | 1.091 | 66% |
+| A glass ball and a clearcoated cube under a sun and sky | 1.043 | 92% |
 | A thin tinted ball and a half-present cube | 1.013 | 93% |
 | Nine sphere and rect lights of different power | 0.998 | 98% |
 | A masked material row, a half-opaque group and a bump map | 1.003 | 97% |
@@ -142,7 +142,7 @@ samples, MoonRay 36):
 | Subsurface scattering, full on a ball and half on a cube | 0.986 | 94% |
 | Anisotropy, along and across texture u | 0.990 | 98% |
 | Absorption inside glass | 1.022 | 96% |
-| Dispersion (Abbe number 4) | 1.056 | 83% |
+| Dispersion (Abbe number 4) | 1.054 | 88% |
 | Checker, noise, a gradient and layer curves | 1.012 | 89% |
 
 ![Depth of field](../docs/images/moonlightipr-depth_of_field.jpg)
@@ -201,6 +201,16 @@ plain diffuse and what is beneath the highlight is not dimmed by it. MoonLightIP
 highlight there: the unlit side of a ball on a lit, shiny ground was 83% as bright as
 MoonRay's, and is now 101%. Before, the stack scene without textures had 64% of its tiles
 within 10%, the layered one 61%, the masked one 54% and the patterns 56%.
+
+Two more, the same day, for glass and coats. `DwaBaseMaterial` gives its transmission lobe the
+transmission colour itself, so light is tinted at every crossing of a solid's surface, in as
+out; MoonLightIPR tinted it going in only, and a tinted glass ball was 10% brighter than
+MoonRay's whatever lit it (now 1%). And under a clearcoat that bends light, which is
+`clearcoat_bending`'s default, what lies beneath is dimmed by the coat's reflection of the
+light going in and again of the light coming out, less what the coat turns back down and
+the layer beneath sends up again (`UnderClearcoatBsdfLobe`); MoonLightIPR had the first of
+those only. A coated cube was 9% brighter than MoonRay's and is now 7%: the rest is not
+accounted for. Before, the glass and coat scene had 66% of its tiles within 10%.
 
 What is left in the full scenes is mostly near shadow edges and in glass, where the
 two renderers resolve noise and clamped bounce light differently, and has not been
@@ -271,7 +281,7 @@ running session leaves out the data of meshes it already holds.
 | Perspective camera matrix, focal length, film width | Pinhole camera with the same horizontal field of view |
 | Meshes, instances, per-polygon material tags | Triangle fans; authored normals on smooth unsubdivided meshes, otherwise area-weighted or faceted |
 | Material `color`, `metallic`, `roughness`, `ior`, `emission` | The uber-shader's starting values |
-| `transmission`, `transmission_color`, `refraction_roughness`, `ior`, `thin_geometry` | Refraction through the surface in place of diffuse, tinted on entry, bent at both faces of a solid or passed straight through a thin sheet. Glass casts an opaque shadow to light sampling; light reaches what is behind it through bounce rays, as in MoonRay |
+| `transmission`, `transmission_color`, `refraction_roughness`, `ior`, `thin_geometry` | Refraction through the surface in place of diffuse, tinted at each crossing of a solid's surface, bent at both faces of a solid or passed straight through a thin sheet. Glass casts an opaque shadow to light sampling; light reaches what is behind it through bounce rays, as in MoonRay |
 | `clearcoat`, `clearcoat_roughness` | A second GGX lobe on top. For material stacks it takes its reflection out of the layers beneath, as `DwaBaseMaterial`'s outer specular does; for plain materials it is added, as in `UsdPreviewSurface` |
 | `presence` (and dissolve layers) | Each camera, bounce and shadow ray passes through with that probability, in an any-hit test that only scenes with such a material pay for |
 | Material stacks and their layers on colour, colour amount, roughness, metallic, emission, emission amount, normal, transmission amount, colour and roughness, coat amount and roughness, dissolve, anisotropy, subsurface amount and colour, and the four driver channels | A layer stack per material: material rows, constants, images, gradients, checker and noise patterns and baked grid and dots procedurals, with the plugin's 15 blend modes and normal map blending, opacity, invert, channel flips, single-channel picks, alpha as mask, gamma, contrast, brightness, bias and gain, and the four tiling modes. Groups blend their rows as one, with their own opacity, blend mode and group mask, up to 4 deep; layer masks scale the row, material row or group they target. Constant rows are worked out by the packer until a channel gets a row that varies, so a material without images costs the GPU no layers |
