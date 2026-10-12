@@ -33,7 +33,7 @@ class _PreviewBody:
         self.region_tool = False
         # Whether the whole frame stays in view when a region is set, as it does over the draft's lines.
         self.whole = False
-        # The draft's paper: two colours the whole view is filled with, head to foot, under a picture that is then
+        # The draft's paper: two colours the frame is filled with, head to foot, under a picture that is then
         # lines with nothing between them. None for the ordinary dark surround.
         self.paper = None
         # The size the picture is spoken of at, where it is drawn finer than it is rendered: a draft's. None for its own.
@@ -231,10 +231,15 @@ class _PreviewBody:
         painter = QtGui.QPainter(self)
         try:
             if self.paper:
-                paper = QtGui.QLinearGradient(0, 0, 0, self.height())
-                paper.setColorAt(0.0, QtGui.QColor(self.paper[0]))
-                paper.setColorAt(1.0, QtGui.QColor(self.paper[1]))
-                painter.fillRect(self.rect(), paper)
+                # The draft's paper is the frame the camera renders, and no more: what of the view lies outside the
+                # frame is black, so that where the picture ends is plain to see.
+                painter.fillRect(self.rect(), QtGui.QColor('#000000'))
+                frame = self.image_rect()
+                if not frame.isEmpty():
+                    paper = QtGui.QLinearGradient(0, frame.top(), 0, frame.bottom())
+                    paper.setColorAt(0.0, QtGui.QColor(self.paper[0]))
+                    paper.setColorAt(1.0, QtGui.QColor(self.paper[1]))
+                    painter.fillRect(frame, paper)
             else:
                 painter.fillRect(self.rect(), QtGui.QColor('#191b20'))
             if self.image.isNull():
