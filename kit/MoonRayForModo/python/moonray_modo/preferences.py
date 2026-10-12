@@ -21,6 +21,8 @@ KEYS = {
 }
 # The samples a pixel each realtime engine may be set to stop at.
 LS_SAMPLES = (1, 4, 16, 32, 64)
+# How wide MoonRay LS may render while it follows the scene: small, to answer at once, or any of the realtime sizes.
+LS_WIDTHS = (80, 160, 240) + tuple(size for label, size in SIZES)
 MOONLIGHTIPR_SAMPLES = (32, 64, 128, 256)
 
 
@@ -105,7 +107,8 @@ class Dialog(QtWidgets.QDialog):
         heading = QtWidgets.QLabel('MoonRay LS quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
-        form.addRow('Width limit', combo('ipr/width', [('%d px' % v, v) for v in (80, 160, 240)]))
+        form.addRow('Width limit', combo('ipr/width', [('%d px' % v, v) for v in LS_WIDTHS],
+                                          'How wide MoonRay LS renders while it follows the scene, and never wider than the realtime preview size above. Narrower answers an edit sooner.'))
         form.addRow('Pixel samples', combo('ipr/samples', [('%d per pixel' % v, v) for v in LS_SAMPLES],
                                             'The most samples a pixel MoonRay LS takes while it follows the scene, and never more than the render settings of the scene give. More is cleaner and slower to answer an edit.'))
         self.error = QtWidgets.QDoubleSpinBox()

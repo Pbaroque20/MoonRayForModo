@@ -52,6 +52,12 @@ class IprTests(unittest.TestCase):
             many,_,_=prepare(dict(scene,render_settings=dict(scene.get('render_settings',{}),sampling_mode=2,max_adaptive_samples=256)),640,360,4,160,cap)
             self.assertEqual(many['render_settings']['max_adaptive_samples'],cap)
         with self.assertRaises(ValueError):prepare(scene,640,360,4,160,48)
+        # The width may be any of the realtime preview's sizes, and is never wider than the preview or the scene.
+        wide=dict(scene,width=1920,height=1080)
+        self.assertEqual(prepare(wide,640,360,4,640)[1:],(640,360))
+        self.assertEqual(prepare(wide,640,360,4,1280)[1:],(640,360))
+        self.assertEqual(prepare(wide,1280,720,4,960)[1:],(960,540))
+        with self.assertRaises(ValueError):prepare(wide,640,360,4,500)
         preview,w,h=prepare(scene,320,640,1)
         self.assertEqual((w,h),(128,256))
         self.assertEqual(preview['render_settings']['max_adaptive_samples'],1)
