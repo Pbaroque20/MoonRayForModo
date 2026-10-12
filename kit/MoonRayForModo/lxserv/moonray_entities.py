@@ -80,6 +80,30 @@ def register():
         Drawn=instance(name)
         floors={channel:entities.limits(name,key) for key,channel,kind,default,choices in plan if entities.limits(name,key) is not None}
         class Typed(lxu.package.BasicPackage, lxu.package.BasicItemBehaviors, lxifc.ChannelUI):
+            def newborn(self,item,original,flags):
+                # Called for newly created items, not when a saved scene is loaded. A duplicate keeps
+                # the authored values of its source, rather than being reset to today's preferences.
+                try:
+                    if original is not None and lx.object.Item(original).test():return
+                except TypeError:
+                    # A fresh item passes a null lx.object.Unknown, not None. Casting it to Item
+                    # raises "no interface"; it is the normal no-original case, not a duplicate.
+                    pass
+                except (RuntimeError,LookupError):
+                    return
+                # Newborn can run before evaluated channels exist. The high-level modo.Channel
+                # helper constructs an evaluated reader even for writes, which fails here.
+                # Use the item's own setup context directly, within the creation transaction.
+                writer=lx.object.ChannelWrite(item.Context().Channels(lx.symbol.s_ACTIONLAYER_SETUP,0.0))
+                for key,value in entities.starting(name).items():
+                    try:
+                        index=item.ChannelLookup(entities.CHANNEL_PREFIX+key)
+                        if writer.Type(item,index)==lx.symbol.i_TYPE_INTEGER:
+                            writer.Integer(item,index,int(value))
+                        else:
+                            writer.Double(item,index,float(value))
+                    except (TypeError,ValueError,AttributeError,LookupError,RuntimeError) as exc:
+                        lx.out('MoonRay: cannot initialize %s.%s: %s'%(name,key,exc))
             def test_parent(self,item,parent):return True
             def pkg_Attach(self):return Drawn(self.acts)
             def pkg_TestInterface(self,guid):return guid==lx.symbol.u_PACKAGEINSTANCE or guid==lx.symbol.u_VIEWITEM3D

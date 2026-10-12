@@ -51,6 +51,8 @@ class Session(QtCore.QObject):
         self.latest=None;self.sent=None;self.applied=None;self.signature=None
         self.scene_memory=False;self.mappings={};self.command_channel=None
         self.partial='';self.stopping=False;self.closed=False;self.view='beauty'
+        from .idle_release import IdleRelease
+        self.idle=IdleRelease(self,self._release_idle,lambda:self.running() and not self.stopping and self.sent is None)
 
     def select_view(self,key):
         if not key or not key.isascii() or len(key)>64 or not all(c.isalnum() or c=='_' for c in key):return
@@ -66,6 +68,7 @@ class Session(QtCore.QObject):
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
 
     def submit(self,text,runtime,threads,mode,generation,bucket_size=0):
+        self.idle.cancel()
         request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size)
         signature=(str(runtime),threads,mode,bucket_size)
         self.latest=request
@@ -186,6 +189,7 @@ class Session(QtCore.QObject):
                     try:path.unlink()
                     except OSError:pass
             elif parts[1]=='DONE' and self.latest and generation==self.latest['id']:
+                self.idle.arm()
                 self.ready.emit(generation)
         self.partial=self.partial[-65536:]
 
@@ -195,6 +199,7 @@ class Session(QtCore.QObject):
             self.failed.emit('Cannot start persistent MoonRay: '+self.process.errorString())
 
     def _exit(self,code,status):
+        self.idle.cancel()
         self._read()
         self.sent=None;self.applied=None
         self._release_mappings()
@@ -204,7 +209,12 @@ class Session(QtCore.QObject):
         elif not self.closed:
             self.failed.emit('Persistent MoonRay exited (0x%08X). Refresh to start a new session; see Render Log.'%(code & 0xffffffff))
 
+    def _release_idle(self):
+        self.stop()
+        self.status.emit("Idle MoonRay released its memory. Cached images are kept; the next render reloads the scene.")
+
     def stop(self):
+        self.idle.cancel()
         self.latest=None;self.sent=None;self.applied=None
         if self.running():self.stopping=True;self.process.kill()
 
