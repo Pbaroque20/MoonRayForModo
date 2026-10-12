@@ -159,3 +159,9 @@ Validation: 35 RDL tests pass, including nested mesh/native-shape default omissi
 Capping an RDL instancer previously caused its per-instance arrays to fail length matching, dropping colors/IDs from every retained placement. Array validation now uses the original placement count while iteration keeps the existing cap. Disabled placements retain their original attribute indices.
 
 Validation: both focused tests failed before the fix. Afterwards 37 RDL and eight primitive-attribute tests passed. Tests temporarily reduce the limit to exercise truncation without allocating a large scene. This is import-plan validation, not a large-scene memory or rendered-color benchmark. Per-face/per-point mesh editing in #22 remains open.
+
+## Instance transform validation
+
+Position, scale and quaternion components are now checked for the required count and finite values before matrix construction. Invalid instancers follow the existing import-notice path without losing unrelated geometry. Quaternion normalization scales components first to avoid overflow and silent rotation loss. Zero scales and the existing zero/tiny-quaternion identity fallback remain supported.
+
+Validation: the new malformed-component and large-quaternion cases failed before the fix. All 41 RDL checks pass afterward, including import-plan recovery with an invalid instancer. No new Modo or rendered-image comparison was needed for these pure numeric/input-validation changes. Motion and semi-sharp crease work in #23 remains open.
