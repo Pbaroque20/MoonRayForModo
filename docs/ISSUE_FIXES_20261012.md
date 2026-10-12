@@ -115,3 +115,9 @@ Validation: four validation-unit checks and eight production checks passed. Nati
 ## Regression coverage in Modo
 
 The standalone suite passed 280 checks with 16 host/runtime skips. The isolated Modo 16.1v9 runner then passed 29 expanded host/runtime checks with no skips, using steady-0351-tiles. Two stale graph tests now verify the current immediate-save and persistent RGB/swatch behavior while retaining field-lifetime and repaint checks. No production behavior changed. The host runner disables the startup preview controller to keep the checks isolated.
+
+## Shared RDL instance assignments (#52)
+
+Prototype caching now includes the imported face-material assignments. Instancers with different shaders or light sets receive separate prototypes while placements within each assignment remain Modo instances. Mesh-instancer links are retained on material layers; receiver references include all scoped prototype copies. Native-shape/nested instancer assignment parity remains incomplete.
+
+Validation: 30 RDL, 20 core, 32 CPU-feature and 8 production checks passed. The isolated Modo import retained two prototypes and four instances; direct and evaluated capture preserved distinct lights/shadows/filters and both exports passed the native MoonRay scene reader. No rendered-image equivalence is claimed.

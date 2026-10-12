@@ -29,6 +29,38 @@ def scene(layer):
 
 
 class Sets(unittest.TestCase):
+    def test_shared_prototypes_keep_instancer_material_and_light_assignments(self):
+        source=scene({'geometries':['one','two'], 'lightsets':['keyOnly','both']})
+        source['objects'][1]['attributes']['surface_shaders']=['paint','otherPaint']
+        source['objects'] += [
+            {'name':'otherPaint','type':'DwaBaseMaterial','attributes':{'metallic':.5}},
+            *[{'name':name,'type':'RdlInstancerGeometry','attributes':{
+                'method':2,'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]*3}}
+              for name in ('one','two')]]
+        data=rdl_import.plan(source,'test.rdla')
+        meshes=[m for m in data['meshes'] if m['render']]
+        self.assertEqual(len(meshes),2)
+        self.assertEqual(len(data['instances']),4)
+        self.assertEqual(len({m['name'] for m in meshes}),2)
+        tags=[m['tags'][0] for m in meshes]
+        self.assertNotEqual(*tags)
+        self.assertEqual({i['source'] for i in data['instances']},{m['name'] for m in meshes})
+        link=next(l for l in data['links'] if l['material']==tags[0])
+        self.assertEqual(link['lights'],['key'])
+        self.assertIn('otherPaint',tags[1])
+
+    def test_shared_shader_still_separates_different_instancer_light_sets(self):
+        source=scene({'geometries':['one','two'], 'lightsets':['keyOnly','both']})
+        source['objects'] += [
+            {'name':name,'type':'RdlInstancerGeometry','attributes':{
+                'method':2,'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]*2}}
+            for name in ('one','two')]
+        data=rdl_import.plan(source,'test.rdla')
+        meshes=[m for m in data['meshes'] if m['render']]
+        self.assertEqual(len(meshes),2)
+        self.assertEqual(len(data['instances']),2)
+        self.assertNotEqual(meshes[0]['tags'],meshes[1]['tags'])
+
     def test_sets_become_the_links_of_the_meshes_they_are_on(self):
         data = rdl_import.plan(scene({'lightsets': ['keyOnly', 'both'], 'shadowsets': ['noFillShadow', None], 'shadowreceiversets': ['notOnFloor', None]}), 'test.rdla')
         names = {record['name'] for record in data['meshes']}
