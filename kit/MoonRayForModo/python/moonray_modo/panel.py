@@ -1103,7 +1103,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # Under Safe Denoising: how long ago MoonRay last saved, which is what a stop now would keep.
         saved=getattr(self.renderer,'saved_at',None)
         if (self._rendering and saved is not None and getattr(self.renderer,'safe_files',None) and not getattr(self.renderer,'settling',False)
-                and not label.startswith(('Complete','Stopped'))):
+                and not label.startswith(('Complete','Stopped')) and 'Denoising' not in label):
             import time
             from .progress import duration
             label+=' · Saved %s ago'%duration(time.monotonic()-saved)

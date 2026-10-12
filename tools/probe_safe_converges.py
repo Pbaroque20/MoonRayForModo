@@ -199,6 +199,7 @@ def beauty():
         if shown is not None and not shown.isNull() and shown.size() == image.size():
             run['denoised_against_beauty'] = [round(apart(shown, image), 2), round(apart(shown, image.mirrored(False, True)), 2)]
         log = str(getattr(panel.renderer, 'log', ''))
+        (out / (held['name'] + '-log.txt')).write_text('\n'.join(line for line in log.splitlines() if 'Rendering [' not in line and not line.startswith('@@')), encoding='utf-8', errors='replace')
         run['log'] = [line[:160] for line in log.splitlines() if ('ample' in line or 'heckpoint' in line) and 'Rendering [' not in line and not line.startswith('@@')][-12:]
         if len(result['runs']) < len(RUNS):
             # Back to how a finished render leaves the window, then the same again with Safe Denoising on.

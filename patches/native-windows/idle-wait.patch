@@ -1,0 +1,19 @@
+diff --git a/lib/rendering/rndr/RenderDriver.cc b/lib/rendering/rndr/RenderDriver.cc
+index c8865dc..d13684f 100644
+--- a/lib/rendering/rndr/RenderDriver.cc
++++ b/lib/rendering/rndr/RenderDriver.cc
+@@ -2344,7 +2344,14 @@ RenderDriver::renderThread(RenderDriver *driver,
+         switch(state) {
+         case RenderThreadState::UNINITIALIZED:
+         case RenderThreadState::READY_TO_RENDER:
++#ifdef _WIN32
++            // Waiting to be asked for a frame. A sleep of under a millisecond returns at once on
++            // Windows, and this thread would then keep a whole core busy for as long as nothing
++            // is rendered: a renderer kept loaded between renders spends most of its time here.
++            std::this_thread::sleep_for(std::chrono::milliseconds(1));
++#else
+             mcrt_common::threadSleep();
++#endif
+             break;
+ 
+         case RenderThreadState::REQUEST_RENDER:
