@@ -184,3 +184,10 @@ The original negative-index fixture completed normally in that candidate (previo
 Saving a material graph failed with FileExistsError when two image nodes named the same source through different path spellings. The copy cache now uses the same resolved, case-normalized identity as its asset folder. UDIM aliases share one asset set; distinct source folders with matching filenames remain separate.
 
 Validation: the alias/relocation regression failed before the fix. Both new bundle-path checks and 26 existing compatibility checks pass afterward, including relocation, tamper rejection, disabled overrides and graph dependencies. These are file/graph checks, not rendered thumbnail validation; #50 remains open. No kit or runtime was installed.
+
+
+## Failed material-bundle save cleanup
+
+A failed asset copy or final folder publication left the partially copied textures on disk. Bundle saves now own their staging directory through TemporaryDirectory, cleaning it on failure while publishing successful bundles by rename. Existing destinations, source images, and unrelated partial folders are preserved.
+
+Validation: both injected-failure regressions failed before the fix. Four focused bundle checks and 26 related compatibility checks pass afterward. The copy-failure check also retries and loads the successful bundle. No Modo scene or installed kit was changed.
