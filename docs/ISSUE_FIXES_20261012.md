@@ -198,3 +198,10 @@ Validation: both injected-failure regressions failed before the fix. Four focuse
 Material bundles resolved a literal <UDIM> filename during save and load, bypassing textures.asset_path, which exists for Windows Python versions that reject pattern characters. Both paths now reuse that helper while retaining containment checks and alias deduplication.
 
 Validation: the UDIM regression failed with simulated Windows invalid-filename handling before the fix. All 30 standalone related checks pass. An isolated Modo 16.1v9 profile ran 15 bundle/compatibility checks with no skips and normal scripted shutdown (exit 1). No native renderer or user scene was involved.
+
+
+## Network-share asset reporting
+
+Backslash UNC paths were silently omitted by assets.paths, so missing-file reports and asset-change signatures ignored network textures and light cookie/VDB files. Path recognition now accepts either slash convention without rewriting stored source paths.
+
+Validation: missing-network-asset and change-signature regressions failed before the fix. Three focused checks and eight production checks pass. Network lookup/stat results are mocked; this proves enumeration and signature handling, not availability or performance of a real network share.
