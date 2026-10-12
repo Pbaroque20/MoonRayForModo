@@ -2,7 +2,8 @@
 from PySide2 import QtCore, QtWidgets
 from . import native
 
-SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('Scene resolution', 0))
+# Of the realtime previews (MoonRay LS and MoonLightIPR). MoonRay itself renders at the camera's resolution.
+SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('1280 px wide', 1280))
 # key: (default, kind)
 KEYS = {
     'runtime': ('', str), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
@@ -38,6 +39,9 @@ class Preferences:
                     # The engine's name as 0.3.50.1 and 0.3.50.2 stored it.
                     return 'moonlightipr'
                 return str(value) if value else (native.default_runtime() if key == 'runtime' else default)
+            if key == 'preview_size' and kind(value) <= 0:
+                # Scene resolution, as it could once be set to: a realtime preview is no longer made that large.
+                return default
             return kind(value)
         except (TypeError, ValueError):
             return default
@@ -79,7 +83,7 @@ class Dialog(QtWidgets.QDialog):
         row.addWidget(self.runtime, 1)
         row.addWidget(browse)
         form.addRow('MoonRay folder', row)
-        form.addRow('Preview size', combo('preview_size', SIZES))
+        form.addRow('Realtime preview size', combo('preview_size', SIZES))
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
         form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',

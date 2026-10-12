@@ -761,9 +761,13 @@ class Panel(Tools, QtWidgets.QWidget):
     # Capturing the scene
 
     def _dimensions(self, scene, final=False):
+        """The size a render is made at. MoonRay, chosen as the engine, renders the picture itself: at the camera's
+        resolution, or the scene's where the camera does not override it. The realtime engines are previews, at the
+        preview size and never wider than it, however large the picture is to be."""
         scene_w, scene_h = scene['width'], scene['height']
         size=self.preferences.get('preview_size')
-        width = scene_w if final or size<=0 else size
+        if size<=0:size=640
+        width = scene_w if final or not self._live() else min(scene_w,size)
         return width, max(16, round(width * scene_h / max(1, scene_w)))
 
     def _capture(self,reuse=False):
