@@ -1336,48 +1336,11 @@ ML_INLINE bool draftEdge(const Hit& a, const Hit& b) {
     return fabsf(dot(b.p - a.p, a.ng)) > 0.03f * fminf(a.t, b.t);
 }
 
-extern "C" __global__ void __raygen__moonlightipr() {
-    const uint3 index = optixGetLaunchIndex();
-    const unsigned pixel = index.y * params.width + index.x;
-    const bool beyond = index.x < params.region[0] || index.x >= params.region[2] || index.y < params.region[1] || index.y >= params.region[3];
-    if (params.draft == 2 || (params.draft == 1 && beyond)) {
-        // Draft: three rays, to here and to the pixels beside and above, and a line where what they find parts.
-        // Nothing is lit or shaded, so it costs next to nothing however heavy the scene, and what is behind the
-        // nearest surface is not drawn.
-        unsigned seed = tea(pixel, params.sample);
-        const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
-        const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
-        const float3 from = vec(params.cameraOrigin), u = vec(params.cameraU), v = vec(params.cameraV), w = vec(params.cameraW);
-        Hit here, beside, above;
-        traceRadiance(from, normalize(u * sx + v * sy + w), here, 1e16f, SEEN_CAMERA);
-        // A line is as wide on the picture whatever its size: about a thousandth of its width, a pixel at least.
-        const float apart = 2.0f * fmaxf(1.0f, float(params.width) / 1100.0f);
-        traceRadiance(from, normalize(u * (sx + apart / params.width) + v * sy + w), beside, 1e16f, SEEN_CAMERA);
-        traceRadiance(from, normalize(u * sx + v * (sy + apart / params.height) + w), above, 1e16f, SEEN_CAMERA);
-        const float line = draftEdge(here, beside) || draftEdge(here, above) ? 1.0f : 0.0f;
-        const float weight = 1.0f / float(params.sample + 1);
-        float4* beauty = reinterpret_cast<float4*>(params.beauty) + pixel;
-        const float kept = beauty->x + (line - beauty->x) * weight;
-        *beauty = make_float4(kept, kept, kept, 1.0f);
-        // The denoiser is shown the lines as they are, so that it leaves them alone.
-        reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(kept, kept, kept, 1.0f);
-        reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-        return;
-    }
-    if (beyond) {
-        // Outside the region being rendered there is no picture: black, as MoonRay leaves it.
-        reinterpret_cast<float4*>(params.beauty)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-        reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
-        reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-        return;
-    }
-    unsigned seed = tea(pixel, params.sample);
-
-    const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
-    const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
-    float3 origin = vec(params.cameraOrigin);
+// The way a camera ray goes for a place on the picture, from -1 to 1 across and up, by the camera's own lens;
+// outside is set where the lens sees nothing.
+ML_INLINE float3 cameraDirection(float sx, float sy, bool& outside) {
     float3 direction = normalize(vec(params.cameraU) * sx + vec(params.cameraV) * sy + vec(params.cameraW));
-    bool outside = false;
+    outside = false;
     if (params.cameraProjection != 0) {
         // MoonRay's fisheye and spherical cameras, by its own formulas. Their directions are in
         // the camera's frame: right, up, and back along the view.
@@ -1412,6 +1375,55 @@ extern "C" __global__ void __raygen__moonlightipr() {
                                   + forward * (cosf(latitude) * cosf(longitude)));
         }
     }
+    return direction;
+}
+
+extern "C" __global__ void __raygen__moonlightipr() {
+    const uint3 index = optixGetLaunchIndex();
+    const unsigned pixel = index.y * params.width + index.x;
+    const bool beyond = index.x < params.region[0] || index.x >= params.region[2] || index.y < params.region[1] || index.y >= params.region[3];
+    if (params.draft == 2 || (params.draft == 1 && beyond)) {
+        // Draft: three rays, to here and to the pixels beside and above, and a line where what they find parts.
+        // Nothing is lit or shaded, so it costs next to nothing however heavy the scene, and what is behind the
+        // nearest surface is not drawn.
+        unsigned seed = tea(pixel, params.sample);
+        const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
+        const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
+        const float3 from = vec(params.cameraOrigin);
+        Hit here, beside, above;
+        // Through the camera's own lens, so that the lines lie where a fisheye or spherical camera's picture does.
+        bool unseen = false, unseenBeside = false, unseenAbove = false;
+        const float3 through = cameraDirection(sx, sy, unseen);
+        traceRadiance(from, through, here, 1e16f, SEEN_CAMERA);
+        // A line is as wide on the picture whatever its size: about a thousandth of its width, a pixel at least.
+        const float apart = 2.0f * fmaxf(1.0f, float(params.width) / 1100.0f);
+        traceRadiance(from, cameraDirection(sx + apart / params.width, sy, unseenBeside), beside, 1e16f, SEEN_CAMERA);
+        traceRadiance(from, cameraDirection(sx, sy + apart / params.height, unseenAbove), above, 1e16f, SEEN_CAMERA);
+        // Where the lens sees nothing there is no line; nor between two places it does not both see.
+        const float line = !unseen && ((!unseenBeside && draftEdge(here, beside)) || (!unseenAbove && draftEdge(here, above))) ? 1.0f : 0.0f;
+        const float weight = 1.0f / float(params.sample + 1);
+        float4* beauty = reinterpret_cast<float4*>(params.beauty) + pixel;
+        const float kept = beauty->x + (line - beauty->x) * weight;
+        *beauty = make_float4(kept, kept, kept, 1.0f);
+        // The denoiser is shown the lines as they are, so that it leaves them alone.
+        reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(kept, kept, kept, 1.0f);
+        reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
+    if (beyond) {
+        // Outside the region being rendered there is no picture: black, as MoonRay leaves it.
+        reinterpret_cast<float4*>(params.beauty)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
+        reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
+    unsigned seed = tea(pixel, params.sample);
+
+    const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
+    const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
+    float3 origin = vec(params.cameraOrigin);
+    bool outside = false;
+    float3 direction = cameraDirection(sx, sy, outside);
     if (outside) {
         // Beyond the lens's field of view there is no picture.
         const float weight = 1.0f / float(params.sample + 1);
