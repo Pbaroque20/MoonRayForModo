@@ -205,3 +205,10 @@ Validation: the UDIM regression failed with simulated Windows invalid-filename h
 Backslash UNC paths were silently omitted by assets.paths, so missing-file reports and asset-change signatures ignored network textures and light cookie/VDB files. Path recognition now accepts either slash convention without rewriting stored source paths.
 
 Validation: missing-network-asset and change-signature regressions failed before the fix. Three focused checks and eight production checks pass. Network lookup/stat results are mocked; this proves enumeration and signature handling, not availability or performance of a real network share.
+
+
+## Package-store hard-link replacement integrity
+
+Replacing an existing packaged texture copied through its hard link, modifying the shared cache and other packages using that asset. Collecting the same asset twice also failed on Windows. Asset destinations are now published from a verified temporary sibling by replacement, preserving other links. Non-shared copies now verify source consistency too.
+
+Validation: before the fix, replacement corrupted the sibling package in both shared/non-shared modes, repeated collection failed, and changed-copy bytes were accepted. Four focused checks now pass, including copy fallback, locked-output preservation and partial-file cleanup. Six existing compatibility checks and eight production checks also pass (18 total). Real local Windows hard links were used; network fallback is simulated. No user packages, scenes, installed kits or shared checkout files were changed.
