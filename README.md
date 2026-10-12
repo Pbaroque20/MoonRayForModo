@@ -14,6 +14,7 @@ The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/r
 - **An idle MoonRay costs nothing.** The MoonRay kept loaded between renders used to keep one processor core busy while it waited; it now rests, and starts again without delay. MoonLightIPR already did. This too needs the MoonRay of the next runtime.
 - **Two lines under the picture**: the status on its own line, then the pointer's values, the render's timing and the picture's size.
 - **Tile outlines move evenly.** They are pastel blue, ease in, stand while MoonRay is at a tile and fade out when it is done; and MoonRay now tells of its tiles about eighteen times a second instead of four, on a clock of their own (next runtime).
+- **No dark blocks in the live picture.** With the graphics card sharing the work, MoonRay counts a sample before all of its light is back, and the live picture caught such pixels too dark, in blocks. A pixel is now shown anew only once MoonRay has left it alone; a render stopped part way is free of the marks they left in its denoised picture (next runtime).
 - **A MoonRay left behind ends itself.** If Modo ends without closing the preview, the loaded MoonRay no longer stays running (next runtime).
 
 ![The preview window with MoonLightIPR chosen and realtime on](docs/images/preview-engines.png)

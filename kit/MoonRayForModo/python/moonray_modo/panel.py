@@ -992,7 +992,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Stopping: keeping what is rendered.');self._await_settle(30000);return
         # MoonRay kept loaded hands over the picture as it stands, with what the denoiser needs, and is then stopped.
         if rendering and not self.draft.isChecked() and self.renderer.keep_progress():
-            self.status.setText('Stopping: keeping what is rendered.');self._await_settle(12000);return
+            self.status.setText('Stopping: keeping what is rendered.');self._await_settle(16000);return
         self.renderer.stop()
         self._set_rendering(False)
         self.status.setText('Stopped.')

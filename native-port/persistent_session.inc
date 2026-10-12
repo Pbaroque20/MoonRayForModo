@@ -4,6 +4,7 @@
 #include <fstream>
 #include <thread>
 #include <atomic>
+#include <map>
 #include <chrono>
 #include <memory>
 #include <scene_rdl2/common/fb_util/FbTypes.h>
@@ -87,8 +88,16 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                 // The last value shown for each pixel of a view. A pixel a worker was adding to
                 // while its picture was taken can be caught part way, lighter or darker than it
                 // is; such a pixel keeps the value it last had when it was at rest.
-                std::string steadyView;
-                std::vector<float> steady;
+                // Kept for each view that has been looked at, so that coming back to one (as when the beauty
+                // and the denoiser's guides are asked for in turn at a stop) finds what it had.
+                struct HeldView { std::vector<float> steady, sampledBefore; };
+                std::map<std::string,HeldView> heldViews;
+                // How much each pixel had been sampled when its picture was last taken. With the graphics
+                // card doing part of the work, a sample is counted before all of its light has come back,
+                // and for that while the pixel reads too dark: a pixel is shown anew only once it has been
+                // left alone from one picture to the next, by when its light is all in.
+                // The frame is finished: every pixel is as it will be, and is taken as it is.
+                bool finished=false;
 
                 auto snapshot = [&](const std::string& key) -> bool {
                     if(useShared && !sharedImage.ready())return false;
@@ -128,7 +137,14 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                     driver->snapshotWeightBuffer(&weightsAfter, true, false);
                     const bool compare=weightsAfter.getWidth()==pixels.getWidth() && weightsAfter.getHeight()==pixels.getHeight();
                     const size_t count=size_t(pixels.getWidth())*pixels.getHeight();
-                    if(steadyView!=key || steady.size()!=count*3){steadyView=key;steady.assign(count*3,std::numeric_limits<float>::quiet_NaN());}
+                    if(!heldViews.count(key) && heldViews.size()>=6)heldViews.clear();
+                    HeldView& held=heldViews[key];
+                    std::vector<float>& steady=held.steady;
+                    std::vector<float>& sampledBefore=held.sampledBefore;
+                    if(steady.size()!=count*3){
+                        steady.assign(count*3,std::numeric_limits<float>::quiet_NaN());
+                        sampledBefore.assign(count,std::numeric_limits<float>::quiet_NaN());
+                    }
                     size_t missingSamples=0;
                     auto readPixel=[&](size_t i,float* rgb) {
                         const unsigned x=i%pixels.getWidth(),y=i/pixels.getWidth();
@@ -140,7 +156,10 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         // it using a weight snapshot captured at a different instant.
                         if(!(sampleWeights.getRow(y)[x]>0.f))++missingSamples;
                         float* kept=&steady[i*3];
-                        if(compare && weightsAfter.getRow(y)[x]!=sampleWeights.getRow(y)[x] && !std::isnan(kept[0])){
+                        const float sampled=sampleWeights.getRow(y)[x];
+                        const bool moving=!finished && ((compare && weightsAfter.getRow(y)[x]!=sampled) || sampledBefore[i]!=sampled);
+                        sampledBefore[i]=sampled;
+                        if(moving && !std::isnan(kept[0])){
                             rgb[0]=kept[0];rgb[1]=kept[1];rgb[2]=kept[2];
                         } else {kept[0]=rgb[0];kept[1]=rgb[1];kept[2]=rgb[2];}
                     };
@@ -205,6 +224,7 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                 complete = context->isFrameComplete() && !waiting();
                 // Show a finished short pass before the output writer performs disk I/O.
                 if(complete) {
+                    finished=true;
                     try { snapshot(selectedView()); }
                     catch(const std::exception& e){std::cerr << "Modo final snapshot: " << e.what() << std::endl;}
                 }

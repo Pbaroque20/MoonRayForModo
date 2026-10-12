@@ -199,13 +199,15 @@ class Renderer(QtCore.QObject):
                 or not getattr(self,'using_session',False) or self.active['snapshot'].get('_ipr') or getattr(self,'phase','')!='render'
                 or not getattr(self,'denoise_guides',None) or getattr(self,'gather',None) is not None or self.buffers.progressive is None):
             return False
-        # Each is taken three times over: a pixel MoonRay is adding to as its picture is taken is caught part way,
-        # too dark or too light, and the denoiser would smear it into a blotch. Of three takes the middle value of
-        # each pixel is used, which no one such pixel spoils. The beauty is asked for last, so as to be the newest.
-        self.gather=gather={'want':['denoise_albedo']*3+['denoise_normal']*3+['beauty']*3,'got':{}}
+        # Each is taken five times over, and the middle value of the last three used for each pixel. A pixel MoonRay
+        # is adding to as its picture is taken is caught part way, too dark, and the denoiser would smear it into a
+        # mark. MoonRay holds such a pixel at what it last showed, but the first picture of a buffer has nothing
+        # earlier to hold it at, and the second may hold it at the first: so those two are let go by. The beauty is
+        # asked for last, so as to be the newest.
+        self.gather=gather={'want':['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5,'got':{}}
         self.pending=None
         self.session.select_view(gather['want'][0])
-        QtCore.QTimer.singleShot(8000,lambda:self._gathered(gather,False))
+        QtCore.QTimer.singleShot(12000,lambda:self._gathered(gather,False))
         return True
 
     def _gathered(self,gather,whole):
@@ -213,7 +215,7 @@ class Renderer(QtCore.QObject):
         self.gather=None
         done=False
         if whole and not self.closed and not self.canceled and self.active:
-            done=self.buffers.keep(gather['got'],self.active['runtime'],self.active['snapshot'],self.backend_status)
+            done=self.buffers.keep({key:taken[-3:] for key,taken in gather['got'].items()},self.active['runtime'],self.active['snapshot'],self.backend_status)
         self.session.select_view('beauty')
         if not self.closed:
             self.stop();self.kept.emit(done)
