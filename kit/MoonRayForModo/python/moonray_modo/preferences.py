@@ -7,6 +7,7 @@ SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('128
 # key: (default, kind)
 KEYS = {
     'runtime': ('', str), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
+    'idle_release_minutes': (5, int),
     'persistent_preview': (True, bool), 'capture_safety': (False, bool), 'preview_motion': (False, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
@@ -86,6 +87,9 @@ class Dialog(QtWidgets.QDialog):
         form.addRow('Realtime preview size', combo('preview_size', SIZES))
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
+        form.addRow('Release idle renderer memory', combo('idle_release_minutes',
+                    [('Never', 0), ('After 1 minute', 1), ('After 5 minutes', 5), ('After 15 minutes', 15), ('After 30 minutes', 30)],
+                    'Keeps cached images. The next render reloads its scene; active renders are never interrupted.'))
         form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
                           'Render reads the scene at shutter open and close; IPR updates stay sharp'))
         form.addRow(check('capture_safety', 'Re-read the scene every 15 seconds while IPR runs',

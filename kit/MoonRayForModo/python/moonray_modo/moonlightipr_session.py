@@ -51,11 +51,14 @@ class Session(QtCore.QObject):
         # Mesh keys the running process is known to hold; their data is not sent again.
         self.known = set()
         self.partial = ''; self.stopping = False; self.closed = False
+        from .idle_release import IdleRelease
+        self.idle = IdleRelease(self, self._release_idle, lambda: self.running() and not self.stopping and self.sent is None and self.latest is None)
 
     def running(self): return self.process.state() != QtCore.QProcess.NotRunning
 
     def submit(self, snapshot, directory, width, height, environment, generation, samples=256, denoise=True, runtime=None):
         """runtime is the MoonRay folder whose oiiotool converts textures."""
+        self.idle.cancel()
         request = dict(snapshot=snapshot, directory=Path(directory), width=width, height=height, environment=environment,
                        id=generation, samples=samples, denoise=denoise, runtime=runtime)
         self.latest = request
@@ -128,6 +131,7 @@ class Session(QtCore.QObject):
                 else: self.failed.emit('MoonLightIPR rejected the scene. Open Render Log for details.')
                 self._dispatch()
             elif parts[1] == 'DONE' and not self.latest and generation == self.current:
+                self.idle.arm()
                 self.ready.emit(generation)
         self.partial = self.partial[-65536:]
 
@@ -137,6 +141,7 @@ class Session(QtCore.QObject):
             self.failed.emit('Cannot start MoonLightIPR: ' + self.process.errorString())
 
     def _exit(self, code, status):
+        self.idle.cancel()
         self._read()
         self.sent = None; self.known = set()
         if self.stopping:
@@ -164,10 +169,17 @@ class Session(QtCore.QObject):
     def stop(self):
         """Stop sampling but keep the process and its loaded meshes, so the next preview starts at once."""
         self.latest = None; self.current = None
-        if self.running() and not self.stopping: self.process.write(b'pause\n')
+        if self.running() and not self.stopping:
+            self.process.write(b'pause\n')
+            self.idle.arm()
+
+    def _release_idle(self):
+        self.release()
+        self.status.emit("Idle MoonLightIPR released its GPU memory. Cached images are kept; the next render reloads the scene.")
 
     def release(self):
         """End the process and free the GPU, for when another renderer takes over."""
+        self.idle.cancel()
         self.latest = None; self.sent = None; self.current = None
         if self.running(): self.stopping = True; self.process.kill()
 

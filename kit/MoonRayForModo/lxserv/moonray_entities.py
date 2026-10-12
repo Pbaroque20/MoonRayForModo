@@ -80,6 +80,19 @@ def register():
         Drawn=instance(name)
         floors={channel:entities.limits(name,key) for key,channel,kind,default,choices in plan if entities.limits(name,key) is not None}
         class Typed(lxu.package.BasicPackage, lxu.package.BasicItemBehaviors, lxifc.ChannelUI):
+            def newborn(self,item,original,flags):
+                # Called for newly created items, not when a saved scene is loaded. A duplicate keeps
+                # the authored values of its source, rather than being reset to today's preferences.
+                try:
+                    if original is not None and lx.object.Item(original).test():return
+                except (TypeError,RuntimeError,LookupError):
+                    return
+                import modo
+                target=modo.Item(item)
+                for key,value in entities.starting(name).items():
+                    try:target.channel(entities.CHANNEL_PREFIX+key).set(value,action=lx.symbol.s_ACTIONLAYER_SETUP)
+                    except (TypeError,ValueError,AttributeError,LookupError,RuntimeError) as exc:
+                        lx.out('MoonRay: cannot initialize %s.%s: %s'%(name,key,exc))
             def test_parent(self,item,parent):return True
             def pkg_Attach(self):return Drawn(self.acts)
             def pkg_TestInterface(self,guid):return guid==lx.symbol.u_PACKAGEINSTANCE or guid==lx.symbol.u_VIEWITEM3D
