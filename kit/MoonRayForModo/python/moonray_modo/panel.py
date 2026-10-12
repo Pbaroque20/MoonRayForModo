@@ -106,7 +106,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.poll_timer.start()
         # Where the preferences ask for it, a preview starts as the window opens.
         # The window opens showing the crest and renders nothing, whatever engine it opens on, unless Preferences
-        # says to render on opening. A realtime engine chosen by hand is on from the moment it is chosen.
+        # says to render on opening. A realtime engine is switched on with its button, never by being chosen.
         if self.preferences.get('render_on_open'):QtCore.QTimer.singleShot(800,lambda:None if self.disposed or self._rendering or self._following else self.start_render())
         self._set_rendering(self._rendering)
 
@@ -121,9 +121,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # Pressed in, as it is while realtime is on, it is lit in Modo's own orange, so that on is told from off at a glance.
         self.start.setStyleSheet('QPushButton:checked{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}')
         row.addWidget(self.start)
-        # Three ways to preview. MoonRay renders the picture once, in full. The other two are realtime: they follow
-        # the scene as it is edited. Whether the window is following is kept in a switch of its own, which is not
-        # shown: the choice of engine sets it.
+        # Three ways to preview. MoonRay renders the picture once, in full. The other two are realtime: switched on
+        # with the button, they follow the scene as it is edited. Whether the engine chosen is a realtime one is
+        # kept in a switch of its own, which is not shown.
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
         self.preview_engine.addItem('MoonRay LS', 'moonray_ls')
@@ -599,11 +599,11 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _engine_changed(self,index):
         live=self._live()
+        # Whatever was rendering or being followed is stopped: nothing renders for a change of engine. A realtime
+        # engine is chosen with realtime off, and is switched on with its button, so that none starts by accident.
+        if not self.disposed and not self._output_busy() and (self._following or self._rendering):self.stop()
         if self.ipr_mode.isChecked()!=live:self.ipr_mode.setChecked(live)
-        if not self.disposed and not self._output_busy():
-            # A realtime engine is on from the moment it is chosen; MoonRay waits for Render.
-            if live and not self._following:QtCore.QTimer.singleShot(0,lambda:None if self.disposed or self._following or not self._live() else self.start_render())
-            elif not live and (self._following or self._rendering):self.stop()
+        if live and not self.disposed:self.status.setText('Realtime is off. Press RT Off to switch it on.')
         self._set_rendering(self._rendering)
         # MoonLightIPR follows edits as they happen, so look for them more often.
         self.timer.setInterval(60 if self._engine()=='moonlightipr' else 150)
@@ -925,7 +925,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _preview_changed(self, index):
         if self.disposed: return
         if not self._following:
-            self.status.setText('Applies to the next render.');return
+            self.status.setText('Realtime is off. Press RT Off to switch it on.' if self._live() else 'Applies to the next render.');return
         if self.preview_lock.isChecked():
             self.status.setText('Preview locked. Applies when unlocked.');return
         if self._output_busy():

@@ -10,7 +10,7 @@ The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/r
 
 Not released yet. The full list, with pictures and what was checked, is in [What's next](docs/WHATS_NEXT.md).
 
-- **Three engines, no Live box**: **MoonRay** for the full render; **MoonRay LS** (low sample) and **MoonLightIPR** follow the scene as you edit it. For those two the button reads **RT On**, lit, and switches realtime off.
+- **Three engines, no Live box**: **MoonRay** for the full render; **MoonRay LS** (low sample) and **MoonLightIPR** follow the scene as you edit it. Those two start switched off; press **RT Off** and it reads **RT On**, lit.
 - **Safe Denoising shows the render as it comes on**, and a stop says how far behind the picture it kept is.
 - **A cleaner live picture**: no dark blocks while MoonRay renders, and none of their marks in a stopped render's denoised picture.
 - **Tile outlines move evenly**, in pastel blue, and fade when a tile is done.
