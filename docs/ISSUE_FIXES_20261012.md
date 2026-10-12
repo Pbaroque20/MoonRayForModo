@@ -105,3 +105,9 @@ Validation: 28 RDL, 19 core, 32 CPU-feature and 8 production unit checks passed.
 Objects/geometry now offers a native MoonRay camera-appearance choice: existing emitter settings, emitter, surface only, or hidden while retaining illumination. This works for object emitters and MeshLight items. Hidden surfaces still retain their other visibility and shadow settings. MoonLightIPR support remains open because its exporter/kernel are owned by the concurrent work.
 
 Validation: 20 core, 32 CPU-feature and 8 production tests passed. Native MoonRay reader checks passed all four modes, including unchanged enabled light/intensity and camera visibility. The isolated Modo control saved and restored the hidden choice. Rendered-image comparison is not claimed.
+
+## Native LPE validation (#18)
+
+The output editor can ask the configured MoonRay runtime to check expressions in a disposable one-pixel scalar scene. It runs asynchronously with one thread, a timeout and cancellation on close. Changed expressions invalidate the pending result. Acceptance requires normal process completion and each expected output; matching light paths in the user scene are not claimed. No runtime rebuild is required.
+
+Validation: four validation-unit checks and eight production checks passed. Native execution accepted C.*L and diffuse, and rejected C(L|), which the fast checker misses. The isolated Modo dialog marked the rejected field, discarded stale results and canceled on close. Initial host probes failed to start because new source text had Windows encoding; the corrected UTF-8/ASCII source and final modal probe passed.
