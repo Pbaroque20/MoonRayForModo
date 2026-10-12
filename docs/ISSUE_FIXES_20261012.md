@@ -111,3 +111,7 @@ Validation: 20 core, 32 CPU-feature and 8 production tests passed. Native MoonRa
 The output editor can ask the configured MoonRay runtime to check expressions in a disposable one-pixel scalar scene. It runs asynchronously with one thread, a timeout and cancellation on close. Changed expressions invalidate the pending result. Acceptance requires normal process completion and each expected output; matching light paths in the user scene are not claimed. No runtime rebuild is required.
 
 Validation: four validation-unit checks and eight production checks passed. Native execution accepted C.*L and diffuse, and rejected C(L|), which the fast checker misses. The isolated Modo dialog marked the rejected field, discarded stale results and canceled on close. Initial host probes failed to start because new source text had Windows encoding; the corrected UTF-8/ASCII source and final modal probe passed.
+
+## Regression coverage in Modo
+
+The standalone suite passed 280 checks with 16 host/runtime skips. The isolated Modo 16.1v9 runner then passed 29 expanded host/runtime checks with no skips, using steady-0351-tiles. Two stale graph tests now verify the current immediate-save and persistent RGB/swatch behavior while retaining field-lifetime and repaint checks. No production behavior changed. The host runner disables the startup preview controller to keep the checks isolated.
