@@ -1229,9 +1229,6 @@ class Panel(Tools, QtWidgets.QWidget):
         if self.disposed or not self._following:return
         from .interaction import dragging
         held=dragging()
-        # MoonLightIPR follows a drag. MoonRay LS waits for the button to come up: each of its updates writes the
-        # scene out for MoonRay on Modo's own thread, which a drag would feel.
-        if held and self._engine()!='moonlightipr':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         # An animation playing in Modo is not followed frame by frame: the frame it stops on is rendered. A time

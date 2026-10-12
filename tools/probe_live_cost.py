@@ -22,6 +22,8 @@ out.mkdir(parents=True, exist_ok=True)
 result = {'phases': []}
 held = {'ticks': [], 'moves': [], 'submits': 0, 'profile': None, 'mover': None, 'offset': 0.0}
 SPAN = 3000
+# The phases, in order (MOONRAY_PROBE_PHASES): the first touches nothing; each other drags the camera or a mesh.
+NAMES = tuple(['nothing touched'] + [word + ' dragged' for word in os.environ.get('MOONRAY_PROBE_PHASES', 'camera,mesh').split(',')])
 
 
 def save():
@@ -35,6 +37,10 @@ def panel_widget():
 
 def begin():
     try:
+        # Should Modo fall over, where every thread of Python stood is written down.
+        import faulthandler
+        held['crash'] = open(str(out / 'crash.txt'), 'wb', 0)
+        faulthandler.enable(file=held['crash'], all_threads=True)
         panel = panel_widget()
         panel.preferences.set('runtime', str(root / os.environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-0351-tiles')))
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(os.environ.get('MOONRAY_PROBE_ENGINE', 'moonlightipr')))
@@ -107,7 +113,7 @@ def begin():
 
 
 def phase(index):
-    names = ('nothing touched', 'camera dragged', 'mesh dragged')
+    names = NAMES
     if index:
         close(names[index - 1])
     if index == len(names):
@@ -118,14 +124,23 @@ def phase(index):
     held['ticks'], held['moves'], held['submits'] = [], [], 0
     # Should Modo's thread stop answering, where every thread stands is written down.
     import faulthandler
-    held['stuck'] = open(str(out / 'stuck.txt'), 'w')
-    faulthandler.dump_traceback_later(9, file=held['stuck'])
+    held['stuck'] = open(str(out / ('stuck_%d.txt' % index)), 'wb', 0)
+    faulthandler.dump_traceback_later(2 if index == 0 else 9, file=held['stuck'])
     held['profile'] = cProfile.Profile()
     held['began'] = time.perf_counter()
+    try:
+        drag(index)
+    except Exception:
+        result.setdefault('errors', []).append(traceback.format_exc())
+        save()
+    QtCore.QTimer.singleShot(SPAN, lambda: phase(index + 1))
+
+
+def drag(index):
     if index:
         from moonray_modo import interaction
         interaction.dragging = lambda: True
-        what = held['camera'] if index == 1 else held['mesh']
+        what = held['camera'] if NAMES[index].startswith('camera') else held['mesh']
         lx.eval('select.item {%s} set' % what)
         held['here'] = lx.eval('transform.channel pos.X ?')
         held['offset'] = 0.0
@@ -139,7 +154,6 @@ def phase(index):
         held['mover'].setInterval(30)
         held['mover'].timeout.connect(move)
         held['mover'].start()
-    QtCore.QTimer.singleShot(SPAN, lambda: phase(index + 1))
 
 
 def close(name):
