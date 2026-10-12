@@ -1,6 +1,6 @@
-# What's next
+# What's coming in 0.4
 
-Built since 0.3.51.3 and not released yet. Items marked *(next runtime)* need the new runtime ZIP that the next release brings; everything else works with the current one.
+Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the new runtime ZIP that 0.4 brings; everything else works with the current one.
 
 ## The preview window
 
@@ -13,7 +13,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(next runtime)* need th
 - **Safe Denoising on the right-click menu**: Off, OptiX or Open Image Denoise. While it is on, the foot of the picture says Safe Denoiser Mode.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **Status on its own line**, so long messages are not cut off.
-- **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(next runtime)*.
+- **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
 - **Titled "MoonRay"** when docked in Modo's layout; "MoonRay Preview" as its own window.
 
 ![The preview window with MoonLightIPR chosen and realtime on](images/preview-engines.png)
@@ -57,10 +57,10 @@ Built since 0.3.51.3 and not released yet. Items marked *(next runtime)* need th
 
 ## Rendering with MoonRay
 
-- **Stop keeps the picture.** A render stopped part way is kept and denoised in about a second and a half *(next runtime)*.
-- **Safe Denoising shows the render as it goes**, like any other render *(next runtime)*. A stop tells you how far behind the kept picture is.
-- **No dark blocks** in the live picture *(next runtime)*.
-- **An idle MoonRay uses no processor**, and closes itself if Modo goes away *(next runtime)*.
+- **Stop keeps the picture.** A render stopped part way is kept and denoised in about a second and a half *(0.4 runtime)*.
+- **Safe Denoising shows the render as it goes**, like any other render *(0.4 runtime)*. A stop tells you how far behind the kept picture is.
+- **No dark blocks** in the live picture *(0.4 runtime)*.
+- **An idle MoonRay uses no processor**, and closes itself if Modo goes away *(0.4 runtime)*.
 
 ![A normal render stopped part way, kept and denoised](images/stop-keeps-picture.png)
 *Stopped after 25 seconds: kept and denoised.*
