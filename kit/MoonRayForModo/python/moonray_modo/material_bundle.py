@@ -1,5 +1,5 @@
 """Portable native material graphs, dependencies and original texture assets."""
-import copy,hashlib,json,os,shutil,uuid
+import copy,hashlib,json,os,shutil,tempfile,uuid
 from pathlib import Path
 from . import nodes,shader_library
 from .file_inputs import file_parameter
@@ -85,28 +85,32 @@ def save(root_id,lookup,destination):
  for entry in materials.values():entry['settings']=remap(entry['settings'],identities)
  data=validate({'format':2,'root':identities[root_id],'materials':materials,'assets':[]})
  destination.parent.mkdir(parents=True,exist_ok=True)
- staging=destination.with_name(destination.name+'.partial-'+uuid.uuid4().hex);staging.mkdir();(staging/'assets').mkdir()
- copied={}
- def collect_file(original):
-  # Match the cache key to the asset folder identity, including Windows case aliases.
-  source_path=Path(original).resolve()
-  identity=os.path.normcase(str(source_path))
-  if identity in copied:return copied[identity]
-  from .textures import source_tiles
-  tiles=source_tiles(str(source_path))
-  if not tiles:raise ValueError('Missing material asset: '+original)
-  token=hashlib.sha256(identity.encode()).hexdigest()[:20]
-  folder=staging/'assets'/token;folder.mkdir()
-  for source in tiles.values():
-   source=Path(source);target=folder/source.name;shutil.copy2(str(source),str(target))
-   checksum=digest(target)
-   if checksum!=digest(source):raise ValueError('Asset changed during collection: '+str(source))
-   data['assets'].append({'file':target.relative_to(staging).as_posix(),'sha256':checksum})
-  copied[identity]=(folder/source_path.name).relative_to(staging).as_posix();return copied[identity]
- for entry in materials.values():files(entry['settings'],collect_file)
- (staging/'material.moonmat.json').write_text(json.dumps(data,indent=2),encoding='utf-8')
- (staging/'README.txt').write_text('Assign material.moonmat.json through MoonRay Asset Library. All graph and referenced-material assets are relative to this folder. Native Modo Shader Tree texture layers outside these graphs are not part of this bundle. Source asset licenses still apply.\n',encoding='utf-8')
- staging.rename(destination);return destination/'material.moonmat.json'
+ # Own only this temporary directory; failed copies/publishing must not leak assets.
+ with tempfile.TemporaryDirectory(prefix=destination.name+'.partial-',dir=str(destination.parent)) as temporary:
+  staging=Path(temporary);(staging/'assets').mkdir()
+  copied={}
+  def collect_file(original):
+   # Match the cache key to the asset folder identity, including Windows case aliases.
+   source_path=Path(original).resolve()
+   identity=os.path.normcase(str(source_path))
+   if identity in copied:return copied[identity]
+   from .textures import source_tiles
+   tiles=source_tiles(str(source_path))
+   if not tiles:raise ValueError('Missing material asset: '+original)
+   token=hashlib.sha256(identity.encode()).hexdigest()[:20]
+   folder=staging/'assets'/token;folder.mkdir()
+   for source in tiles.values():
+    source=Path(source);target=folder/source.name;shutil.copy2(str(source),str(target))
+    checksum=digest(target)
+    if checksum!=digest(source):raise ValueError('Asset changed during collection: '+str(source))
+    data['assets'].append({'file':target.relative_to(staging).as_posix(),'sha256':checksum})
+   copied[identity]=(folder/source_path.name).relative_to(staging).as_posix();return copied[identity]
+  for entry in materials.values():files(entry['settings'],collect_file)
+  (staging/'material.moonmat.json').write_text(json.dumps(data,indent=2),encoding='utf-8')
+  (staging/'README.txt').write_text('Assign material.moonmat.json through MoonRay Asset Library. All graph and referenced-material assets are relative to this folder. Native Modo Shader Tree texture layers outside these graphs are not part of this bundle. Source asset licenses still apply.\n',encoding='utf-8')
+  staging.rename(destination)
+ return destination/'material.moonmat.json'
+
 
 def load(path):
  path=Path(path).resolve();root=path.parent

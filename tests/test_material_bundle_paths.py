@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/python'))
 from moonray_modo import material_bundle, nodes
@@ -54,6 +55,46 @@ class BundlePaths(unittest.TestCase):
             self.assertEqual(Path(held['image2']['parameters']['file']).read_bytes(), b'different texture')
             if os.name == 'nt':
                 self.assertEqual(held['image0']['parameters']['file'], held['image3']['parameters']['file'])
+
+    def test_failed_copy_cleans_only_its_staging_and_can_retry(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            texture = root / 'image.png'
+            texture.write_bytes(b'original texture bytes')
+            unrelated = root / 'bundle.partial-existing'
+            unrelated.mkdir()
+            (unrelated / 'keep.txt').write_text('keep me', encoding='utf-8')
+            graph = nodes.new()
+            graph['nodes']['image'] = {'type': 'image', 'parameters': {'file': str(texture)}, 'inputs': {}, 'position': [0, 0]}
+            entry = {'name': 'Retry', 'settings': {'node_graph': graph, 'node_override': True}}
+            copy = shutil.copy2
+            def fail_after_copy(source, target):
+                copy(source, target)
+                raise OSError('simulated disk failure')
+            with mock.patch.object(material_bundle.shutil, 'copy2', side_effect=fail_after_copy):
+                with self.assertRaisesRegex(OSError, 'simulated disk failure'):
+                    material_bundle.save('root', lambda _: entry, root / 'bundle')
+            self.assertFalse((root / 'bundle').exists())
+            self.assertEqual(set(root.glob('bundle.partial-*')), {unrelated})
+            self.assertEqual((unrelated / 'keep.txt').read_text(encoding='utf-8'), 'keep me')
+            self.assertEqual(texture.read_bytes(), b'original texture bytes')
+            manifest = material_bundle.save('root', lambda _: entry, root / 'bundle')
+            self.assertEqual(material_bundle.load(manifest)['root'], 'material0')
+
+    def test_failed_publish_preserves_existing_destination(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            destination = root / 'bundle'
+            entry = {'name': 'Race', 'settings': {'native_shader': 'DwaBaseMaterial', 'native_parameters': {}}}
+            def concurrent_destination(source, target):
+                destination.mkdir()
+                (destination / 'keep.txt').write_text('another save', encoding='utf-8')
+                raise FileExistsError('destination appeared')
+            with mock.patch.object(Path, 'rename', concurrent_destination):
+                with self.assertRaises(FileExistsError):
+                    material_bundle.save('root', lambda _: entry, destination)
+            self.assertEqual((destination / 'keep.txt').read_text(encoding='utf-8'), 'another save')
+            self.assertEqual(list(root.glob('bundle.partial-*')), [])
 
 if __name__ == '__main__':
     unittest.main()
