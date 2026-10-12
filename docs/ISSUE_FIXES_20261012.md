@@ -73,3 +73,9 @@ All 21 focused RDL tests passed. An isolated Modo 16.1v9 import verified the emi
 Imported native shapes now retain light and shadow-exclusion sets. Exported shapes, volume-only shapes and their primitive-attribute holders use their per-object light/shadow assignments instead of always using the shared light set.
 
 All 22 focused RDL tests passed. An isolated Modo 16.1v9 probe verified a BoxGeometry receiver retains its MeshLight links and exclusions and exited normally. Export assertions cover assignment construction; rendered-lighting equivalence is not claimed. Per-part sets, light-filter sets and native shapes as shadow-receiver targets remain open.
+
+### Native shadow-receiver targets
+
+Native MoonRay shapes can now be retained as excluded shadow-receiver targets during RDL import and scene export. Export uses the actual geometry type, including mesh-converted volume shapes and attribute holder instancers.
+
+Validation: 25 RDL tests and 19 core exporter tests passed; isolated Modo 16.1v9 import/read-back retained a SphereGeometry target. The first host probe omitted the target material assignment and correctly skipped that shape; after correcting the fixture, the check passed. No rendered-shadow comparison is claimed. Per-part and light-filter sets remain open in #52.

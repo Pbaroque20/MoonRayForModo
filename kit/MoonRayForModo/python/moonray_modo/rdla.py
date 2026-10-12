@@ -354,9 +354,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         spared = set(settings.get('shadow_receivers') or [])
         found = [place for place, held in enumerate(render_meshes) if held.get('faces') and 'instances' not in held
                  and (held.get('source_item') or str(held.get('identity', '')).split('|')[0]) in spared]
-        if found:
+        receivers = ['RdlMeshGeometry("/modo/mesh/%d")' % place for place in found]
+        receivers += entities.shadow_receiver_references(scene, spared)
+        if receivers:
             lines.append('objectShadowReceiverSets[%s] = ShadowReceiverSet(%s) { ["geometries"] = %s }' % (string(identity), string('/modo/shadowReceivers/' + identity),
-                                                                                    array('RdlMeshGeometry("/modo/mesh/%d")' % place for place in found)))
+                                                                                    array(receivers)))
     # The objects that join in a material's subsurface light, as MoonRay's trace set on the material: by default only
     # the surface wearing the material does, which leaves a seam where two objects of one body meet.
     from .shader_library import catalog as shader_catalog
