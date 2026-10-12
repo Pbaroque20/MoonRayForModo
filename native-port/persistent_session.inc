@@ -4,6 +4,7 @@
 #include <fstream>
 #include <thread>
 #include <atomic>
+#include <algorithm>
 #include <map>
 #include <chrono>
 #include <memory>
@@ -157,9 +158,21 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         if(!(sampleWeights.getRow(y)[x]>0.f))++missingSamples;
                         float* kept=&steady[i*3];
                         const float sampled=sampleWeights.getRow(y)[x];
-                        const bool moving=!finished && ((compare && weightsAfter.getRow(y)[x]!=sampled) || sampledBefore[i]!=sampled);
+                        // What a pixel lacks while it is being added to is at most the light of the samples
+                        // counted since its picture was last taken. Where those are a small share of all it
+                        // has, it is as good as right and is shown as it is: held back, a pixel that is
+                        // added to a little at every picture, as all are when the picture is being saved as
+                        // it renders, would stay at what it was long before. Where they are a large share
+                        // (a pass that doubles a tile's samples leaves it half as bright for a moment) it is
+                        // held at what it last showed. One given its first samples since the last picture is
+                        // held at the stand-in MoonRay drew for it while it had none, where there was one.
+                        const float before=sampledBefore[i];
+                        const float after=compare?weightsAfter.getRow(y)[x]:sampled;
+                        const bool known=before>=0.f;   // not so for the first picture of a view
+                        const float added=std::max(after-sampled,0.f)+(known?std::max(sampled-before,0.f):0.f);
+                        const bool moving=!finished && known && added>0.03f*std::max(after,sampled);
                         sampledBefore[i]=sampled;
-                        if(moving && !std::isnan(kept[0])){
+                        if(moving && !std::isnan(kept[0]) && (before>0.f || kept[0]+kept[1]+kept[2]>0.f)){
                             rgb[0]=kept[0];rgb[1]=kept[1];rgb[2]=kept[2];
                         } else {kept[0]=rgb[0];kept[1]=rgb[1];kept[2]=rgb[2];}
                     };

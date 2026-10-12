@@ -22,10 +22,13 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 
 - **Safe Denoising shows the render as it comes on**, like any other render, instead of only at each save *(next runtime)*. In a test of 70 seconds the view was brought up to date 35 times, with the saves going on beneath.
 - **A stop says what it kept.** Under Safe Denoising a stop keeps the last save, which may be some seconds behind what was on screen. The status says how far behind, the picture's own line is marked for as long as that picture is shown, and while the render runs its timing ends with how long ago MoonRay last saved. Stopped before the first save, the picture as it stands is kept in place of nothing.
-- **No dark blocks in the live picture** *(next runtime)*. With the graphics card sharing the work, MoonRay counts a pixel's sample before all of that sample's light has come back, and for that moment the pixel reads too dark. The live picture caught such pixels in blocks. A pixel is now shown anew only once MoonRay has left it alone. On two balls, the worst picture of a render had 1.8% of its pixels markedly darker than they ended up, in blocks; now 0.5%, which is sampling noise, with no blocks.
+- **No dark blocks in the live picture**, in a normal render or under Safe Denoising *(next runtime)*. With the graphics card sharing the work, MoonRay counts a pixel's sample before all of that sample's light has come back, and for that moment the pixel reads too dark. The live picture caught such pixels in blocks, and under Safe Denoising in a dither. A pixel is now held at what it last showed for as long as the samples still coming in are a large share of what it has. Counted as pixels that dip markedly darker in one picture than in those before and after it: on two balls the worst picture of a safe render had 2% of its pixels dipped, now 0.03%; on the origami cheetah (1920 x 900) over three minutes, the worst picture of 94 had 0.08% under Safe Denoising, a single small tile, and 0.04% in a normal render.
 - **A render stopped part way denoises cleanly.** The same pixels left faint marks in the denoised picture of a stopped render. The picture and the denoiser's guides are now taken five times over at a stop and the middle of the last three used. A stop of a normal render takes about four seconds for that.
 - **An idle MoonRay costs nothing** *(next runtime)*. The MoonRay kept loaded between renders kept one processor core busy while it waited for its next frame. It now rests, and starts again without delay. Measured with nothing changing in the scene: MoonRay LS went from 100% of a core to 0%. MoonLightIPR was at 0% already. Both keep the graphics card memory they hold (2.3 to 2.6 GB in the test), which is what lets them start again at once.
 - **A MoonRay left behind ends itself** *(next runtime)*. If Modo ends without closing the preview, the loaded MoonRay no longer stays running.
+
+![The cheetah part way through a safe render, with no dark blocks](images/live-picture-safe.jpg)
+*The worst of 94 pictures taken of the cheetah during a safe render: one small dark tile, on the pale flank at the upper right.*
 
 ![A safe render stopped part way: the status and the picture's line say it is the last save](images/safe-stop-last-save.png)
 *Stopped under Safe Denoising: the picture is the last save, seven seconds before the stop, and both lines say so.*
@@ -46,7 +49,7 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 
 ## Not checked
 
-- The heavy scene used for 0.3.51.3 (1920 x 900, 26 buffers) was not rendered again with Safe Denoising's live view, nor with the newest MoonRay.
+- The heavy scene used for 0.3.51.3 (1920 x 900, 26 buffers) was rendered for three minutes in each mode to look for dark blocks; a stop of it, and its speed under Safe Denoising against a normal render, were not measured again.
 - Continue after a stop was offered in every test and was not itself run on the newest MoonRay.
 - A Shader's visibility switches were tested as scene descriptions, not through a Shader item in Modo. Lights and environments with their eye off are now left out too, by the same rule, and that was not rendered.
 - The tile outlines were measured (how often they are told of, and that they ease and fade) and not watched during a real render.
