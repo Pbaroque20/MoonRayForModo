@@ -847,6 +847,24 @@ def emit_lights(scene, lines, refs=None):
                 refs.setdefault(entity['identity'], []).append(name)
 
 
+def shadow_receiver_references(scene, identities):
+    """References to the actual exported geometry for native receiver targets."""
+    from .rdla import string
+    result = []
+    if not identities:
+        return result
+    for entity in checked(scene):
+        if entity['identity'] not in identities or catalog()[entity['class']]['category'] != 'geometry':
+            continue
+        kind = entity['class']
+        if entity['parameters'].get('modo_volume') and kind in ('BoxGeometry', 'SphereGeometry'):
+            kind = 'RdlMeshGeometry'
+        result.append('%s(%s)' % (kind, string('/modo/entity/' + entity['identity'])))
+        if entity.get('attributes'):
+            result.append('RdlInstancerGeometry(%s)' % string('/modo/entity/%s/holder' % entity['identity']))
+    return result
+
+
 def emit_geometry(scene, materials, lines):
     """Volume shaders, then the shapes, each assigned its material and whatever fills it."""
     from .rdla import string

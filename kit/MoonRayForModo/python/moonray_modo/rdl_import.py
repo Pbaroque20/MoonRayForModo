@@ -686,7 +686,7 @@ def plan(document, path):
             return result
         native_geometry = label(geometry) if label(geometry) in native_geometries else None
         links.append({'geometry': mesh.made.get(geometry) or native_geometry, 'named': short(geometry), 'lights': None if lit is None else lights(lit),
-                      'shadows': lights(unshadowed), 'receivers': [mesh.made[name] for name in spared if name in mesh.made]})
+                      'shadows': lights(unshadowed), 'receivers': [mesh.made.get(name) or label(name) for name in spared if name in mesh.made or label(name) in native_geometries]})
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
                 settings=settings, links=links, warnings=list(dict.fromkeys(warnings)), source=str(path))
 
@@ -982,7 +982,7 @@ def apply(data, alone=True, progress=None):
                 if link['shadows']:
                     entry['shadow_exclude'] = [linked_items[name].id for name in link['shadows'] if name in linked_items]
                 if link['receivers']:
-                    entry['shadow_receivers'] = [made[name].id for name in link['receivers'] if name in made]
+                    entry['shadow_receivers'] = [linked_items[name].id for name in link['receivers'] if name in linked_items]
                 held[item.id] = entry
             production['objects'] = held
             stored['production'] = production
