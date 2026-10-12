@@ -139,3 +139,11 @@ Validation: 31 RDL, 20 core, 32 CPU-feature and eight production tests passed. T
 The importer now retains the chain of instancer owners when resolving materials and detecting rendered geometry. A mesh beneath an unassigned inner instancer no longer disappears when its outer instancer supplies the material. The nearest existing assignment retains precedence; distinct outer assignments retain separate scoped prototypes. Native-shape volume lookup also accepts the owner chain.
 
 Validation: the new regression failed before the change (zero imported meshes). After the fix, 32 RDL, 20 core, 32 CPU-feature and eight production tests passed. Isolated Modo 16.1v9 imported two prototypes and six shared instances; direct/evaluated exports passed native-reader checks for distinct lights, shadows and filters. No rendered-image or general nested-transform parity is claimed. Non-mesh per-part and volume-only link cases remain outside this fix.
+
+## Nested transform composition and rendered validation
+
+Referenced instancer node transforms were applied twice and omitted use_reference_xforms was treated as true instead of MoonRay's false default. The importer now includes each enabled reference transform once.
+
+Validation: 34 RDL checks passed. The native scalar renderer produced a 0.02197 mean alpha error between nested and importer-flattened fixtures before the fix; after correction the enabled and disabled reference-transform fixtures both match exactly (zero mean alpha error). Fixtures are 64x64 with two pixel-grid samples, not broad scene-parity validation.
+
+Correction to previous assignment notes: the native render confirms the official RdlInstancerGeometry documentation: a material assigned only to an instancer produces no visible surface. Earlier assignment tests proved editable import/readback, not equivalent source visibility. The current editable fallback is now explicitly warned about in the import report; it remains a known parity limitation. A dedicated fixture records zero coverage for instancer-only material assignment. Documentation: https://docs.openmoonray.org/user-reference/scene-objects/geometry/RdlInstancerGeometry/
