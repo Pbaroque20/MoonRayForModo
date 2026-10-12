@@ -18,6 +18,7 @@ Not released yet. The full list, with pictures and what was checked, is in [What
 - **What Modo hides is hidden**: an item with its eye off does not render, and MoonLightIPR follows a surface's visibility to the camera, indirect light, reflections, refractions and shadows.
 - **Two lines under the picture**, so the status is read whole.
 - **MoonLightIPR has Beauty and Denoised Beauty** when the scene's denoiser is on.
+- **Moving something is followed far faster**: a draft of a 266-mesh scene redraws in 0.3 seconds where it took 1.3.
 - **Draft** follows the scene by itself, has black around the camera's frame and never shows a stale render when switched off; **Region** no longer zooms the view.
 - **The preview window opens on MoonRay with the crest** and renders nothing until asked.
 

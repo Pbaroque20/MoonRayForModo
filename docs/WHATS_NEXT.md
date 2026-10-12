@@ -61,4 +61,6 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 - A Shader's visibility switches were tested as scene descriptions, not through a Shader item in Modo. Lights and environments with their eye off are now left out too, by the same rule, and that was not rendered.
 - The tile outlines were measured (how often they are told of, and that they ease and fade) and not watched during a real render.
 - MoonLightIPR's two buffers and Draft's handling of a changed scene were tried on a single ball, not on a heavy scene.
+- The faster following of a moved item was timed in Draft only. MoonRay LS and MoonLightIPR with realtime on take the same path and were not timed; and a scene with instances, replicators or deformers still reads everything for a move.
+- Draft following the scene with a region set, which renders the region again at each change, was not tried.
 - With the scene's denoiser on, MoonLightIPR denoises every picture whichever buffer is shown; what that costs while Beauty is shown was not measured.
