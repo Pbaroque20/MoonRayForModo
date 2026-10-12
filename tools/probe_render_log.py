@@ -27,6 +27,11 @@ def begin():
         panel.preferences.set('runtime', str(root / os.environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-0350-pool')))
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonray'))
         QtWidgets.QApplication.processEvents()
+        # How often MoonRay tells of the tiles its workers are on, and how evenly.
+        import time
+        held['told'] = []
+        held['count'] = lambda packet: held['told'].append(time.monotonic()) if packet else None
+        panel.renderer.workers.connect(held['count'])
         if not panel._rendering:
             panel.start.click()
     except Exception:
@@ -39,6 +44,12 @@ def finish():
         panel = panel_widget()
         result.update(status=panel.status.text(), tooltip=panel.status.toolTip(), timing=panel.render_timing.text(), picture=not panel.preview.image.isNull(),
                       loaded=bool(getattr(panel.renderer, 'using_session', False)))
+        told = held.get('told', [])
+        gaps = sorted(b - a for a, b in zip(told, told[1:]))
+        if gaps:
+            result['tiles_told'] = {'times': len(told), 'a_second': round(len(gaps) / max(told[-1] - told[0], 1e-6), 1), 'usual_gap_ms': round(1000 * gaps[len(gaps) // 2]),
+                                    'longest_gap_ms': round(1000 * gaps[-1]), 'gaps_over_150ms': sum(1 for gap in gaps if gap > .15)}
+        result['outlines_on_screen'] = len(panel.preview._fading)
         (out / 'moonray.txt').write_text('\n'.join(line for line in str(panel.renderer.log).splitlines() if 'Rendering [' not in line and not line.startswith('@@')),
                                          encoding='utf-8', errors='replace')
         panel.window().grab().save(str(out / 'window.png'))

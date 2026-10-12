@@ -13,8 +13,7 @@ class _PreviewBody:
         self.bucket_timeout=QtCore.QTimer(self)
         self.bucket_timeout.setSingleShot(True)
         self.bucket_timeout.timeout.connect(lambda:self.set_buckets(None))
-        # Outlines that MoonRay has left, each with when it was left: they fade out over FADE seconds instead of
-        # going all at once.
+        # The outlines on screen, each with when it was first and last told of, and how long it is held for.
         self._fading={}
         self._fade_clock=QtCore.QElapsedTimer();self._fade_clock.start()
         self._fade_timer=QtCore.QTimer(self);self._fade_timer.setInterval(33)
@@ -156,50 +155,58 @@ class _PreviewBody:
             scale=min(self.width()/self.image.width(),self.height()/self.image.height())
             if scale>0:self.zoom=1./scale;self.pan=QtCore.QPointF();self.update()
 
-    # MoonRay comes back to a tile many times as a picture comes on, and between its visits the tile is not in what
-    # it reports. An outline it has left therefore stands for HOLD seconds, in case it is come back to, and only
-    # then fades, over FADE seconds: so an outline fades when its tile is done with, not each time it is left.
+    # Outlines are eased, not switched. One comes up over APPEAR seconds. MoonRay comes back to a tile many times as
+    # a picture comes on, and between its visits the tile is not in what it reports: so an outline it has left
+    # stands for HOLD seconds, in case it is come back to, and only then fades, over FADE seconds. It fades when
+    # its tile is done with, not each time it is left. A worker's own small square is left for good far sooner.
+    APPEAR=.12
     HOLD=.7
+    HOLD_WORKER=.12
     FADE=.45
 
     def _outlines(self):
-        """The outlines now being shown: the workers' own where there are any, else the tiles'."""
+        """The outlines now being told of: the workers' own where there are any, else the tiles'."""
         return self.workers if self.show_workers and self.workers is not None else self.buckets
 
-    def _retire(self,before):
-        """Set fading the outlines that were shown and are no longer."""
-        after=self._outlines()
-        if not before or not self.show_buckets:return
-        _,width,height,rectangles=before
-        kept=set(after[3]) if after and after[1:3]==(width,height) else set()
+    def _note_outlines(self):
+        """Take in what MoonRay last told of: each outline is new, or has been seen again just now."""
+        told=self._outlines()
+        if not told or not self.show_buckets:return
+        _,width,height,rectangles=told
         now=self._fade_clock.elapsed()/1000.
+        # Whether these are the workers' squares: they are let go of sooner than a tile is.
+        hold=self.HOLD_WORKER if told is self.workers else self.HOLD
         for rectangle in rectangles:
-            if rectangle not in kept:self._fading[(width,height,rectangle)]=now
-        for key in [key for key in self._fading if key[:2]==(width,height) and key[2] in kept]:del self._fading[key]
-        if len(self._fading)>2048:self._fading=dict(list(self._fading.items())[-2048:])
+            key=(width,height,rectangle)
+            seen=self._fading.get(key)
+            # One that had begun to fade and is come back to comes up again from where it had got to.
+            if seen is None or now-seen[1]>seen[2]+self.FADE:self._fading[key]=[now,now,hold]
+            else:
+                faded=max(0.0,now-seen[1]-seen[2])/self.FADE
+                if faded>0:seen[0]=now-self.APPEAR*(1.0-faded)
+                seen[1]=now;seen[2]=hold
+        if len(self._fading)>4096:
+            for key in sorted(self._fading,key=lambda key:self._fading[key][1])[:len(self._fading)-4096]:del self._fading[key]
         if self._fading and not self._fade_timer.isActive():self._fade_timer.start()
 
     def _fade_step(self):
         now=self._fade_clock.elapsed()/1000.
-        self._fading={key:left for key,left in self._fading.items() if now-left<self.HOLD+self.FADE}
+        self._fading={key:seen for key,seen in self._fading.items() if now-seen[1]<seen[2]+self.FADE}
         if not self._fading:self._fade_timer.stop()
         self.update()
 
     @QtCore.Slot(object)
     def set_buckets(self,packet):
-        before=self._outlines()
         self.buckets=packet
         if packet is None:self.workers=None
         if packet:self.bucket_timeout.start(1500)
         else:self.bucket_timeout.stop()
-        self._retire(before)
-        self.update()
+        # Only what is new is taken in: while the workers' squares are shown, that is not the tiles.
+        if self._outlines() is self.buckets:self._note_outlines()
 
     def set_workers(self,packet):
-        before=self._outlines()
         self.workers=packet
-        self._retire(before)
-        self.update()
+        if self._outlines() is self.workers:self._note_outlines()
 
     def set_worker_overlay(self,enabled):
         self.show_workers=enabled
@@ -268,13 +275,13 @@ class _PreviewBody:
                         painter.fillRect(plate, QtGui.QColor(0, 0, 0, 190))
                         painter.setPen(QtGui.QColor(255, 255, 255))
                         painter.drawText(plate, QtCore.Qt.AlignCenter, text)
-            overlay=self._outlines()
-            # Each outline with how strongly it is drawn: those MoonRay is at in full, those it has left fading.
+            # Each outline with how strongly it is drawn.
             drawn=[]
-            if self.show_buckets and overlay:drawn+=[(overlay[1],overlay[2],rectangle,1.0) for rectangle in overlay[3]]
             if self.show_buckets and self._fading:
                 now=self._fade_clock.elapsed()/1000.
-                drawn+=[(width,height,rectangle,1.0-max(0.0,now-left-self.HOLD)/self.FADE) for (width,height,rectangle),left in self._fading.items()]
+                # Coming up, standing, or fading: each by how long since it was first and last told of.
+                drawn=[(width,height,rectangle,min(1.0,(now-first)/self.APPEAR)*(1.0-max(0.0,now-last-hold)/self.FADE))
+                       for (width,height,rectangle),(first,last,hold) in self._fading.items()]
             painter.setBrush(QtCore.Qt.NoBrush)
             for width,height,(x0,y0,x1,y1),strength in drawn:
                 if strength<=0 or not (self.image.isNull() or (self.image.width(),self.image.height())==(width,height)):continue

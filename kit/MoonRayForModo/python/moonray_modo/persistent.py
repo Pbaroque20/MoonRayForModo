@@ -103,6 +103,8 @@ class Session(QtCore.QObject):
             self.command_channel=Channel()
             env.insert('MOONRAY_MODO_COMMAND',self.command_channel.name)
         env.insert('MOONRAY_MODO_SESSION',str(self.root))
+        # So that the renderer ends itself should this process end without telling it to.
+        env.insert('MOONRAY_MODO_HOST',str(os.getpid()))
         env.insert('MOONRAY_MODO_GENERATION',str(request['id']))
         self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.root))
         self.process.setProgram(str(request['runtime']/'moonray.exe'))

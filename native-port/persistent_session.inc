@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <thread>
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <scene_rdl2/common/fb_util/FbTypes.h>
@@ -13,17 +14,29 @@
 #include <limits>
 #include <vector>
 #include "modo_bucket_output.h"
+#include "modo_protocol_line.h"
+#include <sstream>
 #include "modo_shared_image.h"
 #include "modo_scene_memory.h"
 
 void moonray::RaasCommandLineApplication::renderPersistent(const std::string& directory)
 {
     namespace fs = std::filesystem;
+    // The host that started this renderer may end without telling it to quit, as when it crashes. A renderer left
+    // behind would hold its memory and the graphics card for good: so it ends itself the moment its host is gone.
+    if (const char* host = std::getenv("MOONRAY_MODO_HOST")) {
+        if (HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(std::strtoul(host, nullptr, 10)))) {
+            std::thread([process]() {
+                WaitForSingleObject(process, INFINITE);
+                TerminateProcess(GetCurrentProcess(), 0);
+            }).detach();
+        }
+    }
     const auto mailbox = fs::u8path(directory) / "command.txt";
     ModoSceneCommand command(std::getenv("MOONRAY_MODO_COMMAND"));
     auto waiting = [&]() { return command.enabled()?command.ready():fs::exists(mailbox); };
     auto event = [](const char* kind, const std::string& id) {
-        std::cout << "\n@@MODO_SESSION " << kind << " " << id << std::endl;
+        modoProtocolLine(std::string("@@MODO_SESSION ") + kind + " " + id);
     };
     std::string id = std::getenv("MOONRAY_MODO_GENERATION") ? std::getenv("MOONRAY_MODO_GENERATION") : "0";
     std::unique_ptr<rndr::RenderContext> context;
@@ -152,6 +165,18 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                     event(("FRAME_"+key).c_str(), id);
                     return true;
                 };
+                // The tiles the workers are on are told by a thread of their own, thirty times a second:
+                // handing a picture over takes this one long enough that their outlines would move in jerks.
+                std::atomic<bool> tellTiles{true};
+                const unsigned tilesWidth=driver->getWidth(),tilesHeight=driver->getHeight();
+                std::thread tiles([&]() {
+                    while (tellTiles.load(std::memory_order_relaxed)) {
+                        modoBucketOutput(id,tilesWidth,tilesHeight);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+                    }
+                });
+                struct TilesEnd { std::atomic<bool>& on; std::thread& thread;
+                    ~TilesEnd() { on.store(false); if (thread.joinable()) thread.join(); } } tilesEnd{tellTiles,tiles};
                 while (!context->isFrameComplete() && !waiting()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                     if(waiting())break;
@@ -161,12 +186,13 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                     if ((!published || now-lastSnapshot >= std::chrono::milliseconds(100)) &&
                         (filmActivity!=lastFilmActivity || key!=lastView || !published) && context->isFrameReadyForDisplay()) {
                         printStatusLine(*context, driver->getLastFrameMcrtStartTime(), false);
-                        modoBucketOutput(id,driver->getWidth(),driver->getHeight());
                         {
                             // How far the frame is, for the host's time estimate.
                             std::size_t submitted=0,total=0;
                             const float fraction=context->getFrameProgressFraction(&submitted,&total);
-                            std::cout << "\n@@MODO_PROGRESS " << id << " " << fraction << std::endl;
+                            std::ostringstream progress;
+                            progress << "@@MODO_PROGRESS " << id << " " << fraction;
+                            modoProtocolLine(progress.str());
                         }
                         try {
                             if(snapshot(key)){published=true;lastFilmActivity=filmActivity;lastView=key;}

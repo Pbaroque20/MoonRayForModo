@@ -13,7 +13,8 @@ The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/r
 - **Safe Denoising shows the render as it comes on**, like any other render, instead of only at each save. This needs the MoonRay of the next runtime. A stop keeps the last save, and the window says how long before the stop that was.
 - **An idle MoonRay costs nothing.** The MoonRay kept loaded between renders used to keep one processor core busy while it waited; it now rests, and starts again without delay. MoonLightIPR already did. This too needs the MoonRay of the next runtime.
 - **Two lines under the picture**: the status on its own line, then the pointer's values, the render's timing and the picture's size.
-- **Tile outlines are pastel blue and fade out** when MoonRay is done with a tile, instead of vanishing at once.
+- **Tile outlines move evenly.** They are pastel blue, ease in, stand while MoonRay is at a tile and fade out when it is done; and MoonRay now tells of its tiles about eighteen times a second instead of four, on a clock of their own (next runtime).
+- **A MoonRay left behind ends itself.** If Modo ends without closing the preview, the loaded MoonRay no longer stays running (next runtime).
 
 ![The preview window with MoonLightIPR chosen and realtime on](docs/images/preview-engines.png)
 *MoonLightIPR chosen: realtime is on, and the status has a line to itself.*
