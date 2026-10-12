@@ -8,6 +8,15 @@ LIGHT_KINDS=('','DistantLight','SphereLight','RectLight','SpotLight','DiskLight'
 def owner(geometry):
     return geometry.get('source_item') or str(geometry.get('identity','')).split('|')[0]
 
+def mesh_camera(settings):
+    """Effective native emitter and underlying surface camera visibility."""
+    mode=settings.get('mesh_camera_mode','auto')
+    if mode not in ('auto','emitter','surface','hidden'):
+        raise ValueError('Unknown mesh light camera appearance: '+str(mode))
+    glowing=bool(settings.get('light_seen',True)) if mode=='auto' else mode=='emitter'
+    return glowing, not glowing and mode!='hidden'
+
+
 def emit(scene,meshes,environment,lines):
     controls=scene.get('production',{});light_controls=controls.get('lights',{});objects=controls.get('objects',{})
     refs={};environment_refs=[]
@@ -78,7 +87,7 @@ def emit(scene,meshes,environment,lines):
         if label and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Invalid mesh light group label')
         lines.append('table.insert(lights, %s { ["geometry"] = RdlMeshGeometry("/modo/meshLight/geometry/%d"), ["color"] = %s, ["intensity"] = %s, ["label"] = %s, ["visible_in_camera"] = %d })'%(ref,index,vector(working_color(settings.get('light_color',[1,1,1])),'Rgb'),number(settings.get('light_intensity',1)),string(label),
             # Seen by the camera, the mesh looks as it is: a surface giving off light. MoonRay's own default hides every light.
-            1 if settings.get('light_seen',True) else 0))
+            1 if mesh_camera(settings)[0] else 0))
     from .entities import emit_lights
     # MoonRay light items may be named in an object's Light Links as Modo's lights are.
     items={}

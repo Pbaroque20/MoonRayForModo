@@ -99,3 +99,9 @@ Validation: 27 RDL tests, 19 core exporter tests, 32 CPU-feature tests, 8 produc
 Differently lit/filtered/shadowed RdlMeshGeometry parts now receive distinct imported material layers, even when they share one source shader. Mesh vertices and faces stay intact. Assignment metadata survives direct and evaluated Modo capture; explicit object links retain precedence on export. Non-mesh per-part assignments still report the unsupported case.
 
 Validation: 28 RDL, 19 core, 32 CPU-feature and 8 production unit checks passed. The isolated Modo probe imported two faces sharing a shader with distinct lights and retained their filter/shadow differences. Both direct and evaluated exports passed native MoonRay-reader assignment checks. The first evaluated run lacked the adapter in the isolated kit; copying the installed adapter into the test kit enabled the successful rerun. No installed kit changes or rendered-image equivalence are claimed.
+
+## Mesh emitter camera appearance (#42, native MoonRay)
+
+Objects/geometry now offers a native MoonRay camera-appearance choice: existing emitter settings, emitter, surface only, or hidden while retaining illumination. This works for object emitters and MeshLight items. Hidden surfaces still retain their other visibility and shadow settings. MoonLightIPR support remains open because its exporter/kernel are owned by the concurrent work.
+
+Validation: 20 core, 32 CPU-feature and 8 production tests passed. Native MoonRay reader checks passed all four modes, including unchanged enabled light/intensity and camera visibility. The isolated Modo control saved and restored the hidden choice. Rendered-image comparison is not claimed.
