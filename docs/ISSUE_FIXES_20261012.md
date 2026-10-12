@@ -20,7 +20,9 @@ The user authorized tests on 12 October. Follow-up checks used a separate checko
 
 Reproduce the host check with `MOONRAY_TEST_RESULTS` set to an output folder and `MOONRAY_TEST_KIT` set to the absolute `test-results/PROFILE/Configs/MoonRayForModo` path, then run `tools/launch_gui_probe.py probe_content_library.py --kit-source UNPACKED_KIT --profile PROFILE --wait --timeout 120`. Use a fresh profile. Read `content-library/report.json`: a normal Modo exit alone does not establish probe success.
 
-#72 still needs real renderer-process/GPU-memory verification. #51 now has both headless installation/discovery and host library-window coverage. No claim of full production validation is made.
+- `tools/check_idle_sessions.py`: **passed with real MoonRay XPU and MoonLightIPR processes**, three 64x64 renders per engine. Each returned a 49,152-byte progressive RGB frame. Manual release and an accelerated idle timeout exited the child; subsequent submissions launched distinct processes and completed. Pending work refused release, no failure signal fired, and MoonRay logged successful GPU setup. Used `runtime/steady-0351-tiles` and `build/moonlightipr/stage` from the main project. The test ages the idle timestamp instead of waiting one minute; the separate timer unit checks cover elapsed-time behavior.
+
+Run `tools/check_idle_sessions.py --moonray RUNTIME --moonlight MOONLIGHT_STAGE` with a PySide2-capable Python. Reports and native logs default to `test-results/idle-sessions`. This validates actual process teardown/restart, not a measurement of the driver's VRAM accounting, automatic memory-pressure detection, or the preview's cached-image UI. Those are not claimed. #51 has both headless installation/discovery and host library-window coverage. No claim of full production validation is made.
 
 ## Remaining priorities
 
