@@ -577,12 +577,6 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if any(held.get('link_enabled') or held.get('shadow_exclude') or held.get('shadow_receivers')
            for held in (scene.get('production') or {}).get('objects', {}).values() if isinstance(held, dict)):
         warnings.append('MoonLightIPR lights and shadows every object alike: light links and the shadows objects are set not to cast show in MoonRay only.')
-    from .shading_models import curve
-    for held in (scene.get('materials') or {}).values():
-        rows = (held.get('material_stack') or [held]) if isinstance(held, dict) else []
-        if any(isinstance(row, dict) and curve(row.get('shading_model')) and any(layer.get('effect') == 'rough' for layer in row.get('layers') or []) for row in rows):
-            warnings.append('MoonLightIPR shows a roughness that an image drives as the image gives it; for a Blinn or Ashikhmin material MoonRay takes it through the curve that matches Modo, so the highlight differs there.')
-            break
     if any(isinstance(held, dict) and held.get('sss_trace_set') for held in (scene.get('materials') or {}).values()):
         warnings.append('MoonLightIPR does not join neighbouring objects in subsurface light: a material\'s subsurface neighbours show in MoonRay only.')
     # MoonRay's own items arrive beside the Modo ones; draw those that have a counterpart here.

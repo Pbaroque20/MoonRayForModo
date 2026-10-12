@@ -85,6 +85,18 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                        std::all_of(selected.begin(),selected.end(),[](unsigned char c){return std::isalnum(c)||c=='_';}))key=selected;
                     return key;
                 };
+                // What the host asks to be handed at one asking, as the render goes on: its number, then the
+                // views. Asked for when a render is stopped part way and its picture is to be kept.
+                auto heldRequest=[&]() {
+                    std::vector<std::string> keys;
+                    std::ifstream hold(fs::u8path(directory)/"hold.txt");
+                    std::string asked,key;
+                    if(!(hold>>asked) || asked!=id)return keys;
+                    while(hold>>key && keys.size()<16)
+                        if(key.size()<=64 && std::all_of(key.begin(),key.end(),[](unsigned char c){return std::isalnum(c)||c=='_';}))keys.push_back(key);
+                    return keys;
+                };
+                std::vector<std::string> holdKeys;
                 bool reportedMissingSamples=false;
                 // The last value shown for each pixel of a view. A pixel a worker was adding to
                 // while its picture was taken can be caught part way, lighter or darker than it
@@ -212,6 +224,27 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                 while (!context->isFrameComplete() && !waiting()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                     if(waiting())break;
+                    holdKeys=heldRequest();
+                    if(!holdKeys.empty()) {
+                        // Handed over while the render still runs, and the render ended after: ended first, the
+                        // light of the samples then in hand would never come, and their pixels be left dark. A
+                        // view waits for the host to have taken the one before it.
+                        // Asked for more than once, the views are taken in rounds, a moment apart: a pixel caught
+                        // part way in one round is at rest in another, and the host takes the middle of them.
+                        for(size_t n=0;n<holdKeys.size();++n) {
+                            const std::string& key=holdKeys[n];
+                            if(n && key==holdKeys[0])std::this_thread::sleep_for(std::chrono::milliseconds(80));
+                            const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(3);
+                            bool handed=false;
+                            while(!handed && std::chrono::steady_clock::now()<until) {
+                                try { handed=snapshot(key); }
+                                catch(const std::exception& e){std::cerr << "Modo held snapshot: " << e.what() << std::endl;break;}
+                                if(!handed)std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                            }
+                        }
+                        std::error_code ignored;fs::remove(fs::u8path(directory)/"hold.txt",ignored);
+                        break;
+                    }
                     const auto now=std::chrono::steady_clock::now();
                     const auto filmActivity=context->getFilmActivity();
                     const auto key=selectedView();

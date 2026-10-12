@@ -902,6 +902,16 @@ class Compiler:
         stretched = bool(dwa and (source.get('anisotropy', 0) or 'aniso' in effects or any(m.get('anisotropy', 0) for m in stack or [])))
         if stretched or source.get('anisotropy', 0) or source.get('_beckmann'):
             flags |= MATERIAL_BECKMANN
+        # The roughness so far is Modo's own. For a model whose highlight is drawn at another roughness it is turned
+        # into that one: here, where it is one value over the whole surface; by the GPU, at each hit, where a layer
+        # varies it.
+        from .shading_models import MEASURED, curve, translated
+        model = source.get('shading_model')
+        if source.get('raw_roughness') is not None and curve(model):
+            if 'rough' in foldable:
+                defaults = dict(defaults, rough=translated(model, min(1.0, max(0.0, float(defaults['rough']))))[0])
+            else:
+                flags |= (list(MEASURED).index(model) + 1) << 8
         controls = shader_controls(source)
         # The lobe is stretched along a tangent measured from texture u of the primary coordinates,
         # which a mesh then has to carry.

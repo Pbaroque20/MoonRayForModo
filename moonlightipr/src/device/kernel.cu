@@ -2052,6 +2052,19 @@ struct MappedSlots {
 // rows blend over the rows beneath them, a group blends what its rows produced over what was
 // there before it, and a mask row scales how strongly its target is applied. shift moves every
 // coordinate lookup, which is how a bump map's slope is measured.
+// Modo's roughness as the roughness of the lobe that draws the same highlight, for its Blinn (1), Ashikhmin (2)
+// and GTR (3) models: read along straight lines between what was measured. Keep in step with shading_models.py.
+ML_INLINE float modoRoughness(unsigned model, float roughness) {
+    const float from[8] = {0.0f, 0.1f, 0.2f, 0.35f, 0.5f, 0.7f, 0.9f, 1.0f};
+    const float blinn[8] = {0.0f, 0.20f, 0.28f, 0.36f, 0.36f, 0.38f, 0.50f, 0.50f};
+    const float ashikhmin[8] = {0.0f, 0.22f, 0.28f, 0.38f, 0.44f, 0.48f, 0.50f, 0.50f};
+    const float gtr[8] = {0.0f, 0.16f, 0.22f, 0.36f, 0.50f, 0.70f, 0.90f, 0.90f};
+    const float* to = model == 1 ? blinn : model == 2 ? ashikhmin : gtr;
+    for (int i = 1; i < 8; ++i)
+        if (roughness <= from[i]) return to[i - 1] + (to[i] - to[i - 1]) * (roughness - from[i - 1]) / (from[i] - from[i - 1]);
+    return to[7];
+}
+
 ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMesh& mesh, unsigned primitive,
                                  float2 barycentrics, float3* channel, float2 shift) {
     channel[CHANNEL_COLOR] = vec(material.color);
@@ -2281,6 +2294,8 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
         hit->albedo = channel[CHANNEL_COLOR] * channel[CHANNEL_COLOR_AMOUNT];
         hit->emission = channel[CHANNEL_EMISSION] * channel[CHANNEL_EMISSION_AMOUNT];
         hit->roughness = clamp(average(channel[CHANNEL_ROUGHNESS]), 0.0f, 1.0f);
+        if (material.flags & MATERIAL_ROUGH_MASK)
+            hit->roughness = modoRoughness((material.flags & MATERIAL_ROUGH_MASK) >> MATERIAL_ROUGH_SHIFT, hit->roughness);
         hit->metallic = clamp(average(channel[CHANNEL_METALLIC]), 0.0f, 1.0f);
         hit->transmission = clamp(average(channel[CHANNEL_TRANSMISSION]), 0.0f, 1.0f);
         hit->transmissionColor = channel[CHANNEL_TRANSMISSION_COLOR];

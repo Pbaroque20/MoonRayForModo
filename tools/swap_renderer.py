@@ -32,7 +32,7 @@ def main():
         for name in NAMES:
             shutil.copy2(built / name, target / name)
         session = json.loads((target / 'modo-session.json').read_text(encoding='utf-8'))
-        session.update(executable_sha256=digest(target / 'moonray.exe'), saves=b'Modo session: saving the picture as it renders' in executable)
+        session.update(executable_sha256=digest(target / 'moonray.exe'), saves=b'Modo session: saving the picture as it renders' in executable, holds=b'Modo held snapshot' in executable)
         (target / 'modo-session.json').write_text(json.dumps(session, indent=2), encoding='utf-8')
         crypto = target / 'modo-crypto-categories.json'
         if crypto.is_file():

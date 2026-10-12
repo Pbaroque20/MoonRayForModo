@@ -23,6 +23,13 @@ def saves(runtime):
     except (OSError,ValueError,TypeError,AttributeError):return False
 
 
+def holds(runtime):
+    """Whether this runtime's MoonRay, kept loaded, can hand over several views of a render at one asking: what
+    lets a stop keep its picture without asking for each view in turn."""
+    try:return bool(json.loads((Path(runtime)/'modo-session.json').read_text(encoding='utf-8')).get('holds'))
+    except (OSError,ValueError,TypeError,AttributeError):return False
+
+
 class Session(QtCore.QObject):
     output=QtCore.Signal(str)
     ready=QtCore.Signal(int)
@@ -49,6 +56,12 @@ class Session(QtCore.QObject):
         if not key or not key.isascii() or len(key)>64 or not all(c.isalnum() or c=='_' for c in key):return
         self.view=key
         staged=self.root/'view.tmp';staged.write_text(key,encoding='ascii');staged.replace(self.root/'view.txt')
+
+    def hold(self,keys):
+        """Have these views of the render now going handed over, one after another, in the order given."""
+        if not self.latest:return False
+        staged=self.root/'hold.tmp';staged.write_text('%d %s'%(self.latest['id'],' '.join(keys)),encoding='ascii');staged.replace(self.root/'hold.txt')
+        return True
 
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
 

@@ -27,6 +27,9 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                MATERIAL_CONDUCTOR = 32, // a metal reflects as DwaBaseMaterial's does, not by Schlick's curve
                MATERIAL_HAIR = 64,      // on a curve, the strand scatters light as a hair fibre does
                MATERIAL_VOLUME = 128,   // the surface is only the edge of a fog that fills the shape
+               // Two bits: the roughness its layers give is Modo's, of the model 1 Blinn, 2 Ashikhmin, 3 GTR,
+               // and is turned into the roughness of the lobe that draws the same highlight.
+               MATERIAL_ROUGH_SHIFT = 8, MATERIAL_ROUGH_MASK = 3u << 8,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,

@@ -34,6 +34,7 @@ struct Material {
     bool clearcoatDims = false;     // the coat takes its reflection out of the layers beneath
     float dissolve = 0.0f;          // 1 - presence: how much of the surface is absent
     float bumpStrength = 0.0f;      // height of a bump layer's full range, in scene units
+    int roughnessCurve = 0;         // the roughness the layers give is Modo's: 1 Blinn, 2 Ashikhmin, 3 GTR; 0 as it is
     bool beckmann = false;          // Beckmann specular lobe (DwaBaseMaterial as the plugin sets it up) rather than GGX
     float baseColorAmount = 1.0f;   // multiplies the colour after its layers
     float emissionAmount = 1.0f;

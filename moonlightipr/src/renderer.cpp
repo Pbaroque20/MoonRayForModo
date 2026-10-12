@@ -196,7 +196,7 @@ DeviceMaterial toDevice(const Material& m) {
         d.frontKeep[c] = std::clamp(m.diffuseKept[c], 0.0f, 1.0f);
     }
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
-            | (m.beckmann ? MATERIAL_BECKMANN : 0);
+            | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT);
     d.layerStart = m.layerStart;
     d.layerCount = m.layerCount;
     return d;

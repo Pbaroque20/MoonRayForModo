@@ -52,5 +52,16 @@ class ShadingModels(unittest.TestCase):
                 self.assertIn('["ramp_type"] = 8', text)
                 self.assertIn('["roughness"] = bind(RampMap("/modo/roughness/0"), 1)', text)
 
+    def test_the_gpu_has_the_same_roughnesses(self):
+        # MoonLightIPR turns a roughness its layers vary into the lobe's at each hit, from a copy of the table.
+        import re
+        kernel=(Path(__file__).resolve().parents[1]/'moonlightipr/src/device/kernel.cu').read_text(encoding='utf-8')
+        def row(name):return [float(v.rstrip('f')) for v in re.search(r'const float %s\[8\] = \{([^}]*)\}'%name,kernel).group(1).split(',')]
+        for model in ('blinn','ashikhmin','gtr'):
+            rows=shading_models.MEASURED[model]
+            self.assertEqual(row('from'),[0.0]+[r for r,_,_ in rows]+[1.0])
+            self.assertEqual(row(model),[0.0]+[to for _,to,_ in rows]+[rows[-1][1]])
+        self.assertEqual(list(shading_models.MEASURED),['blinn','ashikhmin','gtr'])
+
 
 if __name__=='__main__':unittest.main()

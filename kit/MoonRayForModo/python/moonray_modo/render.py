@@ -206,6 +206,16 @@ class Renderer(QtCore.QObject):
         # asked for last, so as to be the newest.
         self.gather=gather={'want':['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5,'got':{}}
         self.pending=None
+        from .persistent import holds
+        if holds(self.active['runtime']):
+            # A MoonRay that can hand over several views at one asking hands each over once, with no waiting on the
+            # host between them. Three rounds of them, for the middle to be taken, took twice as long and left the
+            # denoised picture no cleaner.
+            gather['want']=['denoise_albedo','denoise_normal','beauty'];gather['held']=True
+            if self.session.hold(gather['want']):
+                QtCore.QTimer.singleShot(12000,lambda:self._gathered(gather,False))
+                return True
+            gather['want']=['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5;gather['held']=False
         self.session.select_view(gather['want'][0])
         QtCore.QTimer.singleShot(12000,lambda:self._gathered(gather,False))
         return True
@@ -575,7 +585,7 @@ class Renderer(QtCore.QObject):
             # Being stopped: the pictures asked for are taken as they come, one after another, and not shown.
             if key==gather['want'][0]:
                 gather['got'].setdefault(key,[]).append((width,height,pixels));gather['want'].pop(0)
-                if gather['want'] and gather['want'][0]!=key:self.session.select_view(gather['want'][0])
+                if gather['want'] and gather['want'][0]!=key and not gather.get('held'):self.session.select_view(gather['want'][0])
                 if not gather['want']:self._gathered(gather,True)
             return
         try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
