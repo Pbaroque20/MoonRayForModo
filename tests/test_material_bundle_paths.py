@@ -32,7 +32,12 @@ class BundlePaths(unittest.TestCase):
             self.assertEqual(Path(held['first']['parameters']['file']).read_bytes(), b'original texture bytes')
 
     def test_udim_aliases_and_distinct_same_named_files(self):
-        with tempfile.TemporaryDirectory() as folder:
+        resolve = Path.resolve
+        def windows_resolve(path, *args, **kwargs):
+            if '<UDIM>' in path.name:
+                raise OSError(123, 'Windows rejects a pattern as a literal filename')
+            return resolve(path, *args, **kwargs)
+        with mock.patch.object(Path, 'resolve', windows_resolve), tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / 'sub').mkdir()
             (root / 'other').mkdir()
