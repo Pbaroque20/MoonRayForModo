@@ -333,7 +333,13 @@ class Renderer(QtCore.QObject):
             self.failed.emit('This runtime has no MoonLightIPR GPU preview (expected in '+str(directory)+'). Choose MoonRay as the preview engine.');return
         self.status.emit('Rendering · '+self.backend_status)
         self.moonlightipr_serial+=1
-        self.moonlightipr.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,MOONLIGHTIPR_SAMPLES,runtime=request['runtime'])
+        # MoonLightIPR denoises where the scene's denoiser is on for previews, and then has both pictures: the
+        # denoised one and the beauty as it is rendered. Which is shown is the buffer chosen in the window.
+        chosen=denoising.settings(request['snapshot'].get('denoising',{}))
+        self.moonlightipr_denoises=chosen['engine']!='off' and chosen['preview']
+        self.moonlightipr.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,MOONLIGHTIPR_SAMPLES,
+                                 denoise=self.moonlightipr_denoises,runtime=request['runtime'])
+        self.moonlightipr.view(self.buffers.key!='beauty')
 
     def _moonlightipr_memory(self,packet):
         if self.closed or self.canceled or not self.using_moonlightipr or packet[0]!=self.moonlightipr_serial:return
@@ -551,6 +557,9 @@ class Renderer(QtCore.QObject):
                 except OSError:pass
 
     def _select_view(self,key):
+        if getattr(self,'using_moonlightipr',False):
+            # MoonLightIPR has its beauty and its denoised picture both: it sends the one now chosen.
+            self.moonlightipr.view(key!='beauty');return
         if key=='denoised_beauty':return # Post-process result, not a native render output.
         snapshot=self.active['snapshot'] if getattr(self,'active',None) else {}
         if outputs.display_kind(snapshot,key)=='cryptomatte':

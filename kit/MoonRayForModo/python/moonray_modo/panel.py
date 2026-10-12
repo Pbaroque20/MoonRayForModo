@@ -604,12 +604,24 @@ class Panel(Tools, QtWidgets.QWidget):
         self._limit_buffers()
 
     def _limit_buffers(self):
-        """MoonLightIPR makes one picture, which its own denoiser has already cleaned: the list then holds that alone,
-        under the name Denoised Beauty. The other buffers are MoonRay's."""
+        """MoonLightIPR makes the beauty and, where the scene's denoiser is on for previews, a denoised beauty: the
+        list then holds those, and opens on the denoised one. The other buffers are MoonRay's."""
         only=self._engine()=='moonlightipr'
-        self.buffer.setItemText(0,'Denoised Beauty' if only else 'Beauty')
-        for row in range(1,self.buffer.count()):self.buffer.view().setRowHidden(row,only)
-        if only and self.buffer.currentIndex()!=0:self.buffer.setCurrentIndex(0)
+        denoises=self._moonlightipr_denoises()
+        self.buffer.setItemText(0,'Beauty')
+        for row in range(1,self.buffer.count()):
+            self.buffer.view().setRowHidden(row,only and not (denoises and self.buffer.itemData(row)=='denoised_beauty'))
+        if not only:return
+        shown=self.buffer.currentData()
+        # Where it denoises, the denoised picture is what is shown unless the beauty was chosen by hand.
+        wanted='denoised_beauty' if denoises and not (shown=='beauty' and self._buffer_picked=='beauty') else 'beauty'
+        if shown!=wanted:self.buffer.setCurrentIndex(self.buffer.findData(wanted))
+
+    def _moonlightipr_denoises(self):
+        """Whether the scene's denoiser is on for previews, which is when MoonLightIPR denoises."""
+        try:chosen=self._settings_values()['denoising']
+        except Exception:return False
+        return chosen.get('engine','off')!='off' and bool(chosen.get('preview',True))
 
     def _engine_notices(self,messages):
         """Add what the preview engine left out to the notices of the scene it is showing."""
@@ -645,7 +657,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
         if self._following:
             self.renderer.buffers.denoiser.close()
-            if self.buffer.currentData()=='denoised_beauty':
+            if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr':
                 self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             if not self.preview_lock.isChecked():self.timer.start()
         self._set_rendering(self._rendering)
@@ -854,12 +866,19 @@ class Panel(Tools, QtWidgets.QWidget):
         if self.disposed:return
         engine=self._preview_denoiser()
         self._buffer_picked=None
+        if self._engine()=='moonlightipr':
+            # MoonLightIPR denoises for itself: its list of buffers follows the setting, and so does its render.
+            self._limit_buffers()
+            if self._following or self._rendering:self.render_once()
+            return
         self.renderer.buffers.denoiser.request(engine)
         self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' else 'denoised_beauty'))
 
     def _buffer_changed(self,index):
         if self.disposed:return
-        if self._following and self.buffer.currentData()=='denoised_beauty':
+        # MoonRay denoises a finished picture, so there is none while a scene is followed. MoonLightIPR denoises as
+        # it goes.
+        if self._following and self._engine()!='moonlightipr' and self.buffer.currentData()=='denoised_beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('beauty'));return
         try:
             from .display import values
@@ -928,7 +947,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _capture_key(self):
         """What, beside the scene's own contents, a reading of the scene depends on."""
         import modo
-        settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
+        settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery')}
         return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
                 self.preferences.get('preview_motion'),self.runtime_path())
 

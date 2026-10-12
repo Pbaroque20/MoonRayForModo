@@ -96,6 +96,8 @@ class Session(QtCore.QObject):
         self.sent = dict(request, keys=keys, path=path)
         self.latest = None
         self.current = request['id']
+        # The picture looked at is said again with every scene: a session newly started has not been told.
+        self.process.write(b'view 0 denoised\n' if getattr(self, 'denoised_view', True) else b'view 0 beauty\n')
 
     def _read(self):
         text = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
@@ -142,6 +144,13 @@ class Session(QtCore.QObject):
             if self.latest and not self.closed: self._launch()
         elif not self.closed:
             self.failed.emit('MoonLightIPR exited (0x%08X). Refresh to start a new session; see Render Log.' % (code & 0xffffffff))
+
+    def view(self, denoised):
+        """Say which picture of a denoised scene is looked at: the denoised one, or the beauty as it is rendered.
+        The session has both all the while and sends the one asked for, at once."""
+        self.denoised_view = bool(denoised)
+        if self.running() and not self.stopping and not self.closed:
+            self.process.write(('view %d %s\n' % (self.current or 0, 'denoised' if denoised else 'beauty')).encode('utf-8'))
 
     def finish(self):
         """Stop sampling and have what is rendered so far sent as the finished picture. Returns whether there is a
