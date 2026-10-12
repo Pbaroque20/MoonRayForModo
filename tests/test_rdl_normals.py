@@ -29,8 +29,13 @@ class NormalTransforms(unittest.TestCase):
  def test_tiny_uniform_scale_is_not_singular(self):
   matrix=[1e-20,0,0,0,0,1e-20,0,0,0,0,1e-20,0,0,0,0,1]
   self.assertEqual(rdl_import.transformed_normals([[0,0,1]],matrix),[[0,0,1]])
- def test_mirror_and_singular_rejected(self):
-  for scale in (-1,0):
+ def test_singular_rejected(self):
+  for scale in (0,):
    matrix=rdl_import.IDENTITY[:];matrix[0]=scale
    with self.assertRaises(ValueError):rdl_import.transformed_normals([[0,0,1]],matrix)
+class Reflections(unittest.TestCase):
+ def test_reflection_normal_sign(self):
+  matrix=rdl_import.IDENTITY[:];matrix[0]=-1
+  self.assertEqual(rdl_import.transformed_normals([[1,0,0],[0,0,1]],matrix),[[-1,0,0],[0,0,1]])
+  self.assertLess(rdl_import.normal_transform(matrix)[1],0)
 if __name__=='__main__':unittest.main()

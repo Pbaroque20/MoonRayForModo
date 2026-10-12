@@ -11,20 +11,30 @@ try:
  lx.eval('scene.new')
  verts=[[0,0,0],[1,0,0],[1,1,0],[0,1,0]];faces=[[0,1,2],[0,2,3]]
  normals={'point':[[0,0,1]]*4,'corner':[[0,0,1]]*3+[[0,1,0]]*3}
- data=dict(meshes=[dict(name=name,vertices=verts,faces=faces,uv=[],normals=values,tags=[None,None],subd=False,matrix=None,render=True,attributes=[]) for name,values in normals.items()],curves=[],instances=[],entities=[],materials={},cameras=[],settings={},links=[],warnings=[],source='test.rdla')
+ data=dict(meshes=[dict(name=name,vertices=verts,faces=faces,uv=[[0,0],[1,0],[1,1],[.2,.3],[.8,.9],[0,1]],normals=values,tags=[None,None],subd=False,matrix=None,render=True,attributes=[]) for name,values in normals.items()],curves=[],instances=[],entities=[],materials={},cameras=[],settings={},links=[],warnings=[],source='test.rdla')
  shear=[1,1,0,0,0,1,0,0,0,0,1,0,2,0,0,1]
- for record in list(data['meshes']):
-  baked=dict(record,name=record['name']+' sheared',matrix=shear)
-  data['meshes'].append(baked)
-  normals[baked['name']]=rdl_import.transformed_normals(record['normals'],shear)
+ mirror=[-1,0,0,0,0,1,0,0,0,0,1,0,2,0,0,1]
+ originals=list(data['meshes'])
+ for suffix,matrix in [(' sheared',shear),(' mirrored',mirror)]:
+  for record in originals:
+   baked=dict(record,name=record['name']+suffix,matrix=matrix)
+   data['meshes'].append(baked)
+   normals[baked['name']]=rdl_import.transformed_normals(record['normals'],matrix)
  result['import']=rdl_import.apply(data)
  for name,values in normals.items():
   item=next(i for i in modo.Scene().items('mesh') if i.name==name)
   geo=item.geometry;maps=geo.vmaps['RDL Normals'];assert len(maps)==1;nmap=maps[0]
+  uvmap=geo.vmaps['RDL UV'][0]
   for f,face in enumerate(geo.polygons):
+   indices=[v.index for v in face.vertices]
+   assert indices==(list(reversed(faces[f])) if name.endswith('mirrored') else faces[f]),(name,indices)
    for c,v in enumerate(face.vertices):
     actual=nmap.getNormal(v) if name.startswith('point') else nmap.getNormal(v,face)
-    expected=values[v.index] if name.startswith('point') else values[f*3+c]
+    source_corner=faces[f].index(v.index)
+    expected=values[v.index] if name.startswith('point') else values[f*3+source_corner]
+    uv=face.getUV(v,uvmap)
+    expected_uv=data['meshes'][0]['uv'][f*3+source_corner]
+    assert all(abs(a-b)<1e-6 for a,b in zip(uv,expected_uv)),(name,'UV',str(uv),expected_uv)
     assert all(abs(a-b)<1e-6 for a,b in zip(actual,expected)),(name,f,c,str(actual),expected)
  result['ok']=True
 except Exception:result['error']=traceback.format_exc()

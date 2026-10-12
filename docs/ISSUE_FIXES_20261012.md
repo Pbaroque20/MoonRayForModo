@@ -49,3 +49,9 @@ Validation: 12 focused RDL unit tests passed. `tools/probe_rdl_normals.py` impor
 Authored normals now survive orientation-preserving shears baked into imported vertices. The normal matrix uses the inverse transpose of the linear transform and normalizes the result; translation does not affect it. Matrix magnitudes are scaled before inversion to retain very small uniform transforms. Mirrored, singular or near-singular transforms still omit normals with an explicit warning.
 
 All 16 focused RDL tests passed, including transformed-tangent perpendicularity, nonuniform scale, translation independence, tiny scale and unsupported transforms. The Modo 16.1v9 read-back probe passed all four meshes: point/corner maps with and without shear. Rendered-image equivalence, mirrored winding, shutter motion and creases are not covered or claimed.
+
+### Reflection follow-up
+
+Mirrored transforms now preserve authored normals as well. When baking a reflection into mesh points, the importer reverses polygon winding while keeping UVs and corner normals associated with their original vertex. Singular/near-singular transforms still omit normals with an explicit warning.
+
+All 17 focused RDL tests passed. The isolated Modo 16.1v9 probe imported six meshes (point/corner normals, ordinary/sheared/mirrored), checked polygon vertex order and every UV/normal value, and exited normally. Shutter motion and subdivision creases remain unresolved under #23. No rendered-image equivalence claim is made.
