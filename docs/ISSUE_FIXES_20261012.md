@@ -14,9 +14,13 @@ The user authorized tests on 12 October. Follow-up checks used a separate checko
 
 - `tools/check_idle_release.py`: **6 passed**, covering timeout, disabled timeout, manual release, pending work, new submissions, and completion-handler reentrancy. Uses a fake Qt timer; actual GPU memory recovery is not established by this check.
 - `tools/probe_light_defaults.py`: **passed in Modo 16.1v9**. Mesh, Rect, Sphere, Spot, Disk and Cylinder lights created through the native scene API picked up intensity 37; duplicates retained authored intensity 8. Environment starting values also passed. This is a creation/duplication check, not a rendered-image or save/reload check. The probe writes to `MOONRAY_TEST_RESULTS/light-defaults`, or a temporary test folder if unset, and closes the isolated host.
-- `tools/check_release_package.py`: **passed** on the three 0.3.51.3 release archives with `--no-render`: 10 scenes and 86 indexed assets discovered in the fresh installation. No renders or library-window interaction were performed.
+- `tools/check_release_package.py`: **passed** on the three 0.3.51.3 release archives with `--no-render`: 10 scenes and 86 indexed assets discovered in the fresh installation. No renders were performed in that check.
 
-#72 still needs real renderer-process/GPU-memory verification; #51 has headless installation/discovery coverage, not a visual library-window check. No claim of full production validation is made.
+- `tools/probe_content_library.py`: **passed in Modo 16.1v9**, loading a copy of the kit formed from all three 0.3.51.3 archives. The library displayed 76 usable assets and 16 RDL scenes (the content scenes plus kit examples), with paired RDLB files deduplicated. Category selection, search clearing, selected thumbnail and RDL action-button state passed. The saved library-window screenshot was inspected. No scene import or rendering was invoked.
+
+Reproduce the host check with `MOONRAY_TEST_RESULTS` set to an output folder and `MOONRAY_TEST_KIT` set to the absolute `test-results/PROFILE/Configs/MoonRayForModo` path, then run `tools/launch_gui_probe.py probe_content_library.py --kit-source UNPACKED_KIT --profile PROFILE --wait --timeout 120`. Use a fresh profile. Read `content-library/report.json`: a normal Modo exit alone does not establish probe success.
+
+#72 still needs real renderer-process/GPU-memory verification. #51 now has both headless installation/discovery and host library-window coverage. No claim of full production validation is made.
 
 ## Remaining priorities
 
