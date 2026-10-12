@@ -55,3 +55,9 @@ All 16 focused RDL tests passed, including transformed-tangent perpendicularity,
 Mirrored transforms now preserve authored normals as well. When baking a reflection into mesh points, the importer reverses polygon winding while keeping UVs and corner normals associated with their original vertex. Singular/near-singular transforms still omit normals with an explicit warning.
 
 All 17 focused RDL tests passed. The isolated Modo 16.1v9 probe imported six meshes (point/corner normals, ordinary/sheared/mirrored), checked polygon vertex order and every UV/normal value, and exited normally. Shutter motion and subdivision creases remain unresolved under #23. No rendered-image equivalence claim is made.
+
+## Fully sharp RDL subdivision creases (#23, partial)
+
+Import plans validate crease/corner indices, topology and finite nonnegative weights. Fully sharp values (10 or higher) become editable Subdivision edge/corner weights of 1 on Catmull-Clark polygons. Semi-sharp values remain omitted with an explicit notice; their scale conversion is not established.
+
+Twenty focused RDL tests passed. The isolated Modo 16.1v9 probe read back edge/corner weights and Catmull-Clark polygon type and exited normally. An initial candidate crashed when writing edges in the topology-creation edit; the final implementation commits polygons before opening a second edit for edge weights. This failure is resolved in the passing candidate, not hidden. No rendered surface comparison is claimed.
