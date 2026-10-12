@@ -29,6 +29,7 @@ FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'm
 LAYER_GROUP_BEGIN, LAYER_GROUP_END, LAYER_MASK_BASE, MASK_REGISTERS, GROUP_DEPTH = 32, 33, 40, 4, 4
 LAYER_MASKED, LAYER_MASK_SHIFT = 1 << 11, 12
 MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN, MATERIAL_CONDUCTOR, MATERIAL_HAIR, MATERIAL_VOLUME = 1, 2, 16, 32, 64, 128
+MATERIAL_NO_CAUSTICS = 1024
 LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
@@ -899,6 +900,14 @@ class Compiler:
         # A metal rendered through DwaBaseMaterial reflects by its own curve, with a white edge.
         if dwa:
             flags |= MATERIAL_CONDUCTOR
+            # DwaBaseMaterial leaves its highlight, coat, metal and glass out of a path that has already left a diffuse
+            # lobe, unless it is told to cast caustics. A plain material goes to MoonRay as UsdPreviewSurface, which
+            # has no such rule.
+            if not (source.get('native_parameters') or {}).get('casts_caustics'):
+                flags |= MATERIAL_NO_CAUSTICS
+        elif str(native or '').startswith('Dwa') and not (source.get('native_parameters') or {}).get('casts_caustics'):
+            # MoonRay's other Dwa materials are DwaBaseMaterial underneath, and have the rule with it.
+            flags |= MATERIAL_NO_CAUSTICS
         # The plugin selects DwaBaseMaterial's Beckmann lobe only where anisotropy stretches it. Everything else gets GGX.
         stretched = bool(dwa and (source.get('anisotropy', 0) or 'aniso' in effects or any(m.get('anisotropy', 0) for m in stack or [])))
         if stretched or source.get('anisotropy', 0) or source.get('_beckmann'):

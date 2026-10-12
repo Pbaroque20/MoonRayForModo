@@ -622,10 +622,12 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSB', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSC', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
+             # The scene's sample clamp, and from which bounce it holds.
+             struct.pack('<fI', float(settings['sample_clamping_value']), int(settings['sample_clamping_depth'])),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
              struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
              struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])]),

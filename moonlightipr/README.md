@@ -120,12 +120,12 @@ Three more scenes cover textures and the two ways a material reaches MoonRay:
 |---|---|---|
 | An environment image, turned 40 degrees | 0.983 | 100% |
 | Textures on plain materials (`UsdPreviewSurface`): colour, roughness and normal maps | 1.000 | 98% |
-| Material stacks without textures (`DwaBaseMaterial`) | 0.973 | 64% |
-| Material stacks with layers (`DwaBaseMaterial`): multiply blend, a half-opaque material row | 0.982 | 61% |
-| A glass ball and a clearcoated cube under a sun and sky | 1.090 | 69% |
-| A thin tinted ball and a half-present cube | 1.076 | 78% |
+| Material stacks without textures (`DwaBaseMaterial`) | 0.995 | 91% |
+| Material stacks with layers (`DwaBaseMaterial`): multiply blend, a half-opaque material row | 1.001 | 98% |
+| A glass ball and a clearcoated cube under a sun and sky | 1.091 | 66% |
+| A thin tinted ball and a half-present cube | 1.013 | 93% |
 | Nine sphere and rect lights of different power | 0.998 | 98% |
-| A masked material row, a half-opaque group and a bump map | 0.968 | 54% |
+| A masked material row, a half-opaque group and a bump map | 1.003 | 97% |
 
 A third set, added October 7, 2026, covers what was translated last (MoonLightIPR 2048
 samples, MoonRay 36):
@@ -139,11 +139,11 @@ samples, MoonRay 36):
 | Depth of field, five-blade lens | 1.010 | 97% |
 | Layered environment (a gradient with a colour multiplied over it) | 1.006 | 97% |
 | Physical sky | 1.006 | 93% |
-| Subsurface scattering, full on a ball and half on a cube | 0.965 | 94% |
-| Anisotropy, along and across texture u | 0.987 | 95% |
-| Absorption inside glass | 1.006 | 89% |
+| Subsurface scattering, full on a ball and half on a cube | 0.986 | 94% |
+| Anisotropy, along and across texture u | 0.990 | 98% |
+| Absorption inside glass | 1.022 | 96% |
 | Dispersion (Abbe number 4) | 1.056 | 83% |
-| Checker, noise, a gradient and layer curves | 0.971 | 56% |
+| Checker, noise, a gradient and layer curves | 1.012 | 89% |
 
 ![Depth of field](../docs/images/moonlightipr-depth_of_field.jpg)
 *Depth of field through a disc lens.*
@@ -192,6 +192,15 @@ grey metal at roughness 0.6 is within 1 to 4%. Through `UsdPreviewSurface` the p
 matches to four decimal places and the metals to 1 to 3%. Before these three rules
 the stack scene without textures was 17% too bright, and the layered one had 35% of
 its tiles within 10% where it now has 61%.
+
+The figures for `DwaBaseMaterial` in the tables above are of October 12, 2026, after one more
+rule of MoonRay's was matched: on a path that has already bounced off something diffuse,
+`DwaBaseMaterial` leaves out its specular, outer specular, metallic and transmission parts
+altogether unless `casts_caustics` is set, so that by bounced light a shiny surface is
+plain diffuse and what is beneath the highlight is not dimmed by it. MoonLightIPR kept the
+highlight there: the unlit side of a ball on a lit, shiny ground was 83% as bright as
+MoonRay's, and is now 101%. Before, the stack scene without textures had 64% of its tiles
+within 10%, the layered one 61%, the masked one 54% and the patterns 56%.
 
 What is left in the full scenes is mostly near shadow edges and in glass, where the
 two renderers resolve noise and clamped bounce light differently, and has not been

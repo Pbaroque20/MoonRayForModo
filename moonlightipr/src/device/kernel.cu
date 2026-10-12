@@ -1554,7 +1554,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     // What the lamps send here goes on towards the viewer.
                     float3 here = origin + direction * at;
                     if (bounces)
-                        radiance += fogLight(here, -direction, anisotropy, throughput * bounceWeight * albedo, roughDepth >= 1, seed);
+                        radiance += fogLight(here, -direction, anisotropy, throughput * bounceWeight * albedo, roughDepth >= params.sampleClampDepth, seed);
                     // And, for as many times as the scene allows, so does what other fog sends here, as MoonRay works it
                     // out (after Wrenninge): from here the light is followed a step at a time through the fog, each step
                     // as long as the fog where it starts makes likely, and ended where a step lands outside the fog.
@@ -1602,7 +1602,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 radiance += clampSample(throughput * lightWeight * vec(fog.emission) * left * (1.0f / density), clampFound);
                 const float3 on = throughput * bounceWeight * stops * vec(fog.albedo) * left * (1.0f / density);
                 float3 here = origin + direction * reached;
-                if (bounces) radiance += fogLight(here, -direction, fog.anisotropy, on, roughDepth >= 1, seed);
+                if (bounces) radiance += fogLight(here, -direction, fog.anisotropy, on, roughDepth >= params.sampleClampDepth, seed);
                 // And what other fog sends here, as MoonRay works it out: the light is followed a step at a time, each
                 // as long as the fog makes likely, and ended where a step leaves the fog or meets something in it.
                 // Each time the light has scattered before, it counts for less, fog stops less of it on its way from
@@ -1730,6 +1730,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
 
         Surface surface = surfaceFrom(hit);
+        if ((hit.flags & MATERIAL_NO_CAUSTICS) && diffuseDepth > 0) {
+            // MoonRay's DwaBaseMaterial leaves its specular, outer specular, metallic and transmission parts out
+            // altogether on what it calls a caustic path, one that has already left a diffuse lobe; what is beneath
+            // them is then not dimmed by them either. Seen by bounced light such a surface is plain diffuse.
+            surface.specular = 0.0f;
+            surface.coat = 0.0f;
+            surface.metallic = 0.0f;
+            surface.transmission = 0.0f;
+        }
         if (!emerged) {
             radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
             if (!bounces) break;
@@ -1752,7 +1761,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 guideNormal = make_float3(dot(hit.ns, normalize(vec(params.cameraU))), dot(hit.ns, normalize(vec(params.cameraV))),
                                           -dot(hit.ns, normalize(vec(params.cameraW))));
             }
-            radiance += fibreLight(fibre, hit.p, hit.ng, throughput, roughDepth >= 1, seed);
+            radiance += fibreLight(fibre, hit.p, hit.ng, throughput, roughDepth >= params.sampleClampDepth, seed);
             float3 wi;
             if (depth >= params.maxDepth || !fibreSample(fibre, seed, wi)) break;
             const float3 f = fibreEval(fibre, wi, bsdfPdf);
@@ -1762,7 +1771,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             lightWeight = bounceWeight = f * (1.0f / bsdfPdf);
             bounces = true;
             sharp = false;
-            clampFound = roughDepth >= 1;
+            clampFound = roughDepth >= params.sampleClampDepth;
             ++roughDepth;
             origin = offsetOrigin(hit.p, hit.ng, direction);
             continue;
@@ -1824,7 +1833,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             seen = kept ? SEEN_REFLECTED : SEEN_THROUGH;
             lightWeight = bounceWeight = tint;
             sharp = true;
-            clampFound = roughDepth >= 1;
+            clampFound = roughDepth >= params.sampleClampDepth;
             origin = offsetOrigin(hit.p, ng, direction);
             continue;
         }
@@ -1846,7 +1855,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // Sample only what may bounce on; with nothing left, the ray still looks for lights.
             lobes.specular = glossyBounces ? 1.0f : 0.0f;
         }
-        const bool lit = roughDepth >= 1;   // this surface was reached by scattering off something rough
+        const bool lit = roughDepth >= params.sampleClampDepth;   // this surface was reached by scattering off something rough
         radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed);
 
         // The light that enters a transmissive surface goes through it rather than scattering.
@@ -1866,7 +1875,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // Chosen in proportion to its share of the light, so only the tint remains.
             lightWeight = bounceWeight = surface.transmissionColor * tint;
             sharp = true;
-            clampFound = roughDepth >= 1;
+            clampFound = roughDepth >= params.sampleClampDepth;
             bounces = true;
             origin = offsetOrigin(hit.p, ng, direction);
             continue;
@@ -1920,7 +1929,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         bounceWeight = ((diffuseBounces ? e.diffuse : vec(0.0f)) + (glossyBounces ? e.specular : vec(0.0f))) * scale;
         bounces = diffuseBounces || glossyBounces;
         sharp = false;
-        clampFound = roughDepth >= 1;
+        clampFound = roughDepth >= params.sampleClampDepth;
         ++roughDepth;
         if (glossy) ++glossyDepth; else ++diffuseDepth;
         // Light through a rough surface is diffuse light; off its shine, a reflection.

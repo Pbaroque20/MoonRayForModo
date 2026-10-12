@@ -30,6 +30,9 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                // Two bits: the roughness its layers give is Modo's, of the model 1 Blinn, 2 Ashikhmin, 3 GTR,
                // and is turned into the roughness of the lobe that draws the same highlight.
                MATERIAL_ROUGH_SHIFT = 8, MATERIAL_ROUGH_MASK = 3u << 8,
+               // DwaBaseMaterial with its casts_caustics off, as it is unless asked: reached by a path that has left a
+               // diffuse lobe, the material has no highlight, coat, metal or glass to it, only what is beneath them.
+               MATERIAL_NO_CAUSTICS = 1u << 10,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -293,7 +296,8 @@ struct LaunchParams {
     unsigned maxGlossyDepth;    // and how many a specular lobe
     unsigned maxVolumeDepth;    // how many times light may scatter in fog along one path; MoonRay's max_volume_depth
     unsigned opaqueShadows; // a surface that is partly absent casts a whole shadow all the same: MoonRay with its presence shadows off
-    float sampleClamp;      // largest value of one light sample after the first bounce; 0 is unlimited
+    unsigned sampleClampDepth;  // how many rough things: MoonRay's sample_clamping_depth, 1 leaving alone what the camera sees directly
+    float sampleClamp;      // largest value of one light sample once the path has scattered off enough rough things; 0 is unlimited
     unsigned presence;      // some material can be partly absent or is a fog's edge, so rays must run the any-hit test
 
     unsigned long long traversable;

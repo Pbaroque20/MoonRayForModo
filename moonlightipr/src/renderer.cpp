@@ -196,7 +196,8 @@ DeviceMaterial toDevice(const Material& m) {
         d.frontKeep[c] = std::clamp(m.diffuseKept[c], 0.0f, 1.0f);
     }
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
-            | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT);
+            | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT)
+            | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0);
     d.layerStart = m.layerStart;
     d.layerCount = m.layerCount;
     return d;
@@ -691,6 +692,7 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     impl->params.maxDiffuseDepth = impl->params.maxGlossyDepth = 2;
     impl->params.maxVolumeDepth = 1;
     impl->params.sampleClamp = 10.0f;
+    impl->params.sampleClampDepth = 1;
     std::vector<float> albedo = albedoTable(false);
     const std::vector<float> beckmann = albedoTable(true);
     albedo.insert(albedo.end(), beckmann.begin(), beckmann.end());
@@ -1347,6 +1349,12 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     if (impl->denoiser) ML_CHECK(optixDenoiserDestroy(impl->denoiser));
     impl->denoiser = nullptr;
     impl->updateCamera();
+    impl->restart();
+}
+
+void Renderer::setSampleClamp(float value, uint32_t depth) {
+    impl->params.sampleClamp = std::max(value, 0.0f);
+    impl->params.sampleClampDepth = depth;
     impl->restart();
 }
 
