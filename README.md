@@ -52,7 +52,7 @@ Some of these need the MoonRay of the next runtime, so the next release brings a
 
 **Rendering with MoonRay**
 
-- **Safe Denoising**: stop a MoonRay render at any time and keep it, denoised. **Continue** then takes it up where it stood.
+- **Safe Denoising**: stop a MoonRay render at any time after a first pass and keep it, denoised. **Continue** then takes it up where it stood.
 
 ![A MoonRay preview stopped part way, kept and denoised](docs/images/safe-denoising.png)
 *Stopped part way, kept and denoised, with Continue on offer.*
