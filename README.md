@@ -1,14 +1,14 @@
 # MoonLightIPR
 
-This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo), where the next version's preview features are built and tried. For the plugin itself, its download and its installation, see the [main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo).
+This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo), where **0.4**, the next version, is built and tried. For the plugin itself, its download and its installation, see the [main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo).
 
 **MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and follows your edits as you make them. Final renders always come from MoonRay.
 
 The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.3).
 
-## Built since 0.3.51.3
+## Coming in 0.4
 
-Not released yet. More detail and pictures are in [What's next](docs/WHATS_NEXT.md).
+Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WHATS_NEXT.md).
 
 **New**
 
@@ -33,7 +33,7 @@ Not released yet. More detail and pictures are in [What's next](docs/WHATS_NEXT.
 - **Hidden items stay hidden**: an item with its eye off does not render, and a Shader's Cast Shadows switch is followed.
 - **Imported MoonRay lights** are no longer far too bright.
 
-Some of these need the next runtime, so the next release brings a new runtime ZIP.
+Some of these need a newer MoonRay, so 0.4 brings a new runtime ZIP.
 
 ![The preview window with MoonLightIPR chosen and realtime on](docs/images/preview-engines.png)
 *MoonLightIPR chosen, RT On.*
@@ -130,7 +130,7 @@ Every known issue, and what is still to implement, is in the [issue tracker](htt
 
 - [How MoonLightIPR works, what it draws and how closely it matches MoonRay](moonlightipr/README.md)
 - [The plugin's main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo), with the full feature list, limitations and installation
-- [Everything coming in 0.3.51](docs/WHATS_NEW_0351.md)
+- [What was new in 0.3.51](docs/WHATS_NEW_0351.md)
 - [What was new in 0.3.50](docs/WHATS_NEW_0350.md)
 
 Developed by Raphael Tobar with AI assistance. MoonLightIPR is under the [MIT License](moonlightipr/LICENSE) and is not affiliated with DreamWorks Animation; see [moonlightipr/NOTICE.md](moonlightipr/NOTICE.md). Plugin licensing is in [LICENSE](LICENSE).
