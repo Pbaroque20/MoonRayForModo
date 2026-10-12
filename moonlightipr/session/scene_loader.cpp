@@ -19,7 +19,7 @@ const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 
                MESH_CURVES = 128,       // the data is curves: control points, their radii and each segment's first point
                MESH_LINEAR = 256,       // those curves' segments are straight, from one point to the next
                MESH_RIBBON = 512;       // and they are lit as flat ribbons that face the ray
-const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4;
+const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4, SCENE_PRESENCE_SHADOWS = 8;
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
 // Meshes unused for this many scenes are freed, so hiding and showing an item stays cheap.
@@ -637,7 +637,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         renderer.setEnvironment(environment);
         environmentHash = environmentNow;
     }
-    renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth, maxVolumeDepth);
+    renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth, maxVolumeDepth, (sceneFlags & SCENE_PRESENCE_SHADOWS) != 0);
     if (settings.width != renderer.width() || settings.height != renderer.height()) renderer.resize(settings.width, settings.height);
     renderer.setCamera(camera);
     renderer.setCameraMotion(sceneFlags & SCENE_MOTION ? &cameraClose : nullptr);

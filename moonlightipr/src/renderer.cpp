@@ -1350,7 +1350,8 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     impl->restart();
 }
 
-void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t glossyBounces, uint32_t volumeBounces) {
+void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t glossyBounces, uint32_t volumeBounces, bool presenceShadows) {
+    impl->params.opaqueShadows = presenceShadows ? 0 : 1;
     impl->params.maxVolumeDepth = volumeBounces;
     impl->params.maxDepth = bounces;
     impl->params.maxDiffuseDepth = diffuseBounces;

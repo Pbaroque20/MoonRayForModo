@@ -292,7 +292,7 @@ struct LaunchParams {
     unsigned maxDiffuseDepth;   // of those, how many may leave a diffuse lobe
     unsigned maxGlossyDepth;    // and how many a specular lobe
     unsigned maxVolumeDepth;    // how many times light may scatter in fog along one path; MoonRay's max_volume_depth
-    unsigned depthPad;
+    unsigned opaqueShadows; // a surface that is partly absent casts a whole shadow all the same: MoonRay with its presence shadows off
     float sampleClamp;      // largest value of one light sample after the first bounce; 0 is unlimited
     unsigned presence;      // some material can be partly absent or is a fog's edge, so rays must run the any-hit test
 

@@ -49,6 +49,12 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 ![A normal render stopped part way, kept and denoised](images/stop-keeps-picture.png)
 *A normal render stopped after 25 seconds: kept and denoised, with no marks.*
 
+## MoonLightIPR nearer to MoonRay
+
+- **A see-through surface casts the shadow MoonRay gives it.** MoonRay has a surface that is partly absent cast a whole shadow unless Presence Shadows is switched on in the scene's settings; MoonLightIPR always cast a lighter one. It now follows the setting. On the test scene of half-absent strands the shadows are as MoonRay's; the picture as a whole went from 53% within 10% to 59%, what is left being the strands themselves, which MoonRay draws with a darker core where both of a strand's walls are seen.
+- **Fog and clouds with Volume Depth raised agree with MoonRay**: measured at 96% of the picture within 10% for fog at a depth of 3 (1.01 of MoonRay's brightness) and for a VDB cloud at a depth of 4 (1.00).
+- **Draft's outlines go through a fisheye or spherical camera's own lens** (see above), and **a Blinn, Ashikhmin or GTR roughness is drawn as MoonRay draws it** (see above).
+
 ## Nearer to Modo's own look
 
 - **A rough Principled material is no longer dark seen at a low angle.** Modo's Principled model adds its highlight to its diffuse light; MoonRay's layers take from the diffuse what the highlight reflects, which is most at a low angle, and a rough highlight gives little of it back. A rough floor running off toward the horizon came out at a third to a half of Modo's brightness. The highlight's rise toward the edge is now whole up to a roughness of 0.2 and falls away to none at 0.6, in MoonRay and MoonLightIPR alike. Against Modo's own renders of a ball and a box on a ground under one light, the whole picture's brightness went from 79% of Modo's to 94% at a roughness of 0.5, from 73% to 94% at 0.7 and from 67% to 88% at 0.9; in MoonRay itself the far ground at 0.9 went from 29% of Modo's to 74%. Smooth Principled materials (0.2 and under) are as they were.

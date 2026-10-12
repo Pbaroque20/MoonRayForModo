@@ -2215,9 +2215,11 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
 }
 
 // Presence: a surface that is partly absent lets each ray through with that probability, for
-// camera, bounce and shadow rays alike.
+// camera and bounce rays, and for shadow rays where presence shadows are on. With them off, as MoonRay has them
+// unless asked, a ray looking for a light is stopped by such a surface as by any other.
 ML_INLINE void absent(const DeviceMaterial& material, const DeviceMesh& mesh, unsigned primitive, float2 barycentrics) {
     if (!(material.flags & MATERIAL_HAS_PRESENCE)) return;
+    if (params.opaqueShadows && (optixGetRayFlags() & OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT)) return;
     float3 channel[CHANNEL_COUNT];
     channel[CHANNEL_DISSOLVE] = vec(material.dissolve);
     if (material.layerCount) evalLayers(material, mesh, primitive, barycentrics, channel, make_float2(0.0f, 0.0f));

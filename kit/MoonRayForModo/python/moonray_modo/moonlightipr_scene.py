@@ -15,7 +15,7 @@ IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE, MESH_CURVES, MESH_LINEAR, MESH_RIBBON = 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
 # A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
 SUBDIVISION_QUADS = 3000000
-SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION = 1, 2, 4
+SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS = 1, 2, 4, 8
 ENVIRONMENT_ROWS = 64
 ENVIRONMENT_IMAGE = (1024, 512)
 # How a camera turns a point of the picture into a direction, by the session's numbering.
@@ -623,7 +623,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
     parts = [b'MLSB', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
-                                  | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)),
+                                  | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
+                                  # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
+                                  | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
              struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
              struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])]),
