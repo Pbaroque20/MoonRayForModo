@@ -1,0 +1,575 @@
+{
+  "baseline": {
+    "phases": [
+      {
+        "phase": "nothing touched",
+        "seconds": 3.01,
+        "ticks": 19,
+        "in_ticks_seconds": 0.097,
+        "share_of_modo_thread": 0.032,
+        "tick_median_ms": 1.0,
+        "update_tick_median_ms": null,
+        "tick_longest_ms": 27.6,
+        "renders_asked": 0,
+        "moonray_passes_begun": 1,
+        "pass_begin_seconds": 1.401,
+        "of_which_outside_ticks": 1.401,
+        "whole_asked_by": [],
+        "told_of": [
+          [
+            15.37,
+            true,
+            []
+          ]
+        ],
+        "time_now": 0.0,
+        "moves_made": 0,
+        "moves_expected": 100,
+        "move_command_median_ms": null
+      },
+      {
+        "phase": "camera dragged",
+        "seconds": 3.06,
+        "ticks": 16,
+        "in_ticks_seconds": 0.699,
+        "share_of_modo_thread": 0.229,
+        "tick_median_ms": 42.7,
+        "update_tick_median_ms": 43.1,
+        "tick_longest_ms": 107.0,
+        "renders_asked": 14,
+        "moonray_passes_begun": 14,
+        "pass_begin_seconds": 0.033,
+        "of_which_outside_ticks": 0.018,
+        "whole_asked_by": [],
+        "told_of": [
+          [
+            0.2,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            0.63,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.06,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.2,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.37,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.53,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.67,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.82,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.99,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.18,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.44,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.61,
+            false,
+            [
+              "translation005"
+            ]
+          ]
+        ],
+        "time_now": 0.0,
+        "moves_made": 46,
+        "moves_expected": 102,
+        "move_command_median_ms": 2.1
+      },
+      {
+        "phase": "mesh dragged",
+        "seconds": 3.0,
+        "ticks": 19,
+        "in_ticks_seconds": 0.814,
+        "share_of_modo_thread": 0.271,
+        "tick_median_ms": 66.1,
+        "update_tick_median_ms": 71.5,
+        "tick_longest_ms": 118.0,
+        "renders_asked": 11,
+        "moonray_passes_begun": 11,
+        "pass_begin_seconds": 0.027,
+        "of_which_outside_ticks": 0.006,
+        "whole_asked_by": [],
+        "told_of": [
+          [
+            0.01,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            0.24,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            0.46,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            0.76,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            1.09,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            1.38,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            1.7,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            2.01,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            2.25,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            2.48,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            2.79,
+            false,
+            [
+              "translation034"
+            ]
+          ]
+        ],
+        "time_now": 0.0,
+        "moves_made": 53,
+        "moves_expected": 100,
+        "move_command_median_ms": 2.1
+      },
+      {
+        "phase": "release settle",
+        "seconds": 2.99,
+        "ticks": 19,
+        "in_ticks_seconds": 0.193,
+        "share_of_modo_thread": 0.064,
+        "tick_median_ms": 1.0,
+        "update_tick_median_ms": 98.5,
+        "tick_longest_ms": 98.5,
+        "renders_asked": 1,
+        "moonray_passes_begun": 1,
+        "pass_begin_seconds": 0.004,
+        "of_which_outside_ticks": 0.0,
+        "whole_asked_by": [],
+        "told_of": [
+          [
+            0.09,
+            false,
+            [
+              "translation034"
+            ]
+          ]
+        ],
+        "time_now": 0.0,
+        "moves_made": 0,
+        "moves_expected": 99,
+        "move_command_median_ms": null
+      }
+    ],
+    "release_digest_pending": false,
+    "release_digest_is_string": true,
+    "transform_mismatches": []
+  },
+  "candidate": {
+    "phases": [
+      {
+        "phase": "nothing touched",
+        "seconds": 3.0,
+        "ticks": 19,
+        "in_ticks_seconds": 0.091,
+        "share_of_modo_thread": 0.03,
+        "tick_median_ms": 1.0,
+        "update_tick_median_ms": null,
+        "tick_longest_ms": 25.3,
+        "renders_asked": 0,
+        "moonray_passes_begun": 1,
+        "pass_begin_seconds": 1.226,
+        "of_which_outside_ticks": 1.226,
+        "whole_asked_by": [],
+        "told_of": [
+          [
+            15.32,
+            true,
+            []
+          ]
+        ],
+        "time_now": 0.0,
+        "moves_made": 0,
+        "moves_expected": 100,
+        "move_command_median_ms": null
+      },
+      {
+        "phase": "camera dragged",
+        "seconds": 3.02,
+        "ticks": 18,
+        "in_ticks_seconds": 0.318,
+        "share_of_modo_thread": 0.105,
+        "tick_median_ms": 25.3,
+        "update_tick_median_ms": 26.1,
+        "tick_longest_ms": 32.7,
+        "renders_asked": 12,
+        "moonray_passes_begun": 12,
+        "pass_begin_seconds": 0.03,
+        "of_which_outside_ticks": 0.0,
+        "whole_asked_by": [],
+        "told_of": [
+          [
+            0.2,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            0.79,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.1,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.4,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.54,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            1.71,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.01,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.17,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.48,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.64,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.8,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            2.95,
+            false,
+            [
+              "translation005"
+            ]
+          ]
+        ],
+        "time_now": 0.0,
+        "moves_made": 49,
+        "moves_expected": 100,
+        "move_command_median_ms": 2.1
+      },
+      {
+        "phase": "mesh dragged",
+        "seconds": 3.01,
+        "ticks": 20,
+        "in_ticks_seconds": 0.513,
+        "share_of_modo_thread": 0.171,
+        "tick_median_ms": 35.4,
+        "update_tick_median_ms": 51.0,
+        "tick_longest_ms": 63.0,
+        "renders_asked": 10,
+        "moonray_passes_begun": 10,
+        "pass_begin_seconds": 0.023,
+        "of_which_outside_ticks": 0.0,
+        "whole_asked_by": [],
+        "told_of": [
+          [
+            0.14,
+            false,
+            [
+              "translation005"
+            ]
+          ],
+          [
+            0.34,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            0.65,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            0.96,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            1.27,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            1.58,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            1.9,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            2.21,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            2.52,
+            false,
+            [
+              "translation034"
+            ]
+          ],
+          [
+            2.84,
+            false,
+            [
+              "translation034"
+            ]
+          ]
+        ],
+        "time_now": 0.0,
+        "moves_made": 57,
+        "moves_expected": 100,
+        "move_command_median_ms": 2.1
+      },
+      {
+        "phase": "release settle",
+        "seconds": 3.01,
+        "ticks": 20,
+        "in_ticks_seconds": 0.156,
+        "share_of_modo_thread": 0.052,
+        "tick_median_ms": 1.0,
+        "update_tick_median_ms": 89.2,
+        "tick_longest_ms": 89.2,
+        "renders_asked": 1,
+        "moonray_passes_begun": 1,
+        "pass_begin_seconds": 0.002,
+        "of_which_outside_ticks": 0.0,
+        "whole_asked_by": [],
+        "told_of": [
+          [
+            0.06,
+            false,
+            [
+              "translation034"
+            ]
+          ]
+        ],
+        "time_now": 0.0,
+        "moves_made": 0,
+        "moves_expected": 100,
+        "move_command_median_ms": null
+      }
+    ],
+    "release_digest_pending": false,
+    "release_digest_is_string": true,
+    "transform_mismatches": []
+  },
+  "workflow_probes": {
+    "modes": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    },
+    "restarts": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    },
+    "draft_events": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    },
+    "draft_region": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    },
+    "draft_off": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    },
+    "playblast": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    },
+    "output_stop": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    },
+    "compositor": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    },
+    "stop_finishes": {
+      "exit_code": 3221225477,
+      "clean_shutdown": false
+    }
+  },
+  "real_mouse_drag_verified": false,
+  "keep_progress": {
+    "requested": true,
+    "session": true,
+    "grid": 64,
+    "kept": true,
+    "has_frame": true,
+    "files": [
+      "beauty",
+      "denoise_albedo",
+      "denoise_normal"
+    ],
+    "clean_shutdown": true
+  }
+}

@@ -877,14 +877,14 @@ class Panel(Tools, QtWidgets.QWidget):
         if blast is not None:width=min(scene_w,blast.width)
         return width, max(16, round(width * scene_h / max(1, scene_w)))
 
-    def _capture(self,reuse=False):
+    def _capture(self,reuse=False,transform_items=None):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
             self._scene_id=modo.Scene().renderItem.id;self._geometry_cache=None
         scene = host.snapshot(evaluated_geometry=self._settings_values()['surface'] == 2,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None)
         if reuse=='transforms':
             from .incremental import refresh_transforms
-            refresh_transforms(modo.Scene(),scene)
+            refresh_transforms(modo.Scene(),scene,transform_items)
         import copy,time
         full_capture=scene.pop('_full_capture',not reuse)
         if not reuse or reuse in ('materials','transforms') or isinstance(reuse,dict):
@@ -1237,6 +1237,8 @@ class Panel(Tools, QtWidgets.QWidget):
         import time as clock
         began=clock.monotonic()
         if began<getattr(self,'_live_rest',0.0):return
+        # Keep host reads from competing with the Python writer during a drag. Notices stay queued.
+        if held and self.preview_engine.currentData()=='moonray_ls' and getattr(self.renderer,'writer',None) is not None:return
         if not held:self._live_drag_read=False
         try:
             import modo
@@ -1253,11 +1255,12 @@ class Panel(Tools, QtWidgets.QWidget):
             full=full or asset_changed
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
-            if not (full or items or changed):return
-            reuse=not full and not changed and bool(items) and self._geometry_cache is not None
+            settling=not held and getattr(self,'_live_digest_pending',False)
+            if not (full or items or changed or settling):return
+            reuse=not full and not changed and bool(items or settling) and self._geometry_cache is not None
             if reuse:
                 from .incremental import classify
-                reuse=classify(modo.Scene(),items,self._geometry_cache)
+                reuse=classify(modo.Scene(),items,self._geometry_cache) if items else True
             sky=False
             if held and reuse is True:
                 # A physically based sky is painted again for every place its sun is put, which a drag cannot keep
@@ -1276,7 +1279,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # middle of a tool waits for the release.
                 self.changes.full=self.changes.full or full;self.changes.items.update(items)
                 self.release_timer.start();return
-            scene = self._capture(reuse)
+            scene = self._capture(reuse,items if reuse=='transforms' else None)
             if held:
                 # Whatever was dragged, if it changed what lights the scene from all around (an environment, one of
                 # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
@@ -1284,8 +1287,15 @@ class Panel(Tools, QtWidgets.QWidget):
                 if self._surroundings is not None and surroundings(scene)!=self._surroundings:
                     self.changes.items.update(items);self.release_timer.start();return
             self._last_time=time;self._live_settings=settings
-            digest=self._digest(scene)
-            if digest != self.last_digest:self._submit(scene,digest=digest)
+            if held and self.preview_engine.currentData()=='moonray_ls':
+                # Host notices already establish a drag edit. Hash once after release, not on every move.
+                self._live_digest_pending=True
+                self.release_timer.start()
+                self._submit(scene,digest=('live-drag',object()))
+            else:
+                digest=self._digest(scene)
+                self._live_digest_pending=False
+                if digest != self.last_digest:self._submit(scene,digest=digest)
         except Exception as exc:
             self.changes.invalidate();self._failed(str(exc))
         finally:

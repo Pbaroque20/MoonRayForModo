@@ -23,7 +23,7 @@ result = {'phases': []}
 held = {'ticks': [], 'moves': [], 'submits': 0, 'profile': None, 'mover': None, 'offset': 0.0}
 SPAN = 3000
 # The phases, in order (MOONRAY_PROBE_PHASES): the first touches nothing; each other drags the camera or a mesh.
-NAMES = tuple(['nothing touched'] + [word + ' dragged' for word in os.environ.get('MOONRAY_PROBE_PHASES', 'camera,mesh').split(',')])
+NAMES = tuple(['nothing touched'] + [word + ' dragged' for word in os.environ.get('MOONRAY_PROBE_PHASES', 'camera,mesh').split(',')] + (['release settle'] if os.environ.get('MOONRAY_PROBE_SETTLE')=='1' else []))
 
 
 def save():
@@ -49,6 +49,7 @@ def begin():
 
         def timed():
             started = time.perf_counter()
+            submissions_before = held['submits']
             held['in_tick'] = True
             if held['profile'] is not None:
                 held['profile'].enable()
@@ -58,7 +59,9 @@ def begin():
                 held['in_tick'] = False
                 if held['profile'] is not None:
                     held['profile'].disable()
-                held['ticks'].append(time.perf_counter() - started)
+                elapsed=time.perf_counter() - started
+                held['ticks'].append(elapsed)
+                if held['submits']>submissions_before:held.setdefault('update_ticks',[]).append(elapsed)
 
         def counted(*a, **k):
             held['submits'] += 1
@@ -117,11 +120,22 @@ def phase(index):
     if index:
         close(names[index - 1])
     if index == len(names):
+        if os.environ.get('MOONRAY_PROBE_SETTLE')=='1':
+            panel=panel_widget()
+            result['release_digest_pending']=getattr(panel,'_live_digest_pending',False)
+            result['release_digest_is_string']=isinstance(panel.last_digest,str)
+            from moonray_modo.host import world_matrix
+            mismatches=[]
+            for mesh in panel._geometry_cache['meshes']:
+                identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
+                actual=world_matrix(modo.Scene().item(identity))
+                if any(abs(a-b)>1e-5 for a,b in zip(actual,mesh['matrix'])):mismatches.append(identity)
+            result['transform_mismatches']=mismatches
         panel_widget().stop()
         save()
         lx.eval('!app.quit')
         return
-    held['ticks'], held['moves'], held['submits'] = [], [], 0
+    held['ticks'], held['moves'], held['submits'], held['update_ticks'] = [], [], 0, []
     # Should Modo's thread stop answering, where every thread stands is written down.
     import faulthandler
     held['stuck'] = open(str(out / ('stuck_%d.txt' % index)), 'wb', 0)
@@ -137,6 +151,7 @@ def phase(index):
 
 
 def drag(index):
+    if NAMES[index]=='release settle':return
     if index:
         from moonray_modo import interaction
         interaction.dragging = lambda: True
@@ -172,6 +187,7 @@ def close(name):
     held['profile'] = None
     result['phases'].append({'phase': name, 'seconds': round(span, 2), 'ticks': len(ticks), 'in_ticks_seconds': round(sum(ticks), 3),
                              'share_of_modo_thread': round(sum(ticks) / span, 3), 'tick_median_ms': round(1000 * ticks[len(ticks) // 2], 1) if ticks else None,
+                             'update_tick_median_ms': round(1000 * sorted(held['update_ticks'])[len(held['update_ticks'])//2], 1) if held.get('update_ticks') else None,
                              'tick_longest_ms': round(1000 * ticks[-1], 1) if ticks else None, 'renders_asked': held['submits'],
                              'moonray_passes_begun': held.pop('passes', 0), 'pass_begin_seconds': round(held.pop('pass_time', 0.0), 3), 'of_which_outside_ticks': round(held.pop('outside', 0.0), 3),
                              'whole_asked_by': held.pop('whole', [])[:12],

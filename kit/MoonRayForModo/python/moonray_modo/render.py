@@ -35,17 +35,22 @@ class SceneWriter(QtCore.QThread):
     """A snapshot written as MoonRay's scene text away from Modo's own thread, for a scene that is being followed.
     The snapshot is plain data and writing it asks Modo nothing, so Modo is free to move its view meanwhile."""
 
-    def __init__(self, arguments, path, context, generation, parent=None):
+    def __init__(self, arguments, path, context, generation, parent=None, applied=None):
         super().__init__(parent)
         self.arguments, self.path, self.context, self.generation = arguments, path, context, generation
         self.outcome = None
+        self.applied, self.prepared = applied, None
         # Set when something newer was asked for before this was written.
         self.abandoned = False
 
     def run(self):
         try:
             text = rdla.scene_text(*self.arguments)
-            self.path.write_text(text, encoding='utf-8')
+            from .scene_delta import difference
+            delta = difference(self.applied['text'], text) if self.applied else None
+            self.prepared = dict(base=self.applied, delta=delta, full_bytes=text.encode('utf-8'),
+                                 delta_bytes=delta.encode('utf-8') if delta is not None else None)
+            self.path.write_bytes(self.prepared['full_bytes'])
             self.outcome = (text, '')
         except Exception as exc:
             self.outcome = (None, str(exc) or type(exc).__name__)
@@ -489,7 +494,7 @@ class Renderer(QtCore.QObject):
             if self.using_session and not request['output']:
                 # A preview by the MoonRay kept loaded, which is what follows a scene: its text is written on a
                 # thread of its own, and the pass goes on from _written when that is done.
-                self.writer = SceneWriter(arguments, scene, (request, snapshot, scene, mode), generation, self)
+                self.writer = SceneWriter(arguments, scene, (request, snapshot, scene, mode), generation, self, applied=self.session.applied)
                 self.writer.finished.connect(self._written)
                 self.writer.start()
                 return
@@ -524,9 +529,9 @@ class Renderer(QtCore.QObject):
             return
         if error:
             self.failed.emit(error);return
-        self._pass_ready(*worker.context, text)
+        self._pass_ready(*worker.context, text, prepared=worker.prepared)
 
-    def _pass_ready(self, request, snapshot, scene, mode, text):
+    def _pass_ready(self, request, snapshot, scene, mode, text, prepared=None):
         """The pass's scene is written: MoonRay is given it."""
         try:
             env = QtCore.QProcessEnvironment()
@@ -551,7 +556,7 @@ class Renderer(QtCore.QObject):
                 if self.progress_state:self.progress_state.generation=self.session_serial
                 self.session_files[self.session_serial]=self.current_base
                 self._started()
-                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size)
+                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size,prepared=prepared)
             else:
                 self.process.start()
         except Exception as exc:
