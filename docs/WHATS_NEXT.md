@@ -28,6 +28,10 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 - **Render and RT switch Draft off.** With Draft on, pressing Render with MoonRay, or switching realtime on, takes Draft off first and gives the picture itself.
 - **Denoised Beauty denoises of itself.** Chosen in the list with no denoiser set in the scene, a finished MoonRay render is denoised there and then, with the graphics card's denoiser (OptiX), or Open Image Denoise where that will not run, and is left as it is where neither will. MoonLightIPR always lists Denoised Beauty, and denoises when it is the buffer chosen, whatever the scene's denoiser is set to.
 - **The mode is said on the picture.** With Safe Denoising on, the foot of the picture reads Safe Denoiser Mode, in the middle. Right-click the picture, Show Mode on the Picture, to have it or not.
+
+![Safe Denoiser Mode at the foot of the picture](images/mode-on-the-picture.png)
+*Safe Denoising on: the picture says so at its foot.*
+
 - **Two lines under the picture.** The status has a line to itself, so a long message is read whole. Below it are the values under the pointer, how the render is getting on, and the picture's size.
 - **Tile outlines move evenly.** They are pastel blue. An outline eases in, stands for as long as MoonRay keeps coming back to its tile, and fades when the tile is done with. MoonRay now tells of its tiles on a clock of their own: about eighteen times a second reach the window where four did, and no gap is longer than 150 ms where there were gaps of half a second *(next runtime)*.
 
@@ -40,6 +44,9 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 - **Composite is a buffer in the list**, beside Beauty and Denoised Beauty, while the scene has a graph that does something. It is chosen by hand. It is made when a MoonRay render finishes, or is stopped and kept, and again whenever the graph is edited, from the buffers the window has kept: nothing is rendered again.
 - **The graph is kept with the scene**, and Modo's undo undoes an edit to it.
 - **Render EXR and animations write name.composite.exr** beside the EXR, as the denoised copy is written.
+![The compositor's editor](images/compositor-editor.png)
+*The nodes there are to add, down the left; the graph; and the selected node's settings.*
+
 - Not in this first version: the composite while a render is still going, mattes picked from a Cryptomatte, MoonLightIPR (which has only its beauty to give), and MoonRay's own display filters.
 
 ## Rendering with MoonRay
@@ -108,3 +115,7 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 - The rare small dark tile in the live picture under Safe Denoising (0.08% of the worst picture on the cheetah) is still there.
 - A scene with instances, replicators or deformers still reads everything when an item moves.
 - The tile outlines were measured (how often they are told of, and that they ease and fade) and not watched by eye during a long render.
+- Very smooth highlights are still dimmer than Modo's own. MoonRay has one layer for the highlights of lights and for what a surface mirrors of its surroundings, and the surroundings already match: the highlight cannot be raised without them.
+- A rough Principled highlight is dimmer than Modo's at every angle; the diffuse light under it is what was put right.
+- Hair in MoonLightIPR agrees with MoonRay on 74 to 80% of the picture: the top of a tuft is brighter than MoonRay's by about a seventh.
+- The compositor was driven by test scripts, not by hand; an animation's composites and the fall back from OptiX to Open Image Denoise were not run.
