@@ -103,15 +103,17 @@ def choose_denoised():
 def safe_on():
     note('denoised_beauty_chosen_no_denoiser_set')
     result['renders_for_denoising'] = held['submits'] - held['before']
-    lx.eval('moonray.render.denoiser 2')
-    # As the picture's right-click menu does.
-    panel_widget()._safe_toggled(True)
+    # As the picture's right-click menu does: Safe Denoising > OptiX.
+    panel_widget()._safe_chosen('optix')
+    result['after_optix'] = [lx.eval('moonray.render.denoise_safe ?'), lx.eval('moonray.render.denoiser ?')]
+    menu = panel_widget()._image_menu()
+    result['menu'] = [(a.text(), a.isChecked()) for a in panel_widget()._safe_menu.actions()]
 
 
 @step(2000)
 def hud_off():
     note('safe_denoising_on')
-    panel_widget()._safe_toggled(False)
+    panel_widget()._safe_chosen('off')
     result['safe_after_off'] = lx.eval('moonray.render.denoise_safe ?')
 
 

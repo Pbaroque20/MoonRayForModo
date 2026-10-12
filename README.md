@@ -24,7 +24,7 @@ Not released yet. The full list, with pictures and what was checked, is in [What
 - **Rough Principled materials are no longer dark** seen at a low angle, and a Shader's Cast Shadows switch is followed.
 - **Moving something is followed far faster**: a draft of a 266-mesh scene redraws in 0.3 seconds where it took 1.3.
 - **Draft** follows the scene by itself, has black around the camera's frame and never shows a stale render when switched off; **Render** and **RT** switch it off; **Region** no longer zooms the view.
-- **Safe Denoising is switched from the picture's right-click menu**, and the foot of the picture reads Safe Denoiser Mode while it is on.
+- **Safe Denoising is chosen from the picture's right-click menu** (Off, OptiX, Open Image Denoise), and the foot of the picture reads Safe Denoiser Mode while it is on.
 - **The preview window opens on MoonRay with the crest** and renders nothing until asked.
 
 Some of these need the MoonRay of the next runtime, so the next release brings a new runtime ZIP.

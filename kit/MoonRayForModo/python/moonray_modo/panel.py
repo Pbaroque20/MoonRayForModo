@@ -284,13 +284,19 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
         menu.addSeparator()
-        # Safe Denoising itself, switched here as in the scene's render settings; the foot of the picture says when it is on.
-        safe=QtWidgets.QAction('Safe Denoising',menu);safe.setCheckable(True)
-        try:safe.setChecked(bool(self._settings_values()['denoising'].get('safe')))
-        except Exception:pass
-        safe.setToolTip('MoonRay saves its picture as it renders, so that a render stopped by hand is kept with all its buffers and can be continued. '
-                        'The same switch as in MoonRay > Render Settings. It takes effect with a denoiser chosen there.')
-        safe.toggled.connect(self._safe_toggled);menu.addAction(safe)
+        # Safe Denoising itself, chosen here as in the scene's render settings: off, or on with one denoiser or the
+        # other. The foot of the picture says when it is on. (The menu and its actions are made first and then added:
+        # what a menu makes for a label cannot be used afterwards in Modo's Qt.)
+        safe=QtWidgets.QMenu('Safe Denoising',menu);safe.setStyleSheet(MENU_STYLE);safe.setToolTipsVisible(True)
+        try:chosen=self._settings_values()['denoising']
+        except Exception:chosen={}
+        now=chosen.get('engine','off') if chosen.get('safe') else 'off'
+        for words,engine,tip in (('Off','off','MoonRay renders as usual. A render stopped by hand keeps its beauty and its denoised picture.'),
+                                 ('OptiX','optix','MoonRay saves its picture as it renders, so that a render stopped by hand is kept with all its buffers and can be continued; denoised on the graphics card.'),
+                                 ('Open Image Denoise','oidn_cpu','The same, denoised on the processor.')):
+            action=QtWidgets.QAction(words,safe);action.setCheckable(True);action.setChecked(engine==now);action.setToolTip(tip)
+            action.triggered.connect(lambda checked=False,engine=engine:self._safe_chosen(engine));safe.addAction(action)
+        menu.addMenu(safe);self._safe_menu=safe
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
@@ -674,17 +680,18 @@ class Panel(Tools, QtWidgets.QWidget):
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
 
-    def _safe_toggled(self,on):
-        """Safe Denoising switched from the picture's menu: written to the scene as its render settings write it."""
+    def _safe_chosen(self,engine):
+        """Safe Denoising chosen from the picture's menu: off, or on with a denoiser. Written to the scene's settings,
+        as its render settings write them: the denoiser itself is left as it is when Safe Denoising is switched off."""
         try:
-            lx.eval('moonray.render.denoise_safe %d'%(1 if on else 0))
+            stored=dict(self._settings_values()['denoising'])
+            if engine=='off':stored['safe']=False
+            else:stored.update(engine=engine,safe=True)
+            if not self._store(denoising=stored):return
         except Exception as exc:
-            self.status.setText('Cannot switch Safe Denoising: '+str(exc));return
+            self.status.setText('Cannot set Safe Denoising: '+str(exc));return
         self._hud_update()
-        try:engine=self._settings_values()['denoising'].get('engine','off')
-        except Exception:engine='off'
-        self.status.setText('Safe Denoising is off.' if not on else 'Safe Denoising is on.' if engine!='off'
-                            else 'Safe Denoising is on, and takes effect once a denoiser is chosen in MoonRay > Render Settings.')
+        self.status.setText('Safe Denoising is off.' if engine=='off' else 'Safe Denoising is on, with %s.'%('OptiX' if engine=='optix' else 'Open Image Denoise'))
 
     def _hud_words(self):
         """The modes worth saying at the foot of the picture: each a line."""
