@@ -425,7 +425,8 @@ def plan(document, path):
                 warnings.append('%s: the map wired into %s is not imported; MoonRay items hold values only' % (short(record['name']), key))
             if spec[key]['type'].startswith('SceneObject'):
                 names = [value] if isinstance(value, str) else [v for v in (value or []) if v]
-                held = [label(v) for v in names if v in objects and objects[v]['type'] in catalog]
+                held = [label(v) for v in names if v in objects and (objects[v]['type'] in catalog or
+                        (kind=='MeshLight' and key=='geometry' and objects[v]['type']=='RdlMeshGeometry'))]
                 if len(held) != len(names):
                     warnings.append('%s: %s names something that is not a MoonRay item and is left out' % (short(record['name']), key))
                 if not held:
@@ -467,6 +468,8 @@ def plan(document, path):
         items.append(made)
         return made
 
+    emitter_geometries={v.get('attributes',{}).get('geometry') for v in objects.values() if v['type']=='MeshLight'}
+
     def place(name, matrix, title, owner=None, depth=0, outer=()):
         """Put one object into the scene at a matrix: a mesh, a MoonRay shape, curves, or everything an instancer repeats."""
         record = objects.get(name)
@@ -476,7 +479,7 @@ def plan(document, path):
         if depth > 8:
             warnings.append(short(name) + ': instancers nested more than eight deep are not followed')
             return
-        if kind != 'RdlInstancerGeometry' and not any(row['surface'] or row['volume'] for (geometry, part), row in assigned.items() if geometry in (name, owner)):
+        if kind != 'RdlInstancerGeometry' and name not in emitter_geometries and not any(row['surface'] or row['volume'] for (geometry, part), row in assigned.items() if geometry in (name, owner)):
             # MoonRay leaves out a shape the layer gives no material; brought in, it would be in the picture where it was not.
             warnings.append('%s is given no material by the scene, so MoonRay does not render it; it is not imported.' % short(name))
             return
@@ -667,8 +670,19 @@ def plan(document, path):
         if lit is None and not unshadowed and not spared:
             continue
         def lights(names):
-            # A mesh light is its mesh, not an item of its own to tick.
-            return [label(name) for name in names if name in objects and objects[name]['type'] != 'MeshLight']
+            # A mesh light exports under the emitting mesh's identity, not its light item.
+            result=[]
+            for name in names:
+                if name not in objects:continue
+                record=objects[name]
+                if record['type']=='MeshLight':
+                    target=mesh.made.get(record.get('attributes',{}).get('geometry'))
+                    if not target:
+                        warnings.append('%s: linked mesh light has no imported emitter mesh' % short(name))
+                        continue
+                else:target=label(name)
+                if target not in result:result.append(target)
+            return result
         links.append({'geometry': mesh.made.get(geometry), 'named': short(geometry), 'lights': None if lit is None else lights(lit),
                       'shadows': lights(unshadowed), 'receivers': [mesh.made[name] for name in spared if name in mesh.made]})
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
@@ -897,6 +911,8 @@ def apply(data, alone=True, progress=None):
             created.append(item)
             brought_in[record['name']] = item
             parameters = dict(record['parameters'])
+            if record['class']=='MeshLight' and parameters.get('geometry') in made:
+                parameters['geometry']=made[parameters['geometry']].id
             if record['material'] in tags:
                 parameters['modo_material'] = tags[record['material']]
             if record['volume']:
@@ -952,6 +968,7 @@ def apply(data, alone=True, progress=None):
             stored = dict(properties.scene_settings())
             production = dict(stored.get('production') or {})
             held = dict(production.get('objects') or {})
+            linked_items=dict(brought_in,**made)
             for link in data['links']:
                 item = made.get(link['geometry'])
                 if item is None:
@@ -959,9 +976,9 @@ def apply(data, alone=True, progress=None):
                     continue
                 entry = dict(held.get(item.id) or {})
                 if link['lights'] is not None:
-                    entry.update(link_enabled=True, lights=[brought_in[name].id for name in link['lights'] if name in brought_in])
+                    entry.update(link_enabled=True, lights=[linked_items[name].id for name in link['lights'] if name in linked_items])
                 if link['shadows']:
-                    entry['shadow_exclude'] = [brought_in[name].id for name in link['shadows'] if name in brought_in]
+                    entry['shadow_exclude'] = [linked_items[name].id for name in link['shadows'] if name in linked_items]
                 if link['receivers']:
                     entry['shadow_receivers'] = [made[name].id for name in link['receivers'] if name in made]
                 held[item.id] = entry
