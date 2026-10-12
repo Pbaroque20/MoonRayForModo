@@ -105,8 +105,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self.ipr_mode.toggled.connect(self._ipr_changed)
         self.poll_timer.start()
         # Where the preferences ask for it, a preview starts as the window opens.
-        # A realtime engine is on from the moment the window opens, as it is from the moment it is chosen.
-        if self.preferences.get('render_on_open') or self._live():QtCore.QTimer.singleShot(800,lambda:None if self.disposed or self._rendering or self._following else self.start_render())
+        # The window opens showing the crest and renders nothing, whatever engine it opens on, unless Preferences
+        # says to render on opening. A realtime engine chosen by hand is on from the moment it is chosen.
+        if self.preferences.get('render_on_open'):QtCore.QTimer.singleShot(800,lambda:None if self.disposed or self._rendering or self._following else self.start_render())
         self._set_rendering(self._rendering)
 
     # The window's own controls
@@ -127,9 +128,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_engine.addItem('MoonRay', 'moonray')
         self.preview_engine.addItem('MoonRay LS', 'moonray_ls')
         self.preview_engine.addItem('MoonLightIPR', 'moonlightipr')
-        stored=self.preferences.get('preview_engine')
-        # From before there were three: MoonRay with Live ticked is MoonRay LS.
-        if stored=='moonray' and self.preferences.get('ipr'):stored='moonray_ls'
+        # The window opens on the engine named in Preferences, MoonRay unless that is changed. The engine it was
+        # last left on is not remembered: a window that opened on a realtime engine would be one that renders
+        # before it is asked to.
+        stored=self.preferences.get('open_engine')
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(stored)))
         self.preview_engine.setToolTip('MoonRay: the full render, once, as an output render would be.\n'
                                        'MoonRay LS (low sample): MoonRay following the scene as you edit it, at fewer samples and a smaller size.\n'
@@ -591,7 +593,6 @@ class Panel(Tools, QtWidgets.QWidget):
         return self.preview_engine.currentData()!='moonray'
 
     def _engine_changed(self,index):
-        self.preferences.set('preview_engine',self.preview_engine.currentData())
         live=self._live()
         if self.ipr_mode.isChecked()!=live:self.ipr_mode.setChecked(live)
         if not self.disposed and not self._output_busy():

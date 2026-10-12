@@ -5,7 +5,7 @@ from . import native
 SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('Scene resolution', 0))
 # key: (default, kind)
 KEYS = {
-    'runtime': ('', str), 'preview_engine': ('moonray', str), 'preview_size': (640, int),
+    'runtime': ('', str), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
     'persistent_preview': (True, bool), 'capture_safety': (False, bool), 'preview_motion': (False, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
