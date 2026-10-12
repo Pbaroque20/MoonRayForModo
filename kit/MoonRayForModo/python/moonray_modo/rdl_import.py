@@ -982,6 +982,13 @@ def apply(data, alone=True, progress=None):
             created.append(item)
             brought_in[record['name']] = item
             parameters = dict(record['parameters'])
+            # A new item starts with values of the plugin's own choosing (a light fifty times as bright as MoonRay's
+            # default, and smaller). A scene that left one of those at MoonRay's default does not name it, and it is
+            # put at that default here: the item is the scene's, not a new one.
+            for key in entities.starting(record['class']):
+                known = entities.catalog()[record['class']]['attributes'].get(key)
+                if known is not None and key not in parameters and 'default' in known:
+                    parameters[key] = known['default']
             if record['class']=='MeshLight' and parameters.get('geometry') in made:
                 parameters['geometry']=made[parameters['geometry']].id
             if record['material'] in tags:

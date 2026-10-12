@@ -29,5 +29,14 @@ class PlayblastMenu(unittest.TestCase):
         self.assertEqual(moonray_menu.playblast_entry(new), new)
 
 
+class PreviewTitle(unittest.TestCase):
+    def test_set_into_the_layout_it_is_moonray_and_its_window_moonray_preview(self):
+        text = (ROOT / 'kit/MoonRayForModo/layout.cfg').read_text(encoding='utf-8')
+        self.assertIn('<atom type="ViewportTitle">MoonRay</atom>', text)
+        self.assertIn('<atom type="UserName">MoonRay Preview</atom>', text)
+        old = '<atom type="ViewportTitle">MoonRay Preview</atom>'
+        self.assertEqual(moonray_menu.viewport_title(old), '<atom type="ViewportTitle">MoonRay</atom>')
+
+
 if __name__ == '__main__':
     unittest.main()

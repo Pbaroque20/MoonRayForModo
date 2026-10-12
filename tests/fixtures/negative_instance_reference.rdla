@@ -1,0 +1,8 @@
+local camera=PerspectiveCamera("camera") { ["node_xform"]=Mat4(1,0,0,0,0,1,0,0,0,0,1,0,0,0,5,1) }
+local paint=DwaBaseMaterial("paint") {}
+local mesh=RdlMeshGeometry("mesh") { ["vertex_list_0"]={Vec3(-.4,-.4,0),Vec3(.4,-.4,0),Vec3(0,.4,0)},["face_vertex_count"]={3},["vertices_by_index"]={0,1,2},["node_xform"]=Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.1, 0, 0, 1) }
+local inner=RdlInstancerGeometry("inner") { ["method"]=2,["references"]={mesh},["use_reference_xforms"]=true,["xform_list"]={Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.2, 0, 0, 1)},["node_xform"]=Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.3, 0, 0, 1) }
+local outer=RdlInstancerGeometry("outer") { ["ref_indices"]={-1}, ["method"]=2,["references"]={inner},["xform_list"]={Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.4, 0, 0, 1)},["node_xform"]=Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, 0, 0, 1),["use_reference_xforms"]=false }
+GeometrySet("geos") {mesh,inner,outer}
+local layer=Layer("layer") {{mesh,"",paint},{inner,""},{outer,""}}
+SceneVariables { ["camera"]=camera,["layer"]=layer,["image_width"]=64,["image_height"]=64,["pixel_samples"]=2,["sampling_mode"]=0,["two_stage_output"]=false,["max_depth"]=1 }

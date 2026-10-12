@@ -128,6 +128,11 @@ def rdl_entry(text):
     return text[:end] + eol + '      <list type="Control" val="cmd moonray.rdl.import"><atom type="Label">Import MoonRay Scene (RDL)...</atom></list>' + text[end:]
 
 
+def viewport_title(text):
+    """The preview set into Modo's layout is titled MoonRay; its own window keeps MoonRay Preview."""
+    return text.replace('<atom type="ViewportTitle">MoonRay Preview</atom>', '<atom type="ViewportTitle">MoonRay</atom>')
+
+
 def playblast_entry(text):
     """MoonLightIPR Playblast in the MoonRay menu, after Render Animation; unchanged if it is there."""
     anchor = '<list type="Control" val="cmd moonray.page animation">'

@@ -1019,6 +1019,8 @@ class Panel(Tools, QtWidgets.QWidget):
     def _submit(self, scene, output=None, refining=False):
         # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
         self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
+        # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
+        self.renderer.moonlightipr_preview_samples=self.preferences.get('moonlightipr/samples')
         # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
         # a draft's lines is of the same redraw; anything else asked for is not.
         asked=getattr(self,'_draft_quiet_asked',False);self._draft_quiet_asked=False
@@ -1095,7 +1097,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _digest(self, scene):
         render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')}
         stored=self._settings_values();get=self.preferences.get
-        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), self._engine()]
+        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
         from .scene_digest import digest
         return digest(*values)
@@ -1212,8 +1214,6 @@ class Panel(Tools, QtWidgets.QWidget):
         # from, brought up to date at every edit. With realtime off nothing keeps it so, and the scene is read anew.
         if not self._following:return None
         if scene is None or not self.changes.registered or self.changes.full or self.changes.items:return None
-        import time as clock
-        if self.preferences.get('capture_safety') and clock.monotonic()-self._last_full_capture>15:return None
         try:
             if self._capture_key()!=self._kept_key:return None
         except Exception:return None
@@ -1243,7 +1243,7 @@ class Panel(Tools, QtWidgets.QWidget):
             # followed into a full capture.
             if not held and now-self._asset_check_time>=1:
                 self._asset_check_time=now;asset_changed=signature(self._asset_scene)!=self._asset_signature
-            full=full or (not held and self.preferences.get('capture_safety') and now-self._last_full_capture>15) or asset_changed
+            full=full or asset_changed
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             if not (full or items or changed):return
