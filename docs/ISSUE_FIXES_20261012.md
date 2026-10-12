@@ -37,3 +37,21 @@ Run `tools/check_idle_sessions.py --moonray RUNTIME --moonlight MOONLIGHT_STAGE`
 Saved materials now use sidecar images before falling back to a drawing. For `paint.moonmat.json`, `paint.moonmat.png` (or JPG/JPEG) takes priority over the simpler `paint.png` name. Graph bundles without a supplied image show a labelled Graph tile rather than a misleading plain ball. The selection pane explains the fallback and the expected thumbnail filename.
 
 `tools/check_asset_thumbnails.py`: **6 passed** using real Qt image loading offscreen: exact sidecar, simple filename and precedence, graph sidecar, graph placeholder, corrupt-image fallback, and texture-image precedence. Fixtures are PNG-encoded; JPEG codec coverage is not claimed. No host UI launch or renderer change was needed. Automatic generation of rendered material thumbnails remains open in #50.
+
+## Authored RDL mesh normals (#23, partial)
+
+RDL imports now create an editable `RDL Normals` map for authored point or polygon-corner normals. Invalid lengths, nonfinite components and zero vectors produce an explicit warning. Normals requiring a baked shear/mirror transform remain omitted with a warning rather than being stored in the wrong coordinate space.
+
+Validation: 12 focused RDL unit tests passed. `tools/probe_rdl_normals.py` imported two meshes in an isolated Modo 16.1v9 profile and read back every point/corner normal, including different normals at shared vertices. The host exited normally. This checks stored geometry data, not rendered-image equivalence. Motion, subdivision creases and baked-transform normals remain open under #23.
+
+### Baked shear follow-up
+
+Authored normals now survive orientation-preserving shears baked into imported vertices. The normal matrix uses the inverse transpose of the linear transform and normalizes the result; translation does not affect it. Matrix magnitudes are scaled before inversion to retain very small uniform transforms. Mirrored, singular or near-singular transforms still omit normals with an explicit warning.
+
+All 16 focused RDL tests passed, including transformed-tangent perpendicularity, nonuniform scale, translation independence, tiny scale and unsupported transforms. The Modo 16.1v9 read-back probe passed all four meshes: point/corner maps with and without shear. Rendered-image equivalence, mirrored winding, shutter motion and creases are not covered or claimed.
+
+### Reflection follow-up
+
+Mirrored transforms now preserve authored normals as well. When baking a reflection into mesh points, the importer reverses polygon winding while keeping UVs and corner normals associated with their original vertex. Singular/near-singular transforms still omit normals with an explicit warning.
+
+All 17 focused RDL tests passed. The isolated Modo 16.1v9 probe imported six meshes (point/corner normals, ordinary/sheared/mirrored), checked polygon vertex order and every UV/normal value, and exited normally. Shutter motion and subdivision creases remain unresolved under #23. No rendered-image equivalence claim is made.
