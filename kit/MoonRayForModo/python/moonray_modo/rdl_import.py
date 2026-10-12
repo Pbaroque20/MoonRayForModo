@@ -65,6 +65,25 @@ def transformed_normals(normals, matrix):
     return result
 
 
+def hard_creases(attributes, faces, vertex_count):
+    """Validate RDL creases and return the fully sharp subset Modo represents exactly."""
+    indices=attributes.get('subd_crease_indices') or []
+    weights=attributes.get('subd_crease_sharpnesses') or []
+    corners=attributes.get('subd_corner_indices') or []
+    corner_weights=attributes.get('subd_corner_sharpnesses') or []
+    if len(indices)!=2*len(weights) or len(corners)!=len(corner_weights):
+        raise ValueError('Subdivision crease indices and weights have different lengths')
+    if any(type(i) is not int or not 0<=i<vertex_count for i in list(indices)+list(corners)):
+        raise ValueError('Invalid subdivision crease point index')
+    if any(not isinstance(w,(int,float)) or not math.isfinite(w) or w<0 for w in list(weights)+list(corner_weights)):
+        raise ValueError('Invalid subdivision crease sharpness')
+    edges={tuple(sorted((a,b))) for face in faces for a,b in zip(face,face[1:]+face[:1])}
+    pairs=list(zip(indices[::2],indices[1::2]))
+    if any(a==b or tuple(sorted((a,b))) not in edges for a,b in pairs):
+        raise ValueError('Subdivision crease does not refer to a mesh edge')
+    return [list(pair) for pair,w in zip(pairs,weights) if w>=10], [i for i,w in zip(corners,corner_weights) if w>=10], any(0<w<10 for w in list(weights)+list(corner_weights))
+
+
 def product(a, b):
     """a then b, for matrices that move a row vector: the order MoonRay writes them in."""
     return [sum(a[row * 4 + k] * b[k * 4 + col] for k in range(4)) for row in range(4) for col in range(4)]
@@ -337,8 +356,9 @@ def plan(document, path):
         for count in counts:
             faces.append(indices[offset:offset + count])
             offset += count
-        if a.get('subd_crease_indices') or a.get('subd_corner_indices'):
-            warnings.append(short(record['name']) + ': subdivision crease and corner weights are not imported')
+        hard_edges,hard_corners,semi_sharp=hard_creases(a,faces,len(vertices))
+        if semi_sharp:
+            warnings.append(short(record['name']) + ': semi-sharp subdivision weights are not imported; fully sharp creases are retained')
         if volume_of(record['name']):
             warnings.append(short(record['name']) + ': the volume inside it is not imported; MoonRay volumes go in a MoonRay shape')
         for name_, kind_, held in carried(record):
@@ -347,7 +367,7 @@ def plan(document, path):
         note_motion(record)
         name = label(record['name'])
         meshes.append({'name': name, 'vertices': vertices, 'faces': faces, 'uv': uv, 'normals': normals, 'tags': tags, 'subd': bool(a.get('is_subd', False)),
-                       'matrix': None, 'render': False, 'attributes': []})
+                       'matrix': None, 'render': False, 'attributes': [], 'hard_edges':hard_edges, 'hard_corners':hard_corners})
         mesh.made[key] = name
         return name
     mesh.made = {}
@@ -771,7 +791,8 @@ def apply(data, alone=True, progress=None):
                     if normals_by_point:
                         for identity,value in zip(vertices,normals_in):
                             point.Select(identity);normal_value.set(tuple(value));point.SetMapValue(normal_map,normal_value)
-                kind = lx.symbol.iPTYP_SUBD if record['subd'] else lx.symbol.iPTYP_FACE
+                creased=bool(record.get('hard_edges') or record.get('hard_corners'))
+                kind = (lx.symbol.iPTYP_PSUB if creased else lx.symbol.iPTYP_SUBD) if record['subd'] else lx.symbol.iPTYP_FACE
                 tagger, uvs, face_tags = lx.object.StringTag(polygon), record['uv'], record['tags']
                 offset, corners, sized = 0, {}, 0
                 for face_index, face in enumerate(record['faces']):
@@ -801,6 +822,20 @@ def apply(data, alone=True, progress=None):
                     offset += count
                     if progress and not face_index % 20000 and progress(built + face_index, total, record['name']) is False:
                         raise Cancelled()
+            # Commit topology before asking Modo for edge accessors. Newly created
+            # polygons do not yet have a stable edge cache in the construction edit.
+            if record['subd'] and creased:
+                with item.geometry as geo:
+                    mesh=geo.internalMesh
+                    vertices=[v._id for v in geo.vertices]
+                    weight_map=lx.object.MeshMap(mesh.MeshMapAccessor()).New(lx.symbol.i_VMAP_SUBDIV,'Subdivision')
+                    weight=lx.object.storage('f',1);weight.set((1.0,))
+                    edge=lx.object.Edge(mesh.EdgeAccessor())
+                    for a,b in record.get('hard_edges',[]):
+                        edge.SelectEndpoints(vertices[a],vertices[b]);edge.SetMapValue(weight_map,weight)
+                    point=lx.object.Point(mesh.PointAccessor())
+                    for index in record.get('hard_corners',[]):
+                        point.Select(vertices[index]);point.SetMapValue(weight_map,weight)
             built += len(record['faces'])
             if keep:
                 pose(item, record['matrix'])
