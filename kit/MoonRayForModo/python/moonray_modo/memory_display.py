@@ -14,15 +14,17 @@ def supported(kind,settings,runtime):
 
 class Worker(QtCore.QThread):
  result=QtCore.Signal(object)
- def __init__(self,pixels,width,height,kind,settings,runtime,parent=None,source=None):
-  super().__init__(parent);self.pixels=pixels;self.width=width;self.height=height;self.kind=kind;self.settings=settings;self.runtime=Path(runtime);self.source=source
+ def __init__(self,pixels,width,height,kind,settings,runtime,parent=None,source=None,plain=False):
+  # plain: a draft's lines, white on black, which no display transform of the user's has any bearing on. They are
+  # converted here in the process, which takes a tenth of the time of sending them out to be converted.
+  super().__init__(parent);self.plain=plain;self.pixels=pixels;self.width=width;self.height=height;self.kind=kind;self.settings=settings;self.runtime=Path(runtime);self.source=source
  def run(self):
   try:
    from .display_stream import available,convert
-   if available(self.runtime):
+   if not self.plain and available(self.runtime):
     data,width,height=convert(self.pixels,self.width,self.height,self.kind,self.settings,self.runtime,self.source)
     self.outcome=(data,width,height,'');return
-   v=display.values(self.settings);size=self.width*self.height*4
+   v=display.values({'view':'srgb'} if self.plain else self.settings);size=self.width*self.height*4
    if len(self.pixels)!=self.width*self.height*12 or len(self.pixels)>64*1024*1024:raise ValueError('Invalid float image size')
    # Loading by absolute path and scoping dependency lookup avoids Modo DLL collisions.
    with os.add_dll_directory(str(self.runtime)):

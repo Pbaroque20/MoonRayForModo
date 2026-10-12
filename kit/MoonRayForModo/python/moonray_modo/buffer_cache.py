@@ -161,6 +161,12 @@ class BufferCache(QtCore.QObject):
             from .display_stream import available
             if kind=='cryptomatte' and not available(frame['runtime']):
                 raise ValueError('Cryptomatte ID display requires the updated native display processor')
+            if frame['snapshot'].get('_draft') and key in frame.get('linear',{}) and (frame['runtime']/'modo_display.dll').is_file():
+                # A draft's lines are shown as they are drawn, without the display's transform, and at once.
+                from .memory_display import Worker
+                width,height,pixels=frame['linear'][key]
+                self.worker=Worker(pixels,width,height,'beauty',{},frame['runtime'],self,plain=True)
+                self.worker.finished.connect(self._memory_finished);self.worker.start();return
             if available(frame['runtime']):
                 from .memory_display import Worker
                 width,height,pixels=frame.get('linear',{}).get(key,(0,0,None))

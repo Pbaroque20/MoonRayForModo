@@ -1071,9 +1071,13 @@ class Panel(Tools, QtWidgets.QWidget):
             # its lines are as clean as a drawing's and stay so when looked at closely. Either is told from the
             # region rendered among the lines by its size, so neither is ever just the size of the preview.
             if (getattr(self,'_draft_hasty',False) and not self._following):fine=max(64,min(3200,int(self.preferences.get('draft/width') or 640)))
-            else:fine=min(3200,max(2*width,int(1.5*self.preview.width()*self.preview.devicePixelRatioF())))
+            # Twice as many pixels across as the view has: clean lines, and clean still when looked at closely, and
+            # no more than that, since every pixel drawn is one to hand over and show.
+            else:fine=min(3200,max(640,int(2*self.preview.width()*self.preview.devicePixelRatioF())))
             if fine==width:fine+=2
             height=max(16,round(height*fine/width));width=fine
+            # The quick picture may still be on its way when the fine one is asked for: it is a draft's too.
+            if self._draft_fine!=(width,height):self._draft_quick=self._draft_fine
             self._draft_fine=(width,height)
         # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
         if self._following and not output and engine=='moonray':
@@ -1364,7 +1368,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 if frame.isNull():raise ValueError('MoonRay output could not be decoded as an image.')
                 # The lines and the region's render come one after the other, and the last picture of the one may
                 # arrive after the other has begun: they are told apart by size, the lines being drawn finer.
-                if (frame.width(),frame.height())==self._draft_fine:
+                if (frame.width(),frame.height()) in (self._draft_fine,getattr(self,'_draft_quick',None)):
                     self._draft_image=draft.inked(frame,None)
                 else:
                     region=self._draft_region()
@@ -1376,7 +1380,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # Draft is off, and its lines may still arrive or be shown again by a change of buffer or engine: they
                 # are known by their size, and are not a render to show or to keep.
                 late=path if isinstance(path,QtGui.QImage) else QtGui.QImage(str(path))
-                if (late.width(),late.height())==self._draft_fine:return
+                if (late.width(),late.height()) in (self._draft_fine,getattr(self,'_draft_quick',None)):return
             if isinstance(path,QtGui.QImage):self.preview.set_image(path)
             else:self.preview.load(path)
             # Kept, to be put back when Region or Draft is switched off, without rendering.
