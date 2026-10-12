@@ -176,10 +176,12 @@ def _blur(radius):
             '--resize', '{IMG[1].width}x{IMG[1].height}', '--swap', '--pop']
 
 
-def jobs(graph, files, kinds, folder):
+def jobs(graph, files, kinds, folder, channels=None):
     """What the image tool is to be run with, node after node: [(arguments, the file that run makes)], and the file
     that is the output's picture. files has each buffer's file and kinds what kind of buffer each is. A wired input
-    that is left out of a node is black; a node with nothing to work on is black too."""
+    that is left out of a node is black; a node with nothing to work on is black too. channels, where given, says
+    for a buffer what picks it out of its file, in place of what its kind would: for buffers that are channels of
+    one EXR."""
     from pathlib import Path
     graph = validate(graph)
     folder = Path(folder)
@@ -204,7 +206,7 @@ def jobs(graph, files, kinds, folder):
             key = held['buffer']
             if key not in files or kinds.get(key) in UNUSABLE:
                 raise ValueError('The render has no %s buffer for the compositor to take' % key)
-            args = ['--no-autopremult', str(files[key]), '--fixnan', 'black'] + _channels(kinds.get(key, key))
+            args = ['--no-autopremult', str(files[key]), '--fixnan', 'black'] + ((channels or {}).get(key) or _channels(kinds.get(key, key)))
         elif kind == 'output':
             made[identity] = taken.get('image') or none()
             continue

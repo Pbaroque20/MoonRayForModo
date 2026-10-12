@@ -687,6 +687,17 @@ class Renderer(QtCore.QObject):
                 self.deep_path=None
             except OSError as exc:
                 self.failed.emit('Cannot save render: '+str(exc));return
+            # The compositor's picture of the render, written beside it. A graph that cannot be made of this render
+            # (it takes a buffer the render has not) is said so, and the render stands all the same.
+            graph=self.active['snapshot'].get('compositor')
+            if graph:
+                try:
+                    from .composite_output import write
+                    denoised=getattr(self,'denoise_result',None) if self.phase=='postdone' else None
+                    written=write(self.active['runtime'],graph,destination,denoised)
+                    if written is not None:self.log+='Composite written: '+str(written)+'\n'
+                except Exception as exc:
+                    self.status.emit('The composite was not written: '+str(exc))
             self.finished.emit(str(destination))
             return
         self.image_ready.emit(str(self.image_path))

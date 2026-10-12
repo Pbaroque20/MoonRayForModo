@@ -854,6 +854,8 @@ class Panel(Tools, QtWidgets.QWidget):
         values = self._settings_values()
         scene['render_settings'] = values['render']
         scene['scene_variables'] = values['scene_variables']
+        # The compositor's graph goes with the scene so that a render to a file can write its composite beside it.
+        scene['compositor'] = values['compositor']
         scene['aovs'] = values['aovs']
         scene['production']=values['production']
         scene['asset_settings']=values['asset_settings']
@@ -1002,7 +1004,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.last_digest = original_digest
 
     def _digest(self, scene):
-        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising')}
+        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')}
         stored=self._settings_values();get=self.preferences.get
         values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), self._engine()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
