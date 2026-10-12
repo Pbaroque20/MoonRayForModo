@@ -29,7 +29,7 @@ def scene(layer):
 
 
 class Sets(unittest.TestCase):
-    def test_shared_prototypes_keep_instancer_material_and_light_assignments(self):
+    def test_recovery_shared_prototypes_keep_instancer_material_and_light_assignments(self):
         source=scene({'geometries':['one','two'], 'lightsets':['keyOnly','both']})
         source['objects'][1]['attributes']['surface_shaders']=['paint','otherPaint']
         source['objects'] += [
@@ -37,7 +37,7 @@ class Sets(unittest.TestCase):
             *[{'name':name,'type':'RdlInstancerGeometry','attributes':{
                 'method':2,'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]*3}}
               for name in ('one','two')]]
-        data=rdl_import.plan(source,'test.rdla')
+        data=rdl_import.plan(source,'test.rdla',recover_instancer_materials=True)
         meshes=[m for m in data['meshes'] if m['render']]
         self.assertEqual(len(meshes),2)
         self.assertEqual(len(data['instances']),4)
@@ -49,26 +49,26 @@ class Sets(unittest.TestCase):
         self.assertEqual(link['lights'],['key'])
         self.assertIn('otherPaint',tags[1])
 
-    def test_shared_shader_still_separates_different_instancer_light_sets(self):
+    def test_recovery_shared_shader_still_separates_different_instancer_light_sets(self):
         source=scene({'geometries':['one','two'], 'lightsets':['keyOnly','both']})
         source['objects'] += [
             {'name':name,'type':'RdlInstancerGeometry','attributes':{
                 'method':2,'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]*2}}
             for name in ('one','two')]
-        data=rdl_import.plan(source,'test.rdla')
+        data=rdl_import.plan(source,'test.rdla',recover_instancer_materials=True)
         meshes=[m for m in data['meshes'] if m['render']]
         self.assertEqual(len(meshes),2)
         self.assertEqual(len(data['instances']),2)
         self.assertNotEqual(meshes[0]['tags'],meshes[1]['tags'])
 
-    def test_native_instancers_keep_distinct_material_links(self):
+    def test_recovery_native_instancers_keep_distinct_material_links(self):
         source=scene({'geometries':['one','two'], 'lightsets':['keyOnly','both']})
         source['objects'][2].update(type='SphereGeometry',attributes={'radius':1})
         source['objects'] += [
             {'name':name,'type':'RdlInstancerGeometry','attributes':{
                 'method':2,'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]*2}}
             for name in ('one','two')]
-        data=rdl_import.plan(source,'test.rdla')
+        data=rdl_import.plan(source,'test.rdla',recover_instancer_materials=True)
         shapes=[e for e in data['entities'] if e['class']=='SphereGeometry']
         self.assertEqual(len(shapes),4)
         self.assertEqual(len({e['material'] for e in shapes}),2)
@@ -84,14 +84,14 @@ class Sets(unittest.TestCase):
             self.assertIn(table+'["paint"]',text)
         self.assertEqual(text.count('materialLightFilterSets["paint"]'),4)
 
-    def test_nested_instancers_inherit_outer_material_and_light_links(self):
+    def test_recovery_nested_instancers_inherit_outer_material_and_light_links(self):
         source=scene({'geometries':['one','two'], 'lightsets':['keyOnly','both']})
         source['objects'] += [
             {'name':'inner','type':'RdlInstancerGeometry','attributes':{'method':2,
              'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]*2}},
             *[{'name':name,'type':'RdlInstancerGeometry','attributes':{'method':2,
                'references':['inner'],'xform_list':[rdl_import.IDENTITY]*2}} for name in ('one','two')]]
-        data=rdl_import.plan(source,'test.rdla')
+        data=rdl_import.plan(source,'test.rdla',recover_instancer_materials=True)
         meshes=[m for m in data['meshes'] if m['render']]
         self.assertEqual(len(meshes),2)
         self.assertEqual(len(data['instances']),6)
@@ -103,9 +103,28 @@ class Sets(unittest.TestCase):
         source['objects'][1]['attributes']['geometries'].append('inner')
         source['objects'][1]['attributes']['surface_shaders'].append('paint')
         source['objects'][1]['attributes']['lightsets'].append('keyOnly')
-        data=rdl_import.plan(source,'test.rdla')
+        data=rdl_import.plan(source,'test.rdla',recover_instancer_materials=True)
         self.assertEqual(len([m for m in data['meshes'] if m['render']]),1)
         self.assertEqual(len(data['instances']),7)
+
+    def test_instancer_only_material_does_not_make_source_visible(self):
+        for kind,attrs in [('RdlMeshGeometry',dict(TRIANGLE)),('SphereGeometry',{'radius':1})]:
+            with self.subTest(kind=kind):
+                source=scene({'geometries':['outer'],'surface_shaders':['paint']})
+                source['objects'][2].update(type=kind,attributes=attrs)
+                source['objects'] += [
+                    {'name':'inner','type':'RdlInstancerGeometry','attributes':{
+                        'method':2,'references':['/geo/wall'],'xform_list':[rdl_import.IDENTITY]}},
+                    {'name':'outer','type':'RdlInstancerGeometry','attributes':{
+                        'method':2,'references':['inner'],'xform_list':[rdl_import.IDENTITY]}}]
+                data=rdl_import.plan(source,'test.rdla')
+                self.assertFalse(data['meshes'])
+                self.assertFalse(data['instances'])
+                self.assertFalse(any(e['class']=='SphereGeometry' for e in data['entities']))
+                self.assertTrue(any('wall is given no material' in w for w in data['warnings']))
+                recovered=rdl_import.plan(source,'test.rdla',recover_instancer_materials=True)
+                self.assertTrue(recovered['meshes'] or any(e['class']=='SphereGeometry' for e in recovered['entities']))
+                self.assertTrue(any('changes source visibility' in w for w in recovered['warnings']))
 
     def test_sets_become_the_links_of_the_meshes_they_are_on(self):
         data = rdl_import.plan(scene({'lightsets': ['keyOnly', 'both'], 'shadowsets': ['noFillShadow', None], 'shadowreceiversets': ['notOnFloor', None]}), 'test.rdla')

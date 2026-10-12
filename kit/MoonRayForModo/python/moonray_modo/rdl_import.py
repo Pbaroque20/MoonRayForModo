@@ -202,7 +202,8 @@ def authored(record):
     return set(record['authored']) if 'authored' in record else set(record.get('attributes', {}))
 
 
-def plan(document, path):
+def plan(document, path, recover_instancer_materials=False):
+    # Recovery is a developer opt-in; normal/UI imports preserve native source visibility.
     if document.get('version') != 1 or not isinstance(document.get('objects'), list):
         raise ValueError('Invalid RDL conversion document')
     from . import entities, options, outputs, shader_library
@@ -266,7 +267,7 @@ def plan(document, path):
     def material(geometry, part, owner=None):
         """The key of the material a part of a shape is rendered with, made on first use; None for no material."""
         # The shape's own assignment first, then that of the instancer repeating it.
-        pairs = [(name, section) for name in (geometry,) + owners(owner) for section in (part, '')]
+        pairs = [(name, section) for name in (geometry,) + (owners(owner) if recover_instancer_materials else ()) for section in (part, '')]
         rows = [assigned.get(key) for key in pairs]
         row = next((r for r in rows if r and r['surface']), None)
         if not row:
@@ -501,7 +502,8 @@ def plan(document, path):
         if depth > 8:
             warnings.append(short(name) + ': instancers nested more than eight deep are not followed')
             return
-        if kind != 'RdlInstancerGeometry' and name not in emitter_geometries and not any(row['surface'] or row['volume'] for (geometry, part), row in assigned.items() if geometry in (name,) + owners(owner)):
+        if kind != 'RdlInstancerGeometry' and name not in emitter_geometries and not any((row['surface'] and (geometry == name or recover_instancer_materials)) or row['volume']
+                for (geometry, part), row in assigned.items() if geometry in (name,) + owners(owner)):
             # MoonRay leaves out a shape the layer gives no material; brought in, it would be in the picture where it was not.
             warnings.append('%s is given no material by the scene, so MoonRay does not render it; it is not imported.' % short(name))
             return
