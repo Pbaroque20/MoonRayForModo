@@ -189,10 +189,8 @@ def moonray_draft_again():
 
 @step(5000)
 def moonray_move():
+    # Moved with Draft on and nothing pressed: the outlines follow by themselves.
     lx.eval('transform.channel pos.X 0.9')
-    panel = panel_widget()
-    panel.draft.click()
-    panel.draft.click()
 
 
 @step(3000)

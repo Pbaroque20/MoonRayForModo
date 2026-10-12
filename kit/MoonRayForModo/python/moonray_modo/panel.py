@@ -56,6 +56,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self.display_timer.timeout.connect(self._commit_exposure)
         self.preview_timer=QtCore.QTimer(self);self.preview_timer.setSingleShot(True);self.preview_timer.setInterval(150)
         self.preview_timer.timeout.connect(lambda:self._preview_changed(0))
+        # Draft follows the scene by itself, whatever the engine and whether or not realtime is on: its outlines cost
+        # next to nothing. This looks, a few times a second, for something to redraw them for.
+        self.draft_timer=QtCore.QTimer(self);self.draft_timer.setInterval(150)
+        self.draft_timer.timeout.connect(self._draft_tick)
         self.poll_timer=QtCore.QTimer(self);self.poll_timer.setInterval(500)
         self.poll_timer.timeout.connect(self._poll)
 
@@ -423,6 +427,11 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.whole=bool(enabled)
         self.preview.paper=draft.PAPER if enabled else None
         if enabled:
+            try:self._draft_time=lx.service.Selection().GetTime()
+            except Exception:self._draft_time=None
+            self.draft_timer.start()
+        else:self.draft_timer.stop()
+        if enabled:
             if self._following:self.preview_timer.start()
             else:self.render_once()
             return
@@ -441,6 +450,23 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._following:self.preview_timer.start()
         else:self.status.setText('Draft off. The scene has changed since it was rendered: press Render for the picture.' if stale
                                  else 'Draft off. Press Render for the picture.')
+
+    def _draft_tick(self):
+        """While Draft is on: redraw its outlines when the scene changes, without being asked. With realtime on the
+        scene is being followed already and this has nothing to do."""
+        if self.disposed or not self.draft.isChecked():
+            self.draft_timer.stop();return
+        if self._following or self.preview_lock.isChecked() or self._output_busy() or not self.changes.registered:return
+        try:
+            from .interaction import dragging
+            # A drag is waited out: the scene is read once the button is up.
+            if dragging():return
+            time=lx.service.Selection().GetTime()
+            if not (self.changes.full or self.changes.items or time!=getattr(self,'_draft_time',time)):return
+            self._draft_time=time
+            self.render_once()
+        except Exception as exc:
+            self.status.setText('Draft could not follow the scene: '+str(exc))
 
     def _draft_region(self):
         values=self._settings_values()
