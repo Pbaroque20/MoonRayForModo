@@ -28,7 +28,7 @@ def megabytes(count):return '%s MB'%format(int(round(count/1048576.0)),',')
 class Dialog(QtWidgets.QDialog):
  def __init__(self,parent=None):
   super().__init__(parent);self.setWindowTitle('Import MoonRay RDL as editable objects');self.resize(700,500)
-  self.data=None;self.output=bytearray();self.errors='';self.path=None
+  self.data=None;self.output=bytearray();self.errors='';self.path=None;self.auto=False
   layout=QtWidgets.QVBoxLayout(self)
   layout.addWidget(QtWidgets.QLabel('Bring a MoonRay scene into the current Modo scene: meshes, instances and curves as Modo items, materials as MoonRay materials,\n'
    'and lights, light filters, volumes and other MoonRay objects as MoonRay items. What cannot be held is listed before anything is made.'))
@@ -119,6 +119,9 @@ class Dialog(QtWidgets.QDialog):
    counts=rdl_import.summary(self.data);counts=counts[:1].upper()+counts[1:]+' ready.'
    self.report.setPlainText(counts+'\n\n'+'\n'.join(self.data['warnings']))
    self.import_button.setEnabled(not rdl_import.empty(self.data))
+   # Opened from File > Open: the scene was asked for, so it is brought in without a second asking.
+   if self.auto and not rdl_import.empty(self.data):QtCore.QTimer.singleShot(0,self.apply)
+   self.auto=False
   except Exception as exc:
    message=str(exc)
    missing=re.search(r"global variable '([^']+)' was never declared",message)
@@ -154,8 +157,9 @@ class Dialog(QtWidgets.QDialog):
  def closeEvent(self,event):self.abort();super().closeEvent(event)
 
 _dialog=None
-def show(path=None):
+def show(path=None,auto=False):
+ """Open the importer's window; with a path, begin reading that scene, and with auto, import it once it is read."""
  global _dialog
  if _dialog is None:_dialog=Dialog()
  _dialog.show();_dialog.raise_();_dialog.activateWindow()
- if path:_dialog.load(path)
+ if path:_dialog.auto=bool(auto);_dialog.load(path)

@@ -96,6 +96,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 ## Importing MoonRay scenes
 
+- **File > Open reads MoonRay scenes.** Choose an `.rdla` or `.rdlb` file in Modo's own Open (or Import) and it is brought in by the importer, which shows how far it has come.
 - **Imported lights are no longer far too bright.** Lights left at MoonRay's defaults came in fifty times brighter (seen on the Veach scenes in the asset library). Re-import scenes brought in before this fix.
 
 ## Known gaps
