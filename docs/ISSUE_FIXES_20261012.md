@@ -67,3 +67,9 @@ Twenty focused RDL tests passed. The isolated Modo 16.1v9 probe read back edge/c
 MeshLight membership in light and shadow sets now resolves to its emitting mesh rather than being dropped. The importer retains emitter geometry even without a surface material and converts the MeshLight geometry reference to the imported mesh ID. Previously the generic MoonRay-item reference filter discarded that reference too.
 
 All 21 focused RDL tests passed. An isolated Modo 16.1v9 import verified the emitter exists without a material assignment, the MeshLight geometry channel points to it, and receiver light/shadow exclusions contain its ID. Host shutdown was normal. No rendered-lighting comparison was performed. Per-part sets, light-filter sets and assignments on native MoonRay shapes remain open under #52.
+
+## Native MoonRay shape assignments (#52, partial)
+
+Imported native shapes now retain light and shadow-exclusion sets. Exported shapes, volume-only shapes and their primitive-attribute holders use their per-object light/shadow assignments instead of always using the shared light set.
+
+All 22 focused RDL tests passed. An isolated Modo 16.1v9 probe verified a BoxGeometry receiver retains its MeshLight links and exclusions and exited normally. Export assertions cover assignment construction; rendered-lighting equivalence is not claimed. Per-part sets, light-filter sets and native shapes as shadow-receiver targets remain open.

@@ -877,14 +877,18 @@ def emit_geometry(scene, materials, lines):
         tag = entity['parameters'].get('modo_material', '')
         if tag not in materials:
             tag = ''
-        parts = [name, '""', 'materials[%s]' % string(tag), 'lightSet']
+        owner=string(entity['identity'])
+        linked_light='(objectLightSets[%s] or lightSet)' % owner
+        parts = [name, '""', 'materials[%s]' % string(tag), linked_light]
         if entity['parameters'].get('modo_volume') and not entity['parameters'].get('modo_material'):
             # A shape that holds a volume and was given no material is the volume alone: with the scene's
             # default surface on it, a cloud renders as the solid box it sits in.
-            parts = [name, '""', 'lightSet']
+            parts = [name, '""', linked_light]
         if entity['parameters'].get('modo_volume'):
             parts.append(reference(entities, entity['parameters']['modo_volume'], 'VOLUME', entity['name'] + '.volume'))
         lines += body + ['table.insert(geometries, %s)' % name, 'table.insert(assignments, {%s})' % ', '.join(parts)]
+        for table in ('objectShadowSets','objectShadowReceiverSets'):
+            lines.append('if %s[%s] then table.insert(assignments[#assignments], %s[%s]) end' % (table,owner,table,owner))
         if held:
             # MoonRay's own shapes take such values only from an instancer, so the shape is given one that puts it
             # once where it stands. A shape an instancer repeats is not in the picture a second time on its own.
@@ -892,7 +896,9 @@ def emit_geometry(scene, materials, lines):
             lines += [holder + ' {', '  ["method"] = 2,', '  ["references"] = {%s},' % name, '  ["use_reference_xforms"] = true,',
                       '  ["use_reference_attributes"] = true,', '  ["xform_list"] = {Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)},',
                       '  ["primitive_attributes"] = {%s},' % ', '.join(held), '}',
-                      'table.insert(geometries, %s)' % holder, 'table.insert(assignments, {%s, "", nil, lightSet})' % holder]
+                      'table.insert(geometries, %s)' % holder, 'table.insert(assignments, {%s, "", nil, %s})' % (holder,linked_light)]
+            for table in ('objectShadowSets','objectShadowReceiverSets'):
+                lines.append('if %s[%s] then table.insert(assignments[#assignments], %s[%s]) end' % (table,owner,table,owner))
 
 
 def render_camera(scene):

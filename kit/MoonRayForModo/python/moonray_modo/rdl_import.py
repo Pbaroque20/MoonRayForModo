@@ -666,6 +666,7 @@ def plan(document, path):
     if scene.get('motion_steps') and len(scene['motion_steps']) > 1 and any('close' in v for v in objects.values()):
         warnings.append('The scene is imported as it stands at shutter open; Modo holds its motion as animation, which RDL does not carry.')
     links = []
+    native_geometries = {e['name'] for e in items if catalog[e['class']]['category'] == 'geometry'}
     for geometry, (lit, unshadowed, spared) in sets.items():
         if lit is None and not unshadowed and not spared:
             continue
@@ -683,7 +684,8 @@ def plan(document, path):
                 else:target=label(name)
                 if target not in result:result.append(target)
             return result
-        links.append({'geometry': mesh.made.get(geometry), 'named': short(geometry), 'lights': None if lit is None else lights(lit),
+        native_geometry = label(geometry) if label(geometry) in native_geometries else None
+        links.append({'geometry': mesh.made.get(geometry) or native_geometry, 'named': short(geometry), 'lights': None if lit is None else lights(lit),
                       'shadows': lights(unshadowed), 'receivers': [mesh.made[name] for name in spared if name in mesh.made]})
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
                 settings=settings, links=links, warnings=list(dict.fromkeys(warnings)), source=str(path))
@@ -970,9 +972,9 @@ def apply(data, alone=True, progress=None):
             held = dict(production.get('objects') or {})
             linked_items=dict(brought_in,**made)
             for link in data['links']:
-                item = made.get(link['geometry'])
+                item = linked_items.get(link['geometry'])
                 if item is None:
-                    warnings.append('%s: its light and shadow sets are not imported; they are kept for meshes.' % link['named'])
+                    warnings.append('%s: its light and shadow sets are not imported because its geometry is unavailable.' % link['named'])
                     continue
                 entry = dict(held.get(item.id) or {})
                 if link['lights'] is not None:
