@@ -165,3 +165,9 @@ Validation: both focused tests failed before the fix. Afterwards 37 RDL and eigh
 Position, scale and quaternion components are now checked for the required count and finite values before matrix construction. Invalid instancers follow the existing import-notice path without losing unrelated geometry. Quaternion normalization scales components first to avoid overflow and silent rotation loss. Zero scales and the existing zero/tiny-quaternion identity fallback remain supported.
 
 Validation: the new malformed-component and large-quaternion cases failed before the fix. All 41 RDL checks pass afterward, including import-plan recovery with an invalid instancer. No new Modo or rendered-image comparison was needed for these pure numeric/input-validation changes. Motion and semi-sharp crease work in #23 remains open.
+
+## Native negative-index candidate (#100, not runtime-validated)
+
+InstanceProceduralLeaf checks only index > maxIndex before accessing ref[index]; a negative index bypasses the guard. A reproducible build-time patch adds the lower bound and follows the existing fallback-to-zero behavior. The shared upstream source and installed runtime have not been changed.
+
+Validation: three patch-application checks pass. The actual patched selection block was extracted from the local upstream source, compiled with warnings as errors, and passed seven boundary values plus disabled-index mode. Initial compiler invocation needed its binary directory on PATH; the checker now supplies it. Full native library rebuild and the #100 render reproducer remain pending, so this candidate must not be merged or treated as a released crash fix yet.
