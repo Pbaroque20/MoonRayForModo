@@ -85,12 +85,23 @@ def register():
                 # the authored values of its source, rather than being reset to today's preferences.
                 try:
                     if original is not None and lx.object.Item(original).test():return
-                except (TypeError,RuntimeError,LookupError):
+                except TypeError:
+                    # A fresh item passes a null lx.object.Unknown, not None. Casting it to Item
+                    # raises "no interface"; it is the normal no-original case, not a duplicate.
+                    pass
+                except (RuntimeError,LookupError):
                     return
-                import modo
-                target=modo.Item(item)
+                # Newborn can run before evaluated channels exist. The high-level modo.Channel
+                # helper constructs an evaluated reader even for writes, which fails here.
+                # Use the item's own setup context directly, within the creation transaction.
+                writer=lx.object.ChannelWrite(item.Context().Channels(lx.symbol.s_ACTIONLAYER_SETUP,0.0))
                 for key,value in entities.starting(name).items():
-                    try:target.channel(entities.CHANNEL_PREFIX+key).set(value,action=lx.symbol.s_ACTIONLAYER_SETUP)
+                    try:
+                        index=item.ChannelLookup(entities.CHANNEL_PREFIX+key)
+                        if writer.Type(item,index)==lx.symbol.i_TYPE_INTEGER:
+                            writer.Integer(item,index,int(value))
+                        else:
+                            writer.Double(item,index,float(value))
                     except (TypeError,ValueError,AttributeError,LookupError,RuntimeError) as exc:
                         lx.out('MoonRay: cannot initialize %s.%s: %s'%(name,key,exc))
             def test_parent(self,item,parent):return True
