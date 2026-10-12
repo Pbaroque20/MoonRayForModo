@@ -91,10 +91,10 @@ def save(root_id,lookup,destination):
   copied={}
   def collect_file(original):
    # Match the cache key to the asset folder identity, including Windows case aliases.
-   source_path=Path(original).resolve()
+   from .textures import asset_path,source_tiles
+   source_path=asset_path(original)
    identity=os.path.normcase(str(source_path))
    if identity in copied:return copied[identity]
-   from .textures import source_tiles
    tiles=source_tiles(str(source_path))
    if not tiles:raise ValueError('Missing material asset: '+original)
    token=hashlib.sha256(identity.encode()).hexdigest()[:20]
@@ -121,8 +121,8 @@ def load(path):
   if digest(asset)!=entry['sha256']:raise ValueError('Material asset changed: '+entry['file'])
  declared={entry['file'] for entry in data.get('assets',[])}
  def resolve(value):
-  asset=(root/value).resolve();asset.relative_to(root)
-  from .textures import source_tiles
+  from .textures import asset_path,source_tiles
+  asset=asset_path(root/value);asset.relative_to(root)
   tiles=source_tiles(str(asset))
   if not tiles or any(Path(v).resolve().relative_to(root).as_posix() not in declared for v in tiles.values()):raise ValueError('Unlisted or missing material asset: '+value)
   return str(asset)
