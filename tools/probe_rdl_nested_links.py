@@ -1,4 +1,5 @@
 # python
+# Explicit recovery-mode coverage: these intentionally invalid source assignments do not test source visibility.
 """Import nested instancers whose materials and lighting come from their outer owners."""
 import json, os, tempfile, traceback
 from pathlib import Path
@@ -26,7 +27,7 @@ try:
  {'name':'filters','type':'LightFilterSet','attributes':{'lightfilters':['tint']}}]}
  source['objects'] += [{'name':name,'type':'RdlInstancerGeometry','attributes':{'method':2,'references':['inner'],'xform_list':[rdl_import.IDENTITY]*2}} for name in ('one','two')]
  source['objects'].append({'name':'inner','type':'RdlInstancerGeometry','attributes':{'method':2,'references':['mesh'],'xform_list':[rdl_import.IDENTITY]*2}})
- plan=rdl_import.plan(source,'test.rdla');result['import']=rdl_import.apply(plan)
+ plan=rdl_import.plan(source,'test.rdla',recover_instancer_materials=True);result['import']=rdl_import.apply(plan)
  assert 'geometry is unavailable' not in result['import'],result['import']
  mesh=next(m for m in modo.Scene().items('mesh') if m.name==plan['meshes'][0]['name'])
  assert len(plan['meshes'])==2 and len(plan['instances'])==6,plan

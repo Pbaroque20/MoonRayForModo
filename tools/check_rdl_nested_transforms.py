@@ -41,4 +41,11 @@ outer_only=source.replace('{mesh,"",paint},{inner,""},{outer,""}', '{mesh,""},{i
 coverage=render('instancer_material_only',outer_only)
 results['instancer_material_only']={'coverage':sum(coverage)/3}
 assert sum(coverage)==0,'Runtime instancer-only material semantics changed'
+r=subprocess.run([str(runtime/'modo_rdl_import.exe'),str(out/'instancer_material_only.rdla'),str(runtime)],env=native.environment(runtime),capture_output=True,text=True,timeout=60)
+assert r.returncode==0,r.stderr
+document=json.loads(r.stdout.rsplit('@@MODO_RDL_JSON',1)[1])
+plan=rdl_import.plan(document,str(out/'instancer_material_only.rdla'))
+assert not plan['meshes'] and not plan['instances'],'Importer made an invisible source surface visible'
+results['instancer_material_only']['imported_meshes']=len(plan['meshes'])
+
 (out/'report.json').write_text(json.dumps(results,indent=2),encoding='utf-8');print(json.dumps(results))

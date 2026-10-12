@@ -147,3 +147,9 @@ Referenced instancer node transforms were applied twice and omitted use_referenc
 Validation: 34 RDL checks passed. The native scalar renderer produced a 0.02197 mean alpha error between nested and importer-flattened fixtures before the fix; after correction the enabled and disabled reference-transform fixtures both match exactly (zero mean alpha error). Fixtures are 64x64 with two pixel-grid samples, not broad scene-parity validation.
 
 Correction to previous assignment notes: the native render confirms the official RdlInstancerGeometry documentation: a material assigned only to an instancer produces no visible surface. Earlier assignment tests proved editable import/readback, not equivalent source visibility. The current editable fallback is now explicitly warned about in the import report; it remains a known parity limitation. A dedicated fixture records zero coverage for instancer-only material assignment. Documentation: https://docs.openmoonray.org/user-reference/scene-objects/geometry/RdlInstancerGeometry/
+
+## Preserve source visibility on normal RDL imports
+
+Normal/UI imports no longer recover surfaces whose material exists only on an instancer. MoonRay ignores that surface assignment, so such geometry is omitted with the existing no-material notice. The optional plan(..., recover_instancer_materials=True) developer recovery path remains explicit and warns that it changes source visibility. Historical recovery fixtures now opt in and are labelled accordingly; they do not prove native material-inheritance semantics.
+
+Validation: 35 RDL tests pass, including nested mesh/native-shape default omission and explicit recovery. Native scalar fixtures confirm zero source coverage and zero imported meshes for an instancer-only material; enabled/disabled nested-transform fixtures still match exactly. This resolves the specific visibility mismatch identified in the previous audit, not every light-set or volume inheritance case.

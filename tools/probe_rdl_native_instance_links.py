@@ -1,4 +1,5 @@
 # python
+# Explicit recovery-mode coverage: these intentionally invalid source assignments do not test source visibility.
 """Import native spheres under two instancers with different light assignments."""
 import json, os, tempfile, traceback
 from pathlib import Path
@@ -26,7 +27,7 @@ try:
  {'name':'filters','type':'LightFilterSet','attributes':{'lightfilters':['tint']}}]}
  source['objects'][2].update(type='SphereGeometry',attributes={'radius':1})
  source['objects'] += [{'name':name,'type':'RdlInstancerGeometry','attributes':{'method':2,'references':['mesh'],'xform_list':[rdl_import.IDENTITY]*3}} for name in ('one','two')]
- plan=rdl_import.plan(source,'test.rdla');result['import']=rdl_import.apply(plan)
+ plan=rdl_import.plan(source,'test.rdla',recover_instancer_materials=True);result['import']=rdl_import.apply(plan)
  assert 'geometry is unavailable' not in result['import'],result['import']
  assert len([e for e in plan['entities'] if e['class']=='SphereGeometry'])==6,plan
  result['captures']=[]
