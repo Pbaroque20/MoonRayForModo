@@ -16,9 +16,11 @@ def directory(runtime):
         return Path(supplied)
     # MoonLightIPR does not depend on the MoonRay build, so the copy bundled with the kit
     # serves any other runtime the user selects.
+    # It does depend on the plugin, whose scenes it reads: another runtime may carry the MoonLightIPR of another
+    # version, which would refuse them. So the kit's own copy is the one used wherever there is one.
     bundled = Path(__file__).resolve().parents[2] / 'runtime' / 'moonlightipr'
     selected = Path(runtime) / 'moonlightipr'
-    return bundled if not supported(selected) and supported(bundled) else selected
+    return bundled if supported(bundled) else selected
 
 
 def supported(directory):

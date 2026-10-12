@@ -155,7 +155,7 @@ class Panel(QtWidgets.QWidget):
             self.timer.stop()  # Draft commit can itself notify graph_changed.
             size=256 if self.live.isChecked() else 384
             if self.live.isChecked():scene['render_settings'].update(target_adaptive_error=10.0)
-            settings=QtCore.QSettings('MoonRayForModo','NativePreview')
+            settings=QtCore.QSettings('MoonRayForModo',native.settings_name())
             runtime=native.default_runtime() or str(settings.value('runtime',''))
             record("Submit material preview; runtime="+str(runtime))
             self.renderer.submit(scene,runtime,size,size,2,.2,0)

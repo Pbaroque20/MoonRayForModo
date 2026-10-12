@@ -25,7 +25,7 @@ def begin():
         panel = panel_widget()
         held['stored'] = [panel.preferences.store.value(key, None) for key in ('runtime', 'preview_engine', 'ipr')]
         panel.preferences.set('runtime', str(root / os.environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-0350-pool')))
-        panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonray'))
+        panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(os.environ.get('MOONRAY_PROBE_ENGINE', 'moonray')))
         QtWidgets.QApplication.processEvents()
         # How often MoonRay tells of the tiles its workers are on, and how evenly.
         import time
@@ -53,6 +53,11 @@ def finish():
         (out / 'moonray.txt').write_text('\n'.join(line for line in str(panel.renderer.log).splitlines() if 'Rendering [' not in line and not line.startswith('@@')),
                                          encoding='utf-8', errors='replace')
         panel.window().grab().save(str(out / 'window.png'))
+        result['notices'] = panel.warnings.toPlainText()[:1500]
+        scene = getattr(panel, '_ipr_refine_scene', None) or {}
+        result['scene'] = {'meshes': len(scene.get('meshes', [])), 'extra': [str(e.get('kind')) for e in scene.get('extra_geometry', [])][:20],
+                           'volumes': sum(1 for m in scene.get('meshes', []) if m.get('volume')), 'instanced': sum(1 for m in scene.get('meshes', []) if 'instances' in m),
+                           'empty': sum(1 for m in scene.get('meshes', []) if not m.get('faces')), 'subdivision': sum(1 for m in scene.get('meshes', []) if m.get('subdivision'))}
         if panel._rendering or panel._following:
             panel.stop()
         for key, value in zip(('runtime', 'preview_engine', 'ipr'), held['stored']):
@@ -67,10 +72,13 @@ def finish():
 
 
 try:
-    lx.eval('item.create mesh')
-    lx.eval('tool.set prim.cube on')
-    lx.eval('tool.apply')
-    lx.eval('tool.set prim.cube off')
+    if os.environ.get('MOONRAY_PROBE_SCENE'):
+        lx.eval('scene.open {%s} normal' % os.environ['MOONRAY_PROBE_SCENE'])
+    else:
+        lx.eval('item.create mesh')
+        lx.eval('tool.set prim.cube on')
+        lx.eval('tool.apply')
+        lx.eval('tool.set prim.cube off')
     lx.eval('moonray.open')
 except Exception:
     result['error'] = traceback.format_exc()

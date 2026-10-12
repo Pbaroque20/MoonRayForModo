@@ -164,7 +164,14 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
-    if (in.value<uint32_t>() != 0x41534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLSA"
+    // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "B" since
+    // each instance says which rays find it. A plugin and a session of different versions say so plainly, in
+    // place of reading each other's scenes wrongly.
+    const uint32_t mark = in.value<uint32_t>();
+    if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
+    if (mark != 0x42534c4d)
+        throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
+                                 + "', this MoonLightIPR reads 'B'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();

@@ -19,7 +19,7 @@ KEYS = {
 
 class Preferences:
     def __init__(self):
-        self.store = QtCore.QSettings('MoonRayForModo', 'NativePreview')
+        self.store = QtCore.QSettings('MoonRayForModo', native.settings_name())
         installation = native.installation_id()
         if installation and self.store.value('runtime_installation') != installation:
             # A newly installed kit brings its own runtime; the earlier choice is kept aside.

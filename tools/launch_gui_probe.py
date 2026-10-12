@@ -89,6 +89,9 @@ assert probe.resolve().parent==root/'tools' and probe.is_file()
 # an older session refuses the scenes a newer plugin sends it.
 import os,sys
 environment=dict(os.environ)
+# The test Modo keeps its preview settings apart from the user's: what a probe sets is not read by a Modo the user
+# has open at the same time.
+environment['MOONRAY_MODO_PREFERENCES']='TestPreview'
 if (root/'build/moonlightipr/bin/moonlightipr_session.exe').is_file() and not environment.get('MOONRAY_MODO_MOONLIGHTIPR'):
     subprocess.run([sys.executable,str(root/'tools/stage_moonlightipr.py'),'--destination',str(root/'build/moonlightipr/stage')],check=True,stdout=subprocess.DEVNULL)
     environment['MOONRAY_MODO_MOONLIGHTIPR']=str(root/'build/moonlightipr/stage')
