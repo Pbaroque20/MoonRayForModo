@@ -61,3 +61,9 @@ All 17 focused RDL tests passed. The isolated Modo 16.1v9 probe imported six mes
 Import plans validate crease/corner indices, topology and finite nonnegative weights. Fully sharp values (10 or higher) become editable Subdivision edge/corner weights of 1 on Catmull-Clark polygons. Semi-sharp values remain omitted with an explicit notice; their scale conversion is not established.
 
 Twenty focused RDL tests passed. The isolated Modo 16.1v9 probe read back edge/corner weights and Catmull-Clark polygon type and exited normally. An initial candidate crashed when writing edges in the topology-creation edit; the final implementation commits polygons before opening a second edit for edge weights. This failure is resolved in the passing candidate, not hidden. No rendered surface comparison is claimed.
+
+## MeshLight RDL bindings and sets (#52, partial)
+
+MeshLight membership in light and shadow sets now resolves to its emitting mesh rather than being dropped. The importer retains emitter geometry even without a surface material and converts the MeshLight geometry reference to the imported mesh ID. Previously the generic MoonRay-item reference filter discarded that reference too.
+
+All 21 focused RDL tests passed. An isolated Modo 16.1v9 import verified the emitter exists without a material assignment, the MeshLight geometry channel points to it, and receiver light/shadow exclusions contain its ID. Host shutdown was normal. No rendered-lighting comparison was performed. Per-part sets, light-filter sets and assignments on native MoonRay shapes remain open under #52.
