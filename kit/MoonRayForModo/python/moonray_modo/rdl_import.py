@@ -260,10 +260,14 @@ def plan(document, path):
                 warnings.append('%s: differing per-part sets on this geometry type are not imported; the first assignment is retained' % short(geometry))
         sets.setdefault(geometry, own)
 
+    def owners(owner):
+        return owner if isinstance(owner, tuple) else ((owner,) if owner else ())
+
     def material(geometry, part, owner=None):
         """The key of the material a part of a shape is rendered with, made on first use; None for no material."""
         # The shape's own assignment first, then that of the instancer repeating it.
-        rows = [assigned.get(key) for key in ((geometry, part), (geometry, ''), (owner, part), (owner, ''))]
+        pairs = [(name, section) for name in (geometry,) + owners(owner) for section in (part, '')]
+        rows = [assigned.get(key) for key in pairs]
         row = next((r for r in rows if r and r['surface']), None)
         if not row:
             return None
@@ -272,7 +276,7 @@ def plan(document, path):
             warnings.append('%s: its material %s is of a class the plugin has no material for.' % (short(geometry), short(str(surface))))
             return None
         key = surface if not displacement else surface + '|' + displacement
-        assignment = next((pair for pair in ((geometry, part), (geometry, ''), (owner, part), (owner, '')) if assigned.get(pair) is row), None)
+        assignment = next((pair for pair in pairs if assigned.get(pair) is row), None)
         if assignment and (assignment[0] in split_sets or (owner and (objects.get(geometry, {}).get('type') == 'RdlMeshGeometry' or catalog.get(objects.get(geometry, {}).get('type'), {}).get('category') == 'geometry'))):
             key += '|links:' + repr(assignment)
             material_links[key] = (assignment[0], part_sets[assignment])
@@ -470,7 +474,7 @@ def plan(document, path):
         parameters.pop('primitive_attributes', None)
         if catalog[kind]['category'] == 'geometry':
             made['material'] = material(record['name'], '', owner)
-            volume = volume_of(owner or record['name']) or volume_of(record['name'])
+            volume = next((volume_of(name) for name in owners(owner) + (record['name'],) if volume_of(name)), None)
             if volume and objects[volume]['type'] in catalog:
                 made['volume'] = label(volume)
             elif volume:
@@ -494,7 +498,7 @@ def plan(document, path):
         if depth > 8:
             warnings.append(short(name) + ': instancers nested more than eight deep are not followed')
             return
-        if kind != 'RdlInstancerGeometry' and name not in emitter_geometries and not any(row['surface'] or row['volume'] for (geometry, part), row in assigned.items() if geometry in (name, owner)):
+        if kind != 'RdlInstancerGeometry' and name not in emitter_geometries and not any(row['surface'] or row['volume'] for (geometry, part), row in assigned.items() if geometry in (name,) + owners(owner)):
             # MoonRay leaves out a shape the layer gives no material; brought in, it would be in the picture where it was not.
             warnings.append('%s is given no material by the scene, so MoonRay does not render it; it is not imported.' % short(name))
             return
@@ -505,13 +509,13 @@ def plan(document, path):
         elif kind == 'RdlCurveGeometry':
             strands(dict(record, name=name), matrix, outer) if title == label(name) else warnings.append(short(name) + ': instanced curves are not imported')
         elif kind == 'RdlInstancerGeometry':
-            repeated(record, matrix, title, depth, outer)
+            repeated(record, matrix, title, depth, outer, owner)
         elif kind in catalog and catalog[kind]['category'] == 'geometry':
             entity(record, matrix, title, owner, outer)
         else:
             warnings.append('%s: %s has no counterpart in Modo and is not imported' % (short(name), kind))
 
-    def repeated(record, parent, title, depth, outer=()):
+    def repeated(record, parent, title, depth, outer=(), owner=None):
         a, name = record.get('attributes', {}), record['name']
         references = [r for r in a.get('references', [])]
         if not references:
@@ -554,7 +558,7 @@ def plan(document, path):
             matrix = product(product(matrix, own), parent)
             if a.get('use_reference_xforms', True):
                 matrix = product(checked_matrix(objects[reference].get('attributes', {}).get('node_xform', IDENTITY), reference), matrix)
-            place(reference, matrix, '%s %d' % (title, index + 1), name, depth + 1, merged(picked(values, index, total), outer))
+            place(reference, matrix, '%s %d' % (title, index + 1), (name,) + owners(owner), depth + 1, merged(picked(values, index, total), outer))
 
     # A shape an instancer repeats is not in the picture itself, only where the instancer puts it.
     referenced = {name for v in objects.values() if v['type'] == 'RdlInstancerGeometry' for name in v.get('attributes', {}).get('references', [])}
@@ -683,11 +687,20 @@ def plan(document, path):
     links = []
     native_geometries = {e['name'] for e in items if catalog[e['class']]['category'] == 'geometry'}
     available_filters = {e['name'] for e in items if catalog[e['class']]['category'] == 'lightfilter'}
-    # Direct mesh/native-shape instancers carry their links on the scoped material layers above.
+    def supported_references(name, seen=()):
+        if name in seen or len(seen) > 8:
+            return False
+        record = objects.get(name, {})
+        kind = record.get('type')
+        if kind == 'RdlInstancerGeometry':
+            refs = record.get('attributes', {}).get('references', [])
+            return bool(refs) and all(supported_references(ref, seen + (name,)) for ref in refs)
+        return kind == 'RdlMeshGeometry' or catalog.get(kind, {}).get('category') == 'geometry'
+
+    # Supported instancer descendants carry their links on scoped material layers.
     scoped_instancers = {geometry for geometry, own in material_links.values()
                          if objects.get(geometry, {}).get('type') == 'RdlInstancerGeometry'
-                         and all((objects.get(ref, {}).get('type') == 'RdlMeshGeometry' or catalog.get(objects.get(ref, {}).get('type'), {}).get('category') == 'geometry')
-                                 for ref in objects[geometry].get('attributes', {}).get('references', []))}
+                         and supported_references(geometry)}
     linked_rows = [(geometry, None, own) for geometry, own in sets.items()
                    if geometry not in split_sets and geometry not in scoped_instancers]
     linked_rows += [(geometry, key, own) for key, (geometry, own) in material_links.items() if materials.get(key)]
