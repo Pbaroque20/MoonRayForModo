@@ -915,9 +915,36 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._output_busy():
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
         try:
-            self._submit(self._capture_preview())
+            scene=self._unchanged_scene()
+            if scene is None:
+                scene=self._capture_preview()
+                # What Modo has told of up to now is in this reading of the scene.
+                self.changes.consume()
+                self._kept_capture=scene;self._kept_key=self._capture_key()
+            self._submit(scene)
         except Exception as exc:
             self._failed(str(exc))
+
+    def _capture_key(self):
+        """What, beside the scene's own contents, a reading of the scene depends on."""
+        import modo
+        settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
+        return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
+                self.preferences.get('preview_motion'),self.runtime_path())
+
+    def _unchanged_scene(self):
+        """The scene as it was last read out of Modo, where nothing has changed since: reading it is most of the wait
+        for a draft's outlines, and switching Draft on or off or drawing a region changes nothing in the scene.
+        None where anything may have changed. Modo's word that nothing has is trusted for a quarter of a minute,
+        as it is while a scene is followed, unless the safety re-reading is switched off in the preferences."""
+        scene=getattr(self,'_kept_capture',None)
+        if scene is None or not self.changes.registered or self.changes.full or self.changes.items:return None
+        import time as clock
+        if self.preferences.get('capture_safety') and clock.monotonic()-self._last_full_capture>15:return None
+        try:
+            if self._capture_key()!=self._kept_key:return None
+        except Exception:return None
+        return scene
 
     def _live_tick(self):
         if self.disposed or not self._following:return

@@ -17,6 +17,7 @@ Not released yet. The full list, with pictures and what was checked, is in [What
 - **An idle MoonRay rests** instead of keeping a processor core busy, and ends itself if Modo goes away.
 - **What Modo hides is hidden**: an item with its eye off does not render, and MoonLightIPR follows a surface's visibility to the camera, indirect light, reflections, refractions and shadows.
 - **Two lines under the picture**, so the status is read whole.
+- **Draft comes up at once** when the scene has not changed, with black around the camera's frame; **Region** no longer zooms the view.
 
 Some of these need the MoonRay of the next runtime, so the next release brings a new runtime ZIP.
 

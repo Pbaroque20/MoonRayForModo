@@ -38,6 +38,20 @@ def finish():
         result.update(status=panel.status.text(), view=[view.width(), view.height()], frame=[round(v) for v in (frame.left(), frame.top(), frame.right(), frame.bottom())],
                       outside_top=colour(view.width() / 2, max(1, frame.top() / 2)), outside_bottom=colour(view.width() / 2, min(view.height() - 2, (frame.bottom() + view.height()) / 2)),
                       inside_top=colour(frame.left() + 6, frame.top() + 6), inside_bottom=colour(frame.left() + 6, frame.bottom() - 6))
+        # A region set while the view is zoomed and moved leaves it zoomed and moved; so does a picture of another
+        # size and the same shape.
+        from PySide2 import QtGui
+        view.zoom = 2.5; view.pan = QtCore.QPointF(40, -30)
+        view.set_region((.2, .2, .6, .6), True)
+        result['after_region'] = [view.zoom, view.pan.x(), view.pan.y()]
+        view.set_region(None, False)
+        result['after_region_cleared'] = [view.zoom, view.pan.x(), view.pan.y()]
+        half = QtGui.QImage(view.image.width() // 2, view.image.height() // 2, QtGui.QImage.Format_RGB32); half.fill(0)
+        view.set_image(half)
+        result['after_smaller_picture'] = [view.zoom, view.pan.x(), view.pan.y()]
+        tall = QtGui.QImage(400, 800, QtGui.QImage.Format_RGB32); tall.fill(0)
+        view.set_image(tall)
+        result['after_picture_of_another_shape'] = [view.zoom, view.pan.x(), view.pan.y()]
         panel.draft.click()
         panel.stop()
     except Exception:

@@ -52,9 +52,11 @@ class _PreviewBody:
     def set_image(self,image):
         if image.isNull():
             raise ValueError('MoonRay output could not be decoded as an image.')
-        # The view is set to the picture anew only when its size is another than the last picture's: a view cleared
-        # for a new render keeps how it was being looked at.
-        if (image.width(), image.height()) != getattr(self, '_sized', None):
+        # The view is set to the picture anew only when its shape is another than the last picture's. Zoom and place
+        # are kept as shares of the picture, so one of another size and the same shape (a region's, a coarser one
+        # while the scene is followed) is looked at just as the last was, and so is a view cleared for a new render.
+        sized = getattr(self, '_sized', None)
+        if not sized or abs(image.width() * sized[1] - image.height() * sized[0]) > 2 * max(sized):
             self.fit()
         self._sized = (image.width(), image.height())
         # Beauty includes camera-visible environment RGB even where coverage
@@ -115,12 +117,9 @@ class _PreviewBody:
 
     def set_region(self, region, tool):
         """Show the region that is rendered, or none; and say whether a left drag draws a new one."""
-        before = self.region
         self.region = tuple(region) if region else None
         self.region_tool = bool(tool)
-        # The view follows: onto a region newly set, and back to the whole frame when there is none.
-        if self.region != before:
-            self.fit()
+        # The view stays as it is being looked at.
         self.update()
 
     def pixel_at(self, point):
@@ -134,20 +133,10 @@ class _PreviewBody:
         return min(width - 1, max(0, x)), min(height - 1, max(0, y))
 
     def fit(self):
-        """Fill the view with the picture, or with the region of it that is rendered."""
+        """Fill the view with the picture. A region does not change how the picture is looked at: zooming in on it
+        is for whoever is looking to do."""
         self.zoom = 1.0
         self.pan = QtCore.QPointF()
-        region = getattr(self, 'region', None)
-        if region and not getattr(self, 'whole', False) and tuple(region) != (0.0, 0.0, 1.0, 1.0) and not self.image.isNull() and self.width() > 0 and self.height() > 0:
-            left, top, right, bottom = region
-            wide, high = self.image.width() * (right - left), self.image.height() * (bottom - top)
-            if wide > 0 and high > 0:
-                whole = min(self.width() / self.image.width(), self.height() / self.image.height())
-                # A little room is left around it, so that its edge is seen.
-                scale = min(32.0 * whole, .94 * min(self.width() / wide, self.height() / high))
-                self.zoom = scale / whole
-                self.pan = QtCore.QPointF(-((left + right) / 2 - .5) * self.image.width() * scale,
-                                          -((top + bottom) / 2 - .5) * self.image.height() * scale)
         self.update()
 
     def actual_size(self):

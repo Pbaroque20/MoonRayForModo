@@ -12,6 +12,9 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
   - **MoonLightIPR** is the fast GPU preview, which also follows the scene.
 
   The last two are realtime. Each is on from the moment it is chosen, or the window opens on it. The button then reads **RT On** and is lit; press it and it reads **RT Off**, and the preview stops following the scene.
+- **Draft comes up at once.** Nearly all of the wait for a draft's outlines was reading the scene out of Modo again (1.1 of 1.2 seconds on the origami cheetah); drawing them takes a twentieth of a second. Where nothing in the scene has changed since it was last read, it is not read again: 0.17 seconds. MoonLightIPR makes one render for a draft, and a second only for a region, by the engine you chose.
+- **In Draft the paper is the camera's frame**, and the rest of the view is black.
+- **Region leaves the view alone.** Setting or clearing a region no longer zooms the view, and a picture of another size and the same shape is looked at just as the last was. Zooming in is yours to do.
 - **Two lines under the picture.** The status has a line to itself, so a long message is read whole. Below it are the values under the pointer, how the render is getting on, and the picture's size.
 - **Tile outlines move evenly.** They are pastel blue. An outline eases in, stands for as long as MoonRay keeps coming back to its tile, and fades when the tile is done with. MoonRay now tells of its tiles on a clock of their own: about eighteen times a second reach the window where four did, and no gap is longer than 150 ms where there were gaps of half a second *(next runtime)*.
 
