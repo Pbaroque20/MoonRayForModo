@@ -2066,14 +2066,24 @@ struct MappedSlots {
 // coordinate lookup, which is how a bump map's slope is measured.
 // Modo's roughness as the roughness of the lobe that draws the same highlight, for its Blinn (1), Ashikhmin (2)
 // and GTR (3) models: read along straight lines between what was measured. Keep in step with shading_models.py.
-ML_INLINE float modoRoughness(unsigned model, float roughness) {
+ML_INLINE float modoRoughness(unsigned model, float roughness, float& strength) {
     const float from[8] = {0.0f, 0.1f, 0.2f, 0.35f, 0.5f, 0.7f, 0.9f, 1.0f};
+    // What the highlight's strength is multiplied by at each of those roughnesses.
+    const float blinnStrength[8] = {0.301f, 0.301f, 0.363f, 0.520f, 0.590f, 0.598f, 0.730f, 0.730f};
+    const float ashikhminStrength[8] = {1.0f, 1.0f, 1.0f, 0.855f, 0.809f, 0.785f, 0.770f, 0.770f};
+    const float gtrStrength[8] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.848f, 0.762f, 0.762f};
+    const float* strong = model == 1 ? blinnStrength : model == 2 ? ashikhminStrength : gtrStrength;
     const float blinn[8] = {0.0f, 0.20f, 0.28f, 0.36f, 0.36f, 0.38f, 0.50f, 0.50f};
     const float ashikhmin[8] = {0.0f, 0.22f, 0.28f, 0.38f, 0.44f, 0.48f, 0.50f, 0.50f};
     const float gtr[8] = {0.0f, 0.16f, 0.22f, 0.36f, 0.50f, 0.70f, 0.90f, 0.90f};
     const float* to = model == 1 ? blinn : model == 2 ? ashikhmin : gtr;
     for (int i = 1; i < 8; ++i)
-        if (roughness <= from[i]) return to[i - 1] + (to[i] - to[i - 1]) * (roughness - from[i - 1]) / (from[i] - from[i - 1]);
+        if (roughness <= from[i]) {
+            const float t = (roughness - from[i - 1]) / (from[i] - from[i - 1]);
+            strength = strong[i - 1] + (strong[i] - strong[i - 1]) * t;
+            return to[i - 1] + (to[i] - to[i - 1]) * t;
+        }
+    strength = strong[7];
     return to[7];
 }
 
@@ -2306,8 +2316,12 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
         hit->albedo = channel[CHANNEL_COLOR] * channel[CHANNEL_COLOR_AMOUNT];
         hit->emission = channel[CHANNEL_EMISSION] * channel[CHANNEL_EMISSION_AMOUNT];
         hit->roughness = clamp(average(channel[CHANNEL_ROUGHNESS]), 0.0f, 1.0f);
-        if (material.flags & MATERIAL_ROUGH_MASK)
-            hit->roughness = modoRoughness((material.flags & MATERIAL_ROUGH_MASK) >> MATERIAL_ROUGH_SHIFT, hit->roughness);
+        if (material.flags & MATERIAL_ROUGH_MASK) {
+            // The highlight's strength goes with the roughness, as it does for a roughness that is one value.
+            float strength = 1.0f;
+            hit->roughness = modoRoughness((material.flags & MATERIAL_ROUGH_MASK) >> MATERIAL_ROUGH_SHIFT, hit->roughness, strength);
+            hit->specular = fminf(hit->specular * strength, 1.0f);
+        }
         hit->metallic = clamp(average(channel[CHANNEL_METALLIC]), 0.0f, 1.0f);
         hit->transmission = clamp(average(channel[CHANNEL_TRANSMISSION]), 0.0f, 1.0f);
         hit->transmissionColor = channel[CHANNEL_TRANSMISSION_COLOR];

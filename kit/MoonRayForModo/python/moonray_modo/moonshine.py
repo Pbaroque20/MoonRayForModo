@@ -70,7 +70,8 @@ def mapped(material,effect):
 
 def emit(material, tag, index, bindings, lines):
     from .rdla import string, number, vector
-    from .shading_models import curve,principled_rise
+    from .shading_models import curve,principled_rise,strengths
+    driven=None
     from .material_settings import values
     controls = values(material)
     sss_weight = bindings.get('subsurfaceAmount')
@@ -142,6 +143,8 @@ def emit(material, tag, index, bindings, lines):
                       '  ["colors"] = {%s},'%', '.join('Rgb(%s, %s, %s)'%((number(b),)*3) for _,b in points),
                       '  ["interpolations"] = {%s},'%', '.join('1' for _ in points),'}']
             attributes['roughness']='bind(RampMap(%s), 1)'%string(path)
+            # What drives the roughness, for the highlight's strength to follow it too.
+            driven=value
         elif key!='specularColor':
             attributes[names.get(key,key)]=value
             if key=='diffuseColor':
@@ -171,7 +174,17 @@ def emit(material, tag, index, bindings, lines):
             # Modo's Blinn and Ashikhmin highlights reflect less than a lobe that keeps all the light. The amount is divided
             # by the number below, so a weaker highlight is a larger one.
             strength=max(1e-6,float(material.get('_specular_strength',1.0)))
-            lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most*lobe/straight/strength),)*3))
+            if driven is not None:
+                # The roughness is driven by an image: the strength is read for each point from what drives it, as the
+                # roughness is, in place of the one worked out for the material's plain roughness.
+                points=strengths(material['shading_model']);ramp='/modo/strength/%s'%index
+                lines += ['RampMap(%s) {'%string(ramp),'  ["ramp_type"] = 8,','  ["input"] = %s,'%driven,
+                          '  ["positions"] = {%s},'%', '.join(number(a) for a,_ in points),
+                          '  ["colors"] = {%s},'%', '.join('Rgb(%s, %s, %s)'%((number(most*lobe/straight/max(1e-6,k)),)*3) for _,k in points),
+                          '  ["interpolations"] = {%s},'%', '.join('1' for _ in points),'}']
+                lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = bind(RampMap(%s), Rgb(1, 1, 1)), ["blend"] = 5 }'%(string(path),bindings['specularColor'],string(ramp)))
+            else:
+                lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most*lobe/straight/strength),)*3))
             attributes.update(refractive_index=number((1+root)/(1-root)),specular='bind(ModoTextureMap(%s), 1)'%string(path),show_specular='true')
     from .working_space import surface as working_surface
     attributes=working_surface(attributes,'/modo/material/'+str(index),lines,{'albedo','metallic_color','scattering_color','transmission_color','emission','clearcoat_attenuation_color'})

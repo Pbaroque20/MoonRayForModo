@@ -913,6 +913,11 @@ class Compiler:
                 defaults = dict(defaults, rough=translated(model, min(1.0, max(0.0, float(defaults['rough']))))[0])
             else:
                 flags |= (list(MEASURED).index(model) + 1) << 8
+                # The GPU gives the highlight the strength that goes with the roughness at each hit: the one worked
+                # out for the material's plain roughness is taken back out.
+                plain = float(source.get('_specular_strength', 1.0))
+                if plain > 0:
+                    weight /= plain
         controls = shader_controls(source)
         # The lobe is stretched along a tangent measured from texture u of the primary coordinates,
         # which a mesh then has to carry.

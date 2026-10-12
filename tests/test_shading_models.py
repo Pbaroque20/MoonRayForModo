@@ -61,6 +61,9 @@ class ShadingModels(unittest.TestCase):
             rows=shading_models.MEASURED[model]
             self.assertEqual(row('from'),[0.0]+[r for r,_,_ in rows]+[1.0])
             self.assertEqual(row(model),[0.0]+[to for _,to,_ in rows]+[rows[-1][1]])
+            # And the strengths that go with them, which a roughness an image drives is given at each hit.
+            self.assertEqual(row(model+'Strength'),[k for _,k in shading_models.strengths(model)])
+            self.assertEqual([r for r,_ in shading_models.strengths(model)],row('from'))
         self.assertEqual(list(shading_models.MEASURED),['blinn','ashikhmin','gtr'])
 
     def test_a_principled_highlight_rises_less_toward_the_edge_as_it_roughens(self):

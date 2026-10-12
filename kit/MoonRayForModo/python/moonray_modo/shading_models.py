@@ -9,7 +9,7 @@ What each needs was found by drawing Modo's own renders of a ball and a box unde
 roughness, and looking for the lobe and roughness in MoonLightIPR whose picture had the same shape, and then for the
 strength that made it as bright (tools/probe_shading_models.py, tools/check_shading_models.py fit). Between the
 measured roughnesses the values are read along straight lines. A roughness that an image drives is taken through the
-same roughnesses by a ramp, in MoonRay; its highlight keeps the strength worked out for the material's plain roughness.
+same roughnesses, and its highlight through the same strengths, by a ramp in MoonRay and at each hit in MoonLightIPR.
 """
 
 # For each model: Modo's roughness, then MoonRay's roughness and what the highlight's strength is multiplied by.
@@ -45,6 +45,13 @@ def curve(model):
     if rows is None or all(abs(r - to) < 1e-9 for r, to, _ in rows):
         return None
     return [(0.0, 0.0)] + [(r, to) for r, to, _ in rows] + [(1.0, rows[-1][1])]
+
+
+def strengths(model):
+    """Modo's roughness against what the highlight's strength is multiplied by for a model, from nothing to wholly
+    rough, as the points of a ramp: for a roughness that an image drives, whose strength then follows it."""
+    rows = MEASURED[model]
+    return [(0.0, rows[0][2])] + [(r, k) for r, _, k in rows] + [(1.0, rows[-1][2])]
 
 
 def translated(model, roughness):
