@@ -147,7 +147,11 @@ class Renderer(QtCore.QObject):
         # MoonLightIPR produces beauty only.
         if moonlightipr:snapshot=dict(snapshot,preview_buffer='beauty')
         if not output and not linear_preview:
-            self.buffers.select(snapshot.get('preview_buffer','beauty'),snapshot.get('display',{}))
+            chosen,shown=snapshot.get('preview_buffer','beauty'),snapshot.get('display',{})
+            # A draft redrawn with the same buffer shown the same way has nothing to choose: choosing converts the
+            # picture already up once more, and the new one then waits behind that.
+            if not (snapshot.get('_draft') and chosen==self.buffers.key and dict(shown)==self.buffers.display):
+                self.buffers.select(chosen,shown)
         self.buckets.emit(None)
         self.bucket_partial = ''
         self.generation += 1
