@@ -284,9 +284,13 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
         menu.addSeparator()
-        hud=QtWidgets.QAction('Show Mode on the Picture',menu);hud.setCheckable(True);hud.setChecked(bool(self.preferences.get('hud')))
-        hud.setToolTip('A line at the foot of the picture for a mode worth knowing of, such as Safe Denoising')
-        hud.toggled.connect(self._hud_toggled);menu.addAction(hud)
+        # Safe Denoising itself, switched here as in the scene's render settings; the foot of the picture says when it is on.
+        safe=QtWidgets.QAction('Safe Denoising',menu);safe.setCheckable(True)
+        try:safe.setChecked(bool(self._settings_values()['denoising'].get('safe')))
+        except Exception:pass
+        safe.setToolTip('MoonRay saves its picture as it renders, so that a render stopped by hand is kept with all its buffers and can be continued. '
+                        'The same switch as in MoonRay > Render Settings. It takes effect with a denoiser chosen there.')
+        safe.toggled.connect(self._safe_toggled);menu.addAction(safe)
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
@@ -670,8 +674,17 @@ class Panel(Tools, QtWidgets.QWidget):
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
 
-    def _hud_toggled(self,shown):
-        self.preferences.set('hud',bool(shown));self._hud_update()
+    def _safe_toggled(self,on):
+        """Safe Denoising switched from the picture's menu: written to the scene as its render settings write it."""
+        try:
+            lx.eval('moonray.render.denoise_safe %d'%(1 if on else 0))
+        except Exception as exc:
+            self.status.setText('Cannot switch Safe Denoising: '+str(exc));return
+        self._hud_update()
+        try:engine=self._settings_values()['denoising'].get('engine','off')
+        except Exception:engine='off'
+        self.status.setText('Safe Denoising is off.' if not on else 'Safe Denoising is on.' if engine!='off'
+                            else 'Safe Denoising is on, and takes effect once a denoiser is chosen in MoonRay > Render Settings.')
 
     def _hud_words(self):
         """The modes worth saying at the foot of the picture: each a line."""
@@ -685,7 +698,7 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _hud_update(self):
         if self.disposed or not hasattr(self,'hud'):return
-        words=self._hud_words() if self.preferences.get('hud') else []
+        words=self._hud_words()
         text='\n'.join(words)
         if text!=self.hud.text():self.hud.setText(text);self.hud.adjustSize()
         self.hud.setVisible(bool(words))

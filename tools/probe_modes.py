@@ -5,8 +5,8 @@ Two balls, no denoiser set in the scene.
 1. MoonRay: Draft on, then Render: Draft is off and the picture is rendered.
 2. With that render finished, Denoised Beauty is chosen in the list: it is denoised without a denoiser being set, by
    whichever denoiser will run, and nothing is rendered again.
-3. Safe Denoising and a denoiser are switched on in the scene: the corner of the picture says so; switched off from
-   the right-click menu's setting, it is gone.
+3. A denoiser is chosen and Safe Denoising switched on as the picture's right-click menu does: the foot of the
+   picture says so; switched off the same way, it is gone and the scene's setting is off.
 4. MoonLightIPR: Draft on, then RT on: Draft is off. Denoised Beauty is in its list with no denoiser set; chosen, the
    engine renders again, denoising."""
 import json
@@ -74,7 +74,6 @@ def step(wait):
 def draft_on():
     panel = panel_widget()
     panel.preferences.set('runtime', str(root / 'runtime/steady-0351-tiles'))
-    panel.preferences.set('hud', True)
     panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonray'))
     submit = panel.renderer.submit
 
@@ -105,21 +104,21 @@ def safe_on():
     note('denoised_beauty_chosen_no_denoiser_set')
     result['renders_for_denoising'] = held['submits'] - held['before']
     lx.eval('moonray.render.denoiser 2')
-    lx.eval('moonray.render.denoise_safe 1')
+    # As the picture's right-click menu does.
+    panel_widget()._safe_toggled(True)
 
 
 @step(2000)
 def hud_off():
     note('safe_denoising_on')
-    panel_widget()._hud_toggled(False)
+    panel_widget()._safe_toggled(False)
+    result['safe_after_off'] = lx.eval('moonray.render.denoise_safe ?')
 
 
 @step(2000)
 def moonlightipr():
     note('corner_switched_off')
     panel = panel_widget()
-    panel._hud_toggled(True)
-    lx.eval('moonray.render.denoise_safe 0')
     lx.eval('moonray.render.denoiser 0')
     panel._buffer_picked = None
     panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonlightipr'))

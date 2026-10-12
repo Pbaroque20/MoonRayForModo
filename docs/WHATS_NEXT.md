@@ -27,7 +27,7 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 - **Each engine renders at its own size.** MoonRay, chosen as the engine, renders at the camera's resolution, or the scene's where the camera does not override it; it used to render at the preview size. MoonRay LS and MoonLightIPR are previews, at the realtime preview size (640 pixels wide unless changed in the window's Options) and never wider. The option to preview at scene resolution is gone. Tried on a 1280 x 720 scene and with a camera override of 800 x 400: MoonRay rendered each at that size, and MoonLightIPR at 640 wide both times.
 - **Render and RT switch Draft off.** With Draft on, pressing Render with MoonRay, or switching realtime on, takes Draft off first and gives the picture itself.
 - **Denoised Beauty denoises of itself.** Chosen in the list with no denoiser set in the scene, a finished MoonRay render is denoised there and then, with the graphics card's denoiser (OptiX), or Open Image Denoise where that will not run, and is left as it is where neither will. MoonLightIPR always lists Denoised Beauty, and denoises when it is the buffer chosen, whatever the scene's denoiser is set to.
-- **The mode is said on the picture.** With Safe Denoising on, the foot of the picture reads Safe Denoiser Mode, in the middle. Right-click the picture, Show Mode on the Picture, to have it or not.
+- **Safe Denoising is on the picture's right-click menu**, the same switch as in the scene's render settings, and while it is on the foot of the picture reads Safe Denoiser Mode, in the middle.
 
 ![Safe Denoiser Mode at the foot of the picture](images/mode-on-the-picture.png)
 *Safe Denoising on: the picture says so at its foot.*
