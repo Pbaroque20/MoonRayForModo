@@ -546,10 +546,11 @@ def plan(document, path, recover_instancer_materials=False):
         use_indices = len(indices) == len(transforms)
         if indices and not use_indices:
             warnings.append(short(name) + ': ref_indices does not match the instances; the first prototype is used, as MoonRay does')
+        # Per-instance attribute arrays describe the original list, including skipped entries.
+        values, total = carried(record), len(transforms)
         if len(transforms) > INSTANCE_LIMIT:
             warnings.append('%s: only the first %d of its %d instances are imported' % (short(name), INSTANCE_LIMIT, len(transforms)))
             transforms = transforms[:INSTANCE_LIMIT]
-        values, total = carried(record), len(transforms)
         # A referenced instancer's node transform is already included by its parent
         # when use_reference_xforms is enabled; otherwise it must stay excluded.
         own = checked_matrix(a.get('node_xform', IDENTITY), name) if depth == 0 else IDENTITY

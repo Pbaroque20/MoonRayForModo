@@ -153,3 +153,9 @@ Correction to previous assignment notes: the native render confirms the official
 Normal/UI imports no longer recover surfaces whose material exists only on an instancer. MoonRay ignores that surface assignment, so such geometry is omitted with the existing no-material notice. The optional plan(..., recover_instancer_materials=True) developer recovery path remains explicit and warns that it changes source visibility. Historical recovery fixtures now opt in and are labelled accordingly; they do not prove native material-inheritance semantics.
 
 Validation: 35 RDL tests pass, including nested mesh/native-shape default omission and explicit recovery. Native scalar fixtures confirm zero source coverage and zero imported meshes for an instancer-only material; enabled/disabled nested-transform fixtures still match exactly. This resolves the specific visibility mismatch identified in the previous audit, not every light-set or volume inheritance case.
+
+## Retained attributes at the instance import limit
+
+Capping an RDL instancer previously caused its per-instance arrays to fail length matching, dropping colors/IDs from every retained placement. Array validation now uses the original placement count while iteration keeps the existing cap. Disabled placements retain their original attribute indices.
+
+Validation: both focused tests failed before the fix. Afterwards 37 RDL and eight primitive-attribute tests passed. Tests temporarily reduce the limit to exercise truncation without allocating a large scene. This is import-plan validation, not a large-scene memory or rendered-color benchmark. Per-face/per-point mesh editing in #22 remains open.
