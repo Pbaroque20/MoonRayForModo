@@ -187,7 +187,9 @@ def textured(folder):
                 for row_ in material.get('material_stack', [material]) if row_.get('node_graph')
                 for node in row_['node_graph']['nodes'].values() if node['type'] == 'image'}
         if mesh.get('uvs'):
-            mesh['uv_sets'] = {key: list(mesh['uvs']) for key in keys}
+            # Over the sets the mesh has: the ground's own layer reads one of those, and without it each engine
+            # draws the ground its own way.
+            mesh['uv_sets'] = dict(mesh.get('uv_sets') or {}, **{key: list(mesh['uvs']) for key in keys})
     # Nodes that are not images, which MoonLightIPR has MoonRay bake: a ramp over the ball, and on
     # the cube a checker put through a colour correction.
     def node_graph(identity, extra, wires):
@@ -518,6 +520,11 @@ def scenes(folder):
         'rect_light': dict(base, lights=[dict(lamp, kind='RectLight', intensity=60.0, width=2.0, height=1.0, matrix=aimed([2, 5, 3], [0, .5, 0]))]),
         'disk_light': dict(base, lights=[dict(lamp, kind='DiskLight', intensity=60.0, radius=.7, matrix=aimed([-3, 4, 2], [0, .5, 0]))]),
         'spot_light': dict(base, lights=[dict(lamp, kind='SpotLight', intensity=80.0, radius=.05, cone=50.0, soft_edge=8.0, matrix=aimed([0, 6, 4], [0, .5, 0]))]),
+        # An object hidden from one kind of ray and seen by the rest: each is in the picture only as far as it is seen.
+        **{'seen_' + name: dict(base, _environment=.3, meshes=[base['meshes'][0], dict(base['meshes'][1], visibility=flags)] + base['meshes'][2:],
+                                lights=[dict(lamp, kind='SpotLight', intensity=80.0, radius=.05, cone=50.0, soft_edge=8.0, matrix=aimed([0, 6, 4], [0, .5, 0]))])
+           for name, flags in (('not_by_camera', [False, True, True, True, True, True]), ('no_shadow', [True, True, True, True, True, False]),
+                               ('by_camera_only', [True, False, False, False, False, False]), ('shadow_only', [False, False, False, False, False, True]))},
     }
 
 

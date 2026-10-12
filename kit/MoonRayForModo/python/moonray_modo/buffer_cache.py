@@ -51,6 +51,8 @@ class BufferCache(QtCore.QObject):
         self.worker_poll.setInterval(10);self.worker_poll.timeout.connect(self._memory_finished)
         from .cached_denoise import CachedDenoise
         self.denoiser=CachedDenoise(self)
+        from .cached_composite import CachedComposite
+        self.compositor=CachedComposite(self)
         self.key='beauty';self.display={};self.serial=0;self.closed=False;self.log=''
 
     def select(self,key,display):
@@ -84,6 +86,7 @@ class BufferCache(QtCore.QObject):
                     'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':False}
         self.progressive=None;self.progressive_frames.clear();self.progressive_scene=None
         self.serial+=1;self._request();self._prune()
+        self.compositor.again()
         return True
 
     def busy(self):
@@ -122,6 +125,7 @@ class BufferCache(QtCore.QObject):
         else:
             self.frame=frame;self.progressive=None;self.progressive_frames.clear();self.progressive_scene=None
         self.serial+=1;self._request();self._prune()
+        if not partial:self.compositor.again()
 
     def _request(self):
         if self.closed:return
@@ -141,8 +145,12 @@ class BufferCache(QtCore.QObject):
             key='beauty'
         frame=self.progressive_frames.get(key,self.frame)
         if frame is None or (key not in frame['files'] and key not in frame.get('linear',{})):
-            self.notice.emit('Enable a Beauty denoiser and Denoise beauty preview to process the completed pass.' if key=='denoised_beauty' else 'Selected output will be available after a preview with these outputs completes.');return
-        signature=hashlib.sha256(json.dumps([key,self.display,frame.get('denoise_engine') if key=='denoised_beauty' else None],sort_keys=True).encode('utf-8')).hexdigest()
+            self.notice.emit('Enable a Beauty denoiser and Denoise beauty preview to process the completed pass.' if key=='denoised_beauty'
+                             else 'The composite is made when a MoonRay render has finished.' if key=='composite'
+                             else 'Selected output will be available after a preview with these outputs completes.');return
+        # A buffer made after the render is another picture whenever it is made anew.
+        made=frame.get('denoise_engine') if key=='denoised_beauty' else frame.get('composite_signature') if key=='composite' else None
+        signature=hashlib.sha256(json.dumps([key,self.display,made],sort_keys=True).encode('utf-8')).hexdigest()
         destination=frame['folder']/(signature+'.png')
         self.job=dict(frame=frame,key=key,serial=self.serial,destination=destination)
         if destination.is_file():self._show();self.job=None;self._prune();return
@@ -253,7 +261,7 @@ class BufferCache(QtCore.QObject):
 
     def close(self):
         if self.closed:return
-        self.closed=True;self.worker_poll.stop();self.denoiser.close()
+        self.closed=True;self.worker_poll.stop();self.denoiser.close();self.compositor.close()
         retired=False
         if self.worker is not None:
             worker=self.worker;self.worker=None

@@ -8,6 +8,15 @@ LIGHT_KINDS=('','DistantLight','SphereLight','RectLight','SpotLight','DiskLight'
 def owner(geometry):
     return geometry.get('source_item') or str(geometry.get('identity','')).split('|')[0]
 
+def mesh_camera(settings):
+    """Effective native emitter and underlying surface camera visibility."""
+    mode=settings.get('mesh_camera_mode','auto')
+    if mode not in ('auto','emitter','surface','hidden'):
+        raise ValueError('Unknown mesh light camera appearance: '+str(mode))
+    glowing=bool(settings.get('light_seen',True)) if mode=='auto' else mode=='emitter'
+    return glowing, not glowing and mode!='hidden'
+
+
 def emit(scene,meshes,environment,lines):
     controls=scene.get('production',{});light_controls=controls.get('lights',{});objects=controls.get('objects',{})
     refs={};environment_refs=[]
@@ -78,22 +87,34 @@ def emit(scene,meshes,environment,lines):
         if label and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Invalid mesh light group label')
         lines.append('table.insert(lights, %s { ["geometry"] = RdlMeshGeometry("/modo/meshLight/geometry/%d"), ["color"] = %s, ["intensity"] = %s, ["label"] = %s, ["visible_in_camera"] = %d })'%(ref,index,vector(working_color(settings.get('light_color',[1,1,1])),'Rgb'),number(settings.get('light_intensity',1)),string(label),
             # Seen by the camera, the mesh looks as it is: a surface giving off light. MoonRay's own default hides every light.
-            1 if settings.get('light_seen',True) else 0))
+            1 if mesh_camera(settings)[0] else 0))
     from .entities import emit_lights
     # MoonRay light items may be named in an object's Light Links as Modo's lights are.
     items={}
     emit_lights(scene,lines,items)
-    lines += ['local lightSet = LightSet("/modo/lightSet")(lights)','local objectLightSets = {}','local objectShadowSets = {}']
-    for identity,settings in sorted(objects.items()):
-        def selected(key):
-            known=dict(items,**refs)
-            keys=settings.get(key,[]);missing=[k for k in keys if k not in known]
-            if missing:raise ValueError('Linked light is missing or disabled: '+', '.join(missing))
-            return list(dict.fromkeys(ref for k in keys for ref in known[k]))
-        if settings.get('link_enabled'):
-            lines.append('objectLightSets[%s] = LightSet(%s)(%s)'%(string(identity),string('/modo/links/'+identity),array(selected('lights'))))
-        if settings.get('shadow_exclude'):
-            lines.append('objectShadowSets[%s] = ShadowSet(%s)(%s)'%(string(identity),string('/modo/shadows/'+identity),array(selected('shadow_exclude'))))
+    lines += ['local lightSet = LightSet("/modo/lightSet")(lights)','local objectLightSets = {}','local objectShadowSets = {}','local objectLightFilterSets = {}']
+    from . import entities
+    known_entities = entities.checked(scene)
+    known = dict(items, **refs)
+    material_links = {tag: value.get('rdl_layer_links', {}) for tag, value in scene.get('materials', {}).items()}
+    lines += ['local materialLightSets = {}', 'local materialShadowSets = {}', 'local materialLightFilterSets = {}']
+    for prefix, records in (('object', objects), ('material', material_links)):
+        for identity, settings in sorted(records.items()):
+            def selected(key):
+                keys=settings.get(key,[]);missing=[k for k in keys if k not in known]
+                if missing:raise ValueError('Linked light is missing or disabled: '+', '.join(missing))
+                return list(dict.fromkeys(ref for k in keys for ref in known[k]))
+            if settings.get('link_enabled'):
+                lines.append('%sLightSets[%s] = LightSet(%s)(%s)' %
+                             (prefix, string(identity), string('/modo/links/' + ('material/' if prefix == 'material' else '') + identity), array(selected('lights'))))
+            if settings.get('shadow_exclude'):
+                lines.append('%sShadowSets[%s] = ShadowSet(%s)(%s)' %
+                             (prefix, string(identity), string('/modo/shadows/' + ('material/' if prefix == 'material' else '') + identity), array(selected('shadow_exclude'))))
+            if settings.get('light_filters'):
+                filters = [entities.reference(known_entities, name, 'LIGHTFILTER', identity + '.light_filters')
+                           for name in dict.fromkeys(settings['light_filters'])]
+                lines.append('%sLightFilterSets[%s] = LightFilterSet(%s)(%s)' %
+                             (prefix, string(identity), string('/modo/lightFilters/' + ('material/' if prefix == 'material' else '') + identity), array(filters)))
 
     from .native_light_links import emit as emit_native_links
     emit_native_links(scene,meshes,refs,environment_refs,lines)

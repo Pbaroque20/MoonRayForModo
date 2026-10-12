@@ -34,6 +34,8 @@ struct Material {
     bool clearcoatDims = false;     // the coat takes its reflection out of the layers beneath
     float dissolve = 0.0f;          // 1 - presence: how much of the surface is absent
     float bumpStrength = 0.0f;      // height of a bump layer's full range, in scene units
+    bool noCaustics = false;        // DwaBaseMaterial with casts_caustics off: plain diffuse once a path has left a diffuse lobe
+    int roughnessCurve = 0;         // the roughness the layers give is Modo's: 1 Blinn, 2 Ashikhmin, 3 GTR; 0 as it is
     bool beckmann = false;          // Beckmann specular lobe (DwaBaseMaterial as the plugin sets it up) rather than GGX
     float baseColorAmount = 1.0f;   // multiplies the colour after its layers
     float emissionAmount = 1.0f;
@@ -188,6 +190,9 @@ struct Instance {
     // Row-major 3x4 object-to-world transform.
     float transform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     int32_t light = -1;     // the mesh light whose triangles are this instance's surface
+    // Which rays find the instance, a bit for each kind: 1 the camera's, 2 light scattered diffusely, 4 reflections,
+    // 8 light passing through a surface, 16 shadows.
+    uint32_t visibility = 255;
     // Where the instance is when the shutter closes, if it moves.
     bool moves = false;
     float closeTransform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
@@ -337,7 +342,11 @@ public:
     void resize(uint32_t width, uint32_t height);
     // Total bounces, and of those how many may leave a diffuse and a specular lobe, as
     // MoonRay's max_depth, max_diffuse_depth and max_glossy_depth.
-    void setMaxDepth(uint32_t bounces, uint32_t diffuseBounces = 2, uint32_t glossyBounces = 2, uint32_t volumeBounces = 1);
+    // The most one light sample may add once the path has scattered off `depth` rough things; 0 is no limit. MoonRay's
+    // sample_clamping_value and sample_clamping_depth.
+    void setSampleClamp(float value, uint32_t depth = 1);
+    // presenceShadows: whether a surface that is partly absent casts a lighter shadow, or a whole one as MoonRay's does unless asked.
+    void setMaxDepth(uint32_t bounces, uint32_t diffuseBounces = 2, uint32_t glossyBounces = 2, uint32_t volumeBounces = 1, bool presenceShadows = true);
 
     // Adds one sample per pixel to the accumulated image.
     void render();

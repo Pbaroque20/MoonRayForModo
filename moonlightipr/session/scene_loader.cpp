@@ -19,7 +19,7 @@ const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 
                MESH_CURVES = 128,       // the data is curves: control points, their radii and each segment's first point
                MESH_LINEAR = 256,       // those curves' segments are straight, from one point to the next
                MESH_RIBBON = 512;       // and they are lit as flat ribbons that face the ray
-const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4;
+const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4, SCENE_PRESENCE_SHADOWS = 8;
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
 // Meshes unused for this many scenes are freed, so hiding and showing an item stays cheap.
@@ -164,7 +164,14 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
-    if (in.value<uint32_t>() != 0x41534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);   // "MLSA"
+    // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
+    // the scene's sample clamp is written in it. A plugin and a session of different versions say so plainly, in
+    // place of reading each other's scenes wrongly.
+    const uint32_t mark = in.value<uint32_t>();
+    if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
+    if (mark != 0x43534c4d)
+        throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
+                                 + "', this MoonLightIPR reads 'C'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -174,6 +181,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     settings.targetSamples = in.value<uint32_t>();
     const uint32_t sceneFlags = in.value<uint32_t>();
     settings.denoise = (sceneFlags & SCENE_DENOISE) != 0;
+    const float sampleClamp = in.value<float>();
+    const uint32_t sampleClampDepth = in.value<uint32_t>();
     float workingSpace[9];
     in.floats(workingSpace, 9);
 
@@ -281,6 +290,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         material.thin = (materialFlags & 1) != 0;
         material.clearcoatDims = (materialFlags & 2) != 0;
         material.beckmann = (materialFlags & 16) != 0;
+        material.roughnessCurve = int((materialFlags >> 8) & 3);
+        material.noCaustics = (materialFlags & 1024) != 0;
         material.layerStart = in.value<uint32_t>();
         material.layerCount = in.value<uint32_t>();
         material.tangentSlot = in.value<uint32_t>();
@@ -549,6 +560,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         instance.material = in.value<uint32_t>();
         instance.light = in.value<int32_t>();
         if (instance.light >= int32_t(localLights.size())) throw std::runtime_error("MoonLightIPR scene instance refers to a missing light");
+        instance.visibility = in.value<uint32_t>();
         in.floats(instance.transform, 12);
         if (sceneFlags & SCENE_MOTION) {
             in.floats(instance.closeTransform, 12);
@@ -628,7 +640,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         renderer.setEnvironment(environment);
         environmentHash = environmentNow;
     }
-    renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth, maxVolumeDepth);
+    renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth, maxVolumeDepth, (sceneFlags & SCENE_PRESENCE_SHADOWS) != 0);
+    renderer.setSampleClamp(sampleClamp, sampleClampDepth);
     if (settings.width != renderer.width() || settings.height != renderer.height()) renderer.resize(settings.width, settings.height);
     renderer.setCamera(camera);
     renderer.setCameraMotion(sceneFlags & SCENE_MOTION ? &cameraClose : nullptr);

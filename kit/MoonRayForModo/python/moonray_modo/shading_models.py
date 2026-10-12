@@ -9,7 +9,7 @@ What each needs was found by drawing Modo's own renders of a ball and a box unde
 roughness, and looking for the lobe and roughness in MoonLightIPR whose picture had the same shape, and then for the
 strength that made it as bright (tools/probe_shading_models.py, tools/check_shading_models.py fit). Between the
 measured roughnesses the values are read along straight lines. A roughness that an image drives is taken through the
-same roughnesses by a ramp, in MoonRay; its highlight keeps the strength worked out for the material's plain roughness.
+same roughnesses, and its highlight through the same strengths, by a ramp in MoonRay and at each hit in MoonLightIPR.
 """
 
 # For each model: Modo's roughness, then MoonRay's roughness and what the highlight's strength is multiplied by.
@@ -23,6 +23,21 @@ MEASURED = {
 BECKMANN = ('blinn', 'ashikhmin')
 
 
+def principled_rise(material):
+    """How far a Principled material's highlight is let rise toward the edge, from 0 to 1.
+
+    Modo's Principled model adds its highlight to its diffuse light. MoonRay's layers take from the diffuse what the
+    highlight above it reflects, and a highlight reflects most seen edge on: a rough Principled surface seen at a low
+    angle loses its diffuse light there and, being rough, gives little back. Against Modo's own renders (a ball and a
+    box under one light, tools/check_shading_models.py; a ball in a white sky, tools/probe_fresnel.py) a smooth
+    surface is nearest with the whole rise, which is what shows its surroundings mirrored at a low angle, and a
+    rough one with none. So the rise is whole up to a roughness of 0.2, and falls away to none at 0.6."""
+    if material.get('_principled_rise') is not None:
+        return max(0.0, min(1.0, float(material['_principled_rise'])))
+    roughness = float(material.get('raw_roughness', material.get('roughness', .4)))
+    return max(0.0, min(1.0, (.6 - roughness) / .4))
+
+
 def curve(model):
     """Modo's roughness against MoonRay's for a model, from nothing to wholly rough, as the points of a ramp; None for
     a model whose roughness is MoonRay's own."""
@@ -30,6 +45,13 @@ def curve(model):
     if rows is None or all(abs(r - to) < 1e-9 for r, to, _ in rows):
         return None
     return [(0.0, 0.0)] + [(r, to) for r, to, _ in rows] + [(1.0, rows[-1][1])]
+
+
+def strengths(model):
+    """Modo's roughness against what the highlight's strength is multiplied by for a model, from nothing to wholly
+    rough, as the points of a ramp: for a roughness that an image drives, whose strength then follows it."""
+    rows = MEASURED[model]
+    return [(0.0, rows[0][2])] + [(r, k) for r, _, k in rows] + [(1.0, rows[-1][2])]
 
 
 def translated(model, roughness):

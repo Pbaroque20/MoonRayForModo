@@ -19,7 +19,7 @@ def scene():
 class PackTests(unittest.TestCase):
     def test_known_meshes_are_sent_once(self):
         first,keys,warnings=moonlightipr_scene.pack(scene(),320,180,.2)
-        self.assertEqual(first[:4],b'MLSA')
+        self.assertEqual(first[:4],b'MLSC')
         self.assertEqual(struct.unpack_from('<2I',first,4),(320,180))
         self.assertEqual(len(keys),1)
         self.assertFalse(any('CylinderLight' in w for w in warnings))
@@ -104,7 +104,7 @@ class EntityTests(unittest.TestCase):
         self.assertIn('["light_filters"] = {RodLightFilter("/modo/entity/rod")}',text)
         self.assertIn('table.insert(lights, SpotLight("/modo/entity/key"))',text)
         # MoonRay fills a mesh with a volume but not its own box, so a box that holds one goes as a mesh.
-        self.assertIn('table.insert(assignments, {RdlMeshGeometry("/modo/entity/box"), "", materials["red"], lightSet, BaseVolume("/modo/entity/fog")})',text)
+        self.assertIn('table.insert(assignments, {RdlMeshGeometry("/modo/entity/box"), "", materials["red"], (objectLightSets["box"] or materialLightSets["red"] or lightSet), BaseVolume("/modo/entity/fog")})',text)
         self.assertLess(text.index('table.insert(lights, EnvLight("/modo/entity/env"))'),text.index('local lightSet'))
         # A volume shader has no place, so it must not be given a transform.
         self.assertNotIn('node_xform',text[text.index('BaseVolume("/modo/entity/fog") {'):text.index('RdlMeshGeometry("/modo/entity/box") {')])

@@ -2,24 +2,26 @@
 from PySide2 import QtCore, QtWidgets
 from . import native
 
-SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('Scene resolution', 0))
+# Of the realtime previews (MoonRay LS and MoonLightIPR). MoonRay itself renders at the camera's resolution.
+SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('1280 px wide', 1280))
 # key: (default, kind)
 KEYS = {
-    'runtime': ('', str), 'preview_engine': ('moonray', str), 'preview_size': (640, int),
+    'runtime': ('', str), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
+    'idle_release_minutes': (5, int),
     'persistent_preview': (True, bool), 'capture_safety': (False, bool), 'preview_motion': (False, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
     # preview starts as its window opens, how bright a new MoonRay light is, and whether notices open by themselves.
     'assign/shader': ('DwaBaseMaterial', str), 'assign/smooth': (True, bool), 'assign/angle': (40.0, float),
-    'draft/ink': ('tan', str), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
+    'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (160, int), 'ipr/samples': (1, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
 }
 
 
 class Preferences:
     def __init__(self):
-        self.store = QtCore.QSettings('MoonRayForModo', 'NativePreview')
+        self.store = QtCore.QSettings('MoonRayForModo', native.settings_name())
         installation = native.installation_id()
         if installation and self.store.value('runtime_installation') != installation:
             # A newly installed kit brings its own runtime; the earlier choice is kept aside.
@@ -38,6 +40,9 @@ class Preferences:
                     # The engine's name as 0.3.50.1 and 0.3.50.2 stored it.
                     return 'moonlightipr'
                 return str(value) if value else (native.default_runtime() if key == 'runtime' else default)
+            if key == 'preview_size' and kind(value) <= 0:
+                # Scene resolution, as it could once be set to: a realtime preview is no longer made that large.
+                return default
             return kind(value)
         except (TypeError, ValueError):
             return default
@@ -79,9 +84,12 @@ class Dialog(QtWidgets.QDialog):
         row.addWidget(self.runtime, 1)
         row.addWidget(browse)
         form.addRow('MoonRay folder', row)
-        form.addRow('Preview size', combo('preview_size', SIZES))
+        form.addRow('Realtime preview size', combo('preview_size', SIZES))
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
+        form.addRow('Release idle renderer memory', combo('idle_release_minutes',
+                    [('Never', 0), ('After 1 minute', 1), ('After 5 minutes', 5), ('After 15 minutes', 15), ('After 30 minutes', 30)],
+                    'Keeps cached images. The next render reloads its scene; active renders are never interrupted.'))
         form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
                           'Render reads the scene at shutter open and close; IPR updates stay sharp'))
         form.addRow(check('capture_safety', 'Re-read the scene every 15 seconds while IPR runs',

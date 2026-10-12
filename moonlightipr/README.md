@@ -25,8 +25,11 @@ build to an installed kit during development.
 
 ## Where it stands
 
-- It is used inside Modo: Render and IPR both go through it, and with IPR on it follows
-  light, transform and material edits, including while they are dragged.
+- It is used inside Modo: choose MoonLightIPR in the preview window's engine list and press
+  RT Off, which then reads RT On. It follows light, transform and material edits, including
+  while they are dragged. Press the button again to switch realtime off.
+- With the scene's denoiser on for previews it denoises, and the buffer list offers Beauty
+  and Denoised Beauty; it holds both, so changing between them renders nothing again.
 - It draws Modo's standard and Principled materials, MoonRay's Dwa surface materials,
   material stacks from the Shader Tree, imported MaterialX graphs, MoonRay's own light
   items, curves and hair, subdivision surfaces, depth of field and motion blur.
@@ -117,12 +120,12 @@ Three more scenes cover textures and the two ways a material reaches MoonRay:
 |---|---|---|
 | An environment image, turned 40 degrees | 0.983 | 100% |
 | Textures on plain materials (`UsdPreviewSurface`): colour, roughness and normal maps | 1.000 | 98% |
-| Material stacks without textures (`DwaBaseMaterial`) | 0.973 | 64% |
-| Material stacks with layers (`DwaBaseMaterial`): multiply blend, a half-opaque material row | 0.982 | 61% |
-| A glass ball and a clearcoated cube under a sun and sky | 1.090 | 69% |
-| A thin tinted ball and a half-present cube | 1.076 | 78% |
+| Material stacks without textures (`DwaBaseMaterial`) | 0.995 | 91% |
+| Material stacks with layers (`DwaBaseMaterial`): multiply blend, a half-opaque material row | 1.001 | 98% |
+| A glass ball and a clearcoated cube under a sun and sky | 1.043 | 92% |
+| A thin tinted ball and a half-present cube | 1.013 | 93% |
 | Nine sphere and rect lights of different power | 0.998 | 98% |
-| A masked material row, a half-opaque group and a bump map | 0.968 | 54% |
+| A masked material row, a half-opaque group and a bump map | 1.003 | 97% |
 
 A third set, added October 7, 2026, covers what was translated last (MoonLightIPR 2048
 samples, MoonRay 36):
@@ -136,11 +139,11 @@ samples, MoonRay 36):
 | Depth of field, five-blade lens | 1.010 | 97% |
 | Layered environment (a gradient with a colour multiplied over it) | 1.006 | 97% |
 | Physical sky | 1.006 | 93% |
-| Subsurface scattering, full on a ball and half on a cube | 0.965 | 94% |
-| Anisotropy, along and across texture u | 0.987 | 95% |
-| Absorption inside glass | 1.006 | 89% |
-| Dispersion (Abbe number 4) | 1.056 | 83% |
-| Checker, noise, a gradient and layer curves | 0.971 | 56% |
+| Subsurface scattering, full on a ball and half on a cube | 0.986 | 94% |
+| Anisotropy, along and across texture u | 0.990 | 98% |
+| Absorption inside glass | 1.022 | 96% |
+| Dispersion (Abbe number 4) | 1.054 | 88% |
+| Checker, noise, a gradient and layer curves | 1.012 | 89% |
 
 ![Depth of field](../docs/images/moonlightipr-depth_of_field.jpg)
 *Depth of field through a disc lens.*
@@ -189,6 +192,25 @@ grey metal at roughness 0.6 is within 1 to 4%. Through `UsdPreviewSurface` the p
 matches to four decimal places and the metals to 1 to 3%. Before these three rules
 the stack scene without textures was 17% too bright, and the layered one had 35% of
 its tiles within 10% where it now has 61%.
+
+The figures for `DwaBaseMaterial` in the tables above are of October 12, 2026, after one more
+rule of MoonRay's was matched: on a path that has already bounced off something diffuse,
+`DwaBaseMaterial` leaves out its specular, outer specular, metallic and transmission parts
+altogether unless `casts_caustics` is set, so that by bounced light a shiny surface is
+plain diffuse and what is beneath the highlight is not dimmed by it. MoonLightIPR kept the
+highlight there: the unlit side of a ball on a lit, shiny ground was 83% as bright as
+MoonRay's, and is now 101%. Before, the stack scene without textures had 64% of its tiles
+within 10%, the layered one 61%, the masked one 54% and the patterns 56%.
+
+Two more, the same day, for glass and coats. `DwaBaseMaterial` gives its transmission lobe the
+transmission colour itself, so light is tinted at every crossing of a solid's surface, in as
+out; MoonLightIPR tinted it going in only, and a tinted glass ball was 10% brighter than
+MoonRay's whatever lit it (now 1%). And under a clearcoat that bends light, which is
+`clearcoat_bending`'s default, what lies beneath is dimmed by the coat's reflection of the
+light going in and again of the light coming out, less what the coat turns back down and
+the layer beneath sends up again (`UnderClearcoatBsdfLobe`); MoonLightIPR had the first of
+those only. A coated cube was 9% brighter than MoonRay's and is now 7%: the rest is not
+accounted for. Before, the glass and coat scene had 66% of its tiles within 10%.
 
 What is left in the full scenes is mostly near shadow edges and in glass, where the
 two renderers resolve noise and clamped bounce light differently, and has not been
@@ -259,7 +281,7 @@ running session leaves out the data of meshes it already holds.
 | Perspective camera matrix, focal length, film width | Pinhole camera with the same horizontal field of view |
 | Meshes, instances, per-polygon material tags | Triangle fans; authored normals on smooth unsubdivided meshes, otherwise area-weighted or faceted |
 | Material `color`, `metallic`, `roughness`, `ior`, `emission` | The uber-shader's starting values |
-| `transmission`, `transmission_color`, `refraction_roughness`, `ior`, `thin_geometry` | Refraction through the surface in place of diffuse, tinted on entry, bent at both faces of a solid or passed straight through a thin sheet. Glass casts an opaque shadow to light sampling; light reaches what is behind it through bounce rays, as in MoonRay |
+| `transmission`, `transmission_color`, `refraction_roughness`, `ior`, `thin_geometry` | Refraction through the surface in place of diffuse, tinted at each crossing of a solid's surface, bent at both faces of a solid or passed straight through a thin sheet. Glass casts an opaque shadow to light sampling; light reaches what is behind it through bounce rays, as in MoonRay |
 | `clearcoat`, `clearcoat_roughness` | A second GGX lobe on top. For material stacks it takes its reflection out of the layers beneath, as `DwaBaseMaterial`'s outer specular does; for plain materials it is added, as in `UsdPreviewSurface` |
 | `presence` (and dissolve layers) | Each camera, bounce and shadow ray passes through with that probability, in an any-hit test that only scenes with such a material pay for |
 | Material stacks and their layers on colour, colour amount, roughness, metallic, emission, emission amount, normal, transmission amount, colour and roughness, coat amount and roughness, dissolve, anisotropy, subsurface amount and colour, and the four driver channels | A layer stack per material: material rows, constants, images, gradients, checker and noise patterns and baked grid and dots procedurals, with the plugin's 15 blend modes and normal map blending, opacity, invert, channel flips, single-channel picks, alpha as mask, gamma, contrast, brightness, bias and gain, and the four tiling modes. Groups blend their rows as one, with their own opacity, blend mode and group mask, up to 4 deep; layer masks scale the row, material row or group they target. Constant rows are worked out by the packer until a channel gets a row that varies, so a material without images costs the GPU no layers |
@@ -282,6 +304,7 @@ running session leaves out the data of meshes it already holds.
 | Cylinder lights | The side of a cylinder along local Y, sampled evenly, with the same normalization |
 | Portal lights | A rectangle that shows the lighting environment times its own colour and intensity (MoonRay does not normalize a portal); the environment then lights the scene only through portals. All lighting environments pass through; MoonRay wants one chosen |
 | Mesh lights (Object controls) | The object's triangles emit from both faces, chosen by area, normalized by the total area; the object is seen shining, as MoonRay shows a light that is visible to the camera, unless that is switched off. Up to 50,000 triangles, not instanced |
+| A surface's visibility to the camera, indirect light, reflections, refractions and shadows | Each instance carries a mask and each ray asks for its kind. Light a scattered ray comes upon is stopped by what casts shadows, as in MoonRay, whatever the ray itself goes on to meet. Checked on four scenes (hidden from the camera; no shadow; camera only; shadow only): 96 to 100% of the picture within 10% of MoonRay. Visibility to subsurface light is not told apart. |
 | Depth of field, f-stop, focus distance, iris blades and rotation | MoonRay's lens: radius from the focal length and f-stop, a disc or a polygon |
 | A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. The panel captures such a snapshot for Render Preview when **System > Motion blur in MoonLightIPR previews** is on; IPR updates stay sharp |
 | Working colour space | The same conversion `rdla.py` applies to colours |

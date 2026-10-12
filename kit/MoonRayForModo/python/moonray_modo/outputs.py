@@ -95,7 +95,7 @@ def preview(scene):
     return result
 
 def display_kind(scene,key):
-    if key=='denoised_beauty':return 'beauty'
+    if key in ('denoised_beauty','composite'):return 'beauty'
     for entry in values(scene.get('custom_aovs',[])):
         if entry['name']==key:return entry['kind'] if entry['kind'] in ('depth','normal','position','alpha','motion','cryptomatte') else 'beauty'
     return key

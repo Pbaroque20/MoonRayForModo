@@ -55,7 +55,7 @@ class Dialog(QtWidgets.QDialog):
    self.path=Path(path).resolve()
    if not self.path.is_file() or self.path.suffix.lower() not in ('.rdla','.rdlb','.rdl'):raise ValueError('Choose an existing RDL scene')
    if self.path.suffix.lower()=='.rdl':raise ValueError('Use .rdla for an ASCII MoonRay scene or .rdlb for a binary MoonRay scene; generic .rdl is ambiguous.')
-   settings=QtCore.QSettings('MoonRayForModo','NativePreview');runtime=native.configured_runtime(settings)
+   settings=QtCore.QSettings('MoonRayForModo',native.settings_name());runtime=native.configured_runtime(settings)
    helper=runtime/'modo_rdl_import.exe'
    if not helper.is_file():raise ValueError('Install the RDL-import runtime before importing')
    self.data=None;self.output.clear();self.errors='';self.told=None;self.pending_error='';self.import_button.setEnabled(False);self.choose.setEnabled(False);self.cancel.setEnabled(True)

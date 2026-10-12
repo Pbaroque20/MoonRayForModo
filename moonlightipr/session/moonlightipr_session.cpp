@@ -42,6 +42,11 @@ public:
         std::lock_guard<std::mutex> lock(mutex);
         return !lines.empty();
     }
+    // The line that next() would give, without taking it.
+    std::string front() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return lines.empty() ? std::string() : lines.front();
+    }
     std::string next() {
         std::unique_lock<std::mutex> lock(mutex);
         ready.wait(lock, [this] { return !lines.empty(); });
@@ -83,9 +88,24 @@ int main(int argc, char** argv) {
         // The scene last applied, for a finish to send as it stands.
         moonlightipr::SceneSettings lastSettings;
         std::string lastGeneration;
+        // Which picture is sent of a scene that is denoised: the denoised one, or the beauty as it is rendered.
+        // Both are there all the while; the host says which it is looking at, and may change its mind at any time.
+        bool showDenoised = true, viewChanged = false;
+        // Takes what the host says about that as it comes, in the middle of a render or between two. True where
+        // something else is waiting, which is for the render to give way to.
+        auto interrupted = [&]() {
+            while (commands.waiting()) {
+                const std::string line = commands.front();
+                if (line.rfind("view ", 0) != 0) return true;
+                commands.next();
+                const bool denoised = line.find(" beauty") == std::string::npos;
+                if (denoised != showDenoised) { showDenoised = denoised; viewChanged = true; }
+            }
+            return false;
+        };
         auto send = [&](const moonlightipr::SceneSettings& settings, const std::string& generation) {
             if (!sharedImage.ready()) return false;
-            if (settings.denoise) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+            if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
             return sharedImage.publish(generation, "beauty", settings.width, settings.height,
                 [&](size_t i, float* rgb) { rgb[0] = pixels[i * 3]; rgb[1] = pixels[i * 3 + 1]; rgb[2] = pixels[i * 3 + 2]; });
         };
@@ -97,6 +117,18 @@ int main(int argc, char** argv) {
             std::getline(command >> std::ws, path);     // a path may contain spaces
             if (verb == "quit") return 0;
             if (verb == "pause") continue;      // stop sampling; the loaded scene stays for the next one
+            if (verb == "view") {
+                // Between renders: the picture there is, sent again as the one now looked at.
+                const bool denoised = path != "beauty";
+                if (denoised != showDenoised) {
+                    showDenoised = denoised;
+                    if (!lastGeneration.empty() && renderer.sampleCount() > 0)
+                        while (!interrupted() && !send(lastSettings, lastGeneration))
+                            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    viewChanged = false;
+                }
+                continue;
+            }
             if (verb == "finish") {
                 // Stopped by the user, who wants what there is: sent whole, and reported as done.
                 if (!lastGeneration.empty() && generation == lastGeneration && renderer.sampleCount() > 0) {
@@ -127,26 +159,29 @@ int main(int argc, char** argv) {
             uint32_t published = 0;
             auto publish = [&]() {
                 if (!sharedImage.ready()) return false;
-                if (settings.denoise) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+                if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
                 const bool sent = sharedImage.publish(generation, "beauty", settings.width, settings.height,
                     [&](size_t i, float* rgb) { rgb[0] = pixels[i * 3]; rgb[1] = pixels[i * 3 + 1]; rgb[2] = pixels[i * 3 + 2]; });
                 if (sent) published = renderer.sampleCount();
                 return sent;
             };
-            while (renderer.sampleCount() < settings.targetSamples && !commands.waiting()) {
+            while (renderer.sampleCount() < settings.targetSamples && !interrupted()) {
                 renderer.render();
+                // The other picture was asked for: it is sent at once, not at the next thirtieth of a second.
+                if (viewChanged) { viewChanged = false; published = 0; }
                 // Show the first sample at once, then at most 30 frames a second.
                 const auto now = std::chrono::steady_clock::now();
                 if (!published || now - lastFrame >= std::chrono::milliseconds(33)) {
                     if (publish()) lastFrame = std::chrono::steady_clock::now();
                 }
             }
-            if (commands.waiting()) continue;   // a newer scene replaces this one
+            if (interrupted()) continue;   // a newer scene replaces this one
 
             // The viewer may still hold the previous frame; wait for it before the final one.
-            while (published != renderer.sampleCount() && !commands.waiting() && !publish())
+            if (viewChanged) { viewChanged = false; published = 0; }
+            while (published != renderer.sampleCount() && !interrupted() && !publish())
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            if (!commands.waiting()) event("DONE", generation);
+            if (!interrupted()) event("DONE", generation);
         }
     } catch (const std::exception& error) {
         std::cerr << "MoonLightIPR session failed: " << error.what() << std::endl;

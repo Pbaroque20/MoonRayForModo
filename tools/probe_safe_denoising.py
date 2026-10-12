@@ -5,6 +5,7 @@ Two balls are previewed with MoonRay at many samples, so that the render takes a
 Denoising switched on. It is stopped some seconds into its long pass. What the window then says, what the kept frame
 holds, and the picture are written down."""
 import json
+import os
 import pathlib
 import traceback
 import lx
@@ -26,16 +27,20 @@ def panel_widget():
     return next(w for w in QtWidgets.QApplication.allWidgets() if isinstance(w, Panel))
 
 
+SCENE = os.environ.get('MOONRAY_PROBE_SCENE', '')
 try:
-    for x in (-.6, .6):
-        lx.eval('select.typeFrom item')
-        lx.eval('item.create mesh')
-        lx.eval('tool.set prim.sphere on')
-        lx.eval('tool.attr prim.sphere cenX %s' % x)
-        lx.eval('tool.apply')
-        lx.eval('tool.set prim.sphere off')
-    lx.eval('moonray.render.sampling_mode 0')
-    lx.eval('moonray.render.samples 40')
+    if SCENE:
+        lx.eval('scene.open {%s} normal' % SCENE)
+    else:
+        for x in (-.6, .6):
+            lx.eval('select.typeFrom item')
+            lx.eval('item.create mesh')
+            lx.eval('tool.set prim.sphere on')
+            lx.eval('tool.attr prim.sphere cenX %s' % x)
+            lx.eval('tool.apply')
+            lx.eval('tool.set prim.sphere off')
+        lx.eval('moonray.render.sampling_mode 0')
+        lx.eval('moonray.render.samples 40')
     lx.eval('moonray.render.denoiser 2')
     lx.eval('moonray.render.denoise_preview 1')
     lx.eval('moonray.render.denoise_safe 1')
@@ -52,8 +57,7 @@ def first():
         held['stored'] = panel.preferences.store.value('runtime', '')
         held['engine'] = panel.preview_engine.currentData()
         held['live'] = panel.ipr_mode.isChecked()
-        panel.preferences.set('runtime', str(root / 'runtime/steady-0350-pool'))
-        panel.ipr_mode.setChecked(False)
+        panel.preferences.set('runtime', str(root / os.environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-0351-tiles')))
         if panel.start.text() == 'Stop':
             panel.start.click()
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonray'))
@@ -78,7 +82,10 @@ def watch():
             held['long'] = held.get('long', 0) + 1
             # How many different pictures the view has shown during the long pass: it should come on, not stand still.
             held.setdefault('seen', set()).add(panel.preview.image.cacheKey())
-        if held.get('long', 0) >= 14 or held['ticks'] > 150:
+        # Stopped a few seconds after MoonRay has made a save of the long pass, so that there is one to keep.
+        saved = getattr(panel.renderer, 'saved_at', None) is not None and getattr(panel.renderer, 'safe_whole', False) and not panel.renderer.passes
+        held['since_save'] = held.get('since_save', 0) + 1 if saved else 0
+        if held['since_save'] >= 6 or held['ticks'] > 420:
             result['pictures_during_long_pass'] = len(held.get('seen', ()))
             result['before_stop'] = [text, panel.render_timing.text(), held['ticks'], [p.name for p in panel.renderer.safe_files][:4]]
             result['buffer_before_stop'] = [panel.buffer.currentData(), panel._buffer_picked]
@@ -107,10 +114,17 @@ def last():
         panel.window().grab().save(str(out / 'stopped.png'))
         # Continue: the button now offers to take the render up again.
         result['offered'] = panel.start.text()
+        held['kept_timing'] = panel.render_timing.text()
+        # Everything MoonRay says from here on is kept: what it says of taking a render up comes at once, and is
+        # soon pushed out of the little of its talk that the window holds on to.
+        held['said'] = []
+        held['listen'] = lambda text: held['said'].append(text)
+        panel.renderer.session.output.connect(held['listen'])
+        panel.renderer.process.readyReadStandardOutput.connect(lambda: None)
         panel.start.click()
         result['continuing'] = [panel.status.text(), panel.start.text()]
         save()
-        QtCore.QTimer.singleShot(22000, resumed)
+        QtCore.QTimer.singleShot(int(os.environ.get('MOONRAY_PROBE_CONTINUE', '22')) * 1000, resumed)
         return
     except Exception:
         result['last_error'] = traceback.format_exc()
@@ -121,8 +135,10 @@ def last():
 def resumed():
     try:
         panel = panel_widget()
-        log = str(getattr(panel.renderer, 'log', ''))
-        result['resumed'] = {'status': panel.status.text(), 'timing': panel.render_timing.text(), 'took_up': 'resume render initial information' in log,
+        log = ''.join(held.get('said', [])) or str(getattr(panel.renderer, 'log', ''))
+        words = [line.strip()[:170] for line in log.splitlines() if ('esum' in line or 'heckpoint' in line) and not line.startswith('@@') and 'Wrote' not in line]
+        result['said_of_resuming'] = words[:14]
+        result['resumed'] = {'status': panel.status.text(), 'timing': panel.render_timing.text(), 'timing_when_kept': held.get('kept_timing'), 'loaded': bool(getattr(panel.renderer, 'using_session', False)), 'rendering': panel._rendering, 'took_up': 'resume render initial information' in log,
                              'fell_back': 'Fall back on standard rendering' in log, 'read': log.count('.exr') if 'read resume files' in log else 0,
                              'said': [line[:150] for line in log.splitlines() if 'rror' in line or 'progressCheckpointTileSamples' in line][:6]}
         # Stopped again, to see that it can be kept a second time.

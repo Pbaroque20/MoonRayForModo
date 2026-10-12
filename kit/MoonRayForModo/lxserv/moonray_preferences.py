@@ -132,7 +132,7 @@ class RuntimeBrowse(lxu.command.BasicCommand):
         if path:held().set('runtime',path)
 
 
-lx.bless(choice('preview_engine',(('moonray','MoonRay'),('moonlightipr','MoonLightIPR'))),'moonray.pref.engine')
+lx.bless(choice('open_engine',(('moonray','MoonRay'),('moonray_ls','MoonRay LS'),('moonlightipr','MoonLightIPR'))),'moonray.pref.engine')
 lx.bless(switch('ipr'),'moonray.pref.live')
 lx.bless(switch('render_on_open'),'moonray.pref.renderOnOpen')
 lx.bless(switch('notices_open'),'moonray.pref.noticesOpen')
@@ -140,6 +140,28 @@ lx.bless(choice('assign/shader',shaders),'moonray.pref.assignType')
 lx.bless(switch('assign/smooth'),'moonray.pref.assignSmooth')
 lx.bless(number('assign/angle',0.0,180.0),'moonray.pref.assignAngle')
 lx.bless(choice('draft/ink',(('tan','Tan'),('purple','Pastel purple'),('grey','Grey'))),'moonray.pref.draftInk')
+lx.bless(number('draft/width',64.0,3200.0),'moonray.pref.draftWidth')
 lx.bless(number('light_intensity',0.0,1e9),'moonray.pref.lightIntensity')
 lx.bless(RuntimeFolder,'moonray.pref.runtime')
 lx.bless(RuntimeBrowse,'moonray.pref.runtimeBrowse')
+
+
+class ReleaseIdleRenderers(lxu.command.BasicCommand):
+    """Free completed sessions only; never interrupt sampling or queued work."""
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Enable(self, msg): return True
+    def basic_Execute(self, msg, flags):
+        from PySide2 import QtWidgets
+        from moonray_modo.render import Renderer
+        released = 0
+        seen = set()
+        for widget in QtWidgets.QApplication.allWidgets():
+            renderer = getattr(widget, 'renderer', None)
+            if not isinstance(renderer, Renderer) or id(renderer) in seen: continue
+            seen.add(id(renderer))
+            for session in (renderer.session, renderer.moonlightipr):
+                released += int(session.idle.release_now())
+        lx.out('MoonRay: released %d idle renderer session(s); active renders were left running.' % released)
+
+lx.bless(choice('idle_release_minutes', ((0,'Never'),(1,'After 1 minute'),(5,'After 5 minutes'),(15,'After 15 minutes'),(30,'After 30 minutes'))),'moonray.pref.idleRelease')
+lx.bless(ReleaseIdleRenderers,'moonray.releaseIdle')

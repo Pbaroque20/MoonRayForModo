@@ -10,14 +10,14 @@ from . import properties, rdla
 
 # What Panel.run() does in the window; any other page is a group of render settings.
 WINDOW_PAGES = ('preferences', 'final', 'bake', 'export', 'animation', 'stop', 'log', 'objects', 'outputs', 'colors',
-                'report', 'package', 'package_sequence', 'preview')
+                'report', 'package', 'package_sequence', 'preview', 'playblast')
 
 
 class Tools:
     def run(self, page):
         """Do what a menu entry or a form button names."""
         actions = {'preferences': self.edit_preferences, 'final': self.render_final, 'bake': self.bake_texture, 'export': self.export,
-                   'animation': self.render_animation, 'stop': self.stop, 'log': self.show_log,
+                   'animation': self.render_animation, 'playblast': self.render_playblast, 'stop': self.stop, 'log': self.show_log,
                    'objects': self._edit_production, 'outputs': self._edit_outputs, 'colors': self._edit_assets,
                    'report': self._report_assets, 'package': self._package_assets,
                    'package_sequence': self._package_sequence, 'preview': lambda: None}
@@ -231,6 +231,45 @@ class Tools:
                                  step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked())
             self.settings.setValue('output/animation', directory)
             self.stop()
+            self.sequence = candidate
+            self.sequence.start()
+        except Exception as exc:
+            self._failed(str(exc))
+
+    def render_playblast(self):
+        """MoonLightIPR Playblast: the animation rendered on the graphics card into a folder of PNGs, and played."""
+        if self._output_busy():
+            self.status.setText('An output render is running. Press Stop before starting a playblast.')
+            return
+        from .playblast import Playblast, PlayblastDialog, Player
+        try:
+            import modo
+            # Never wider than the picture itself; a camera with a size of its own may narrow it further.
+            widest = int(modo.Scene().renderItem.channel('resX').get())
+        except Exception:
+            widest = 8192
+        size = self.preferences.get('preview_size')
+        dialog = PlayblastDialog(self.settings, size if size > 0 else 640, widest, self.buffer.currentData() == 'denoised_beauty', self)
+        if not dialog.exec_():
+            return
+        directory = dialog.folder.text().strip()
+        try:
+            candidate = Playblast(self, directory, dialog.first.value(), dialog.last.value(), dialog.fps.value(),
+                                  step=dialog.step.value(), prefix=dialog.prefix.text(), width=dialog.width.value(),
+                                  samples=dialog.samples.value())
+            self.settings.setValue('output/playblast', directory)
+            self.settings.setValue('output/playblast_samples', dialog.samples.value())
+            self.stop()
+            # The picture itself is wanted, and MoonLightIPR has its beauty and its denoised beauty to show.
+            if self.draft.isChecked():
+                self.draft.setChecked(False)
+            if self.buffer.currentData() not in ('beauty', 'denoised_beauty'):
+                self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+            if dialog.play.isChecked():
+                def play(files, fps=dialog.fps.value()/dialog.step.value()):
+                    self._playblast_player = Player(files, fps, self)
+                    self._playblast_player.show()
+                candidate.done.connect(play)
             self.sequence = candidate
             self.sequence.start()
         except Exception as exc:

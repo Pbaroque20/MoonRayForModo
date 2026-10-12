@@ -196,7 +196,8 @@ DeviceMaterial toDevice(const Material& m) {
         d.frontKeep[c] = std::clamp(m.diffuseKept[c], 0.0f, 1.0f);
     }
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
-            | (m.beckmann ? MATERIAL_BECKMANN : 0);
+            | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT)
+            | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0);
     d.layerStart = m.layerStart;
     d.layerCount = m.layerCount;
     return d;
@@ -475,17 +476,20 @@ struct Renderer::Impl {
     void buildInstances(float time = 0.0f) {
         std::vector<OptixInstance> input(instances.size());
         std::vector<DeviceInstance> table(instances.size());
+        bool mixed = false;
         for (size_t i = 0; i < instances.size(); ++i) {
             for (int k = 0; k < 12; ++k)
                 input[i].transform[k] = instances[i].moves ? instances[i].transform[k] + (instances[i].closeTransform[k] - instances[i].transform[k]) * time
                                                            : instances[i].transform[k];
             input[i].instanceId = unsigned(i);
             input[i].sbtOffset = meshes[instances[i].mesh]->curves ? (meshes[instances[i].mesh]->linear ? 2 : 1) : 0;
-            input[i].visibilityMask = 255;
+            input[i].visibilityMask = instances[i].visibility & 255u;
+            if ((instances[i].visibility & 31u) != 31u) mixed = true;
             input[i].flags = OPTIX_INSTANCE_FLAG_NONE;
             input[i].traversableHandle = meshes[instances[i].mesh]->handle;
             table[i] = {instances[i].mesh, instances[i].material, instances[i].light, 0};
         }
+        params.mixedVisibility = mixed ? 1 : 0;
         instanceTable.upload(table);
         params.instances = instanceTable.ptr;
         params.traversable = 0;     // tracing an empty scene always misses
@@ -688,6 +692,7 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     impl->params.maxDiffuseDepth = impl->params.maxGlossyDepth = 2;
     impl->params.maxVolumeDepth = 1;
     impl->params.sampleClamp = 10.0f;
+    impl->params.sampleClampDepth = 1;
     std::vector<float> albedo = albedoTable(false);
     const std::vector<float> beckmann = albedoTable(true);
     albedo.insert(albedo.end(), beckmann.begin(), beckmann.end());
@@ -1347,7 +1352,14 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     impl->restart();
 }
 
-void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t glossyBounces, uint32_t volumeBounces) {
+void Renderer::setSampleClamp(float value, uint32_t depth) {
+    impl->params.sampleClamp = std::max(value, 0.0f);
+    impl->params.sampleClampDepth = depth;
+    impl->restart();
+}
+
+void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t glossyBounces, uint32_t volumeBounces, bool presenceShadows) {
+    impl->params.opaqueShadows = presenceShadows ? 0 : 1;
     impl->params.maxVolumeDepth = volumeBounces;
     impl->params.maxDepth = bounces;
     impl->params.maxDiffuseDepth = diffuseBounces;

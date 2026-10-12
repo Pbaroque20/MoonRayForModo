@@ -15,7 +15,7 @@ IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE, MESH_CURVES, MESH_LINEAR, MESH_RIBBON = 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
 # A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
 SUBDIVISION_QUADS = 3000000
-SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION = 1, 2, 4
+SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS = 1, 2, 4, 8
 ENVIRONMENT_ROWS = 64
 ENVIRONMENT_IMAGE = (1024, 512)
 # How a camera turns a point of the picture into a direction, by the session's numbering.
@@ -372,6 +372,17 @@ def emitter(mesh, settings, warnings):
             + cached[0])
 
 
+def seen_by(item):
+    """The rays that find a mesh or a set of curves, as the engine's bits: 1 the camera's, 2 light scattered
+    diffusely, 4 reflections, 8 light passing through a surface, 16 shadows. Modo's visibility is in MoonRay's
+    order: camera, indirect, reflection, refraction, subsurface, shadow."""
+    visibility = item.get('visibility')
+    if not visibility:
+        return 255
+    camera, indirect, reflection, refraction, _, shadow = (list(visibility) + [True] * 6)[:6]
+    return (1 if camera else 0) | (2 if indirect else 0) | (4 if reflection else 0) | (8 if refraction else 0) | (16 if shadow else 0)
+
+
 def cage_payload(mesh, material_index, slots, warnings):
     """A subdivision surface as its control cage, which the session refines.
 
@@ -553,7 +564,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     from . import geometry, options
     if scene.get('_draft') == 2:
         # A draft's lines are as clean after a few passes as after hundreds, and there is nothing in them to denoise.
-        samples, denoise = min(samples, 12), False
+        # Fewer still while a drag is being followed, which wants pictures more than clean ones.
+        samples, denoise = min(samples, int(scene.get('_draft_samples') or 12)), False
     from .moonlightipr_materials import Compiler
     from .working_space import TO_AP1, enabled as working_enabled
     if not 16 <= width <= 16384 or not 16 <= height <= 16384:
@@ -565,12 +577,6 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if any(held.get('link_enabled') or held.get('shadow_exclude') or held.get('shadow_receivers')
            for held in (scene.get('production') or {}).get('objects', {}).values() if isinstance(held, dict)):
         warnings.append('MoonLightIPR lights and shadows every object alike: light links and the shadows objects are set not to cast show in MoonRay only.')
-    from .shading_models import curve
-    for held in (scene.get('materials') or {}).values():
-        rows = (held.get('material_stack') or [held]) if isinstance(held, dict) else []
-        if any(isinstance(row, dict) and curve(row.get('shading_model')) and any(layer.get('effect') == 'rough' for layer in row.get('layers') or []) for row in rows):
-            warnings.append('MoonLightIPR shows a roughness that an image drives as the image gives it; for a Blinn or Ashikhmin material MoonRay takes it through the curve that matches Modo, so the highlight differs there.')
-            break
     if any(isinstance(held, dict) and held.get('sss_trace_set') for held in (scene.get('materials') or {}).values()):
         warnings.append('MoonLightIPR does not join neighbouring objects in subsurface light: a material\'s subsurface neighbours show in MoonRay only.')
     # MoonRay's own items arrive beside the Modo ones; draw those that have a counterpart here.
@@ -615,8 +621,13 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     depths = [min(8, settings[key]) for key in ('max_depth', 'max_diffuse_depth', 'max_glossy_depth', 'max_volume_depth')]
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
-    parts = [b'MLSA', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
-                                  | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)),
+    # The letter after MLS says which form of scene this is; the session refuses any other than its own.
+    parts = [b'MLSC', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+                                  | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
+                                  # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
+                                  | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
+             # The scene's sample clamp, and from which bounce it holds.
+             struct.pack('<fI', float(settings['sample_clamping_value']), int(settings['sample_clamping_depth'])),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
              struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
              struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])]),
@@ -685,8 +696,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         ending = (mesh.get('instances_close') or opening) if 'instances' in mesh else [mesh.get('matrix_close', opening[0])]
         if len(ending) != len(opening):
             raise ValueError('Instance shutter transforms of %s must match' % mesh['name'])
+        # A fog's box is found by every ray, and so is a mesh light, which is the light itself.
+        seen = 255 if light >= 0 or mesh.get('volume') else seen_by(mesh)
         for placement, later in zip(opening, ending):
-            instances.append(struct.pack('<2Ii12f', order[key], material, light, *transform(placement))
+            instances.append(struct.pack('<2IiI12f', order[key], material, light, seen, *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
     # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
     from .moonlightipr_curves import payload as curve_payload
@@ -712,7 +725,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             meshes.append(head if key in known else head + payload)
         used.add(key)
         placement = transform(entry.get('matrix') or IDENTITY)
-        instances.append(struct.pack('<2Ii12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, *placement)
+        instances.append(struct.pack('<2IiI12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, seen_by(entry), *placement)
                          + (struct.pack('<12f', *transform(entry.get('matrix_close') or entry.get('matrix') or IDENTITY)) if motion else b''))
     if any(entry.get('kind') not in ('curves', 'vdb') for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points.')

@@ -48,6 +48,31 @@ def rough(image):
     return total / max(count, 1) / 4.0
 
 
+RING = [(6, 0), (6, 2), (4, 4), (2, 6), (0, 6), (-2, 6), (-4, 4), (-6, 2), (-6, 0), (-6, -2), (-4, -4), (-2, -6), (0, -6), (2, -6), (4, -4), (6, -2)]
+
+
+def blotch(image):
+    """The deepest dark mark in a picture: how far the darkest pixel lies below the mean of a ring of pixels six away
+    from it. A smooth picture has none to speak of; a pixel the denoiser smeared from one caught too dark stands out."""
+    image = image.convertToFormat(QtGui.QImage.Format_RGB888)
+    w, h, stride = image.width(), image.height(), image.bytesPerLine()
+    data = bytes(image.constBits())
+    worst = count = 0
+    for y in range(8, h - 8, 2):
+        row = y * stride
+        for x in range(8, w - 8, 2):
+            i = row + x * 3 + 1
+            ring = [data[i + dx * 3 + dy * stride] for dx, dy in RING]
+            # Only where the whole ring around is itself even: an edge is not a mark, nor is a line running through.
+            if max(ring) - min(ring) > 10:
+                continue
+            dip = sum(ring) / len(ring) - data[i]
+            if dip > 6:
+                count += 1
+            worst = max(worst, dip)
+    return [round(worst, 1), count]
+
+
 def apart(a, b):
     a = a.convertToFormat(QtGui.QImage.Format_RGB888); b = b.convertToFormat(QtGui.QImage.Format_RGB888)
     if a.size() != b.size():
@@ -86,7 +111,7 @@ def first():
         held['stored'] = panel.preferences.store.value('runtime', '')
         held['engine'] = panel.preview_engine.currentData()
         held['live'] = panel.ipr_mode.isChecked()
-        panel.preferences.set('runtime', str(root / 'runtime/steady-0350-pool'))
+        panel.preferences.set('runtime', str(root / os.environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-0350-pool')))
         panel.ipr_mode.setChecked(False)
         if panel.start.text() == 'Stop':
             panel.start.click()
@@ -145,13 +170,22 @@ def watch():
             run['pictures'] = len(held['seen'])
             run['saves'] = held['saves']
             run['files'] = len(files)
+            run['timing_before_stop'] = panel.render_timing.text()
             run['ended'] = [now, panel.status.text(), panel.render_timing.text(), panel.start.text(), panel.buffer.currentData(), panel._buffer_picked]
             run['interval'] = getattr(panel.renderer, 'safe_minutes', None) if RUNS[len(result['runs']) - 1][1] else None
             if panel._rendering:
                 # Stopped as the user stops it, so that what is kept of a render part way is seen too.
                 panel.start.click()
                 run['at_stop'] = panel.status.text()
+                held['stop_at'] = time.time(); held['stop_took'] = None
             panel.window().grab().save(str(out / (held['name'] + '-window.png')))
+            def until_stopped():
+                if held.get('stop_at') and held.get('stop_took') is None:
+                    if not panel_widget()._rendering:
+                        held['stop_took'] = round(time.time() - held['stop_at'], 2)
+                    else:
+                        QtCore.QTimer.singleShot(50, until_stopped)
+            until_stopped()
             QtCore.QTimer.singleShot(40000, stopped)
             return
     except Exception:
@@ -164,16 +198,30 @@ def watch():
 
 
 def stopped():
+    # (How long the stop took is taken by the watcher below, which runs till the window says it has stopped.)
     """Well after the stop: what the window has kept, and whether the denoised picture is the render's own."""
     try:
         panel = panel_widget()
         run = result['runs'][held['name']]
         frame = panel.renderer.buffers.frame or {}
         run['kept'] = {'status': panel.status.text(), 'button': panel.start.text(), 'buffer': panel.buffer.currentData(), 'rendering': panel._rendering,
+                       'info': panel.image_info.text(), 'loaded': bool(getattr(panel.renderer, 'using_session', False)), 'behind': getattr(panel.renderer, 'kept_behind', None),
+                       'saving': 'saving the picture as it renders' in str(getattr(panel.renderer, 'log', '')),
                        'files': sorted(frame.get('files', {}))[:6], 'denoised': 'denoised_beauty' in frame.get('files', {}), 'timing': panel.render_timing.text()}
         shown = panel.preview.image.copy()
         held['shown'] = shown
         run['shown'] = [panel.buffer.currentData(), None if shown.isNull() else round(rough(shown), 2)]
+        run['marks'] = None if shown.isNull() else blotch(shown)
+        if not shown.isNull():
+            shown.save(str(out / ('%s-shown-%s.png' % (held['name'], os.environ.get('MOONRAY_MODO_STOP_TAKES', '5')))))
+        run['stop_took'] = held.get('stop_took')
+        # What was kept, each buffer as a file of its own, to see which a mark is in.
+        import shutil
+        for key, path in (frame.get('files') or {}).items():
+            try:
+                shutil.copyfile(str(path), str(out / ('%s-kept-%s%s' % (held['name'], key, pathlib.Path(str(path)).suffix))))
+            except Exception as exc:
+                run.setdefault('kept_copy_errors', []).append(str(exc)[:80])
         panel.window().grab().save(str(out / (held['name'] + '-stopped.png')))
         # The beauty itself, apart from the denoiser, is what the runs are compared by.
         panel.buffer.setCurrentIndex(panel.buffer.findData('beauty'))
@@ -196,6 +244,7 @@ def beauty():
         if shown is not None and not shown.isNull() and shown.size() == image.size():
             run['denoised_against_beauty'] = [round(apart(shown, image), 2), round(apart(shown, image.mirrored(False, True)), 2)]
         log = str(getattr(panel.renderer, 'log', ''))
+        (out / (held['name'] + '-log.txt')).write_text('\n'.join(line for line in log.splitlines() if 'Rendering [' not in line and not line.startswith('@@')), encoding='utf-8', errors='replace')
         run['log'] = [line[:160] for line in log.splitlines() if ('ample' in line or 'heckpoint' in line) and 'Rendering [' not in line and not line.startswith('@@')][-12:]
         if len(result['runs']) < len(RUNS):
             # Back to how a finished render leaves the window, then the same again with Safe Denoising on.

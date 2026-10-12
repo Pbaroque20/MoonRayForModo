@@ -1,6 +1,7 @@
 #pragma once
 #include "modo_bucket_tracker.h"
 #include "modo_bucket_size.h"
+#include "modo_protocol_line.h"
 #include <sstream>
 #include <cstdlib>
 #include <iostream>
@@ -12,7 +13,7 @@ inline void modoBucketOutput(const std::string& generation,unsigned width,unsign
     uint64_t rectangles[512];
     unsigned count=modoBucketSnapshot(rectangles,512);
     std::ostringstream line;
-    line << "\n@@MODO_TILES " << generation << " " << width << " " << height;
+    line << "@@MODO_TILES " << generation << " " << width << " " << height;
     // Report occupied scheduling buckets, not invented progress percentages.
     std::set<uint64_t> active;
     const unsigned size=modoBucketSize(width,height);
@@ -26,12 +27,12 @@ inline void modoBucketOutput(const std::string& generation,unsigned width,unsign
     for(auto r:active) {
         line << " " << (r&65535) << "," << ((r>>16)&65535) << "," << ((r>>32)&65535) << "," << ((r>>48)&65535);
     }
-    std::cout << line.str() << std::endl;
+    modoProtocolLine(line.str());
     std::ostringstream workers;
-    workers << "\n@@MODO_WORKERS " << generation << " " << width << " " << height;
+    workers << "@@MODO_WORKERS " << generation << " " << width << " " << height;
     for(unsigned i=0;i<count;++i){
         auto r=rectangles[i];
         workers << " " << (r&65535) << "," << ((r>>16)&65535) << "," << ((r>>32)&65535) << "," << ((r>>48)&65535);
     }
-    std::cout << workers.str() << std::endl;
+    modoProtocolLine(workers.str());
 }

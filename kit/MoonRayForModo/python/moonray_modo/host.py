@@ -56,12 +56,19 @@ def corner_values(polygons, map_id, count, dimension):
 
 
 def render_visible(item):
+    """Whether Modo would render the item. Render: Yes or No settles it, for the item and what is under it. Left at
+    Default, an item renders as it is shown: not with its eye off, nor under a parent hidden with its children."""
+    own = True
     while item is not None:
         value = channel(item, 'render', 'default')
         if value in ('off', 'no', False):
             return False
         if value in ('on', 'yes'):
             return True
+        shown = channel(item, 'visible', 'default')
+        if shown == 'allOff' or (own and shown in ('off', 'no', False)):
+            return False
+        own = False
         item = item.parent
     return True
 
@@ -147,6 +154,7 @@ def material_values(material):
                                 'reflection_fresnel':float(channel(material,'reflFres',1)),
                                 'thin_geometry': settings.get('thin_geometry',False),
                                 # The objects whose surfaces join in this material's subsurface light: MoonRay's sss trace set.
+                                'rdl_layer_links': settings.get('rdl_layer_links', {}),
                                 'sss_trace_set': sorted(str(v) for v in (settings.get('sss_trace_set') or [])),
                                 # Where a material says how its polygons are smoothed: 0 for flat, otherwise the angle within which
                                 # neighbours are smoothed together. None leaves the mesh to be smoothed as it otherwise would be.
@@ -279,6 +287,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     if projection=='ortho':
         warnings.append('Orthographic width uses target distance and film/focal ratio; reference parity is unverified.')
     result['_full_capture']=reuse_geometry is None
+    native_shape_materials = {}
     from .layers import ordered_items, material_tag
     if reuse_geometry is not None and not refresh_materials:
         result['materials']=reuse_geometry['materials'];result['native_materials']=reuse_geometry.get('native_materials',{})
@@ -344,6 +353,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             cached=reuse_geometry.get('_evaluated_data') if reuse_geometry else None
             data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())
             result['_evaluated_data']=data
+            native_shape_materials = result['materials']
             result['materials'] = evaluated.assign_materials(data, scene, warnings)
             shader_library.attach_dependencies(result['materials'],library)
             result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)
@@ -616,10 +626,15 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 warnings.append(str(exc));path=filename
             from pathlib import Path
             result['source_assets'].append(str(Path(path).resolve()))
-    from .native_light_links import capture as capture_light_links
-    result['native_light_links']=capture_light_links(scene,result,warnings)
     from .entities import collect as collect_entities
     result['entities']=collect_entities(scene,warnings)
+    # Native shapes are absent from Modo's evaluated surface list but still use named materials.
+    for entity in result['entities']:
+        tag = entity.get('parameters', {}).get('modo_material')
+        if tag in native_shape_materials:
+            result['materials'].setdefault(tag, native_shape_materials[tag])
+    from .native_light_links import capture as capture_light_links
+    result['native_light_links']=capture_light_links(scene,result,warnings)
     if smoothed_whole:
         warnings.append("Smoothed all over rather than within their material's smoothing angle, having more than %d polygons: %s. "
                         'Set a smoothing angle in the MoonRay material settings to hold it.'

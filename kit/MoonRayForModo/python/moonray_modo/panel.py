@@ -26,6 +26,11 @@ def scene_display(stored):
     return values(stored['display'])
 
 
+# How long the scene's time must stand still before a preview that follows the scene renders it: longer than the gap
+# between two frames of an animation played slowly.
+PLAYBACK_REST=0.35
+
+
 class Panel(Tools, QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,12 +61,22 @@ class Panel(Tools, QtWidgets.QWidget):
         self.display_timer.timeout.connect(self._commit_exposure)
         self.preview_timer=QtCore.QTimer(self);self.preview_timer.setSingleShot(True);self.preview_timer.setInterval(150)
         self.preview_timer.timeout.connect(lambda:self._preview_changed(0))
+        # Draft follows the scene by itself, whatever the engine and whether or not realtime is on: its outlines cost
+        # next to nothing. This looks, thirty times a second, for something to redraw them for, and finds it at once
+        # where Modo has told of nothing: only then is the scene looked into.
+        self.draft_timer=QtCore.QTimer(self);self.draft_timer.setInterval(33)
+        self.draft_timer.timeout.connect(self._draft_tick)
         self.poll_timer=QtCore.QTimer(self);self.poll_timer.setInterval(500)
         self.poll_timer.timeout.connect(self._poll)
 
         layout = QtWidgets.QVBoxLayout(self);layout.setContentsMargins(4,4,4,4);layout.setSpacing(3)
         layout.addLayout(self._toolbar())
         self.preview = Preview()
+        # A line at the foot of the picture, in the middle, for a mode worth knowing of. It takes no clicks: they go
+        # to the picture.
+        self.hud=QtWidgets.QLabel(self.preview)
+        self.hud.setStyleSheet('QLabel{color:#f2e3c4;background-color:rgba(20,22,26,170);border-radius:3px;padding:3px 7px;font-weight:bold;}')
+        self.hud.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);self.hud.hide()
         self.preview.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.preview.customContextMenuRequested.connect(lambda point:self._image_menu(point).exec_(self.preview.mapToGlobal(point)))
         self.preview.installEventFilter(self)
@@ -84,7 +99,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.buckets.connect(self.preview.set_buckets)
         self.renderer.workers.connect(self.preview.set_workers)
         self.renderer.progress.connect(self._render_progress)
-        self.renderer.status.connect(self.status.setText)
+        self.renderer.status.connect(self._renderer_status)
         self.renderer.failed.connect(self._failed)
         self.renderer.image_ready.connect(self._image)
         self.renderer.image_object.connect(self._image)
@@ -105,7 +120,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self.ipr_mode.toggled.connect(self._ipr_changed)
         self.poll_timer.start()
         # Where the preferences ask for it, a preview starts as the window opens.
+        # The window opens showing the crest and renders nothing, whatever engine it opens on, unless Preferences
+        # says to render on opening. A realtime engine is switched on with its button, never by being chosen.
         if self.preferences.get('render_on_open'):QtCore.QTimer.singleShot(800,lambda:None if self.disposed or self._rendering or self._following else self.start_render())
+        self._set_rendering(self._rendering)
 
     # The window's own controls
 
@@ -115,21 +133,33 @@ class Panel(Tools, QtWidgets.QWidget):
         self.start.setToolTip(RENDER_TIP)
         # One button: it starts a preview, and while one runs or IPR is watching, it stops it.
         self.start.clicked.connect(self._render_or_stop)
+        # Pressed in, as it is while realtime is on, it is lit in Modo's own orange, so that on is told from off at a glance.
+        self.start.setStyleSheet('QPushButton:checked{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}')
         row.addWidget(self.start)
-        # Called Live, so that it is not taken for the MoonLightIPR engine in the list beside it.
-        self.ipr_mode=QtWidgets.QCheckBox('Live')
-        self.ipr_mode.setToolTip('With Live on, Render keeps following the scene as it is edited, until Stop.')
-        self.ipr_mode.setChecked(self.preferences.get('ipr'))
-        row.addWidget(self.ipr_mode)
+        # Three ways to preview. MoonRay renders the picture once, in full. The other two are realtime: switched on
+        # with the button, they follow the scene as it is edited. Whether the engine chosen is a realtime one is
+        # kept in a switch of its own, which is not shown.
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
+        self.preview_engine.addItem('MoonRay LS', 'moonray_ls')
         self.preview_engine.addItem('MoonLightIPR', 'moonlightipr')
-        self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(self.preferences.get('preview_engine'))))
-        self.preview_engine.setToolTip('MoonLightIPR is a fast GPU preview that approximates materials and lighting; Notices lists what it leaves out. Output renders always use MoonRay.')
+        # The window opens on the engine named in Preferences, MoonRay unless that is changed. The engine it was
+        # last left on is not remembered: a window that opened on a realtime engine would be one that renders
+        # before it is asked to.
+        stored=self.preferences.get('open_engine')
+        self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(stored)))
+        self.preview_engine.setToolTip('MoonRay: the full render, once, as an output render would be.\n'
+                                       'MoonRay LS (low sample): MoonRay following the scene as you edit it, at fewer samples and a smaller size.\n'
+                                       'MoonLightIPR: a fast GPU preview that follows the scene and approximates materials and lighting; Notices lists what it leaves out.\n'
+                                       'Output renders always use MoonRay.')
+        self.ipr_mode=QtWidgets.QCheckBox('Live',self);self.ipr_mode.hide()
+        self.ipr_mode.setChecked(self._live())
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
         self.camera=QtWidgets.QComboBox()
         self.camera.setToolTip('The camera the scene is rendered through. MoonRay camera items are added from MoonRay > Add MoonRay Item.')
+        # A long camera name is cut short in a narrow window: the whole of it is in the tip.
+        self.camera.currentTextChanged.connect(lambda text:self.camera.setToolTip((text+'\n' if text else '')+'The camera the scene is rendered through. MoonRay camera items are added from MoonRay > Add MoonRay Item.'))
         self.camera.activated.connect(self._camera_chosen)
         row.addWidget(self.camera)
         self.buffer = QtWidgets.QComboBox()
@@ -206,7 +236,8 @@ class Panel(Tools, QtWidgets.QWidget):
             if isinstance(widget,QtWidgets.QToolButton):
                 widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text()))
             elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
-        self.start.setFixedWidth(wide(self.start,'Render',36))
+        # Wide enough for the longest thing it says.
+        self.start.setFixedWidth(wide(self.start,'Continue',28))
         # Room for the menu arrow beside the word, which it otherwise covers.
         gear.setFixedWidth(wide(gear,'Options',34))
         for combo,least,most in ((self.preview_engine,96,124),(self.camera,96,170),(self.buffer,96,150)):
@@ -241,8 +272,11 @@ class Panel(Tools, QtWidgets.QWidget):
         self.worker_tiles.setChecked(self.preferences.get('worker_tiles'))
         self.worker_tiles.toggled.connect(self._overlay_changed)
         menu.addSeparator()
+        menu.addAction('Compositor...',self.open_compositor)
+        menu.addSeparator()
         menu.addAction('Render EXR...',self.render_final)
         menu.addAction('Render Animation...',self.render_animation)
+        menu.addAction('MoonLightIPR Playblast...',self.render_playblast)
         menu.addAction('Export Scene...',self.export)
         menu.addSeparator()
         menu.addAction('Render Log...',self.show_log)
@@ -256,11 +290,25 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
         menu.addSeparator()
+        # Safe Denoising itself, chosen here as in the scene's render settings: off, or on with one denoiser or the
+        # other. The foot of the picture says when it is on. (The menu and its actions are made first and then added:
+        # what a menu makes for a label cannot be used afterwards in Modo's Qt.)
+        safe=QtWidgets.QMenu('Safe Denoising',menu);safe.setStyleSheet(MENU_STYLE);safe.setToolTipsVisible(True)
+        try:chosen=self._settings_values()['denoising']
+        except Exception:chosen={}
+        now=chosen.get('engine','off') if chosen.get('safe') else 'off'
+        for words,engine,tip in (('Off','off','MoonRay renders as usual. A render stopped by hand keeps its beauty and its denoised picture.'),
+                                 ('OptiX','optix','MoonRay saves its picture as it renders, so that a render stopped by hand is kept with all its buffers and can be continued; denoised on the graphics card.'),
+                                 ('Open Image Denoise','oidn_cpu','The same, denoised on the processor.')):
+            action=QtWidgets.QAction(words,safe);action.setCheckable(True);action.setChecked(engine==now);action.setToolTip(tip)
+            action.triggered.connect(lambda checked=False,engine=engine:self._safe_chosen(engine));safe.addAction(action)
+        menu.addMenu(safe);self._safe_menu=safe
+        menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
         # The outputs of the last finished MoonRay preview, each as a picture of its own. MoonLightIPR has the one.
         batch=menu.addAction('Export AOVs as Images...',self.export_buffers)
-        batch.setEnabled(self.preview_engine.currentData()!='moonlightipr')
+        batch.setEnabled(self._engine()!='moonlightipr')
         if not batch.isEnabled():batch.setToolTip('MoonLightIPR renders the one picture; choose MoonRay for its outputs.')
         if getattr(self,'_continuable',None) is not None and not self._rendering:
             # Continue is what the button offers; this is the other choice. It throws the stopped render away, so it
@@ -271,8 +319,10 @@ class Panel(Tools, QtWidgets.QWidget):
         return menu
 
     def _status_line(self):
-        # Three cells of one width, as a table of one row: the probe, the status, and the picture's details. What is
-        # written in one never moves another.
+        # Two lines. The first is the status, across the whole window, so that a long message is read whole. The
+        # second is three cells of one width, as a table of one row: the probe, how the render is getting on, and the
+        # picture's details. What is written in one never moves another.
+        lines=QtWidgets.QVBoxLayout();lines.setSpacing(2);lines.setContentsMargins(0,0,0,0)
         row=QtWidgets.QHBoxLayout();row.setSpacing(10)
         cells=[]
         for _ in range(3):
@@ -291,19 +341,22 @@ class Panel(Tools, QtWidgets.QWidget):
         left.addWidget(self.swatch)
         left.addWidget(self.probe)
         left.addStretch(1)
-        # The status is in the middle of the row, between the probe and the picture's details.
         self.status.setAlignment(QtCore.Qt.AlignCenter)
-        middle.addWidget(self.status,1)
+        lines.addWidget(self.status)
+        lines.addLayout(row)
+        # How the render is getting on is in the middle of the second line, between the probe and the picture's details.
+        self.render_timing=QtWidgets.QLabel('');self.render_timing.setEnabled(False)
+        self.render_timing.setAlignment(QtCore.Qt.AlignCenter)
+        self.render_timing.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
+        middle.addWidget(self.render_timing,1)
         self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
         right.addStretch(1)
         right.addWidget(self.image_info)
-        self.render_timing=QtWidgets.QLabel('');self.render_timing.setEnabled(False)
-        right.addWidget(self.render_timing)
         self.notice_toggle=QtWidgets.QToolButton();self.notice_toggle.setText('Notices (0)');self.notice_toggle.setCheckable(True);self.notice_toggle.setAutoRaise(True)
         self.notice_toggle.setToolTip('What the renderer could not carry over from the scene')
         self.notice_toggle.toggled.connect(lambda visible:self.warnings.setVisible(visible))
         right.addWidget(self.notice_toggle)
-        return row
+        return lines
 
     def _focus_armed(self,armed):
         if armed:
@@ -312,6 +365,8 @@ class Panel(Tools, QtWidgets.QWidget):
         else:self.preview.unsetCursor()
 
     def eventFilter(self,watched,event):
+        # The mode's line keeps its place at the foot of the picture as the picture is made larger or smaller.
+        if watched is self.preview and event.type()==QtCore.QEvent.Resize and hasattr(self,'hud') and self.hud.isVisible():self._hud_place()
         # While Focus is armed, the next click in the image picks instead of panning.
         if watched is self.preview and self.focus_pick.isChecked() and event.type()==QtCore.QEvent.MouseButtonPress and event.button()==QtCore.Qt.LeftButton:
             point=event.pos()
@@ -404,19 +459,97 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.whole=bool(enabled)
         self.preview.paper=draft.PAPER if enabled else None
         if enabled:
+            try:self._draft_time=lx.service.Selection().GetTime()
+            except Exception:self._draft_time=None
+            self._draft_hasty=True
+            self.draft_timer.start()
+        else:self.draft_timer.stop()
+        if enabled:
             if self._following:self.preview_timer.start()
             else:self.render_once()
             return
         self._draft_image=self._draft_render=None;self._draft_engine=False;self.preview.nominal=None
-        if self._whole is not None:
-            # A render made before is shown again as it was; nothing is rendered until the scene changes.
-            self._paste();self.preview.fit()
+        # The render made before the draft is of the scene as it was then. Where the draft has since drawn another
+        # scene, or Modo tells of a change not yet looked at, that render is stale and is not put back.
+        stale=self._whole is not None and (getattr(self,'_whole_digest',None)!=self.last_digest or self.changes.full or bool(self.changes.items))
+        if self._whole is not None and not stale:
+            # Shown again as it was; nothing is rendered, the scene being the same.
+            self._paste()
             self.status.setText('Draft off.');return
-        # Nothing was rendered before the draft: the lines are not left standing as though they were a render.
+        # Nothing to put back: the lines are not left standing as though they were a render.
+        self._whole=None;self._part=None
         self._held=True
         self.preview.clear();self.image_info.setText('')
         if self._following:self.preview_timer.start()
-        else:self.status.setText('Draft off. Press Render for the picture.')
+        else:self.status.setText('Draft off. The scene has changed since it was rendered: press Render for the picture.' if stale
+                                 else 'Draft off. Press Render for the picture.')
+
+    def _draft_tick(self):
+        """While Draft is on: redraw its outlines when the scene changes, without being asked. With realtime on the
+        scene is being followed already and this has nothing to do."""
+        if self.disposed or not self.draft.isChecked():
+            self.draft_timer.stop();return
+        if self._following or self.preview_lock.isChecked() or self._output_busy() or not self.changes.registered:return
+        try:
+            from .interaction import dragging
+            # A drag is waited out, and the scene drawn as it is when the button comes up: what is shown is then always
+            # the outcome of an edit, never something part way through one.
+            if dragging():return
+            held=False
+            if not held:self._draft_drag_read=False
+            # One picture at a time: the next is begun when this one is shown, so that each is seen and none piles up
+            # behind another.
+            if self._rendering:return
+            # Nor is an animation playing in Modo drawn frame by frame: the frame it stops on is.
+            if not self._time_settled():return
+            time=lx.service.Selection().GetTime()
+            moved=time!=getattr(self,'_draft_time',time)
+            if not (self.changes.full or self.changes.items or moved):
+                # Nothing new. Outlines drawn in haste during a drag are drawn again with care once it is over.
+                if not held and getattr(self,'_draft_hasty',False) and getattr(self,'_kept_capture',None) is not None:
+                    self._draft_hasty=False
+                    self._draft_submit(self._kept_capture)
+                return
+            if self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
+                if held:return
+                self._draft_time=time
+                self.render_once();return
+            # Reading every mesh out of Modo again is most of what a redraw takes (a second of 1.3 on a scene of 266
+            # meshes), and most edits leave the meshes as they are. As when a scene is followed, only what the
+            # edit touched is read again: where things stand, a material, the meshes named, or all of it.
+            import modo
+            full,items=self.changes.consume()
+            reuse=not full and not moved and bool(items) and self._geometry_cache is not None and modo.Scene().renderItem.id==self._scene_id
+            if reuse:
+                from .incremental import classify
+                reuse=classify(modo.Scene(),items,self._geometry_cache)
+            if held and reuse not in (True,'transforms','materials'):
+                if getattr(self,'_draft_drag_read',False):
+                    # A drag is followed as it goes, picture after picture, where that takes only asking where things
+                    # now stand or how they are shaded. One that needs the meshes read again waits for the button
+                    # to come up: what Modo told of is put back to be looked at then.
+                    self.changes.full=self.changes.full or full;self.changes.items.update(items);return
+                # But the first step of a drag often makes something new in the scene (an item's first move gives it
+                # a place of its own), which needs the scene read whole. That is done once in a drag, so that the
+                # rest of it can be followed.
+                self._draft_drag_read=True
+            self._draft_time=time
+            # In the middle of a drag the outlines are drawn in fewer passes, so that more pictures of it are shown.
+            # A change is shown first in a quick, small picture, and then, once that is up and nothing more has
+            # changed, in a fine one.
+            self._draft_hasty=True
+            self._draft_submit(self._capture(reuse))
+        except Exception as exc:
+            self._draft_quiet=False
+            self.status.setText('Draft could not follow the scene: '+str(exc))
+
+    def _draft_submit(self,scene):
+        """Redraw the draft for a change it followed by itself. Nothing in the window but the picture changes: no
+        status, bar or button comes and goes with each picture, which made following look like starting over."""
+        self._draft_quiet_asked=True
+        try:self._submit(scene)
+        except Exception:
+            self._draft_quiet=False;raise
 
     def _draft_region(self):
         values=self._settings_values()
@@ -429,7 +562,8 @@ class Panel(Tools, QtWidgets.QWidget):
         region=self._draft_region()
         rendered=self._draft_render[1] if self._draft_render and self._draft_render[0]==region else None
         self.preview.set_image(draft.over(self._draft_image,rendered,region))
-        self.image_info.setText('%d x %d | Draft'%self._draft_size)
+        # A draft is not of a size worth naming: it is drawn small and then finely, and is not the render.
+        self.image_info.setText('Draft')
 
     def _probe(self,x,y):
         """Say what is under the pointer: the render's own linear values where they are held, else what is on screen."""
@@ -476,7 +610,7 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _settled(self):
         """Take the scene's settings as they now are for seen, so that following does not render for them."""
-        self._live_settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
+        self._live_settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
 
     def _paste(self):
         """Show the last whole frame with the last region rendered laid in it, and keep it until something is rendered."""
@@ -537,10 +671,13 @@ class Panel(Tools, QtWidgets.QWidget):
         if scene_id!=self._scene_id:
             self._scene_id=scene_id;self._geometry_cache=None;self._shown=None
         self._sync_cameras()
-        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'])
+        self._hud_update()
+        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']))
         if watched==self._shown:return
         previous,self._shown=self._shown,watched
         self._sync_output_menu(values['custom_aovs'])
+        # The Composite buffer is made again by the graph as it now is, of the render that is kept.
+        self.renderer.buffers.compositor.request(values['compositor'])
         if not self.display_timer.isActive():
             blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker
         # The button is lit by a region being rendered, or by its being ready for one to be drawn.
@@ -551,32 +688,113 @@ class Panel(Tools, QtWidgets.QWidget):
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
 
+    def _safe_chosen(self,engine):
+        """Safe Denoising chosen from the picture's menu: off, or on with a denoiser. Written to the scene's settings,
+        as its render settings write them: the denoiser itself is left as it is when Safe Denoising is switched off."""
+        try:
+            stored=dict(self._settings_values()['denoising'])
+            if engine=='off':stored['safe']=False
+            else:stored.update(engine=engine,safe=True)
+            if not self._store(denoising=stored):return
+        except Exception as exc:
+            self.status.setText('Cannot set Safe Denoising: '+str(exc));return
+        self._hud_update()
+        self.status.setText('Safe Denoising is off.' if engine=='off' else 'Safe Denoising is on, with %s.'%('OptiX' if engine=='optix' else 'Open Image Denoise'))
+
+    def _hud_words(self):
+        """The modes worth saying at the foot of the picture: each a line."""
+        words=[]
+        try:
+            values=self._settings_values()
+            if self._engine()=='moonray' and not self._live() and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
+                words.append('Safe Denoiser Mode')
+        except Exception:pass
+        return words
+
+    def _hud_update(self):
+        if self.disposed or not hasattr(self,'hud'):return
+        words=self._hud_words()
+        text='\n'.join(words)
+        if text!=self.hud.text():self.hud.setText(text);self.hud.adjustSize()
+        self.hud.setVisible(bool(words))
+        if words:self._hud_place();self.hud.raise_()
+
+    def _hud_place(self):
+        """At the foot of the picture, in the middle."""
+        self.hud.move(max(0,(self.preview.width()-self.hud.width())//2),max(0,self.preview.height()-self.hud.height()-12))
+
+    def open_compositor(self):
+        """The scene's compositor: a graph over the buffers of a finished render, whose output is the Composite buffer."""
+        try:
+            from .compositor_editor import open_editor
+            open_editor(self)
+        except Exception as exc:
+            self.status.setText('Cannot open the compositor: '+str(exc))
+
     def _sync_output_menu(self,custom_aovs):
         names=[(v['name'],v['name']) for v in custom_aovs if v['kind']!='cryptomatte']
         held={v.get('category','object'):v['name'] for v in custom_aovs if v['kind']=='cryptomatte'}
         names+=[(label,held.get(category,'crypto_'+category)) for category,label in CRYPTOMATTES]
+        # The compositor's picture, where the scene has a graph that does something: first after MoonRay's own buffers.
+        from . import compositor
+        if not compositor.trivial(self._settings_values_stored().get('compositor')):names.insert(0,('Composite','composite'))
         if 'asset' in held:names.append(('Cryptomatte: Assets',held['asset']))
         base=2+len(options.AOVS)
         if names==[(self.buffer.itemText(i),self.buffer.itemData(i)) for i in range(base,self.buffer.count())]:return
         key=self.buffer.currentData();blocker=QtCore.QSignalBlocker(self.buffer)
         while self.buffer.count()>base:self.buffer.removeItem(self.buffer.count()-1)
         for label,name in names:self.buffer.addItem(label,name)
+        gone=self.buffer.findData(key)<0
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
+        # The buffer that was shown is no longer in the list (the Composite, its graph emptied): the beauty is shown.
+        if gone:self._buffer_changed(self.buffer.currentIndex())
         self._limit_buffers()
 
+    def _engine(self):
+        """The renderer behind the engine chosen: MoonRay LS is MoonRay."""
+        chosen=self.preview_engine.currentData()
+        return 'moonray' if chosen=='moonray_ls' else chosen
+
+    def _live(self):
+        """Whether the engine chosen is a realtime one, which follows the scene as it is edited."""
+        return self.preview_engine.currentData()!='moonray'
+
     def _engine_changed(self,index):
-        self.preferences.set('preview_engine',self.preview_engine.currentData())
+        live=self._live()
+        # Whatever was rendering or being followed is stopped: nothing renders for a change of engine. A realtime
+        # engine is chosen with realtime off, and is switched on with its button, so that none starts by accident.
+        if not self.disposed and not self._output_busy() and (self._following or self._rendering):self.stop()
+        if self.ipr_mode.isChecked()!=live:self.ipr_mode.setChecked(live)
+        if live and not self.disposed:self.status.setText('Realtime is off. Press RT Off to switch it on.')
+        if not self.disposed and self.draft.isChecked() and not self._output_busy():
+            # A draft's region is rendered by the engine chosen: with another engine it is drawn again.
+            self._draft_hasty=True
+            QtCore.QTimer.singleShot(0,lambda:None if self.disposed or not self.draft.isChecked() else self.render_once())
+        self._set_rendering(self._rendering)
         # MoonLightIPR follows edits as they happen, so look for them more often.
-        self.timer.setInterval(60 if self.preview_engine.currentData()=='moonlightipr' else 150)
+        self.timer.setInterval(60 if self._engine()=='moonlightipr' else 150)
         self._limit_buffers()
 
     def _limit_buffers(self):
-        """MoonLightIPR makes one picture, which its own denoiser has already cleaned: the list then holds that alone,
-        under the name Denoised Beauty. The other buffers are MoonRay's."""
-        only=self.preview_engine.currentData()=='moonlightipr'
-        self.buffer.setItemText(0,'Denoised Beauty' if only else 'Beauty')
-        for row in range(1,self.buffer.count()):self.buffer.view().setRowHidden(row,only)
-        if only and self.buffer.currentIndex()!=0:self.buffer.setCurrentIndex(0)
+        """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty: the list then holds those two.
+        It shows the beauty unless the denoised one is chosen by hand, and choosing it is what has MoonLightIPR
+        denoise. The other buffers are MoonRay's."""
+        only=self._engine()=='moonlightipr'
+        denoises=self._moonlightipr_denoises()
+        self.buffer.setItemText(0,'Beauty')
+        for row in range(1,self.buffer.count()):
+            self.buffer.view().setRowHidden(row,only and not (denoises and self.buffer.itemData(row)=='denoised_beauty'))
+        if not only:return
+        shown=self.buffer.currentData()
+        # The beauty is what is shown. The denoised picture is for whoever is looking to choose, and stays chosen
+        # for as long as there is one.
+        wanted='denoised_beauty' if denoises and shown=='denoised_beauty' and self._buffer_picked=='denoised_beauty' else 'beauty'
+        if shown!=wanted:self.buffer.setCurrentIndex(self.buffer.findData(wanted))
+
+    def _moonlightipr_denoises(self):
+        """Whether MoonLightIPR's list has the denoised beauty in it: always. It denoises with the graphics card's own
+        denoiser, whatever the scene's denoiser is set to, when that buffer is the one chosen."""
+        return True
 
     def _engine_notices(self,messages):
         """Add what the preview engine left out to the notices of the scene it is showing."""
@@ -598,7 +816,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # Turned on during a preview: carry on from it.
                 self._follow(True)
                 self.status.setText('Following the scene.')
-            else:self.status.setText('IPR on: Render will follow the scene until Stop.')
+            else:self.status.setText('Realtime: the preview follows the scene.')
         else:
             was=self._following
             self._follow(False)
@@ -612,7 +830,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
         if self._following:
             self.renderer.buffers.denoiser.close()
-            if self.buffer.currentData()=='denoised_beauty':
+            if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr':
                 self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             if not self.preview_lock.isChecked():self.timer.start()
         self._set_rendering(self._rendering)
@@ -630,10 +848,31 @@ class Panel(Tools, QtWidgets.QWidget):
 
     # Capturing the scene
 
+    def _playblasting(self):
+        """The playblast that is running, if one is."""
+        from .playblast import Playblast
+        return self.sequence if isinstance(self.sequence,Playblast) and self.sequence.running else None
+
+    def _time_settled(self):
+        """Whether the scene's time has stood still for a moment. While Modo plays an animation it has not, and
+        the preview waits: it shows the frame the playing stops on, not each one it passes."""
+        import time as clock
+        time=lx.service.Selection().GetTime();now=clock.monotonic()
+        if time!=getattr(self,'_seen_time',time):self._time_moved=now
+        self._seen_time=time
+        return now-getattr(self,'_time_moved',0.0)>=PLAYBACK_REST
+
     def _dimensions(self, scene, final=False):
+        """The size a render is made at. MoonRay, chosen as the engine, renders the picture itself: at the camera's
+        resolution, or the scene's where the camera does not override it. The realtime engines are previews, at the
+        preview size and never wider than it, however large the picture is to be."""
         scene_w, scene_h = scene['width'], scene['height']
         size=self.preferences.get('preview_size')
-        width = scene_w if final or size<=0 else size
+        if size<=0:size=640
+        width = scene_w if final or not self._live() else min(scene_w,size)
+        # A playblast has a width of its own, whichever engine is chosen.
+        blast=None if final else self._playblasting()
+        if blast is not None:width=min(scene_w,blast.width)
         return width, max(16, round(width * scene_h / max(1, scene_w)))
 
     def _capture(self,reuse=False):
@@ -647,14 +886,36 @@ class Panel(Tools, QtWidgets.QWidget):
         import copy,time
         full_capture=scene.pop('_full_capture',not reuse)
         if not reuse or reuse in ('materials','transforms') or isinstance(reuse,dict):
+            # What was found of the meshes when they were last read whole holds while they are only moved or shaded anew.
+            stand=self._geometry_cache.get('_item_transforms') if self._geometry_cache is not None and reuse in ('materials','transforms') else None
             self._geometry_cache=dict(scene,meshes=[dict(m) for m in scene['meshes']],materials=copy.deepcopy(scene['materials']),native_materials=copy.deepcopy(scene.get('native_materials',{})))
+            if stand:self._geometry_cache['_item_transforms']=True
         if full_capture or isinstance(reuse,dict):self._last_full_capture=time.monotonic()
+        if full_capture and self._geometry_cache is not None and scene.get('_evaluated_data') is not None:
+            # Whether each evaluated mesh stands where its item does, which lets a later move of an item be followed
+            # without evaluating every mesh again. Not so for copies Modo generates, which are no item's.
+            self._geometry_cache['_item_transforms']=self._stand_with_items(modo.Scene(),scene)
         scene.pop('_evaluated_data',None)
         scene['_geometry_revision']=str(id(self))+':'+str(self._last_full_capture)
         configured=self._configure_snapshot(scene)
         from .assets import signature
         self._asset_scene=configured;self._asset_signature=signature(configured)
         return configured
+
+    def _stand_with_items(self,document,scene):
+        from .host import world_matrix
+        try:
+            if document.items('replicator',superType=False) or document.items('meshInst',superType=False):return False
+            if scene.get('extra_geometry'):return False
+            where={}
+            for mesh in scene['meshes']:
+                if 'instances' in mesh:return False
+                identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
+                if identity not in where:where[identity]=world_matrix(document.item(identity))
+                held=mesh.get('matrix')
+                if not held or len(held)!=16 or any(abs(a-b)>1e-5*max(1.0,abs(b)) for a,b in zip(held,where[identity])):return False
+            return bool(where)
+        except Exception:return False
 
     def _capture_output(self):
         values=self._settings_values()
@@ -663,7 +924,7 @@ class Panel(Tools, QtWidgets.QWidget):
         return self._configure_snapshot(capture_current(values['surface']==2))
 
     def _capture_preview(self):
-        if self.preview_engine.currentData()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
+        if self._engine()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
         from .animation import capture_current
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
         # Stepping through the shutter is not an edit for IPR to follow.
@@ -674,6 +935,8 @@ class Panel(Tools, QtWidgets.QWidget):
         values = self._settings_values()
         scene['render_settings'] = values['render']
         scene['scene_variables'] = values['scene_variables']
+        # The compositor's graph goes with the scene so that a render to a file can write its composite beside it.
+        scene['compositor'] = values['compositor']
         scene['aovs'] = values['aovs']
         scene['production']=values['production']
         scene['asset_settings']=values['asset_settings']
@@ -727,6 +990,8 @@ class Panel(Tools, QtWidgets.QWidget):
         """What the Render button does: one render, or with IPR on, a render that keeps following."""
         if self._output_busy():
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
+        # Render, or realtime switched on, is asking for the picture itself: Draft, where it is on, goes off first.
+        if self.draft.isChecked():self.draft.setChecked(False)
         if self.ipr_mode.isChecked():self._follow(True)
         # A render begun by hand begins from an empty view, unless it turns out to be one continued.
         self._clear_first=True
@@ -735,14 +1000,36 @@ class Panel(Tools, QtWidgets.QWidget):
     def _set_rendering(self,rendering):
         """Keep the Render button saying what pressing it will do."""
         self._rendering=bool(rendering)
+        if getattr(self,'_draft_quiet',False):return
         active=self._rendering or self._following
         again=not active and getattr(self,'_continuable',None) is not None
+        if self._live():
+            # A realtime engine is switched on and off, not started and stopped.
+            # RT for realtime. While it is on the button stays pressed in, as a switch that is on does.
+            self.start.setText('RT On' if active else 'RT Off')
+            self.start.setCheckable(True);self.start.setChecked(active)
+            self.start.setToolTip('Realtime is on: the preview follows the scene as you edit it. Press to switch it off.' if active
+                                  else 'Realtime is off: the preview is not following the scene. Press to switch it on.')
+            return
+        self.start.setChecked(False);self.start.setCheckable(False)
         self.start.setText('Stop' if active else 'Continue' if again else 'Render')
         self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)
 
     def _submit(self, scene, output=None, refining=False):
+        # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
+        self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
+        # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
+        # a draft's lines is of the same redraw; anything else asked for is not.
+        asked=getattr(self,'_draft_quiet_asked',False);self._draft_quiet_asked=False
+        if output or not getattr(self,'_draft_pass',False):self._draft_quiet=bool(asked and not output)
         self.refine_timer.stop()
+        if not output and not refining:
+            # The newest reading of the scene, whichever way it was come by (a render asked for, or an edit
+            # followed): the one that may be used again while nothing changes. Kept only from here, so that it is
+            # never an older one than the picture on screen was made from.
+            try:self._kept_capture=scene;self._kept_key=self._capture_key()
+            except Exception:self._kept_capture=None
         if not output:
             self._held=False;self._draft_engine=self._draft_lines=False
             region_pass,self._draft_pass=getattr(self,'_draft_pass',False),False
@@ -754,7 +1041,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # first, over the whole frame; the engine chosen then renders the region at the preview's own size,
             # and that is laid on them.
             self._draft_engine=self._draft_lines=True
-            self._draft_then=scene if self._draft_region() else None
+            # The region is rendered after the fine picture, not after the quick one before it.
+            self._draft_then=scene if self._draft_region() and not (getattr(self,'_draft_hasty',False) and not self._following) else None
         if not output:
             from .incremental import surroundings
             self._surroundings=surroundings(scene)
@@ -764,23 +1052,27 @@ class Panel(Tools, QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
-        if self._draft_engine:scene=dict(scene,_draft=2)
+        if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if (getattr(self,'_draft_hasty',False) and not self._following) else 12)
         if not output and self.draft.isChecked():
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
             self._draft_size=(width,height);self.preview.nominal=(width,height)
-        engine='moonray' if output else 'moonlightipr' if self._draft_engine else self.preview_engine.currentData()
+        engine='moonray' if output else 'moonlightipr' if self._draft_engine or self._playblasting() is not None else self._engine()
         # Continue: the same scene as the render that was stopped and kept, taken up where it stood.
         resume=bool(not output and not refining and engine=='moonray' and getattr(self,'_continuable',None) is not None and self._continuable==original_digest)
-        if not output:self._continuable=None
+        if not output:self._continuable=None;self._kept_note=''
         if not output and getattr(self,'_clear_first',False):
             self._clear_first=False
             if not resume and not self.draft.isChecked():
                 self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
                 self.renderer.buffers.forget()
         if self._draft_engine:
-            # The draft is drawn finer than the preview, as many pixels as the view has and half as many again, so
-            # that its lines are as clean as a drawing's and stay so when looked at closely.
-            fine=min(3200,max(2*width,int(1.5*self.preview.width()*self.preview.devicePixelRatioF())))
+            # A draft is drawn twice. First quickly and small, 640 pixels wide unless Preferences says otherwise, so
+            # that it is up at once. Then finely: as many pixels as the view has and half as many again, so that
+            # its lines are as clean as a drawing's and stay so when looked at closely. Either is told from the
+            # region rendered among the lines by its size, so neither is ever just the size of the preview.
+            if (getattr(self,'_draft_hasty',False) and not self._following):fine=max(64,min(3200,int(self.preferences.get('draft/width') or 640)))
+            else:fine=min(3200,max(2*width,int(1.5*self.preview.width()*self.preview.devicePixelRatioF())))
+            if fine==width:fine+=2
             height=max(16,round(height*fine/width));width=fine
             self._draft_fine=(width,height)
         # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
@@ -797,33 +1089,50 @@ class Panel(Tools, QtWidgets.QWidget):
         self.last_digest = original_digest
 
     def _digest(self, scene):
-        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising')}
+        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')}
         stored=self._settings_values();get=self.preferences.get
-        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), self.preview_engine.currentData()]
+        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), self._engine()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
         from .scene_digest import digest
         return digest(*values)
 
     def _preview_denoiser(self):
         denoising=self._settings_values()['denoising']
-        return denoising['engine'] if denoising['preview'] and not self._following else 'off'
+        if self._following:return 'off'
+        if denoising['engine']!='off' and denoising['preview']:return denoising['engine']
+        # The scene asks for none, and the denoised beauty is chosen in the list all the same: it is denoised with
+        # the graphics card's denoiser, or the processor's where that will not run.
+        return 'auto' if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' else 'off'
 
     def _denoising_changed(self,*args):
         if self.disposed:return
         engine=self._preview_denoiser()
         self._buffer_picked=None
+        if self._engine()=='moonlightipr':
+            # MoonLightIPR denoises for itself, when its denoised picture is chosen: the scene's setting is MoonRay's.
+            self._limit_buffers()
+            return
         self.renderer.buffers.denoiser.request(engine)
         self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' else 'denoised_beauty'))
 
     def _buffer_changed(self,index):
         if self.disposed:return
-        if self._following and self.buffer.currentData()=='denoised_beauty':
+        # MoonRay denoises a finished picture, so there is none while a scene is followed. MoonLightIPR denoises as
+        # it goes.
+        if self._following and self._engine()!='moonlightipr' and self.buffer.currentData()=='denoised_beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('beauty'));return
         try:
             from .display import values
             stored=self._settings_values();key=self.buffer.currentData()
             if self._add_cryptomatte(key,stored):return
+            if key=='denoised_beauty' and self._engine()!='moonlightipr':
+                # Chosen with no denoiser set in the scene: the kept render is denoised now.
+                engine=self._preview_denoiser()
+                if engine=='auto':self.renderer.buffers.denoiser.request(engine)
             self.renderer.buffers.select(key,values(stored['display']))
+            if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
+                # MoonLightIPR has not been denoising: it renders again, denoising this time.
+                if self._following or self._rendering or not self.preview.image.isNull():self.render_once()
             if not self._rendering and any(v['name']==key and v['kind']=='cryptomatte' for v in stored['custom_aovs']):
                 self.status.setText('Cryptomatte: each color is one ID. The EXR holds the mattes.')
         except Exception as exc:
@@ -834,7 +1143,7 @@ class Panel(Tools, QtWidgets.QWidget):
         category=next((c for c,_ in CRYPTOMATTES if key=='crypto_'+c),None)
         entries=list(stored['custom_aovs'])
         if category is None or any(v['name']==key for v in entries):return False
-        if self.preview_engine.currentData()!='moonray':
+        if self._engine()!='moonray':
             self.status.setText('Cryptomatte needs the MoonRay engine.');return True
         from . import native,outputs
         if not native.supports_crypto_categories(self.runtime_path()):
@@ -850,7 +1159,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _preview_changed(self, index):
         if self.disposed: return
         if not self._following:
-            self.status.setText('Applies to the next render.');return
+            self.status.setText('Realtime is off. Press RT Off to switch it on.' if self._live() else 'Applies to the next render.');return
         if self.preview_lock.isChecked():
             self.status.setText('Preview locked. Applies when unlocked.');return
         if self._output_busy():
@@ -873,18 +1182,50 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._output_busy():
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
         try:
-            self._submit(self._capture_preview())
+            scene=self._unchanged_scene()
+            if scene is None:
+                scene=self._capture_preview()
+                # What Modo has told of up to now is in this reading of the scene.
+                self.changes.consume()
+            self._submit(scene)
         except Exception as exc:
             self._failed(str(exc))
+
+    def _capture_key(self):
+        """What, beside the scene's own contents, a reading of the scene depends on."""
+        import modo
+        settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','compositor')}
+        return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
+                self.preferences.get('preview_motion'),self.runtime_path())
+
+    def _unchanged_scene(self):
+        """The scene as it was last read out of Modo, where nothing has changed since: reading it is most of the wait
+        for a draft's outlines, and switching Draft on or off or drawing a region changes nothing in the scene.
+        None where anything may have changed. Modo's word that nothing has is trusted for a quarter of a minute,
+        as it is while a scene is followed, unless the safety re-reading is switched off in the preferences."""
+        scene=getattr(self,'_kept_capture',None)
+        # Only while the scene is being followed: the reading kept is then the one the picture on screen was made
+        # from, brought up to date at every edit. With realtime off nothing keeps it so, and the scene is read anew.
+        if not self._following:return None
+        if scene is None or not self.changes.registered or self.changes.full or self.changes.items:return None
+        import time as clock
+        if self.preferences.get('capture_safety') and clock.monotonic()-self._last_full_capture>15:return None
+        try:
+            if self._capture_key()!=self._kept_key:return None
+        except Exception:return None
+        return scene
 
     def _live_tick(self):
         if self.disposed or not self._following:return
         from .interaction import dragging
         held=dragging()
         # MoonLightIPR is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
-        if held and self.preview_engine.currentData()!='moonlightipr':self.release_timer.start();return
+        if held and self._engine()!='moonlightipr':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
+        # An animation playing in Modo is not followed frame by frame: the frame it stops on is rendered. A time
+        # dragged by hand is another matter, and is followed as any drag is.
+        if not self._time_settled() and not held:return
         try:
             import modo
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
@@ -899,7 +1240,7 @@ class Panel(Tools, QtWidgets.QWidget):
             if not held and now-self._asset_check_time>=1:
                 self._asset_check_time=now;asset_changed=signature(self._asset_scene)!=self._asset_signature
             full=full or (not held and self.preferences.get('capture_safety') and now-self._last_full_capture>15) or asset_changed
-            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising')}
+            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             if not (full or items or changed):return
             reuse=not full and not changed and bool(items) and self._geometry_cache is not None
@@ -931,6 +1272,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self.changes.invalidate();self._failed(str(exc))
 
     def stop(self):
+        self._draft_quiet=False
         self.refine_timer.stop()
         self._pending_preview=False;self.release_timer.stop()
         self.preview_timer.stop()
@@ -950,7 +1292,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Stopping: keeping what is rendered.');self._await_settle(30000);return
         # MoonRay kept loaded hands over the picture as it stands, with what the denoiser needs, and is then stopped.
         if rendering and not self.draft.isChecked() and self.renderer.keep_progress():
-            self.status.setText('Stopping: keeping what is rendered.');self._await_settle(12000);return
+            self.status.setText('Stopping: keeping what is rendered.');self._await_settle(16000);return
         self.renderer.stop()
         self._set_rendering(False)
         self.status.setText('Stopped.')
@@ -996,7 +1338,8 @@ class Panel(Tools, QtWidgets.QWidget):
         A pass cut short leaves nothing of its own; MoonRay hands over a picture only when a pass ends."""
         engine=self._preview_denoiser()
         frame=self.renderer.buffers.frame
-        if engine=='off' or not frame or frame.get('snapshot',{}).get('_ipr'):return
+        # MoonLightIPR denoises for itself, and which of its pictures is shown is chosen in the list.
+        if engine=='off' or not frame or frame.get('snapshot',{}).get('_ipr') or self._engine()=='moonlightipr':return
         if not all(key in frame.get('files',{}) for key in ('beauty','denoise_albedo','denoise_normal')):return
         self.renderer.buffers.denoiser.request(engine)
         if self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
@@ -1004,6 +1347,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText('Stopped. The picture as it stood is kept and denoised.' if standing else 'Stopped. The last finished pass is kept and denoised.')
 
     def _failed(self, message):
+        self._draft_quiet=False
         self.refine_timer.stop()
         self._following=False;self.timer.stop()
         self.renderer.stop()
@@ -1040,7 +1384,9 @@ class Panel(Tools, QtWidgets.QWidget):
                 region=self._draft_region()
                 # Copies of their own: the picture shown may rest on memory the renderer takes back.
                 if region:self._part=(region,self.preview.image.copy())
-                else:self._whole=self.preview.image.copy();self._part=None
+                else:
+                    # With which scene it is of, so that it is not put back once the scene is another.
+                    self._whole=self.preview.image.copy();self._part=None;self._whole_digest=self.last_digest
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
@@ -1048,16 +1394,48 @@ class Panel(Tools, QtWidgets.QWidget):
                 settings=snapshot['render_settings']
                 text+=' | IPR '+('1 SPP' if settings['max_adaptive_samples']==1 else '%d-%d SPP'%(settings['min_adaptive_samples'],settings['max_adaptive_samples']))
             self.image_info.setText(text)
+            self._image_note()
             self.image_info.setToolTip(str(frame.get('backend',self.renderer.backend_status)))
         except ValueError as exc:
             self.status.setText('Cannot display cached preview: '+str(exc))
 
+    def _renderer_status(self,text):
+        # Left as it is while a draft redraws by itself.
+        if getattr(self,'_draft_quiet',False):return
+        self.status.setText(text)
+
     def _render_progress(self,value,label):
+        if getattr(self,'_draft_quiet',False):return
         if self.sequence is not None and self.sequence.running:
             label='Frame %d (%d/%d) | %s'%(self.sequence.frame,len(self.sequence.completed)+1,self.sequence.total,label)
         self.render_progress.setRange(0,0 if value<0 else 100)
         if value>=0: self.render_progress.setValue(value)
+        # Under Safe Denoising: how long ago MoonRay last saved, which is what a stop now would keep.
+        saved=getattr(self.renderer,'saved_at',None)
+        if (self._rendering and saved is not None and getattr(self.renderer,'safe_files',None) and not getattr(self.renderer,'settling',False)
+                and not label.startswith(('Complete','Stopped')) and 'Denoising' not in label):
+            import time
+            from .progress import duration
+            label+=' · Saved %s ago'%duration(time.monotonic()-saved)
         self.render_timing.setText(label.replace(' · ',' | '))
+
+    def _kept_status(self):
+        """What to say of a render stopped under Safe Denoising: it is kept as MoonRay last saved it, which may be
+        some way behind what was on screen at the stop. The picture's own line says so for as long as it is shown."""
+        from .progress import duration
+        behind=getattr(self.renderer,'kept_behind',None)
+        if behind is None or behind<1.5:
+            self._kept_note='';return 'Stopped and kept. Continue takes the render up again.'
+        self._kept_note='as saved %s before the stop'%duration(behind)
+        self._image_note()
+        return 'Stopped: the picture is the last save, %s before the stop. Continue takes it up from there.'%duration(behind)
+
+    def _image_note(self):
+        """Mark the picture's line where the picture is not what was last on screen."""
+        note=getattr(self,'_kept_note','')
+        text=self.image_info.text().split(' | as saved ')[0]
+        if text:self.image_info.setText(text+(' | '+note if note else ''))
+        self.image_info.setStyleSheet('QLabel,QLabel:disabled{color:#ffd166;}' if note else '')
 
     def _finished(self, output):
         if not output and getattr(self,'_draft_then',None) is not None and self.draft.isChecked():
@@ -1071,10 +1449,11 @@ class Panel(Tools, QtWidgets.QWidget):
         # A preview stopped under Safe Denoising can be taken up again while the scene stays as it was.
         self._continuable=self.last_digest if not output and getattr(self.renderer,'resumable',None) else None
         self._set_rendering(False)
+        self._draft_quiet=False
         self.status.setToolTip('')
-        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else 'Stopped and kept. Continue takes the render up again.' if self._continuable
+        self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
                              else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))
-        if not output:
+        if not output and self._engine()!='moonlightipr' and self._playblasting() is None:
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)
             # With a preview denoiser on, the finished picture shown is the denoised one, unless Beauty was chosen by hand:

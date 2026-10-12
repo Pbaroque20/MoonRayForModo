@@ -128,6 +128,13 @@ def configured_runtime(settings):
 
 
 _CRYPTO_LIBS=('libscene_rdl2.dll','librendering_rndr.dll','moonray.exe')
+def settings_name():
+    """Where the preview's settings are kept. A test copy of Modo is given a name of its own, so that what a test
+    sets (its runtime above all) is never what the user's own Modo reads while the test runs."""
+    import os
+    return os.environ.get('MOONRAY_MODO_PREFERENCES') or 'NativePreview'
+
+
 def supports_crypto_categories(directory):
     root=Path(directory).resolve()
     try:signature=tuple((p.stat().st_size,p.stat().st_mtime_ns) for p in [root/'modo-crypto-categories.json']+[root/n for n in _CRYPTO_LIBS])

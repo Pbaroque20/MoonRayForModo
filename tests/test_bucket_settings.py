@@ -48,7 +48,7 @@ class BucketSettings(unittest.TestCase):
         calls=[]
         state=SimpleNamespace(running=lambda:True,signature=('runtime',0,'auto',0),
             stopping=False,sent=None,process=SimpleNamespace(kill=lambda:calls.append('restart')),
-            _dispatch=lambda:calls.append('dispatch'))
+            _dispatch=lambda:calls.append('dispatch'),idle=SimpleNamespace(cancel=lambda:None))
         Session.submit(state,'scene','runtime',0,'auto',1,0)
         self.assertEqual(calls,['dispatch'])
         Session.submit(state,'scene','runtime',0,'auto',2,64)

@@ -1,4 +1,5 @@
 #pragma once
+#include "modo_protocol_line.h"
 #include <windows.h>
 #include <string>
 #include <iostream>
@@ -27,7 +28,7 @@ public:
         for(size_t i=0;i<count;++i)sample(i,destination+i*3);
         publishedAt=GetTickCount64();
         MemoryBarrier();
-        std::cout << "\n@@MODO_SHARED " << generation << " " << key << " " << width << " " << height << " " << name << std::endl;
+        modoProtocolLine("@@MODO_SHARED " + generation + " " + key + " " + std::to_string(width) + " " + std::to_string(height) + " " + name);
         return true;
     }
 };

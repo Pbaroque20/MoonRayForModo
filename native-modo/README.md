@@ -10,6 +10,15 @@ to reading a polygon at a time where the adapter is missing or older. Build it w
 folder given with `--output-dir` (the 0.3.50.1 release used `build/modo-geometry-fast`).
 `tools/probe_mesh_reader.py` checks in Modo that the two ways of reading give the same mesh.
 
+`render_cache.cpp` hands evaluated geometry over in two files (`MR_geometry_snapshot_binary`): a small
+JSON text that names the surfaces and their segments, and the segments' long rows of numbers as they
+are, 32-bit floats and whole numbers, which the text points into. Written out as text the rows were
+nine tenths of what a reading took. The older `MR_geometry_snapshot_file`, all text, is kept; the
+plugin uses it where the adapter has no other. `tools/probe_geometry_cache.py` times both in Modo and
+checks that they give the same. A render cache kept between readings was tried and given up: it ran a
+moment behind each edit and failed just after a mesh changed shape, and making one anew costs Modo
+only a few thousandths of a second.
+
 The user supplied `lxsdk_661446.zip` (SHA-256
 `bacdd6db4300766e8c76b714332d7fa0ae32e51eb8b825d2f460085577a687d2`). Extract it to
 `upstream/modo-sdk-661446/LXSDK_661446`, with `include` and `common` immediately underneath.

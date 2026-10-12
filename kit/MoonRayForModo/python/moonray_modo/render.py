@@ -2,12 +2,13 @@
 from pathlib import Path
 import shutil
 import tempfile
+import time
 import uuid
 from PySide2 import QtCore
 from . import native, rdla, options, denoising, outputs
 from .progress import Progress, duration
 from .buffer_cache import BufferCache
-from .persistent import Session, supported as persistent_supported
+from .persistent import Session, supported as persistent_supported, saves as persistent_saves
 from .moonlightipr_session import Session as MoonLightIPRSession, supported as moonlightipr_supported, directory as moonlightipr_directory
 
 MOONLIGHTIPR_STATUS = 'MoonLightIPR (GPU preview, approximate)'
@@ -140,6 +141,9 @@ class Renderer(QtCore.QObject):
             raise ValueError('Unknown preview engine')
         runtime = native.find_runtime(runtime)
         moonlightipr = engine=='moonlightipr' and not output and not linear_preview
+        # MoonLightIPR denoises when its denoised beauty is the buffer chosen in the window, with its own denoiser.
+        # (The window says so before it hands the scene over: a scene read earlier and used again says what was
+        # chosen when it was read.)
         # MoonLightIPR produces beauty only.
         if moonlightipr:snapshot=dict(snapshot,preview_buffer='beauty')
         if not output and not linear_preview:
@@ -150,9 +154,10 @@ class Renderer(QtCore.QObject):
         request = dict(snapshot=snapshot, runtime=runtime, width=width, height=height, generation=self.generation,
                        samples=samples, environment=environment, threads=threads, output=output,
                        linear_preview=linear_preview, moonlightipr=moonlightipr, resume=bool(resume),
-                       # A safe render is one MoonRay of its own, which can be ended where it stands.
+                       # A safe render is rendered by the MoonRay kept loaded where that one can save as it renders,
+                       # and so is shown as it comes on; else by a MoonRay of its own, shown at each save.
                        persistent=bool(persistent_preview and not moonlightipr and not output and not linear_preview and persistent_supported(runtime)
-                                       and not denoising.settings(snapshot.get('denoising',{}))['safe']))
+                                       and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime))))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         # A stop that was still waiting for MoonRay to save is over: this render is not one being stopped.
@@ -197,13 +202,25 @@ class Renderer(QtCore.QObject):
                 or not getattr(self,'using_session',False) or self.active['snapshot'].get('_ipr') or getattr(self,'phase','')!='render'
                 or not getattr(self,'denoise_guides',None) or getattr(self,'gather',None) is not None or self.buffers.progressive is None):
             return False
-        # Each is taken three times over: a pixel MoonRay is adding to as its picture is taken is caught part way,
-        # too dark or too light, and the denoiser would smear it into a blotch. Of three takes the middle value of
-        # each pixel is used, which no one such pixel spoils. The beauty is asked for last, so as to be the newest.
-        self.gather=gather={'want':['denoise_albedo']*3+['denoise_normal']*3+['beauty']*3,'got':{}}
+        # Each is taken five times over, and the middle value of the last three used for each pixel. A pixel MoonRay
+        # is adding to as its picture is taken is caught part way, too dark, and the denoiser would smear it into a
+        # mark. MoonRay holds such a pixel at what it last showed, but the first picture of a buffer has nothing
+        # earlier to hold it at, and the second may hold it at the first: so those two are let go by. The beauty is
+        # asked for last, so as to be the newest.
+        self.gather=gather={'want':['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5,'got':{}}
         self.pending=None
+        from .persistent import holds
+        if holds(self.active['runtime']):
+            # A MoonRay that can hand over several views at one asking hands each over once, with no waiting on the
+            # host between them. Three rounds of them, for the middle to be taken, took twice as long and left the
+            # denoised picture no cleaner.
+            gather['want']=['denoise_albedo','denoise_normal','beauty'];gather['held']=True
+            if self.session.hold(gather['want']):
+                QtCore.QTimer.singleShot(12000,lambda:self._gathered(gather,False))
+                return True
+            gather['want']=['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5;gather['held']=False
         self.session.select_view(gather['want'][0])
-        QtCore.QTimer.singleShot(8000,lambda:self._gathered(gather,False))
+        QtCore.QTimer.singleShot(12000,lambda:self._gathered(gather,False))
         return True
 
     def _gathered(self,gather,whole):
@@ -211,7 +228,7 @@ class Renderer(QtCore.QObject):
         self.gather=None
         done=False
         if whole and not self.closed and not self.canceled and self.active:
-            done=self.buffers.keep(gather['got'],self.active['runtime'],self.active['snapshot'],self.backend_status)
+            done=self.buffers.keep({key:taken[-3:] for key,taken in gather['got'].items()},self.active['runtime'],self.active['snapshot'],self.backend_status)
         self.session.select_view('beauty')
         if not self.closed:
             self.stop();self.kept.emit(done)
@@ -220,9 +237,15 @@ class Renderer(QtCore.QObject):
         """Stop MoonRay where it stands and finish with the picture it last saved, where safe denoising had it save
         one. Returns whether that is under way: the render then ends as any other does, or reports stopped if
         nothing had been saved yet."""
-        if (self.closed or self.canceled or not self.active or getattr(self,'using_moonlightipr',False) or getattr(self,'using_session',False)
-                or not getattr(self,'safe_files',None) or getattr(self,'phase','')!='render' or self.process.state()==QtCore.QProcess.NotRunning):
+        loaded=getattr(self,'using_session',False)
+        if (self.closed or self.canceled or not self.active or getattr(self,'using_moonlightipr',False)
+                or not getattr(self,'safe_files',None) or getattr(self,'phase','')!='render'
+                or not (self.session.running() if loaded else self.process.state()!=QtCore.QProcess.NotRunning)):
             return False
+        # The MoonRay kept loaded can hand over its picture as it stands: before its first save, that is what is
+        # kept, in place of nothing.
+        if loaded and not getattr(self,'safe_whole',False) and not getattr(self,'safe_written',None):return False
+        self.stopped_at=time.monotonic()
         self.settling=True;self.pending=None;self.watchdog.stop()
         # MoonRay may be part way through saving, and a file cut short is no picture. Between saves, with a whole
         # save made, it is ended at once and that save is the render. Part way through one, or before the first,
@@ -237,7 +260,16 @@ class Renderer(QtCore.QObject):
     def _settle_now(self):
         if getattr(self,'settling',False) and getattr(self,'settle_wanted',None) is not None:
             self.settle_wanted=None
-            if self.process.state()!=QtCore.QProcess.NotRunning:self.process.kill()
+            if getattr(self,'using_session',False):
+                # The MoonRay kept loaded is ended, and what it last saved is finished with as its render.
+                # Not from within the reading of its own output, which is where the last save is heard of.
+                def ended():
+                    if self.closed or not getattr(self,'settling',False):return
+                    self.session.stop()
+                    self.session.process.waitForFinished(3000)
+                    self._exited(1,QtCore.QProcess.CrashExit)
+                QtCore.QTimer.singleShot(0,ended)
+            elif self.process.state()!=QtCore.QProcess.NotRunning:self.process.kill()
 
     def _safe_key(self,path):
         """What a file of a render is, apart from which render it is of: the end of its name."""
@@ -314,7 +346,12 @@ class Renderer(QtCore.QObject):
             self.failed.emit('This runtime has no MoonLightIPR GPU preview (expected in '+str(directory)+'). Choose MoonRay as the preview engine.');return
         self.status.emit('Rendering · '+self.backend_status)
         self.moonlightipr_serial+=1
-        self.moonlightipr.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,MOONLIGHTIPR_SAMPLES,runtime=request['runtime'])
+        # MoonLightIPR denoises when its denoised beauty was the buffer chosen as the render was asked for, and then
+        # has both pictures: the denoised one and the beauty as it is rendered. Which is shown is the buffer chosen.
+        self.moonlightipr_denoises=bool(getattr(self,'moonlightipr_wanted',False))
+        self.moonlightipr.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,getattr(self,'moonlightipr_samples',None) or MOONLIGHTIPR_SAMPLES,
+                                 denoise=self.moonlightipr_denoises,runtime=request['runtime'])
+        self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key!='beauty')
 
     def _moonlightipr_memory(self,packet):
         if self.closed or self.canceled or not self.using_moonlightipr or packet[0]!=self.moonlightipr_serial:return
@@ -405,7 +442,7 @@ class Renderer(QtCore.QObject):
             if denoising.settings(snapshot.get('denoising',{}))['safe'] and not snapshot.get('_ipr') and not snapshot.get('_recovery') and not request.get('linear_preview'):
                 data=self.current_base.with_suffix('.resume-data.exr')
                 snapshot['_safe']={'data':str(data)}
-                self.safe_written=set();self.safe_whole=False;self.safe_tail=''
+                self.safe_written=set();self.safe_whole=False;self.safe_tail='';self.saved_at=None;self.kept_behind=None
                 self.safe_files=([Path(self.image_path)] if request['output'] else [Path(path) for path in self.preview_files.values()])+[Path(path) for path in self.denoise_guides.values()]+[data]
                 snapshot['_safe']['minutes']=self.safe_minutes=denoising.safe_minutes(len(self.safe_files),request['width'],request['height'])
                 if request.get('resume') and getattr(self,'resumable',None):
@@ -494,9 +531,9 @@ class Renderer(QtCore.QObject):
                 if name not in names:continue
                 self.safe_written.add(name)
                 if self.safe_written>=names:
-                    self.safe_written=set();self.safe_whole=whole=True
+                    self.safe_written=set();self.safe_whole=whole=True;self.saved_at=time.monotonic()
             saved=Path(denoising.safe_name(self.buffer_path))
-            if whole and not self.active.get('output') and not getattr(self,'settling',False) and saved.is_file():
+            if whole and not self.active.get('output') and not getattr(self,'settling',False) and not self.using_session and saved.is_file():
                 # A safe render is a MoonRay of its own, which shows nothing until a pass ends: each save of the
                 # beauty is shown as it is made, so that the picture is seen to come on.
                 try:self.buffers.publish({'beauty':str(saved)},self.active['runtime'],self.active['snapshot'],self.backend_status,partial=True)
@@ -532,6 +569,9 @@ class Renderer(QtCore.QObject):
                 except OSError:pass
 
     def _select_view(self,key):
+        if getattr(self,'using_moonlightipr',False):
+            # MoonLightIPR has its beauty and its denoised picture both: it sends the one now chosen.
+            self.moonlightipr.view(key!='beauty');return
         if key=='denoised_beauty':return # Post-process result, not a native render output.
         snapshot=self.active['snapshot'] if getattr(self,'active',None) else {}
         if outputs.display_kind(snapshot,key)=='cryptomatte':
@@ -547,7 +587,7 @@ class Renderer(QtCore.QObject):
             # Being stopped: the pictures asked for are taken as they come, one after another, and not shown.
             if key==gather['want'][0]:
                 gather['got'].setdefault(key,[]).append((width,height,pixels));gather['want'].pop(0)
-                if gather['want'] and gather['want'][0]!=key:self.session.select_view(gather['want'][0])
+                if gather['want'] and gather['want'][0]!=key and not gather.get('held'):self.session.select_view(gather['want'][0])
                 if not gather['want']:self._gathered(gather,True)
             return
         try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
@@ -586,6 +626,9 @@ class Renderer(QtCore.QObject):
                 self.passes=[]
             elif self._promote_safe():
                 code,exit_status=0,QtCore.QProcess.NormalExit;self.passes=[]
+                # How long before the stop the picture now kept was saved: what was rendered since is not in it.
+                if getattr(self,'saved_at',None) is not None and getattr(self,'stopped_at',None) is not None:
+                    self.kept_behind=max(0.0,self.stopped_at-self.saved_at)
             else:
                 self.resumable=getattr(self,'resumable_before',None)
                 self.canceled=True;self._progress_end(False);self.status.emit('Stopped');self.stopped.emit();return
@@ -646,6 +689,17 @@ class Renderer(QtCore.QObject):
                 self.deep_path=None
             except OSError as exc:
                 self.failed.emit('Cannot save render: '+str(exc));return
+            # The compositor's picture of the render, written beside it. A graph that cannot be made of this render
+            # (it takes a buffer the render has not) is said so, and the render stands all the same.
+            graph=self.active['snapshot'].get('compositor')
+            if graph:
+                try:
+                    from .composite_output import write
+                    denoised=getattr(self,'denoise_result',None) if self.phase=='postdone' else None
+                    written=write(self.active['runtime'],graph,destination,denoised)
+                    if written is not None:self.log+='Composite written: '+str(written)+'\n'
+                except Exception as exc:
+                    self.status.emit('The composite was not written: '+str(exc))
             self.finished.emit(str(destination))
             return
         self.image_ready.emit(str(self.image_path))

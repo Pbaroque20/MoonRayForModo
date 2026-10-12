@@ -1,5 +1,5 @@
 """Named output editor with explicit precision and filtering controls."""
-from PySide2 import QtGui, QtWidgets
+from PySide2 import QtCore, QtGui, QtWidgets
 from . import outputs
 
 class OutputsDialog(QtWidgets.QDialog):
@@ -24,6 +24,9 @@ class OutputsDialog(QtWidgets.QDialog):
         self.problem=QtWidgets.QLabel('');self.problem.setWordWrap(True);self.problem.setStyleSheet('color: #e0a030;');layout.insertWidget(layout.count()-1,self.problem)
         for entry in entries:self.add(entry)
         self.table.itemChanged.connect(lambda item:self.check())
+        self.native_button=QtWidgets.QPushButton('Check with MoonRay');self.native_button.clicked.connect(self.check_native);row.addWidget(self.native_button)
+        self._native_process=None;self._native_job=None;self._native_log=bytearray();self._native_closing=False
+        self._native_timer=QtCore.QTimer(self);self._native_timer.setSingleShot(True);self._native_timer.timeout.connect(self.native_timeout)
         self.check()
     def free(self,name):
         """The name, or the name with a number after it where an output already has it."""
@@ -44,6 +47,68 @@ class OutputsDialog(QtWidgets.QDialog):
             self.table.blockSignals(blocked)
             if wrong and not first:first='%s: %s'%(self.table.item(row,0).text() if self.table.item(row,0) else 'Row %d'%(row+1),wrong)
         self.problem.setText(first)
+    def native_expressions(self):
+        return [(row,self.table.item(row,2).text().strip()) for row in range(self.table.rowCount())
+                if self.table.cellWidget(row,1).currentData()=='lpe']
+    def check_native(self):
+        from pathlib import Path
+        from . import native,lpe_validation
+        try:
+            expressions=self.native_expressions()
+            if not expressions:raise ValueError('Add a light path output first')
+            runtime=native.configured_runtime(QtCore.QSettings('MoonRayForModo',native.settings_name()))
+            self._native_temp=QtCore.QTemporaryDir()
+            if not self._native_temp.isValid():raise ValueError('Cannot create a temporary validation folder')
+            directory=Path(self._native_temp.path());path=lpe_validation.prepare(directory,[v for _,v in expressions])
+            process=QtCore.QProcess(self);self._native_process=process;self._native_job=(expressions,directory)
+            self._native_log=bytearray();self.native_button.setEnabled(False)
+            process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
+            environment=QtCore.QProcessEnvironment()
+            for key,value in native.environment(runtime).items():environment.insert(key,value)
+            process.setProcessEnvironment(environment);process.setWorkingDirectory(str(directory))
+            process.readyReadStandardOutput.connect(self.native_read)
+            process.finished.connect(self.native_finished)
+            process.errorOccurred.connect(self.native_error)
+            process.setProgram(str(runtime/'moonray.exe'))
+            process.setArguments(native.arguments(path,directory/'beauty.exr',threads=1,mode='scalar'))
+            self.problem.setText('Checking expressions with MoonRay in a temporary one-pixel scene...')
+            self._native_timer.start(60000);process.start()
+        except Exception as exc:
+            self.problem.setText(str(exc));self.native_button.setEnabled(True)
+    def native_read(self):
+        if self._native_process:self._native_log.extend(bytes(self._native_process.readAllStandardOutput()))
+    def native_timeout(self):
+        if self._native_process and self._native_job:
+            self._native_process.kill()
+            self.problem.setText('Native validation timed out; no result was accepted.')
+    def native_error(self,error):
+        if error==QtCore.QProcess.FailedToStart:self.native_finished(-1,QtCore.QProcess.CrashExit)
+    def native_finished(self,code,status):
+        if self._native_job is None:return
+        from . import lpe_validation
+        self.native_read();expressions,directory=self._native_job;self._native_job=None;self._native_timer.stop()
+        self.native_button.setEnabled(True)
+        try:
+            if self._native_closing:return
+            if self.native_expressions()!=expressions:
+                self.problem.setText('Expressions changed during the check; run it again.');return
+            failed=lpe_validation.results(directory,len(expressions),code,bytes(self._native_log).decode('utf-8',errors='replace'))
+            blocked=self.table.blockSignals(True)
+            for index,(row,expression) in enumerate(expressions):
+                cell=self.table.item(row,2);wrong=failed.get(index)
+                cell.setForeground(QtGui.QBrush(QtGui.QColor('#b02010' if wrong else '#000000')));cell.setToolTip(wrong or 'Accepted by the MoonRay parser; matching scene paths are not verified')
+            self.table.blockSignals(blocked)
+            self.problem.setText('%d expression(s) rejected by MoonRay; hover over marked fields.'%len(failed) if failed else
+                                 'MoonRay accepted the expressions. This does not verify that matching light paths exist in your scene.')
+        except Exception as exc:self.problem.setText(str(exc))
+        finally:
+            self._native_temp.remove()
+            if self._native_process:self._native_process.deleteLater();self._native_process=None
+    def done(self,result):
+        self._native_closing=True
+        if self._native_process and self._native_process.state()!=QtCore.QProcess.NotRunning:
+            self._native_process.kill();self._native_process.waitForFinished(1000)
+        super().done(result)
     def light_group(self):
         label,ok=QtWidgets.QInputDialog.getText(self,'Light-group output','Light group label (set in Lighting scene controls)')
         if not ok:return

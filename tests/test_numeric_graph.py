@@ -8,6 +8,7 @@ except ImportError:raise unittest.SkipTest('Requires Modo Python/Qt')
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'kit/MoonRayForModo/python'))
 from moonray_modo import nodes,properties
 from moonray_modo.node_editor import Editor
+from moonray_modo.node_widgets import key_of,VectorField
 from test_node_editing import key_text,key_click
 
 class NumericGraph(unittest.TestCase):
@@ -24,13 +25,15 @@ class NumericGraph(unittest.TestCase):
     def field(self):return next(w for w in self.editor.numeric_fields if w.key=='metallic')
     def type_value(self,text):
         field=self.field();field.setFocus();field.selectAll();key_text(field.lineEdit(),text);return field
-    def test_enter_commits_without_replacing_field_or_saving_graph(self):
+    def test_enter_commits_without_replacing_field_or_closing_editor(self):
         field=self.type_value('0.5');key_click(field.lineEdit(),QtCore.Qt.Key_Return);self.app.processEvents()
         self.assertEqual(self.editor.table.item(self.editor.table.currentRow(),0).text(),'metallic')
         self.assertEqual(self.editor.graph['nodes']['surface']['parameters']['metallic'],.5)
         self.assertIs(self.field(),field)
         self.assertIsNone(self.editor.table.itemDelegateForColumn(1).active_editor)
-        self.assertNotIn('metallic',properties.read(self.item)['node_graph']['nodes']['surface']['parameters'])
+        # The current editor applies valid edits immediately and has a Close button, not Save.
+        self.assertEqual(properties.read(self.item)['node_graph']['nodes']['surface']['parameters']['metallic'],.5)
+        self.assertTrue(self.editor.isVisible())
         self.assertFalse(self.editor.material_preview.live.isChecked())
     def test_draft_commits_pending_text_without_tab(self):
         field=self.type_value('0.5');draft=self.editor.preview_draft()
@@ -46,14 +49,18 @@ class NumericGraph(unittest.TestCase):
         field=self.type_value('0.5');self.editor.property_search.setFocus();self.app.processEvents()
         self.assertEqual(self.editor.graph['nodes']['surface']['parameters']['metallic'],.5)
         self.assertIs(self.field(),field)
-    def test_color_swatch_uses_native_decoration_without_python_paint(self):
+    def test_color_swatch_uses_persistent_native_control_without_python_paint(self):
         delegate=self.editor.table.itemDelegateForColumn(1)
         self.assertNotIn('paint',type(delegate).__dict__)
-        row=next(r for r in range(self.editor.table.rowCount()) if self.editor.table.item(r,0).text()=='metallic_color')
+        row=next(r for r in range(self.editor.table.rowCount()) if key_of(self.editor.table,r)=='metallic_color')
         cell=self.editor.table.item(row,1)
-        self.assertIsInstance(cell.data(QtCore.Qt.DecorationRole),QtGui.QColor)
-        cell.setText('[0.8, 0.1, 0.5]')
-        self.assertEqual(cell.data(QtCore.Qt.DecorationRole).name(),'#cc1a80')
+        field=self.editor.table.cellWidget(row,1)
+        self.assertIsInstance(field,VectorField)
+        self.assertIsInstance(field.swatch,QtWidgets.QPushButton)
+        for spin,value in zip(field.spins,(.8,.1,.5)):spin.setValue(value)
+        self.assertIn('#cc1a80',field.swatch.styleSheet())
+        self.assertEqual(properties.read(self.item)['node_graph']['nodes']['surface']['parameters']['metallic_color'],[.8,.1,.5])
+        self.assertIs(self.editor.table.cellWidget(row,1),field)
         self.editor.table.scrollToItem(cell)
         for _ in range(10):
             self.editor.table.viewport().repaint();self.app.processEvents();gc.collect()

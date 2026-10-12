@@ -21,6 +21,8 @@ DEFAULTS = {
     'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
     'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
+    # The compositor's graph over a finished render's buffers (compositor.py); none until one is made.
+    'compositor': {},
 }
 
 
