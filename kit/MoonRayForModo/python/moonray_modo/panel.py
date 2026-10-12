@@ -681,6 +681,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if not self.disposed and not self._output_busy() and (self._following or self._rendering):self.stop()
         if self.ipr_mode.isChecked()!=live:self.ipr_mode.setChecked(live)
         if live and not self.disposed:self.status.setText('Realtime is off. Press RT Off to switch it on.')
+        if not self.disposed and self.draft.isChecked() and not self._output_busy():
+            # A draft's region is rendered by the engine chosen: with another engine it is drawn again.
+            self._draft_hasty=True
+            QtCore.QTimer.singleShot(0,lambda:None if self.disposed or not self.draft.isChecked() else self.render_once())
         self._set_rendering(self._rendering)
         # MoonLightIPR follows edits as they happen, so look for them more often.
         self.timer.setInterval(60 if self._engine()=='moonlightipr' else 150)

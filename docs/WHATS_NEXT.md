@@ -60,13 +60,22 @@ Several of these need the **MoonRay of the next runtime** (a rebuilt `moonray.ex
 ![An object that only casts its shadow, MoonRay on the left and MoonLightIPR on the right](images/moonlightipr-seen_shadow_only.jpg)
 *Two balls hidden from everything but shadows: MoonRay (left) and MoonLightIPR (right).*
 
-## Not checked
+## Checked since
 
-- The heavy scene used for 0.3.51.3 (1920 x 900, 26 buffers) was rendered for three minutes in each mode to look for dark blocks; a stop of it, and its speed under Safe Denoising against a normal render, were not measured again.
-- Continue after a stop was offered in every test and was not itself run on the newest MoonRay.
-- A Shader's visibility switches were tested as scene descriptions, not through a Shader item in Modo. Lights and environments with their eye off are now left out too, by the same rule, and that was not rendered.
-- The tile outlines were measured (how often they are told of, and that they ease and fade) and not watched during a real render.
-- MoonLightIPR's two buffers and Draft's handling of a changed scene were tried on a single ball, not on a heavy scene.
-- The faster following of a moved item was timed in Draft only. MoonRay LS and MoonLightIPR with realtime on take the same path and were not timed; and a scene with instances, replicators or deformers still reads everything for a move.
-- Draft following the scene with a region set, which renders the region again at each change, was not tried.
-- With the scene's denoiser on, MoonLightIPR denoises every picture whichever buffer is shown; what that costs while Beauty is shown was not measured.
+- **Continue after a stop** works on the newest MoonRay, on two balls and on the origami cheetah: MoonRay took up the saved render (26 files on the cheetah) and went on from it; stopped again, it kept its picture and offered Continue again.
+- **The heavy scene under Safe Denoising** (the cheetah, 1920 x 900, 26 buffers): a stop keeps the last save and denoises it. In 198 seconds a normal render reached 7.5% and a safe one 6.1%, so Safe Denoising costs about a fifth of the pace on this scene.
+- **Draft with a region set** follows the scene: the outlines and the region are drawn again by themselves after a change, under MoonRay (the region at MoonRay's size) and under MoonLightIPR.
+- **Following a moved item on the cheetah**, realtime on: MoonLightIPR shows the new picture 0.17 to 0.19 seconds after the move, MoonRay LS 0.74 to 0.79 seconds. Both read only what moved.
+- **Geometry handed over as numbers** gives exactly what the text gave on a ball, two instances of it and a subdivided cube.
+- **MoonLightIPR's denoiser while Beauty is shown** costs next to nothing: 256 samples took 1.0 to 1.1 seconds with it on and 1.0 to 1.4 with it off.
+- **A light with its eye off** is left out, and comes back when set to Render: Yes. Environments have no eye of their own to follow.
+- **A Shader set not to be seen by the camera** reaches the renderer through the Shader item in Modo.
+- **A stop of a normal render** takes 3.6 to 4.7 seconds. Taking the picture three times over in place of five did not make it reliably quicker, so five it stays.
+- **A release package** made from this work (the kit, the next runtime and the geometry reader) passes the release check. Nothing was published.
+
+## Known gaps
+
+- **A Shader's Cast Shadows switch does not reach the renderer.** Modo hands over six switches for a surface, and Cast Shadows is not among them; the plugin takes Visible to Occlusion Rays for it. A surface with Cast Shadows off still casts its shadow; and, going by the code, one hidden from occlusion rays would cast none (not rendered to see).
+- The rare small dark tile in the live picture under Safe Denoising (0.08% of the worst picture on the cheetah) is still there.
+- A scene with instances, replicators or deformers still reads everything when an item moves.
+- The tile outlines were measured (how often they are told of, and that they ease and fade) and not watched by eye during a long render.

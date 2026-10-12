@@ -48,6 +48,31 @@ def rough(image):
     return total / max(count, 1) / 4.0
 
 
+RING = [(6, 0), (6, 2), (4, 4), (2, 6), (0, 6), (-2, 6), (-4, 4), (-6, 2), (-6, 0), (-6, -2), (-4, -4), (-2, -6), (0, -6), (2, -6), (4, -4), (6, -2)]
+
+
+def blotch(image):
+    """The deepest dark mark in a picture: how far the darkest pixel lies below the mean of a ring of pixels six away
+    from it. A smooth picture has none to speak of; a pixel the denoiser smeared from one caught too dark stands out."""
+    image = image.convertToFormat(QtGui.QImage.Format_RGB888)
+    w, h, stride = image.width(), image.height(), image.bytesPerLine()
+    data = bytes(image.constBits())
+    worst = count = 0
+    for y in range(8, h - 8, 2):
+        row = y * stride
+        for x in range(8, w - 8, 2):
+            i = row + x * 3 + 1
+            ring = [data[i + dx * 3 + dy * stride] for dx, dy in RING]
+            # Only where the whole ring around is itself even: an edge is not a mark, nor is a line running through.
+            if max(ring) - min(ring) > 10:
+                continue
+            dip = sum(ring) / len(ring) - data[i]
+            if dip > 6:
+                count += 1
+            worst = max(worst, dip)
+    return [round(worst, 1), count]
+
+
 def apart(a, b):
     a = a.convertToFormat(QtGui.QImage.Format_RGB888); b = b.convertToFormat(QtGui.QImage.Format_RGB888)
     if a.size() != b.size():
@@ -152,7 +177,15 @@ def watch():
                 # Stopped as the user stops it, so that what is kept of a render part way is seen too.
                 panel.start.click()
                 run['at_stop'] = panel.status.text()
+                held['stop_at'] = time.time(); held['stop_took'] = None
             panel.window().grab().save(str(out / (held['name'] + '-window.png')))
+            def until_stopped():
+                if held.get('stop_at') and held.get('stop_took') is None:
+                    if not panel_widget()._rendering:
+                        held['stop_took'] = round(time.time() - held['stop_at'], 2)
+                    else:
+                        QtCore.QTimer.singleShot(50, until_stopped)
+            until_stopped()
             QtCore.QTimer.singleShot(40000, stopped)
             return
     except Exception:
@@ -165,6 +198,7 @@ def watch():
 
 
 def stopped():
+    # (How long the stop took is taken by the watcher below, which runs till the window says it has stopped.)
     """Well after the stop: what the window has kept, and whether the denoised picture is the render's own."""
     try:
         panel = panel_widget()
@@ -177,6 +211,10 @@ def stopped():
         shown = panel.preview.image.copy()
         held['shown'] = shown
         run['shown'] = [panel.buffer.currentData(), None if shown.isNull() else round(rough(shown), 2)]
+        run['marks'] = None if shown.isNull() else blotch(shown)
+        if not shown.isNull():
+            shown.save(str(out / ('%s-shown-%s.png' % (held['name'], os.environ.get('MOONRAY_MODO_STOP_TAKES', '5')))))
+        run['stop_took'] = held.get('stop_took')
         panel.window().grab().save(str(out / (held['name'] + '-stopped.png')))
         # The beauty itself, apart from the denoiser, is what the runs are compared by.
         panel.buffer.setCurrentIndex(panel.buffer.findData('beauty'))

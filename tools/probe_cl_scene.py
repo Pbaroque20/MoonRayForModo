@@ -46,11 +46,19 @@ try:
         lights = [item for item in document.items('light', superType=True)]
         environments = document.items('environment', superType=False)
         result['items'] = {'lights': [l.name for l in lights], 'environments': [e.name for e in environments]}
+        def set_channel(item, name, value):
+            try:
+                lx.eval('select.item {%s} set' % item.id)
+                lx.eval('item.channel %s %s' % (name, value))
+                return True
+            except Exception as exc:
+                result.setdefault('cannot_set', []).append('%s.%s: %s' % (item.name, name, str(exc)[:60]))
+                return False
         for item in lights[:1] + environments[:1]:
-            item.channel('visible').set('off')
+            set_channel(item, 'visible', 'off')
         read('a light and an environment with their eye off')
         for item in lights[:1] + environments[:1]:
-            item.channel('render').set('on')
+            set_channel(item, 'render', 'on')
         read('the same, set to Render: Yes')
 except Exception:
     result['error'] = traceback.format_exc()
