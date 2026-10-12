@@ -25,8 +25,9 @@ build to an installed kit during development.
 
 ## Where it stands
 
-- It is used inside Modo: Render and IPR both go through it, and with IPR on it follows
-  light, transform and material edits, including while they are dragged.
+- It is used inside Modo: choose MoonLightIPR in the preview window's engine list and it is
+  on at once (the button reads RT On), following light, transform and material edits,
+  including while they are dragged. Press the button to switch realtime off.
 - It draws Modo's standard and Principled materials, MoonRay's Dwa surface materials,
   material stacks from the Shader Tree, imported MaterialX graphs, MoonRay's own light
   items, curves and hair, subdivision surfaces, depth of field and motion blur.

@@ -8,22 +8,20 @@ The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/r
 
 ## Built since 0.3.51.3
 
-- **What Modo hides is hidden.** An item with its eye off no longer renders (in MoonRay or MoonLightIPR) unless its Render setting says Yes.
-- **Three engines, no Live box.** **MoonRay** renders the picture once, in full. **MoonRay LS** (low sample) and **MoonLightIPR** are realtime: each follows the scene from the moment it is chosen, and the button reads **RT On** and stays pressed in; press it to switch realtime off.
-- **Safe Denoising shows the render as it comes on**, like any other render, instead of only at each save. This needs the MoonRay of the next runtime. A stop keeps the last save, and the window says how long before the stop that was.
-- **An idle MoonRay costs nothing.** The MoonRay kept loaded between renders used to keep one processor core busy while it waited; it now rests, and starts again without delay. MoonLightIPR already did. This too needs the MoonRay of the next runtime.
-- **Two lines under the picture**: the status on its own line, then the pointer's values, the render's timing and the picture's size.
-- **Tile outlines move evenly.** They are pastel blue, ease in, stand while MoonRay is at a tile and fade out when it is done; and MoonRay now tells of its tiles about eighteen times a second instead of four, on a clock of their own (next runtime).
-- **No dark blocks in the live picture.** With the graphics card sharing the work, MoonRay counts a sample before all of its light is back, and the live picture caught such pixels too dark, in blocks. A pixel is now shown anew only once MoonRay has left it alone; a render stopped part way is free of the marks they left in its denoised picture (next runtime).
-- **A MoonRay left behind ends itself.** If Modo ends without closing the preview, the loaded MoonRay no longer stays running (next runtime).
+Not released yet. The full list, with pictures and what was checked, is in [What's next](docs/WHATS_NEXT.md).
+
+- **Three engines, no Live box**: **MoonRay** for the full render; **MoonRay LS** (low sample) and **MoonLightIPR** follow the scene as you edit it. For those two the button reads **RT On**, lit, and switches realtime off.
+- **Safe Denoising shows the render as it comes on**, and a stop says how far behind the picture it kept is.
+- **A cleaner live picture**: no dark blocks while MoonRay renders, and none of their marks in a stopped render's denoised picture.
+- **Tile outlines move evenly**, in pastel blue, and fade when a tile is done.
+- **An idle MoonRay rests** instead of keeping a processor core busy, and ends itself if Modo goes away.
+- **What Modo hides is hidden**: an item with its eye off does not render, and MoonLightIPR follows a surface's visibility to the camera, indirect light, reflections, refractions and shadows.
+- **Two lines under the picture**, so the status is read whole.
+
+Some of these need the MoonRay of the next runtime, so the next release brings a new runtime ZIP.
 
 ![The preview window with MoonLightIPR chosen and realtime on](docs/images/preview-engines.png)
-*MoonLightIPR chosen: realtime is on, and the status has a line to itself.*
-
-- **MoonLightIPR follows a surface's visibility to each kind of ray**: seen by the camera, by indirect light, in reflections, in refractions, and whether it casts shadows, as MoonRay does. Set these on a Shader with Surfaces set to Evaluated.
-
-![An object that only casts its shadow, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-seen_shadow_only.jpg)
-*Two balls hidden from everything but shadows: MoonRay (left) and MoonLightIPR (right).*
+*MoonLightIPR chosen: RT On is lit, and the status has a line to itself.*
 
 ## Released in 0.3.51
 
