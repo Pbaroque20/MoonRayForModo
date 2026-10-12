@@ -905,7 +905,7 @@ def emit_geometry(scene, materials, lines):
         if entity['parameters'].get('modo_volume'):
             parts.append(reference(entities, entity['parameters']['modo_volume'], 'VOLUME', entity['name'] + '.volume'))
         lines += body + ['table.insert(geometries, %s)' % name, 'table.insert(assignments, {%s})' % ', '.join(parts)]
-        for table in ('objectShadowSets','objectShadowReceiverSets'):
+        for table in ('objectShadowSets','objectShadowReceiverSets','objectLightFilterSets'):
             lines.append('if %s[%s] then table.insert(assignments[#assignments], %s[%s]) end' % (table,owner,table,owner))
         if held:
             # MoonRay's own shapes take such values only from an instancer, so the shape is given one that puts it
@@ -915,7 +915,7 @@ def emit_geometry(scene, materials, lines):
                       '  ["use_reference_attributes"] = true,', '  ["xform_list"] = {Mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)},',
                       '  ["primitive_attributes"] = {%s},' % ', '.join(held), '}',
                       'table.insert(geometries, %s)' % holder, 'table.insert(assignments, {%s, "", nil, %s})' % (holder,linked_light)]
-            for table in ('objectShadowSets','objectShadowReceiverSets'):
+            for table in ('objectShadowSets','objectShadowReceiverSets','objectLightFilterSets'):
                 lines.append('if %s[%s] then table.insert(assignments[#assignments], %s[%s]) end' % (table,owner,table,owner))
 
 

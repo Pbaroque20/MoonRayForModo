@@ -87,3 +87,9 @@ All 22 focused RDL tests passed. An isolated Modo 16.1v9 probe verified a BoxGeo
 Native MoonRay shapes can now be retained as excluded shadow-receiver targets during RDL import and scene export. Export uses the actual geometry type, including mesh-converted volume shapes and attribute holder instancers.
 
 Validation: 25 RDL tests and 19 core exporter tests passed; isolated Modo 16.1v9 import/read-back retained a SphereGeometry target. The first host probe omitted the target material assignment and correctly skipped that shape; after correcting the fixture, the check passed. No rendered-shadow comparison is claimed. Per-part and light-filter sets remain open in #52.
+
+### Imported light-filter sets (#52, partial)
+
+RDL LightFilterSet assignments now retain supported filter items and store their IDs on the imported geometry. Meshes and native shapes export the set in their layer assignment. Missing/unsupported imported filters are named in warnings; deleted filter targets cause an explicit export error.
+
+Validation: 27 RDL tests, 19 core exporter tests, 32 CPU-feature tests, 8 production tests, and isolated Modo 16.1v9 import/read-back passed. `tools/check_rdl_link_roundtrip.py RUNTIME` also passed: MoonRay's native reader accepted the exported file and read back all four light/shadow/receiver/filter sets. This is scene-reader validation, not a rendered-lighting comparison. Different sets on individual parts remain open.

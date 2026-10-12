@@ -248,12 +248,11 @@ def plan(document, path):
         members = set(objects.get(row['lights'], {}).get('attributes', {}).get('lights', [])) if row['lights'] else set()
         own = (tuple(sorted(members)) if all_lights and row['lights'] and members != all_lights else None,
                tuple(sorted(set(objects.get(row['shadows'], {}).get('attributes', {}).get('lights', [])))) if row['shadows'] else (),
-               tuple(sorted(set(objects.get(row['receivers'], {}).get('attributes', {}).get('geometries', [])))) if row['receivers'] else ())
+               tuple(sorted(set(objects.get(row['receivers'], {}).get('attributes', {}).get('geometries', [])))) if row['receivers'] else (),
+               tuple(sorted(set(objects.get(row['filters'], {}).get('attributes', {}).get('lightfilters', [])))) if row['filters'] else ())
         if geometry in sets and sets[geometry] != own:
-            warnings.append('%s: its parts are lit or shadowed differently from one another; the whole item takes what its first part has.' % short(geometry))
+            warnings.append('%s: its parts are lit, filtered or shadowed differently from one another; the whole item takes what its first part has.' % short(geometry))
         sets.setdefault(geometry, own)
-        if row['filters']:
-            warnings.append('%s: its light filter set is not imported.' % short(geometry))
 
     def material(geometry, part, owner=None):
         """The key of the material a part of a shape is rendered with, made on first use; None for no material."""
@@ -667,8 +666,9 @@ def plan(document, path):
         warnings.append('The scene is imported as it stands at shutter open; Modo holds its motion as animation, which RDL does not carry.')
     links = []
     native_geometries = {e['name'] for e in items if catalog[e['class']]['category'] == 'geometry'}
-    for geometry, (lit, unshadowed, spared) in sets.items():
-        if lit is None and not unshadowed and not spared:
+    available_filters = {e['name'] for e in items if catalog[e['class']]['category'] == 'lightfilter'}
+    for geometry, (lit, unshadowed, spared, filters) in sets.items():
+        if lit is None and not unshadowed and not spared and not filters:
             continue
         def lights(names):
             # A mesh light exports under the emitting mesh's identity, not its light item.
@@ -684,8 +684,12 @@ def plan(document, path):
                 else:target=label(name)
                 if target not in result:result.append(target)
             return result
+        for name in filters:
+            if label(name) not in available_filters:
+                warnings.append('%s: light filter %s has no imported counterpart and is omitted' % (short(geometry), short(name)))
         native_geometry = label(geometry) if label(geometry) in native_geometries else None
         links.append({'geometry': mesh.made.get(geometry) or native_geometry, 'named': short(geometry), 'lights': None if lit is None else lights(lit),
+                      'filters': [label(name) for name in filters if label(name) in available_filters],
                       'shadows': lights(unshadowed), 'receivers': [mesh.made.get(name) or label(name) for name in spared if name in mesh.made or label(name) in native_geometries]})
     return dict(meshes=meshes, curves=curves, instances=instances, entities=items, materials={k: v for k, v in materials.items() if v}, cameras=cameras,
                 settings=settings, links=links, warnings=list(dict.fromkeys(warnings)), source=str(path))
@@ -981,6 +985,8 @@ def apply(data, alone=True, progress=None):
                     entry.update(link_enabled=True, lights=[linked_items[name].id for name in link['lights'] if name in linked_items])
                 if link['shadows']:
                     entry['shadow_exclude'] = [linked_items[name].id for name in link['shadows'] if name in linked_items]
+                if link.get('filters'):
+                    entry['light_filters'] = [linked_items[name].id for name in link['filters'] if name in linked_items]
                 if link['receivers']:
                     entry['shadow_receivers'] = [linked_items[name].id for name in link['receivers'] if name in linked_items]
                 held[item.id] = entry

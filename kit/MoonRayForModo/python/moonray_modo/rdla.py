@@ -213,7 +213,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
-    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('mesh_light')}))
+    render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('light_filters') or v.get('mesh_light')}))
     multi_crypto=crypto and cryptomatte.multiple(scene)
     if multi_crypto and not scene.get('_crypto_categories'):
         raise ValueError('Multiple Cryptomatte categories require a matching category-enabled runtime')
@@ -341,6 +341,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     lines += ['local objectShadowReceiverSets = {}',
               'local function assign(g, part, tag, owner)',
               '  local a = {g, part, materials[tag], objectLightSets[owner] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
+              '  if objectLightFilterSets[owner] then table.insert(a, objectLightFilterSets[owner]) end',
               '  if objectShadowSets[owner] then table.insert(a, objectShadowSets[owner]) end',
               '  if objectShadowReceiverSets[owner] then table.insert(a, objectShadowReceiverSets[owner]) end',
               '  if displacements[tag] then table.insert(a, displacements[tag]) end',

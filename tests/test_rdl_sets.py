@@ -101,6 +101,32 @@ class Sets(unittest.TestCase):
         text=rdla.scene_text(value)
         self.assertIn('objectShadowReceiverSets["caster"] = ShadowReceiverSet("/modo/shadowReceivers/caster") { ["geometries"] = {SphereGeometry("/modo/entity/target")} }',text)
 
+    def test_light_filter_set_import(self):
+        source=scene({'lightfiltersets':['filters',None]})
+        source['objects'] += [
+            {'name':'tint','type':'IntensityLightFilter','attributes':{'color':[1,.5,.2]}},
+            {'name':'filters','type':'LightFilterSet','attributes':{'lightfilters':['tint']}}]
+        data=rdl_import.plan(source,'test.rdla')
+        target=next(e for e in data['entities'] if e['class']=='IntensityLightFilter')
+        self.assertEqual(data['links'][0]['filters'],[target['name']])
+        self.assertFalse(any('light filter' in w for w in data['warnings']))
+        source['objects'][-1]['attributes']['lightfilters'].append('missing')
+        data=rdl_import.plan(source,'test.rdla')
+        self.assertTrue(any('missing' in w and 'omitted' in w for w in data['warnings']))
+
+    def test_filter_assignment_export_and_missing_filter(self):
+        from moonray_modo import rdla
+        value={'camera':{'matrix':rdla.IDENTITY,'focal_mm':50,'film_mm':36},
+               'meshes':[{'identity':'mesh','vertices':[[0,0,0],[1,0,0],[0,1,0]],'faces':[[0,1,2]],'material':''}],
+               'entities':[{'identity':'tint','name':'Tint','class':'IntensityLightFilter','parameters':{'color':[1,.5,.2]}}],
+               'production':{'objects':{'mesh':{'light_filters':['tint']}}}}
+        text=rdla.scene_text(value)
+        self.assertIn('objectLightFilterSets["mesh"] = LightFilterSet("/modo/lightFilters/mesh")({IntensityLightFilter("/modo/entity/tint")})',text)
+        self.assertIn('table.insert(a, objectLightFilterSets[owner])',text)
+        value['entities']=[]
+        with self.assertRaisesRegex(ValueError,'not a MoonRay item of the right kind'):
+            rdla.scene_text(value)
+
     def test_a_scene_lit_by_all_its_lights_has_no_links(self):
         self.assertEqual(rdl_import.plan(scene({'lightsets': ['both', 'both']}), 'test.rdla')['links'], [])
         self.assertEqual(rdl_import.plan(scene({}), 'test.rdla')['links'], [])
