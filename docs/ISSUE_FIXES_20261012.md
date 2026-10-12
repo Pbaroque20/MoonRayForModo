@@ -127,3 +127,9 @@ Validation: 30 RDL, 20 core, 32 CPU-feature and 8 production checks passed. The 
 Boolean text such as "false" no longer becomes true. Non-finite numeric values, malformed containers and fractional integer values are rejected before writing item tags or RDL. Overflow now uses the same ValueError path as other invalid values, so reading a malformed saved tag cannot escape capture error handling. This hardens existing constant/instance attributes; per-face/per-point editing in #22 remains open.
 
 Validation: eight focused attribute checks, 30 RDL checks, 20 core, 32 CPU-feature and eight production tests passed. Valid HDR colors remain accepted. Invalid writes leave the previous item tag untouched.
+
+## Native-shape instancer assignments (#52)
+
+Imported native shapes now retain the owning instancer's material-scoped light, shadow, receiver and filter links. Native shape export uses those material links after explicit object overrides, including primitive-attribute holders. Evaluated capture preserves named materials referenced by native shapes, which do not appear in Modo's evaluated mesh surface list.
+
+Validation: 31 RDL, 20 core, 32 CPU-feature and eight production tests passed. The initial isolated host check exposed the evaluated-capture material loss; the corrected Modo 16.1v9 run passed both direct and evaluated capture. MoonRay's native scene reader confirmed six spheres with two distinct light sets and the expected three shadow/filter assignments. These are assignment checks, not rendered-image comparisons. Nested instancer and non-mesh per-part parity remain open.

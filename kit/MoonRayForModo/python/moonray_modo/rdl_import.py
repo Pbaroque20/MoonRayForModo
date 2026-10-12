@@ -273,7 +273,7 @@ def plan(document, path):
             return None
         key = surface if not displacement else surface + '|' + displacement
         assignment = next((pair for pair in ((geometry, part), (geometry, ''), (owner, part), (owner, '')) if assigned.get(pair) is row), None)
-        if assignment and (assignment[0] in split_sets or (owner and objects.get(geometry, {}).get('type') == 'RdlMeshGeometry')):
+        if assignment and (assignment[0] in split_sets or (owner and (objects.get(geometry, {}).get('type') == 'RdlMeshGeometry' or catalog.get(objects.get(geometry, {}).get('type'), {}).get('category') == 'geometry'))):
             key += '|links:' + repr(assignment)
             material_links[key] = (assignment[0], part_sets[assignment])
         if key not in materials:
@@ -683,10 +683,10 @@ def plan(document, path):
     links = []
     native_geometries = {e['name'] for e in items if catalog[e['class']]['category'] == 'geometry'}
     available_filters = {e['name'] for e in items if catalog[e['class']]['category'] == 'lightfilter'}
-    # Direct mesh instancers carry their links on the scoped material layers above.
+    # Direct mesh/native-shape instancers carry their links on the scoped material layers above.
     scoped_instancers = {geometry for geometry, own in material_links.values()
                          if objects.get(geometry, {}).get('type') == 'RdlInstancerGeometry'
-                         and all(objects.get(ref, {}).get('type') == 'RdlMeshGeometry'
+                         and all((objects.get(ref, {}).get('type') == 'RdlMeshGeometry' or catalog.get(objects.get(ref, {}).get('type'), {}).get('category') == 'geometry')
                                  for ref in objects[geometry].get('attributes', {}).get('references', []))}
     linked_rows = [(geometry, None, own) for geometry, own in sets.items()
                    if geometry not in split_sets and geometry not in scoped_instancers]
