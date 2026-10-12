@@ -7,6 +7,7 @@ MoonRay UserData: on a shape, one value for all of it; on an instancer, one for 
 
 An attribute is {'name': 'Cd', 'type': 'color', 'value': [1, 0, 0]}."""
 import json
+import math
 
 TAG = 'MRPA'
 # type: (UserData's word for it, how many numbers, how a value is written)
@@ -19,25 +20,49 @@ READ = {'color': 'color', 'float': 'float', 'vec2f': 'vec2', 'vec3f': 'vec3', 'i
 def checked(attributes):
     """The attributes as they must be to be written out; raises ValueError for what cannot be."""
     result, names = [], set()
-    for entry in attributes or []:
+    if attributes is None:
+        return result
+    if not isinstance(attributes, (list, tuple)):
+        raise ValueError('Attributes must be a list')
+    for entry in attributes:
+        if not isinstance(entry, dict):
+            raise ValueError('Each attribute must have a name, type and value')
         name, kind, value = entry.get('name'), entry.get('type'), entry.get('value')
         if not isinstance(name, str) or not name or len(name) > 128 or name in names:
             raise ValueError('Attribute names must be given and differ: ' + str(name))
-        if kind not in KINDS:
+        if not isinstance(kind, str) or kind not in KINDS:
             raise ValueError('Unknown attribute type for ' + name)
         size = KINDS[kind][1]
-        if kind == 'string':
-            value = str(value)
-        elif kind == 'bool':
-            value = bool(value)
-        elif kind == 'int':
-            value = int(value)
-        elif size == 1:
-            value = float(value)
-        else:
-            value = [float(v) for v in value]
-            if len(value) != size:
-                raise ValueError('%s needs %d numbers' % (name, size))
+        try:
+            if kind == 'string':
+                value = str(value)
+            elif kind == 'bool':
+                if isinstance(value, str):
+                    token = value.strip().lower()
+                    if token not in ('true', 'false', '1', '0'):
+                        raise ValueError('expected true or false')
+                    value = token in ('true', '1')
+                elif isinstance(value, (bool, int, float)) and value in (0, 1):
+                    value = bool(value)
+                else:
+                    raise ValueError('expected true or false')
+            elif kind == 'int':
+                original = value
+                value = int(value)
+                if not isinstance(original, str) and value != original:
+                    raise ValueError('expected a whole number')
+            elif size == 1:
+                value = float(value)
+                if not math.isfinite(value):
+                    raise ValueError('expected a finite number')
+            else:
+                if not isinstance(value, (list, tuple)) or len(value) != size:
+                    raise ValueError('expected %d numbers' % size)
+                value = [float(v) for v in value]
+                if not all(math.isfinite(v) for v in value):
+                    raise ValueError('expected finite numbers')
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError('Invalid attribute %s: %s' % (name, exc)) from exc
         names.add(name)
         result.append({'name': name, 'type': kind, 'value': value})
     return result
@@ -77,6 +102,7 @@ def emit(path, rows, lines):
 
     Instances need not all hold the same names: one without a name is given nothing of it (zero, empty, off)."""
     from .rdla import string
+    rows = [checked(row) for row in rows]
     kinds = {}
     for row in rows:
         for entry in row:

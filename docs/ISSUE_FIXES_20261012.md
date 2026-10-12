@@ -121,3 +121,9 @@ The standalone suite passed 280 checks with 16 host/runtime skips. The isolated 
 Prototype caching now includes the imported face-material assignments. Instancers with different shaders or light sets receive separate prototypes while placements within each assignment remain Modo instances. Mesh-instancer links are retained on material layers; receiver references include all scoped prototype copies. Native-shape/nested instancer assignment parity remains incomplete.
 
 Validation: 30 RDL, 20 core, 32 CPU-feature and 8 production checks passed. The isolated Modo import retained two prototypes and four instances; direct and evaluated capture preserved distinct lights/shadows/filters and both exports passed the native MoonRay scene reader. No rendered-image equivalence is claimed.
+
+## Primitive attribute validation
+
+Boolean text such as "false" no longer becomes true. Non-finite numeric values, malformed containers and fractional integer values are rejected before writing item tags or RDL. Overflow now uses the same ValueError path as other invalid values, so reading a malformed saved tag cannot escape capture error handling. This hardens existing constant/instance attributes; per-face/per-point editing in #22 remains open.
+
+Validation: eight focused attribute checks, 30 RDL checks, 20 core, 32 CPU-feature and eight production tests passed. Valid HDR colors remain accepted. Invalid writes leave the previous item tag untouched.
