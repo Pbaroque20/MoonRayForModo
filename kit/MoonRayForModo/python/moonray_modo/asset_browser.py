@@ -60,17 +60,14 @@ def tile(letters,colour,size=SIZE):
 
 def picture(row,size=SIZE):
     """What stands for an asset: the picture itself, a picture kept beside the file under the same name, a ball in a
-    saved material's colour, or a tile with the file type on it."""
+    saved material's colour, or a tile with the file type on it. Sidecar images take priority over drawings;
+    a graph without a thumbnail uses a labelled tile because a plain ball cannot represent its texture inputs."""
     path=Path(row.get('path',''))
     try:
-        if str(path).lower().endswith('.moonmat.json'):
-            held=json.loads(path.read_text(encoding='utf-8')) if path.stat().st_size<2*1024*1024 else {}
-            values=held.get('parameters') or {};shader=str(held.get('shader',''))
-            metal='Metal' in shader or float(values.get('metallic',0) or 0)>.5
-            colour=next((values[k] for k in ('metallic_color','albedo','color','transmission_color','diffuse_color') if isinstance(values.get(k),(list,tuple))),[.75,.75,.75])
-            clear=float(values.get('transmission',1.0 if 'Refractive' in shader else 0.0) or 0.0)
-            return ball(colour,metal,float(values.get('roughness',.4) or 0.0),clear,size)
         beside=[path]+[path.with_suffix(ext) for ext in ('.png','.jpg','.jpeg')] if path.suffix.lower() in PICTURES else [path.with_suffix(ext) for ext in ('.png','.jpg','.jpeg')]
+        if str(path).lower().endswith('.moonmat.json'):
+            # Accept both paint.moonmat.png and the simpler paint.png; the exact stem wins.
+            beside += [path.with_name(path.name[:-len('.moonmat.json')]+ext) for ext in ('.png','.jpg','.jpeg')]
         for candidate in beside:
             if candidate.suffix.lower() in PICTURES and candidate.is_file() and candidate.stat().st_size<64*1024*1024:
                 reader=QtGui.QImageReader(str(candidate));full=reader.size()
@@ -79,6 +76,14 @@ def picture(row,size=SIZE):
                 found=reader.read()
                 if not found.isNull():
                     return found
+        if str(path).lower().endswith('.moonmat.json'):
+            held=json.loads(path.read_text(encoding='utf-8')) if path.stat().st_size<2*1024*1024 else {}
+            if held.get('format')==2:return tile('Graph','#70747c',size)
+            values=held.get('parameters') or {};shader=str(held.get('shader',''))
+            metal='Metal' in shader or float(values.get('metallic',0) or 0)>.5
+            colour=next((values[k] for k in ('metallic_color','albedo','color','transmission_color','diffuse_color') if isinstance(values.get(k),(list,tuple))),[.75,.75,.75])
+            clear=float(values.get('transmission',1.0 if 'Refractive' in shader else 0.0) or 0.0)
+            return ball(colour,metal,float(values.get('roughness',.4) or 0.0),clear,size)
     except (OSError,ValueError,TypeError):pass
     return tile(path.suffix.lstrip('.').upper()[:4] or '?',TILES.get(row.get('category',''),'#70747c'),size)
 
@@ -174,6 +179,8 @@ class Browser(QtWidgets.QDialog):
    self.shown.setPixmap(QtGui.QPixmap());self.title.setText('Nothing chosen');self.details.setText('Choose an asset to see what it is and what it is for.');return
   self.shown.setPixmap(QtGui.QPixmap.fromImage(picture(row,220)).scaled(220,220,QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation))
   self.title.setText(row.get('name',''))
+  if str(row.get('path','')).lower().endswith('.moonmat.json'):
+   about+=' The library uses a supplied thumbnail when present; otherwise it shows a colour approximation or a Graph tile. To supply a rendered image, save it beside this file as '+Path(row['path']).with_suffix('.png').name+'.'
   self.details.setText('\n\n'.join(part for part in (about,row.get('category',''),'In the folder '+Path(row['path']).parent.name if row.get('path') else '') if part))
  def put_to_use(self):
   """Do the one thing the chosen asset is for."""
