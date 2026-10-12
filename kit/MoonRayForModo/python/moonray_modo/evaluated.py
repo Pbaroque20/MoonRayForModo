@@ -75,6 +75,26 @@ def assign_materials(data, scene, warnings):
         surface['material']=tags[stack]
     return materials
 
+def _row(entry,held):
+    """One row of numbers out of the file they were handed over in: 32-bit floats or whole numbers, `count` entries
+    of `width` each, as the lists the rest of the plugin works with."""
+    from array import array
+    count,width=int(entry['count']),int(entry['width'])
+    values=array('i' if entry.get('whole') else 'f')
+    if count*width:values.frombytes(held[int(entry['at']):int(entry['at'])+count*width*4])
+    flat=values.tolist()
+    return flat if width==1 else [flat[index:index+width] for index in range(0,len(flat),width)]
+
+
+def _unpack(data,held):
+    for prototype in data.get('prototypes',{}).values():
+        for segment in prototype.get('segments',[]):
+            segment.pop('skip',None)
+            for key in ('vertices','faces','radii','velocities','normals'):
+                if isinstance(segment.get(key),dict):segment[key]=_row(segment[key],held)
+            segment['uv_sets']=[_row(entry,held) if isinstance(entry,dict) else entry for entry in segment.get('uv_sets',[])]
+
+
 def capture(time, path=None, displaced=True):
     global _bridge
     if _bridge is None:
@@ -87,11 +107,21 @@ def capture(time, path=None, displaced=True):
         _bridge = bridge
     with tempfile.TemporaryDirectory(prefix='MoonRay-geometry-') as folder:
         output=Path(folder)/'geometry.json'
-        error=_bridge.MR_geometry_snapshot_file(float(time),int(displaced),str(output).encode('utf-8'))
+        try:rows=_bridge.MR_geometry_snapshot_binary
+        except AttributeError:rows=None
+        if rows is not None:
+            # The meshes' long rows of numbers come as they are, in a file of their own: written out as text and
+            # read back, they were most of what a reading took.
+            rows.argtypes=[ctypes.c_double,ctypes.c_int,ctypes.c_char_p,ctypes.c_char_p];rows.restype=ctypes.c_char_p
+            held=Path(folder)/'geometry.rows'
+            error=rows(float(time),int(displaced),str(output).encode('utf-8'),str(held).encode('utf-8'))
+        else:
+            error=_bridge.MR_geometry_snapshot_file(float(time),int(displaced),str(output).encode('utf-8'))
         if error:
             raise ValueError('Modo evaluated geometry: '+error.decode('utf-8',errors='replace'))
         with output.open(encoding='utf-8') as stream:
             data=json.load(stream)
+        if rows is not None:_unpack(data,held.read_bytes())
     if 'error' in data:
         raise ValueError('Modo evaluated geometry: ' + data['error'])
     return data
