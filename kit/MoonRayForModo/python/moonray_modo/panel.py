@@ -427,15 +427,20 @@ class Panel(Tools, QtWidgets.QWidget):
             else:self.render_once()
             return
         self._draft_image=self._draft_render=None;self._draft_engine=False;self.preview.nominal=None
-        if self._whole is not None:
-            # A render made before is shown again as it was; nothing is rendered until the scene changes.
-            self._paste();self.preview.fit()
+        # The render made before the draft is of the scene as it was then. Where the draft has since drawn another
+        # scene, or Modo tells of a change not yet looked at, that render is stale and is not put back.
+        stale=self._whole is not None and (getattr(self,'_whole_digest',None)!=self.last_digest or self.changes.full or bool(self.changes.items))
+        if self._whole is not None and not stale:
+            # Shown again as it was; nothing is rendered, the scene being the same.
+            self._paste()
             self.status.setText('Draft off.');return
-        # Nothing was rendered before the draft: the lines are not left standing as though they were a render.
+        # Nothing to put back: the lines are not left standing as though they were a render.
+        self._whole=None;self._part=None
         self._held=True
         self.preview.clear();self.image_info.setText('')
         if self._following:self.preview_timer.start()
-        else:self.status.setText('Draft off. Press Render for the picture.')
+        else:self.status.setText('Draft off. The scene has changed since it was rendered: press Render for the picture.' if stale
+                                 else 'Draft off. Press Render for the picture.')
 
     def _draft_region(self):
         values=self._settings_values()
@@ -606,7 +611,8 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _limit_buffers(self):
         """MoonLightIPR makes the beauty and, where the scene's denoiser is on for previews, a denoised beauty: the
-        list then holds those, and opens on the denoised one. The other buffers are MoonRay's."""
+        list then holds those. It shows the beauty unless the denoised one is chosen by hand. The other buffers are
+        MoonRay's."""
         only=self._engine()=='moonlightipr'
         denoises=self._moonlightipr_denoises()
         self.buffer.setItemText(0,'Beauty')
@@ -614,8 +620,9 @@ class Panel(Tools, QtWidgets.QWidget):
             self.buffer.view().setRowHidden(row,only and not (denoises and self.buffer.itemData(row)=='denoised_beauty'))
         if not only:return
         shown=self.buffer.currentData()
-        # Where it denoises, the denoised picture is what is shown unless the beauty was chosen by hand.
-        wanted='denoised_beauty' if denoises and not (shown=='beauty' and self._buffer_picked=='beauty') else 'beauty'
+        # The beauty is what is shown. The denoised picture is for whoever is looking to choose, and stays chosen
+        # for as long as there is one.
+        wanted='denoised_beauty' if denoises and shown=='denoised_beauty' and self._buffer_picked=='denoised_beauty' else 'beauty'
         if shown!=wanted:self.buffer.setCurrentIndex(self.buffer.findData(wanted))
 
     def _moonlightipr_denoises(self):
@@ -1093,7 +1100,8 @@ class Panel(Tools, QtWidgets.QWidget):
         A pass cut short leaves nothing of its own; MoonRay hands over a picture only when a pass ends."""
         engine=self._preview_denoiser()
         frame=self.renderer.buffers.frame
-        if engine=='off' or not frame or frame.get('snapshot',{}).get('_ipr'):return
+        # MoonLightIPR denoises for itself, and which of its pictures is shown is chosen in the list.
+        if engine=='off' or not frame or frame.get('snapshot',{}).get('_ipr') or self._engine()=='moonlightipr':return
         if not all(key in frame.get('files',{}) for key in ('beauty','denoise_albedo','denoise_normal')):return
         self.renderer.buffers.denoiser.request(engine)
         if self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
@@ -1137,7 +1145,9 @@ class Panel(Tools, QtWidgets.QWidget):
                 region=self._draft_region()
                 # Copies of their own: the picture shown may rest on memory the renderer takes back.
                 if region:self._part=(region,self.preview.image.copy())
-                else:self._whole=self.preview.image.copy();self._part=None
+                else:
+                    # With which scene it is of, so that it is not put back once the scene is another.
+                    self._whole=self.preview.image.copy();self._part=None;self._whole_digest=self.last_digest
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
@@ -1197,7 +1207,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
                              else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))
-        if not output:
+        if not output and self._engine()!='moonlightipr':
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)
             # With a preview denoiser on, the finished picture shown is the denoised one, unless Beauty was chosen by hand:
