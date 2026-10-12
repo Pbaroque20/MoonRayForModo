@@ -20,6 +20,8 @@ def topology(vertices,faces):
     return weighted,[unit(n) for n in weighted],edges
 
 _SMOOTHED={}
+import threading
+_SMOOTHED_LOCK=threading.Lock()
 
 def prepare(mesh):
     settings=options.object_values(mesh.get('geometry_settings',{}))
@@ -84,8 +86,10 @@ def prepare(mesh):
                 corners.append(cache[key])
         result['normals']=corners
         if kept is not None:
-            if len(_SMOOTHED)>=64:_SMOOTHED.pop(next(iter(_SMOOTHED)))
-            _SMOOTHED[kept]=corners
+            # Asked from the thread that makes a scene ready for MoonLightIPR as well as from Modo's own.
+            with _SMOOTHED_LOCK:
+                if len(_SMOOTHED)>=64:_SMOOTHED.pop(next(iter(_SMOOTHED)),None)
+                _SMOOTHED[kept]=corners
     return result
 
 

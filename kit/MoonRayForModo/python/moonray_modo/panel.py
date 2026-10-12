@@ -29,6 +29,8 @@ def scene_display(stored):
 # How long the scene's time must stand still before a preview that follows the scene renders it: longer than the gap
 # between two frames of an animation played slowly.
 PLAYBACK_REST=0.35
+# How long Modo's thread is left alone after an update of a followed scene, in lengths of that update.
+LIVE_REST=2.0
 
 
 class Panel(Tools, QtWidgets.QWidget):
@@ -898,8 +900,12 @@ class Panel(Tools, QtWidgets.QWidget):
         scene.pop('_evaluated_data',None)
         scene['_geometry_revision']=str(id(self))+':'+str(self._last_full_capture)
         configured=self._configure_snapshot(scene)
-        from .assets import signature
-        self._asset_scene=configured;self._asset_signature=signature(configured)
+        self._asset_scene=configured
+        # Which files the scene names, and how they stand on disk, is looked into when the scene was read: not when
+        # only where things stand was asked again, which names no new file. Looking walks the whole scene.
+        if reuse not in (True,'transforms') or not self._asset_signature:
+            from .assets import signature
+            self._asset_signature=signature(configured)
         return configured
 
     def _stand_with_items(self,document,scene):
@@ -1016,7 +1022,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)
 
-    def _submit(self, scene, output=None, refining=False):
+    def _submit(self, scene, output=None, refining=False, digest=None):
         # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
         self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
         # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
@@ -1052,7 +1058,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self._ipr_refine_scene=scene if not output else None
         values=self._settings_values();get=self.preferences.get
         width, height = self._dimensions(scene, bool(output))
-        original_digest=self._digest(scene)
+        original_digest=digest or self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
         if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if (getattr(self,'_draft_hasty',False) and not self._following) else 12)
         if not output and self.draft.isChecked():
@@ -1223,17 +1229,21 @@ class Panel(Tools, QtWidgets.QWidget):
         if self.disposed or not self._following:return
         from .interaction import dragging
         held=dragging()
-        # MoonLightIPR is fast enough to follow a drag; a MoonRay preview waits for the button to come up.
+        # MoonLightIPR follows a drag. MoonRay LS waits for the button to come up: each of its updates writes the
+        # scene out for MoonRay on Modo's own thread, which a drag would feel.
         if held and self._engine()!='moonlightipr':self.release_timer.start();return
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         # An animation playing in Modo is not followed frame by frame: the frame it stops on is rendered. A time
         # dragged by hand is another matter, and is followed as any drag is.
         if not self._time_settled() and not held:return
+        import time as clock
+        began=clock.monotonic()
+        if began<getattr(self,'_live_rest',0.0):return
+        if not held:self._live_drag_read=False
         try:
             import modo
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
-            import time as clock
             from .assets import signature
             # Periodic reconciliation covers host notifications omitted by some
             # procedural mesh providers. Normal idle ticks do not capture geometry.
@@ -1251,12 +1261,18 @@ class Panel(Tools, QtWidgets.QWidget):
             if reuse:
                 from .incremental import classify
                 reuse=classify(modo.Scene(),items,self._geometry_cache)
+            sky=False
             if held and reuse is True:
                 # A physically based sky is painted again for every place its sun is put, which a drag cannot keep
                 # up with: the sun of such a sky is shown where it was let go.
                 from .incremental import moves_sky
-                if moves_sky(modo.Scene(),items,self._geometry_cache):reuse=False
-            if held and reuse not in (True,'transforms','materials'):
+                if moves_sky(modo.Scene(),items,self._geometry_cache):reuse=False;sky=True
+            if held and reuse not in (True,'transforms','materials') and not sky and not getattr(self,'_live_drag_read',False):
+                # The first step of a drag often makes something new in the scene (an item's first move gives it a
+                # place of its own), which needs the scene read whole. That is done once in a drag, so that the rest
+                # of it can be followed; a drag that goes on needing it waits for the release, as below.
+                self._live_drag_read=True
+            elif held and reuse not in (True,'transforms','materials'):
                 # Modo reports some drags as they happen (the transform tool) and others only on
                 # release (viewport navigation). Of those it reports, only light, transform and
                 # material edits are followed live; reading meshes or the whole scene in the
@@ -1271,9 +1287,15 @@ class Panel(Tools, QtWidgets.QWidget):
                 if self._surroundings is not None and surroundings(scene)!=self._surroundings:
                     self.changes.items.update(items);self.release_timer.start();return
             self._last_time=time;self._live_settings=settings
-            if self._digest(scene) != self.last_digest:self._submit(scene)
+            digest=self._digest(scene)
+            if digest != self.last_digest:self._submit(scene,digest=digest)
         except Exception as exc:
             self.changes.invalidate();self._failed(str(exc))
+        finally:
+            # Following is done on Modo's own thread, which cannot move the view while it is at it. After each
+            # update the thread is left to Modo for twice as long as the update took, so that a drag stays Modo's.
+            done=clock.monotonic()
+            if done-began>0.004:self._live_rest=done+min(LIVE_REST*(done-began),0.2)
 
     def stop(self):
         self._draft_quiet=False

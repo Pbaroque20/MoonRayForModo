@@ -33,7 +33,8 @@ def classify(scene, identities, cache):
             # Meshes read as Modo evaluates them stand where their items do, when that was found to be so at the
             # time they were read: moving one is then a matter of asking its item where it now is.
             plain=cache.get('_evaluated_data') is None
-            if (plain or cache.get('_item_transforms')) and owners and all(item.type in (('mesh','meshInst') if plain else ('mesh',)) for item in owners):
+            # A light or the camera moved along with them is read again in any case.
+            if (plain or cache.get('_item_transforms')) and owners and all(item.type in LIGHTS or item.type in (('mesh','meshInst') if plain else ('mesh',)) for item in owners):
                 from .coordinates import descriptors
                 if any(d.get('projection','uv')!='uv' for d in descriptors(cache['materials']).values()):return False
                 # A deformer may depend on world transforms. Retain the full path

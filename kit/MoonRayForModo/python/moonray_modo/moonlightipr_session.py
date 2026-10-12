@@ -29,6 +29,30 @@ def supported(directory):
     return (directory / EXECUTABLE).is_file() and (directory / PROGRAM).is_file() and any(directory.glob('cudart64_*.dll'))
 
 
+class Packer(QtCore.QThread):
+    """A snapshot made into what the session reads, away from Modo's own thread: the snapshot is plain data, and
+    making it into bytes asks Modo nothing. Modo is then free to move its view while a followed edit is on its way."""
+
+    def __init__(self, request, known, path, parent=None):
+        super().__init__(parent)
+        self.request, self.known, self.path = request, set(known), path
+        self.outcome = None
+        # Set when the scene is no longer wanted by the time it is ready: stopped, or the process gone.
+        self.abandoned = False
+
+    def run(self):
+        request = self.request
+        try:
+            from .serialization import WRITING
+            with WRITING:
+                payload, keys, warnings = moonlightipr_scene.pack(request['snapshot'], request['width'], request['height'],
+                    request['environment'], self.known, request['samples'], request['denoise'], request['runtime'])
+            self.path.write_bytes(payload)
+            self.outcome = (keys, warnings, '')
+        except Exception as exc:
+            self.outcome = (None, None, str(exc) or type(exc).__name__)
+
+
 class Session(QtCore.QObject):
     output = QtCore.Signal(str)
     ready = QtCore.Signal(int)
@@ -51,8 +75,15 @@ class Session(QtCore.QObject):
         # Mesh keys the running process is known to hold; their data is not sent again.
         self.known = set()
         self.partial = ''; self.stopping = False; self.closed = False
+        # The scene being made ready on another thread, if one is.
+        self.packer = None
+        self.packer_poll = QtCore.QTimer(self); self.packer_poll.setSingleShot(True); self.packer_poll.setInterval(5)
+        self.packer_poll.timeout.connect(self._packed)
+        # Modo ending while a scene is being made ready: the thread is let finish, not cut off under it.
+        application = QtCore.QCoreApplication.instance()
+        if application is not None: application.aboutToQuit.connect(self._quitting)
         from .idle_release import IdleRelease
-        self.idle = IdleRelease(self, self._release_idle, lambda: self.running() and not self.stopping and self.sent is None and self.latest is None)
+        self.idle = IdleRelease(self, self._release_idle, lambda: self.running() and not self.stopping and self.sent is None and self.latest is None and self.packer is None)
 
     def running(self): return self.process.state() != QtCore.QProcess.NotRunning
 
@@ -72,6 +103,8 @@ class Session(QtCore.QObject):
         request = self.latest
         if not request or self.closed: return
         self.partial = ''; self.sent = None; self.known = set(); self.directory = request['directory']
+        # A scene made ready for the process before this one left out what that one held.
+        self._abandon()
         env = QtCore.QProcessEnvironment.systemEnvironment()
         # A child process must not load Modo's Python/Qt libraries.
         for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'): env.remove(key)
@@ -83,21 +116,45 @@ class Session(QtCore.QObject):
         self.process.start()
         self._dispatch()
 
+    def _quitting(self):
+        if self.packer is not None:
+            self.packer.abandoned = True; self.packer.wait(5000)
+
+    def _abandon(self):
+        if self.packer is not None: self.packer.abandoned = True
+
     def _dispatch(self):
+        """Begin making the newest scene ready. One at a time: a newer one waits in latest and takes its turn when
+        this one has been sent and applied, so edits that come faster than they can be shown are run together."""
         request = self.latest
-        if not request or self.sent is not None: return
-        try:
-            payload, keys, warnings = moonlightipr_scene.pack(request['snapshot'], request['width'], request['height'],
-                request['environment'], self.known, request['samples'], request['denoise'], request['runtime'])
-            path = self.root / ('%d.mls' % request['id'])
-            path.write_bytes(payload)
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            self.latest = None
-            self.failed.emit('MoonLightIPR cannot preview this scene: ' + str(exc)); return
+        if not request or self.sent is not None or self.packer is not None: return
+        self.latest = None
+        self.packer = Packer(request, self.known, self.root / ('%d.mls' % request['id']), self)
+        self.packer.finished.connect(self._packed)
+        self.packer.start()
+
+    def _packed(self):
+        worker = self.packer
+        if worker is None: return
+        # finished may arrive while the thread is still unwinding: it is kept until it has ended.
+        if not worker.wait(0):
+            self.packer_poll.start(); return
+        self.packer_poll.stop()
+        self.packer = None
+        request, path = worker.request, worker.path
+        keys, warnings, error = worker.outcome or (None, None, 'The scene was not made ready')
+        worker.deleteLater()
+        if self.closed: return
+        if worker.abandoned or self.stopping or not self.running():
+            try: path.unlink()
+            except OSError: pass
+            if not self.stopping: self._dispatch()
+            return
+        if error:
+            self.failed.emit('MoonLightIPR cannot preview this scene: ' + error); return
         self.warnings.emit(warnings)
         self.process.write(('scene %d %s\n' % (request['id'], path)).encode('utf-8'))
         self.sent = dict(request, keys=keys, path=path)
-        self.latest = None
         self.current = request['id']
         # The picture looked at is said again with every scene: a session newly started has not been told.
         self.process.write(b'view 0 denoised\n' if getattr(self, 'denoised_view', True) else b'view 0 beauty\n')
@@ -144,6 +201,10 @@ class Session(QtCore.QObject):
         self.idle.cancel()
         self._read()
         self.sent = None; self.known = set()
+        # What was being made ready for this process is made ready again for the next, which holds nothing yet.
+        if self.packer is not None and not self.packer.abandoned:
+            self.packer.abandoned = True
+            if self.latest is None: self.latest = self.packer.request
         if self.stopping:
             self.stopping = False
             if self.latest and not self.closed: self._launch()
@@ -160,7 +221,7 @@ class Session(QtCore.QObject):
     def finish(self):
         """Stop sampling and have what is rendered so far sent as the finished picture. Returns whether there is a
         render under way to finish; if there is, ready is reported as at the end of any render."""
-        self.latest = None
+        self.latest = None; self._abandon()
         if not self.running() or self.stopping or self.closed or self.current is None or self.sent is not None:
             return False
         self.process.write(('finish %d\n' % self.current).encode('utf-8'))
@@ -168,7 +229,7 @@ class Session(QtCore.QObject):
 
     def stop(self):
         """Stop sampling but keep the process and its loaded meshes, so the next preview starts at once."""
-        self.latest = None; self.current = None
+        self.latest = None; self.current = None; self._abandon()
         if self.running() and not self.stopping:
             self.process.write(b'pause\n')
             self.idle.arm()
@@ -180,10 +241,11 @@ class Session(QtCore.QObject):
     def release(self):
         """End the process and free the GPU, for when another renderer takes over."""
         self.idle.cancel()
-        self.latest = None; self.sent = None; self.current = None
+        self.latest = None; self.sent = None; self.current = None; self._abandon()
         if self.running(): self.stopping = True; self.process.kill()
 
     def close(self):
         self.closed = True; self.release()
+        if self.packer is not None: self.packer.wait(5000)
         if self.running(): self.process.waitForFinished(2000)
         if not self.running(): self.workspace.cleanup()

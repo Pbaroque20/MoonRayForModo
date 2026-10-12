@@ -2,6 +2,10 @@
 from collections import OrderedDict
 from contextlib import contextmanager
 from contextvars import ContextVar
+import threading
+# A snapshot is made into what a renderer reads on a thread of its own while a scene is followed, and on Modo's own
+# for everything else. What is kept between one writing and the next is shared, so one is written at a time.
+WRITING=threading.RLock()
 _active=ContextVar('moonray_serialization_revision',default=None)
 _revision=None
 _cache=OrderedDict()
