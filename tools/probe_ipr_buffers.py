@@ -105,6 +105,8 @@ def opened():
 def moonlightipr():
     panel = panel_widget()
     panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonlightipr'))
+    # A realtime engine is chosen with realtime off: switched on here.
+    panel.start.click()
 
 
 @step(9000)

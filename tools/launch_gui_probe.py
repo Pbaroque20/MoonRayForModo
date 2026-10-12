@@ -17,6 +17,7 @@ parser.add_argument('--without-native',action='store_true')
 parser.add_argument('--without-controller',action='store_true')
 parser.add_argument('--kit-source',type=pathlib.Path)
 parser.add_argument('--user-settings',action='store_true',help='Copy user UI preferences into the disposable profile')
+parser.add_argument('--show',action='store_true',help='Open the test Modo in front, for a probe whose pictures are taken off the screen. Without it the window opens minimized and does not take the keyboard from whoever is working')
 parser.add_argument('--user-kits',action='store_true',help='Read other installed kit definitions without copying or modifying them')
 args=parser.parse_args()
 if not args.profile.replace('-','').replace('_','').isalnum():
@@ -97,7 +98,9 @@ if (root/'build/moonlightipr/bin/moonlightipr_session.exe').is_file() and not en
     environment['MOONRAY_MODO_MOONLIGHTIPR']=str(root/'build/moonlightipr/stage')
 startup=subprocess.STARTUPINFO()
 startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW
-startup.wShowWindow=1  # This is an explicitly interactive GUI probe, not a hidden worker.
+# Minimized and not made the active window, unless asked to show: a probe reads the window's state and the picture
+# it holds, and need not be looked at. (7 is SW_SHOWMINNOACTIVE, 1 SW_SHOWNORMAL.)
+startup.wShowWindow=1 if args.show else 7
 process = subprocess.Popen([r'C:\Program Files\Modo16.1v9\modo\modo.exe',
     '-path:user=' + str(profile), '-config:' + str(config),
     '-cmdlate:@{' + str(probe) + '}'], stdout=log, stderr=subprocess.STDOUT,startupinfo=startup,env=environment)

@@ -90,15 +90,16 @@ index dde0002..fc3f2a0 100644
  
          // Output results.
 diff --git a/cmd/raas_cmd/moonray/moonray.cc b/cmd/raas_cmd/moonray/moonray.cc
-index 2e73a05..adbb826 100644
+index 2e73a05..765e67e 100644
 --- a/cmd/raas_cmd/moonray/moonray.cc
 +++ b/cmd/raas_cmd/moonray/moonray.cc
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,5 @@
++#include "modo_runtime_paths.h"
 +#include "modo_bucket_output.h"
  // Copyright 2023-2024 DreamWorks Animation LLC
  // SPDX-License-Identifier: Apache-2.0
  
-@@ -25,6 +26,7 @@ protected:
+@@ -25,6 +27,7 @@ protected:
      void parseOptions();
      void render(rndr::RenderContext & renderContext);
      void renderOutput(rndr::RenderContext &renderContext);
@@ -106,7 +107,7 @@ index 2e73a05..adbb826 100644
      void run();
  };
  
-@@ -60,6 +62,7 @@ RaasCommandLineApplication::render(rndr::RenderContext & renderContext)
+@@ -60,6 +63,7 @@ RaasCommandLineApplication::render(rndr::RenderContext & renderContext)
          usleep(100000);
          // TODO: Do we want a 'verbosity' setting.  Maybe we don't want to print status always
          printStatusLine(renderContext, driver->getLastFrameMcrtStartTime(), false);
@@ -114,7 +115,7 @@ index 2e73a05..adbb826 100644
      }
      // Inform the status line that we're done rendering.
      printStatusLine(renderContext, driver->getLastFrameMcrtStartTime(), true);
-@@ -109,14 +112,27 @@ RaasCommandLineApplication::renderOutput(rndr::RenderContext &renderContext)
+@@ -109,14 +113,27 @@ RaasCommandLineApplication::renderOutput(rndr::RenderContext &renderContext)
      }
  }
  
@@ -142,7 +143,7 @@ index 2e73a05..adbb826 100644
  
      // Create a RenderContext. Since the RenderContext internally holds a
      // ref on the RenderDriver, scope it to this block so it gets destroyed
-@@ -142,7 +158,6 @@ RaasCommandLineApplication::run()
+@@ -142,15 +159,15 @@ RaasCommandLineApplication::run()
          }
      }
  
@@ -150,6 +151,16 @@ index 2e73a05..adbb826 100644
  }
  
  } // namespace
+ 
+ int main(int argc, char* argv[])
+ {
+-    moonray::RaasCommandLineApplication app;
+     try {
++        modoRuntimePaths();
++        moonray::RaasCommandLineApplication app;
+         return app.main(argc, argv);
+     } catch (const std::exception& e) {
+         Logger::error(e.what());
 diff --git a/dso/geometry/RdlInstancerGeometry/RdlInstancerGeometry.cc b/dso/geometry/RdlInstancerGeometry/RdlInstancerGeometry.cc
 index bcaa6e8..5992174 100644
 --- a/dso/geometry/RdlInstancerGeometry/RdlInstancerGeometry.cc
@@ -832,6 +843,41 @@ index 80a81c8..ac00c0e 100644
      ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
      LINKER_LANGUAGE CXX
  )
+diff --git a/lib/rendering/mcrt_common/ThreadLocalState.cc b/lib/rendering/mcrt_common/ThreadLocalState.cc
+index 6a4142a..b5ef92c 100644
+--- a/lib/rendering/mcrt_common/ThreadLocalState.cc
++++ b/lib/rendering/mcrt_common/ThreadLocalState.cc
+@@ -3,6 +3,8 @@
+ 
+ //
+ //
++#include <cstdlib>
++#include <algorithm>
+ #include "ThreadLocalState.h"
+ #include "ProfileAccumulatorHandles.h"
+ #include <moonray/common/mcrt_macros/moonray_static_check.h>
+@@ -156,7 +158,20 @@ void TLSInitParams::setVectorizedDefaults(bool realtimeRender)
+     const int CL1_POOL_SIZE = 1024 * 1024;
+     const int MAX_CL1_POOL_SIZE = 0x0FFFFFFF;
+     MNRY_STATIC_ASSERT(CL1_POOL_SIZE < MAX_CL1_POOL_SIZE);
+-    mPerThreadCL1PoolSize = CL1_POOL_SIZE;
++    // MoonRayForModo: a scene with many render outputs and adaptive sampling fills the store in XPU
++    // mode, where every ray in flight holds what it owes each output; the renderer then stops with
++    // "timed out whilst trying to allocate a CacheLine1". The store is four times upstream's size
++    // here, about 4 GB of address space at 16 threads, touched only as it is used, and
++    // MOONRAY_MODO_CL1_POOL_SCALE sets another multiple of upstream's, from 1 to 8. A handle to an
++    // item has 28 bits for its place among those of all threads (PbrTLState.cc), at least 16 of
++    // them, which bounds the multiple.
++    int cl1Scale = 4;
++    if (const char *text = std::getenv("MOONRAY_MODO_CL1_POOL_SCALE")) {
++        cl1Scale = std::atoi(text);
++    }
++    const int cl1Threads = std::max(16, static_cast<int>(std::thread::hardware_concurrency()));
++    cl1Scale = std::max(1, std::min(std::min(8, cl1Scale), MAX_CL1_POOL_SIZE / (CL1_POOL_SIZE * cl1Threads)));
++    mPerThreadCL1PoolSize = CL1_POOL_SIZE * std::max(1, cl1Scale);
+ 
+ #ifdef FORCE_SINGLE_ENTRY_QUEUES
+     mRayQueueSize = 1;
 diff --git a/lib/rendering/mcrt_common/Util.cc b/lib/rendering/mcrt_common/Util.cc
 index 7b6cc82..ac62788 100644
 --- a/lib/rendering/mcrt_common/Util.cc
@@ -1999,6 +2045,25 @@ index 0a864ad..4629fe3 100644
          break;
      case RenderMode::PROGRESSIVE:
      case RenderMode::PROGRESSIVE_FAST:
+diff --git a/lib/rendering/rndr/RenderDriver.cc b/lib/rendering/rndr/RenderDriver.cc
+index c8865dc..d13684f 100644
+--- a/lib/rendering/rndr/RenderDriver.cc
++++ b/lib/rendering/rndr/RenderDriver.cc
+@@ -2344,7 +2344,14 @@ RenderDriver::renderThread(RenderDriver *driver,
+         switch(state) {
+         case RenderThreadState::UNINITIALIZED:
+         case RenderThreadState::READY_TO_RENDER:
++#ifdef _WIN32
++            // Waiting to be asked for a frame. A sleep of under a millisecond returns at once on
++            // Windows, and this thread would then keep a whole core busy for as long as nothing
++            // is rendered: a renderer kept loaded between renders spends most of its time here.
++            std::this_thread::sleep_for(std::chrono::milliseconds(1));
++#else
+             mcrt_common::threadSleep();
++#endif
+             break;
+ 
+         case RenderThreadState::REQUEST_RENDER:
 diff --git a/lib/rendering/rndr/RenderDriver.h b/lib/rendering/rndr/RenderDriver.h
 index 2b6886d..39a6ca1 100644
 --- a/lib/rendering/rndr/RenderDriver.h
@@ -2305,15 +2370,20 @@ index e94728d..d1b448f 100644
      }
      return std::string(buff);
 diff --git a/lib/rendering/rndr/TileScheduler.cc b/lib/rendering/rndr/TileScheduler.cc
-index 53a12af..da9e478 100644
+index 53a12af..e1b4c1b 100644
 --- a/lib/rendering/rndr/TileScheduler.cc
 +++ b/lib/rendering/rndr/TileScheduler.cc
-@@ -80,6 +80,27 @@ TileScheduler::generateTiles(scene_rdl2::alloc::Arena *arena,
+@@ -1,3 +1,4 @@
++#include "modo_bucket_size.h"
+ // Copyright 2023-2024 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ 
+@@ -80,6 +81,27 @@ TileScheduler::generateTiles(scene_rdl2::alloc::Arena *arena,
      // under multi-machine context, each mcrt computation uses different random seed
      generateTileIndices(arena, numTilesX, numTilesY, mTileIndices.get(), uint32_t(mRenderNodeIdx));
  
 +    // Modo 256px scheduling buckets; do not change the 8x8 film storage.
-+    const unsigned bucketTiles = 32;
++    const unsigned bucketTiles = modoBucketSize(width,height) / 8;
 +    const unsigned offsetX = (unsigned(viewport.mMinX) >> 3) % bucketTiles;
 +    const unsigned offsetY = (unsigned(viewport.mMinY) >> 3) % bucketTiles;
 +    const unsigned bucketsX = (offsetX + numTilesX + bucketTiles - 1) / bucketTiles;

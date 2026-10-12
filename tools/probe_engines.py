@@ -1,8 +1,8 @@
 # python
 """Isolated GUI test: the three preview engines, and the button that goes with each.
 
-MoonRay renders once, and its button reads Render and Stop. MoonRay LS and MoonLightIPR are realtime: each is on from
-the moment it is chosen, its button reads Realtime On, and pressing it switches realtime off. After each step the
+MoonRay renders once, and its button reads Render and Stop. MoonRay LS and MoonLightIPR are realtime: each is chosen
+with realtime off, its button reads RT Off, and pressing it switches realtime on (RT On) and off again. After each step the
 button, whether the window is following the scene, and the window itself are written down."""
 import json
 import pathlib
@@ -83,31 +83,31 @@ def low_sample():
 
 @step(3000)
 def low_sample_off():
-    note('moonray_ls_chosen')
+    note('moonray_ls_chosen_rt_off')
     panel_widget().start.click()
 
 
 @step(8000)
 def moonlightipr():
-    note('moonray_ls_switched_off')
+    note('moonray_ls_rt_on')
     choose('moonlightipr')
 
 
 @step(3000)
 def moonlightipr_off():
-    note('moonlightipr_chosen')
+    note('moonlightipr_chosen_rt_off')
     panel_widget().start.click()
 
 
 @step(8000)
 def moonlightipr_on():
-    note('moonlightipr_switched_off')
+    note('moonlightipr_rt_on')
     panel_widget().start.click()
 
 
 @step(4000)
 def back_to_moonray():
-    note('moonlightipr_switched_on')
+    note('moonlightipr_rt_off_again')
     choose('moonray')
 
 

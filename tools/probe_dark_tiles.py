@@ -68,6 +68,10 @@ def finish():
         panel = panel_widget()
         result.update(safe=SAFE, loaded=bool(getattr(panel.renderer, 'using_session', False)), status=panel.status.text(), timing=panel.render_timing.text(),
                       rendering_at_end=panel._rendering)
+        # How far the render got, and since when: for setting a safe render's pace against a normal one's.
+        state = getattr(panel.renderer, 'progress_state', None)
+        if state is not None and state.first and state.last:
+            result['progress'] = {'percent': round(state.percent, 3), 'over_seconds': round(state.last[0] - state.first[0], 1), 'from_percent': round(state.first[1], 3)}
         frames = held['frames']
         dips = []
         for index in range(1, len(frames) - 1):

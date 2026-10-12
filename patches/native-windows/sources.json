@@ -19,7 +19,7 @@
       "commit": "eef67ae992b5037943a7716cca96ed443c36dcec",
       "origin": "https://github.com/OpenMoonRay/moonray",
       "patch": "patches/native-windows/moonray.patch",
-      "patch_sha256": "6eb6f5a280196720b80834fae068ac08e72c263f495f28c903fa03aeb2b352b3"
+      "patch_sha256": "75853c78a7a3882c376317fa70a13411efc55518f60599d4094b7d3c7b1f6b2a"
     },
     "mcrt_denoise": {
       "path": "upstream/openmoonray/moonray/mcrt_denoise",
