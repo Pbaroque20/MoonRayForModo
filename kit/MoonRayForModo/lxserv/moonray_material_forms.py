@@ -223,6 +223,10 @@ def register():
                                   'Tick the objects that should join in: the one wearing the material and those it meets.')
             note.setWordWrap(True);layout.addWidget(note)
             listed=QtWidgets.QListWidget();layout.addWidget(listed,1)
+            # Modo's host style omits item-view check indicators. Draw explicit empty/filled
+            # squares here so artists can see and change membership without guessing.
+            listed.setStyleSheet('QListWidget::indicator { width: 14px; height: 14px; border: 1px solid #333333; background: #eeeeee; } '
+                                 'QListWidget::indicator:checked { background: #168ec4; border: 2px solid #153e52; }')
             for mesh in sorted(modo.Scene().items('mesh',superType=False),key=lambda i:i.name.casefold()):
                 row=QtWidgets.QListWidgetItem(mesh.name,listed);row.setData(QtCore.Qt.UserRole,mesh.id)
                 row.setFlags(row.flags()|QtCore.Qt.ItemIsUserCheckable);row.setCheckState(QtCore.Qt.Checked if mesh.id in held else QtCore.Qt.Unchecked)

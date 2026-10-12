@@ -32,6 +32,14 @@ Run `tools/check_idle_sessions.py --moonray RUNTIME --moonlight MOONLIGHT_STAGE`
 - **#19, #43, #49, #53, #57, #67, #69:** several reports require host interaction, reproduction, or another machine rather than a speculative code change.
 - Material/lighting parity, motion blur, volumes, import, display filters and distributed rendering remain substantial independent issues; this pass does not claim to resolve the whole backlog.
 
+## Subsurface Neighbours dialog (#26)
+
+`tools/probe_neighbours_dialog.py` passed in an isolated Modo 16.1v9 profile. It exercises the real `moonray.material.neighbours` command: mouse press/release toggles, accepting mesh IDs, restoring checks on reopen, canceling without changes, applying to multiple selected materials, and clearing the stored trace set. Modo exited normally after the probe.
+
+Screenshot inspection found that Modo's host style hid the check indicators. The dialog now gives its list explicit empty/filled indicators; checked and unchecked states were visually inspected after the fix. No global Qt style is changed. The probe writes JSON and screenshots under `MOONRAY_TEST_RESULTS/neighbours-dialog`, or a temporary test directory when unset. Run through `tools/launch_gui_probe.py probe_neighbours_dialog.py --profile NEW_PROFILE --wait --timeout 120`.
+
+This completes #26's remaining dialog check. Renderer comparison and MoonLightIPR support remain tracked in #45; incomplete imported sets remain in #52. No rendering-parity claim is made by this UI test.
+
 ## Material thumbnail precedence (#50, partial)
 
 Saved materials now use sidecar images before falling back to a drawing. For `paint.moonmat.json`, `paint.moonmat.png` (or JPG/JPEG) takes priority over the simpler `paint.png` name. Graph bundles without a supplied image show a labelled Graph tile rather than a misleading plain ball. The selection pane explains the fallback and the expected thumbnail filename.
