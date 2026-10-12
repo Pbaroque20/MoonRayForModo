@@ -57,8 +57,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview_timer=QtCore.QTimer(self);self.preview_timer.setSingleShot(True);self.preview_timer.setInterval(150)
         self.preview_timer.timeout.connect(lambda:self._preview_changed(0))
         # Draft follows the scene by itself, whatever the engine and whether or not realtime is on: its outlines cost
-        # next to nothing. This looks, a few times a second, for something to redraw them for.
-        self.draft_timer=QtCore.QTimer(self);self.draft_timer.setInterval(150)
+        # next to nothing. This looks, thirty times a second, for something to redraw them for, and finds it at once
+        # where Modo has told of nothing: only then is the scene looked into.
+        self.draft_timer=QtCore.QTimer(self);self.draft_timer.setInterval(33)
         self.draft_timer.timeout.connect(self._draft_tick)
         self.poll_timer=QtCore.QTimer(self);self.poll_timer.setInterval(500)
         self.poll_timer.timeout.connect(self._poll)
@@ -88,7 +89,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.buckets.connect(self.preview.set_buckets)
         self.renderer.workers.connect(self.preview.set_workers)
         self.renderer.progress.connect(self._render_progress)
-        self.renderer.status.connect(self.status.setText)
+        self.renderer.status.connect(self._renderer_status)
         self.renderer.failed.connect(self._failed)
         self.renderer.image_ready.connect(self._image)
         self.renderer.image_object.connect(self._image)
@@ -429,6 +430,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if enabled:
             try:self._draft_time=lx.service.Selection().GetTime()
             except Exception:self._draft_time=None
+            self._draft_hasty=False
             self.draft_timer.start()
         else:self.draft_timer.stop()
         if enabled:
@@ -459,13 +461,22 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._following or self.preview_lock.isChecked() or self._output_busy() or not self.changes.registered:return
         try:
             from .interaction import dragging
-            # A drag is waited out: the scene is read once the button is up.
-            if dragging():return
+            held=dragging()
+            if not held:self._draft_drag_read=False
+            # One picture at a time: the next is begun when this one is shown, so that each is seen and none piles up
+            # behind another.
+            if self._rendering:return
             time=lx.service.Selection().GetTime()
             moved=time!=getattr(self,'_draft_time',time)
-            if not (self.changes.full or self.changes.items or moved):return
-            self._draft_time=time
+            if not (self.changes.full or self.changes.items or moved):
+                # Nothing new. Outlines drawn in haste during a drag are drawn again with care once it is over.
+                if not held and getattr(self,'_draft_hasty',False) and getattr(self,'_kept_capture',None) is not None:
+                    self._draft_hasty=False
+                    self._draft_submit(self._kept_capture)
+                return
             if self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
+                if held:return
+                self._draft_time=time
                 self.render_once();return
             # Reading every mesh out of Modo again is most of what a redraw takes (a second of 1.3 on a scene of 266
             # meshes), and most edits leave the meshes as they are. As when a scene is followed, only what the
@@ -476,9 +487,31 @@ class Panel(Tools, QtWidgets.QWidget):
             if reuse:
                 from .incremental import classify
                 reuse=classify(modo.Scene(),items,self._geometry_cache)
-            self._submit(self._capture(reuse))
+            if held and reuse not in (True,'transforms','materials'):
+                if getattr(self,'_draft_drag_read',False):
+                    # A drag is followed as it goes, picture after picture, where that takes only asking where things
+                    # now stand or how they are shaded. One that needs the meshes read again waits for the button
+                    # to come up: what Modo told of is put back to be looked at then.
+                    self.changes.full=self.changes.full or full;self.changes.items.update(items);return
+                # But the first step of a drag often makes something new in the scene (an item's first move gives it
+                # a place of its own), which needs the scene read whole. That is done once in a drag, so that the
+                # rest of it can be followed.
+                self._draft_drag_read=True
+            self._draft_time=time
+            # In the middle of a drag the outlines are drawn in fewer passes, so that more pictures of it are shown.
+            self._draft_hasty=bool(held)
+            self._draft_submit(self._capture(reuse))
         except Exception as exc:
+            self._draft_quiet=False
             self.status.setText('Draft could not follow the scene: '+str(exc))
+
+    def _draft_submit(self,scene):
+        """Redraw the draft for a change it followed by itself. Nothing in the window but the picture changes: no
+        status, bar or button comes and goes with each picture, which made following look like starting over."""
+        self._draft_quiet_asked=True
+        try:self._submit(scene)
+        except Exception:
+            self._draft_quiet=False;raise
 
     def _draft_region(self):
         values=self._settings_values()
@@ -848,6 +881,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _set_rendering(self,rendering):
         """Keep the Render button saying what pressing it will do."""
         self._rendering=bool(rendering)
+        if getattr(self,'_draft_quiet',False):return
         active=self._rendering or self._following
         again=not active and getattr(self,'_continuable',None) is not None
         if self._live():
@@ -864,6 +898,10 @@ class Panel(Tools, QtWidgets.QWidget):
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)
 
     def _submit(self, scene, output=None, refining=False):
+        # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
+        # a draft's lines is of the same redraw; anything else asked for is not.
+        asked=getattr(self,'_draft_quiet_asked',False);self._draft_quiet_asked=False
+        if output or not getattr(self,'_draft_pass',False):self._draft_quiet=bool(asked and not output)
         self.refine_timer.stop()
         if not output and not refining:
             # The newest reading of the scene, whichever way it was come by (a render asked for, or an edit
@@ -892,7 +930,7 @@ class Panel(Tools, QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=self._digest(scene)
         if not output:scene=dict(scene,_clay_preview=self._clay())
-        if self._draft_engine:scene=dict(scene,_draft=2)
+        if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if getattr(self,'_draft_hasty',False) else 12)
         if not output and self.draft.isChecked():
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
             self._draft_size=(width,height);self.preview.nominal=(width,height)
@@ -1095,6 +1133,7 @@ class Panel(Tools, QtWidgets.QWidget):
             self.changes.invalidate();self._failed(str(exc))
 
     def stop(self):
+        self._draft_quiet=False
         self.refine_timer.stop()
         self._pending_preview=False;self.release_timer.stop()
         self.preview_timer.stop()
@@ -1169,6 +1208,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText('Stopped. The picture as it stood is kept and denoised.' if standing else 'Stopped. The last finished pass is kept and denoised.')
 
     def _failed(self, message):
+        self._draft_quiet=False
         self.refine_timer.stop()
         self._following=False;self.timer.stop()
         self.renderer.stop()
@@ -1220,7 +1260,13 @@ class Panel(Tools, QtWidgets.QWidget):
         except ValueError as exc:
             self.status.setText('Cannot display cached preview: '+str(exc))
 
+    def _renderer_status(self,text):
+        # Left as it is while a draft redraws by itself.
+        if getattr(self,'_draft_quiet',False):return
+        self.status.setText(text)
+
     def _render_progress(self,value,label):
+        if getattr(self,'_draft_quiet',False):return
         if self.sequence is not None and self.sequence.running:
             label='Frame %d (%d/%d) | %s'%(self.sequence.frame,len(self.sequence.completed)+1,self.sequence.total,label)
         self.render_progress.setRange(0,0 if value<0 else 100)
@@ -1264,6 +1310,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # A preview stopped under Safe Denoising can be taken up again while the scene stays as it was.
         self._continuable=self.last_digest if not output and getattr(self.renderer,'resumable',None) else None
         self._set_rendering(False)
+        self._draft_quiet=False
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
                              else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))

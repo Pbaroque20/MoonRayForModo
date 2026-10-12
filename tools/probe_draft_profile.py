@@ -91,6 +91,11 @@ def edit(count):
     """Move an item a little and time the redraw that follows by itself."""
     try:
         panel = panel_widget()
+        # With MOONRAY_PROBE_DRAG set, the first three edits are made as though a mouse button were held down.
+        if os.environ.get('MOONRAY_PROBE_DRAG'):
+            from moonray_modo import interaction
+            interaction.dragging = (lambda: True) if count < 3 else (lambda: False)
+        held['dragged'] = bool(os.environ.get('MOONRAY_PROBE_DRAG')) and count < 3
         held['marks'] = {}
         held['shown_before'] = panel.preview.image.cacheKey() if not panel.preview.image.isNull() else None
         lx.eval('select.item {%s} set' % held['item'])
@@ -111,7 +116,7 @@ def wait(count):
     if 'shown' in marks or waited > 30:
         base = marks['edit']
         span = lambda a, b: round(marks[b] - marks[a], 3) if a in marks and b in marks else None
-        result['redraws'].append({'read_how': held.get('reuse'), 'noticed_after': span('edit', 'read_begin'), 'read_scene': span('read_begin', 'read_end'),
+        result['redraws'].append({'during_drag': held.get('dragged'), 'read_how': held.get('reuse'), 'noticed_after': span('edit', 'read_begin'), 'read_scene': span('read_begin', 'read_end'),
                                   'pack_and_send': span('submit_begin', 'submit_end'), 'session_asked_to_applied': span('session_asked', 'session_applied'),
                                   'asked_to_first_picture': span('session_asked', 'first_picture'), 'asked_to_last_picture': span('session_asked', 'session_done'),
                                   'last_picture_to_shown': span('session_done', 'shown'), 'whole': span('edit', 'shown'), 'drawn_at': list(panel._draft_fine)})

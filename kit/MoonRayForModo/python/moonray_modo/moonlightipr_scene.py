@@ -564,7 +564,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     from . import geometry, options
     if scene.get('_draft') == 2:
         # A draft's lines are as clean after a few passes as after hundreds, and there is nothing in them to denoise.
-        samples, denoise = min(samples, 12), False
+        # Fewer still while a drag is being followed, which wants pictures more than clean ones.
+        samples, denoise = min(samples, int(scene.get('_draft_samples') or 12)), False
     from .moonlightipr_materials import Compiler
     from .working_space import TO_AP1, enabled as working_enabled
     if not 16 <= width <= 16384 or not 16 <= height <= 16384:
