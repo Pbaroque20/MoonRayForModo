@@ -23,6 +23,12 @@ def saves(runtime):
     except (OSError,ValueError,TypeError,AttributeError):return False
 
 
+def drains(runtime):
+    """Whether this runtime's MoonRay can be asked to finish with what it has in hand: the tiles its workers are on
+    rendered to the end and the frame ended there as a finished one."""
+    try:return bool(json.loads((Path(runtime)/'modo-session.json').read_text(encoding='utf-8')).get('drains'))
+    except (OSError,ValueError):return False
+
 def holds(runtime):
     """Whether this runtime's MoonRay, kept loaded, can hand over several views of a render at one asking: what
     lets a stop keep its picture without asking for each view in turn."""
@@ -58,6 +64,12 @@ class Session(QtCore.QObject):
         if not key or not key.isascii() or len(key)>64 or not all(c.isalnum() or c=='_' for c in key):return
         self.view=key
         staged=self.root/'view.tmp';staged.write_text(key,encoding='ascii');staged.replace(self.root/'view.txt')
+
+    def drain(self):
+        """Have the render now going finish with what it has in hand and end as a finished one."""
+        if not self.latest or not self.running():return False
+        staged=self.root/'drain.tmp';staged.write_text(str(self.latest['id']),encoding='ascii');staged.replace(self.root/'drain.txt')
+        return True
 
     def hold(self,keys):
         """Have these views of the render now going handed over, one after another, in the order given."""

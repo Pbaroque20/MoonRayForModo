@@ -68,6 +68,8 @@ class Renderer(QtCore.QObject):
     # A render stopped by hand that had nothing saved to finish with.
     stopped = QtCore.Signal()
     kept = QtCore.Signal(bool)
+    # Smart Render: the picture has become clean enough for the denoiser. With how noisy it read.
+    settled_clean = QtCore.Signal(float)
     progress = QtCore.Signal(int,str)
 
     def __init__(self, parent=None):
@@ -239,9 +241,15 @@ class Renderer(QtCore.QObject):
         # mark. MoonRay holds such a pixel at what it last showed, but the first picture of a buffer has nothing
         # earlier to hold it at, and the second may hold it at the first: so those two are let go by. The beauty is
         # asked for last, so as to be the newest.
+        from .persistent import holds,drains
+        if drains(self.active['runtime']) and self.session.drain():
+            # A MoonRay that can finish with what it has in hand does so: the tiles its workers are on are rendered
+            # to the end, with the light of their samples, and the frame ends as a finished one, every buffer of
+            # it written. Nothing is left dark or coarse, and what follows is what follows any finished render.
+            self.pending=None;self.passes=[];self.draining=True
+            return True
         self.gather=gather={'want':['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5,'got':{}}
         self.pending=None
-        from .persistent import holds
         if holds(self.active['runtime']):
             # A MoonRay that can hand over several views at one asking hands each over once, with no waiting on the
             # host between them. Three rounds of them, for the middle to be taken, took twice as long and left the
@@ -356,15 +364,28 @@ class Renderer(QtCore.QObject):
             for path in Path(self.directory.name).iterdir():
                 if path.is_file():path.unlink()
         self.canceled = False
+        self.draining = False
         self.progress_state=Progress()
         self.progress_timer.start()
+        # Smart Render watches a MoonRay preview's picture as it comes on (not one that follows the scene, nor an
+        # output, nor MoonLightIPR's).
+        self.smart=None
+        try:
+            level=denoising.settings(self.active['snapshot'].get('denoising',{}))['smart']
+            if level!='off' and not self.active['output'] and not self.active['moonlightipr'] and not self.active.get('linear_preview') and not self.active['snapshot'].get('_ipr'):
+                from .smart_render import Watch
+                self.smart=Watch(level,time.monotonic)
+        except (ValueError,KeyError):pass
         self.using_moonlightipr=self.active['moonlightipr']
         if self.using_moonlightipr:
             self._begin_moonlightipr();return
         target = int(self.active['samples'])
         adaptive=options.render_values(self.active['snapshot'].get('render_settings',{}))['sampling_mode']==2
-        # A render taken up again goes straight on with its long pass.
-        self.passes = [target] if self.active['output'] or self.active.get('resume') or adaptive or self.active['snapshot'].get('_ipr_refined') else sorted(set([1, min(2, target), target]))
+        # A render taken up again goes straight on with its long pass. So does one by the MoonRay kept loaded, which
+        # shows its picture as it comes on: two quick passes before the long one, each begun from nothing, were a
+        # first look that such a render gives anyway, and on a heavy scene took a third of the whole time. Only a
+        # MoonRay of its own, whose picture is seen when a pass ends, is still given them.
+        self.passes = [target] if self.active['output'] or self.active.get('resume') or adaptive or self.active['snapshot'].get('_ipr_refined') or self.active.get('persistent') else sorted(set([1, min(2, target), target]))
         # The estimate of the time left is of the whole render: it is told what passes there are, by their samples.
         self.progress_state.plan([side*side for side in self.passes],adaptive)
         self.log = ''
@@ -673,6 +694,13 @@ class Renderer(QtCore.QObject):
             return
         try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
+        # Smart Render: is the beauty clean enough yet? Not in the two quick passes before the long one, whose
+        # pictures are only a first look.
+        smart=getattr(self,'smart',None)
+        if smart is not None and key=='beauty' and not self.passes and self.phase=='render':
+            try:
+                if smart.look(width,height,pixels):self.settled_clean.emit(float(smart.noise))
+            except Exception:self.smart=None
 
     def _persistent_image(self,serial,key,path):
         # While a pass's scene is being written, what the loaded MoonRay reports is of the render that pass replaces:
