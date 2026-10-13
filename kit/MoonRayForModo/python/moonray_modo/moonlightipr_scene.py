@@ -755,7 +755,12 @@ def fur_from_file(entry):
     if held is None:
         from . import fur_native
         try:
-            vertices, counts, radii, places, _ = fur_native.read(entry['fur_file'], FUR_MOST)
+            vertices, counts, radii, places, fibres = fur_native.read(entry['fur_file'], FUR_MOST)
+            # The preview draws a share of the fibres, each wider by as much as there are fewer, so that the fur
+            # covers what the whole of it covers. (MoonRay renders every fibre at its own width.)
+            if counts and fibres > len(counts):
+                wider = (fibres / float(len(counts))) ** .5
+                radii = [radius * wider for radius in radii]
         except (OSError, ValueError, EOFError):
             return entry
         if len(_FUR) >= 6:
