@@ -2,7 +2,7 @@
 
 This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo), where **0.4**, the next version, is built and tried. For the plugin itself, its download and its installation, see the [main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo).
 
-**MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and follows your edits as you make them. Final renders always come from MoonRay.
+**MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and updates quickly after each edit. Final renders always come from MoonRay.
 
 The current release is [0.3.51.3](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.3).
 
@@ -14,7 +14,7 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 
 - **Compositor**: a node graph over a finished render's buffers, in Options > Compositor: merge, colour correction, filters such as blur, glow, sharpen and vignette, and mattes. Nothing is rendered again.
 - **MoonLightIPR Playblast**: renders an animation on the graphics card and plays it back. In the MoonRay menu and the preview's Options.
-- **Three engines**: **MoonRay** for the full render; **MoonRay LS** and **MoonLightIPR** follow your edits once you press **RT Off** to switch realtime on.
+- **Three engines**: **MoonRay** for the full render; **MoonRay LS** and **MoonLightIPR** update after each edit once you press **RT Off** to switch realtime on.
 - **Pixel samples per realtime engine**, in the preview's Preferences.
 - **Smart Render**: MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it. Right-click the picture to choose Draft, Medium or Fine.
 - **File > Open reads MoonRay scenes** (`.rdla`, `.rdlb`), as does File > Import.
