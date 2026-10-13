@@ -406,8 +406,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
 
             def polygon(face, tag, subdivision, uv_of, normals):
                 """Put one polygon with its like. uv_of(name) is its corners' values in a UV map, or nothing."""
-                maps = result['materials'].get(tag, {}).get('textures', {})
-                uv_name = result['materials'].get(tag, {}).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
+                # Polygons no material is set on carry Modo's own tag, which names no material: they wear the
+                # scene's base material, and take the UVs its layers ask for.
+                maps = (result['materials'].get(tag) or result['materials'].get('', {})).get('textures', {})
+                uv_name = (result['materials'].get(tag) or result['materials'].get('', {})).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
                 face_uv = uv_of(uv_name)
                 # A UV map several images read, each moved or scaled its own way, is read from the polygon once.
                 read = {uv_name: face_uv}
@@ -415,7 +417,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                     raise ValueError('Mesh %s is missing UV values in map %s.' % (item.name, uv_name))
                 extra_uvs = {}
                 if tag not in tag_descriptors:
-                    tag_descriptors[tag] = coordinates.descriptors({tag:result['materials'].get(tag,{})})
+                    tag_descriptors[tag] = coordinates.descriptors({tag:(result['materials'].get(tag) or result['materials'].get('', {}))})
                 for key, descriptor in tag_descriptors[tag].items():
                     source_name = descriptor.get('uv_map','')
                     source_uv = []
@@ -440,10 +442,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 plain = len(whole.counts) and whole.subdivided.count(whole.subdivided[0]) == len(whole.subdivided)
                 for which in set(whole.tag_indices) if plain else ():
                     tag = whole.tags[which]
-                    maps = result['materials'].get(tag, {}).get('textures', {})
-                    names.add(result['materials'].get(tag, {}).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else ''))
+                    maps = (result['materials'].get(tag) or result['materials'].get('', {})).get('textures', {})
+                    names.add((result['materials'].get(tag) or result['materials'].get('', {})).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else ''))
                     if tag not in tag_descriptors:
-                        tag_descriptors[tag] = coordinates.descriptors({tag:result['materials'].get(tag,{})})
+                        tag_descriptors[tag] = coordinates.descriptors({tag:(result['materials'].get(tag) or result['materials'].get('', {}))})
                     plain = plain and not tag_descriptors[tag]
                 if plain and len(names) == 1:
                     uv_name = next(iter(names))
