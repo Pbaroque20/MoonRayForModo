@@ -141,8 +141,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # Pressed in, as it is while realtime is on, it is lit in Modo's own orange, so that on is told from off at a glance.
         self.start.setStyleSheet('QPushButton:checked{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}')
         row.addWidget(self.start)
-        # Three ways to preview. MoonRay renders the picture once, in full. The other two are realtime: switched on
-        # with the button, they follow the scene as it is edited. Whether the engine chosen is a realtime one is
+        # Three ways to preview. MoonRay renders the picture once, in full. MoonRay LS renders it once too, small
+        # and at few samples: it is too slow to follow a scene of any size. MoonLightIPR is realtime: switched on
+        # with the button, it follows the scene as it is edited. Whether the engine chosen is the realtime one is
         # kept in a switch of its own, which is not shown.
         self.preview_engine=QtWidgets.QComboBox()
         self.preview_engine.addItem('MoonRay', 'moonray')
@@ -154,7 +155,7 @@ class Panel(Tools, QtWidgets.QWidget):
         stored=self.preferences.get('open_engine')
         self.preview_engine.setCurrentIndex(max(0,self.preview_engine.findData(stored)))
         self.preview_engine.setToolTip('MoonRay: the full render, once, as an output render would be.\n'
-                                       'MoonRay LS (low sample): MoonRay following the scene as you edit it, at fewer samples and a smaller size.\n'
+                                       'MoonRay LS (low sample): a quick MoonRay render, once, at fewer samples and a smaller size.\n'
                                        'MoonLightIPR: a fast GPU preview that follows the scene and approximates materials and lighting; Notices lists what it leaves out.\n'
                                        'Output renders always use MoonRay.')
         self.ipr_mode=QtWidgets.QCheckBox('Live',self);self.ipr_mode.hide()
@@ -737,10 +738,10 @@ class Panel(Tools, QtWidgets.QWidget):
         words=[]
         try:
             values=self._settings_values()
-            if self._engine()=='moonray' and not self._live() and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
+            if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
                 words.append('Safe Denoiser')
             level=values['denoising'].get('smart','off')
-            if self._engine()=='moonray' and not self._live() and level!='off':
+            if self.preview_engine.currentData()=='moonray' and level!='off':
                 from .smart_render import LEVELS
                 watch=getattr(self.renderer,'smart',None)
                 read=getattr(watch,'noise',None) if self._rendering else None
@@ -797,8 +798,12 @@ class Panel(Tools, QtWidgets.QWidget):
         return 'moonray' if chosen=='moonray_ls' else chosen
 
     def _live(self):
-        """Whether the engine chosen is a realtime one, which follows the scene as it is edited."""
-        return self.preview_engine.currentData()!='moonray'
+        """Whether the engine chosen is the realtime one, which follows the scene as it is edited."""
+        return self.preview_engine.currentData()=='moonlightipr'
+
+    def _low(self):
+        """Whether the engine chosen is MoonRay LS: MoonRay rendering once, small and at few samples."""
+        return self.preview_engine.currentData()=='moonray_ls'
 
     def _engine_changed(self,index):
         live=self._live()
@@ -912,12 +917,12 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _dimensions(self, scene, final=False):
         """The size a render is made at. MoonRay, chosen as the engine, renders the picture itself: at the camera's
-        resolution, or the scene's where the camera does not override it. The realtime engines are previews, at the
+        resolution, or the scene's where the camera does not override it. MoonRay LS and MoonLightIPR are previews, at the
         preview size and never wider than it, however large the picture is to be."""
         scene_w, scene_h = scene['width'], scene['height']
         size=self.preferences.get('preview_size')
         if size<=0:size=640
-        width = scene_w if final or not self._live() else min(scene_w,size)
+        width = scene_w if final or not (self._live() or self._low()) else min(scene_w,size)
         # A playblast has a width of its own, whichever engine is chosen.
         blast=None if final else self._playblasting()
         if blast is not None:width=min(scene_w,blast.width)
@@ -1145,8 +1150,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # The quick picture may still be on its way when the fine one is asked for: it is a draft's too.
             if self._draft_fine!=(width,height):self._draft_quick=self._draft_fine
             self._draft_fine=(width,height)
-        # MoonLightIPR accumulates at full preview size; the IPR quality limits are for MoonRay.
-        if self._following and not output and engine=='moonray':
+        # MoonRay LS is MoonRay within its quality limits. A draft's region is not held to them.
+        if self._low() and not output and not scene.get('_draft'):
             from .ipr import prepare
             scene,width,height=prepare(scene,width,height,values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'))
         if refining:
@@ -1168,7 +1173,7 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _preview_denoiser(self):
         denoising=self._settings_values()['denoising']
-        if self._following:return 'off'
+        if self._following or self._low():return 'off'
         if denoising['engine']!='off' and denoising['preview']:return denoising['engine']
         # Smart Render stops a render for the denoiser to finish: with none chosen, whichever will run.
         if denoising.get('smart','off')!='off' and self._engine()!='moonlightipr':return denoising['engine'] if denoising['engine']!='off' else 'auto'
@@ -1189,9 +1194,8 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _buffer_changed(self,index):
         if self.disposed:return
-        # MoonRay denoises a finished picture, so there is none while a scene is followed. MoonLightIPR denoises as
-        # it goes.
-        if self._following and self._engine()!='moonlightipr' and self.buffer.currentData()=='denoised_beauty':
+        # MoonRay LS is a quick look and is not denoised. MoonLightIPR denoises as it goes.
+        if self._low() and self.buffer.currentData()=='denoised_beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('beauty'));return
         try:
             from .display import values
@@ -1420,7 +1424,7 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _smart_settled(self,noise):
         """Smart Render: the picture is clean enough for the denoiser. The render is stopped as Stop stops it."""
-        if self.disposed or not self._rendering or self._following or self._output_busy() or self._engine()!='moonray':return
+        if self.disposed or not self._rendering or self._following or self._output_busy() or self.preview_engine.currentData()!='moonray':return
         self._smart_note='Smart Render stopped the render at %.1f%% noise.'%(100*noise)
         self.stop()
         if not self._rendering:
@@ -1495,7 +1499,7 @@ class Panel(Tools, QtWidgets.QWidget):
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
             if snapshot.get('_ipr'):
                 settings=snapshot['render_settings']
-                text+=' | IPR '+('1 SPP' if settings['max_adaptive_samples']==1 else '%d-%d SPP'%(settings['min_adaptive_samples'],settings['max_adaptive_samples']))
+                text+=' | LS '+('1 SPP' if settings['max_adaptive_samples']==1 else '%d-%d SPP'%(settings['min_adaptive_samples'],settings['max_adaptive_samples']))
             self.image_info.setText(text)
             self._image_note()
             self.image_info.setToolTip(str(frame.get('backend',self.renderer.backend_status)))

@@ -2,7 +2,7 @@
 from PySide2 import QtCore, QtWidgets
 from . import native
 
-# Of the realtime previews (MoonRay LS and MoonLightIPR). MoonRay itself renders at the camera's resolution.
+# Of the previews (MoonRay LS and MoonLightIPR). MoonRay itself renders at the camera's resolution.
 SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('1280 px wide', 1280))
 # key: (default, kind)
 KEYS = {
@@ -15,13 +15,13 @@ KEYS = {
     # preview starts as its window opens, how bright a new MoonRay light is, and whether notices open by themselves.
     'assign/shader': ('DwaBaseMaterial', str), 'assign/smooth': (True, bool), 'assign/angle': (40.0, float),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
-    'ipr/width': (160, int), 'ipr/samples': (1, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
+    'ipr/width': (640, int), 'ipr/samples': (16, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
     'moonlightipr/samples': (256, int),
 }
 # The samples a pixel each realtime engine may be set to stop at.
 LS_SAMPLES = (1, 4, 16, 32, 64)
-# How wide MoonRay LS may render while it follows the scene: small, to answer at once, or any of the realtime sizes.
+# How wide MoonRay LS may render: small, to be quick, or any of the preview sizes.
 LS_WIDTHS = (80, 160, 240) + tuple(size for label, size in SIZES)
 MOONLIGHTIPR_SAMPLES = (32, 64, 128, 256)
 
@@ -108,9 +108,9 @@ class Dialog(QtWidgets.QDialog):
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
         form.addRow('Width limit', combo('ipr/width', [('%d px' % v, v) for v in LS_WIDTHS],
-                                          'How wide MoonRay LS renders while it follows the scene, and never wider than the realtime preview size above. Narrower answers an edit sooner.'))
+                                          'How wide MoonRay LS renders, and never wider than the preview size above. Narrower is quicker.'))
         form.addRow('Pixel samples', combo('ipr/samples', [('%d per pixel' % v, v) for v in LS_SAMPLES],
-                                            'The most samples a pixel MoonRay LS takes while it follows the scene, and never more than the render settings of the scene give. More is cleaner and slower to answer an edit.'))
+                                            'The most samples a pixel MoonRay LS takes, and never more than the render settings of the scene give. More is cleaner and slower.'))
         self.error = QtWidgets.QDoubleSpinBox()
         self.error.setRange(.1, 1000)
         self.error.setDecimals(1)
@@ -118,7 +118,6 @@ class Dialog(QtWidgets.QDialog):
         self.error.setValue(preferences.get('ipr/error'))
         self.error.setToolTip('Higher stops sooner')
         form.addRow('Adaptive error', self.error)
-        form.addRow(check('ipr/refine', 'Refine to 16 samples when idle'))
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
