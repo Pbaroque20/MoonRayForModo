@@ -89,6 +89,12 @@ def watch():
     watching = getattr(panel.renderer, 'smart', None)
     result['seen'].append([round(now, 1), round(watching.noise, 4) if watching is not None and watching.noise is not None else None,
                            panel.hud.text() if panel.hud.isVisible() else None, panel.render_timing.text(), panel.status.text()[:80]])
+    # The window as it is a few looks into the reading, with the noise and where it will stop at the picture's foot.
+    if watching is not None and watching.noise is not None and panel._rendering:
+        held['read'] = held.get('read', 0) + 1
+        if held['read'] == 5:
+            panel.window().grab().save(str(out / (tag + '-reading.png')))
+            result['pictured_reading'] = panel.hud.text()
     if STOP_AT and 'pressed' not in held and now >= STOP_AT and panel._rendering:
         held['pressed'] = now
         result['pressed_stop_at'] = round(now, 1)

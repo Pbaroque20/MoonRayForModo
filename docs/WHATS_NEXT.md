@@ -65,9 +65,12 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **Smart Render.** MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
   - **Right-click the picture > Smart Render**: Off, Draft, Medium or Fine. The same setting is in the render settings under Denoising.
-  - The foot of the picture shows the noise falling and where it will stop, such as "noise 6.4%, stops at 4.5%".
+  - The foot of the picture shows the noise falling and where it will stop, such as "noise 5.6%, stops at 3.0%".
   - The picture is rendered all over at once, in random bucket order, so the noise falls evenly.
   - On the coffee maker example it finished in 40 to 70 seconds where the full render takes 105.
+
+![The noise reading at the foot of the picture during a render](images/smart-render-noise.png)
+*Smart Render at Fine, 18 seconds in: the noise reads 5.6% and the render will stop at 3.0%.*
 
 ![Smart Render on the picture's right-click menu](images/picture-menu-smart-render.png)
 *Right-click the picture: Smart Render, with Safe Denoising below it.*
