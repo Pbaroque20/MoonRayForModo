@@ -464,9 +464,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self._store(region=region,region_enabled=True)
         self.preview.set_region(region,True)
         self.status.setText('Region set: %d%% to %d%% across, %d%% to %d%% down.'%(region[0]*100,region[2]*100,region[1]*100,region[3]*100))
+        # With realtime on the region is rendered as any edit is. Otherwise it is only marked, its outline moving
+        # round it: Render, or RT, is what renders it.
         if self._following:self.preview_timer.start()
-        # In draft, drawing the region is asking for it to be rendered.
-        elif self.draft.isChecked():self.render_once()
+        else:self.status.setText('Region marked. Press %s to render it.'%('RT Off' if self._live() else 'Render'))
 
     def _draft_toggled(self,enabled):
         """Draft on: lines in place of a render, and the whole frame kept in view. Off: the render again."""
@@ -477,6 +478,7 @@ class Panel(Tools, QtWidgets.QWidget):
             try:self._draft_time=lx.service.Selection().GetTime()
             except Exception:self._draft_time=None
             self._draft_hasty=True
+            self._draft_render=None
             self.draft_timer.start()
         else:self.draft_timer.stop()
         if enabled:
@@ -1097,7 +1099,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # and that is laid on them.
             self._draft_engine=self._draft_lines=True
             # The region is rendered after the fine picture, not after the quick one before it.
-            self._draft_then=scene if self._draft_region() and not (getattr(self,'_draft_hasty',False) and not self._following) else None
+            # A region marked on a draft is not rendered by the draft: it waits for Render or RT.
+            self._draft_then=None
         if not output:
             from .incremental import surroundings
             self._surroundings=surroundings(scene)
@@ -1552,7 +1555,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self._draft_quiet=False
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
-                             else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))
+                             else 'Draft: press Region and drag in the picture to mark a part of it.' if self.draft.isChecked() and self._draft_region() is None
+                             else 'Draft: region marked. Press %s to render it.'%('RT Off' if self._live() else 'Render') if self.draft.isChecked() else 'Done'))
         if not output and getattr(self.renderer,'draining',False):
             # Stopped by hand, or by Smart Render: MoonRay finished the tiles it had in hand and ended the render
             # there, so the picture is whole and has all its buffers.

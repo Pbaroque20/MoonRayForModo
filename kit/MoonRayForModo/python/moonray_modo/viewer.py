@@ -31,6 +31,12 @@ class _PreviewBody:
         # whether a drag of the left button draws a new one, in place of moving the picture.
         self.region = None
         self.region_tool = False
+        # The region's outline is dotted and its dots move round it, as a selection's do, for as long as there is a
+        # region: it says a part of the picture is marked, whether or not anything has been rendered of it.
+        self._ants = 0
+        self._ants_timer = QtCore.QTimer(self)
+        self._ants_timer.setInterval(90)
+        self._ants_timer.timeout.connect(self._march)
         # Whether the whole frame stays in view when a region is set, as it does over the draft's lines.
         self.whole = False
         # The draft's paper: two colours the frame is filled with, head to foot, under a picture that is then
@@ -115,10 +121,20 @@ class _PreviewBody:
                 return self.looked_at()
         return self._single[1]
 
+    def _march(self):
+        """Move the dots of the region's outline on by one."""
+        self._ants = (self._ants + 1) % 8
+        self.update()
+
     def set_region(self, region, tool):
         """Show the region that is rendered, or none; and say whether a left drag draws a new one."""
         self.region = tuple(region) if region else None
         self.region_tool = bool(tool)
+        marked = self.region is not None and tuple(self.region) != (0.0, 0.0, 1.0, 1.0)
+        if marked and not self._ants_timer.isActive():
+            self._ants_timer.start()
+        elif not marked:
+            self._ants_timer.stop()
         # The view stays as it is being looked at.
         self.update()
 
@@ -250,13 +266,18 @@ class _PreviewBody:
                     left, top, right, bottom = self.region
                     box = QtCore.QRectF(area.left() + left * area.width(), area.top() + top * area.height(), (right - left) * area.width(), (bottom - top) * area.height())
                 if box is not None:
-                    # The region: a red rectangle, as render buffers draw it.
-                    pen = QtGui.QPen(QtGui.QColor('#ff5a4d'))
-                    pen.setWidthF(1.0)
-                    if self._drawing is not None:
-                        pen.setStyle(QtCore.Qt.DashLine)
-                    painter.setPen(pen)
+                    # The region: a dotted outline whose dots move round it, light on dark so that it shows over
+                    # any picture. While it is being dragged out the dots stand still.
                     painter.setBrush(QtCore.Qt.NoBrush)
+                    under = QtGui.QPen(QtGui.QColor('#101010'))
+                    under.setWidthF(1.0)
+                    painter.setPen(under)
+                    painter.drawRect(box)
+                    pen = QtGui.QPen(QtGui.QColor('#ffffff'))
+                    pen.setWidthF(1.0)
+                    pen.setDashPattern([4, 4])
+                    pen.setDashOffset(0 if self._drawing is not None else -self._ants)
+                    painter.setPen(pen)
                     painter.drawRect(box)
                     if self._drawing is not None and area.width() > 0:
                         # How many pixels of the picture the rectangle takes in, written by the pointer.

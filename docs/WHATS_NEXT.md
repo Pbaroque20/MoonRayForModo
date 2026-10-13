@@ -28,6 +28,11 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Render and RT switch Draft off** and give you the picture.
 - **Nothing stale when switched off.** If the scene changed, the view is cleared instead of showing an old render.
 - **Region no longer zooms the view.**
+- **A region is marked, then rendered when you ask.** Drag a region and it gets a moving dotted outline; nothing renders until you press Render or RT.
+- **Draft and realtime are one or the other.** Choosing an engine never switches realtime on, and Draft switched on takes realtime off.
+
+![A region marked on the draft with a dotted outline](images/region-outline.png)
+*A region marked on the Draft: press Render to render it.*
 
 ![The cheetah in Draft](images/draft-refined.png)
 *Draft, with black outside the camera's frame.*
