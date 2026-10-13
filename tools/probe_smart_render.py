@@ -27,7 +27,7 @@ if os.environ.get('MOONRAY_PROBE_LXO'):
     name = source.stem
 LIMIT = float(os.environ.get('MOONRAY_PROBE_LIMIT', '300'))
 STOP_AT = float(os.environ.get('MOONRAY_PROBE_STOP_AT', '0'))
-tag = '%s-%d%s' % (name, level, '-stop%d' % STOP_AT if STOP_AT else '')
+tag = '%s-%d%s' % (name, level, '-stop%d' % STOP_AT if STOP_AT else '') + os.environ.get('MOONRAY_PROBE_TAG', '')
 result = {'scene': str(source), 'level': level, 'seen': []}
 held = {}
 
@@ -53,6 +53,9 @@ def opened():
         lx.eval('render.res 0 %d' % width)
         lx.eval('render.res 1 %d' % max(16, round(width * was[1] / max(1, was[0]))))
         lx.eval('moonray.render.smart_render %d' % level)
+        # MOONRAY_PROBE_COMMANDS: further commands, a semicolon between them, to set the scene up for a comparison.
+        for command in filter(None, (c.strip() for c in os.environ.get('MOONRAY_PROBE_COMMANDS', '').split(';'))):
+            lx.eval(command)
         # What the reading makes of each picture, and why it does not judge one.
         from moonray_modo import smart_render
         reading = smart_render.reading
@@ -73,6 +76,8 @@ def opened():
         panel._image_menu()
         result['menu'] = [(a.text(), a.isChecked()) for a in panel._smart_menu.actions()]
         result['denoiser_in_scene'] = panel._settings_values()['denoising']
+        values = panel._settings_values()
+        result['sampling'] = dict(samples=values['samples'], **{key: values['render'][key] for key in ('sampling_mode', 'min_adaptive_samples', 'max_adaptive_samples', 'target_adaptive_error', 'important_first')})
         held['began'] = time.monotonic()
         panel.start.click()
     except Exception:
