@@ -2040,28 +2040,109 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
 
         if (scatters && rnd(seed) < beneath) {
-            // Pick a colour channel by its albedo and a distance from that channel's profile; the
-            // other channels are weighted by how likely they were to give the same distance.
+            // MoonRay's diffusion, as its integrator works it out (PathIntegratorSubsurface.cc). Where the light
+            // comes out is looked for from several points drawn from the profile, each projected onto the surface
+            // along the normal (three times in four) or along one of the two directions across it, so that a
+            // surface that turns away, an edge or a thin part is found as well as a flat one; each find is
+            // weighed by how likely every one of those ways was to make it. What those finds add up to is set
+            // against what a flat, endless surface would give, and made up to it: a small or thin shape loses
+            // none of its light for being small. And light is looked for through the solid, on a far side that
+            // faces away, as it comes through an ear or a leaf.
             const float3 albedo = make_float3(fmaxf(surface.albedo.x, 0.001f), fmaxf(surface.albedo.y, 0.001f),
                                               fmaxf(surface.albedo.z, 0.001f));
             const float3 width = make_float3(profileWidth(albedo.x, hit.subsurfaceRadius.x), profileWidth(albedo.y, hit.subsurfaceRadius.y),
                                              profileWidth(albedo.z, hit.subsurfaceRadius.z));
-            const float total = albedo.x + albedo.y + albedo.z, pick = rnd(seed) * total;
-            const float chosen = pick < albedo.x ? width.x : pick < albedo.x + albedo.y ? width.y : width.z;
-            const float r = (rnd(seed) < 0.25f ? chosen : 3.0f * chosen) * -logf(fmaxf(1e-6f, 1.0f - rnd(seed)));
-            const float3 shape = make_float3(profileShape(r, width.x), profileShape(r, width.y), profileShape(r, width.z));
-            const float mixture = (albedo.x * shape.x + albedo.y * shape.y + albedo.z * shape.z) / total;
+            const float total = albedo.x + albedo.y + albedo.z;
+            const float3 share = albedo * (1.0f / total);
+            // No further than where all but a two-hundredth of the widest channel's light has come out.
+            const float furthest = 15.03f * fmaxf(width.x, fmaxf(width.y, width.z)), nearest = 0.1f * furthest;
+            const int tries = roughDepth == 0 ? 4 : 2;
+            float3 found[8], from[8], way[8];
+            float span[8], heavy[8];
+            bool through_[8];
+            int count = 0;
+            float3 measured = vec(0.0f);
+            for (int i = 0; i < tries; ++i) {
+                // A colour channel by its albedo, and a distance from that channel's profile.
+                const float pick = rnd(seed) * total;
+                const float chosen = pick < albedo.x ? width.x : pick < albedo.x + albedo.y ? width.y : width.z;
+                const float r = (rnd(seed) < 0.25f ? chosen : 3.0f * chosen) * -logf(fmaxf(1e-6f, 1.0f - rnd(seed)));
+                const float phi = 2.0f * ML_PI * rnd(seed), lx = r * cosf(phi), ly = r * sinf(phi);
+                const float axis = rnd(seed);
+                float3 down, offset;
+                if (axis < 0.75f) { down = -ns; offset = frame.t * lx + frame.b * ly; }
+                else if (axis < 0.8125f) { down = -frame.t; offset = frame.b * lx + ns * ly; }
+                else if (axis < 0.875f) { down = frame.t; offset = frame.b * lx + ns * ly; }
+                else if (axis < 0.9375f) { down = -frame.b; offset = ns * lx + frame.t * ly; }
+                else { down = frame.b; offset = ns * lx + frame.t * ly; }
+                const float search = fmaxf(fminf(r, furthest), nearest);
+                const float3 above = hit.p + offset - down * search;
+                Hit under;
+                traceRadiance(above, down, under, 2.0f * search, SEEN_ALL);
+                if (!under.valid || under.instance != hit.instance) continue;
+                // Only a face turned toward where the look came from counts.
+                if (-dot(under.ns, down) < 1e-5f) continue;
+                const float3 apart = hit.p - under.p;
+                const float gone = length(apart);
+                if (gone > furthest) continue;
+                const float ax = dot(apart, frame.t), ay = dot(apart, frame.b), an = dot(apart, ns);
+                const float rn = fmaxf(sqrtf(ax * ax + ay * ay), 0.001f), rx = fmaxf(sqrtf(ay * ay + an * an), 0.001f), ry = fmaxf(sqrtf(an * an + ax * ax), 0.001f);
+                // A profile's density over the surface at a distance: its shape there, over eight pi times the distance.
+                const float dn = (share.x * profileShape(rn, width.x) + share.y * profileShape(rn, width.y) + share.z * profileShape(rn, width.z)) / (8.0f * ML_PI * rn);
+                const float dx = (share.x * profileShape(rx, width.x) + share.y * profileShape(rx, width.y) + share.z * profileShape(rx, width.z)) / (8.0f * ML_PI * rx);
+                const float dy = (share.x * profileShape(ry, width.x) + share.y * profileShape(ry, width.y) + share.z * profileShape(ry, width.z)) / (8.0f * ML_PI * ry);
+                const float every = 0.75f * dn * fabsf(dot(ns, under.ns)) + 0.125f * dx * fabsf(dot(frame.t, under.ns)) + 0.125f * dy * fabsf(dot(frame.b, under.ns));
+                if (!(every > 0.0f)) continue;
+                const float at = fmaxf(gone, 0.001f);
+                const float3 given = albedo * make_float3(profileShape(at, width.x), profileShape(at, width.y), profileShape(at, width.z))
+                                   * (1.0f / (8.0f * ML_PI * at * every));
+                if (!finite(given)) continue;
+                measured += given;
+                found[count] = given; from[count] = above; way[count] = down; span[count] = 2.0f * search; through_[count] = false;
+                ++count;
+            }
+            // Made up to what a flat, endless surface gives, channel by channel, where enough was found to go by.
+            measured = measured * (1.0f / float(tries));
+            const float3 made = make_float3(measured.x > 0.01f ? albedo.x / measured.x : 1.0f, measured.y > 0.01f ? albedo.y / measured.y : 1.0f,
+                                            measured.z > 0.01f ? albedo.z / measured.z : 1.0f);
+            for (int i = 0; i < count; ++i) found[i] = found[i] * made;
+            // Through the solid: a way in, anywhere within 85 degrees of straight down, to a far side that faces away.
+            for (int i = 0; i < tries && count < 8; ++i) {
+                const float lowest = 0.0871557f;   // cos 85 degrees
+                const float z = 1.0f - rnd(seed) * (1.0f - lowest), ring = sqrtf(fmaxf(0.0f, 1.0f - z * z)), turn = 2.0f * ML_PI * rnd(seed);
+                const float3 in = -(frame.t * (ring * cosf(turn)) + frame.b * (ring * sinf(turn)) + ns * z);
+                const float3 start = offsetOrigin(hit.p, ng, in);
+                Hit far;
+                traceRadiance(start, in, far, furthest, SEEN_ALL);
+                if (!far.valid || far.instance != hit.instance) continue;
+                // Its outside is the side the look is heading for; it must face away from where the light went in.
+                const float3 outside = dot(far.ns, in) < 0.0f ? -far.ns : far.ns;
+                if (dot(outside, ns) > -1e-5f) continue;
+                const float gone = fmaxf(far.t, 0.001f);
+                const float3 given = albedo * make_float3(profileShape(gone, width.x), profileShape(gone, width.y), profileShape(gone, width.z))
+                                   * (gone * gone / (8.0f * ML_PI * gone * fmaxf(fabsf(dot(outside, in)), 0.05f)) * (2.0f * ML_PI * (1.0f - lowest)));
+                if (!finite(given)) continue;
+                found[count] = given; from[count] = start; way[count] = in; span[count] = far.t * 1.01f + 1e-5f; through_[count] = true;
+                ++count;
+            }
+            // One of them is followed, the likelier the more light it carries, and stands for them all.
+            float whole = 0.0f;
+            for (int i = 0; i < count; ++i) { heavy[i] = found[i].x + found[i].y + found[i].z; whole += heavy[i]; }
+            if (!(whole > 0.0f)) break;
+            int taken = count - 1;
+            float left = rnd(seed) * whole;
+            for (int i = 0; i < count; ++i) { if (left < heavy[i]) { taken = i; break; } left -= heavy[i]; }
+            if (!(heavy[taken] > 0.0f)) break;
             // What comes out is diffuse light, already dimmed by what the surface reflected.
-            throughput *= surface.albedo * surface.frontKeep * (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath))
-                        * (mixture > 0.0f ? shape * (1.0f / mixture) : vec(1.0f));
-            // Look down onto the surface from that far to one side.
-            const float phi = 2.0f * ML_PI * rnd(seed);
+            throughput *= surface.frontKeep * (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath))
+                        * found[taken] * (whole / (heavy[taken] * float(tries)));
             entryInstance = hit.instance;
-            origin = hit.p + (frame.t * cosf(phi) + frame.b * sinf(phi)) * r + ns * r;
-            direction = -ns;
+            origin = from[taken];
+            direction = way[taken];
             seen = SEEN_ALL;
-            reach = 2.0f * r;
+            reach = span[taken];
             probing = true;
+            walked = through_[taken];
             --depth;    // coming out again is not a bounce
             continue;
         }

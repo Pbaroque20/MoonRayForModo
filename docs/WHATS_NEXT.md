@@ -124,6 +124,14 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **Shiny surfaces in bounced light**, **tinted glass** and **clearcoats** now match MoonRay's brightness far better.
 - **Shadows of see-through surfaces** follow the scene's Presence Shadows setting.
+- **Subsurface on small, thin and backlit shapes matches MoonRay.** Light is now looked for across the surface and through the solid as MoonRay does, and small shapes keep their light. On test scenes the share of the picture within 10% of MoonRay went from 68-75% to 91-94%.
+
+![Backlit subsurface before](images/sss-backlit-before.png)
+*Lit from behind, before: MoonRay (left), MoonLightIPR (right).*
+
+![Backlit subsurface after](images/sss-backlit-after.png)
+*After.*
+
 - **Random walk subsurface is a real random walk.** It used to be drawn with the default model, which came out darker and less translucent than MoonRay. It now has MoonRay's look, and is about 9% brighter than MoonRay.
 
 ![Random walk subsurface before](images/sss-random-walk-before.png)
