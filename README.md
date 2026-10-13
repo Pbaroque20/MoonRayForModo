@@ -16,15 +16,17 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 - **MoonLightIPR Playblast**: renders an animation on the graphics card and plays it back. In the MoonRay menu and the preview's Options.
 - **Three engines**: **MoonRay** for the full render; **MoonRay LS** for a quick low-sample render; **MoonLightIPR** updates after each edit once you press **RT Off** to switch realtime on.
 - **Pixel samples for MoonRay LS and MoonLightIPR**, in the preview's Preferences.
-- **Important Parts First**: MoonRay renders the buckets with the most detail before the plain ones.
+- **Important Parts First**: MoonRay renders the buckets with the most detail before the plain ones, with or without Smart Render.
 - **Smart Render**: MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it. Right-click the picture to choose Draft, Medium or Fine.
 - **File > Open reads MoonRay scenes** (`.rdla`, `.rdlb`), as does File > Import.
+- **Sampling shown beside the picture size**, such as "Uniform 16 ps", and new scenes start on uniform sampling.
+- **The MoonRay menu is regrouped** by what each entry is for.
 
 **Faster**
 
 - **Dragging with realtime on is much smoother**: MoonLightIPR updates quickly after drag.
 - **Draft** redraws in about a third of a second after a move, where it took over a second, and follows the scene by itself.
-- **Stop keeps the picture**, denoised, in about a second and a half.
+- **Stop keeps a whole picture**: MoonRay finishes the tiles it is on, so nothing is left dark or blocky.
 - **One pass, not three**: a MoonRay preview no longer starts over twice, and is about a third shorter.
 - **A steadier time-left estimate**: one countdown for the whole render.
 - **An idle MoonRay uses no processor.**
