@@ -66,7 +66,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
   - **Filters**: Blur, Glow, Sharpen, Median, Grow / Shrink, Edges, Grain, Vignette, Flip.
   - **Mattes**: Brightness Matte and Channel, to wire into a Merge's mask.
   - **Make**: a plain Colour and a Ramp.
-- **The result is the Composite buffer**, always in the buffer list. Editing the graph updates it without rendering again. Chosen before a graph is built, it says to open the compositor.
+- **The result is the Composite buffer**, always in the buffer list. Editing the graph updates it without rendering again. Chosen before a graph is built, it says to build one.
 - **Saved with the scene**, with undo.
 - **Render EXR and animations write `name.composite.exr`** beside the EXR.
 - Not yet: compositing during a render, Cryptomatte mattes, MoonLightIPR renders.
