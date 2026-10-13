@@ -21,7 +21,7 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 
 **Faster**
 
-- **Dragging with realtime on is much smoother**: MoonLightIPR updates almost immediate, and MoonRay LS updates much sooner once you let go.
+- **Dragging with realtime on is much smoother**: MoonLightIPR updates instantly, and MoonRay LS updates much sooner once you let go.
 - **Draft** redraws in about a third of a second after a move, where it took over a second, and follows the scene by itself.
 - **Stop keeps the picture**, denoised, in about a second and a half.
 - **One pass, not three**: a MoonRay preview no longer starts over twice, and is about a third shorter.
