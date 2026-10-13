@@ -128,8 +128,8 @@ GROUPS = [
         field('denoiser', ('denoising', 'engine'), 'choice', 'Denoiser', '', choices=DENOISERS),
         field('denoise_preview', ('denoising', 'preview'), 'bool', 'Denoise Preview'),
         field('denoise_final', ('denoising', 'final'), 'bool', 'Save Denoised EXR', 'Written beside the original EXR, which is kept'),
-        field('smart_render', ('denoising', 'smart'), 'choice', 'Smart Render', 'A MoonRay render in the preview window is stopped once its picture is clean enough for the denoiser, and denoised: no need to wait for every sample. Draft stops soonest and leaves the denoiser the most to do; Fine stops latest. With no denoiser chosen, OptiX is used, or Open Image Denoise where OptiX will not run. A picture full of fine texture may never read as clean, and renders to its end', choices=SMART),
-        field('denoise_safe', ('denoising', 'safe'), 'bool', 'Safe Denoising', 'Keep every buffer of a MoonRay render stopped by hand, and let Continue take it up again: the picture so far is saved as it renders, every few seconds where that is quick and less often for a large picture with many buffers. With this off, Stop still keeps the beauty and denoises it'),
+        field('smart_render', ('denoising', 'smart'), 'choice', 'Smart Render', 'A MoonRay render in the preview window is stopped once its picture is clean enough for the denoiser, and denoised: no need to wait for every sample. Draft stops soonest and leaves the denoiser the most to do; Fine stops latest. With no denoiser chosen, OptiX is used, or Open Image Denoise where OptiX will not run. A picture full of fine texture may never read as clean, and renders to its end. Switching it on switches Safe Denoising off', choices=SMART),
+        field('denoise_safe', ('denoising', 'safe'), 'bool', 'Safe Denoising', 'Keep every buffer of a MoonRay render stopped by hand, and let Continue take it up again: the picture so far is saved as it renders, every few seconds where that is quick and less often for a large picture with many buffers. With this off, Stop still keeps the beauty and denoises it. Switching it on switches Smart Render off'),
     ]),
     ('Lighting', True, [
         field('light_multiplier', ('light_multiplier',), 'float', 'Light Multiplier', 'Scales every Modo light', 0.0, 10000.0),
@@ -259,6 +259,12 @@ def put(stored, entry, value):
         value = str(value).strip()
     if len(path) == 1:
         stored[path[0]] = value
+        return
+    if path in (('denoising', 'smart'), ('denoising', 'safe')):
+        from .denoising import one_or_other
+        held = dict(stored.get('denoising') or {})
+        held[path[1]] = value
+        stored['denoising'] = one_or_other(held, path[1])
         return
     # The parts of a group are kept together, so start from all of them.
     group = complete(stored)[path[0]]

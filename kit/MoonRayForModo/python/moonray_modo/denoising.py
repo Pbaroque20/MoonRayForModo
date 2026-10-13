@@ -10,6 +10,8 @@ def settings(value):
     result={'engine':value.get('engine','off'),'preview':value.get('preview',True),'final':value.get('final',True),'safe':value.get('safe',False),
             'smart':value.get('smart','off')}
     if result['smart'] not in SMART:raise ValueError('Invalid denoising settings')
+    # One or the other: a scene saved with both has Smart Render.
+    if result['smart']!='off' and result['safe'] is True:result['safe']=False
     if result['engine'] not in ENGINES or type(result['preview']) is not bool or type(result['final']) is not bool or type(result['safe']) is not bool:
         raise ValueError('Invalid denoising settings')
     return result
@@ -30,6 +32,13 @@ def safe_minutes(files,width,height):
     takes about a quarter of a second for each file and million pixels: every three seconds where that is little,
     and otherwise seldom enough that saving takes about a sixth of the time, up to every two minutes."""
     return max(SAFE_MINUTES,min(2.0,.25*files*width*height/1e6*5/60))
+def one_or_other(stored,changed):
+    """Safe Denoising and Smart Render are one or the other: a render that stops by itself once it is clean has no
+    use for being saved as it goes. stored is a scene's denoising settings, changed whichever of 'safe' and 'smart'
+    has just been set: switched on, it switches the other off."""
+    if changed=='smart' and stored.get('smart','off')!='off':stored['safe']=False
+    elif changed=='safe' and stored.get('safe'):stored['smart']='off'
+    return stored
 def safe_name(path):return str(path)+'.safe.exr'
 
 def sidecar(path):

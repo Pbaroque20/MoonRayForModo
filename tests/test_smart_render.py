@@ -198,5 +198,39 @@ class Settings(unittest.TestCase):
         self.assertIn('cmd moonray.render.smart_render ?', text)
 
 
+class OneOrOther(unittest.TestCase):
+    def test_smart_render_switched_on_switches_safe_denoising_off(self):
+        from moonray_modo import denoising
+        self.assertEqual(denoising.one_or_other({'engine': 'optix', 'safe': True, 'smart': 'medium'}, 'smart'),
+                         {'engine': 'optix', 'safe': False, 'smart': 'medium'})
+
+    def test_safe_denoising_switched_on_switches_smart_render_off(self):
+        from moonray_modo import denoising
+        self.assertEqual(denoising.one_or_other({'engine': 'optix', 'safe': True, 'smart': 'fine'}, 'safe')['smart'], 'off')
+
+    def test_switching_one_off_leaves_the_other(self):
+        from moonray_modo import denoising
+        self.assertTrue(denoising.one_or_other({'safe': True, 'smart': 'off'}, 'smart')['safe'])
+        self.assertEqual(denoising.one_or_other({'safe': False, 'smart': 'draft'}, 'safe')['smart'], 'draft')
+
+    def test_a_scene_saved_with_both_has_smart_render(self):
+        from moonray_modo import denoising
+        read = denoising.settings({'engine': 'optix', 'safe': True, 'smart': 'draft'})
+        self.assertFalse(read['safe'])
+        self.assertEqual(read['smart'], 'draft')
+
+    def test_the_render_settings_form_keeps_them_apart(self):
+        from moonray_modo import scene_settings
+        fields = {entry['key']: entry for entry in scene_settings.FIELDS}
+        stored = {}
+        scene_settings.put(stored, fields['denoise_safe'], True)
+        self.assertTrue(stored['denoising']['safe'])
+        level = [key for _, key in fields['smart_render']['choices']].index('medium')
+        scene_settings.put(stored, fields['smart_render'], level)
+        self.assertEqual((stored['denoising']['safe'], stored['denoising']['smart']), (False, 'medium'))
+        scene_settings.put(stored, fields['denoise_safe'], True)
+        self.assertEqual((stored['denoising']['safe'], stored['denoising']['smart']), (True, 'off'))
+
+
 if __name__ == '__main__':
     unittest.main()

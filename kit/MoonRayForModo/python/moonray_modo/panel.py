@@ -713,25 +713,30 @@ class Panel(Tools, QtWidgets.QWidget):
     def _smart_chosen(self,level):
         """Smart Render chosen from the picture's menu: written to the scene's settings."""
         try:
-            stored=dict(self._settings_values()['denoising']);stored['smart']=level
+            from .denoising import one_or_other
+            stored=dict(self._settings_values()['denoising']);was=stored.get('safe');stored['smart']=level
+            one_or_other(stored,'smart')
             if not self._store(denoising=stored):return
         except Exception as exc:
             self.status.setText('Cannot set Smart Render: '+str(exc));return
         self._hud_update()
-        self.status.setText('Smart Render is off.' if level=='off' else 'Smart Render is on: a MoonRay render stops once it is clean enough for the denoiser.')
+        self.status.setText('Smart Render is off.' if level=='off' else 'Smart Render is on: a MoonRay render stops once it is clean enough for the denoiser.'
+                            +(' Safe Denoising is switched off.' if was else ''))
 
     def _safe_chosen(self,engine):
         """Safe Denoising chosen from the picture's menu: off, or on with a denoiser. Written to the scene's settings,
         as its render settings write them: the denoiser itself is left as it is when Safe Denoising is switched off."""
         try:
-            stored=dict(self._settings_values()['denoising'])
+            from .denoising import one_or_other
+            stored=dict(self._settings_values()['denoising']);was=stored.get('smart','off')!='off'
             if engine=='off':stored['safe']=False
             else:stored.update(engine=engine,safe=True)
+            one_or_other(stored,'safe')
             if not self._store(denoising=stored):return
         except Exception as exc:
             self.status.setText('Cannot set Safe Denoising: '+str(exc));return
         self._hud_update()
-        self.status.setText('Safe Denoising is off.' if engine=='off' else 'Safe Denoising is on, with %s.'%('OptiX' if engine=='optix' else 'Open Image Denoise'))
+        self.status.setText('Safe Denoising is off.' if engine=='off' else 'Safe Denoising is on, with %s.'%('OptiX' if engine=='optix' else 'Open Image Denoise')+(' Smart Render is switched off.' if was else ''))
 
     def _hud_words(self):
         """The modes worth saying at the foot of the picture: each a line."""
