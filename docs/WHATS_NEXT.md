@@ -8,10 +8,10 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **RT Off / RT On.** The realtime engines start switched off, so nothing renders by accident. Press the button to follow the scene; press again to stop.
 - **Opens on MoonRay, with the crest**, and renders nothing until asked.
 - **Each engine has its own size.** MoonRay renders at the camera's resolution; the realtime engines at the preview size (640 px unless changed).
-- **Pixel samples per realtime engine**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64. MoonRay LS can also render as wide as the preview.
+- **Pixel samples per realtime engine**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64.
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
 - **Smart Render and Safe Denoising on the picture's right-click menu.** Safe Denoising is Off, OptiX or Open Image Denoise; while it is on, the foot of the picture says Safe Denoiser. Smart Render is described under Rendering with MoonRay.
-- **Dragging with realtime on is much smoother.** MoonLightIPR follows the camera or an object as you drag, taking far less of Modo's time. MoonRay LS updates when you let go, and does so much sooner than before.
+- **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time. MoonRay LS updates when you let go, and does so much sooner than before.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
@@ -65,7 +65,8 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **Smart Render.** MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
   - **Right-click the picture > Smart Render**: Off, Draft, Medium or Fine. The same setting is in the render settings under Denoising.
-  - The foot of the picture shows the noise reading and where it will stop.
+  - The foot of the picture shows the noise falling and where it will stop, such as "noise 6.4%, stops at 4.5%".
+  - The picture is rendered all over at once, in random bucket order, so the noise falls evenly.
   - On the coffee maker example it finished in 40 to 70 seconds where the full render takes 105.
 
 ![Smart Render on the picture's right-click menu](images/picture-menu-smart-render.png)

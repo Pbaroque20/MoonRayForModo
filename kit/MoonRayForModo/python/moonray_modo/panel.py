@@ -737,7 +737,10 @@ class Panel(Tools, QtWidgets.QWidget):
                 watch=getattr(self.renderer,'smart',None)
                 read=getattr(watch,'noise',None) if self._rendering else None
                 # While it renders: how noisy the picture reads now, and at what it will be stopped.
-                words.append('Smart Render' if read is None else 'Smart Render: noise %.0f%%, stops at %.0f%%'%(100*read,100*LEVELS[level]))
+                # Before there is a reading (a pass's first seconds, while the picture is still coarse), it says so.
+                words.append('Smart Render: noise %.1f%%, stops at %.1f%%'%(100*read,100*LEVELS[level]) if read is not None
+                             else 'Smart Render: stops at %.1f%% noise'%(100*LEVELS[level]) if self._rendering and watch is not None
+                             else 'Smart Render')
         except Exception:pass
         return words
 
@@ -1391,7 +1394,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _smart_settled(self,noise):
         """Smart Render: the picture is clean enough for the denoiser. The render is stopped as Stop stops it."""
         if self.disposed or not self._rendering or self._following or self._output_busy() or self._engine()!='moonray':return
-        self._smart_note='Smart Render stopped the render at %.0f%% noise.'%(100*noise)
+        self._smart_note='Smart Render stopped the render at %.1f%% noise.'%(100*noise)
         self.stop()
         if not self._rendering:
             # Stopped outright, with nothing handed over: say why it stopped all the same.
