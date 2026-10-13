@@ -14,6 +14,15 @@ from .channel_values import rgb
 def collect(scene, warnings):
     from .host import channel, color, world_matrix, render_visible
     result = []
+    # Where the preferences say to follow Modo, the environment lights the scene only with Global Illumination on
+    # in the Render item: it is seen as the backdrop and in reflections all the same.
+    lights = True
+    try:
+        from .preferences import Preferences
+        if Preferences().get('environment_lighting') == 'modo':
+            lights = bool(channel(scene.renderItem, 'globEnable', 1))
+    except Exception:
+        lights = True
     for environment in scene.items('environment', superType=False):
         if not render_visible(environment):
             continue
@@ -22,7 +31,7 @@ def collect(scene, warnings):
             continue
         item = {'identity':environment.id,'name':environment.name, 'intensity':intensity,
                 'camera':bool(channel(environment,'visCam',1)),
-                'indirect':bool(channel(environment,'visInd',1)),
+                'indirect':bool(channel(environment,'visInd',1)) and lights,
                 'reflection':bool(channel(environment,'visRefl',1)),
                 'refraction':bool(channel(environment,'visRefr',1))}
         from .layers import ordered_items,texture_groups

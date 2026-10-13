@@ -606,8 +606,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     result['environments'] = collect_environments(scene, warnings)
     # With every light hidden the scene is still lit where an environment is: said, since Modo's own renderer
     # leaves such a scene dark unless Global Illumination is on.
-    if not result['lights'] and result['environments'] and list(scene.items('light')):
-        warnings.append('No lights are visible. The scene is lit by the environment (%s); turn its eye off, or its intensity to 0, for no light at all.'
+    if not result['lights'] and any(environment.get('indirect',True) for environment in result['environments']) and list(scene.items('light')):
+        warnings.append('No lights are visible. The scene is lit by the environment (%s); turn its eye off, or set Environment lights the scene to Follow Modo in the MoonRay preferences, for no light at all.'
                         % ', '.join(environment['name'] for environment in result['environments']))
     solar_discs(result)
     from .extra_geometry import collect as collect_extra,furs as furs_extra
