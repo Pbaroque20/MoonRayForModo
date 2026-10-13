@@ -464,11 +464,6 @@ class Renderer(QtCore.QObject):
         self.buffer_key = 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
-        if getattr(self,'smart',None) is not None and not options.render_values(snapshot.get('render_settings') or {})['important_first']:
-            # Smart Render judges the picture as a whole, so the picture is rendered all over at once: the tiles
-            # are taken in no order, in place of one part of it being finished long before another. With the
-            # important parts first, the order chosen is kept: the parts that take longest to clean are taken first.
-            snapshot['render_settings']=dict(snapshot.get('render_settings') or {},batch_tile_order=5)
         snapshot['_crypto_categories']=native.supports_crypto_categories(request['runtime'])
         snapshot['_paired_instance_motion']=native.supports_paired_instance_motion(request['runtime'])
         if not request['output'] and not request.get('linear_preview'):

@@ -2,8 +2,10 @@
 
 How noisy the picture is, is read from the picture itself as it comes on: at pixels spread over it, how far each
 stands from the line through its neighbours, across and up and down, the lesser of the two (so that an edge, which is
-far out one way only, is not taken for noise), set against how bright it is there. The middle value of those is the
-picture's noise: half of it is cleaner than that. A render samples a pixel again and again and that figure falls as
+far out one way only, is not taken for noise), set against how bright it is there. The picture is taken in squares,
+and the squares with the most in them (where pixels differ most from their neighbours: the subject, its edges, its
+texture, and the noise itself) are the ones judged, so that a wide plain floor or wall does not speak for a subject
+that is still noisy. The middle value of what is read in those is the picture's noise. A render samples a pixel again and again and that figure falls as
 it does; when it has stood at or under the level asked for, for two looks running, the render is stopped as Stop
 stops it, keeping the picture, and the denoiser does the rest.
 
@@ -39,6 +41,11 @@ FLOOR = 0.05
 # the tiles it has in hand before its picture is taken, so a few tiles still being filled in are no reason to
 # go on, and held to a two-hundredth a render that read clean was never stopped at all.
 COARSE = 0.05
+# The side of the squares the picture is taken in, in pixels; and the fewest readings
+# the squares with the most in them must hold between them for the picture to be judged by those alone. Small
+# squares, so that each lies in the subject or out of it.
+SQUARE = 32
+ENOUGH = 64
 
 
 last = {}
@@ -65,6 +72,10 @@ def reading(width, height, pixels):
     row = width * 3
     found = []
     looked = rendered = same = 0
+    # For each square of the picture: how much its pixels differ from their neighbours, how many were looked at,
+    # and what was read of its noise.
+    squares = {}
+    across_squares = (width + SQUARE - 1) // SQUARE
     for y in range(1 + (step // 2) % 2, height - 1, step):
         base = y * row
         for x in range(1, width - 1, step):
@@ -79,6 +90,11 @@ def reading(width, height, pixels):
             up = .2126 * values[at - row] + .7152 * values[at - row + 1] + .0722 * values[at - row + 2]
             down = .2126 * values[at + row] + .7152 * values[at + row + 1] + .0722 * values[at + row + 2]
             rendered += 1
+            square = squares.setdefault((y // SQUARE) * across_squares + x // SQUARE, [0.0, 0, []])
+            # Bright and dark weighed alike, as the renderer weighs them when it takes the important parts first.
+            tone = here / (1.0 + here)
+            square[0] += abs(tone - left / (1.0 + left)) + abs(tone - up / (1.0 + up)) if left >= 0.0 and up >= 0.0 else 0.0
+            square[1] += 1
             l, r, u, d = here == left, here == right, here == up, here == down
             if l and r and u and d:
                 # A plain patch: nothing to read here.
@@ -109,7 +125,9 @@ def reading(width, height, pixels):
                 continue
             across = abs(2 * here - left - right)
             along = abs(2 * here - up - down)
-            found.append(.5 * (across if across < along else along) / (here + FLOOR))
+            value = .5 * (across if across < along else along) / (here + FLOOR)
+            found.append(value)
+            square[2].append(value)
     if not looked:
         return None, 0.0, False
     share = rendered / float(looked)
@@ -118,6 +136,13 @@ def reading(width, height, pixels):
     last.update(read=len(found), blocks=same, looked=looked)
     if len(found) < max(64, LIT * looked):
         return None, share, coarse
+    # The squares with more in them than the average square are the ones judged, where they hold enough readings.
+    held = [(detail / count, values) for detail, count, values in squares.values() if count]
+    average = sum(detail for detail, _ in held) / len(held) if held else 0.0
+    important = [value for detail, values in held if detail > average for value in values]
+    last.update(squares=len(held), important=sum(1 for detail, _ in held if detail > average))
+    if len(important) >= ENOUGH:
+        found = important
     found.sort()
     return found[len(found) // 2], share, coarse
 
