@@ -549,6 +549,11 @@ def emit(scene,materials,lines,crypto=False):
                 from .moonlightipr_curves import chance
                 lines+=['UserData(%s) {'%string(path+'/scatter'),'  ["float_key"] = "scatter_tag",','  ["float_values_0"] = {%s},'%', '.join('%.6f'%chance(i) for i in range(len(counts))),'}']
                 carried.append('UserData(%s)'%string(path+'/scatter'))
+        if kind=='curves' and not entry.get('fur_file'):
+            # Curves say they are fine: the matte of fur, hair and curves by which a denoised picture keeps its
+            # fibres is this number, seen by the camera. (Fur read from a file says so for itself.)
+            lines+=['UserData(%s) {'%string(path+'/fine'),'  ["float_key"] = "modo_fine",','  ["float_values_0"] = {1},','}']
+            carried.append('UserData(%s)'%string(path+'/fine'))
         if carried:attrs['primitive_attributes']=array(carried)
         lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':

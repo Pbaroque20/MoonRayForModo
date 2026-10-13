@@ -133,8 +133,19 @@ def watch():
     status = panel.status.text()
     entry['seen'].append([round(now, 1), panel.render_timing.text(), status[:200]])
     done = (engine == 'moonray' and not panel._rendering and now > 8) or (engine != 'moonray' and now > 70) or now > LIMIT
+    # MOONRAY_PROBE_BUFFER: once the render is done, that buffer is chosen and given a while to be made and shown.
+    wanted = os.environ.get('MOONRAY_PROBE_BUFFER')
+    if done and wanted and 'picked' not in held:
+        held['picked'] = now
+        entry['buffer_found'] = panel.buffer.findData(wanted)
+        panel.buffer.setCurrentIndex(panel.buffer.findData(wanted))
+        panel._buffer_picked = wanted
+    if done and wanted and now - held['picked'] < 30:
+        QtCore.QTimer.singleShot(3000, watch)
+        return
     if done:
         entry['status'] = status
+        entry['buffer'] = panel.buffer.currentData()
         entry['picture'] = not panel.preview.image.isNull()
         snapshot = (panel.renderer.active or {}).get('snapshot', {})
         entry['warnings'] = snapshot.get('warnings')
@@ -151,7 +162,7 @@ def watch():
             import shutil
             frame = panel.renderer.buffers.frame or {}
             entry['kept'] = {}
-            for key in ('beauty', 'denoise_albedo', 'denoise_normal'):
+            for key in ('beauty', 'denoise_albedo', 'denoise_normal', 'denoise_fine', 'denoised_beauty'):
                 source = (frame.get('files') or {}).get(key)
                 if source and pathlib.Path(str(source)).is_file():
                     held_ = out / ('%s_%s%s' % (tag, key, pathlib.Path(str(source)).suffix))

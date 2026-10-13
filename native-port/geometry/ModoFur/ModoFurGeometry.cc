@@ -94,6 +94,9 @@ ModoFurProcedural::generate(const GenerateContext &generateContext,
 
     shading::PrimitiveAttributeTable primitiveAttributeTable;
     primitiveAttributeTable.addAttribute(shading::StandardAttributes::sUv, shading::RATE_VERTEX, std::move(places));
+    // Fur says it is fine: the plugin's matte of fur, hair and curves, by which a denoised picture keeps its fibres.
+    primitiveAttributeTable.addAttribute(shading::TypedAttributeKey<float>("modo_fine"), shading::RATE_CONSTANT,
+                                         std::vector<float>{1.0f});
 
     const Curves::Type type = Curves::Type::LINEAR;
     const Curves::SubType subtype = rdlGeometry->get(attrCurvesSubType) == 1 ? Curves::SubType::ROUND : Curves::SubType::RAY_FACING;

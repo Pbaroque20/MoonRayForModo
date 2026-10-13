@@ -480,7 +480,10 @@ class Renderer(QtCore.QObject):
         try:
             use_denoise=denoising.enabled(snapshot,bool(request['output']),request.get('linear_preview',False))
             if denoising.guides_required(snapshot,bool(request['output']),request.get('linear_preview',False)):
-                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')}
+                # With fur, hair or curves in the scene, a third: how much of each pixel is those, so that the
+                # denoised picture can keep them as they were rendered.
+                fine=any(entry.get('kind')=='curves' for entry in snapshot.get('extra_geometry',[]))
+                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')+(('fine',) if fine else ())}
                 self.denoise_guides=snapshot['_denoise_guides']
             if use_denoise:
                 if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))

@@ -88,6 +88,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 *Right-click the picture: Smart Render, with Safe Denoising below it.*
 
 - **Keep Fine Detail**, in the render settings under Denoising: Off, Some (the default) or More. Hair, fur and other things about a pixel wide, which the denoiser smooths away, are let through from the render.
+- **Fur, hair and curves have a matte of their own for the denoiser**: the surface under them is denoised, and the fibres are laid back over it as rendered.
 - **Important Parts First** *(0.4 runtime)*. Tick it in the render settings under System: MoonRay looks over the whole picture first, then renders the buckets with the most detail before the plain ones, in the Bucket Order you chose. The finished picture is the same; you see what matters sooner. It works with or without Smart Render.
 
 ![Important Parts First on](images/important-first-on.png)
@@ -137,7 +138,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 *Cellular, Wood, Weave and Ripples at their default settings.*
 
 - **Bump and normal images show on subdivision surfaces in MoonRay** *(0.4 runtime)*. They were left out, so MoonRay rendered such a surface smooth where MoonLightIPR showed the bump. A heavily tiled bump image is also read finely enough to show.
-- **Modo fur without a limit** *(0.4 runtime)*. Every fibre Modo would grow is grown, each as thick as the Fur material says; the 60,000-fibre limit and the widening are gone. 1.26 million fibres on a test scene took about nine seconds to grow.
+- **Modo fur without a limit** *(0.4 runtime)*. Every fibre Modo would grow is grown, each as thick as the Fur material says; the 60,000-fibre limit and the widening are gone. A test scene with 1.26 million fibres was read in about nine seconds.
 - **A Fur material's Remove Base Surface is followed**: the fur renders without the surface it grows from.
 - **Notices says when a Fur material grows nothing**, which is usually a mesh that is hidden or set to Render: Off.
 
@@ -188,6 +189,7 @@ What you may run into:
 - **File > Open** of a MoonRay scene leaves one empty mesh in it and keeps the `.rdla` file's name.
 - **Heavy scenes with instances, replicators or deformers** update more slowly when an item is moved.
 - **Procedural layers** are flat patterns laid on by UV or from six sides, not solid textures running through the object.
+- **Smoothing angle:** a mesh of more than 300,000 polygons is smoothed all over, and Notices names it. (The limit was 50,000.)
 - **Highlights:** very smooth ones, and rough Principled ones, are still dimmer than Modo's.
 - **Hair in MoonLightIPR** is close to MoonRay's, a little brighter at the top of a tuft.
 

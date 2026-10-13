@@ -66,8 +66,11 @@ def jobs(runtime,source,base,engine,guides,detail='some'):
     mask=base.with_suffix('.denoise-detail.exr')
     def fine(guide,weight):
         return [str(guide),'--chnames','R,G,B','--dup','--blur','7x7','--absdiff','--chsum:weight=%g,%g,%g'%(weight,weight,weight)]
+    # And, where the render made it, the matte of fur, hair and curves itself: how much of each pixel is those. With
+    # it the surface under the fibres is the denoised one and the fibres are the rendered ones, laid over it.
+    matte=[str(guides['fine']),'--ch','0,0,0','--chnames','R,G,B','--mulc',str(1.5*gain),'--max'] if guides.get('fine') else []
     steps.append((oiio,fine(guides['albedo'],2.0)+fine(guides['normal'],.6667)+['--max','--mulc',str(gain),'--blur','3x3','--mulc','1.5',
-                       '--clamp:min=0:max=1','--ch','0,0,0','--chnames','R,G,B','-d','float','-o',str(mask)],mask))
+                       '--clamp:min=0:max=1','--ch','0,0,0','--chnames','R,G,B']+matte+['--clamp:min=0:max=1','-d','float','-o',str(mask)],mask))
     # The denoised picture, and over it the rendered one by as much as the mask says.
     steps.append((oiio,['--no-autopremult',str(rgba),'--ch','R,G,B',str(filtered),'--ch','R,G,B','--sub',str(mask),'--mul',
                        str(filtered),'--ch','R,G,B','--add','-d','float','-o',str(output)],output))

@@ -202,8 +202,9 @@ def material_values(material):
 
 # The sun's width in the sky, in degrees, at a solar disc size of 100%.
 SUN_DEGREES = 0.53
-# The most polygons a mesh may have for its material's Modo smoothing angle to be worked out for it.
-SMOOTHING_ANGLE_FACES = 50000
+# The most polygons a mesh may have for its material's Modo smoothing angle to be worked out for it: about three
+# seconds' work for 75,000 polygons and ten for 250,000, done once for a mesh and kept until the mesh changes.
+SMOOTHING_ANGLE_FACES = 300000
 
 
 def solar_discs(result):

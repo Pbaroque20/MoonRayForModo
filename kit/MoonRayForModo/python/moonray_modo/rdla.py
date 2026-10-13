@@ -650,7 +650,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                 lines.append('  [%s] = %s,'%(string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
             lines.append('}')
     for key,path in scene.get('_denoise_guides',{}).items():
-        attributes={'result':7,'material_aov':'albedo'} if key=='albedo' else {'result':3,'state_variable':2}
+        attributes=({'result':7,'material_aov':'albedo'} if key=='albedo'
+                    # The matte of fur, hair and curves: a number those carry and nothing else does.
+                    else {'result':4,'primitive_attribute':'modo_fine','primitive_attribute_type':0} if key=='fine'
+                    else {'result':3,'state_variable':2})
         if recovery:
             from .recovery import attributes as recovery_attributes
             attributes.update(recovery_attributes(recovery,key))
