@@ -19,6 +19,7 @@ STOP_TIP = 'Stop the render in progress and stop following scene changes.'
 # Modo's own style draws menu entries hard against the edge.
 MENU_STYLE = 'QMenu::item { padding: 5px 24px 5px 24px; } QMenu::separator { height: 1px; margin: 4px 10px; }'
 CRYPTOMATTES = (('object', 'Cryptomatte: Objects'), ('material', 'Cryptomatte: Materials'))
+NO_COMPOSITE = 'Nothing is composited yet. Open the scene\'s compositor (Options > Compositor) and build a node network that does more than pass the Beauty through.'
 
 
 # The Notices button when there is something to read: a background and the colour of its words.
@@ -751,7 +752,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_region(values['region'] if values['region_enabled'] else None,armed)
         if previous is None:return
         if previous[1]!=watched[1]:self._denoising_changed()
-        if previous[0]!=watched[0] or previous[3]!=watched[3] or previous[6]!=watched[6]:self._buffer_changed(0)
+        # The graph changed while the Composite is the buffer chosen: it is shown, or said to be nothing yet.
+        if previous[0]!=watched[0] or previous[3]!=watched[3] or previous[6]!=watched[6] or (previous[5]!=watched[5] and self.buffer.currentData()=='composite'):self._buffer_changed(0)
 
     def _smart_chosen(self,level):
         """Smart Render chosen from the picture's menu: written to the scene's settings."""
@@ -825,9 +827,9 @@ class Panel(Tools, QtWidgets.QWidget):
         names=[(v['name'],v['name']) for v in custom_aovs if v['kind']!='cryptomatte']
         held={v.get('category','object'):v['name'] for v in custom_aovs if v['kind']=='cryptomatte'}
         names+=[(label,held.get(category,'crypto_'+category)) for category,label in CRYPTOMATTES]
-        # The compositor's picture, where the scene has a graph that does something: first after MoonRay's own buffers.
-        from . import compositor
-        if not compositor.trivial(self._settings_values_stored().get('compositor')):names.insert(0,('Composite','composite'))
+        # The compositor's picture, first after MoonRay's own buffers. It is always listed; chosen while the scene's
+        # graph does nothing, it says where to make one that does.
+        names.insert(0,('Composite','composite'))
         if 'asset' in held:names.append(('Cryptomatte: Assets',held['asset']))
         base=2+len(options.AOVS)
         if names==[(self.buffer.itemText(i),self.buffer.itemData(i)) for i in range(base,self.buffer.count())]:return
@@ -1260,6 +1262,10 @@ class Panel(Tools, QtWidgets.QWidget):
             from .display import values
             stored=self._settings_values();key=self.buffer.currentData()
             if self._add_cryptomatte(key,stored):return
+            if key=='composite':
+                from . import compositor
+                if compositor.trivial(stored.get('compositor')):
+                    self.status.setText(NO_COMPOSITE);return
             if key=='denoised_beauty' and self._engine()!='moonlightipr':
                 # Chosen with no denoiser set in the scene: the kept render is denoised now.
                 engine=self._preview_denoiser()

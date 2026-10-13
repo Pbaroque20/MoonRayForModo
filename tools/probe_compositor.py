@@ -1,10 +1,10 @@
 # python
 """Isolated GUI test: the compositor's Composite buffer after a MoonRay render.
 
-Two balls are rendered with MoonRay and a denoiser. With no graph the buffer list has no Composite. A graph is then
-stored with the scene (the beauty graded two stops up): Composite comes into the list, is made without rendering, and
+Two balls are rendered with MoonRay and a denoiser. Composite is always in the buffer list. A graph is then
+stored with the scene (the beauty graded two stops up): the Composite is made without rendering, and
 chosen shows a brighter picture than the beauty. The graph is changed (to the denoised beauty with a glow) and the
-composite is made again. Last the graph is emptied and Composite leaves the list."""
+composite is made again. Last the graph is emptied: the Composite is no longer made."""
 import json
 import pathlib
 import traceback
