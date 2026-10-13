@@ -123,13 +123,20 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 ## Known gaps
 
-- A rare small dark tile can still appear in the live picture under Safe Denoising.
-- Scenes with instances, replicators or deformers are still re-read whole when an item moves.
-- An adaptive render often has no time-left figure: MoonRay reports only how many tiles have finished, and most finish near the end.
-- MoonRay LS does not update while you drag, only after you let go.
-- Very smooth highlights, and rough Principled highlights, are still dimmer than Modo's.
-- Hair in MoonLightIPR is close to MoonRay's, with the top of a tuft a little brighter.
-- The compositor has been tested by script more than by hand.
-- Tested on one machine (RTX 3090).
+What you may run into:
+
+- **Time left:** an adaptive render often shows no time-left figure, only how many tiles have finished.
+- **MoonRay LS** does not update while you drag, only after you let go.
+- **Smart Render** works on MoonRay renders in the preview window, not Render EXR or animations. A picture full of fine texture may not read as clean and then renders to its end.
+- **Stop** takes a few seconds, since MoonRay finishes its tiles first.
+- **Safe Denoising:** a small dark tile can still flash in the live picture now and then.
+- **Compositor:** no matte from a Cryptomatte, no transform or crop, and it does not run while a render is going.
+- **Playblast:** PNG frames only, no movie file and no motion blur.
+- **File > Open** of a MoonRay scene leaves one empty mesh in it and keeps the `.rdla` file's name.
+- **Heavy scenes with instances, replicators or deformers** update more slowly when an item is moved.
+- **Highlights:** very smooth ones, and rough Principled ones, are still dimmer than Modo's.
+- **Hair in MoonLightIPR** is close to MoonRay's, a little brighter at the top of a tuft.
+
+What has and has not been tested is on the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Tested on one machine (RTX 3090).
 
 How things were measured is in the [MoonLightIPR notes](../moonlightipr/README.md) and the project history.
