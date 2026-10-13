@@ -146,6 +146,18 @@ def watch():
             pass
         panel.window().grab().save(str(out / ('%s_%s.png' % (tag, engine))))
         panel.preview.image.save(str(out / ('%s_%s_picture.png' % (tag, engine))))
+        if os.environ.get('MOONRAY_PROBE_KEEP') == '1':
+            # The render's own files, for trying things on them afterwards: its beauty and the denoiser's guides.
+            import shutil
+            frame = panel.renderer.buffers.frame or {}
+            entry['kept'] = {}
+            for key in ('beauty', 'denoise_albedo', 'denoise_normal'):
+                source = (frame.get('files') or {}).get(key)
+                if source and pathlib.Path(str(source)).is_file():
+                    held_ = out / ('%s_%s%s' % (tag, key, pathlib.Path(str(source)).suffix))
+                    shutil.copyfile(str(source), str(held_))
+                    entry['kept'][key] = str(held_)
+            entry['frame_keys'] = sorted((frame.get('files') or {}))[:40]
         save()
         QtCore.QTimer.singleShot(1000, next_engine)
         return

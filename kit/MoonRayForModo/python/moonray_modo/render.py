@@ -211,7 +211,7 @@ class Renderer(QtCore.QObject):
         self.generation+=1;self.canceled=False;self.pending=None;self.using_session=False
         self.active={'output':str(output),'runtime':runtime,'snapshot':{'denoising':settings},'generation':self.generation}
         self.image_path=Path(output);self.original_published=True;self.current_base=Path(self.directory.name)/uuid.uuid4().hex
-        self.post_jobs=denoising.jobs(runtime,self.image_path,self.current_base,engine,guides);self.denoise_result=self.post_jobs[-1][2]
+        self.post_jobs=denoising.jobs(runtime,self.image_path,self.current_base,engine,guides,denoising.settings(settings)['detail']);self.denoise_result=self.post_jobs[-1][2]
         self.progress_state=Progress();self.progress_timer.start()
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(runtime).items():env.insert(key,value)
@@ -484,7 +484,7 @@ class Renderer(QtCore.QObject):
                 self.denoise_guides=snapshot['_denoise_guides']
             if use_denoise:
                 if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))
-                self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'])
+                self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'],denoising.settings(snapshot['denoising'])['detail'])
                 self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
                 raise ValueError('The selected runtime has no XPU GPU program/CUDA runtime. Choose the XPU runtime or CPU mode.')

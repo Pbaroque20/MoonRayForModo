@@ -85,6 +85,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 ![Smart Render on the picture's right-click menu](images/picture-menu-smart-render.png)
 *Right-click the picture: Smart Render, with Safe Denoising below it.*
 
+- **Keep Fine Detail**, in the render settings under Denoising: Off, Some (the default) or More. Hair, fur and other things about a pixel wide, which the denoiser smooths away, are let through from the render.
 - **Important Parts First** *(0.4 runtime)*. Tick it in the render settings under System: MoonRay looks over the whole picture first, then renders the buckets with the most detail before the plain ones, in the Bucket Order you chose. The finished picture is the same; you see what matters sooner. It works with or without Smart Render.
 
 ![Important Parts First on](images/important-first-on.png)
