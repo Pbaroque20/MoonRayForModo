@@ -14,14 +14,14 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 
 - **Compositor**: a node graph over a finished render's buffers, in Options > Compositor: merge, colour correction, filters such as blur, glow, sharpen and vignette, and mattes. Nothing is rendered again.
 - **MoonLightIPR Playblast**: renders an animation on the graphics card and plays it back. In the MoonRay menu and the preview's Options.
-- **Three engines**: **MoonRay** for the full render; **MoonRay LS** and **MoonLightIPR** update after each edit once you press **RT Off** to switch realtime on.
-- **Pixel samples per realtime engine**, in the preview's Preferences.
+- **Three engines**: **MoonRay** for the full render; **MoonRay LS** for a quick low-sample render; **MoonLightIPR** updates after each edit once you press **RT Off** to switch realtime on.
+- **Pixel samples for MoonRay LS and MoonLightIPR**, in the preview's Preferences.
 - **Smart Render**: MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it. Right-click the picture to choose Draft, Medium or Fine.
 - **File > Open reads MoonRay scenes** (`.rdla`, `.rdlb`), as does File > Import.
 
 **Faster**
 
-- **Dragging with realtime on is much smoother**: MoonLightIPR updates instantly, and MoonRay LS updates much sooner once you let go.
+- **Dragging with realtime on is much smoother**: MoonLightIPR updates quickly after drag.
 - **Draft** redraws in about a third of a second after a move, where it took over a second, and follows the scene by itself.
 - **Stop keeps the picture**, denoised, in about a second and a half.
 - **One pass, not three**: a MoonRay preview no longer starts over twice, and is about a third shorter.

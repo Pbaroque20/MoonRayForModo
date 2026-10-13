@@ -4,14 +4,14 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 ## The preview window
 
-- **Three engines.** **MoonRay** renders the full picture once. **MoonRay LS** (low sample) and **MoonLightIPR** are realtime: they update after each edit.
-- **RT Off / RT On.** The realtime engines start switched off, so nothing renders by accident. Press the button to follow the scene; press again to stop.
+- **Three engines.** **MoonRay** renders the full picture once. **MoonRay LS** (low sample) renders a quick, smaller picture when you press Render. **MoonLightIPR** is realtime: it updates after each edit.
+- **RT Off / RT On.** MoonLightIPR starts switched off, so nothing renders by accident. Press the button to follow the scene; press again to stop.
 - **Opens on MoonRay, with the crest**, and renders nothing until asked.
-- **Each engine has its own size.** MoonRay renders at the camera's resolution; the realtime engines at the preview size (640 px unless changed).
-- **Pixel samples per realtime engine**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64.
+- **Each engine has its own size.** MoonRay renders at the camera's resolution; MoonRay LS and MoonLightIPR at the preview size (640 px unless changed).
+- **Pixel samples for MoonRay LS and MoonLightIPR**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64.
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
 - **Smart Render and Safe Denoising on the picture's right-click menu.** Safe Denoising is Off, OptiX or Open Image Denoise; while it is on, the foot of the picture says Safe Denoiser. Smart Render is described under Rendering with MoonRay.
-- **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time. MoonRay LS updates when you let go, and does so much sooner than before.
+- **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.

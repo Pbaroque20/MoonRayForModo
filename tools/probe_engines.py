@@ -1,13 +1,15 @@
 # python
 """Isolated GUI test: the three preview engines, and the button that goes with each.
 
-MoonRay renders once, and its button reads Render and Stop. MoonRay LS and MoonLightIPR are realtime: each is chosen
-with realtime off, its button reads RT Off, and pressing it switches realtime on (RT On) and off again. After each step the
+MoonRay renders once, and its button reads Render and Stop. So does MoonRay LS, smaller and at few samples, and it
+does not follow the scene. MoonLightIPR is realtime: it is chosen with realtime off, its button reads RT Off, and
+pressing it switches realtime on (RT On) and off again. After each step the
 button, whether the window is following the scene, and the window itself are written down."""
 import json
 import pathlib
 import traceback
 import lx
+import modo
 from PySide2 import QtCore, QtWidgets
 
 root = pathlib.Path(r'C:\Users\Raphael Tobar\MoonRayForModo')
@@ -65,7 +67,7 @@ def step(wait):
 def start():
     panel = panel_widget()
     held['stored'] = [panel.preferences.store.value(key, None) for key in ('runtime', 'preview_engine', 'ipr')]
-    panel.preferences.set('runtime', str(root / 'runtime/steady-0350-pool'))
+    panel.preferences.set('runtime', str(root / 'runtime/steady-04-drain'))
     choose('moonray')
 
 
@@ -83,13 +85,28 @@ def low_sample():
 
 @step(3000)
 def low_sample_off():
-    note('moonray_ls_chosen_rt_off')
+    note('moonray_ls_chosen')
     panel_widget().start.click()
 
 
-@step(8000)
+@step(1500)
+def low_sample_rendering():
+    note('moonray_ls_render_pressed')
+
+
+@step(20000)
+def low_sample_edit():
+    # An edit after the render: MoonRay LS does not follow it.
+    held['renders'] = panel_widget().renderer.generation
+    lx.eval('select.item {%s} set' % modo.Scene().items('mesh')[0].id)
+    lx.eval('transform.channel pos.Y 0.3')
+
+
+@step(6000)
 def moonlightipr():
-    note('moonray_ls_rt_on')
+    result['renders_for_an_edit_with_ls'] = panel_widget().renderer.generation - held['renders']
+    result['ls_picture'] = [panel_widget().preview.image.width(), panel_widget().preview.image.height()]
+    note('moonray_ls_rendered_then_edited')
     choose('moonlightipr')
 
 
