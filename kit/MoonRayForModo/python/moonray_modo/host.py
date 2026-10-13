@@ -612,6 +612,15 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     solar_discs(result)
     from .extra_geometry import collect as collect_extra,furs as furs_extra
     result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None and not dirty_meshes and not (evaluated_geometry and refresh_materials) else result.get('extra_geometry',[])+furs_extra(scene,warnings,result['meshes']) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
+    from .extra_geometry import without_fur_bases
+    # A Fur material that grows nothing is most often on a mesh that is hidden or set not to render: said, since
+    # nothing else does.
+    try:
+        grown=any('|fur|' in str(entry.get('identity','')) for entry in result['extra_geometry'])
+        if not grown and any(channel(layer,'enable',1) for layer in scene.items('furMaterial')):
+            warnings.append('A Fur material is in the scene but no fur is grown: the mesh wearing it is hidden or set to Render: Off, or wears another material.')
+    except (LookupError,RuntimeError,TypeError):pass
+    result['meshes']=without_fur_bases(result['meshes'],result['extra_geometry'],warnings)
     from .scene_references import capture as capture_references
     result['scene_references']=capture_references(scene,result)
     result['time']=lx.service.Selection().GetTime();result['fps']=float(scene.fps);result['frame']=round(result['time']*result['fps'])

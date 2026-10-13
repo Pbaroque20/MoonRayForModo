@@ -37,7 +37,7 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         if(getAttrFlipGreen(me)) n.y=-n.y;
         float sx=n.x/n.z,sy=n.y/n.z;
         if(getAttrBumpStrength(me)!=0) {
-            uniform float e=.001f;
+            uniform float e=max(1.e-7f,getAttrBumpStep(me));
             State other=state;
             other.mSt.x=state.mSt.x+e;float right=evalAttrHeight(me,tls,other);
             other.mSt.x=state.mSt.x-e;float left=evalAttrHeight(me,tls,other);
@@ -59,8 +59,11 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
     uniform bool named=data->uv>=0;
     Vec2f namedUv=Vec2f_ctor(0.f,0.f);Vec4f jacobian=Vec4f_ctor(1.f,0.f,0.f,1.f);
     if((mode==12 || mode==13) && named) {
-        if(!isProvided(state,data->uv) || !isProvided(state,data->base) || !isdsProvided(state,data->uv) || !isdtProvided(state,data->uv)){logEvent(me,data->missing);return mode==13?Color_ctor(.5f,.5f,1.f):Color_ctor(0.f);}
-        Vec2f ds=getdVec2fAttributeds(tls,state,data->uv),dt=getdVec2fAttributedt(tls,state,data->uv);
+        if(!isProvided(state,data->uv) || !isProvided(state,data->base)){logEvent(me,data->missing);return mode==13?Color_ctor(.5f,.5f,1.f):Color_ctor(0.f);}
+        // As in the scalar code: without the map's slopes (a subdivision surface), it changes as the layer places the surface's coordinates.
+        const uniform Vec4f placed=getAttrUvAffine(me);
+        Vec2f ds=Vec2f_ctor(placed.x,placed.z),dt=Vec2f_ctor(placed.y,placed.w);
+        if(isdsProvided(state,data->uv) && isdtProvided(state,data->uv)){ds=getdVec2fAttributeds(tls,state,data->uv);dt=getdVec2fAttributedt(tls,state,data->uv);}
         Vec2f delta=state.mSt-getVec2fAttribute(tls,state,data->base);
         namedUv=getVec2fAttribute(tls,state,data->uv)+ds*delta.x+dt*delta.y;
         jacobian=Vec4f_ctor(ds.x,dt.x,ds.y,dt.y);

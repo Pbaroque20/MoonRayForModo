@@ -77,7 +77,11 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
         normal_basis=None
         named_basis=layer.get('coordinate_key') if effect in ('normal','normalCoat','bump','coatBump') else None
         if named_basis:
-            coordinates=node('ModoTextureMap',{'mode':'12','uv_name':string(named_basis)})
+            # With the layer's own placement of the UVs (its tiling and turn): on a subdivision surface MoonRay
+            # does not say how a named map changes across the surface, and this is what it changes by.
+            from .coordinates import affine as placed
+            coordinates=node('ModoTextureMap',{'mode':'12','uv_name':string(named_basis),
+                                               **({'uv_affine':vector(placed(layer)[0],'Vec4')} if layer.get('projection','uv')=='uv' else {})})
         if effect in ('normal','normalCoat','bump','coatBump') and kind!='constant' and not coordinates:
             from .coordinates import affine
             matrix,offset=affine(layer)
@@ -232,10 +236,26 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
         result['presence'] = value[:-1] + ', 1)'
     for normal_effect,bump_effect,result_key in (('normal','bump','normal'),('normalCoat','coatBump','coatNormal')):
         if used & {normal_effect,bump_effect}:
+            # The height is read a thousandth of the image to either side: of the image as its layer lays it on,
+            # so the more it is tiled the nearer the readings are.
+            tiled=1.0
+            for layer in material.get('layers') or []:
+                if textures.EFFECT_ALIASES.get(layer.get('effect'),layer.get('effect'))!=bump_effect or layer.get('projection','uv')!='uv':continue
+                try:
+                    from .coordinates import affine as placed
+                    a=placed(layer)[0]
+                    tiled=max(tiled,(a[0]*a[0]+a[2]*a[2])**.5,(a[1]*a[1]+a[3]*a[3])**.5)
+                except (ValueError,TypeError,KeyError):pass
             result[result_key] = node('ModoTextureMap',{'mode':'1','normal':current[normal_effect],
                 'height':current[bump_effect] if bump_effect in used else '0',
+                **({'bump_step':number(.001/tiled)} if BUMP_STEP and tiled>1 and bump_effect in used else {}),
                 'bump_strength':number(material.get('bump_strength',.005) if bump_effect in used else 0)})
     return result
+
+
+# Whether the runtime being written for knows bump_step: set by rdla.scene_text from the scene it is given, and off
+# for any that does not say so, since a MoonRay that does not know an attribute refuses the scene.
+BUMP_STEP = False
 
 
 def defaults_for(material):

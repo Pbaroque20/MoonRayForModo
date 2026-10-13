@@ -122,6 +122,12 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Rough Principled materials are no longer dark at low angles**, such as a floor running to the horizon.
 - **Image-driven roughness** keeps the right highlight strength on Blinn, Ashikhmin and GTR materials.
 - **An image layer's Low Value and High Value are followed**, in MoonRay and MoonLightIPR. They used to be ignored.
+- **Bump and normal images show on subdivision surfaces in MoonRay** *(0.4 runtime)*. They were left out, so MoonRay rendered such a surface smooth where MoonLightIPR showed the bump. A heavily tiled bump image is also read finely enough to show.
+- **A Fur material's Remove Base Surface is followed**: the fur renders without the surface it grows from.
+- **Notices says when a Fur material grows nothing**, which is usually a mesh that is hidden or set to Render: Off.
+
+![A bump image on a subdivision surface](images/bump-on-subdivision.png)
+*A chequered bump image on a subdivision surface, in MoonRay.*
 
 ## Visibility
 

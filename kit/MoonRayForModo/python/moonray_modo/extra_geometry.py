@@ -309,9 +309,33 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
         if held is None or held[0] is not strands:
             if len(BATCHED)>=8:BATCHED.pop(next(iter(BATCHED)))
             held=BATCHED[kept]=(strands,batches(item.id+'|fur|'+layer.id,item.name,[(strand,worn[at],None) for strand,at in zip(strands,stands)],shape,'',world_matrix(item)))
-        # The fur is its mesh's, for what lights it and what it is called.
-        made+=[dict(entry,source_item=item.id) for entry in held[1]]
+        # The fur is its mesh's, for what lights it and what it is called. Where the Fur material asks for the
+        # surface it grows from to be left out (Remove Base Surface), the entry says of which material's polygons.
+        alone={'fur_only':wanted} if channel(layer,'furOnly',0) else {}
+        made+=[dict(entry,source_item=item.id,**alone) for entry in held[1]]
     return made
+
+
+def without_fur_bases(meshes,extras,warnings):
+    """meshes without the surfaces that fur marked Remove Base Surface grows from: Modo renders the fur and not the
+    surface under it. A mesh is left out where all of it wears that Fur material's group; where only some of its
+    polygons do, it is kept whole and that is said."""
+    bare={}
+    for entry in extras or []:
+        if 'fur_only' in entry:bare.setdefault(entry.get('source_item'),set()).add(entry['fur_only'])
+    if not bare:return meshes
+    kept=[];said=set()
+    for mesh in meshes:
+        source=str(mesh.get('identity','')).split('|')[0]
+        tags=bare.get(source)
+        if tags is None:kept.append(mesh);continue
+        worn=set(mesh.get('face_materials') or [mesh.get('material','')])
+        if '' in tags or worn<=tags:continue
+        kept.append(mesh)
+        if worn&tags and source not in said:
+            said.add(source)
+            warnings.append('Fur on %s: its base surface is kept, since only part of the mesh wears the Fur material.'%mesh.get('name',source))
+    return kept
 
 
 def furs(scene,warnings,meshes):

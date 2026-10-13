@@ -58,6 +58,11 @@
       "type": "Float",
       "default": "0.0f"
     },
+    "attrBumpStep": {
+      "name": "bump_step",
+      "type": "Float",
+      "default": "0.001f"
+    },
     "attrFlipGreen": {
       "name": "flip_green",
       "type": "Bool",

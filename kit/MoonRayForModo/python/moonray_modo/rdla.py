@@ -158,6 +158,8 @@ def _pieces(mesh, inside):
 
 
 def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
+    from . import graph as graph_
+    graph_.BUMP_STEP = bool(scene.get('_bump_step'))
     from .serialization import revision
     from .scene_references import configuration as reference_configuration
     from .working_space import configuration as working_configuration

@@ -135,6 +135,12 @@ def settings_name():
     return os.environ.get('MOONRAY_MODO_PREFERENCES') or 'NativePreview'
 
 
+def supports_bump_step(directory):
+    """Whether this runtime's texture plugin reads a tiled bump image as finely as it is tiled (its bump_step)."""
+    import json
+    try:return bool(json.loads((Path(directory)/'modo-session.json').read_text(encoding='utf-8')).get('bump_step'))
+    except (OSError,ValueError,TypeError,AttributeError):return False
+
 def supports_crypto_categories(directory):
     root=Path(directory).resolve()
     try:signature=tuple((p.stat().st_size,p.stat().st_mtime_ns) for p in [root/'modo-crypto-categories.json']+[root/n for n in _CRYPTO_LIBS])
