@@ -80,15 +80,30 @@ def default_execution_mode(directory):
     return 'auto'
 
 
+def _gpu():
+    try:
+        from . import hardware
+        return hardware.gpu()
+    except Exception:return ''
+
+
+def _cpu():
+    try:
+        from . import hardware
+        return hardware.cpu()
+    except Exception:return ''
+
+
 def execution_status(log):
     """Read selection and fallback in log order; preparation is not GPU confirmation."""
     result=None
     for line in log.splitlines():
         line=line.lower()
-        if 'executing a scalar render' in line: result='Scalar active (CPU)'
-        elif 'executing a vectorized render' in line: result='Vector active (CPU / AVX)'
+        if 'executing a scalar render' in line: result='Scalar active (%s)'%(_cpu() or 'CPU')
+        elif 'executing a vectorized render' in line: result='Vector active (%s)'%(_cpu()+' / AVX' if _cpu() else 'CPU / AVX')
         elif 'executing an xpu render' in line: result='XPU initializing'
-        if 'gpu: setup complete' in line: result='XPU active (NVIDIA GPU + CPU)'
+        # With what it is running on, where the machine says: the first NVIDIA card and the processor.
+        if 'gpu: setup complete' in line: result='XPU active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
         if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
     return result
 

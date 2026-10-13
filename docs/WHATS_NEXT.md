@@ -18,6 +18,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **The Notices button is coloured when there is something to read**: pastel yellow for notices, red for an error or a failed render.
+- **The status names what MoonRay is running on**, such as "XPU active (RTX 3090 + i7-4930K)": the first NVIDIA card and the processor.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
 - **Titled "MoonRay"** when docked in Modo's layout; "MoonRay Preview" as its own window.
