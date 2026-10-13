@@ -80,6 +80,7 @@ def image_pixels(layer, folder, width, height):
         def corrected(a):
             value=max(0,a)**(1/controls.get('gamma',1))
             value=((value-.5)*controls.get('contrast',1)+.5)*controls.get('brightness',1)
+            value=controls.get('low',0)+(controls.get('high',1)-controls.get('low',0))*value
             return [1-value if flip else value for flip in flips]
         pixels=tuple(v for a in alpha for v in corrected(a))
         return pixels,None
@@ -87,6 +88,7 @@ def image_pixels(layer, folder, width, height):
     if controls.get('gamma',1)!=1:args+=['--maxc','0','--powc',str(1/controls['gamma'])]
     if controls.get('contrast',1)!=1:args+=['--subc','.5','--mulc',str(controls['contrast']),'--addc','.5']
     if controls.get('brightness',1)!=1:args+=['--mulc',str(controls['brightness'])]
+    if (controls.get('low',0),controls.get('high',1))!=(0,1):args+=['--mulc',str(controls.get('high',1)-controls.get('low',0)),'--addc',str(controls.get('low',0))]
     flips=layer.get('flips',[False]*3)
     if any(flips):args+=['--mulc',','.join('-1' if v else '1' for v in flips),'--addc',','.join('1' if v else '0' for v in flips)]
     if channel in ('red','green','blue'):args+=['--ch',','.join([{'red':'R','green':'G','blue':'B'}[channel]]*3)]

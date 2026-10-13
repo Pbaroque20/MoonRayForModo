@@ -856,13 +856,16 @@ class Compiler:
             corrections = layer.get('corrections') or {}
             contrast, brightness = float(corrections.get('contrast', 1)), float(corrections.get('brightness', 1))
             bumped = bumped or effect == 'bump'
-            plain = (contrast, brightness, corrections.get('gamma', 1), layer.get('bias', .5), layer.get('gain', .5)) == (1, 1, 1, .5, .5)
+            # Low Value and High Value come after the rest: a gain and an offset over what contrast and brightness give.
+            from .texture_controls import remap
+            span, low = remap(corrections)
+            plain = (contrast, brightness, corrections.get('gamma', 1), layer.get('bias', .5), layer.get('gain', .5), span, low) == (1, 1, 1, .5, .5, 1, 0)
             if kind == 'constant' and plain and effect != 'layerMask':
                 put(effect, channel, blend, mode, flags, value, layer.get('opacity', 1), constant=True)
                 continue
             foldable.discard(effect)
             self.layer(channel, mode, flags, texture, slot, value, layer.get('opacity', 1),
-                       contrast * brightness, .5 * (1 - contrast) * brightness, gamma=float(corrections.get('gamma', 1)),
+                       span * contrast * brightness, low + span * .5 * (1 - contrast) * brightness, gamma=float(corrections.get('gamma', 1)),
                        bias=float(layer.get('bias', .5)), gain_curve=float(layer.get('gain', .5)), **extra)
         enter([])
         defaults = dict(defaults, **{effect: value if FOLDED[effect] is None else value[0] for effect, value in folded.items()})

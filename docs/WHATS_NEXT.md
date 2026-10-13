@@ -121,6 +121,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **Rough Principled materials are no longer dark at low angles**, such as a floor running to the horizon.
 - **Image-driven roughness** keeps the right highlight strength on Blinn, Ashikhmin and GTR materials.
+- **An image layer's Low Value and High Value are followed**, in MoonRay and MoonLightIPR. They used to be ignored.
 
 ## Visibility
 
