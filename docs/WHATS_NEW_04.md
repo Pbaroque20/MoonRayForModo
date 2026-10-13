@@ -1,6 +1,6 @@
-# What's coming in 0.4
+# What's new in 0.4
 
-Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the new runtime ZIP that 0.4 brings; everything else works with the current one.
+New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with the kit. Items marked *(0.4 runtime)* are the ones that need it.
 
 ## The preview window
 
