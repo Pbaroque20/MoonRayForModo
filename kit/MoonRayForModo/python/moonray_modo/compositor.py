@@ -15,6 +15,12 @@ import json
 # How two pictures are put together. a is what is beneath, b what is laid over it.
 MODES = ('normal', 'add', 'multiply', 'screen', 'lighten', 'darken', 'difference')
 
+MATH = ('add', 'subtract', 'multiply', 'divide', 'power', 'least of', 'most of')
+FLIPS = ('left to right', 'top to bottom', 'both')
+TAKES = ('the bright', 'the dark')
+CHANNELS = ('brightness', 'red', 'green', 'blue')
+RAMPS = ('left to right', 'top to bottom')
+
 # Each kind of node: the pictures it takes, and its settings as (kind, default, least, most) or (kind, default, choices).
 NODES = {
     'input': {'label': 'Buffer', 'inputs': (), 'tip': 'One of the render\'s buffers.',
@@ -32,6 +38,51 @@ NODES = {
              'parameters': {'threshold': ('number', 1.0, 0.0, 100.0), 'radius': ('number', 12.0, 0.0, 200.0),
                             'strength': ('number', 0.5, 0.0, 10.0)}},
     'output': {'label': 'Composite', 'inputs': ('image',), 'tip': 'The picture the Composite buffer shows.', 'parameters': {}},
+    # Colour.
+    'levels': {'label': 'Levels', 'inputs': ('image',), 'family': 'colour',
+               'tip': 'What is at Black becomes Out Black and what is at White becomes Out White, with a gamma between.',
+               'parameters': {'black': ('number', 0.0, -10.0, 100.0), 'white': ('number', 1.0, -10.0, 100.0), 'gamma': ('number', 1.0, 0.1, 5.0),
+                              'out_black': ('number', 0.0, -10.0, 100.0), 'out_white': ('number', 1.0, -10.0, 100.0)}},
+    'contrast': {'label': 'Contrast', 'inputs': ('image',), 'family': 'colour',
+                 'tip': 'Pushes values away from the pivot, or draws them towards it. The pivot is the grey that stays as it is.',
+                 'parameters': {'contrast': ('number', 1.2, 0.0, 4.0), 'pivot': ('number', 0.18, 0.0, 10.0)}},
+    'invert': {'label': 'Invert', 'inputs': ('image',), 'family': 'colour', 'tip': 'One less each value: black for white.', 'parameters': {}},
+    'clamp': {'label': 'Clamp', 'inputs': ('image',), 'family': 'colour', 'tip': 'Nothing under Least or over Most.',
+              'parameters': {'least': ('number', 0.0, -100.0, 100.0), 'most': ('number', 1.0, -100.0, 1000.0)}},
+    'tonemap': {'label': 'Tone Map', 'inputs': ('image',), 'family': 'colour',
+                'tip': 'Brings bright values under one, the brightest most (Reinhard), after an exposure in stops.',
+                'parameters': {'exposure': ('number', 0.0, -10.0, 10.0)}},
+    'math': {'label': 'Math', 'inputs': ('image',), 'family': 'colour', 'tip': 'Every value with a number: added, multiplied and so on.',
+             'parameters': {'operation': ('choice', 'multiply', MATH), 'value': ('number', 1.0, -1000.0, 1000.0)}},
+    # Filters.
+    'sharpen': {'label': 'Sharpen', 'inputs': ('image',), 'family': 'filter', 'tip': 'Edges made crisper: by how much, and how wide an edge is.',
+                'parameters': {'amount': ('number', 0.5, 0.0, 5.0), 'radius': ('number', 1.5, 0.5, 20.0)}},
+    'median': {'label': 'Median', 'inputs': ('image',), 'family': 'filter',
+               'tip': 'Each pixel the middle value of those around it: takes out specks and keeps edges.',
+               'parameters': {'radius': ('number', 1.0, 1.0, 6.0)}},
+    'grow': {'label': 'Grow / Shrink', 'inputs': ('image',), 'family': 'filter',
+             'tip': 'What is bright spread by so many pixels, or with a number under nothing, eaten back: for a matte\'s edge.',
+             'parameters': {'pixels': ('number', 2.0, -20.0, 20.0)}},
+    'edges': {'label': 'Edges', 'inputs': ('image',), 'family': 'filter', 'tip': 'Where the picture changes sharply, bright; black elsewhere.',
+              'parameters': {'strength': ('number', 1.0, 0.0, 100.0)}},
+    'grain': {'label': 'Grain', 'inputs': ('image',), 'family': 'filter', 'tip': 'A film\'s grain, the same in every colour, added over the picture.',
+              'parameters': {'amount': ('number', 0.02, 0.0, 1.0), 'seed': ('number', 1.0, 0.0, 9999.0)}},
+    'vignette': {'label': 'Vignette', 'inputs': ('image',), 'family': 'filter',
+                 'tip': 'Darkens towards the edges: by how much at the corners, and how soon it begins.',
+                 'parameters': {'amount': ('number', 0.5, 0.0, 1.0), 'falloff': ('number', 0.5, 0.05, 4.0)}},
+    'flip': {'label': 'Flip', 'inputs': ('image',), 'family': 'filter', 'tip': 'The picture mirrored.',
+             'parameters': {'direction': ('choice', 'left to right', FLIPS)}},
+    # Mattes: grey pictures to wire to a Merge's mask.
+    'luma_matte': {'label': 'Brightness Matte', 'inputs': ('image',), 'family': 'matte',
+                   'tip': 'White where the picture is as bright as High, black where it is as dark as Low, grey between. For a Merge\'s mask.',
+                   'parameters': {'low': ('number', 0.0, -10.0, 1000.0), 'high': ('number', 1.0, -10.0, 1000.0), 'take': ('choice', 'the bright', TAKES)}},
+    'channel': {'label': 'Channel', 'inputs': ('image',), 'family': 'matte', 'tip': 'One channel of the picture, or its brightness, as grey.',
+                'parameters': {'channel': ('choice', 'brightness', CHANNELS)}},
+    # Pictures made from nothing.
+    'constant': {'label': 'Colour', 'inputs': (), 'family': 'make', 'tip': 'A picture of one colour.',
+                 'parameters': {'color': ('color', [0.5, 0.5, 0.5])}},
+    'ramp': {'label': 'Ramp', 'inputs': (), 'family': 'make', 'tip': 'A picture running from one colour to another, across or down.',
+             'parameters': {'direction': ('choice', 'left to right', RAMPS), 'start': ('color', [0.0, 0.0, 0.0]), 'end': ('color', [1.0, 1.0, 1.0])}},
 }
 # Buffers that are not pictures to put together.
 UNUSABLE = ('cryptomatte',)
@@ -176,6 +227,89 @@ def _blur(radius):
             '--resize', '{IMG[1].width}x{IMG[1].height}', '--swap', '--pop']
 
 
+LUMA = '--chsum:weight=0.2126,0.7152,0.0722'
+
+
+def _colour(values):
+    return ','.join(_number(v) for v in values)
+
+
+def _levels(image, held):
+    span = float(held['white']) - float(held['black'])
+    span = span if abs(span) > 1e-6 else 1e-6
+    return [image, '--subc', _number(held['black']), '--mulc', _number(1.0 / span), '--maxc', '0', '--powc', _number(1.0 / float(held['gamma'])),
+            '--mulc', _number(float(held['out_white']) - float(held['out_black'])), '--addc', _number(held['out_black'])]
+
+
+def _math(image, held):
+    value = float(held['value'])
+    if held['operation'] == 'divide':
+        return [image, '--mulc', _number(1.0 / value if abs(value) > 1e-9 else 0.0)]
+    if held['operation'] == 'power':
+        # A power of a negative number is not a number: what is under black stays black.
+        return [image, '--maxc', '0', '--powc', _number(value)]
+    return [image, {'add': '--addc', 'subtract': '--subc', 'multiply': '--mulc', 'least of': '--minc', 'most of': '--maxc'}[held['operation']], _number(value)]
+
+
+def _grow(image, held):
+    pixels = int(round(float(held['pixels'])))
+    if not pixels:
+        return None
+    across = 2 * abs(pixels) + 1
+    return [image, '--dilate' if pixels > 0 else '--erode', '%dx%d' % (across, across)]
+
+
+def _vignette(image, held):
+    # Across the picture and down it, a hump that is one in the middle and nothing at the edge; the two multiplied
+    # are one at the centre and nothing along every edge. The picture is darkened by Amount where that is nothing.
+    hump = lambda first, second: ['--pattern', 'fill:%s=0,0,0:%s=1,1,1' % (first, second), '{TOP.width}x{TOP.height}', '3',
+                                  '--dup', '--invert', '--mul', '--mulc', '4']
+    amount = float(held['amount'])
+    return ([image] + hump('left', 'right') + hump('top', 'bottom') + ['--mul', '--maxc', '0', '--powc', _number(held['falloff']),
+            '--mulc', _number(amount), '--addc', _number(1.0 - amount), '--mul'])
+
+
+def _luma_matte(image, held):
+    span = float(held['high']) - float(held['low'])
+    span = span if abs(span) > 1e-6 else 1e-6
+    args = [image, LUMA, '--ch', '0,0,0', '--subc', _number(held['low']), '--mulc', _number(1.0 / span), '--maxc', '0', '--minc', '1']
+    return args + (['--invert'] if held['take'] == 'the dark' else [])
+
+
+def _ramp(black, held):
+    first, second = ('left', 'right') if held['direction'] == 'left to right' else ('top', 'bottom')
+    return [black, '--pattern', 'fill:%s=%s:%s=%s' % (first, _colour(held['start']), second, _colour(held['end'])),
+            '{TOP.width}x{TOP.height}', '3', '--swap', '--pop']
+
+
+# What each node that works on one picture asks of the image tool, given the picture and its settings; None where it
+# is set to do nothing. And the same for those that make a picture, given a black one of the render's size.
+WORKERS = {
+    'levels': _levels,
+    'contrast': lambda image, held: [image, '--subc', _number(held['pivot']), '--mulc', _number(held['contrast']), '--addc', _number(held['pivot'])],
+    'invert': lambda image, held: [image, '--invert'],
+    'clamp': lambda image, held: [image, '--maxc', _number(held['least']), '--minc', _number(held['most'])],
+    'tonemap': lambda image, held: [image, '--mulc', _number(2.0 ** float(held['exposure'])), '--maxc', '0', '--dup', '--addc', '1', '--div'],
+    'math': _math,
+    'sharpen': lambda image, held: None if float(held['amount']) < 1e-4 else
+        [image, '--unsharp:kernel=gaussian:width=%s:contrast=%s:threshold=0' % (_number(2 * float(held['radius']) + 1), _number(held['amount']))],
+    'median': lambda image, held: [image, '--median', '%dx%d' % ((2 * int(round(float(held['radius']))) + 1,) * 2)],
+    'grow': _grow,
+    'edges': lambda image, held: [image, '--laplacian', '--abs', '--mulc', _number(held['strength'])],
+    'grain': lambda image, held: None if float(held['amount']) < 1e-6 else
+        [image, '--noise:type=gaussian:mean=0:stddev=%s:mono=1:seed=%d' % (_number(held['amount']), int(float(held['seed'])))],
+    'vignette': _vignette,
+    'flip': lambda image, held: [image, {'left to right': '--flop', 'top to bottom': '--flip', 'both': '--rotate180'}[held['direction']]],
+    'luma_matte': _luma_matte,
+    'channel': lambda image, held: [image, LUMA, '--ch', '0,0,0'] if held['channel'] == 'brightness' else
+        [image, '--ch', ','.join([str(('red', 'green', 'blue').index(held['channel']))] * 3)],
+}
+MAKERS = {
+    'constant': lambda black, held: [black, '--addc', _colour(held['color'])],
+    'ramp': _ramp,
+}
+
+
 def jobs(graph, files, kinds, folder, channels=None):
     """What the image tool is to be run with, node after node: [(arguments, the file that run makes)], and the file
     that is the output's picture. files has each buffer's file and kinds what kind of buffer each is. A wired input
@@ -252,6 +386,17 @@ def jobs(graph, files, kinds, folder, channels=None):
             if float(held['radius']) >= 0.25:
                 args += _blur(held['radius'])
             args += ['--mulc', _number(held['strength']), image, '--add']
+        elif kind in MAKERS:
+            args = MAKERS[kind](str(none()), held)
+        elif kind in WORKERS:
+            if taken.get('image') is None:
+                made[identity] = none()
+                continue
+            args = WORKERS[kind](str(taken['image']), held)
+            if args is None:
+                # Set to do nothing: the picture passes as it is.
+                made[identity] = taken['image']
+                continue
         steps.append((args + ['-d', 'float', '-o', str(target)], target))
         made[identity] = target
     return steps, made[graph['root']]

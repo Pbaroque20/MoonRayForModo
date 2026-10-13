@@ -22,7 +22,7 @@ class Graphs(unittest.TestCase):
     def test_what_is_not_a_graph_is_refused(self):
         for bad in ({'nodes':{'out':{'type':'output'}}},                                                       # no root
                     graph(out=('output',{},{}),other=('output',{},{})),                                        # two outputs
-                    graph(a=('sharpen',{},{}),out=('output',{},{'image':'a'})),                                # unknown node
+                    graph(a=('wobble',{},{}),out=('output',{},{'image':'a'})),                                 # unknown node
                     graph(a=('merge',{'mode':'burn'},{}),out=('output',{},{'image':'a'})),                     # unknown mode
                     graph(a=('blur',{'radius':-1},{}),out=('output',{},{'image':'a'})),                        # out of range
                     graph(a=('input',{'buffer':'../x'},{}),out=('output',{},{'image':'a'})),                   # not a buffer's name

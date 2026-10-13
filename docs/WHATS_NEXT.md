@@ -11,7 +11,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Pixel samples per realtime engine**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64. MoonRay LS can also render as wide as the preview.
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
 - **Safe Denoising on the right-click menu**: Off, OptiX or Open Image Denoise. While it is on, the foot of the picture says Safe Denoiser.
-- **Dragging with realtime on is much smoother.** The preview takes far less of Modo's time while you drag the camera or an object. MoonRay LS now follows a drag too, where it used to wait for you to let go.
+- **Dragging with realtime on is much smoother.** MoonLightIPR follows the camera or an object as you drag, taking far less of Modo's time. MoonRay LS updates when you let go, and does so much sooner than before.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
@@ -47,7 +47,12 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 ## The compositor
 
-- **Options > Compositor**: a node graph over the buffers of a finished render. Nodes to add are listed on the left: the render's buffers, Merge, Grade, Blur and Glow.
+- **Options > Compositor**: a node graph over the buffers of a finished render. Nodes to add are listed on the left:
+  - **Buffers** of the render, and **Merge** in seven modes, with a mix amount and an optional mask.
+  - **Colour**: Grade, Levels, Contrast, Invert, Clamp, Tone Map, Math.
+  - **Filters**: Blur, Glow, Sharpen, Median, Grow / Shrink, Edges, Grain, Vignette, Flip.
+  - **Mattes**: Brightness Matte and Channel, to wire into a Merge's mask.
+  - **Make**: a plain Colour and a Ramp.
 - **The result is the Composite buffer** in the list. Editing the graph updates it without rendering again.
 - **Saved with the scene**, with undo.
 - **Render EXR and animations write `name.composite.exr`** beside the EXR.
@@ -114,7 +119,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - A rare small dark tile can still appear in the live picture under Safe Denoising.
 - Scenes with instances, replicators or deformers are still re-read whole when an item moves.
 - An adaptive render often has no time-left figure: MoonRay reports only how many tiles have finished, and most finish near the end.
-- MoonRay LS is more interactive during a drag but not yet as fluid as MoonLightIPR on heavy scenes.
+- MoonRay LS does not update while you drag, only after you let go.
 - Very smooth highlights, and rough Principled highlights, are still dimmer than Modo's.
 - Hair in MoonLightIPR is close to MoonRay's, with the top of a tuft a little brighter.
 - The compositor has been tested by script more than by hand.

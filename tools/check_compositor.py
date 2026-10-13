@@ -117,6 +117,52 @@ def main():
                lambda u, v: (1.0, 1.0, 1.0), places=((32, 16),))
         expect('glow under its threshold', graph(f, ('x', 'glow', {'threshold': 1.0, 'radius': 3.0, 'strength': 2.0}, {'image': 'f'})),
                lambda u, v: (.5, .5, .5), places=((32, 16),))
+        # The nodes added after the first few: each against what it should make of the picture.
+        one = lambda kind, held: graph(a, ('x', kind, held, {'image': 'a'}))
+        each = lambda f: (lambda u, v: tuple(f(p) for p in beauty(u, v)))
+        expect('levels', one('levels', {'black': .1, 'white': .9, 'gamma': 1.0, 'out_black': 0.0, 'out_white': 2.0}), each(lambda p: max(0.0, (p - .1) / .8) * 2.0))
+        expect('levels with gamma', one('levels', {'black': 0.0, 'white': 1.0, 'gamma': 2.0}), each(lambda p: p ** .5))
+        expect('contrast', one('contrast', {'contrast': 2.0, 'pivot': .4}), each(lambda p: (p - .4) * 2 + .4))
+        expect('invert', one('invert', {}), each(lambda p: 1 - p))
+        expect('clamp', one('clamp', {'least': .3, 'most': .5}), each(lambda p: min(.5, max(.3, p))))
+        expect('tone map', one('tonemap', {'exposure': 1.0}), each(lambda p: 2 * p / (1 + 2 * p)))
+        for operation, fn in (('add', lambda p: p + .25), ('subtract', lambda p: p - .25), ('multiply', lambda p: p * .25), ('divide', lambda p: p / .25),
+                             ('power', lambda p: p ** .25), ('least of', lambda p: min(p, .25)), ('most of', lambda p: max(p, .25))):
+            expect('math ' + operation, one('math', {'operation': operation, 'value': .25}), each(fn), tolerance=4e-3)
+        expect('flip left to right', one('flip', {'direction': 'left to right'}), lambda u, v: beauty(1 - u, v))
+        expect('flip top to bottom', one('flip', {'direction': 'top to bottom'}), lambda u, v: beauty(u, 1 - v))
+        expect('flip both', one('flip', {'direction': 'both'}), lambda u, v: beauty(1 - u, 1 - v))
+
+        def luma(u, v):
+            r, g, b_ = beauty(u, v)
+            return .2126 * r + .7152 * g + .0722 * b_
+        expect('channel brightness', one('channel', {'channel': 'brightness'}), lambda u, v: (luma(u, v),) * 3)
+        expect('channel red', one('channel', {'channel': 'red'}), lambda u, v: (beauty(u, v)[0],) * 3)
+        expect('channel blue', one('channel', {'channel': 'blue'}), lambda u, v: (beauty(u, v)[2],) * 3)
+        expect('brightness matte', one('luma_matte', {'low': .3, 'high': .5}), lambda u, v: (min(1.0, max(0.0, (luma(u, v) - .3) / .2)),) * 3)
+        expect('brightness matte of the dark', one('luma_matte', {'low': .3, 'high': .5, 'take': 'the dark'}),
+               lambda u, v: (1 - min(1.0, max(0.0, (luma(u, v) - .3) / .2)),) * 3)
+        # On an even picture: a filter that looks at a pixel's neighbours leaves it as it was, and there are no edges.
+        even = lambda kind, held: graph(f, ('x', kind, held, {'image': 'f'}))
+        half = lambda u, v: (.5, .5, .5)
+        expect('sharpen of an even picture', even('sharpen', {'amount': 1.0, 'radius': 2.0}), half, places=((32, 16),))
+        expect('median of an even picture', even('median', {'radius': 2.0}), half, places=((32, 16),))
+        expect('grow of an even picture', even('grow', {'pixels': 3.0}), half, places=((32, 16),))
+        expect('shrink of an even picture', even('grow', {'pixels': -3.0}), half, places=((32, 16),))
+        expect('edges of an even picture', even('edges', {'strength': 5.0}), lambda u, v: (0, 0, 0), places=((32, 16),))
+        expect('grain', even('grain', {'amount': .01, 'seed': 3.0}), half, places=((32, 16), (10, 10)), tolerance=.06)
+        # A matte grown: white reaches further into the black side than it did.
+        expect('grow of a matte', graph(m, ('x', 'grow', {'pixels': 4.0}, {'image': 'm'})), lambda u, v: (1.0, 1.0, 1.0), places=((29, 16),))
+        expect('shrink of a matte', graph(m, ('x', 'grow', {'pixels': -4.0}, {'image': 'm'})), lambda u, v: (0.0, 0.0, 0.0), places=((34, 16),))
+        expect('vignette at the centre', even('vignette', {'amount': .6, 'falloff': .5}), half, places=((32, 16), (31, 15)), tolerance=2e-2)
+        expect('vignette at a corner', even('vignette', {'amount': .6, 'falloff': .5}), lambda u, v: (.2, .2, .2), places=((0, 0), (63, 31)), tolerance=2e-2)
+        expect('colour', {'nodes': {'c': {'type': 'constant', 'parameters': {'color': [.25, .5, .75]}, 'inputs': {}},
+                                    'out': {'type': 'output', 'parameters': {}, 'inputs': {'image': 'c'}}}, 'root': 'out'}, lambda u, v: (.25, .5, .75))
+        ramp = lambda direction: {'nodes': {'r': {'type': 'ramp', 'parameters': {'direction': direction, 'start': [1.0, 0.0, 0.0], 'end': [0.0, 0.0, 1.0]}, 'inputs': {}},
+                                            'out': {'type': 'output', 'parameters': {}, 'inputs': {'image': 'r'}}}, 'root': 'out'}
+        expect('ramp left to right', ramp('left to right'), lambda u, v: (1 - u, 0.0, u), tolerance=2e-2)
+        # The check's pictures are read from the bottom row up: the top of the picture is where v is one.
+        expect('ramp top to bottom', ramp('top to bottom'), lambda u, v: (v, 0.0, 1 - v), tolerance=2e-2)
         expect('nothing wired to the output', {'nodes': {'out': {'type': 'output', 'parameters': {}, 'inputs': {}}}, 'root': 'out'}, lambda u, v: (0, 0, 0))
     if failures:
         print('\n'.join(['', 'Compositor check FAILED:'] + failures))
