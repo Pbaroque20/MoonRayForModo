@@ -583,7 +583,8 @@ class Renderer(QtCore.QObject):
                 if self.progress_state:self.progress_state.generation=self.session_serial
                 self.session_files[self.session_serial]=self.current_base
                 self._started()
-                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size,prepared=prepared)
+                self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size,prepared=prepared,
+                                    important=bool(options.render_values(snapshot.get('render_settings',{}))['important_first']))
             else:
                 self.process.start()
         except Exception as exc:

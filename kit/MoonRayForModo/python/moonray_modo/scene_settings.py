@@ -187,6 +187,7 @@ GROUPS = [
         field('timeout', ('timeout',), 'int', 'Time Limit', 'Minutes; 0 is no limit', 0, 10080),
         render_field('bucket_size', 'Bucket Size'),
         render_field('batch_tile_order', 'Bucket Order'),
+        render_field('important_first', 'Important Parts First', 'A MoonRay render in the preview window looks over the whole picture in its first passes, then renders the buckets with the most in them (edges, detail, noise) before the plain ones, in the Bucket Order chosen'),
     ]),
     # Outputs that are written as expressions rather than ticked: a part of the light picked out by the path it took,
     # a value a material holds, an ID matte.

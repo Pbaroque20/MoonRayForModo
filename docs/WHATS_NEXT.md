@@ -79,6 +79,14 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 ![Smart Render on the picture's right-click menu](images/picture-menu-smart-render.png)
 *Right-click the picture: Smart Render, with Safe Denoising below it.*
 
+- **Important Parts First** *(0.4 runtime)*. Tick it in the render settings under System: MoonRay looks over the whole picture first, then renders the buckets with the most detail before the plain ones, in the Bucket Order you chose. The finished picture is the same; you see what matters sooner.
+
+![Important Parts First on](images/important-first-on.png)
+*On: the ball is finished while the plain floor waits.*
+
+![Important Parts First off](images/important-first-off.png)
+*Off, at the same moment: the ball is still rough.*
+
 - **One pass, not three.** A MoonRay preview no longer renders twice quickly before the real render, starting over each time: the picture comes in once, and the render is about a third shorter.
 - **A steadier time left.** One countdown for the whole render, where it used to start over with each of MoonRay's passes and jump about. With adaptive sampling a time is shown only when MoonRay's own figure can be trusted; otherwise the window says how many tiles have finished.
 - **Stop keeps a whole picture.** MoonRay finishes the tiles it is working on before it stops, so nothing is left dark or blocky, and every buffer is kept, not only the beauty. It takes a few seconds *(0.4 runtime)*.

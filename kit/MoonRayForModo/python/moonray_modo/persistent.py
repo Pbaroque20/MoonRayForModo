@@ -29,6 +29,12 @@ def saves(runtime):
     except (OSError,ValueError,TypeError,AttributeError):return False
 
 
+def important(runtime):
+    """Whether this runtime's MoonRay can take the tiles with the most in them first."""
+    try:return bool(json.loads((Path(runtime)/'modo-session.json').read_text(encoding='utf-8')).get('important'))
+    except (OSError,ValueError):return False
+
+
 def drains(runtime):
     """Whether this runtime's MoonRay can be asked to finish with what it has in hand: the tiles its workers are on
     rendered to the end and the frame ended there as a finished one."""
@@ -85,8 +91,12 @@ class Session(QtCore.QObject):
 
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
 
-    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None):
+    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None,important=False):
         self.idle.cancel()
+        # Whether the render takes the tiles with the most in them first: read by MoonRay as each render begins.
+        try:
+            staged=self.root/'important.tmp';staged.write_text('1' if important else '0',encoding='ascii');staged.replace(self.root/'important.txt')
+        except (OSError,AttributeError):pass
         request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared)
         signature=(str(runtime),threads,mode,bucket_size)
         self.latest=request

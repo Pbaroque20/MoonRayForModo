@@ -67,6 +67,12 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                 context->setRenderMode(saves ? rndr::RenderMode::PROGRESS_CHECKPOINT : rndr::RenderMode::PROGRESSIVE);
                 if (saves) std::cout << "Modo session: saving the picture as it renders" << std::endl;
             }
+            {
+                // Whether this render takes the tiles with the most in them first: "1" in important.txt.
+                std::ifstream important(fs::u8path(directory)/"important.txt");
+                std::string asked;
+                rndr::getRenderDriver()->setModoImportant(bool(important>>asked) && asked=="1");
+            }
             const auto prep = context->startFrame();
             if (prep == rndr::RenderContext::RP_RESULT::FINISHED) {
                 auto driver = rndr::getRenderDriver();

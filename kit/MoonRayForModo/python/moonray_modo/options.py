@@ -8,6 +8,7 @@ ENUMS['bucket_size'] = [('Auto (resolution)',0),('32 × 32',32),('64 × 64',64),
 RENDER = {
     'bucket_size': (0, 0, 256, 'Bucket size (preview and final)'),
     'batch_tile_order': (6, 0, 8, 'Tile order (preview and final)'),
+    'important_first': (0, 0, 1, 'Important parts first (preview)'),
     'sampling_mode': (0, 0, 2, 'Sampling mode'),
     'min_adaptive_samples': (16, 1, 1048576, 'Minimum samples / pixel'),
     'max_adaptive_samples': (4096, 1, 1048576, 'Maximum samples / pixel'),
@@ -47,7 +48,9 @@ RENDER = {
     'lock_frame_noise': (0, 0, 1, 'Lock noise across frames'),
 }
 # Settings MoonRay holds as on or off; they are kept here as 0 or 1.
-BOOLS = ('enable_presence_shadows', 'lock_frame_noise')
+BOOLS = ('enable_presence_shadows', 'lock_frame_noise', 'important_first')
+# Settings that are the kit's own, and are not written into a MoonRay scene by their names.
+OWN = ('batch_tile_order', 'bucket_size', 'important_first')
 ENUMS['volume_overlap_mode'] = [('Add them up', 0), ('The densest', 1), ('One at random', 2)]
 ENUMS['pixel_filter'] = [('Box', 0), ('Cubic B-spline (default)', 1), ('Quadratic B-spline', 2)]
 OBJECT = {
