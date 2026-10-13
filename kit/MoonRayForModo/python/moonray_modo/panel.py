@@ -464,9 +464,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self._store(region=region,region_enabled=True)
         self.preview.set_region(region,True)
         self.status.setText('Region set: %d%% to %d%% across, %d%% to %d%% down.'%(region[0]*100,region[2]*100,region[1]*100,region[3]*100))
+        # With realtime on the region is rendered as any edit is. Otherwise it is only marked, its outline moving
+        # round it: Render, or RT, is what renders it.
         if self._following:self.preview_timer.start()
-        # In draft, drawing the region is asking for it to be rendered.
-        elif self.draft.isChecked():self.render_once()
+        else:self.status.setText('Region marked. Press %s to render it.'%('RT Off' if self._live() else 'Render'))
 
     def _draft_toggled(self,enabled):
         """Draft on: lines in place of a render, and the whole frame kept in view. Off: the render again."""
@@ -477,11 +478,16 @@ class Panel(Tools, QtWidgets.QWidget):
             try:self._draft_time=lx.service.Selection().GetTime()
             except Exception:self._draft_time=None
             self._draft_hasty=True
+            self._draft_render=None
             self.draft_timer.start()
         else:self.draft_timer.stop()
         if enabled:
-            if self._following:self.preview_timer.start()
-            else:self.render_once()
+            # Draft and realtime are one or the other: Draft switched on takes realtime off, as realtime switched
+            # on takes Draft off.
+            if self._following:
+                self.stop()
+                if self._following:self._follow(False)
+            self.render_once()
             return
         self._draft_image=self._draft_render=None;self._draft_engine=False;self.preview.nominal=None
         # The render made before the draft is of the scene as it was then. Where the draft has since drawn another
@@ -799,7 +805,14 @@ class Panel(Tools, QtWidgets.QWidget):
         # Whatever was rendering or being followed is stopped: nothing renders for a change of engine. A realtime
         # engine is chosen with realtime off, and is switched on with its button, so that none starts by accident.
         if not self.disposed and not self._output_busy() and (self._following or self._rendering):self.stop()
-        if self.ipr_mode.isChecked()!=live:self.ipr_mode.setChecked(live)
+        # Choosing an engine never switches realtime on, whatever is rendering as it is chosen (a draft's lines may
+        # be): only its button does. Chosen with a render still stopping, a realtime engine took that render for
+        # one to carry on from, and came on with Draft still on.
+        self._choosing_engine=True
+        try:
+            if self.ipr_mode.isChecked()!=live:self.ipr_mode.setChecked(live)
+        finally:self._choosing_engine=False
+        if self._following and not self.disposed:self._follow(False)
         if live and not self.disposed:self.status.setText('Realtime is off. Press RT Off to switch it on.')
         if not self.disposed and self.draft.isChecked() and not self._output_busy():
             # A draft's region is rendered by the engine chosen: with another engine it is drawn again.
@@ -847,7 +860,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _ipr_changed(self,enabled):
         self.preferences.set('ipr',bool(enabled))
         if enabled:
-            if self._rendering and not self._output_busy():
+            if self._rendering and not self._output_busy() and not getattr(self,'_choosing_engine',False):
                 # Turned on during a preview: carry on from it.
                 self._follow(True)
                 self.status.setText('Following the scene.')
@@ -1045,6 +1058,9 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._live():
             # A realtime engine is switched on and off, not started and stopped.
             # RT for realtime. While it is on the button stays pressed in, as a switch that is on does.
+            # A draft's lines, or its region, being rendered is not realtime being on: with Draft on the button
+            # says only whether the scene is being followed.
+            if self.draft.isChecked():active=self._following
             self.start.setText('RT On' if active else 'RT Off')
             self.start.setCheckable(True);self.start.setChecked(active)
             self.start.setToolTip('Realtime is on: the preview follows the scene as you edit it. Press to switch it off.' if active
@@ -1083,7 +1099,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # and that is laid on them.
             self._draft_engine=self._draft_lines=True
             # The region is rendered after the fine picture, not after the quick one before it.
-            self._draft_then=scene if self._draft_region() and not (getattr(self,'_draft_hasty',False) and not self._following) else None
+            # A region marked on a draft is not rendered by the draft: it waits for Render or RT.
+            self._draft_then=None
         if not output:
             from .incremental import surroundings
             self._surroundings=surroundings(scene)
@@ -1538,7 +1555,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self._draft_quiet=False
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
-                             else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))
+                             else 'Draft: press Region and drag in the picture to mark a part of it.' if self.draft.isChecked() and self._draft_region() is None
+                             else 'Draft: region marked. Press %s to render it.'%('RT Off' if self._live() else 'Render') if self.draft.isChecked() else 'Done'))
         if not output and getattr(self.renderer,'draining',False):
             # Stopped by hand, or by Smart Render: MoonRay finished the tiles it had in hand and ended the render
             # there, so the picture is whole and has all its buffers.
