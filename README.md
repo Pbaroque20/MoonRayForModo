@@ -32,7 +32,7 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 
 - **Denoised Beauty just works**: choose it in the list, with nothing to set up.
 - **Safe Denoising** is on the picture's right-click menu and shows the render as it goes.
-- **No dark blocks** while MoonRay renders.
+- **Reduced dark blocks** while MoonRay renders.
 - **MoonLightIPR is much closer to MoonRay** on layered materials, glass, coats and see-through shadows.
 - **Rough Principled materials** are no longer dark at low angles.
 - **Hidden items stay hidden**: an item with its eye off does not render, and a Shader's Cast Shadows switch is followed.
