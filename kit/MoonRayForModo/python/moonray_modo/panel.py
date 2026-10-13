@@ -1158,7 +1158,10 @@ class Panel(Tools, QtWidgets.QWidget):
             from .ipr import refine
             scene=refine(scene)
         self.renderer.timeout_seconds = values['timeout']*60
-        self.renderer.submit(scene, self.runtime_path(), width, height, (4 if refining else 1) if scene.get('_ipr') and not output else values['samples'],
+        grid=(4 if refining else 1) if scene.get('_ipr') and not output else values['samples']
+        # Kept with the picture, for its sampling to be said beside its size.
+        if engine=='moonray':scene=dict(scene,_pixel_samples=int(grid)**2)
+        self.renderer.submit(scene, self.runtime_path(), width, height, grid,
                              values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine, resume=resume)
         if resume:self.status.setText('Continuing the stopped render.')
         self.last_digest = original_digest
@@ -1497,9 +1500,12 @@ class Panel(Tools, QtWidgets.QWidget):
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
-            if snapshot.get('_ipr'):
-                settings=snapshot['render_settings']
-                text+=' | LS '+('1 SPP' if settings['max_adaptive_samples']==1 else '%d-%d SPP'%(settings['min_adaptive_samples'],settings['max_adaptive_samples']))
+            if snapshot.get('_pixel_samples') and not snapshot.get('_draft') and not frame.get('moonlightipr'):
+                # How a MoonRay picture was sampled: uniform with its samples a pixel, or adaptive with the fewest and most.
+                from .options import render_values
+                settings=render_values(snapshot.get('render_settings',{}))
+                text+=' | '+('LS ' if snapshot.get('_ipr') else '')+('Adaptive %d-%d ps'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'])
+                             if settings['sampling_mode']==2 else 'Uniform %d ps'%snapshot['_pixel_samples'])
             self.image_info.setText(text)
             self._image_note()
             self.image_info.setToolTip(str(frame.get('backend',self.renderer.backend_status)))
