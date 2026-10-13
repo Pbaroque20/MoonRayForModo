@@ -69,7 +69,7 @@ DENOISERS = [('Off', 'off'), ('NVIDIA OptiX (GPU)', 'optix'), ('Intel Open Image
 SMART = [('Off', 'off'), ('Draft: stop soonest', 'draft'), ('Medium', 'medium'), ('Fine: stop latest', 'fine')]
 BACKGROUNDS = [('Scene environment', 'environment'), ('Black', 'black'), ('Solid color', 'color'), ('Image', 'image')]
 SURFACES = [('As modeled', 0), ('Smooth subdivision', 1), ('Modo evaluated geometry', 2)]
-VIEWS = [('ACES (sRGB display)', 'aces'), ('sRGB', 'srgb'), ('Highlight compression + sRGB', 'reinhard'), ('Raw linear', 'raw'), ('OCIO display / view', 'ocio')]
+VIEWS = [('Modo color management', 'modo'), ('ACES (sRGB display)', 'aces'), ('sRGB', 'srgb'), ('Highlight compression + sRGB', 'reinhard'), ('Raw linear', 'raw'), ('OCIO display / view', 'ocio')]
 LUT_SPACES = [('After display transform', 'display'), ('Scene-linear, before view', 'linear')]
 DEEP_FORMATS = [('OpenEXR 2', 0), ('OpenDCX 2', 1)]
 MODES = [('Auto (XPU, Vector, Scalar)', 'auto'), ('XPU (NVIDIA GPU + CPU)', 'xpu'), ('Vector (CPU / AVX)', 'vectorized'), ('Scalar (CPU)', 'scalar')]
@@ -160,7 +160,7 @@ GROUPS = [
      [field('aov_' + key, ('aovs',), 'member', label, 'Adds the ' + channel + ' channel to the EXR', member=key)
       for key, (label, _, channel) in options.AOVS.items()]),
     ('Display', True, [
-        field('view', ('display', 'view'), 'choice', 'View Transform', 'How the preview is shown; EXRs stay linear', choices=VIEWS),
+        field('view', ('display', 'view'), 'choice', 'View Transform', 'How the preview is shown; EXRs stay linear. Modo color management follows the scene\'s OCIO configuration and the color space of its Final Color Output, as set in Modo (and its system preferences); OCIO display / view uses the configuration, source, display and view named below', choices=VIEWS),
         field('exposure', ('display', 'exposure'), 'float', 'Exposure', 'Stops', -20.0, 20.0),
         field('lut', ('display', 'lut'), 'file', 'LUT File'),
         field('lut_space', ('display', 'lut_space'), 'choice', 'LUT Applies', '', choices=LUT_SPACES),

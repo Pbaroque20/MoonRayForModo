@@ -228,6 +228,10 @@ def solar_discs(result):
 
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):
     scene = modo.Scene()
+    try:
+        from . import modo_color
+        modo_color.refresh()
+    except Exception:pass
     if scene.items('replicator',superType=False):
         # Render Cache resolves generated replica transforms and source meshes.
         evaluated_geometry = True

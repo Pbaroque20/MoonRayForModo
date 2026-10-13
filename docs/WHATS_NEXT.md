@@ -10,6 +10,8 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Each engine has its own size.** MoonRay renders at the camera's resolution; MoonRay LS and MoonLightIPR at the preview size (640 px unless changed).
 - **Sampling beside the picture size.** A MoonRay render says how it was sampled, such as "Uniform 16 ps" or "Adaptive 4-12 ps" (fewest to most pixel samples).
 - **Pixel samples for MoonRay LS and MoonLightIPR**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64.
+- **The preview follows Modo's color management by default**: the scene's OCIO configuration (Modo's own, or one added in its system preferences) and the color space of the Final Color Output. View Transform in the render settings chooses between that, ACES, sRGB, raw, or an OCIO display and view of your own.
+- **The view transform and LUT are named at the foot of the window**, bottom right, such as "Modo: nuke-default, sRGB" or "ACES + LUT film.cube".
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
 - **Smart Render and Safe Denoising on the picture's right-click menu.** Safe Denoising is Off, OptiX or Open Image Denoise; while it is on, the foot of the picture says Safe Denoiser. Smart Render is described under Rendering with MoonRay.
 - **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time.
@@ -18,6 +20,9 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
 - **Titled "MoonRay"** when docked in Modo's layout; "MoonRay Preview" as its own window.
 - **The MoonRay menu is regrouped**: preview, rendering to files, settings, creating, import and export, scene files.
+
+![The view transform named at the foot of the window](images/view-at-the-foot.png)
+*Bottom right: the size, the sampling, and the view the picture is shown through.*
 
 ![The preview window with MoonLightIPR chosen and realtime on](images/preview-engines.png)
 *MoonLightIPR chosen, RT On.*

@@ -2,8 +2,10 @@
 import math
 from pathlib import Path
 
-# The view a scene starts with is ACES for an sRGB monitor, as is usual in production; plain sRGB is the next choice.
-DEFAULTS={'working_space':'rec709','view':'aces','exposure':0.0,'lut':'','lut_space':'display',
+# The view a scene starts with is Modo's own colour management: the scene's OCIO configuration and the colour space
+# its Final Color Output is viewed in, so that a preview reads as Modo's own render view does. ACES for an sRGB
+# monitor, plain sRGB and a chosen OCIO display and view are the other choices.
+DEFAULTS={'working_space':'rec709','view':'modo','exposure':0.0,'lut':'','lut_space':'display',
           'config':'','source':'Linear Rec.709 (sRGB)','display':'sRGB','ocio_view':'ACES 1.0 - SDR Video'}
 
 
@@ -20,7 +22,14 @@ def built_in(config):
 def values(settings):
     result={key:settings.get(key,value) for key,value in DEFAULTS.items()}
     if result['working_space'] not in ('rec709','acescg'):raise ValueError('Unknown render working space')
-    if result['view'] not in ('srgb','aces','reinhard','raw','ocio'): raise ValueError('Unknown display transform')
+    if result['view'] not in ('modo','srgb','aces','reinhard','raw','ocio'): raise ValueError('Unknown display transform')
+    if result['view']=='modo':
+        # As Modo shows it: what modo_color last read of the scene. Where the scene has no colour management, or
+        # nothing has been read yet, plain sRGB.
+        from . import modo_color
+        held=modo_color.RESOLVED
+        if held:result.update(view='ocio',config=held['config'],source=held['source'],display=held['display'],ocio_view=held['view'])
+        else:result['view']='srgb'
     if result['view']=='aces':
         # ACES for an sRGB monitor is an OCIO view with everything already chosen.
         result.update(ACES,view='ocio')

@@ -670,11 +670,31 @@ class Panel(Tools, QtWidgets.QWidget):
 
     # Settings: the scene's, and how the window follows them
 
+    def _view_words(self):
+        """How the picture is shown, in a few words: the view transform and the LUT, for the foot of the window."""
+        try:
+            from pathlib import Path
+            from . import modo_color
+            held=self._settings_values()['display'];view=held.get('view','modo')
+            if view=='modo':
+                read=modo_color.RESOLVED
+                words='Modo: %s, %s'%(read.get('name',''),read['view']) if read else 'sRGB'
+            elif view=='ocio':words='OCIO: %s, %s'%(held.get('display',''),held.get('ocio_view',''))
+            else:words={'aces':'ACES','srgb':'sRGB','reinhard':'Highlight compression','raw':'Raw linear'}.get(view,str(view))
+            if held.get('lut'):words+=' + LUT '+Path(held['lut']).name
+            return words
+        except Exception:return ''
+
     def _settings_values_stored(self):
         try:return properties.scene_settings()
         except Exception:return {}
 
     def _settings_values(self):
+        # Modo's own colour management is read here, where Modo may be asked: the display code takes what was read.
+        try:
+            from . import modo_color
+            modo_color.refresh()
+        except Exception:pass
         values=scene_settings.complete(self._settings_values_stored())
         values['preview_buffer']=self.buffer.currentData()
         return values
@@ -694,7 +714,9 @@ class Panel(Tools, QtWidgets.QWidget):
             self._scene_id=scene_id;self._geometry_cache=None;self._shown=None
         self._sync_cameras()
         self._hud_update()
-        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']))
+        from . import modo_color
+        # With what was read of Modo's own colour management: changed in Modo, the picture is shown again by it.
+        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']),repr(modo_color.RESOLVED))
         if watched==self._shown:return
         previous,self._shown=self._shown,watched
         self._sync_output_menu(values['custom_aovs'])
@@ -708,7 +730,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_region(values['region'] if values['region_enabled'] else None,armed)
         if previous is None:return
         if previous[1]!=watched[1]:self._denoising_changed()
-        if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
+        if previous[0]!=watched[0] or previous[3]!=watched[3] or previous[6]!=watched[6]:self._buffer_changed(0)
 
     def _smart_chosen(self,level):
         """Smart Render chosen from the picture's menu: written to the scene's settings."""
@@ -1511,6 +1533,9 @@ class Panel(Tools, QtWidgets.QWidget):
                 settings=render_values(snapshot.get('render_settings',{}))
                 text+=' | '+('LS ' if snapshot.get('_ipr') else '')+('Adaptive %d-%d ps'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'])
                              if settings['sampling_mode']==2 else 'Uniform %d ps'%snapshot['_pixel_samples'])
+            # And how it is shown: the view transform, and a LUT where there is one.
+            shown=self._view_words()
+            if shown:text+=' | '+shown
             self.image_info.setText(text)
             self._image_note()
             self.image_info.setToolTip(str(frame.get('backend',self.renderer.backend_status)))
