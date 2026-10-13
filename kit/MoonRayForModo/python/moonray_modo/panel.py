@@ -19,7 +19,7 @@ STOP_TIP = 'Stop the render in progress and stop following scene changes.'
 # Modo's own style draws menu entries hard against the edge.
 MENU_STYLE = 'QMenu::item { padding: 5px 24px 5px 24px; } QMenu::separator { height: 1px; margin: 4px 10px; }'
 CRYPTOMATTES = (('object', 'Cryptomatte: Objects'), ('material', 'Cryptomatte: Materials'))
-NO_COMPOSITE = 'Nothing is composited yet. Open the scene\'s compositor (Options > Compositor) and build a node network that does more than pass the Beauty through.'
+NO_COMPOSITE = "Open the scene's compositor (Options > Compositor) and build a non-default node network."
 
 
 # The Notices button when there is something to read: a background and the colour of its words.
