@@ -20,9 +20,6 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 ![The preview window with MoonLightIPR chosen and realtime on](images/preview-engines.png)
 *MoonLightIPR chosen, RT On.*
 
-![Safe Denoiser at the foot of the picture](images/mode-on-the-picture.png)
-*Safe Denoising on.*
-
 ## Draft
 
 - **Much faster.** After moving the camera or an object, the lines are back in about a third of a second on a 266-mesh scene. It used to take over a second.
