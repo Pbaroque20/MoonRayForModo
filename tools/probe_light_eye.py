@@ -43,7 +43,8 @@ def note(name):
     panel = panel_widget()
     lights = [(light.name, light.type, light.channel('visible').get(), light.channel('render').get()) for light in modo.Scene().items('light')]
     result['steps'].append({'step': name, 'brightness': bright(), 'lights': lights, 'following': panel._following, 'rendering': panel._rendering,
-                            'status': panel.status.text()[:80]})
+                            'status': panel.status.text()[:80],
+                            'notices': [w for w in ((panel.renderer.active or {}).get('snapshot', {}).get('warnings') or []) if 'lit by the environment' in w]})
     panel.window().grab().save(str(out / ('%s_%d_%s.png' % (tag, len(result['steps']), name))))
     save()
 

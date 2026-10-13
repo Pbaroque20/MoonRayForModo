@@ -125,6 +125,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 ## Visibility
 
 - **An item with its eye off does not render.** Render: Yes or No still overrides.
+- **The environment lights the scene** whether or not Modo's Global Illumination is on. With every light hidden, Notices says the scene is lit by the environment.
 - **MoonLightIPR follows per-ray visibility**: camera, indirect light, reflections, refractions and shadows.
 - **A Shader's Cast Shadows switch is followed.**
 
