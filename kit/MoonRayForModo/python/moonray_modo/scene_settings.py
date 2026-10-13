@@ -165,7 +165,7 @@ GROUPS = [
      [field('aov_' + key, ('aovs',), 'member', label, 'Adds the ' + channel + ' channel to the EXR', member=key)
       for key, (label, _, channel) in options.AOVS.items()]),
     ('Display', True, [
-        field('view', ('display', 'view'), 'choice', 'View Transform', 'How the preview is shown; EXRs stay linear. Modo color management follows the scene\'s OCIO configuration and the color space of its Final Color Output, as set in Modo (and its system preferences); OCIO display / view uses the configuration, source, display and view named below', choices=VIEWS),
+        field('view', ('display', 'view'), 'choice', 'View Transform', 'How the preview is shown; EXRs stay linear. Modo color management follows the OCIO configuration and color spaces in Modo\'s system preferences; what is chosen here is remembered for new scenes; OCIO display / view uses the configuration, source, display and view named below', choices=VIEWS),
         field('exposure', ('display', 'exposure'), 'float', 'Exposure', 'Stops', -20.0, 20.0),
         field('lut', ('display', 'lut'), 'file', 'LUT File'),
         field('lut_space', ('display', 'lut_space'), 'choice', 'LUT Applies', '', choices=LUT_SPACES),
