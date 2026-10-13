@@ -21,6 +21,11 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 - **File > Open reads MoonRay scenes** (`.rdla`, `.rdlb`), as does File > Import.
 - **Sampling shown beside the picture size**, such as "Uniform 16 ps", and new scenes start on uniform sampling.
 - **The MoonRay menu is regrouped** by what each entry is for.
+- **Modo fur without a limit**: every fibre Modo would grow, each as thick as the Fur material says. Remove Base Surface is followed.
+- **Keep Fine Detail** when denoising: fur, hair and curves stay sharp over a denoised surface.
+- **Cellular, Wood, Weave and Ripples** layers render.
+- **The preview follows Modo's color management** by default, and names the view and LUT at the foot of the window.
+- **Environment lighting preference**: always, or only with Modo's Global Illumination on.
 
 **Faster**
 
@@ -40,6 +45,9 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 - **Rough Principled materials** are no longer dark at low angles.
 - **Hidden items stay hidden**: an item with its eye off does not render, and a Shader's Cast Shadows switch is followed.
 - **Imported MoonRay lights** are no longer far too bright.
+- **Bump and normal images show on subdivision surfaces** in MoonRay.
+- **An image layer's Low Value and High Value** are followed.
+- **The Notices button is coloured** when there is something to read: yellow for notices, red for errors.
 
 Some of these need a newer MoonRay, so 0.4 brings a new runtime ZIP.
 

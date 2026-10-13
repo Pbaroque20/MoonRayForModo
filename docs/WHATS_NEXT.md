@@ -137,6 +137,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 ![Cellular, Wood, Weave and Ripples](images/procedural-patterns.png)
 *Cellular, Wood, Weave and Ripples at their default settings.*
 
+- **A texture layer under the Render item shows on polygons with no material set.** MoonRay left it out.
 - **Bump and normal images show on subdivision surfaces in MoonRay** *(0.4 runtime)*. They were left out, so MoonRay rendered such a surface smooth where MoonLightIPR showed the bump. A heavily tiled bump image is also read finely enough to show.
 - **Modo fur without a limit** *(0.4 runtime)*. Every fibre Modo would grow is grown, each as thick as the Fur material says; the 60,000-fibre limit and the widening are gone. A test scene with 1.26 million fibres was read in about nine seconds.
 - **A Fur material's Remove Base Surface is followed**: the fur renders without the surface it grows from.
