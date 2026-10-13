@@ -730,7 +730,7 @@ class Panel(Tools, QtWidgets.QWidget):
         try:
             values=self._settings_values()
             if self._engine()=='moonray' and not self._live() and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
-                words.append('Safe Denoiser Mode')
+                words.append('Safe Denoiser')
             level=values['denoising'].get('smart','off')
             if self._engine()=='moonray' and not self._live() and level!='off':
                 from .smart_render import LEVELS
