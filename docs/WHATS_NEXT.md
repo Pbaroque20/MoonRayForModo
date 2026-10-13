@@ -38,6 +38,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Nothing stale when switched off.** If the scene changed, the view is cleared instead of showing an old render.
 - **Region no longer zooms the view.**
 - **A region is marked, then rendered when you ask.** Drag a region and it gets a moving dotted outline; nothing renders until you press Render or RT.
+- **The Region tool switches realtime off**, so marking a region never forces a render.
 - **Draft and realtime are one or the other.** Choosing an engine never switches realtime on, and Draft switched on takes realtime off.
 
 ![A region marked on the draft with a dotted outline](images/region-outline.png)

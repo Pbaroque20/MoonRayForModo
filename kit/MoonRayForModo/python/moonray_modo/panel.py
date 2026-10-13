@@ -473,13 +473,14 @@ class Panel(Tools, QtWidgets.QWidget):
         """A rectangle dragged in the picture is the region to render."""
         region=[round(min(1.0,max(0.0,v)),4) for v in (left,top,right,bottom)]
         if region[2]-region[0]<.005 or region[3]-region[1]<.005:return
+        # Marking a region renders nothing: with realtime on it is switched off first, so that the region is not
+        # rendered until it is asked for.
+        if self._following:self._follow(False)
         self._store(region=region,region_enabled=True)
         self.preview.set_region(region,True)
         self.status.setText('Region set: %d%% to %d%% across, %d%% to %d%% down.'%(region[0]*100,region[2]*100,region[1]*100,region[3]*100))
-        # With realtime on the region is rendered as any edit is. Otherwise it is only marked, its outline moving
-        # round it: Render, or RT, is what renders it.
-        if self._following:self.preview_timer.start()
-        else:self.status.setText('Region marked. Press %s to render it.'%('RT Off' if self._live() else 'Render'))
+        # It is only marked, its outline moving round it: Render, or RT, is what renders it.
+        self.status.setText('Region marked. Press %s to render it.'%('RT Off' if self._live() else 'Render'))
 
     def _draft_toggled(self,enabled):
         """Draft on: lines in place of a render, and the whole frame kept in view. Off: the render again."""
@@ -630,6 +631,10 @@ class Panel(Tools, QtWidgets.QWidget):
         # Switched on, the button only readies the drag: nothing is rendered anew until a region is drawn.
         # Switched off, the region is forgotten, so that the next one is drawn from nothing.
         self._region_armed=bool(enabled)
+        # The Region tool takes realtime off: a region is marked and then rendered when asked, not as it is drawn.
+        if enabled and self._following:
+            self._follow(False)
+            self.status.setText('Realtime is off while a region is marked. Press RT Off to render it.')
         self.preview.set_region(None,enabled)
         if enabled or not self._settings_values()['region_enabled']:return
         self._store(region=[0.0,0.0,1.0,1.0],region_enabled=False)

@@ -132,7 +132,7 @@ def watch():
     entry = result['engines'][engine]
     status = panel.status.text()
     entry['seen'].append([round(now, 1), panel.render_timing.text(), status[:200]])
-    done = (engine == 'moonray' and not panel._rendering and now > 8) or (engine != 'moonray' and now > 70) or now > LIMIT
+    done = (engine == 'moonray' and not panel._rendering and now > 8) or (engine != 'moonray' and now > float(os.environ.get('MOONRAY_PROBE_IPR_WAIT', '70'))) or now > LIMIT
     # MOONRAY_PROBE_BUFFER: once the render is done, that buffer is chosen and given a while to be made and shown.
     wanted = os.environ.get('MOONRAY_PROBE_BUFFER')
     if done and wanted and 'picked' not in held:
