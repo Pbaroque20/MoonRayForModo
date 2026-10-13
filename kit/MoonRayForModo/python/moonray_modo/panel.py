@@ -29,6 +29,8 @@ def scene_display(stored):
 # How long the scene's time must stand still before a preview that follows the scene renders it: longer than the gap
 # between two frames of an animation played slowly.
 PLAYBACK_REST=0.35
+# The most pixels a draft is drawn at. A picture is handed over as twelve bytes a pixel, in at most 64 MB.
+DRAFT_MOST=4500000
 # How long Modo's thread is left alone after an update of a followed scene, in lengths of that update.
 LIVE_REST=2.0
 
@@ -1110,9 +1112,17 @@ class Panel(Tools, QtWidgets.QWidget):
             # its lines are as clean as a drawing's and stay so when looked at closely. Either is told from the
             # region rendered among the lines by its size, so neither is ever just the size of the preview.
             if (getattr(self,'_draft_hasty',False) and not self._following):fine=max(64,min(3200,int(self.preferences.get('draft/width') or 640)))
-            # Twice as many pixels across as the view has: clean lines, and clean still when looked at closely, and
-            # no more than that, since every pixel drawn is one to hand over and show.
-            else:fine=min(3200,max(640,int(2*self.preview.width()*self.preview.devicePixelRatioF())))
+            # Twice as many pixels across as the picture has in the view: clean lines, and clean still when looked at
+            # closely, and no more than that, since every pixel drawn is one to hand over and show. The picture is
+            # fitted into the view, so an upright one is narrower there than the view is: sized by the view's
+            # width alone it came out several times too tall.
+            else:
+                scale=self.preview.devicePixelRatioF()
+                across=min(self.preview.width()*scale,self.preview.height()*scale*width/max(1,height))
+                fine=min(3200,max(640,int(2*across)))
+            # And never more pixels than MoonLightIPR hands over at one go (DRAFT_MOST): asked for more, it handed
+            # over nothing and the window waited on it for good.
+            fine=max(64,min(fine,int((DRAFT_MOST*width/max(1,height))**.5)))
             if fine==width:fine+=2
             height=max(16,round(height*fine/width));width=fine
             # The quick picture may still be on its way when the fine one is asked for: it is a draft's too.
