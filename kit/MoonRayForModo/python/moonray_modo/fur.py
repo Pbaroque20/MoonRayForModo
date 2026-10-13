@@ -98,8 +98,8 @@ def grow(triangles, held, maps=None):
     count = min(wanted, MOST)
     if count <= 0 or total <= 0:
         return [], 0.0, 0.0, wanted, []
-    # Fewer fibres than Modo's stand further apart, and are wider by as much.
-    apart *= math.sqrt(wanted / count)
+    # A fibre is as thick as the Fur material says, however many of Modo's are grown: fewer of them are thinner
+    # fur, not wider fibres.
     root = held['widthAbs'] / 2 if held['widthMode'] == 'absolute' else apart * max(0.0, held['width']) / 2
     tip = root * max(.02, 1.0 - min(1.0, max(0.0, held['taper'])))
     curls, clumps = max(0.0, held['curls']), min(1.0, max(0.0, held['clumps']))

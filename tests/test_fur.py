@@ -44,10 +44,11 @@ class Fur(unittest.TestCase):
         self.assertTrue(all(abs(s[-1][1] - s[0][1]) < 1e-9 for s in stiff))
         self.assertTrue(all(s[-1][1] < s[0][1] - .005 for s in limp))
 
-    def test_too_many_fibres_are_grown_fewer_and_wider(self):
+    def test_too_many_fibres_are_grown_fewer_and_no_wider(self):
         strands, root, _, asked, _ = fur.grow(FLOOR, held(dist=.002))
         self.assertEqual((asked, len(strands)), (250000, fur.MOST))
-        self.assertAlmostEqual(root, .002 * math.sqrt(250000 / fur.MOST) * .5 / 2)
+        # As thick as the Fur material says, however many are grown.
+        self.assertAlmostEqual(root, .002 * .5 / 2)
 
     def test_the_same_fur_grows_each_time_and_is_kept(self):
         first = fur.kept(FLOOR, held(dist=.05))

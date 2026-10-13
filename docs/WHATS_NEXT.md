@@ -12,10 +12,12 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Pixel samples for MoonRay LS and MoonLightIPR**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64.
 - **The preview follows Modo's color management by default**: the scene's OCIO configuration (Modo's own, or one added in its system preferences) and the color space of the Final Color Output. View Transform in the render settings chooses between that, ACES, sRGB, raw, or an OCIO display and view of your own.
 - **The view transform and LUT are named at the foot of the window**, bottom right, such as "Modo: nuke-default, sRGB" or "ACES + LUT film.cube".
+- **Beauty is what every engine shows by default.** Denoised Beauty is in the buffer list to choose; only Smart Render switches to it by itself.
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
 - **Smart Render and Safe Denoising on the picture's right-click menu.** Safe Denoising is Off, OptiX or Open Image Denoise; while it is on, the foot of the picture says Safe Denoiser. Smart Render is described under Rendering with MoonRay.
 - **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
+- **The Notices button is coloured when there is something to read**: pastel yellow for notices, red for an error or a failed render.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
 - **Titled "MoonRay"** when docked in Modo's layout; "MoonRay Preview" as its own window.
@@ -135,6 +137,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 *Cellular, Wood, Weave and Ripples at their default settings.*
 
 - **Bump and normal images show on subdivision surfaces in MoonRay** *(0.4 runtime)*. They were left out, so MoonRay rendered such a surface smooth where MoonLightIPR showed the bump. A heavily tiled bump image is also read finely enough to show.
+- **Modo fur without a limit** *(0.4 runtime)*. Every fibre Modo would grow is grown, each as thick as the Fur material says; the 60,000-fibre limit and the widening are gone. 1.26 million fibres on a test scene took about nine seconds to grow.
 - **A Fur material's Remove Base Surface is followed**: the fur renders without the surface it grows from.
 - **Notices says when a Fur material grows nothing**, which is usually a mesh that is hidden or set to Render: Off.
 

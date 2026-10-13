@@ -87,7 +87,7 @@ def look():
                 from moonray_modo import rdla
                 text = rdla.scene_text(scene_read, 640, 360, 2, 0.0)
                 (out / (tag + '.rdla.txt')).write_text(chr(10).join(line[:600] for line in text.splitlines()), encoding='utf-8')
-            result[key] = {'fibres': [[e.get('name'), e.get('kind'), len(e.get('counts') or e.get('curve_counts') or []), sorted(e)[:14]] for e in fibres][:10], 'seconds': round(time.monotonic() - began, 1), 'warnings': scene_read['warnings'],
+            result[key] = {'fibres': [[e.get('name'), e.get('kind'), len(e.get('counts') or e.get('curve_counts') or []), e.get('fur_fibres'), e.get('fur_points'), e.get('radius'), e.get('material')] for e in fibres][:10], 'seconds': round(time.monotonic() - began, 1), 'warnings': scene_read['warnings'],
                            'meshes': [[m.get('name'), m.get('material'), len(m.get('faces') or m.get('face_counts') or [])] for m in scene_read['meshes']][:40],
                            'curves': [[c.get('name'), len(c.get('counts') or c.get('strands') or [])] for c in scene_read.get('curves', [])][:40],
                            'keys': sorted(scene_read)[:80],
