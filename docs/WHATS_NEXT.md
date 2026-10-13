@@ -127,9 +127,13 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - Scenes with instances, replicators or deformers are still re-read whole when an item moves.
 - An adaptive render often has no time-left figure: MoonRay reports only how many tiles have finished, and most finish near the end.
 - MoonRay LS does not update while you drag, only after you let go.
+- Smart Render's three levels were set from one scene, and it watches MoonRay renders in the preview window only, not Render EXR or animations. A picture full of fine texture may never read as clean and renders to its end.
+- Stop now takes a few seconds, since MoonRay finishes its tiles first. Stopping under Safe Denoising, and Continue, were not tried with the new renderer.
 - Very smooth highlights, and rough Principled highlights, are still dimmer than Modo's.
 - Hair in MoonLightIPR is close to MoonRay's, with the top of a tuft a little brighter.
-- The compositor has been tested by script more than by hand.
+- The compositor has been tested by script more than by hand, and has no matte from a Cryptomatte, no transform or crop, and does not run while a render is going.
+- A playblast is PNG frames only: no movie file and no motion blur.
+- A MoonRay scene opened from File > Open keeps one empty mesh and the `.rdla` file's name.
 - Tested on one machine (RTX 3090).
 
 How things were measured is in the [MoonLightIPR notes](../moonlightipr/README.md) and the project history.
