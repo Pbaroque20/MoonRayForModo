@@ -76,6 +76,12 @@ def collect(scene, warnings):
                         if len(suns)!=1:
                             raise ValueError('physical sky requires one Sun Light or an explicit MoonRay sun_item setting')
                         sun = suns[0]
+                        if not render_visible(sun):
+                            # A sky lit by a sun that is hidden is dark: no sun, so no daylight either.
+                            black=[0.0,0.0,0.0]
+                            entry.update(kind='constant',zenith=black,sky=black,ground=black,nadir=black,dark=True)
+                            warnings.append('The physical sky of %s is dark: its sun, %s, is hidden.'%(environment.name,sun.name))
+                    if entry['kind']=='physical':
                         from .sun import direction as sun_direction
                         entry.update(sun_direction=sun_direction(sun),
                                      normalize=bool(channel(layer,'normalize',False)),

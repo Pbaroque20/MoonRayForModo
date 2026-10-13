@@ -133,6 +133,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **An item with its eye off does not render.** Render: Yes or No still overrides.
 - **The environment lights the scene** whether or not Modo's Global Illumination is on. With every light hidden, Notices says the scene is lit by the environment.
+- **A physical sky goes dark when its sun is hidden.** Notices says so.
 - **Or have it follow Modo**: in System > Preferences > MoonRay, set Environment lights the scene to Follow Modo, and it lights the scene only with Global Illumination on.
 
 ![Follow Modo with the light hidden](images/environment-follow-modo.png)

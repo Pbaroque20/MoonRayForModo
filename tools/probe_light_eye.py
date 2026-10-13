@@ -17,7 +17,7 @@ root = pathlib.Path(r'C:\Users\Raphael Tobar\MoonRayForModo')
 ENGINE = os.environ.get('MOONRAY_PROBE_ENGINE', 'moonlightipr')
 # MOONRAY_PROBE_ENVIRONMENT=1 leaves Modo's own environment as it is.
 PLAIN = os.environ.get('MOONRAY_PROBE_ENVIRONMENT') != '1'
-tag = ENGINE + ('' if PLAIN else '-environment') + ('-follow' if os.environ.get('MOONRAY_PROBE_FOLLOW') == '1' else '')
+tag = ENGINE + ('' if PLAIN else '-environment') + ('-follow' if os.environ.get('MOONRAY_PROBE_FOLLOW') == '1' else '') + ('-sky' if os.environ.get('MOONRAY_PROBE_SKY') == '1' else '')
 out = root / 'test-results/light-eye'
 out.mkdir(parents=True, exist_ok=True)
 result = {'engine': ENGINE, 'steps': []}
@@ -44,7 +44,7 @@ def note(name):
     lights = [(light.name, light.type, light.channel('visible').get(), light.channel('render').get()) for light in modo.Scene().items('light')]
     result['steps'].append({'step': name, 'brightness': bright(), 'lights': lights, 'following': panel._following, 'rendering': panel._rendering,
                             'status': panel.status.text()[:80],
-                            'notices': [w for w in ((panel.renderer.active or {}).get('snapshot', {}).get('warnings') or []) if 'lit by the environment' in w]})
+                            'notices': [w for w in ((panel.renderer.active or {}).get('snapshot', {}).get('warnings') or []) if 'lit by the environment' in w or 'sky' in w]})
     panel.window().grab().save(str(out / ('%s_%d_%s.png' % (tag, len(result['steps']), name))))
     save()
 
@@ -135,6 +135,10 @@ try:
     if os.environ.get('MOONRAY_PROBE_FOLLOW') == '1':
         # Global Illumination off in the Render item, as a scene lit by its lights alone has it.
         lx.eval('channel.value 0 channel:{%s:globEnable}' % modo.Scene().renderItem.id)
+    if os.environ.get('MOONRAY_PROBE_SKY') == '1':
+        # A physically based sky, lit by the directional light as its sun.
+        for layer in modo.Scene().items('envMaterial'):
+            lx.eval('channel.value physical channel:{%s:type}' % layer.id)
     lx.eval('moonray.render.samples 2')
     lx.eval('moonray.open')
 except Exception:
