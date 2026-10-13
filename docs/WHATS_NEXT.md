@@ -4,7 +4,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 ## The preview window
 
-- **Three engines.** **MoonRay** renders the full picture once. **MoonRay LS** (low sample) and **MoonLightIPR** are realtime: they follow the scene as you edit.
+- **Three engines.** **MoonRay** renders the full picture once. **MoonRay LS** (low sample) and **MoonLightIPR** are realtime: they update after each edit.
 - **RT Off / RT On.** The realtime engines start switched off, so nothing renders by accident. Press the button to follow the scene; press again to stop.
 - **Opens on MoonRay, with the crest**, and renders nothing until asked.
 - **Each engine has its own size.** MoonRay renders at the camera's resolution; the realtime engines at the preview size (640 px unless changed).
@@ -83,7 +83,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 *Stopped the new way: MoonRay finishes those tiles first.*
 
 - **Safe Denoising shows the render as it goes**, like any other render *(0.4 runtime)*. A stop tells you how far behind the kept picture is.
-- **No dark blocks** in the live picture *(0.4 runtime)*.
+- **Reduced dark blocks** in the live picture *(0.4 runtime)*.
 - **An idle MoonRay uses no processor**, and closes itself if Modo goes away *(0.4 runtime)*.
 
 ![A normal render stopped part way, kept and denoised](images/stop-keeps-picture.png)
@@ -127,7 +127,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 What you may run into:
 
 - **Time left:** an adaptive render often shows no time-left figure, only how many tiles have finished.
-- **MoonRay LS** does not update while you drag, only after you let go.
+- **Realtime previews** update after you let go of a drag, not while you drag.
 - **Smart Render** works on MoonRay renders in the preview window, not Render EXR or animations. A picture full of fine texture may not read as clean and then renders to its end.
 - **Stop** takes a few seconds, since MoonRay finishes its tiles first.
 - **Safe Denoising:** a small dark tile can still flash in the live picture now and then.
