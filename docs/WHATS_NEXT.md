@@ -10,7 +10,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Each engine has its own size.** MoonRay renders at the camera's resolution; the realtime engines at the preview size (640 px unless changed).
 - **Pixel samples per realtime engine**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64. MoonRay LS can also render as wide as the preview.
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
-- **Safe Denoising on the right-click menu**: Off, OptiX or Open Image Denoise. While it is on, the foot of the picture says Safe Denoiser Mode.
+- **Safe Denoising on the right-click menu**: Off, OptiX or Open Image Denoise. While it is on, the foot of the picture says Safe Denoiser.
 - **Dragging with realtime on is much smoother.** The preview takes far less of Modo's time while you drag the camera or an object. MoonRay LS now follows a drag too, where it used to wait for you to let go.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **Status on its own line**, so long messages are not cut off.
@@ -20,7 +20,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 ![The preview window with MoonLightIPR chosen and realtime on](images/preview-engines.png)
 *MoonLightIPR chosen, RT On.*
 
-![Safe Denoiser Mode at the foot of the picture](images/mode-on-the-picture.png)
+![Safe Denoiser at the foot of the picture](images/mode-on-the-picture.png)
 *Safe Denoising on.*
 
 ## Draft
