@@ -705,6 +705,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     from .moonlightipr_curves import payload as curve_payload
     from .moonlightipr_materials import UV_SLOTS
     for entry in scene.get('extra_geometry', []):
+        if entry.get('kind') == 'curves' and entry.get('fur_file'):
+            # Fur grown into a file for MoonRay: the preview takes a share of its fibres from the file.
+            entry = fur_from_file(entry)
         if entry.get('kind') != 'curves' or not entry.get('vertices'):
             continue
         packed = curve_payload(entry, compiler.slots.get(''))
@@ -737,3 +740,25 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     for identity in [k for k, v in _packed.items() if v[0] not in used]:
         del _packed[identity]
     return b''.join(parts), used, list(dict.fromkeys(warnings))
+
+
+# Fur read from a file, by the file and how much of it was taken: reading a million fibres is not done twice.
+_FUR = {}
+# The most fibres of a fur file the GPU preview draws.
+FUR_MOST = 150000
+
+
+def fur_from_file(entry):
+    """A fur entry that names a file, with a share of the file's fibres in it as lists."""
+    key = (entry['fur_file'], FUR_MOST)
+    held = _FUR.get(key)
+    if held is None:
+        from . import fur_native
+        try:
+            vertices, counts, radii, places, _ = fur_native.read(entry['fur_file'], FUR_MOST)
+        except (OSError, ValueError, EOFError):
+            return entry
+        if len(_FUR) >= 6:
+            _FUR.pop(next(iter(_FUR)))
+        held = _FUR[key] = dict(vertices=vertices, counts=counts, radii=radii, uvs=places)
+    return dict(entry, **held)

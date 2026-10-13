@@ -21,6 +21,17 @@ MENU_STYLE = 'QMenu::item { padding: 5px 24px 5px 24px; } QMenu::separator { hei
 CRYPTOMATTES = (('object', 'Cryptomatte: Objects'), ('material', 'Cryptomatte: Materials'))
 
 
+# The Notices button when there is something to read: a background and the colour of its words.
+NOTICE_STYLE = 'QToolButton{background-color:%s;color:%s;border-radius:3px;padding:1px 6px;}'
+# Words that make a notice an error and not a remark.
+NOTICE_ERRORS = ('error', 'failed', 'could not', 'cannot', 'unavailable', 'unsupported', 'missing', 'not found', 'invalid')
+
+
+def notice_is_error(message):
+    lowered = str(message).lower()
+    return any(word in lowered for word in NOTICE_ERRORS)
+
+
 def scene_display(stored):
     from .display import values
     return values(stored['display'])
@@ -670,11 +681,36 @@ class Panel(Tools, QtWidgets.QWidget):
 
     # Settings: the scene's, and how the window follows them
 
+    def _view_words(self):
+        """How the picture is shown, in a few words: the view transform and the LUT, for the foot of the window."""
+        try:
+            from pathlib import Path
+            from . import modo_color
+            held=self._settings_values()['display'];view=held.get('view','modo')
+            if view=='modo':
+                read=modo_color.RESOLVED
+                words='Modo: %s, %s'%(read.get('name',''),read['view']) if read else 'sRGB'
+            elif view=='ocio':words='OCIO: %s, %s'%(held.get('display',''),held.get('ocio_view',''))
+            else:words={'aces':'ACES','srgb':'sRGB','reinhard':'Highlight compression','raw':'Raw linear'}.get(view,str(view))
+            if held.get('lut'):words+=' + LUT '+Path(held['lut']).name
+            return words
+        except Exception:return ''
+
+    def _smart_on(self):
+        """Whether Smart Render is on for the scene."""
+        try:return self._settings_values()['denoising'].get('smart','off')!='off'
+        except Exception:return False
+
     def _settings_values_stored(self):
         try:return properties.scene_settings()
         except Exception:return {}
 
     def _settings_values(self):
+        # Modo's own colour management is read here, where Modo may be asked: the display code takes what was read.
+        try:
+            from . import modo_color
+            modo_color.refresh()
+        except Exception:pass
         values=scene_settings.complete(self._settings_values_stored())
         values['preview_buffer']=self.buffer.currentData()
         return values
@@ -694,7 +730,9 @@ class Panel(Tools, QtWidgets.QWidget):
             self._scene_id=scene_id;self._geometry_cache=None;self._shown=None
         self._sync_cameras()
         self._hud_update()
-        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']))
+        from . import modo_color
+        # With what was read of Modo's own colour management: changed in Modo, the picture is shown again by it.
+        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']),repr(modo_color.RESOLVED))
         if watched==self._shown:return
         previous,self._shown=self._shown,watched
         self._sync_output_menu(values['custom_aovs'])
@@ -708,7 +746,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_region(values['region'] if values['region_enabled'] else None,armed)
         if previous is None:return
         if previous[1]!=watched[1]:self._denoising_changed()
-        if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
+        if previous[0]!=watched[0] or previous[3]!=watched[3] or previous[6]!=watched[6]:self._buffer_changed(0)
 
     def _smart_chosen(self,level):
         """Smart Render chosen from the picture's menu: written to the scene's settings."""
@@ -864,6 +902,12 @@ class Panel(Tools, QtWidgets.QWidget):
         text='\n\n'.join(unique)
         if text!=self.warnings.toPlainText():self.warnings.setPlainText(text)
         self.notice_toggle.setText('Notices (%d)'%len(unique))
+        # The button says at a glance that there is something to read: pastel yellow for notices, red where one
+        # of them is an error or a render has failed.
+        failed=bool(getattr(self,'_failure',None)) or any(notice_is_error(message) for message in unique)
+        self.notice_toggle.setStyleSheet(NOTICE_STYLE%(('#e9938c','#2a0f0d') if failed else ('#f2e3a3','#2b2610')) if unique or failed else '')
+        self.notice_toggle.setToolTip('A render failed, or a notice is an error: open to read it.' if failed else
+                                      'The renderer has something to say about the scene: open to read it.' if unique else 'Nothing to report.')
         # Where the preferences ask for it, the notices open by themselves when there is something to read.
         if unique and not self.notice_toggle.isChecked() and self.preferences.get('notices_open'):self.notice_toggle.setChecked(True)
 
@@ -1055,6 +1099,8 @@ class Panel(Tools, QtWidgets.QWidget):
         # Render, or realtime switched on, is asking for the picture itself: Draft, where it is on, goes off first.
         if self.draft.isChecked():self.draft.setChecked(False)
         if self.ipr_mode.isChecked():self._follow(True)
+        # What failed before is no longer the news.
+        self._failure=None
         # A render begun by hand begins from an empty view, unless it turns out to be one continued.
         self._clear_first=True
         self.render_once()
@@ -1457,7 +1503,9 @@ class Panel(Tools, QtWidgets.QWidget):
         if engine=='off' or not frame or frame.get('snapshot',{}).get('_ipr') or self._engine()=='moonlightipr':return
         if not all(key in frame.get('files',{}) for key in ('beauty','denoise_albedo','denoise_normal')):return
         self.renderer.buffers.denoiser.request(engine)
-        if self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
+        # The beauty is what is shown, whatever the engine. Smart Render alone turns to the denoised picture, which
+        # is what it stopped the render for.
+        if self._smart_on() and self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty'))
         self.status.setText('Stopped. The picture as it stood is kept and denoised.' if standing else 'Stopped. The last finished pass is kept and denoised.')
 
@@ -1469,6 +1517,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self._set_rendering(False)
         self.status.setText('Render unavailable: ' + message)
         self.status.setToolTip(message)
+        # Said among the notices too, with the button gone red, so that it is not missed once the status moves on.
+        self._failure=str(message)
+        snapshot=(self.renderer.active or {}).get('snapshot',{})
+        self._set_notices(['Render unavailable: '+str(message)]+list(snapshot.get('warnings',[])))
 
     def _image(self, path):
         try:
@@ -1511,6 +1563,9 @@ class Panel(Tools, QtWidgets.QWidget):
                 settings=render_values(snapshot.get('render_settings',{}))
                 text+=' | '+('LS ' if snapshot.get('_ipr') else '')+('Adaptive %d-%d ps'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'])
                              if settings['sampling_mode']==2 else 'Uniform %d ps'%snapshot['_pixel_samples'])
+            # And how it is shown: the view transform, and a LUT where there is one.
+            shown=self._view_words()
+            if shown:text+=' | '+shown
             self.image_info.setText(text)
             self._image_note()
             self.image_info.setToolTip(str(frame.get('backend',self.renderer.backend_status)))
@@ -1581,9 +1636,9 @@ class Panel(Tools, QtWidgets.QWidget):
         if not output and self._engine()!='moonlightipr' and self._playblasting() is None:
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)
-            # With a preview denoiser on, the finished picture shown is the denoised one, unless Beauty was chosen by hand:
-            # the preview may have been opened, or the render begun, before the list had been set to it.
-            if engine!='off' and self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
+            # The finished picture shown is the beauty: the denoised one is made and is there in the list to choose.
+            # Smart Render alone turns to it, unless Beauty was chosen by hand.
+            if engine!='off' and self._smart_on() and self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
                 self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty'))
             snapshot=(self.renderer.active or {}).get('snapshot',{})
             if self._following and self.preferences.get('ipr/refine') and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:

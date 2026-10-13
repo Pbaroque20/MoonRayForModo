@@ -7,6 +7,9 @@ SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('128
 # key: (default, kind)
 KEYS = {
     'runtime': ('', str), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
+    # Whether the environment lights the scene always, as a path tracer has it ('moonray'), or only with Global
+    # Illumination on in the Render item, as Modo's own renderer has it ('modo').
+    'environment_lighting': ('moonray', str),
     'idle_release_minutes': (5, int),
     'persistent_preview': (True, bool), 'preview_motion': (False, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),

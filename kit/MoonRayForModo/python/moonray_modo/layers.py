@@ -68,7 +68,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             continue
         if channel(layer,'effect','') in baked_effects:
             continue
-        if layer.type not in ('imageMap','constant','checker','noise','grid','dots','gradient'):
+        if layer.type not in ('imageMap','constant','checker','noise','grid','dots','gradient','cellular','wood','weave','ripples'):
             from . import properties
             # A render output says what Modo's own renderer writes; it is not a layer of any material.
             if not properties.is_material(layer) and layer.type not in ('defaultShader','mask','envMaterial','renderOutput','furMaterial') and channel(layer,'effect',None) is not None:
@@ -134,6 +134,11 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 if not locator:
                     raise ValueError('missing Texture Locator')
                 projection = channel(locator,'projType','uv')
+                if projection=='none' and layer.type!='imageMap':
+                    # Solid, as Modo starts a procedural layer: the pattern runs through the object. The plugin's
+                    # patterns are flat, and are laid on from six sides in its place, which is the nearest to it.
+                    projection='cubic'
+                    warnings.append('Layer %s: a Solid projection is laid on as Cubic.'%layer.name)
                 if projection not in ('uv','planar','spherical','cylindrical','cubic'):
                     raise ValueError('unsupported projection '+projection)
                 node['projection'] = projection
@@ -187,7 +192,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         srgb=effect not in ('normal','normalCoat','bump','coatBump') and (space=='sRGB' or
                             (space=='(default)' and effect in textures.COLOR_EFFECTS and path.suffix.lower() not in ('.exr','.hdr','.tx'))),
                         use_alpha=source_channel=='use')
-                elif layer.type in ('grid','dots'):
+                elif layer.type in ('grid','dots','cellular','wood','weave','ripples'):
                     from .procedurals import capture
                     node['procedural']=capture(layer,channel,color,is_color)
                     warnings.append('Procedural '+layer.name+': sampled 2D '+layer.type+' translation; Modo pattern equivalence is unverified.')

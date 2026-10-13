@@ -71,7 +71,13 @@ class CachedDenoise(QtCore.QObject):
                 else:shutil.copyfile(str(files[key]),str(target))
             beauty=root/'beauty.exr'
             guides={key:str(root/('denoise_'+key+'.exr')) for key in ('albedo','normal')}
-            self.jobs=before+denoising.jobs(frame['runtime'],beauty,root/'result',engine,guides)
+            # The matte of fur, hair and curves, where the render made one.
+            fine=files.get('denoise_fine')
+            if fine and Path(str(fine)).suffix.lower()=='.exr' and Path(str(fine)).is_file():
+                shutil.copyfile(str(fine),str(root/'denoise_fine.exr'));guides['fine']=str(root/'denoise_fine.exr')
+            try:detail=denoising.settings(frame.get('snapshot',{}).get('denoising',{}))['detail']
+            except ValueError:detail='some'
+            self.jobs=before+denoising.jobs(frame['runtime'],beauty,root/'result',engine,guides,detail)
             self.result=self.jobs[-1][2];self.job=(frame,engine)
             env=QtCore.QProcessEnvironment()
             for key,value in native.environment(frame['runtime']).items():env.insert(key,value)

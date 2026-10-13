@@ -14,6 +14,15 @@ from .channel_values import rgb
 def collect(scene, warnings):
     from .host import channel, color, world_matrix, render_visible
     result = []
+    # Where the preferences say to follow Modo, the environment lights the scene only with Global Illumination on
+    # in the Render item: it is seen as the backdrop and in reflections all the same.
+    lights = True
+    try:
+        from .preferences import Preferences
+        if Preferences().get('environment_lighting') == 'modo':
+            lights = bool(channel(scene.renderItem, 'globEnable', 1))
+    except Exception:
+        lights = True
     for environment in scene.items('environment', superType=False):
         if not render_visible(environment):
             continue
@@ -22,7 +31,7 @@ def collect(scene, warnings):
             continue
         item = {'identity':environment.id,'name':environment.name, 'intensity':intensity,
                 'camera':bool(channel(environment,'visCam',1)),
-                'indirect':bool(channel(environment,'visInd',1)),
+                'indirect':bool(channel(environment,'visInd',1)) and lights,
                 'reflection':bool(channel(environment,'visRefl',1)),
                 'refraction':bool(channel(environment,'visRefr',1))}
         from .layers import ordered_items,texture_groups
@@ -67,6 +76,12 @@ def collect(scene, warnings):
                         if len(suns)!=1:
                             raise ValueError('physical sky requires one Sun Light or an explicit MoonRay sun_item setting')
                         sun = suns[0]
+                        if not render_visible(sun):
+                            # A sky lit by a sun that is hidden is dark: no sun, so no daylight either.
+                            black=[0.0,0.0,0.0]
+                            entry.update(kind='constant',zenith=black,sky=black,ground=black,nadir=black,dark=True)
+                            warnings.append('The physical sky of %s is dark: its sun, %s, is hidden.'%(environment.name,sun.name))
+                    if entry['kind']=='physical':
                         from .sun import direction as sun_direction
                         entry.update(sun_direction=sun_direction(sun),
                                      normalize=bool(channel(layer,'normalize',False)),

@@ -202,8 +202,9 @@ def material_values(material):
 
 # The sun's width in the sky, in degrees, at a solar disc size of 100%.
 SUN_DEGREES = 0.53
-# The most polygons a mesh may have for its material's Modo smoothing angle to be worked out for it.
-SMOOTHING_ANGLE_FACES = 50000
+# The most polygons a mesh may have for its material's Modo smoothing angle to be worked out for it: about three
+# seconds' work for 75,000 polygons and ten for 250,000, done once for a mesh and kept until the mesh changes.
+SMOOTHING_ANGLE_FACES = 300000
 
 
 def solar_discs(result):
@@ -228,6 +229,10 @@ def solar_discs(result):
 
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):
     scene = modo.Scene()
+    try:
+        from . import modo_color
+        modo_color.refresh()
+    except Exception:pass
     if scene.items('replicator',superType=False):
         # Render Cache resolves generated replica transforms and source meshes.
         evaluated_geometry = True
@@ -401,8 +406,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
 
             def polygon(face, tag, subdivision, uv_of, normals):
                 """Put one polygon with its like. uv_of(name) is its corners' values in a UV map, or nothing."""
-                maps = result['materials'].get(tag, {}).get('textures', {})
-                uv_name = result['materials'].get(tag, {}).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
+                # Polygons no material is set on carry Modo's own tag, which names no material: they wear the
+                # scene's base material, and take the UVs its layers ask for.
+                maps = (result['materials'].get(tag) or result['materials'].get('', {})).get('textures', {})
+                uv_name = (result['materials'].get(tag) or result['materials'].get('', {})).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
                 face_uv = uv_of(uv_name)
                 # A UV map several images read, each moved or scaled its own way, is read from the polygon once.
                 read = {uv_name: face_uv}
@@ -410,7 +417,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                     raise ValueError('Mesh %s is missing UV values in map %s.' % (item.name, uv_name))
                 extra_uvs = {}
                 if tag not in tag_descriptors:
-                    tag_descriptors[tag] = coordinates.descriptors({tag:result['materials'].get(tag,{})})
+                    tag_descriptors[tag] = coordinates.descriptors({tag:(result['materials'].get(tag) or result['materials'].get('', {}))})
                 for key, descriptor in tag_descriptors[tag].items():
                     source_name = descriptor.get('uv_map','')
                     source_uv = []
@@ -435,10 +442,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 plain = len(whole.counts) and whole.subdivided.count(whole.subdivided[0]) == len(whole.subdivided)
                 for which in set(whole.tag_indices) if plain else ():
                     tag = whole.tags[which]
-                    maps = result['materials'].get(tag, {}).get('textures', {})
-                    names.add(result['materials'].get(tag, {}).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else ''))
+                    maps = (result['materials'].get(tag) or result['materials'].get('', {})).get('textures', {})
+                    names.add((result['materials'].get(tag) or result['materials'].get('', {})).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else ''))
                     if tag not in tag_descriptors:
-                        tag_descriptors[tag] = coordinates.descriptors({tag:result['materials'].get(tag,{})})
+                        tag_descriptors[tag] = coordinates.descriptors({tag:(result['materials'].get(tag) or result['materials'].get('', {}))})
                     plain = plain and not tag_descriptors[tag]
                 if plain and len(names) == 1:
                     uv_name = next(iter(names))
@@ -606,12 +613,23 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     result['environments'] = collect_environments(scene, warnings)
     # With every light hidden the scene is still lit where an environment is: said, since Modo's own renderer
     # leaves such a scene dark unless Global Illumination is on.
-    if not result['lights'] and result['environments'] and list(scene.items('light')):
-        warnings.append('No lights are visible. The scene is lit by the environment (%s); turn its eye off, or its intensity to 0, for no light at all.'
-                        % ', '.join(environment['name'] for environment in result['environments']))
+    lit=[environment for environment in result['environments'] if environment.get('indirect',True)
+         and not environment.get('dark') and not (environment.get('layers') and all(layer.get('dark') for layer in environment['layers']))]
+    if not result['lights'] and lit and list(scene.items('light')):
+        warnings.append('No lights are visible. The scene is lit by the environment (%s); turn its eye off, or set Environment lights the scene to Follow Modo in the MoonRay preferences, for no light at all.'
+                        % ', '.join(environment['name'] for environment in lit))
     solar_discs(result)
     from .extra_geometry import collect as collect_extra,furs as furs_extra
     result['extra_geometry']=reuse_geometry.get('extra_geometry',[]) if reuse_geometry is not None and not dirty_meshes and not (evaluated_geometry and refresh_materials) else result.get('extra_geometry',[])+furs_extra(scene,warnings,result['meshes']) if evaluated_geometry else collect_extra(scene,warnings,properties.scene_settings().get('production',{}))
+    from .extra_geometry import without_fur_bases
+    # A Fur material that grows nothing is most often on a mesh that is hidden or set not to render: said, since
+    # nothing else does.
+    try:
+        grown=any('|fur|' in str(entry.get('identity','')) for entry in result['extra_geometry'])
+        if not grown and any(channel(layer,'enable',1) for layer in scene.items('furMaterial')):
+            warnings.append('A Fur material is in the scene but no fur is grown: the mesh wearing it is hidden or set to Render: Off, or wears another material.')
+    except (LookupError,RuntimeError,TypeError):pass
+    result['meshes']=without_fur_bases(result['meshes'],result['extra_geometry'],warnings)
     from .scene_references import capture as capture_references
     result['scene_references']=capture_references(scene,result)
     result['time']=lx.service.Selection().GetTime();result['fps']=float(scene.fps);result['frame']=round(result['time']*result['fps'])

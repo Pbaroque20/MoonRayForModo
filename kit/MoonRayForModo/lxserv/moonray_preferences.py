@@ -133,6 +133,7 @@ class RuntimeBrowse(lxu.command.BasicCommand):
 
 
 lx.bless(choice('open_engine',(('moonray','MoonRay'),('moonray_ls','MoonRay LS'),('moonlightipr','MoonLightIPR'))),'moonray.pref.engine')
+lx.bless(choice('environment_lighting',(('moonray','MoonRay: always'),('modo','Follow Modo: with Global Illumination on'))),'moonray.pref.environmentLighting')
 lx.bless(switch('ipr'),'moonray.pref.live')
 lx.bless(switch('render_on_open'),'moonray.pref.renderOnOpen')
 lx.bless(switch('notices_open'),'moonray.pref.noticesOpen')

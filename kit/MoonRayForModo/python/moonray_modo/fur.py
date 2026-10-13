@@ -5,7 +5,8 @@ says (how far apart the fibres are, how long, how wide, how they taper, bend and
 the polygons the material is on. It is fur of the same kind, not the same fibres: the count, the length, the width and
 the lean are Modo's; where each fibre stands is not. Curls, clumps, kink, frizz and strays are grown after Modo's
 settings for them, and the weight maps that vary density, length, clumping, curling and bending across the surface
-are followed. Guides, the vector map and the width map are not read, and where they are used the plugin says so.
+are followed. Remove Base Surface is followed: the surface the fur grows from is then left out of the render. Guides,
+the vector map and the width map are not read, and where they are used the plugin says so.
 """
 import bisect
 import hashlib
@@ -97,8 +98,8 @@ def grow(triangles, held, maps=None):
     count = min(wanted, MOST)
     if count <= 0 or total <= 0:
         return [], 0.0, 0.0, wanted, []
-    # Fewer fibres than Modo's stand further apart, and are wider by as much.
-    apart *= math.sqrt(wanted / count)
+    # A fibre is as thick as the Fur material says, however many of Modo's are grown: fewer of them are thinner
+    # fur, not wider fibres.
     root = held['widthAbs'] / 2 if held['widthMode'] == 'absolute' else apart * max(0.0, held['width']) / 2
     tip = root * max(.02, 1.0 - min(1.0, max(0.0, held['taper'])))
     curls, clumps = max(0.0, held['curls']), min(1.0, max(0.0, held['clumps']))

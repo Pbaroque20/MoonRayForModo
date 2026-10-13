@@ -17,7 +17,7 @@ root = pathlib.Path(r'C:\Users\Raphael Tobar\MoonRayForModo')
 ENGINE = os.environ.get('MOONRAY_PROBE_ENGINE', 'moonlightipr')
 # MOONRAY_PROBE_ENVIRONMENT=1 leaves Modo's own environment as it is.
 PLAIN = os.environ.get('MOONRAY_PROBE_ENVIRONMENT') != '1'
-tag = ENGINE + ('' if PLAIN else '-environment')
+tag = ENGINE + ('' if PLAIN else '-environment') + ('-follow' if os.environ.get('MOONRAY_PROBE_FOLLOW') == '1' else '') + ('-sky' if os.environ.get('MOONRAY_PROBE_SKY') == '1' else '')
 out = root / 'test-results/light-eye'
 out.mkdir(parents=True, exist_ok=True)
 result = {'engine': ENGINE, 'steps': []}
@@ -44,7 +44,7 @@ def note(name):
     lights = [(light.name, light.type, light.channel('visible').get(), light.channel('render').get()) for light in modo.Scene().items('light')]
     result['steps'].append({'step': name, 'brightness': bright(), 'lights': lights, 'following': panel._following, 'rendering': panel._rendering,
                             'status': panel.status.text()[:80],
-                            'notices': [w for w in ((panel.renderer.active or {}).get('snapshot', {}).get('warnings') or []) if 'lit by the environment' in w]})
+                            'notices': [w for w in ((panel.renderer.active or {}).get('snapshot', {}).get('warnings') or []) if 'lit by the environment' in w or 'sky' in w]})
     panel.window().grab().save(str(out / ('%s_%d_%s.png' % (tag, len(result['steps']), name))))
     save()
 
@@ -77,6 +77,10 @@ def begin():
     panel = panel_widget()
     panel.preferences.set('runtime', str(root / os.environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-04-drain')))
     panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(ENGINE))
+    # MOONRAY_PROBE_FOLLOW=1: the environment lights the scene as Modo has it, only with Global Illumination on.
+    held['was'] = panel.preferences.get('environment_lighting')
+    panel.preferences.set('environment_lighting', 'modo' if os.environ.get('MOONRAY_PROBE_FOLLOW') == '1' else 'moonray')
+    result['global_illumination'] = modo.Scene().renderItem.channel('globEnable').get()
     panel.start.click()
 
 
@@ -101,6 +105,7 @@ def eye_on():
 def finish_():
     note('light_eye_on_again')
     panel_widget().stop()
+    panel_widget().preferences.set('environment_lighting', held.get('was', 'moonray'))
 
 
 def run(index=0):
@@ -127,6 +132,13 @@ try:
         for environment in modo.Scene().items('environment'):
             environment.channel('radiance').set(0.0)
     result['environments'] = [(e.name, e.channel('radiance').get(), e.channel('visCam').get()) for e in modo.Scene().items('environment')]
+    if os.environ.get('MOONRAY_PROBE_FOLLOW') == '1':
+        # Global Illumination off in the Render item, as a scene lit by its lights alone has it.
+        lx.eval('channel.value 0 channel:{%s:globEnable}' % modo.Scene().renderItem.id)
+    if os.environ.get('MOONRAY_PROBE_SKY') == '1':
+        # A physically based sky, lit by the directional light as its sun.
+        for layer in modo.Scene().items('envMaterial'):
+            lx.eval('channel.value physical channel:{%s:type}' % layer.id)
     lx.eval('moonray.render.samples 2')
     lx.eval('moonray.open')
 except Exception:

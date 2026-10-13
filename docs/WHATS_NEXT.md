@@ -10,14 +10,21 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Each engine has its own size.** MoonRay renders at the camera's resolution; MoonRay LS and MoonLightIPR at the preview size (640 px unless changed).
 - **Sampling beside the picture size.** A MoonRay render says how it was sampled, such as "Uniform 16 ps" or "Adaptive 4-12 ps" (fewest to most pixel samples).
 - **Pixel samples for MoonRay LS and MoonLightIPR**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64.
+- **The preview follows Modo's color management by default**: the scene's OCIO configuration (Modo's own, or one added in its system preferences) and the color space of the Final Color Output. View Transform in the render settings chooses between that, ACES, sRGB, raw, or an OCIO display and view of your own.
+- **The view transform and LUT are named at the foot of the window**, bottom right, such as "Modo: nuke-default, sRGB" or "ACES + LUT film.cube".
+- **Beauty is what every engine shows by default.** Denoised Beauty is in the buffer list to choose; only Smart Render switches to it by itself.
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
 - **Smart Render and Safe Denoising on the picture's right-click menu.** Safe Denoising is Off, OptiX or Open Image Denoise; while it is on, the foot of the picture says Safe Denoiser. Smart Render is described under Rendering with MoonRay.
 - **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
+- **The Notices button is coloured when there is something to read**: pastel yellow for notices, red for an error or a failed render.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
 - **Titled "MoonRay"** when docked in Modo's layout; "MoonRay Preview" as its own window.
 - **The MoonRay menu is regrouped**: preview, rendering to files, settings, creating, import and export, scene files.
+
+![The view transform named at the foot of the window](images/view-at-the-foot.png)
+*Bottom right: the size, the sampling, and the view the picture is shown through.*
 
 ![The preview window with MoonLightIPR chosen and realtime on](images/preview-engines.png)
 *MoonLightIPR chosen, RT On.*
@@ -80,6 +87,8 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 ![Smart Render on the picture's right-click menu](images/picture-menu-smart-render.png)
 *Right-click the picture: Smart Render, with Safe Denoising below it.*
 
+- **Keep Fine Detail**, in the render settings under Denoising: Off, Some (the default) or More. Hair, fur and other things about a pixel wide, which the denoiser smooths away, are let through from the render.
+- **Fur, hair and curves have a matte of their own for the denoiser**: the surface under them is denoised, and the fibres are laid back over it as rendered.
 - **Important Parts First** *(0.4 runtime)*. Tick it in the render settings under System: MoonRay looks over the whole picture first, then renders the buckets with the most detail before the plain ones, in the Bucket Order you chose. The finished picture is the same; you see what matters sooner. It works with or without Smart Render.
 
 ![Important Parts First on](images/important-first-on.png)
@@ -121,11 +130,32 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **Rough Principled materials are no longer dark at low angles**, such as a floor running to the horizon.
 - **Image-driven roughness** keeps the right highlight strength on Blinn, Ashikhmin and GTR materials.
+- **An image layer's Low Value and High Value are followed**, in MoonRay and MoonLightIPR. They used to be ignored.
+- **Cellular, Wood, Weave and Ripples layers render**, in MoonRay and MoonLightIPR, with their Value 1 / Value 2 (or colours), bias and gain. They are flat patterns after Modo's, not Modo's own.
+- **A procedural layer left on Solid projection renders**, laid on as Cubic. Notices says so.
+
+![Cellular, Wood, Weave and Ripples](images/procedural-patterns.png)
+*Cellular, Wood, Weave and Ripples at their default settings.*
+
+- **A texture layer under the Render item shows on polygons with no material set.** MoonRay left it out.
+- **Bump and normal images show on subdivision surfaces in MoonRay** *(0.4 runtime)*. They were left out, so MoonRay rendered such a surface smooth where MoonLightIPR showed the bump. A heavily tiled bump image is also read finely enough to show.
+- **Modo fur without a limit** *(0.4 runtime)*. Every fibre Modo would grow is grown, each as thick as the Fur material says; the 60,000-fibre limit and the widening are gone. A test scene with 1.26 million fibres was read in about nine seconds.
+- **A Fur material's Remove Base Surface is followed**: the fur renders without the surface it grows from.
+- **Notices says when a Fur material grows nothing**, which is usually a mesh that is hidden or set to Render: Off.
+
+![A bump image on a subdivision surface](images/bump-on-subdivision.png)
+*A chequered bump image on a subdivision surface, in MoonRay.*
 
 ## Visibility
 
 - **An item with its eye off does not render.** Render: Yes or No still overrides.
 - **The environment lights the scene** whether or not Modo's Global Illumination is on. With every light hidden, Notices says the scene is lit by the environment.
+- **A physical sky goes dark when its sun is hidden.** Notices says so.
+- **Or have it follow Modo**: in System > Preferences > MoonRay, set Environment lights the scene to Follow Modo, and it lights the scene only with Global Illumination on.
+
+![Follow Modo with the light hidden](images/environment-follow-modo.png)
+*Follow Modo, Global Illumination off, the light's eye off: the backdrop shows and the ball is unlit.*
+
 - **MoonLightIPR follows per-ray visibility**: camera, indirect light, reflections, refractions and shadows.
 - **A Shader's Cast Shadows switch is followed.**
 
@@ -159,6 +189,8 @@ What you may run into:
 - **Playblast:** PNG frames only, no movie file and no motion blur.
 - **File > Open** of a MoonRay scene leaves one empty mesh in it and keeps the `.rdla` file's name.
 - **Heavy scenes with instances, replicators or deformers** update more slowly when an item is moved.
+- **Procedural layers** are flat patterns laid on by UV or from six sides, not solid textures running through the object.
+- **Smoothing angle:** a mesh of more than 300,000 polygons is smoothed all over, and Notices names it. (The limit was 50,000.)
 - **Highlights:** very smooth ones, and rough Principled ones, are still dimmer than Modo's.
 - **Hair in MoonLightIPR** is close to MoonRay's, a little brighter at the top of a tuft.
 

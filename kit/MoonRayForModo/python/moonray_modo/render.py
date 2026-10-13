@@ -211,7 +211,7 @@ class Renderer(QtCore.QObject):
         self.generation+=1;self.canceled=False;self.pending=None;self.using_session=False
         self.active={'output':str(output),'runtime':runtime,'snapshot':{'denoising':settings},'generation':self.generation}
         self.image_path=Path(output);self.original_published=True;self.current_base=Path(self.directory.name)/uuid.uuid4().hex
-        self.post_jobs=denoising.jobs(runtime,self.image_path,self.current_base,engine,guides);self.denoise_result=self.post_jobs[-1][2]
+        self.post_jobs=denoising.jobs(runtime,self.image_path,self.current_base,engine,guides,denoising.settings(settings)['detail']);self.denoise_result=self.post_jobs[-1][2]
         self.progress_state=Progress();self.progress_timer.start()
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(runtime).items():env.insert(key,value)
@@ -465,6 +465,7 @@ class Renderer(QtCore.QObject):
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
         snapshot['_crypto_categories']=native.supports_crypto_categories(request['runtime'])
+        snapshot['_bump_step']=native.supports_bump_step(request['runtime'])
         snapshot['_paired_instance_motion']=native.supports_paired_instance_motion(request['runtime'])
         if not request['output'] and not request.get('linear_preview'):
             self.preview_files={key:self.current_base.with_suffix('.'+key+'.exr') for key in outputs.preview(snapshot)}
@@ -479,11 +480,14 @@ class Renderer(QtCore.QObject):
         try:
             use_denoise=denoising.enabled(snapshot,bool(request['output']),request.get('linear_preview',False))
             if denoising.guides_required(snapshot,bool(request['output']),request.get('linear_preview',False)):
-                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')}
+                # With fur, hair or curves in the scene, a third: how much of each pixel is those, so that the
+                # denoised picture can keep them as they were rendered.
+                fine=any(entry.get('kind')=='curves' for entry in snapshot.get('extra_geometry',[]))
+                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')+(('fine',) if fine else ())}
                 self.denoise_guides=snapshot['_denoise_guides']
             if use_denoise:
                 if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))
-                self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'])
+                self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'],denoising.settings(snapshot['denoising'])['detail'])
                 self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
                 raise ValueError('The selected runtime has no XPU GPU program/CUDA runtime. Choose the XPU runtime or CPU mode.')

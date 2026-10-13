@@ -58,7 +58,10 @@ public:
             if(me->get(attrFlipGreen)) n.y=-n.y;
             float sx=n.x/n.z,sy=n.y/n.z;
             if(me->get(attrBumpStrength)!=0) {
-                const float e=.001f;
+                // How far to either side the height is read, in the surface's own coordinates: a thousandth of the
+                // image where it is laid on once, and as much less as it is tiled, so that an image repeated
+                // thirty times is still read a texel or so apart and its fine grain is not stepped over.
+                const float e=max(1.e-7f,me->get(attrBumpStep));
                 Intersection shifted=*state.getIntersection();
                 State other(&shifted);
                 Vec2f uv=state.getSt();
@@ -82,11 +85,17 @@ public:
         const bool named=me->mData.uv>=0;
         if((mode==12 || mode==13) && named) {
             TypedAttributeKey<Vec2f> key(me->mData.uv),baseKey(me->mData.base);
-            if(!state.isProvided(key) || !state.isProvided(baseKey) || !state.isdsProvided(key) || !state.isdtProvided(key)) {
+            if(!state.isProvided(key) || !state.isProvided(baseKey)) {
                 moonray::shading::logEvent(me,me->mData.missing);
                 *out=mode==13?Color(.5f,.5f,1.f):Color(0.f);return;
             }
-            const Vec2f ds=state.getdAttributeds(key),dt=state.getdAttributedt(key);
+            // A subdivision surface gives a map's values and not how they change across it. The map is then taken
+            // to change as the layer's own placement of the surface's coordinates does (uv_affine: its tiling and
+            // turn), which is what it does where it is the mesh's UV map: a bump or normal image on a
+            // subdivision surface was otherwise left out altogether.
+            const bool sloped=state.isdsProvided(key) && state.isdtProvided(key);
+            const auto placed=me->get(attrUvAffine);
+            const Vec2f ds=sloped?state.getdAttributeds(key):Vec2f(placed.x,placed.z),dt=sloped?state.getdAttributedt(key):Vec2f(placed.y,placed.w);
             const Vec2f delta=state.getSt()-state.getAttribute(baseKey);
             namedUv=state.getAttribute(key)+ds*delta.x+dt*delta.y;
             jacobian=Vec4f(ds.x,dt.x,ds.y,dt.y);

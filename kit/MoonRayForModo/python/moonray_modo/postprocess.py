@@ -17,7 +17,7 @@ def recover(output,engine):
     if not manifest.is_file():raise ValueError('Denoise inputs were not preserved for '+str(output))
     data=json.loads(manifest.read_text(encoding='utf-8'))
     if data['engine']!=engine or file_hash(output)!=data['output_sha256']:raise ValueError('Denoise recovery does not match the current beauty/denoiser')
-    if set(data['guides'])!={'normal','albedo'}:raise ValueError('Incomplete denoise recovery guides')
+    if not {'normal','albedo'}<=set(data['guides']):raise ValueError('Incomplete denoise recovery guides')
     for entry in data['guides'].values():
         if file_hash(entry['path'])!=entry['sha256']:raise ValueError('Denoise recovery guide has changed')
     return {k:v['path'] for k,v in data['guides'].items()}

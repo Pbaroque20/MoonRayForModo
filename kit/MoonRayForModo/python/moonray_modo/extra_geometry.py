@@ -233,6 +233,18 @@ def written(kind,values,write):
     return WRITTEN[key]
 
 
+def fur_runtime():
+    """The runtime to grow fur with, where it has both the program that grows it and a MoonRay that reads the file
+    it writes: the one the preview is set to. None where it has not, and fur is grown in Python."""
+    try:
+        from . import fur_native
+        from .preferences import Preferences
+        runtime=Preferences().get('runtime')
+        if runtime and fur_native.program(runtime) is not None and fur_native.reads(runtime):return runtime
+    except Exception:pass
+    return None
+
+
 def fur_entries(scene,item,mesh,polygons,points,warnings):
     """The fur of a mesh that wears one of Modo's Fur materials, as curve geometry: one for each Fur material that is
     on any of its polygons."""
@@ -297,11 +309,26 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
             except (LookupError,RuntimeError,TypeError):
                 warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
             varied[what]=[(weights[c[0]],weights[c[k]],weights[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
-        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read),varied)
         left=fur.unread(read)
         if left:warnings.append('Fur on %s is grown without %s, which the plugin does not read from a Fur material.'%(item.name,', '.join(left)))
+        alone={'fur_only':wanted} if channel(layer,'furOnly',0) else {}
+        # Where the runtime can grow fur itself and read it from a file, every fibre Modo would grow is grown, and
+        # none of them passes through here: the entry names the file.
+        from . import fur_native
+        runtime=fur_runtime()
+        grown=None
+        if runtime is not None:
+            tags=sorted(set(worn));numbers={tag:index for index,tag in enumerate(tags)}
+            grown=fur_native.grow(triangles,fur.settings(read),varied,[numbers[tag] for tag in worn],0,runtime)
+        if grown is not None:
+            for number,(path,fibres,points) in sorted(grown['files'].items()):
+                made.append(dict(kind='curves',identity=item.id+'|fur|'+layer.id+'|curves|'+tags[number],source_item=item.id,name=item.name,
+                                 vertices=[],counts=[],radius=grown['root'],curve_type=0,material=tags[number],matrix=world_matrix(item),
+                                 fur_file=str(path),fur_fibres=fibres,fur_points=points,**alone))
+            continue
+        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read),varied)
         if asked>fur.MOST:
-            warnings.append('Fur on %s: Modo would grow %s fibres; %s are grown, each wider, to cover the surface as well.'%(item.name,format(asked,','),format(len(strands),',')))
+            warnings.append('Fur on %s: Modo would grow %s fibres; %s are grown, the most this runtime grows. It is thinner fur than Modo\'s.'%(item.name,format(asked,','),format(len(strands),',')))
         if not strands:continue
         shape=dict(root=root,tip=tip,envelope=1.0,samples=8,uv=True,round=False,basis=0)
         kept=(item.id+'|fur|'+layer.id,item.name,root,tip,wanted,tuple(world_matrix(item)))
@@ -309,9 +336,32 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
         if held is None or held[0] is not strands:
             if len(BATCHED)>=8:BATCHED.pop(next(iter(BATCHED)))
             held=BATCHED[kept]=(strands,batches(item.id+'|fur|'+layer.id,item.name,[(strand,worn[at],None) for strand,at in zip(strands,stands)],shape,'',world_matrix(item)))
-        # The fur is its mesh's, for what lights it and what it is called.
-        made+=[dict(entry,source_item=item.id) for entry in held[1]]
+        # The fur is its mesh's, for what lights it and what it is called. Where the Fur material asks for the
+        # surface it grows from to be left out (Remove Base Surface), the entry says of which material's polygons.
+        made+=[dict(entry,source_item=item.id,**alone) for entry in held[1]]
     return made
+
+
+def without_fur_bases(meshes,extras,warnings):
+    """meshes without the surfaces that fur marked Remove Base Surface grows from: Modo renders the fur and not the
+    surface under it. A mesh is left out where all of it wears that Fur material's group; where only some of its
+    polygons do, it is kept whole and that is said."""
+    bare={}
+    for entry in extras or []:
+        if 'fur_only' in entry:bare.setdefault(entry.get('source_item'),set()).add(entry['fur_only'])
+    if not bare:return meshes
+    kept=[];said=set()
+    for mesh in meshes:
+        source=str(mesh.get('identity','')).split('|')[0]
+        tags=bare.get(source)
+        if tags is None:kept.append(mesh);continue
+        worn=set(mesh.get('face_materials') or [mesh.get('material','')])
+        if '' in tags or worn<=tags:continue
+        kept.append(mesh)
+        if worn&tags and source not in said:
+            said.add(source)
+            warnings.append('Fur on %s: its base surface is kept, since only part of the mesh wears the Fur material.'%mesh.get('name',source))
+    return kept
 
 
 def furs(scene,warnings,meshes):
@@ -452,6 +502,10 @@ def emit(scene,materials,lines,crypto=False):
             lines.append('%s { ["opacity_gain_mult"] = Rgb(%s,%s,%s), ["color_mult"] = %s, ["incandescence_gain_mult"] = Rgb(%s,%s,%s), ["anisotropy"] = %s }'%(shader,number(gain),number(gain),number(gain),vector(working_color(entry.get('volume_color',[1,1,1])),'Rgb'),number(emission),number(emission),number(emission),number(anisotropy)))
             attrs.update(model=string(entry['file']),density_grid=string(entry.get('density_grid','density')),emission_grid=string(entry.get('emission_grid','')),velocity_grid=string(entry.get('velocity_grid','')),velocity_scale=number(entry.get('velocity_scale',1)))
             constructor='VdbGeometry'
+        elif entry.get('fur_file'):
+            # Fur the runtime grew into a file: MoonRay reads its fibres from there.
+            constructor='ModoFurGeometry';attrs['file']=string(str(entry['fur_file']).replace('\\','/'))
+            if entry.get('round'):attrs['curves_subtype']='1'
         else:
             vertices=entry['vertices'];radii=entry.get('radii',[entry.get('radius',.001)])
             if not vertices:continue
@@ -487,7 +541,7 @@ def emit(scene,materials,lines,crypto=False):
         if entry.get('attributes') and kind=='curves':
             from . import primitive_attributes
             carried+=primitive_attributes.emit(path+'/attribute',[entry['attributes']],lines)
-        if kind=='curves':
+        if kind=='curves' and not entry.get('fur_file'):
             # MoonRay's hair glints turn with a number that is each strand's own, which it reads from the strands as
             # scatter_tag; without it a hair material with glints renders as an error.
             held=materials.get(tag) or {};held=(held.get('material_stack') or [held])[-1]
@@ -495,6 +549,11 @@ def emit(scene,materials,lines,crypto=False):
                 from .moonlightipr_curves import chance
                 lines+=['UserData(%s) {'%string(path+'/scatter'),'  ["float_key"] = "scatter_tag",','  ["float_values_0"] = {%s},'%', '.join('%.6f'%chance(i) for i in range(len(counts))),'}']
                 carried.append('UserData(%s)'%string(path+'/scatter'))
+        if kind=='curves' and not entry.get('fur_file'):
+            # Curves say they are fine: the matte of fur, hair and curves by which a denoised picture keeps its
+            # fibres is this number, seen by the camera. (Fur read from a file says so for itself.)
+            lines+=['UserData(%s) {'%string(path+'/fine'),'  ["float_key"] = "modo_fine",','  ["float_values_0"] = {1},','}']
+            carried.append('UserData(%s)'%string(path+'/fine'))
         if carried:attrs['primitive_attributes']=array(carried)
         lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':
