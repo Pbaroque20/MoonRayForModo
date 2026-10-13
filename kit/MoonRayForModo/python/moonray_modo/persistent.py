@@ -16,6 +16,12 @@ def supported(runtime):
     except (OSError,ValueError,TypeError):return False
 
 
+# The most MoonRay takes of a scene through shared memory: the loaded renderer refuses more.
+SHARED_LIMIT=256*1024*1024
+# For trying the other way with a small scene: MOONRAY_MODO_SHARED_LIMIT, in bytes, lowers it.
+try:SHARED_LIMIT=max(0,min(SHARED_LIMIT,int(os.environ.get('MOONRAY_MODO_SHARED_LIMIT',SHARED_LIMIT))))
+except ValueError:pass
+
 def saves(runtime):
     """Whether this runtime's MoonRay, kept loaded, can save its picture as it renders and take a render up from a
     save: what Safe Denoising and Continue need, with the picture still shown as it comes on."""
@@ -93,15 +99,19 @@ class Session(QtCore.QObject):
     def _write_scene(self,request,suffix,text,payload=None):
         if self.scene_memory:
             if payload is None:payload=text.encode('utf-8')
-            if not 0<len(payload)<=256*1024*1024:raise ValueError('Scene text exceeds the 256 MiB shared-scene limit')
+            if not payload:raise ValueError('The scene to hand to MoonRay is empty')
+        if self.scene_memory and len(payload)<=SHARED_LIMIT:
             name='Local\\MoonRayForModoScene_%d_%s'%(os.getpid(),uuid.uuid4().hex)
             mapping=mmap.mmap(-1,len(payload),tagname=name,access=mmap.ACCESS_WRITE)
             mapping.write(payload)
             self.mappings.setdefault(request['id'],[]).append(mapping)
             return 'modo-memory:%d:%s'%(len(payload),name)
+        # A scene too large to hand over in memory (MoonRay takes at most SHARED_LIMIT that way) is handed over as a
+        # file, as every scene is where the runtime has no shared memory: slower, and no scene is refused for its size.
         path=self.root/('%d.%s.rdla'%(request['id'],suffix))
         if payload is None:path.write_text(text,encoding='utf-8')
         else:path.write_bytes(payload)
+        if self.scene_memory:return path.as_posix()
         return path
 
     def _release_mappings(self):
