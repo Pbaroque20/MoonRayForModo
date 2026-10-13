@@ -18,6 +18,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **The Notices button is coloured when there is something to read**: pastel yellow for notices, red for an error or a failed render.
+- **The status names what MoonRay is running on**, such as "XPU active (RTX 3090 + i7-4930K)": the first NVIDIA card and the processor.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
 - **Titled "MoonRay"** when docked in Modo's layout; "MoonRay Preview" as its own window.
@@ -123,6 +124,22 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **Shiny surfaces in bounced light**, **tinted glass** and **clearcoats** now match MoonRay's brightness far better.
 - **Shadows of see-through surfaces** follow the scene's Presence Shadows setting.
+- **Subsurface on small, thin and backlit shapes matches MoonRay.** Light is now looked for across the surface and through the solid as MoonRay does, and small shapes keep their light. On test scenes the share of the picture within 10% of MoonRay went from 68-75% to 91-94%.
+
+![Backlit subsurface before](images/sss-backlit-before.png)
+*Lit from behind, before: MoonRay (left), MoonLightIPR (right).*
+
+![Backlit subsurface after](images/sss-backlit-after.png)
+*After.*
+
+- **Random walk subsurface is a real random walk.** It used to be drawn with the default model, which came out darker and less translucent than MoonRay. It now has MoonRay's look, and is about 9% brighter than MoonRay.
+
+![Random walk subsurface before](images/sss-random-walk-before.png)
+*Before: MoonRay (left), MoonLightIPR (right).*
+
+![Random walk subsurface after](images/sss-random-walk-after.png)
+*After.*
+
 - **Sample Clamp** settings are followed.
 - **Blinn, Ashikhmin and GTR roughness** are drawn as MoonRay draws them.
 - **Draft outlines line up** under fisheye and spherical cameras.

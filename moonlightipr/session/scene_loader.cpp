@@ -292,6 +292,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         material.beckmann = (materialFlags & 16) != 0;
         material.roughnessCurve = int((materialFlags >> 8) & 3);
         material.noCaustics = (materialFlags & 1024) != 0;
+        material.randomWalk = (materialFlags & 2048) != 0;
         material.layerStart = in.value<uint32_t>();
         material.layerCount = in.value<uint32_t>();
         material.tangentSlot = in.value<uint32_t>();

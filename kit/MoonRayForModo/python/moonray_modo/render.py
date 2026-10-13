@@ -398,7 +398,10 @@ class Renderer(QtCore.QObject):
         self.passes=[];self.log='';self.bucket_partial='';self.backend_log=''
         self.phase='render';self.using_session=False;self.gpu_error=False
         self.original_published=False;self.post_jobs=[];self.denoise_result=None
-        self.backend_status=MOONLIGHTIPR_STATUS;self.moonlightipr_frame=None
+        # With the graphics card it runs on, where the machine says which.
+        card=native._gpu()
+        self.backend_status='MoonLightIPR active (%s, approximate)'%card if card else MOONLIGHTIPR_STATUS
+        self.moonlightipr_frame=None
         self._progress_tick()
         directory=moonlightipr_directory(request['runtime'])
         if not moonlightipr_supported(directory):

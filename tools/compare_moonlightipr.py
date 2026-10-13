@@ -119,6 +119,17 @@ def textured(folder):
     # Light that scatters beneath the surface, fully on the ball and half on the cube.
     skin = lobes(row('ball', [.85, .6, .5], .45, subsurface_amount=1.0, subsurface_distance=.35, subsurface_color=[1, .45, .3]),
                  row('cube', [.5, .8, .6], .5, subsurface_amount=.5, subsurface_distance=.2, subsurface_color=[.6, 1, .7]))
+    # Harder cases of the same: light that travels further beneath the surface than the things are wide, as in a
+    # berry or a candle; the same lit from behind, where what shows is what came through; and MoonRay's other two
+    # ways of working the scattering out.
+    far = lobes(row('ball', [.8, .25, .2], .3, subsurface_amount=1.0, subsurface_distance=2.5, subsurface_color=[1, .3, .25]),
+                row('cube', [.9, .85, .7], .4, subsurface_amount=1.0, subsurface_distance=1.5, subsurface_color=[1, .8, .5]))
+    behind = dict(far, _environment=0.05, lights=[dict(identity='back', name='Back', kind='SphereLight', color=[1, .95, .9], intensity=400.0,
+                                                         radius=.4, matrix=aimed([0.5, 2.5, -5.0], [0, .8, 0]))])
+    dipole = lobes(row('ball', [.85, .6, .5], .45, subsurface_amount=1.0, subsurface_distance=.35, subsurface_color=[1, .45, .3], subsurface_model=1),
+                   row('cube', [.5, .8, .6], .5, subsurface_amount=1.0, subsurface_distance=.2, subsurface_color=[.6, 1, .7], subsurface_model=1))
+    walk = lobes(row('ball', [.85, .6, .5], .45, subsurface_amount=1.0, subsurface_distance=.35, subsurface_color=[1, .45, .3], subsurface_model=2),
+                 row('cube', [.5, .8, .6], .5, subsurface_amount=1.0, subsurface_distance=.2, subsurface_color=[.6, 1, .7], subsurface_model=2))
     # A specular lobe stretched along texture u on the ball and across it on the cube.
     brushed = lobes(row('ball', [.9, .9, .9], .4, metallic=1.0, anisotropy=.8), row('cube', [.9, .6, .3], .4, metallic=1.0, anisotropy=-.8))
     # Glass that takes its colour from the depth crossed, and glass that splits colours.
@@ -235,7 +246,7 @@ def textured(folder):
     blinn = dict(stacked, materials=dict(layered, ball={'material_stack': [row('ball', [.8, .8, .8], .36, [layer('b3', 'rough', 'roughness', False)],
                                                                               shading_model='blinn', raw_roughness=.35, _beckmann=True, _specular_strength=.52)]}))
     return {'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
-            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin,
+            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
 

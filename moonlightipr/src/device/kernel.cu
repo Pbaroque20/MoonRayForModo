@@ -1490,6 +1490,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
     bool probing = false;
     float reach = 1e16f;
     unsigned entryInstance = 0;
+    // Whether the probe is the last step of a random walk, which meets the surface from inside the solid.
+    bool walked = false;
     // The kind of ray being followed, which finds only what is visible to its kind.
     unsigned seen = SEEN_CAMERA;
     // The fog the ray is in, as its entry among the volumes, and how many edges of fog the path has crossed.
@@ -1648,9 +1650,13 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // The probe looked straight down the normal of where the light went in. Failing to find
             // the same object, the light comes out level with that point.
             const bool found = hit.valid && hit.instance == entryInstance;
-            const float3 ng = found ? (dot(hit.ng, direction) > 0.0f ? -hit.ng : hit.ng) : -direction;
-            const float3 ns = found ? (dot(hit.ns, ng) < 0.0f ? -hit.ns : hit.ns) : -direction;
-            hit.p = found ? hit.p : origin + direction * (0.5f * reach);
+            // A probe looks down onto the surface, and the side it sees is the outside. A walk comes up under the
+            // surface, and the outside is the side it is heading for.
+            const float3 away = walked ? direction : -direction;
+            const float3 ng = found ? (dot(hit.ng, away) < 0.0f ? -hit.ng : hit.ng) : away;
+            const float3 ns = found ? (dot(hit.ns, ng) < 0.0f ? -hit.ns : hit.ns) : away;
+            hit.p = found ? hit.p : origin + direction * ((walked ? 0.99f : 0.5f) * reach);
+            walked = false;
             hit.ng = ng;
             hit.ns = ns;
             hit.albedo = vec(1.0f);     // its colour is already in the path's weight
@@ -1897,29 +1903,246 @@ extern "C" __global__ void __raygen__moonlightipr() {
             continue;
         }
 
+        if (scatters && (hit.flags & MATERIAL_RANDOM_WALK) && rnd(seed) < beneath) {
+            // MoonRay's random walk: the light is followed through the solid, from where it goes in to where it
+            // comes out. How far it goes between scatterings, and how much of it each scattering keeps, come
+            // from the surface's colour and its scattering radius by MoonRay's own fit (VolumeSubsurface.cc,
+            // after Chiang and others, Practical and Controllable Subsurface Scattering).
+            const float3 a = make_float3(fmaxf(surface.albedo.x, 0.001f), fmaxf(surface.albedo.y, 0.001f), fmaxf(surface.albedo.z, 0.001f));
+            const float3 d = make_float3(fmaxf(hit.subsurfaceRadius.x * 0.3333f, 0.001f), fmaxf(hit.subsurfaceRadius.y * 0.3333f, 0.001f),
+                                         fmaxf(hit.subsurfaceRadius.z * 0.3333f, 0.001f));
+            const float3 kept = make_float3(1.0f - expf(-3.25172f * a.x * a.x * a.x + 1.2166f * a.x * a.x - 4.75914f * a.x),
+                                            1.0f - expf(-3.25172f * a.y * a.y * a.y + 1.2166f * a.y * a.y - 4.75914f * a.y),
+                                            1.0f - expf(-3.25172f * a.z * a.z * a.z + 1.2166f * a.z * a.z - 4.75914f * a.z));
+            const float3 sigmaT = make_float3(1.0f / (d.x * (1.9f - a.x + 3.5f * (a.x - 0.8f) * (a.x - 0.8f))),
+                                              1.0f / (d.y * (1.9f - a.y + 3.5f * (a.y - 0.8f) * (a.y - 0.8f))),
+                                              1.0f / (d.z * (1.9f - a.z + 3.5f * (a.z - 0.8f) * (a.z - 0.8f))));
+            const float3 sigmaS = sigmaT * kept;
+            // What MoonRay steers the walk by: the greatest eigenvalue of how light spreads in such a medium.
+            const float3 rest = vec(1.0f) - kept;
+            const float3 kappa = make_float3(sqrtf(3.0f * rest.x) * (1.0f - rest.x * (0.4f + rest.x * (12.0f / 175.0f + rest.x * (2.0f / 125.0f + rest.x * 166.0f / 67375.0f)))),
+                                             sqrtf(3.0f * rest.y) * (1.0f - rest.y * (0.4f + rest.y * (12.0f / 175.0f + rest.y * (2.0f / 125.0f + rest.y * 166.0f / 67375.0f)))),
+                                             sqrtf(3.0f * rest.z) * (1.0f - rest.z * (0.4f + rest.z * (12.0f / 175.0f + rest.z * (2.0f / 125.0f + rest.z * 166.0f / 67375.0f)))));
+            const float3 v0 = make_float3(1.0f / fmaxf(kappa.x, 1e-6f), 1.0f / fmaxf(kappa.y, 1e-6f), 1.0f / fmaxf(kappa.z, 1e-6f));
+            const float3 norm = make_float3(1.0f / logf((v0.x + 1.0f) / (v0.x - 1.0f)), 1.0f / logf((v0.y + 1.0f) / (v0.y - 1.0f)),
+                                            1.0f / logf((v0.z + 1.0f) / (v0.z - 1.0f)));
+            // Straight through with no scattering at all, which a thin part lets happen: plain absorption.
+            const float3 straight = make_float3(-logf(fmaxf(a.x - 1e-6f, 1e-6f)) / d.x, -logf(fmaxf(a.y - 1e-6f, 1e-6f)) / d.y,
+                                                -logf(fmaxf(a.z - 1e-6f, 1e-6f)) / d.z);
+            // What goes in is what the surface did not reflect; its colour comes from the walk.
+            const float3 entered = surface.frontKeep * (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath));
+            float3 weight = entered, from = hit.p, along = -ns;
+            float far = 0.0f;
+            bool out = false, lost = false;
+            // A try that leaves without scattering after the first step is not counted, as MoonRay does not count
+            // it: it is taken again, as often as MoonRay has tries to spare, which is its subsurface samples (four,
+            // as the scene has them unless told) where the camera or a mirror sees the surface, and one after that.
+            // Where none of them counts, at a thin edge, nothing comes of it there, as in MoonRay.
+            const int tries = roughDepth == 0 ? 4 : 1;
+            for (int attempt = 0; attempt < tries && !out && !lost; ++attempt) {
+                weight = entered;
+                const float3 local = sampleDiffuse(rnd(seed), rnd(seed));
+                along = -(frame.t * local.x + frame.b * local.y + ns * local.z);
+                from = offsetOrigin(hit.p, ng, along);
+                Hit wall;
+                {
+                    const float sum = weight.x + weight.y + weight.z, pick = rnd(seed) * sum;
+                    const float rate = pick < weight.x ? straight.x : pick < weight.x + weight.y ? straight.y : straight.z;
+                    const float step = -logf(fmaxf(1e-7f, 1.0f - rnd(seed))) / rate;
+                    traceRadiance(from, along, wall, step, SEEN_ALL);
+                    if (wall.valid && wall.instance == hit.instance) {
+                        const float3 tr = make_float3(expf(-straight.x * wall.t), expf(-straight.y * wall.t), expf(-straight.z * wall.t));
+                        const float chance = (weight.x * tr.x + weight.y * tr.y + weight.z * tr.z) / sum;
+                        weight = weight * tr * (1.0f / fmaxf(chance, 1e-20f));
+                        far = wall.t;
+                        out = true;
+                        break;
+                    }
+                }
+                // From here on the walk is MoonRay's own, step for step (PathIntegratorSubsurface.cc): after two
+                // scatterings nine steps in ten are steered back toward the surface (Dwivedi sampling), and each
+                // step is weighed by the one density MoonRay gives it. That weighing is part of how MoonRay's
+                // random walk looks; a walk weighed by the book comes out brighter than MoonRay's.
+                bool scattered = false, steered = false;
+                for (int event = 0; event < 256; ++event) {
+                    const float sum = weight.x + weight.y + weight.z;
+                    if (!(sum > 0.0f)) { lost = true; break; }
+                    const float plain = event > 1 ? 0.1f : 1.0f;
+                    const float3 share = weight * (1.0f / sum);
+                    const float pick = rnd(seed);
+                    const int channel = pick < share.x ? 0 : pick < share.x + share.y ? 1 : 2;
+                    float cosine = dot(along, ns);
+                    const float3 sigmaP = make_float3(sigmaT.x * (1.0f - cosine / v0.x), sigmaT.y * (1.0f - cosine / v0.y), sigmaT.z * (1.0f - cosine / v0.z));
+                    const float3 rates = steered ? sigmaP : sigmaT;
+                    const float rate = channel == 0 ? rates.x : channel == 1 ? rates.y : rates.z;
+                    const float step = -logf(fmaxf(1e-7f, 1.0f - rnd(seed))) / fmaxf(rate, 1e-20f);
+                    traceRadiance(from, along, wall, step, SEEN_ALL);
+                    if (wall.valid && wall.instance == hit.instance) {
+                        if (!scattered) break;     // not counted: taken again
+                        const float3 tr = make_float3(expf(-sigmaT.x * wall.t), expf(-sigmaT.y * wall.t), expf(-sigmaT.z * wall.t));
+                        const float3 trp = make_float3(expf(-sigmaP.x * wall.t), expf(-sigmaP.y * wall.t), expf(-sigmaP.z * wall.t));
+                        const float chance = share.x * (plain * tr.x + (1.0f - plain) * trp.x) + share.y * (plain * tr.y + (1.0f - plain) * trp.y)
+                                           + share.z * (plain * tr.z + (1.0f - plain) * trp.z);
+                        weight = weight * tr * (1.0f / fmaxf(chance, 1e-20f));
+                        far = wall.t;
+                        out = true;
+                        break;
+                    }
+                    // A scattering: on from there.
+                    scattered = true;
+                    from = from + along * step;
+                    const float3 tr = make_float3(expf(-sigmaT.x * step), expf(-sigmaT.y * step), expf(-sigmaT.z * step));
+                    const float3 dense = sigmaT * tr;
+                    const float3 denseP = make_float3(sigmaP.x * expf(-sigmaP.x * step), sigmaP.y * expf(-sigmaP.y * step), sigmaP.z * expf(-sigmaP.z * step));
+                    weight = weight * tr * sigmaS * (0.25f / ML_PI);
+                    const float u = rnd(seed), turn = 2.0f * ML_PI * rnd(seed);
+                    const bool back = rnd(seed) < 0.9f;
+                    float3 local;
+                    if (u < plain) {
+                        // Any way at all.
+                        steered = false;
+                        const float z = 1.0f - 2.0f * (u / plain), ring = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+                        local = make_float3(ring * cosf(turn), ring * sinf(turn), z);
+                        along = frame.t * local.x + frame.b * local.y + ns * local.z;
+                        cosine = back ? local.z : -local.z;
+                    } else {
+                        // Steered: mostly back toward the surface the light came in by.
+                        steered = true;
+                        const float r = (u - plain) / (1.0f - plain);
+                        const float v = channel == 0 ? v0.x : channel == 1 ? v0.y : v0.z;
+                        cosine = v - (v + 1.0f) * powf((v - 1.0f) / (v + 1.0f), r);
+                        const float ring = sqrtf(fmaxf(0.0f, 1.0f - cosine * cosine));
+                        local = make_float3(ring * cosf(turn), ring * sinf(turn), cosine);
+                        along = normalize(frame.t * local.x + frame.b * local.y + ns * local.z);
+                        if (!back) along = -along;
+                    }
+                    const float3 steer = make_float3(norm.x / (v0.x - cosine), norm.y / (v0.y - cosine), norm.z / (v0.z - cosine)) * (0.5f / ML_PI);
+                    const float density = share.x * (plain * (0.25f / ML_PI) * dense.x + (1.0f - plain) * steer.x * denseP.x)
+                                        + share.y * (plain * (0.25f / ML_PI) * dense.y + (1.0f - plain) * steer.y * denseP.y)
+                                        + share.z * (plain * (0.25f / ML_PI) * dense.z + (1.0f - plain) * steer.z * denseP.z);
+                    weight = weight * (1.0f / fmaxf(density, 1e-20f));
+                    if (event == 255) lost = true;     // never came out: counted, as nothing
+                }
+                if (scattered && !out) lost = true;
+            }
+            if (!out || !finite(weight)) break;
+            throughput *= weight;
+            // The last step again, as the probe that finds where the light comes out.
+            entryInstance = hit.instance;
+            origin = from;
+            direction = along;
+            seen = SEEN_ALL;
+            reach = far * 1.01f + 1e-5f;
+            probing = true;
+            walked = true;
+            --depth;    // coming out again is not a bounce
+            continue;
+        }
+
         if (scatters && rnd(seed) < beneath) {
-            // Pick a colour channel by its albedo and a distance from that channel's profile; the
-            // other channels are weighted by how likely they were to give the same distance.
+            // MoonRay's diffusion, as its integrator works it out (PathIntegratorSubsurface.cc). Where the light
+            // comes out is looked for from several points drawn from the profile, each projected onto the surface
+            // along the normal (three times in four) or along one of the two directions across it, so that a
+            // surface that turns away, an edge or a thin part is found as well as a flat one; each find is
+            // weighed by how likely every one of those ways was to make it. What those finds add up to is set
+            // against what a flat, endless surface would give, and made up to it: a small or thin shape loses
+            // none of its light for being small. And light is looked for through the solid, on a far side that
+            // faces away, as it comes through an ear or a leaf.
             const float3 albedo = make_float3(fmaxf(surface.albedo.x, 0.001f), fmaxf(surface.albedo.y, 0.001f),
                                               fmaxf(surface.albedo.z, 0.001f));
             const float3 width = make_float3(profileWidth(albedo.x, hit.subsurfaceRadius.x), profileWidth(albedo.y, hit.subsurfaceRadius.y),
                                              profileWidth(albedo.z, hit.subsurfaceRadius.z));
-            const float total = albedo.x + albedo.y + albedo.z, pick = rnd(seed) * total;
-            const float chosen = pick < albedo.x ? width.x : pick < albedo.x + albedo.y ? width.y : width.z;
-            const float r = (rnd(seed) < 0.25f ? chosen : 3.0f * chosen) * -logf(fmaxf(1e-6f, 1.0f - rnd(seed)));
-            const float3 shape = make_float3(profileShape(r, width.x), profileShape(r, width.y), profileShape(r, width.z));
-            const float mixture = (albedo.x * shape.x + albedo.y * shape.y + albedo.z * shape.z) / total;
+            const float total = albedo.x + albedo.y + albedo.z;
+            const float3 share = albedo * (1.0f / total);
+            // No further than where all but a two-hundredth of the widest channel's light has come out.
+            const float furthest = 15.03f * fmaxf(width.x, fmaxf(width.y, width.z)), nearest = 0.1f * furthest;
+            const int tries = roughDepth == 0 ? 4 : 2;
+            float3 found[8], from[8], way[8];
+            float span[8], heavy[8];
+            bool through_[8];
+            int count = 0;
+            float3 measured = vec(0.0f);
+            for (int i = 0; i < tries; ++i) {
+                // A colour channel by its albedo, and a distance from that channel's profile.
+                const float pick = rnd(seed) * total;
+                const float chosen = pick < albedo.x ? width.x : pick < albedo.x + albedo.y ? width.y : width.z;
+                const float r = (rnd(seed) < 0.25f ? chosen : 3.0f * chosen) * -logf(fmaxf(1e-6f, 1.0f - rnd(seed)));
+                const float phi = 2.0f * ML_PI * rnd(seed), lx = r * cosf(phi), ly = r * sinf(phi);
+                const float axis = rnd(seed);
+                float3 down, offset;
+                if (axis < 0.75f) { down = -ns; offset = frame.t * lx + frame.b * ly; }
+                else if (axis < 0.8125f) { down = -frame.t; offset = frame.b * lx + ns * ly; }
+                else if (axis < 0.875f) { down = frame.t; offset = frame.b * lx + ns * ly; }
+                else if (axis < 0.9375f) { down = -frame.b; offset = ns * lx + frame.t * ly; }
+                else { down = frame.b; offset = ns * lx + frame.t * ly; }
+                const float search = fmaxf(fminf(r, furthest), nearest);
+                const float3 above = hit.p + offset - down * search;
+                Hit under;
+                traceRadiance(above, down, under, 2.0f * search, SEEN_ALL);
+                if (!under.valid || under.instance != hit.instance) continue;
+                // Only a face turned toward where the look came from counts.
+                if (-dot(under.ns, down) < 1e-5f) continue;
+                const float3 apart = hit.p - under.p;
+                const float gone = length(apart);
+                if (gone > furthest) continue;
+                const float ax = dot(apart, frame.t), ay = dot(apart, frame.b), an = dot(apart, ns);
+                const float rn = fmaxf(sqrtf(ax * ax + ay * ay), 0.001f), rx = fmaxf(sqrtf(ay * ay + an * an), 0.001f), ry = fmaxf(sqrtf(an * an + ax * ax), 0.001f);
+                // A profile's density over the surface at a distance: its shape there, over eight pi times the distance.
+                const float dn = (share.x * profileShape(rn, width.x) + share.y * profileShape(rn, width.y) + share.z * profileShape(rn, width.z)) / (8.0f * ML_PI * rn);
+                const float dx = (share.x * profileShape(rx, width.x) + share.y * profileShape(rx, width.y) + share.z * profileShape(rx, width.z)) / (8.0f * ML_PI * rx);
+                const float dy = (share.x * profileShape(ry, width.x) + share.y * profileShape(ry, width.y) + share.z * profileShape(ry, width.z)) / (8.0f * ML_PI * ry);
+                const float every = 0.75f * dn * fabsf(dot(ns, under.ns)) + 0.125f * dx * fabsf(dot(frame.t, under.ns)) + 0.125f * dy * fabsf(dot(frame.b, under.ns));
+                if (!(every > 0.0f)) continue;
+                const float at = fmaxf(gone, 0.001f);
+                const float3 given = albedo * make_float3(profileShape(at, width.x), profileShape(at, width.y), profileShape(at, width.z))
+                                   * (1.0f / (8.0f * ML_PI * at * every));
+                if (!finite(given)) continue;
+                measured += given;
+                found[count] = given; from[count] = above; way[count] = down; span[count] = 2.0f * search; through_[count] = false;
+                ++count;
+            }
+            // Made up to what a flat, endless surface gives, channel by channel, where enough was found to go by.
+            measured = measured * (1.0f / float(tries));
+            const float3 made = make_float3(measured.x > 0.01f ? albedo.x / measured.x : 1.0f, measured.y > 0.01f ? albedo.y / measured.y : 1.0f,
+                                            measured.z > 0.01f ? albedo.z / measured.z : 1.0f);
+            for (int i = 0; i < count; ++i) found[i] = found[i] * made;
+            // Through the solid: a way in, anywhere within 85 degrees of straight down, to a far side that faces away.
+            for (int i = 0; i < tries && count < 8; ++i) {
+                const float lowest = 0.0871557f;   // cos 85 degrees
+                const float z = 1.0f - rnd(seed) * (1.0f - lowest), ring = sqrtf(fmaxf(0.0f, 1.0f - z * z)), turn = 2.0f * ML_PI * rnd(seed);
+                const float3 in = -(frame.t * (ring * cosf(turn)) + frame.b * (ring * sinf(turn)) + ns * z);
+                const float3 start = offsetOrigin(hit.p, ng, in);
+                Hit far;
+                traceRadiance(start, in, far, furthest, SEEN_ALL);
+                if (!far.valid || far.instance != hit.instance) continue;
+                // Its outside is the side the look is heading for; it must face away from where the light went in.
+                const float3 outside = dot(far.ns, in) < 0.0f ? -far.ns : far.ns;
+                if (dot(outside, ns) > -1e-5f) continue;
+                const float gone = fmaxf(far.t, 0.001f);
+                const float3 given = albedo * make_float3(profileShape(gone, width.x), profileShape(gone, width.y), profileShape(gone, width.z))
+                                   * (gone * gone / (8.0f * ML_PI * gone * fmaxf(fabsf(dot(outside, in)), 0.05f)) * (2.0f * ML_PI * (1.0f - lowest)));
+                if (!finite(given)) continue;
+                found[count] = given; from[count] = start; way[count] = in; span[count] = far.t * 1.01f + 1e-5f; through_[count] = true;
+                ++count;
+            }
+            // One of them is followed, the likelier the more light it carries, and stands for them all.
+            float whole = 0.0f;
+            for (int i = 0; i < count; ++i) { heavy[i] = found[i].x + found[i].y + found[i].z; whole += heavy[i]; }
+            if (!(whole > 0.0f)) break;
+            int taken = count - 1;
+            float left = rnd(seed) * whole;
+            for (int i = 0; i < count; ++i) { if (left < heavy[i]) { taken = i; break; } left -= heavy[i]; }
+            if (!(heavy[taken] > 0.0f)) break;
             // What comes out is diffuse light, already dimmed by what the surface reflected.
-            throughput *= surface.albedo * surface.frontKeep * (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath))
-                        * (mixture > 0.0f ? shape * (1.0f / mixture) : vec(1.0f));
-            // Look down onto the surface from that far to one side.
-            const float phi = 2.0f * ML_PI * rnd(seed);
+            throughput *= surface.frontKeep * (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath))
+                        * found[taken] * (whole / (heavy[taken] * float(tries)));
             entryInstance = hit.instance;
-            origin = hit.p + (frame.t * cosf(phi) + frame.b * sinf(phi)) * r + ns * r;
-            direction = -ns;
+            origin = from[taken];
+            direction = way[taken];
             seen = SEEN_ALL;
-            reach = 2.0f * r;
+            reach = span[taken];
             probing = true;
+            walked = through_[taken];
             --depth;    // coming out again is not a bounce
             continue;
         }
