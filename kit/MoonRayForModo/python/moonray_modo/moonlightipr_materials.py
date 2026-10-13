@@ -30,6 +30,7 @@ LAYER_GROUP_BEGIN, LAYER_GROUP_END, LAYER_MASK_BASE, MASK_REGISTERS, GROUP_DEPTH
 LAYER_MASKED, LAYER_MASK_SHIFT = 1 << 11, 12
 MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN, MATERIAL_CONDUCTOR, MATERIAL_HAIR, MATERIAL_VOLUME = 1, 2, 16, 32, 64, 128
 MATERIAL_NO_CAUSTICS = 1024
+MATERIAL_RANDOM_WALK = 2048
 LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
@@ -938,8 +939,11 @@ class Compiler:
         # Light scatters beneath the surface over the material's distance when any of it does.
         scattering = dwa and (defaults['subsAmt'] > 0 or 'subsAmt' in effects or bool(stack and supported(stack)))
         radius = max(0.0, float(source.get('subsurface_distance', 0))) if scattering else 0.0
-        if radius > 0 and controls['subsurface_model'] != 0:
-            self.note('the dipole and random walk subsurface models, shown as normalized diffusion', name)
+        if radius > 0 and controls['subsurface_model'] == 2:
+            # MoonRay's random walk, followed through the solid on the GPU as MoonRay follows it.
+            flags |= MATERIAL_RANDOM_WALK
+        elif radius > 0 and controls['subsurface_model'] != 0:
+            self.note('the dipole subsurface model, shown as normalized diffusion', name)
         # A solid with an absorption distance takes its colour from the depth crossed.
         depth = 0.0
         if dwa and not source.get('thin_geometry'):

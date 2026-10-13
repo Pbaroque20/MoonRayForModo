@@ -124,6 +124,14 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **Shiny surfaces in bounced light**, **tinted glass** and **clearcoats** now match MoonRay's brightness far better.
 - **Shadows of see-through surfaces** follow the scene's Presence Shadows setting.
+- **Random walk subsurface is a real random walk.** It used to be drawn with the default model, which came out darker and less translucent than MoonRay. It now has MoonRay's look, and is about 9% brighter than MoonRay.
+
+![Random walk subsurface before](images/sss-random-walk-before.png)
+*Before: MoonRay (left), MoonLightIPR (right).*
+
+![Random walk subsurface after](images/sss-random-walk-after.png)
+*After.*
+
 - **Sample Clamp** settings are followed.
 - **Blinn, Ashikhmin and GTR roughness** are drawn as MoonRay draws them.
 - **Draft outlines line up** under fisheye and spherical cameras.

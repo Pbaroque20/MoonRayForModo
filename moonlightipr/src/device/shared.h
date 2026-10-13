@@ -33,6 +33,9 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                // DwaBaseMaterial with its casts_caustics off, as it is unless asked: reached by a path that has left a
                // diffuse lobe, the material has no highlight, coat, metal or glass to it, only what is beneath them.
                MATERIAL_NO_CAUSTICS = 1u << 10,
+               // Light beneath the surface is followed step by step through the solid (MoonRay's random walk
+               // model), in place of being gathered by a diffusion profile.
+               MATERIAL_RANDOM_WALK = 1u << 11,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
