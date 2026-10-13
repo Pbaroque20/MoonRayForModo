@@ -10,7 +10,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Each engine has its own size.** MoonRay renders at the camera's resolution; the realtime engines at the preview size (640 px unless changed).
 - **Pixel samples per realtime engine**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64. MoonRay LS can also render as wide as the preview.
 - **Denoised Beauty just works.** Choose it in the buffer list and the picture is denoised (OptiX, or Open Image Denoise if OptiX is unavailable). No denoiser to set up first.
-- **Safe Denoising on the right-click menu**: Off, OptiX or Open Image Denoise. While it is on, the foot of the picture says Safe Denoiser.
+- **Smart Render and Safe Denoising on the picture's right-click menu.** Safe Denoising is Off, OptiX or Open Image Denoise; while it is on, the foot of the picture says Safe Denoiser. Smart Render is described under Rendering with MoonRay.
 - **Dragging with realtime on is much smoother.** MoonLightIPR follows the camera or an object as you drag, taking far less of Modo's time. MoonRay LS updates when you let go, and does so much sooner than before.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **Status on its own line**, so long messages are not cut off.
@@ -59,11 +59,18 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - Not yet: compositing during a render, Cryptomatte mattes, MoonLightIPR renders.
 
 ![The compositor](images/compositor-editor.png)
-*Nodes on the left, the graph, and the selected node's settings.*
+*The nodes to add on the left, a graph of Grade, Vignette and Sharpen, and the selected node's settings.*
 
 ## Rendering with MoonRay
 
-- **Smart Render.** MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it. Choose Draft, Medium or Fine in the render settings or on the picture's right-click menu; the foot of the picture shows the noise reading and where it will stop. On the coffee maker example it finished in 65 to 100 seconds where the full render takes 137.
+- **Smart Render.** MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
+  - **Right-click the picture > Smart Render**: Off, Draft, Medium or Fine. The same setting is in the render settings under Denoising.
+  - The foot of the picture shows the noise reading and where it will stop.
+  - On the coffee maker example it finished in 40 to 70 seconds where the full render takes 105.
+
+![Smart Render on the picture's right-click menu](images/picture-menu-smart-render.png)
+*Right-click the picture: Smart Render, with Safe Denoising below it.*
+
 - **One pass, not three.** A MoonRay preview no longer renders twice quickly before the real render, starting over each time: the picture comes in once, and the render is about a third shorter.
 - **A steadier time left.** One countdown for the whole render, where it used to start over with each of MoonRay's passes and jump about. With adaptive sampling a time is shown only when MoonRay's own figure can be trusted; otherwise the window says how many tiles have finished.
 - **Stop keeps a whole picture.** MoonRay finishes the tiles it is working on before it stops, so nothing is left dark or blocky, and every buffer is kept, not only the beauty. It takes a few seconds *(0.4 runtime)*.
