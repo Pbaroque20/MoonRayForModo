@@ -1,6 +1,6 @@
-# What's coming in 0.4
+# What's new in 0.4
 
-Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the new runtime ZIP that 0.4 brings; everything else works with the current one.
+New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with the kit. Items marked *(0.4 runtime)* are the ones that need it.
 
 ## The preview window
 
@@ -178,6 +178,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 *Follow Modo, Global Illumination off, the light's eye off: the backdrop shows and the ball is unlit.*
 
 - **MoonLightIPR follows per-ray visibility**: camera, indirect light, reflections, refractions and shadows.
+- **A light whose light material has its eye off in the Shader Tree gives no light**, as in Modo. Notices names it.
 - **A Shader's Cast Shadows switch is followed.**
 
 ![Four cubes, two of them hidden](images/visibility-eye.png)

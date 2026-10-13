@@ -7,16 +7,53 @@ MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Mo
 
 The plugin includes CPU and XPU rendering, a dockable live preview with a second GPU preview engine, native MoonRay materials with a graph editor, Shader Tree translation, MoonRay's own lights and other items, MaterialX and RDL scene import, AOVs, and denoising.
 
-**Current version: 0.3.51.3 — experimental development build.** It is 0.3.51 with fixes to Draft, to Stop, to renders that did not refresh, and to Safe Denoising, which held heavy renders back.
+**Current version: 0.4 — experimental development build.** It brings a compositor, playblasts, Smart Render, fur without a limit, and a preview with three engines that follows Modo's color management.
 
-[Download 0.3.51.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51.3) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.3.51](docs/WHATS_NEW_0351.md)
+[Download 0.4: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4](docs/WHATS_NEW_04.md)
 
-Work on **0.4**, the next version, goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
+Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
 ![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
 
-## New in 0.3.51
+## New in 0.4
+
+The full list, with pictures, is in [What's new in 0.4](docs/WHATS_NEW_04.md).
+
+**The preview window**
+
+- **Three engines**: **MoonRay** for the full render; **MoonRay LS** for a quick low-sample render; **MoonLightIPR**, which updates after each edit once you press **RT Off** to switch realtime on.
+- **Smart Render**: MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
+- **Important Parts First**: the buckets with the most detail render before the plain ones.
+- **Stop keeps a whole picture**, and **Denoised Beauty just works**: choose it in the buffer list.
+- **The preview follows Modo's color management** by default, and names the view and LUT at the foot of the window.
+- **Draft** redraws in about a third of a second after a move, and follows the scene by itself.
+
+![The preview window with MoonLightIPR chosen and realtime on](docs/images/preview-engines.png)
+*MoonLightIPR chosen, RT On.*
+
+**New tools**
+
+- **Compositor**: a node graph over a finished render's buffers, in Options > Compositor. Nothing is rendered again.
+- **MoonLightIPR Playblast**: renders an animation on the graphics card and plays it back.
+- **File > Open reads MoonRay scenes** (`.rdla`, `.rdlb`), of any size.
+
+![The compositor](docs/images/compositor-editor.png)
+*The compositor: the beauty graded, given a vignette and sharpened.*
+
+**Closer to Modo**
+
+- **Modo fur without a limit**: every fibre Modo would grow, each as thick as the Fur material says.
+- **Keep Fine Detail** when denoising: fur, hair and curves stay sharp over a denoised surface.
+- **Bump and normal images show on subdivision surfaces**; an image layer's **Low Value and High Value** are followed.
+- **Cellular, Wood, Weave and Ripples** layers render.
+- **Hidden items stay hidden**: an item, or a light's material, with its eye off does not render.
+- **MoonLightIPR is much closer to MoonRay** on layered materials, glass, coats and subsurface.
+
+![Stopped the new way: an even picture](docs/images/stop-after-drain.png)
+*Stopped part way: MoonRay finishes the tiles it is on, so nothing is left dark or blocky.*
+
+## From 0.3.51
 
 The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
 
@@ -129,14 +166,14 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 ## Currently implemented
 
 - Native Windows rendering: CPU/AVX and NVIDIA XPU, with XPU → Vector → Scalar fallback.
-- Interactive preview: dockable window, live updates, draft and region rendering, a colour probe, worker-tile/bucket overlays, and the MoonLightIPR GPU engine.
+- Interactive preview: dockable window, live updates, draft and region rendering, a colour probe, worker-tile/bucket overlays, the quick MoonRay LS engine, and the realtime MoonLightIPR GPU engine with playblasts.
 - Materials: native MoonRay materials with their own forms, a visual node editor, material preview, and MaterialX import.
 - Modo scene translation: standard and Principled materials, image textures, normal/bump maps, procedurals, lights, daylight, environments, subdivisions, instances, replicators, curves and hair—with the limits below.
 - MoonRay items: lights, light filters, cameras, analytic shapes and volumes with their own properties.
-- Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
+- Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.3.51.3
+## Known issues in 0.4
 
 The ones you are most likely to meet:
 
@@ -144,7 +181,8 @@ The ones you are most likely to meet:
 - Under Principled, Modo's diffuse gets brighter with roughness and MoonRay's does not.
 - Hair in MoonLightIPR is close to MoonRay's but not exact.
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode; the plugin switches for you and says so.
-- Draft assumes an ordinary lens: a fisheye or spherical camera's draft does not line up with its render.
+- Smart Render and Important Parts First work on MoonRay renders in the preview window, not on Render EXR or animations.
+- MoonLightIPR updates after you let go of a drag, not while you drag.
 
 Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
 
@@ -157,7 +195,7 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 - **RDL import leaves some things out**, and names each in its report: motion (the scene comes in as it stands at shutter open), values that differ face by face or point by point, subdivision creases, authored normals and light filter sets.
 - **Geometry**: some instancing, motion, subdivision, UV-projection and normal-map cases differ from Modo. A mesh that mixes polygon kinds or needs per-polygon projection is read the slower way.
 - **Cryptomatte**: volume coverage is unfinished; ID previews are not an interactive matte-selection tool.
-- **Preview**: some edits still need the whole scene read again; with a denoiser on, the denoised view is off while Live follows the scene. Safe Denoising and Continue are for MoonRay with Live off.
+- **Preview**: some edits still need the whole scene read again; the compositor works on finished MoonRay renders, not on MoonLightIPR's. Safe Denoising and Continue are for the MoonRay engine.
 
 ## Still to implement
 

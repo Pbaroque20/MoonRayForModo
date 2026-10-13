@@ -586,6 +586,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             warnings.append('Skipped unsupported light: ' + item.name)
             continue
         material = item.material
+        if material and not channel(material, 'enable', 1):
+            # Its material's eye is off in the Shader Tree: in Modo's own renders such a light gives no light.
+            warnings.append('Light %s gives no light: its light material is switched off in the Shader Tree.' % item.name)
+            continue
         light = {'kind': types[item.type], 'identity':item.id, 'name':item.name, 'matrix': world_matrix(item),
                  'color': color(material, 'lightCol') if material else [1, 1, 1],
                  'intensity': float(channel(item, 'radiance', 1)),
