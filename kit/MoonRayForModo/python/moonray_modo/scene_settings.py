@@ -46,7 +46,10 @@ def complete(stored):
     except ValueError:
         result['render'] = options.render_values({})
     result['background'] = dict(background_defaults, **(stored.get('background') or {}))
-    result['display'] = {key: (stored.get('display') or {}).get(key, value)
+    # What the scene has not chosen for itself is as last chosen through MoonRay on this machine.
+    from . import display_memory
+    last = display_memory.remembered()
+    result['display'] = {key: (stored.get('display') or {}).get(key, last.get(key, value))
                          for key, value in display_defaults.items() if key != 'working_space'}
     return result
 
@@ -276,3 +279,7 @@ def put(stored, entry, value):
     if path[0] == 'render':
         group = options.render_values(group)
     stored[path[0]] = group
+    if path[0] == 'display':
+        # Kept for the scenes to come, and for the next time Modo is opened.
+        from . import display_memory
+        display_memory.remember(path[1], value)
