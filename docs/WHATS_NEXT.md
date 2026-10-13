@@ -59,7 +59,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - Not yet: compositing during a render, Cryptomatte mattes, MoonLightIPR renders.
 
 ![The compositor](images/compositor-editor.png)
-*Nodes on the left, the graph, and the selected node's settings.*
+*The nodes to add on the left, a graph of Grade, Vignette and Sharpen, and the selected node's settings.*
 
 ## Rendering with MoonRay
 

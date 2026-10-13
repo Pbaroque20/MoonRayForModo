@@ -44,7 +44,7 @@ Some of these need a newer MoonRay, so 0.4 brings a new runtime ZIP.
 *MoonLightIPR chosen, RT On.*
 
 ![The compositor](docs/images/compositor-editor.png)
-*The compositor: the beauty graded, given a glow, and sent to the Composite buffer.*
+*The compositor: the beauty graded, given a vignette and sharpened, with the nodes to add listed on the left.*
 
 ## Released in 0.3.51
 
