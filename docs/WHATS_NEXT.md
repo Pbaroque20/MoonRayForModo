@@ -18,7 +18,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Dragging with realtime on is much smoother.** MoonLightIPR updates quickly after drag, taking far less of Modo's time.
 - **Realtime waits while an animation plays**, then renders the frame it stops on.
 - **The Notices button is coloured when there is something to read**: pastel yellow for notices, red for an error or a failed render.
-- **The status names what MoonRay is running on**, such as "XPU active (RTX 3090 + i7-4930K)": the first NVIDIA card and the processor.
+- **The status names what the render is running on**, such as "XPU active (RTX 3090 + i7-4930K)" for MoonRay or "MoonLightIPR active (RTX 3090, approximate)": the first NVIDIA card and, for MoonRay, the processor.
 - **Status on its own line**, so long messages are not cut off.
 - **Tile outlines** are pastel blue, move evenly and fade when a tile is done *(0.4 runtime)*.
 - **Titled "MoonRay"** when docked in Modo's layout; "MoonRay Preview" as its own window.
@@ -66,7 +66,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
   - **Filters**: Blur, Glow, Sharpen, Median, Grow / Shrink, Edges, Grain, Vignette, Flip.
   - **Mattes**: Brightness Matte and Channel, to wire into a Merge's mask.
   - **Make**: a plain Colour and a Ramp.
-- **The result is the Composite buffer** in the list. Editing the graph updates it without rendering again.
+- **The result is the Composite buffer**, always in the buffer list. Editing the graph updates it without rendering again. Chosen before a graph is built, it says to open the compositor.
 - **Saved with the scene**, with undo.
 - **Render EXR and animations write `name.composite.exr`** beside the EXR.
 - Not yet: compositing during a render, Cryptomatte mattes, MoonLightIPR renders.
@@ -170,6 +170,9 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **The environment lights the scene** whether or not Modo's Global Illumination is on. With every light hidden, Notices says the scene is lit by the environment.
 - **A physical sky goes dark when its sun is hidden.** Notices says so.
 - **Or have it follow Modo**: in System > Preferences > MoonRay, set Environment lights the scene to Follow Modo, and it lights the scene only with Global Illumination on.
+
+![Environment lights the scene, in MoonRay's system preferences](images/environment-preference.png)
+*System > Preferences > MoonRay: Environment lights the scene.*
 
 ![Follow Modo with the light hidden](images/environment-follow-modo.png)
 *Follow Modo, Global Illumination off, the light's eye off: the backdrop shows and the ball is unlit.*

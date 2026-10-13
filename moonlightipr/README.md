@@ -1,6 +1,6 @@
 # MoonLightIPR (experimental)
 
-*Updated October 10, 2026. Releases 0.3.50.1 and 0.3.50.2 hold an earlier MoonLightIPR; what is described as added since is on the `MoonLightIPR` branch. Sections that record a check keep the date it was made.*
+*Updated October 13, 2026. Releases 0.3.50.1 and 0.3.50.2 hold an earlier MoonLightIPR; what is described as added since is on the `MoonLightIPR` branch. Sections that record a check keep the date it was made.*
 
 Created by Raphael Tobar. Released under the [MIT License](LICENSE). MoonLightIPR is not a DreamWorks
 Animation product and is not affiliated with, sponsored by or endorsed by DreamWorks Animation;
@@ -26,10 +26,10 @@ build to an installed kit during development.
 ## Where it stands
 
 - It is used inside Modo: choose MoonLightIPR in the preview window's engine list and press
-  RT Off, which then reads RT On. It follows light, transform and material edits, including
-  while they are dragged. Press the button again to switch realtime off.
-- With the scene's denoiser on for previews it denoises, and the buffer list offers Beauty
-  and Denoised Beauty; it holds both, so changing between them renders nothing again.
+  RT Off, which then reads RT On. It follows light, transform and material edits, updating
+  when a drag is let go. Press the button again to switch realtime off.
+- The buffer list offers Beauty, which is the default, and Denoised Beauty; it holds both, so
+  changing between them renders nothing again.
 - It draws Modo's standard and Principled materials, MoonRay's Dwa surface materials,
   material stacks from the Shader Tree, imported MaterialX graphs, MoonRay's own light
   items, curves and hair, subdivision surfaces, depth of field and motion blur.
@@ -73,8 +73,8 @@ build to an installed kit during development.
   with the signals of `persistent.Session`.
 - `render.py` and `panel.py`: an engine popup in the preview window's toolbar, saved as
   a user preference. With MoonLightIPR selected, preview requests go to the session and
-  its frames reach the preview through the normal buffer and display path, at full
-  preview size (the IPR size and sample limits apply to MoonRay only). Its warnings
+  its frames reach the preview through the normal buffer and display path, at the
+  preview size and with its own pixel samples (Options > Preferences). Its warnings
   are added to the window's Notices. Output renders always use MoonRay. The preview
   material choices in the Options menu are honoured.
 
@@ -139,7 +139,7 @@ samples, MoonRay 36):
 | Depth of field, five-blade lens | 1.010 | 97% |
 | Layered environment (a gradient with a colour multiplied over it) | 1.006 | 97% |
 | Physical sky | 1.006 | 93% |
-| Subsurface scattering, full on a ball and half on a cube | 0.986 | 94% |
+| Subsurface scattering, full on a ball and half on a cube (October 13) | 0.981 | 95% |
 | Anisotropy, along and across texture u | 0.990 | 98% |
 | Absorption inside glass | 1.022 | 96% |
 | Dispersion (Abbe number 4) | 1.054 | 88% |
@@ -249,7 +249,7 @@ at low sample counts; they sharpen as the picture gathers samples.
 ## Using it in Modo
 
 With the release installed there is nothing to set up: choose **MoonLightIPR** in the preview
-window's engine popup and press Render. The rest of this section is for development builds.
+window's engine popup and press RT Off. The rest of this section is for development builds.
 
 
 `python tools/install_moonlightipr.py` adds a built MoonLightIPR to the installed kit: the
@@ -265,7 +265,7 @@ runtime, and falls back to the copy in the kit's own runtime:
 
 For development, the `MOONRAY_MODO_MOONLIGHTIPR` environment variable names a staged
 folder instead. Then choose **MoonLightIPR** in the preview window's engine popup and press
-Render; with IPR ticked, Render keeps following the scene until Stop. Motion blur in
+RT Off; it follows the scene until the button is pressed again. Motion blur in
 MoonLightIPR renders is a preference (Options > Preferences).
 
 Edits cost what the design intends: a camera or material change only restarts
@@ -337,22 +337,23 @@ Added to what is translated since the table was written:
   ![Hair, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-hair_dark.jpg)
 - **Skin**: `DwaSkinMaterial` is read as itself: albedo, scattering beneath the surface,
   moisture as a clear coat, and diffuse light passing through to the far side (diffuse
-  transmission, on every Dwa surface material). Brightness 0.98, 98% of tiles within a tenth;
-  with light passing through, 1.03 and 99%. Light beneath the surface is still looked for down
-  the normal only: probing across the surface as well, which would light thin ears from behind
-  by scattering, was tried and measured darker than MoonRay, and was left out.
+  transmission, on every Dwa surface material). Brightness 0.98, 95% of tiles within a tenth;
+  with light passing through, 1.03 and 99% (October 13). Light beneath the surface is looked for
+  across the surface and through the solid as MoonRay looks for it, which lights thin ears from
+  behind by scattering.
 - **Volumes**: a `BaseVolume` with constant values, on a MoonRay box or sphere shape that has
   no material, is an even fog: it dims and tints what is behind it, scatters the lights' light
   once (MoonRay's default) with its anisotropy, glows with its emission, and thins shadows.
-  Brightness 1.03 to 1.04, 80 to 89% of tiles within a tenth. Not drawn: volumes with ramps, a
-  volume inside a shape that also has a surface material, and fog seen from a camera inside it.
+  Brightness 1.03 to 1.04, 80 to 89% of tiles within a tenth. The camera or a light may stand
+  inside it. Not drawn: volumes with ramps, and a volume inside a shape that also has a surface
+  material.
 - **VDB volumes**: a Modo volume item with a VDB file, or a `VdbGeometry` item with a `VdbVolume`,
   is fog as thick at each place as the file's density grid says. The runtime's `modo_vdb_grid`
   reads the grid once into a plain block of at most 192 cells along an edge, which the session
   holds as a 3D picture; density, colour and anisotropy are the item's. Light scatters in it once,
   and it shadows and is shadowed. Against MoonRay: brightness 1.00 to 1.02, 79 to 92% of tiles
-  within a tenth. Not drawn: the emission grid's glow, motion from a velocity grid, and a second
-  VDB volume behind the first along one shadow ray.
+  within a tenth. It glows by its emission grid, and VDB volumes may overlap. Not drawn: motion
+  from a velocity grid.
   ![A VDB cloud, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-vdb_cloud.jpg)
   ![Fog, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-fog_coloured.jpg)
 - **Pictures on lights**: sphere, disk, spot, cylinder and distant lights show their texture as
@@ -464,8 +465,8 @@ recapture, which waits for release. Why it was classified so was not established
 
 ## Known gaps in the hookup
 
-- The preview buffer menu has no effect; MoonLightIPR produces beauty only. Choosing a
-  Cryptomatte buffer says that it needs the MoonRay engine.
+- MoonLightIPR produces Beauty and Denoised Beauty only; the other buffers need MoonRay.
+  Choosing a Cryptomatte buffer says that it needs the MoonRay engine.
 - With the ACES or an OCIO view transform the picture goes through a slower display path
   than plain sRGB; its cost during fast IPR updates has not been measured.
 - Viewport navigation reaches MoonLightIPR only when the mouse button comes up, because Modo
@@ -473,9 +474,8 @@ recapture, which waits for release. Why it was classified so was not established
 
 ## Not done yet
 
-- Volumes with ramps, a VDB volume's emission, and fog seen from inside it.
-- The layer features listed above as reported; rod, barn door, cookie, VDB and combined
-  light filters.
+- Volumes with ramps, and a VDB volume's motion from a velocity grid.
+- The layer features listed above as reported; combined light filters.
 - Motion blur during IPR updates, moving lights, and a comparison of motion blur with MoonRay.
 - A test of OCIO colour spaces, and of UDIM against a MoonRay that loads the tiles.
 - Comparison against MoonRay on scenes captured from Modo. The comparisons above use
