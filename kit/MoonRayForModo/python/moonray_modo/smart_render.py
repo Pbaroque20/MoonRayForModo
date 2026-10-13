@@ -24,26 +24,41 @@ import math
 # the render 62, about 70 and 100 seconds into the 137 it takes.)
 LEVELS = {'draft': 0.08, 'medium': 0.045, 'fine': 0.03}
 CHOICES = [('Off', 'off'), ('Draft: stop soonest', 'draft'), ('Medium', 'medium'), ('Fine: stop latest', 'fine')]
-# How many pixels are looked at, at most; how much of the picture must have been rendered for it to be judged; how
-# often it is looked at, in seconds; and how many looks running must be clean enough.
+# How many pixels are looked at, at most; how many of those must have something in them for the picture to be
+# judged, as a share; how often it is looked at, in seconds; and how many looks running must be clean enough.
+# (Black is not taken for a part not yet rendered: a subject on a black background is most of it black, and was
+# never judged at all while it was. What is black is left out, and the rest is what is read.)
 SAMPLES = 12000
-RENDERED = 0.9
+LIT = 0.01
 EVERY = 2.0
 LOOKS = 2
 # Set against a pixel's brightness, with this added so that what is nearly black does not count as all noise.
 FLOOR = 0.05
 # The picture is taken to be coarse still, and not judged, while more than this share of its pixels are the very
-# same as a neighbour. Few: the hard parts of a picture are the last to be filled in, and stopped with a small part
-# of it still in blocks, the blocks are what is seen.
-COARSE = 0.005
+# same as a neighbour: a pass's first seconds, when most of it is. Not fewer: a render that is stopped finishes
+# the tiles it has in hand before its picture is taken, so a few tiles still being filled in are no reason to
+# go on, and held to a two-hundredth a render that read clean was never stopped at all.
+COARSE = 0.05
+
+
+last = {}
 
 
 def noise(width, height, pixels):
-    """(noise, share rendered) of a picture given as float RGB, three numbers a pixel, row after row. noise is None
-    where too little of the picture has been rendered to say, or it is still coarse."""
+    """(noise, share of the picture that is not black) of a picture given as float RGB, three numbers a pixel, row
+    after row. noise is None where there is next to nothing in the picture yet, or it is still coarse: this is
+    the reading a render is stopped by."""
+    value, share, coarse = reading(width, height, pixels)
+    return (None if coarse else value), share
+
+
+def reading(width, height, pixels):
+    """(noise, share of the picture that is not black, whether part of it is still coarse). The noise is read
+    from the part of the picture that has been filled in, and is there to be shown whether or not the rest has:
+    None only where next to nothing has been filled in yet."""
     width, height = int(width), int(height)
     if width < 8 or height < 8 or len(pixels) != width * height * 12:
-        return None, 0.0
+        return None, 0.0, False
     values = array('f')
     values.frombytes(bytes(pixels) if not isinstance(pixels, (bytes, bytearray)) else pixels)
     step = max(2, int(math.sqrt(width * height / float(SAMPLES))))
@@ -56,7 +71,7 @@ def noise(width, height, pixels):
             at = base + x * 3
             here = .2126 * values[at] + .7152 * values[at + 1] + .0722 * values[at + 2]
             looked += 1
-            # Nothing there yet: MoonRay has not reached this part of the picture.
+            # Black: a background, or a part MoonRay has not reached. Nothing to read either way.
             if not here > 0.0:
                 continue
             left = .2126 * values[at - 3] + .7152 * values[at - 2] + .0722 * values[at - 1]
@@ -85,20 +100,26 @@ def noise(width, height, pixels):
                         != .2126 * values[far] + .7152 * values[far + 1] + .0722 * values[far + 2]):
                     continue
                 same += 1
+                continue
             elif l != r or u != d:
                 # The same as the pixel on one side and not on the other: the edge or the corner of a block.
                 # (The same on both sides is something that does not change that way, a backdrop's band.)
+                # A block says nothing of the noise: it is counted, and not read.
                 same += 1
+                continue
             across = abs(2 * here - left - right)
             along = abs(2 * here - up - down)
             found.append(.5 * (across if across < along else along) / (here + FLOOR))
     if not looked:
-        return None, 0.0
+        return None, 0.0, False
     share = rendered / float(looked)
-    if share < RENDERED or len(found) < 64 or same > COARSE * len(found):
-        return None, share
+    coarse = same > COARSE * (len(found) + same)
+    # Kept for whoever wants to know why a picture was or was not judged.
+    last.update(read=len(found), blocks=same, looked=looked)
+    if len(found) < max(64, LIT * looked):
+        return None, share, coarse
     found.sort()
-    return found[len(found) // 2], share
+    return found[len(found) // 2], share, coarse
 
 
 class Watch:
@@ -111,6 +132,8 @@ class Watch:
         self.looked = None
         self.clean = 0
         self.noise = None
+        # Whether part of the picture was still coarse at the last look: it is not stopped while it is.
+        self.coarse = False
         self.settled = False
 
     def look(self, width, height, pixels):
@@ -121,11 +144,12 @@ class Watch:
         if self.looked is not None and now - self.looked < EVERY:
             return False
         self.looked = now
-        value, _ = noise(width, height, pixels)
-        if value is None:
+        value, _, self.coarse = reading(width, height, pixels)
+        # What it reads is kept to be shown, whether or not the picture is ready to be judged by it.
+        self.noise = value
+        if value is None or self.coarse:
             self.clean = 0
             return False
-        self.noise = value
         self.clean = self.clean + 1 if value <= self.threshold else 0
         if self.clean >= LOOKS:
             self.settled = True

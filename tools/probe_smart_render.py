@@ -21,7 +21,10 @@ out = root / 'test-results/smart-render'
 out.mkdir(parents=True, exist_ok=True)
 name = os.environ.get('MOONRAY_PROBE_NAME', 'coffee_maker')
 level = int(os.environ.get('MOONRAY_PROBE_LEVEL', '2'))
-source = root / 'downloads/moonray-example-scenes/scenes' / name / 'scene.rdla'
+# MOONRAY_PROBE_LXO names a Modo scene to open in place of an example scene.
+source = pathlib.Path(os.environ['MOONRAY_PROBE_LXO']) if os.environ.get('MOONRAY_PROBE_LXO') else root / 'downloads/moonray-example-scenes/scenes' / name / 'scene.rdla'
+if os.environ.get('MOONRAY_PROBE_LXO'):
+    name = source.stem
 LIMIT = float(os.environ.get('MOONRAY_PROBE_LIMIT', '300'))
 STOP_AT = float(os.environ.get('MOONRAY_PROBE_STOP_AT', '0'))
 tag = '%s-%d%s' % (name, level, '-stop%d' % STOP_AT if STOP_AT else '')
@@ -50,6 +53,15 @@ def opened():
         lx.eval('render.res 0 %d' % width)
         lx.eval('render.res 1 %d' % max(16, round(width * was[1] / max(1, was[0]))))
         lx.eval('moonray.render.smart_render %d' % level)
+        # What the reading makes of each picture, and why it does not judge one.
+        from moonray_modo import smart_render
+        reading = smart_render.reading
+
+        def told(width, height, pixels):
+            value = reading(width, height, pixels)
+            result.setdefault('readings', []).append([round(time.monotonic() - held.get('began', time.monotonic()), 1), value[0] if value[0] is None else round(value[0], 4), round(value[1], 3)] + list(value[2:]) + [smart_render.last.get('blocks'), smart_render.last.get('read')])
+            return value
+        smart_render.reading = told
         result['setting'] = lx.eval('moonray.render.smart_render ?')
         lx.eval('moonray.open')
         QtWidgets.QApplication.processEvents()
