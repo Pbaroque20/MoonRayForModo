@@ -1526,6 +1526,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
                              else 'Draft: press Region and drag in the picture to render that part.' if self.draft.isChecked() and self._draft_region() is None else 'Done'))
+        if not output and getattr(self.renderer,'draining',False):
+            # Stopped by hand, or by Smart Render: MoonRay finished the tiles it had in hand and ended the render
+            # there, so the picture is whole and has all its buffers.
+            self.renderer.draining=False
+            note=getattr(self,'_smart_note','');self._smart_note=''
+            self.status.setText(note+' The picture is kept with all its buffers.' if note else 'Stopped. The picture is kept with all its buffers.')
         if not output and self._engine()!='moonlightipr' and self._playblasting() is None:
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)

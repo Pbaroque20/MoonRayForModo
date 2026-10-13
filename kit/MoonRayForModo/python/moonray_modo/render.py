@@ -241,9 +241,15 @@ class Renderer(QtCore.QObject):
         # mark. MoonRay holds such a pixel at what it last showed, but the first picture of a buffer has nothing
         # earlier to hold it at, and the second may hold it at the first: so those two are let go by. The beauty is
         # asked for last, so as to be the newest.
+        from .persistent import holds,drains
+        if drains(self.active['runtime']) and self.session.drain():
+            # A MoonRay that can finish with what it has in hand does so: the tiles its workers are on are rendered
+            # to the end, with the light of their samples, and the frame ends as a finished one, every buffer of
+            # it written. Nothing is left dark or coarse, and what follows is what follows any finished render.
+            self.pending=None;self.passes=[];self.draining=True
+            return True
         self.gather=gather={'want':['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5,'got':{}}
         self.pending=None
-        from .persistent import holds
         if holds(self.active['runtime']):
             # A MoonRay that can hand over several views at one asking hands each over once, with no waiting on the
             # host between them. Three rounds of them, for the middle to be taken, took twice as long and left the
@@ -358,6 +364,7 @@ class Renderer(QtCore.QObject):
             for path in Path(self.directory.name).iterdir():
                 if path.is_file():path.unlink()
         self.canceled = False
+        self.draining = False
         self.progress_state=Progress()
         self.progress_timer.start()
         # Smart Render watches a MoonRay preview's picture as it comes on (not one that follows the scene, nor an

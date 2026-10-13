@@ -60,7 +60,14 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 - **Smart Render.** MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it. Choose Draft, Medium or Fine in the render settings or on the picture's right-click menu; the foot of the picture shows the noise reading and where it will stop. On the coffee maker example it finished in 65 to 100 seconds where the full render takes 137.
 - **A steadier time left.** One countdown for the whole render, where it used to start over with each of MoonRay's passes and jump about. With adaptive sampling a time is shown only when MoonRay's own figure can be trusted; otherwise the window says how many tiles have finished.
-- **Stop keeps the picture.** A render stopped part way is kept and denoised in about a second and a half *(0.4 runtime)*.
+- **Stop keeps a whole picture.** MoonRay finishes the tiles it is working on before it stops, so nothing is left dark or blocky, and every buffer is kept, not only the beauty. It takes a few seconds *(0.4 runtime)*.
+
+![Stopped the old way: dark and patterned tiles](images/stop-before-drain.png)
+*Stopped at once, as before: the tiles in progress are left dark and patterned.*
+
+![Stopped the new way: an even picture](images/stop-after-drain.png)
+*Stopped the new way: MoonRay finishes those tiles first.*
+
 - **Safe Denoising shows the render as it goes**, like any other render *(0.4 runtime)*. A stop tells you how far behind the kept picture is.
 - **No dark blocks** in the live picture *(0.4 runtime)*.
 - **An idle MoonRay uses no processor**, and closes itself if Modo goes away *(0.4 runtime)*.

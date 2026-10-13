@@ -1915,7 +1915,7 @@ index f88d871..6d33635 100644
  
      // Non-copyable
 diff --git a/lib/rendering/rndr/RenderContext.cc b/lib/rendering/rndr/RenderContext.cc
-index 0a864ad..4629fe3 100644
+index 0a864ad..4e7ec5b 100644
 --- a/lib/rendering/rndr/RenderContext.cc
 +++ b/lib/rendering/rndr/RenderContext.cc
 @@ -1,3 +1,4 @@
@@ -2019,7 +2019,22 @@ index 0a864ad..4629fe3 100644
          }    
      }
  
-@@ -2104,6 +2116,7 @@ RenderContext::loadScene(std::stringstream &initMessages)
+@@ -1227,6 +1239,14 @@ RenderContext::requestStopRenderAtPassBoundary()
+     }
+ }
+ 
++void
++RenderContext::requestDrain()
++{
++    if (mRendering && !isFrameComplete()) {
++        mDriver->requestDrain();
++    }
++}
++
+ int
+ RenderContext::getCurrentFrame() const
+ {
+@@ -2104,6 +2124,7 @@ RenderContext::loadScene(std::stringstream &initMessages)
      // Load each scene file in order.
      const auto& sceneFiles = mOptions.getSceneFiles();
      for (const auto& sceneFile : sceneFiles) {
@@ -2027,7 +2042,7 @@ index 0a864ad..4629fe3 100644
          if (!sceneFile.empty()) {
              mRenderStats->logLoadingScene(initMessages, sceneFile);
              // Grab the file extension and convert it to lower case.
-@@ -2534,7 +2547,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
+@@ -2534,7 +2555,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
  
      timer.stop();
  
@@ -2036,7 +2051,7 @@ index 0a864ad..4629fe3 100644
      // return unused memory from malloc() arena to OS so process memory usage
      // stats are accurate
      malloc_trim(0);
-@@ -3006,7 +3019,7 @@ RenderContext::buildFrameState(FrameState *fs, double frameStartTime, const bool
+@@ -3006,7 +3027,7 @@ RenderContext::buildFrameState(FrameState *fs, double frameStartTime, const bool
      switch (getRenderMode())
      {
      case RenderMode::BATCH:
@@ -2045,11 +2060,36 @@ index 0a864ad..4629fe3 100644
          break;
      case RenderMode::PROGRESSIVE:
      case RenderMode::PROGRESSIVE_FAST:
+diff --git a/lib/rendering/rndr/RenderContext.h b/lib/rendering/rndr/RenderContext.h
+index 79daeec..588ad3e 100644
+--- a/lib/rendering/rndr/RenderContext.h
++++ b/lib/rendering/rndr/RenderContext.h
+@@ -214,6 +214,12 @@ public:
+      */
+     void requestStopRenderAtPassBoundary();
+ 
++    /**
++     * Modo: finish the tiles the workers are on, let the light of their samples come in, and end the frame
++     * there as a finished one.
++     */
++    void requestDrain();
++
+     /**
+      * Snapshots the contents of the render buffer OR, if a primary AOV is specified,
+      * snapshots the contents of that aov to the output render buffer. The passed in buffer is
 diff --git a/lib/rendering/rndr/RenderDriver.cc b/lib/rendering/rndr/RenderDriver.cc
-index c8865dc..d13684f 100644
+index c8865dc..b60dea9 100644
 --- a/lib/rendering/rndr/RenderDriver.cc
 +++ b/lib/rendering/rndr/RenderDriver.cc
-@@ -2344,7 +2344,14 @@ RenderDriver::renderThread(RenderDriver *driver,
+@@ -891,6 +891,7 @@ RenderDriver::startFrame(const FrameState &fs)
+     gCancelFlag.set(false);
+     mStopAtFrameReadyForDisplay = false;
+     mRenderStopAtPassBoundary = false;
++    mModoDrain = false;
+ 
+     if (updated ||
+         mCachedSamplesPerPixel != mFs.mMaxSamplesPerPixel ||
+@@ -2344,7 +2345,14 @@ RenderDriver::renderThread(RenderDriver *driver,
          switch(state) {
          case RenderThreadState::UNINITIALIZED:
          case RenderThreadState::READY_TO_RENDER:
@@ -2065,10 +2105,20 @@ index c8865dc..d13684f 100644
  
          case RenderThreadState::REQUEST_RENDER:
 diff --git a/lib/rendering/rndr/RenderDriver.h b/lib/rendering/rndr/RenderDriver.h
-index 2b6886d..39a6ca1 100644
+index 2b6886d..bd84a33 100644
 --- a/lib/rendering/rndr/RenderDriver.h
 +++ b/lib/rendering/rndr/RenderDriver.h
-@@ -676,7 +676,7 @@ private:
+@@ -152,6 +152,9 @@ public:
+     void                stopFrame();
+ 
+     void requestStopAtPassBoundary() { mRenderStopAtPassBoundary = true; } // called by progmcrt_computation
++    // Modo: finish the tiles in hand, let their light come in, and end the frame there as a finished one.
++    void requestDrain() { mModoDrain = true; }
++    bool isDraining() const { return mModoDrain; }
+ 
+     //
+     // Here are the steps which happen internally to produce a linear render
+@@ -676,7 +679,7 @@ private:
      float                      mCachedDeepCurvatureTolerance;
      float                      mCachedDeepZTolerance;
      float                      mCachedTargetAdaptiveError;
@@ -2077,8 +2127,17 @@ index 2b6886d..39a6ca1 100644
      std::vector<std::string>   mCachedDeepIDChannelNames;
      scene_rdl2::math::Viewport mCachedViewport;
      SamplingMode               mCachedSamplingMode;
+@@ -809,6 +812,8 @@ private:
+ 
+     // Condition rendering should stop at pass boundary. Only used under arras multi mcrt computation context
+     bool mRenderStopAtPassBoundary;
++    // Modo: the workers take no more tiles, and the pass they are in is the frame's last.
++    std::atomic<bool> mModoDrain {false};
+ 
+     // Queues for XPU processing of rays (RenderDriver is owner)
+ public:
 diff --git a/lib/rendering/rndr/RenderFramePasses.cc b/lib/rendering/rndr/RenderFramePasses.cc
-index 6f7b815..ca85aae 100644
+index 6f7b815..cd1f313 100644
 --- a/lib/rendering/rndr/RenderFramePasses.cc
 +++ b/lib/rendering/rndr/RenderFramePasses.cc
 @@ -1,3 +1,5 @@
@@ -2087,6 +2146,15 @@ index 6f7b815..ca85aae 100644
  // Copyright 2023-2024 DreamWorks Animation LLC
  // SPDX-License-Identifier: Apache-2.0
  
+@@ -106,7 +108,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+     MNRY_ASSERT(fs.mNumRenderThreads <= mcrt_common::getNumTBBThreads());
+ 
+     // This is a part of the termination logic of multi-machine mcrt-computation
+-    if (driver->mRenderStopAtPassBoundary) {
++    if (driver->mRenderStopAtPassBoundary || driver->isDraining()) {
+         return RenderPassesResult::STOP_AT_PASS_BOUNDARY; // render completed at pass boundary
+     }
+     bool stopAtPassBoundary = false;
 @@ -188,7 +190,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
      size_t parallelInitFrameUpdateMinTileTotal = 0;
      if (driver->mParallelInitFrameUpdate) {
@@ -2096,7 +2164,27 @@ index 6f7b815..ca85aae 100644
                       static_cast<size_t>(workQueue->getNumTiles()) / driver->mParallelInitFrameUpdateMcrtCount);
          /* useful debug message
          std::cerr << ">> RenderFramePasses.cc init minTileTotal:" << parallelInitFrameUpdateMinTileTotal
-@@ -580,6 +582,8 @@ RenderDriver::renderTile(RenderDriver *driver,
+@@ -277,7 +279,10 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+             // We have to track the condition of stopAtPassBoundary each thread independently
+             // in order to properly flush the radiance queue under vector mode.
+             bool stopAtPassBoundaryThreadLocal = false;
+-            while (!tls->isCanceled() && workQueue->getNextTileGroup(threadIdx, &group, driver->getLastCoarsePassIdx())) {
++            // Modo: asked to finish with what is in hand, a worker takes no more tiles; its queues are drained below
++            // as at the end of any pass.
++            while (!tls->isCanceled() && !driver->isDraining() &&
++                   workQueue->getNextTileGroup(threadIdx, &group, driver->getLastCoarsePassIdx())) {
+                 if (group.mFirstFinePass && (fs.mRenderMode == RenderMode::PROGRESSIVE ||
+                                              fs.mRenderMode == RenderMode::PROGRESSIVE_FAST ||
+                                              fs.mRenderMode == RenderMode::PROGRESS_CHECKPOINT)) {
+@@ -420,6 +425,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+ 
+     if (stopAtPassBoundary) return RenderPassesResult::STOP_AT_PASS_BOUNDARY;
+     if (canceled) return RenderPassesResult::ERROR_OR_CANCEL;
++    if (driver->isDraining()) return RenderPassesResult::STOP_AT_PASS_BOUNDARY; // Modo: the frame ends here
+     return RenderPassesResult::OK_AND_TRY_NEXT;
+ }
+ 
+@@ -580,6 +586,8 @@ RenderDriver::renderTile(RenderDriver *driver,
          }
      }
  

@@ -73,7 +73,7 @@ def step(wait):
 @step(4000)
 def draft_on():
     panel = panel_widget()
-    panel.preferences.set('runtime', str(root / 'runtime/steady-0351-tiles'))
+    panel.preferences.set('runtime', str(root / __import__('os').environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-0351-tiles')))
     panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonray'))
     submit = panel.renderer.submit
 

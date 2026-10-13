@@ -96,6 +96,16 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                         if(key.size()<=64 && std::all_of(key.begin(),key.end(),[](unsigned char c){return std::isalnum(c)||c=='_';}))keys.push_back(key);
                     return keys;
                 };
+                // Asked to finish with what it has in hand: the tiles the workers are on are rendered to the end,
+                // the light of their samples comes in, and the frame ends there as a finished one, with every
+                // file of it written. Asked for when a render is stopped part way and its picture is to be kept:
+                // stopped at once, the tiles then in hand were left dark and coarse.
+                auto drainRequest=[&]() {
+                    std::ifstream drain(fs::u8path(directory)/"drain.txt");
+                    std::string asked;
+                    return bool(drain>>asked) && asked==id;
+                };
+                bool draining=false;
                 std::vector<std::string> holdKeys;
                 bool reportedMissingSamples=false;
                 // The last value shown for each pixel of a view. A pixel a worker was adding to
@@ -224,6 +234,12 @@ void moonray::RaasCommandLineApplication::renderPersistent(const std::string& di
                 while (!context->isFrameComplete() && !waiting()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                     if(waiting())break;
+                    if(!draining && drainRequest()) {
+                        draining=true;
+                        context->requestDrain();
+                        std::error_code ignored;fs::remove(fs::u8path(directory)/"drain.txt",ignored);
+                        modoProtocolLine("Modo session: finishing with what is in hand");
+                    }
                     holdKeys=heldRequest();
                     if(!holdKeys.empty()) {
                         // Handed over while the render still runs, and the render ended after: ended first, the

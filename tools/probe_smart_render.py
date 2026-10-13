@@ -3,7 +3,8 @@
 
 A MoonRay example scene (MOONRAY_PROBE_NAME, the coffee maker unless named) is opened as File > Open opens it. Smart
 Render is set to a level (MOONRAY_PROBE_LEVEL: 1 draft, 2 medium, 3 fine; 0 leaves it off, to see how long the render
-takes by itself) with the command the render settings form uses, and the scene is rendered with MoonRay. Each second
+takes by itself) with the command the render settings form uses, and the scene is rendered with MoonRay. With
+MOONRAY_PROBE_STOP_AT, Stop is pressed that many seconds in, to see what a render stopped by hand keeps. Each second
 what the picture's noise reads, what the foot of the picture says and the status are written down; at the end, when it
 stopped, what it then showed, and the picture."""
 import json
@@ -22,7 +23,8 @@ name = os.environ.get('MOONRAY_PROBE_NAME', 'coffee_maker')
 level = int(os.environ.get('MOONRAY_PROBE_LEVEL', '2'))
 source = root / 'downloads/moonray-example-scenes/scenes' / name / 'scene.rdla'
 LIMIT = float(os.environ.get('MOONRAY_PROBE_LIMIT', '300'))
-tag = '%s-%d' % (name, level)
+STOP_AT = float(os.environ.get('MOONRAY_PROBE_STOP_AT', '0'))
+tag = '%s-%d%s' % (name, level, '-stop%d' % STOP_AT if STOP_AT else '')
 result = {'scene': str(source), 'level': level, 'seen': []}
 held = {}
 
@@ -75,6 +77,10 @@ def watch():
     watching = getattr(panel.renderer, 'smart', None)
     result['seen'].append([round(now, 1), round(watching.noise, 4) if watching is not None and watching.noise is not None else None,
                            panel.hud.text() if panel.hud.isVisible() else None, panel.render_timing.text(), panel.status.text()[:80]])
+    if STOP_AT and 'pressed' not in held and now >= STOP_AT and panel._rendering:
+        held['pressed'] = now
+        result['pressed_stop_at'] = round(now, 1)
+        panel.start.click()
     if 'stopped' not in held and not panel._rendering and now > 5:
         held['stopped'] = now
         result['render_ended_at'] = round(now, 1)
@@ -82,6 +88,7 @@ def watch():
     if ('stopped' in held and now - held['stopped'] > 12) or now > LIMIT:
         frame = panel.renderer.buffers.frame or {}
         result['after'] = {'status': panel.status.text(), 'buffer': panel.buffer.currentData(), 'denoised_file': 'denoised_beauty' in frame.get('files', {}),
+                           'buffers_kept': len(frame.get('files', {})),
                            'denoise_engine': frame.get('denoise_engine'), 'rendering': panel._rendering, 'hud': panel.hud.text() if panel.hud.isVisible() else None}
         panel.preview.grab().save(str(out / (tag + '.png')))
         save()
