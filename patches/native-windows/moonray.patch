@@ -2078,18 +2078,22 @@ index 79daeec..588ad3e 100644
       * Snapshots the contents of the render buffer OR, if a primary AOV is specified,
       * snapshots the contents of that aov to the output render buffer. The passed in buffer is
 diff --git a/lib/rendering/rndr/RenderDriver.cc b/lib/rendering/rndr/RenderDriver.cc
-index c8865dc..b60dea9 100644
+index c8865dc..26d85f8 100644
 --- a/lib/rendering/rndr/RenderDriver.cc
 +++ b/lib/rendering/rndr/RenderDriver.cc
-@@ -891,6 +891,7 @@ RenderDriver::startFrame(const FrameState &fs)
+@@ -891,6 +891,11 @@ RenderDriver::startFrame(const FrameState &fs)
      gCancelFlag.set(false);
      mStopAtFrameReadyForDisplay = false;
      mRenderStopAtPassBoundary = false;
 +    mModoDrain = false;
++    {
++        std::lock_guard<std::mutex> modoLock(mModoOrderMutex);
++        mModoOrder.clear();
++    }
  
      if (updated ||
          mCachedSamplesPerPixel != mFs.mMaxSamplesPerPixel ||
-@@ -2344,7 +2345,14 @@ RenderDriver::renderThread(RenderDriver *driver,
+@@ -2344,7 +2349,14 @@ RenderDriver::renderThread(RenderDriver *driver,
          switch(state) {
          case RenderThreadState::UNINITIALIZED:
          case RenderThreadState::READY_TO_RENDER:
@@ -2105,20 +2109,24 @@ index c8865dc..b60dea9 100644
  
          case RenderThreadState::REQUEST_RENDER:
 diff --git a/lib/rendering/rndr/RenderDriver.h b/lib/rendering/rndr/RenderDriver.h
-index 2b6886d..bd84a33 100644
+index 2b6886d..25d1e54 100644
 --- a/lib/rendering/rndr/RenderDriver.h
 +++ b/lib/rendering/rndr/RenderDriver.h
-@@ -152,6 +152,9 @@ public:
+@@ -152,6 +152,13 @@ public:
      void                stopFrame();
  
      void requestStopAtPassBoundary() { mRenderStopAtPassBoundary = true; } // called by progmcrt_computation
 +    // Modo: finish the tiles in hand, let their light come in, and end the frame there as a finished one.
 +    void requestDrain() { mModoDrain = true; }
 +    bool isDraining() const { return mModoDrain; }
++    // Modo: in each fine pass, the tiles with the most in them are rendered first.
++    void setModoImportant(bool on) { mModoImportant = on; }
++    // The tile a pass renders in a place of its order.
++    unsigned modoTileOf(unsigned passIdx, unsigned itile);
  
      //
      // Here are the steps which happen internally to produce a linear render
-@@ -676,7 +679,7 @@ private:
+@@ -676,7 +683,7 @@ private:
      float                      mCachedDeepCurvatureTolerance;
      float                      mCachedDeepZTolerance;
      float                      mCachedTargetAdaptiveError;
@@ -2127,17 +2135,21 @@ index 2b6886d..bd84a33 100644
      std::vector<std::string>   mCachedDeepIDChannelNames;
      scene_rdl2::math::Viewport mCachedViewport;
      SamplingMode               mCachedSamplingMode;
-@@ -809,6 +812,8 @@ private:
+@@ -809,6 +816,12 @@ private:
  
      // Condition rendering should stop at pass boundary. Only used under arras multi mcrt computation context
      bool mRenderStopAtPassBoundary;
 +    // Modo: the workers take no more tiles, and the pass they are in is the frame's last.
 +    std::atomic<bool> mModoDrain {false};
++    // Modo: important tiles first. An order for each fine pass, made when the pass is first asked for a tile.
++    std::atomic<bool> mModoImportant {false};
++    std::mutex mModoOrderMutex;
++    std::vector<std::vector<uint32_t>> mModoOrder;
  
      // Queues for XPU processing of rays (RenderDriver is owner)
  public:
 diff --git a/lib/rendering/rndr/RenderFramePasses.cc b/lib/rendering/rndr/RenderFramePasses.cc
-index 6f7b815..cd1f313 100644
+index 6f7b815..3d800ea 100644
 --- a/lib/rendering/rndr/RenderFramePasses.cc
 +++ b/lib/rendering/rndr/RenderFramePasses.cc
 @@ -1,3 +1,5 @@
@@ -2146,7 +2158,17 @@ index 6f7b815..cd1f313 100644
  // Copyright 2023-2024 DreamWorks Animation LLC
  // SPDX-License-Identifier: Apache-2.0
  
-@@ -106,7 +108,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+@@ -12,6 +14,9 @@
+ 
+ #include "RenderDriver.h"
+ #include "AdaptiveRenderTilesTable.h"
++#include <cmath>
++#include <mutex>
++#include <vector>
+ #include "DisplayFilterDriver.h"
+ #include "PixSampleRuntimeVerify.h"
+ #include "RenderContext.h"
+@@ -106,7 +111,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
      MNRY_ASSERT(fs.mNumRenderThreads <= mcrt_common::getNumTBBThreads());
  
      // This is a part of the termination logic of multi-machine mcrt-computation
@@ -2155,7 +2177,7 @@ index 6f7b815..cd1f313 100644
          return RenderPassesResult::STOP_AT_PASS_BOUNDARY; // render completed at pass boundary
      }
      bool stopAtPassBoundary = false;
-@@ -188,7 +190,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+@@ -188,7 +193,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
      size_t parallelInitFrameUpdateMinTileTotal = 0;
      if (driver->mParallelInitFrameUpdate) {
          parallelInitFrameUpdateMinTileTotal =
@@ -2164,7 +2186,7 @@ index 6f7b815..cd1f313 100644
                       static_cast<size_t>(workQueue->getNumTiles()) / driver->mParallelInitFrameUpdateMcrtCount);
          /* useful debug message
          std::cerr << ">> RenderFramePasses.cc init minTileTotal:" << parallelInitFrameUpdateMinTileTotal
-@@ -277,7 +279,10 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+@@ -277,7 +282,10 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
              // We have to track the condition of stopAtPassBoundary each thread independently
              // in order to properly flush the radiance queue under vector mode.
              bool stopAtPassBoundaryThreadLocal = false;
@@ -2176,7 +2198,7 @@ index 6f7b815..cd1f313 100644
                  if (group.mFirstFinePass && (fs.mRenderMode == RenderMode::PROGRESSIVE ||
                                               fs.mRenderMode == RenderMode::PROGRESSIVE_FAST ||
                                               fs.mRenderMode == RenderMode::PROGRESS_CHECKPOINT)) {
-@@ -420,6 +425,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
+@@ -420,6 +428,7 @@ RenderDriver::renderPasses(RenderDriver *driver, const FrameState &fs,
  
      if (stopAtPassBoundary) return RenderPassesResult::STOP_AT_PASS_BOUNDARY;
      if (canceled) return RenderPassesResult::ERROR_OR_CANCEL;
@@ -2184,7 +2206,81 @@ index 6f7b815..cd1f313 100644
      return RenderPassesResult::OK_AND_TRY_NEXT;
  }
  
-@@ -580,6 +586,8 @@ RenderDriver::renderTile(RenderDriver *driver,
+@@ -549,7 +558,7 @@ RenderDriver::renderTiles(RenderDriver *driver,
+     // Loop over current batch of tiles, we execute tile batches in parallel.
+     unsigned processedSampleTotal = 0;
+     for (unsigned itile = group.mStartTileIdx; itile != group.mEndTileIdx; ++itile) {
+-        params.mTileIdx = itile;
++        params.mTileIdx = driver->modoTileOf(group.mPassIdx, itile);
+         if (!renderTile(driver, tls, group, params, deepBuffer, cryptomatteBuffer, processedSampleTotal)) {
+             return 0; // cancel return
+         }
+@@ -559,6 +568,64 @@ RenderDriver::renderTiles(RenderDriver *driver,
+     return processedSampleTotalFilm0; // return processed sample total of film = 0
+ }
+ 
++// Modo: the tile a pass renders in a place of its order. As MoonRay has it, the tile in that place; with the
++// important ones first, the tiles whose pixels differ most from their neighbours come before the others, each
++// lot in the order it was in. A pass keeps the order it was first given, so it renders every tile once.
++unsigned
++RenderDriver::modoTileOf(unsigned passIdx, unsigned itile)
++{
++    if (!mModoImportant || passIdx >= mTileWorkQueue.getNumPasses() ||
++        mTileWorkQueue.getPass(passIdx).isCoarsePass()) {
++        return itile;
++    }
++    const std::vector<scene_rdl2::fb_util::Tile> *tiles = getTiles();
++    if (!tiles || !mFilm || itile >= tiles->size()) return itile;
++    std::lock_guard<std::mutex> lock(mModoOrderMutex);
++    if (mModoOrder.size() <= passIdx) mModoOrder.resize(passIdx + 1);
++    std::vector<uint32_t> &order = mModoOrder[passIdx];
++    if (order.size() != tiles->size()) {
++        const size_t count = tiles->size();
++        const scene_rdl2::fb_util::RenderBuffer &colors = mFilm->getRenderBuffer();
++        const scene_rdl2::fb_util::FloatBuffer &weights = mFilm->getWeightBuffer();
++        const scene_rdl2::fb_util::Tiler &tiler = mFilm->getTiler();
++        std::vector<float> score(count, 0.f);
++        double total = 0.0;
++        std::vector<float> above;
++        for (size_t t = 0; t < count; ++t) {
++            const scene_rdl2::fb_util::Tile &tile = (*tiles)[t];
++            const unsigned wide = tile.mMaxX - tile.mMinX;
++            above.assign(wide, 0.f);
++            double sum = 0.0;
++            unsigned pixels = 0;
++            for (unsigned y = tile.mMinY; y < tile.mMaxY; ++y) {
++                float left = 0.f;
++                for (unsigned x = tile.mMinX; x < tile.mMaxX; ++x) {
++                    unsigned tx, ty;
++                    tiler.linearToTiledCoords(x, y, &tx, &ty);
++                    const float weight = weights.getPixel(tx, ty);
++                    const scene_rdl2::fb_util::RenderColor &c = colors.getPixel(tx, ty);
++                    float light = weight > 0.f ? (0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z) / weight : 0.f;
++                    // Bright and dark are weighed alike: a lamp is no more important than a face.
++                    light = std::isfinite(light) && light > 0.f ? light / (1.f + light) : 0.f;
++                    if (x > tile.mMinX) sum += std::fabs(light - left);
++                    if (y > tile.mMinY) sum += std::fabs(light - above[x - tile.mMinX]);
++                    left = light;
++                    above[x - tile.mMinX] = light;
++                    ++pixels;
++                }
++            }
++            score[t] = pixels ? float(sum / pixels) : 0.f;
++            total += score[t];
++        }
++        const float average = count ? float(total / count) : 0.f;
++        order.clear();
++        order.reserve(count);
++        for (size_t t = 0; t < count; ++t) if (score[t] > average) order.push_back(uint32_t(t));
++        for (size_t t = 0; t < count; ++t) if (!(score[t] > average)) order.push_back(uint32_t(t));
++    }
++    return order[itile];
++}
++
+ // static function
+ bool
+ RenderDriver::renderTile(RenderDriver *driver,
+@@ -580,6 +647,8 @@ RenderDriver::renderTile(RenderDriver *driver,
          }
      }
  
