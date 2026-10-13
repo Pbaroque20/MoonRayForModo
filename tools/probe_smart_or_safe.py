@@ -59,6 +59,18 @@ def begin():
         pair('menu: safe optix')
         panel._smart_chosen('draft')
         pair('menu: smart draft again')
+        # MOONRAY_PROBE_IMPORTANT=1: with Important Parts First, Smart Render keeps the bucket order chosen.
+        important = os.environ.get('MOONRAY_PROBE_IMPORTANT') == '1'
+        lx.eval('moonray.render.important_first %d' % (1 if important else 0))
+        from moonray_modo import persistent
+        submit = persistent.Session.submit
+
+        def told(self, text, *a, **k):
+            import re
+            found = re.search(r'progressive_tile_order\W+=\s*(\d+)', text if isinstance(text, str) else '')
+            result.setdefault('handed', []).append([found.group(1) if found else None, k.get('important')])
+            return submit(self, text, *a, **k)
+        persistent.Session.submit = told
         save()
         panel.start.click()
     except Exception:
@@ -93,6 +105,7 @@ def finish():
     if panel._rendering:
         panel.stop()
     lx.eval('moonray.render.smart_render 0')
+    lx.eval('moonray.render.important_first 0')
     lx.eval('moonray.render.denoise_safe 0')
     save()
     QtCore.QTimer.singleShot(2000, lambda: lx.eval('!app.quit'))

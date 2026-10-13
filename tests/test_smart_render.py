@@ -198,6 +198,28 @@ class Settings(unittest.TestCase):
         self.assertIn('cmd moonray.render.smart_render ?', text)
 
 
+class ImportantParts(unittest.TestCase):
+    def test_a_noisy_subject_is_not_hidden_by_a_clean_gradient_around_it(self):
+        # A smooth ramp all over, as a floor is, and a noisy square in the middle of it a sixth of the picture.
+        import random as chance_
+        chance = chance_.Random(3)
+        values = array('f')
+        for y in range(HEIGHT):
+            for x in range(WIDTH):
+                level = 0.2 + 0.6 * x / WIDTH + 0.1 * y / HEIGHT
+                if WIDTH // 3 <= x < 2 * WIDTH // 3 and HEIGHT // 4 <= y < 3 * HEIGHT // 4:
+                    level *= 1 + chance.gauss(0, 0.2)
+                values.extend((max(1e-4, level),) * 3)
+        value = smart_render.noise(WIDTH, HEIGHT, values.tobytes())[0]
+        # Read from the subject: far from the nothing the ramp reads.
+        self.assertGreater(value, 0.02)
+
+    def test_a_picture_noisy_all_over_reads_as_it_did(self):
+        whole = smart_render.noise(WIDTH, HEIGHT, picture(0.1))[0]
+        self.assertGreater(whole, 0.03)
+        self.assertLess(whole, 0.2)
+
+
 class OneOrOther(unittest.TestCase):
     def test_smart_render_switched_on_switches_safe_denoising_off(self):
         from moonray_modo import denoising
