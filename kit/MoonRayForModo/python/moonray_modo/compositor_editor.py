@@ -14,6 +14,11 @@ WIDTH, HEADER, ROW = 170, 24, 20
 # A node's header and the wire out of it, by what the node is.
 HEADERS = {'input': '#35627f', 'merge': '#3d7449', 'grade': '#86682f', 'blur': '#65548a', 'glow': '#65548a', 'output': '#7a3f3f'}
 WIRES = {'input': '#77bce8', 'merge': '#89ce94', 'grade': '#e4b367', 'blur': '#c6a0e9', 'glow': '#c6a0e9', 'output': '#e89a9a'}
+# The other nodes are coloured by what they are for: colour as Grade is, filters as Blur is, and so on.
+FAMILIES = {'colour': ('#86682f', '#e4b367'), 'filter': ('#65548a', '#c6a0e9'), 'matte': ('#59636e', '#c8d2dc'), 'make': ('#35627f', '#77bce8')}
+for _kind, _node in compositor.NODES.items():
+    if _kind not in HEADERS:
+        HEADERS[_kind], WIRES[_kind] = FAMILIES[_node.get('family', 'filter')]
 _open = {}
 
 
@@ -224,11 +229,20 @@ class Editor(QtWidgets.QDialog):
         merges = group('Merge')
         for mode in compositor.MODES:
             row(merges, 'Merge: ' + mode, 'merge', {'mode': mode}, compositor.NODES['merge']['tip'])
+        def family(name):
+            return [kind for kind, node in compositor.NODES.items() if node.get('family') == name]
         colour = group('Colour')
-        row(colour, 'Grade', 'grade', {}, compositor.NODES['grade']['tip'])
+        for kind in ['grade'] + family('colour'):
+            row(colour, compositor.NODES[kind]['label'], kind, {}, compositor.NODES[kind]['tip'])
         filters = group('Filters')
-        row(filters, 'Blur', 'blur', {}, compositor.NODES['blur']['tip'])
-        row(filters, 'Glow', 'glow', {}, compositor.NODES['glow']['tip'])
+        for kind in ['blur', 'glow'] + family('filter'):
+            row(filters, compositor.NODES[kind]['label'], kind, {}, compositor.NODES[kind]['tip'])
+        mattes = group('Mattes')
+        for kind in family('matte'):
+            row(mattes, compositor.NODES[kind]['label'], kind, {}, compositor.NODES[kind]['tip'])
+        makes = group('Make')
+        for kind in family('make'):
+            row(makes, compositor.NODES[kind]['label'], kind, {}, compositor.NODES[kind]['tip'])
         self.library_listed = self.buffer_choices()
         self.filter_library(self.node_search.text())
 
