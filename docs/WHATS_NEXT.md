@@ -128,6 +128,12 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 - **Rough Principled materials are no longer dark at low angles**, such as a floor running to the horizon.
 - **Image-driven roughness** keeps the right highlight strength on Blinn, Ashikhmin and GTR materials.
 - **An image layer's Low Value and High Value are followed**, in MoonRay and MoonLightIPR. They used to be ignored.
+- **Cellular, Wood, Weave and Ripples layers render**, in MoonRay and MoonLightIPR, with their Value 1 / Value 2 (or colours), bias and gain. They are flat patterns after Modo's, not Modo's own.
+- **A procedural layer left on Solid projection renders**, laid on as Cubic. Notices says so.
+
+![Cellular, Wood, Weave and Ripples](images/procedural-patterns.png)
+*Cellular, Wood, Weave and Ripples at their default settings.*
+
 - **Bump and normal images show on subdivision surfaces in MoonRay** *(0.4 runtime)*. They were left out, so MoonRay rendered such a surface smooth where MoonLightIPR showed the bump. A heavily tiled bump image is also read finely enough to show.
 - **A Fur material's Remove Base Surface is followed**: the fur renders without the surface it grows from.
 - **Notices says when a Fur material grows nothing**, which is usually a mesh that is hidden or set to Render: Off.
@@ -178,6 +184,7 @@ What you may run into:
 - **Playblast:** PNG frames only, no movie file and no motion blur.
 - **File > Open** of a MoonRay scene leaves one empty mesh in it and keeps the `.rdla` file's name.
 - **Heavy scenes with instances, replicators or deformers** update more slowly when an item is moved.
+- **Procedural layers** are flat patterns laid on by UV or from six sides, not solid textures running through the object.
 - **Highlights:** very smooth ones, and rough Principled ones, are still dimmer than Modo's.
 - **Hair in MoonLightIPR** is close to MoonRay's, a little brighter at the top of a tuft.
 
