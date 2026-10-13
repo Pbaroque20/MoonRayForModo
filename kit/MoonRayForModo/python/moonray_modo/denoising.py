@@ -1,10 +1,15 @@
 """Linear beauty-only denoising; raw EXR/AOVs never enter a destructive operation."""
 from pathlib import Path
 ENGINES=('off','optix','oidn_cpu')
+SMART=('off','draft','medium','fine')
 def settings(value):
     # safe: MoonRay saves its picture every few seconds as it renders, so that a render stopped by hand is kept and
     # denoised as a finished one is.
-    result={'engine':value.get('engine','off'),'preview':value.get('preview',True),'final':value.get('final',True),'safe':value.get('safe',False)}
+    # smart: a MoonRay render is stopped once its picture is clean enough for the denoiser (smart_render.py); 'off',
+    # or how clean is clean enough.
+    result={'engine':value.get('engine','off'),'preview':value.get('preview',True),'final':value.get('final',True),'safe':value.get('safe',False),
+            'smart':value.get('smart','off')}
+    if result['smart'] not in SMART:raise ValueError('Invalid denoising settings')
     if result['engine'] not in ENGINES or type(result['preview']) is not bool or type(result['final']) is not bool or type(result['safe']) is not bool:
         raise ValueError('Invalid denoising settings')
     return result

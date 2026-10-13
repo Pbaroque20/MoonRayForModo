@@ -68,6 +68,8 @@ class Renderer(QtCore.QObject):
     # A render stopped by hand that had nothing saved to finish with.
     stopped = QtCore.Signal()
     kept = QtCore.Signal(bool)
+    # Smart Render: the picture has become clean enough for the denoiser. With how noisy it read.
+    settled_clean = QtCore.Signal(float)
     progress = QtCore.Signal(int,str)
 
     def __init__(self, parent=None):
@@ -358,6 +360,15 @@ class Renderer(QtCore.QObject):
         self.canceled = False
         self.progress_state=Progress()
         self.progress_timer.start()
+        # Smart Render watches a MoonRay preview's picture as it comes on (not one that follows the scene, nor an
+        # output, nor MoonLightIPR's).
+        self.smart=None
+        try:
+            level=denoising.settings(self.active['snapshot'].get('denoising',{}))['smart']
+            if level!='off' and not self.active['output'] and not self.active['moonlightipr'] and not self.active.get('linear_preview') and not self.active['snapshot'].get('_ipr'):
+                from .smart_render import Watch
+                self.smart=Watch(level,time.monotonic)
+        except (ValueError,KeyError):pass
         self.using_moonlightipr=self.active['moonlightipr']
         if self.using_moonlightipr:
             self._begin_moonlightipr();return
@@ -673,6 +684,13 @@ class Renderer(QtCore.QObject):
             return
         try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
+        # Smart Render: is the beauty clean enough yet? Not in the two quick passes before the long one, whose
+        # pictures are only a first look.
+        smart=getattr(self,'smart',None)
+        if smart is not None and key=='beauty' and not self.passes and self.phase=='render':
+            try:
+                if smart.look(width,height,pixels):self.settled_clean.emit(float(smart.noise))
+            except Exception:self.smart=None
 
     def _persistent_image(self,serial,key,path):
         # While a pass's scene is being written, what the loaded MoonRay reports is of the render that pass replaces:

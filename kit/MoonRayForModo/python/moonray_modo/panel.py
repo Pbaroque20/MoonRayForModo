@@ -108,6 +108,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.finished.connect(self._finished)
         self.renderer.stopped.connect(self._stopped_plain)
         self.renderer.kept.connect(self._kept)
+        self.renderer.settled_clean.connect(self._smart_settled)
         self.renderer.notices.connect(self._engine_notices)
         self._engine_changed(0)
         self._poll()
@@ -292,6 +293,16 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
         menu.addSeparator()
+        # Smart Render, chosen here as in the scene's render settings.
+        smart=QtWidgets.QMenu('Smart Render',menu);smart.setStyleSheet(MENU_STYLE);smart.setToolTipsVisible(True)
+        try:level=self._settings_values()['denoising'].get('smart','off')
+        except Exception:level='off'
+        from .smart_render import CHOICES as SMART_CHOICES
+        for words,key in SMART_CHOICES:
+            action=QtWidgets.QAction(words,smart);action.setCheckable(True);action.setChecked(key==level)
+            action.setToolTip('MoonRay renders to the end.' if key=='off' else 'The render is stopped once its picture is clean enough for the denoiser, and denoised.')
+            action.triggered.connect(lambda checked=False,key=key:self._smart_chosen(key));smart.addAction(action)
+        menu.addMenu(smart);self._smart_menu=smart
         # Safe Denoising itself, chosen here as in the scene's render settings: off, or on with one denoiser or the
         # other. The foot of the picture says when it is on. (The menu and its actions are made first and then added:
         # what a menu makes for a label cannot be used afterwards in Modo's Qt.)
@@ -690,6 +701,16 @@ class Panel(Tools, QtWidgets.QWidget):
         if previous[1]!=watched[1]:self._denoising_changed()
         if previous[0]!=watched[0] or previous[3]!=watched[3]:self._buffer_changed(0)
 
+    def _smart_chosen(self,level):
+        """Smart Render chosen from the picture's menu: written to the scene's settings."""
+        try:
+            stored=dict(self._settings_values()['denoising']);stored['smart']=level
+            if not self._store(denoising=stored):return
+        except Exception as exc:
+            self.status.setText('Cannot set Smart Render: '+str(exc));return
+        self._hud_update()
+        self.status.setText('Smart Render is off.' if level=='off' else 'Smart Render is on: a MoonRay render stops once it is clean enough for the denoiser.')
+
     def _safe_chosen(self,engine):
         """Safe Denoising chosen from the picture's menu: off, or on with a denoiser. Written to the scene's settings,
         as its render settings write them: the denoiser itself is left as it is when Safe Denoising is switched off."""
@@ -710,6 +731,13 @@ class Panel(Tools, QtWidgets.QWidget):
             values=self._settings_values()
             if self._engine()=='moonray' and not self._live() and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
                 words.append('Safe Denoiser Mode')
+            level=values['denoising'].get('smart','off')
+            if self._engine()=='moonray' and not self._live() and level!='off':
+                from .smart_render import LEVELS
+                watch=getattr(self.renderer,'smart',None)
+                read=getattr(watch,'noise',None) if self._rendering else None
+                # While it renders: how noisy the picture reads now, and at what it will be stopped.
+                words.append('Smart Render' if read is None else 'Smart Render: noise %.0f%%, stops at %.0f%%'%(100*read,100*LEVELS[level]))
         except Exception:pass
         return words
 
@@ -1112,6 +1140,8 @@ class Panel(Tools, QtWidgets.QWidget):
         denoising=self._settings_values()['denoising']
         if self._following:return 'off'
         if denoising['engine']!='off' and denoising['preview']:return denoising['engine']
+        # Smart Render stops a render for the denoiser to finish: with none chosen, whichever will run.
+        if denoising.get('smart','off')!='off' and self._engine()!='moonlightipr':return denoising['engine'] if denoising['engine']!='off' else 'auto'
         # The scene asks for none, and the denoised beauty is chosen in the list all the same: it is denoised with
         # the graphics card's denoiser, or the processor's where that will not run.
         return 'auto' if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' else 'off'
@@ -1358,12 +1388,22 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Stopped.')
         QtCore.QTimer.singleShot(wait,late)
 
+    def _smart_settled(self,noise):
+        """Smart Render: the picture is clean enough for the denoiser. The render is stopped as Stop stops it."""
+        if self.disposed or not self._rendering or self._following or self._output_busy() or self._engine()!='moonray':return
+        self._smart_note='Smart Render stopped the render at %.0f%% noise.'%(100*noise)
+        self.stop()
+        if not self._rendering:
+            # Stopped outright, with nothing handed over: say why it stopped all the same.
+            self.status.setText(self._smart_note);self._smart_note=''
+
     def _kept(self,done):
         """MoonRay has been stopped, having handed over the picture as it stood (or not, if it could not)."""
         if self.disposed:return
         self._settle_token=None
         self._set_rendering(False)
-        self.status.setText('Stopped. The picture is kept as it stood.' if done else 'Stopped.')
+        note=getattr(self,'_smart_note','');self._smart_note=''
+        self.status.setText((note+' The picture is kept and denoised.' if note else 'Stopped. The picture is kept as it stood.') if done else 'Stopped.')
         self._settle_stopped(done)
 
     def _settle_stopped(self,standing=False):

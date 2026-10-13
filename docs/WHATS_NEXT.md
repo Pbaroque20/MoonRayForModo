@@ -58,6 +58,7 @@ Built since 0.3.51.3 and not released yet. Items marked *(0.4 runtime)* need the
 
 ## Rendering with MoonRay
 
+- **Smart Render.** MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it. Choose Draft, Medium or Fine in the render settings or on the picture's right-click menu; the foot of the picture shows the noise reading and where it will stop. On the coffee maker example it finished in 65 to 100 seconds where the full render takes 137.
 - **A steadier time left.** One countdown for the whole render, where it used to start over with each of MoonRay's passes and jump about. With adaptive sampling a time is shown only when MoonRay's own figure can be trusted; otherwise the window says how many tiles have finished.
 - **Stop keeps the picture.** A render stopped part way is kept and denoised in about a second and a half *(0.4 runtime)*.
 - **Safe Denoising shows the render as it goes**, like any other render *(0.4 runtime)*. A stop tells you how far behind the kept picture is.

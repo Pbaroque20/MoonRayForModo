@@ -16,6 +16,7 @@ Not released yet. More detail and pictures are in [What's coming in 0.4](docs/WH
 - **MoonLightIPR Playblast**: renders an animation on the graphics card and plays it back. In the MoonRay menu and the preview's Options.
 - **Three engines**: **MoonRay** for the full render; **MoonRay LS** and **MoonLightIPR** follow your edits once you press **RT Off** to switch realtime on.
 - **Pixel samples per realtime engine**, in the preview's Preferences.
+- **Smart Render**: MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
 - **File > Open reads MoonRay scenes** (`.rdla`, `.rdlb`), as does File > Import.
 
 **Faster**

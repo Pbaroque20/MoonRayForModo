@@ -19,7 +19,7 @@ DEFAULTS = {
     'recovery': {'enabled': False, 'resume': True, 'minutes': 1.0},
     # A deep EXR written beside the render: every surface and volume a pixel sees, each at its own depth.
     'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
-    'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False},
+    'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off'},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
     # The compositor's graph over a finished render's buffers (compositor.py); none until one is made.
     'compositor': {},
@@ -66,6 +66,7 @@ def render_field(key, label, tip=''):
 
 
 DENOISERS = [('Off', 'off'), ('NVIDIA OptiX (GPU)', 'optix'), ('Intel Open Image Denoise (CPU)', 'oidn_cpu')]
+SMART = [('Off', 'off'), ('Draft: stop soonest', 'draft'), ('Medium', 'medium'), ('Fine: stop latest', 'fine')]
 BACKGROUNDS = [('Scene environment', 'environment'), ('Black', 'black'), ('Solid color', 'color'), ('Image', 'image')]
 SURFACES = [('As modeled', 0), ('Smooth subdivision', 1), ('Modo evaluated geometry', 2)]
 VIEWS = [('ACES (sRGB display)', 'aces'), ('sRGB', 'srgb'), ('Highlight compression + sRGB', 'reinhard'), ('Raw linear', 'raw'), ('OCIO display / view', 'ocio')]
@@ -127,6 +128,7 @@ GROUPS = [
         field('denoiser', ('denoising', 'engine'), 'choice', 'Denoiser', '', choices=DENOISERS),
         field('denoise_preview', ('denoising', 'preview'), 'bool', 'Denoise Preview'),
         field('denoise_final', ('denoising', 'final'), 'bool', 'Save Denoised EXR', 'Written beside the original EXR, which is kept'),
+        field('smart_render', ('denoising', 'smart'), 'choice', 'Smart Render', 'A MoonRay render in the preview window is stopped once its picture is clean enough for the denoiser, and denoised: no need to wait for every sample. Draft stops soonest and leaves the denoiser the most to do; Fine stops latest. With no denoiser chosen, OptiX is used, or Open Image Denoise where OptiX will not run. A picture full of fine texture may never read as clean, and renders to its end', choices=SMART),
         field('denoise_safe', ('denoising', 'safe'), 'bool', 'Safe Denoising', 'Keep every buffer of a MoonRay render stopped by hand, and let Continue take it up again: the picture so far is saved as it renders, every few seconds where that is quick and less often for a large picture with many buffers. With this off, Stop still keeps the beauty and denoises it'),
     ]),
     ('Lighting', True, [
