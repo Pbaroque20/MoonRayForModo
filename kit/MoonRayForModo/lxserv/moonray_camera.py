@@ -13,6 +13,12 @@ import lxifc
 import lxu.command
 
 
+def _same(kind, *args):
+    """One popup description for each set of choices (moonray_modo.hint_cache); the kit is on the path only once commands run."""
+    from moonray_modo.hint_cache import same
+    return same(kind, *args)
+
+
 class Hints(lxifc.UIValueHints):
     """The events the popup follows and its (internal name, label) entries."""
     def __init__(self,notifiers,entries):self._notifiers,self._entries=notifiers,entries
@@ -35,7 +41,7 @@ def register():
             self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
         def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
         def arg_UIValueHints(self,index):
-            return Hints(WATCHED,[('camera%d'%i,label) for i,(label,_) in enumerate(camera_choice.choices())])
+            return _same(Hints,WATCHED,[('camera%d'%i,label) for i,(label,_) in enumerate(camera_choice.choices())])
         def cmd_Query(self,index,query):
             identities=[identity for _,identity in camera_choice.choices()]
             current=camera_choice.current()

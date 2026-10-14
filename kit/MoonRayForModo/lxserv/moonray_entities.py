@@ -17,6 +17,12 @@ import lxu.command
 import lxu.package
 
 
+def _same(kind, *args):
+    """One popup description for each set of choices (moonray_modo.hint_cache); the kit is on the path only once commands run."""
+    from moonray_modo.hint_cache import same
+    return same(kind, *args)
+
+
 class Popup(lxifc.UIValueHints):
     """A popup of (internal name, label) entries; the argument's value is the entry's index."""
     def __init__(self,entries):self._entries=entries
@@ -183,7 +189,7 @@ def register():
         labels=entities.choice_labels(name,key)
         numbers=[number for number,_,_ in labels]
         class Choice(Listed):
-            def arg_UIValueHints(self,index):return Popup([(internal,label) for _,internal,label in labels])
+            def arg_UIValueHints(self,index):return _same(Popup,[(internal,label) for _,internal,label in labels])
             def basic_Enable(self,msg):return bool(chosen(name))
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
@@ -229,7 +235,7 @@ def register():
         class Pick(Listed):
             def arg_UIValueHints(self,index):
                 existing,fresh=offered(category)
-                return Popup([('none','(none)')]+[('item%d'%i,label) for i,label in enumerate(existing)]
+                return _same(Popup,[('none','(none)')]+[('item%d'%i,label) for i,label in enumerate(existing)]
                              +[('new%d'%i,label) for i,label in enumerate(fresh)])
             def basic_Enable(self,msg):return bool(chosen(name))
             def cmd_Query(self,index,query):
@@ -257,7 +263,7 @@ def register():
                 return offered(category,held_names(items[0],channel) if len(items)==1 else ())
             def arg_UIValueHints(self,index):
                 existing,fresh=self.lists()
-                return Popup([('choose','(choose)')]+[('item%d'%i,label) for i,label in enumerate(existing)]
+                return _same(Popup,[('choose','(choose)')]+[('item%d'%i,label) for i,label in enumerate(existing)]
                              +[('new%d'%i,label) for i,label in enumerate(fresh)])
             def basic_Enable(self,msg):return bool(chosen(name))
             def cmd_Query(self,index,query):
@@ -282,7 +288,7 @@ def register():
                 for item in chosen(name):names+=[n for n in held_names(item,channel) if n not in names]
                 return names
             def arg_UIValueHints(self,index):
-                return Popup([('choose','(choose)')]+[('item%d'%i,label) for i,label in enumerate(self.held())])
+                return _same(Popup,[('choose','(choose)')]+[('item%d'%i,label) for i,label in enumerate(self.held())])
             def basic_Enable(self,msg):return bool(self.held())
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
@@ -376,7 +382,7 @@ def register():
                 return value.replace('\\','/').rsplit('/',1)[-1] if mode=='file' else value
             def arg_UIValueHints(self,index):
                 values=self.values()
-                return Popup([('none','(none)')]+[('value%d'%i,self.shown(v)) for i,v in enumerate(values)]+([('action',action)] if action else []))
+                return _same(Popup,[('none','(none)')]+[('value%d'%i,self.shown(v)) for i,v in enumerate(values)]+([('action',action)] if action else []))
             def basic_Enable(self,msg):return bool(chosen(name))
             def cmd_Query(self,index,query):
                 held=lx.object.ValueArray(query);values=self.values()

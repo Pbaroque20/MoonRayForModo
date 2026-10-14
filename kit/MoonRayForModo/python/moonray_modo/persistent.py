@@ -183,7 +183,7 @@ class Session(QtCore.QObject):
         self.status.emit('Updating loaded scene' if mode=='delta' else 'Reloading scene structure in persistent session')
 
     def _read(self):
-        text=bytes(self.process.readAllStandardOutput()).decode('utf-8',errors='replace')
+        text=self.process.readAllStandardOutput().data().decode('utf-8',errors='replace')
         self.output.emit(text)
         self.partial+=text
         while '\n' in self.partial:
@@ -222,7 +222,12 @@ class Session(QtCore.QObject):
                 if not key or not all(c.isalnum() or c=='_' for c in key):continue
                 path=self.root/('preview_%d_%s.pfm'%(generation,key) if parts[1]!='FRAME' else 'preview_%d.pfm'%generation)
                 try:
-                    if self.latest and generation==self.latest['id'] and path.is_file():self.image.emit(generation,key,str(path))
+                    if self.latest and generation==self.latest['id'] and path.is_file():
+                        # Too large to hand over in memory, the picture comes as a file with its rows top first.
+                        from .pfm import upright
+                        upright(path)
+                        self.image.emit(generation,key,str(path))
+                except (OSError,ValueError) as exc:self.status.emit('Progressive image skipped: '+str(exc))
                 finally:
                     try:path.unlink()
                     except OSError:pass

@@ -18,6 +18,12 @@ import lxu.command
 import lxu.package
 
 
+def _same(kind, *args):
+    """One popup description for each set of choices (moonray_modo.hint_cache); the kit is on the path only once commands run."""
+    from moonray_modo.hint_cache import same
+    return same(kind, *args)
+
+
 class Hints(lxifc.UIValueHints):
     """What Modo needs to draw a control and keep it current: the events that mean its value
     may have changed, and for a popup its (internal name, label) entries, the argument's value
@@ -71,7 +77,7 @@ def register():
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
             def basic_Enable(self,msg):return bool(matching(shader))
             def arg_UIValueHints(self,index):
-                return Hints(WATCHED,labels if how=='choice' else ())
+                return _same(Hints,WATCHED,labels if how=='choice' else ())
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 for item in matching(shader):
@@ -131,7 +137,7 @@ def register():
                 self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
             def basic_Enable(self,msg):return bool(matching(shader))
-            def arg_UIValueHints(self,index):return Hints(WATCHED)
+            def arg_UIValueHints(self,index):return _same(Hints,WATCHED)
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 for item in matching(shader):
@@ -172,7 +178,7 @@ def register():
             self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
         def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
         def basic_Enable(self,msg):return bool(overridden())
-        def arg_UIValueHints(self,index):return Hints(WATCHED,SMOOTHING)
+        def arg_UIValueHints(self,index):return _same(Hints,WATCHED,SMOOTHING)
         def cmd_Query(self,index,query):
             values=lx.object.ValueArray(query)
             for item in overridden():
@@ -198,7 +204,7 @@ def register():
         def basic_Enable(self,msg):
             items=overridden()
             return bool(items) and all(properties.read(item).get('smoothing') for item in items)
-        def arg_UIValueHints(self,index):return Hints(WATCHED)
+        def arg_UIValueHints(self,index):return _same(Hints,WATCHED)
         def cmd_Query(self,index,query):
             values=lx.object.ValueArray(query)
             for item in overridden():values.AddFloat(float(properties.read(item).get('smoothing_angle',40.0)))
@@ -265,7 +271,7 @@ def register():
                 entries=[('none','(none)'),('load','Load Image...')]
                 found=self.found()
                 if found is not None:entries.append(('current',graph_images.label(found)))
-                return Hints(WATCHED,entries)
+                return _same(Hints,WATCHED,entries)
             def cmd_Query(self,index,query):
                 lx.object.ValueArray(query).AddInt(2 if self.found() is not None else 0)
             def basic_Execute(self,msg,flags):

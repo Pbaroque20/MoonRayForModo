@@ -11,6 +11,12 @@ if package_root not in sys.path:
     sys.path.insert(0, package_root)
 
 
+def _same(kind, *args):
+    """One popup description for each set of choices (moonray_modo.hint_cache); the kit is on the path only once commands run."""
+    from moonray_modo.hint_cache import same
+    return same(kind, *args)
+
+
 class MoonRayView(lxifc.CustomView):
     def customview_Init(self, pane):
         from PySide2 import QtWidgets
@@ -196,7 +202,7 @@ def object_choice(key, choices):
             return bool(properties.selected_geometry())
 
         def arg_UIValueHints(self, index):
-            return ObjectPopup([label for _, label in choices()])
+            return _same(ObjectPopup,[label for _, label in choices()])
 
         def cmd_Query(self, index, query):
             from moonray_modo import options, properties

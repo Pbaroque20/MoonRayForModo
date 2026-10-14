@@ -9,6 +9,12 @@ import lxu.command
 # The key map the option writes beside the kit's other configuration, which Modo reads when it starts. While the
 # option is off there is no such file, and the key is Modo's own as it always was. (Modo's command for mapping a key
 # from a script brought Modo down when it was tried, so the key map is written rather than asked for.)
+def _same(kind, *args):
+    """One popup description for each set of choices (moonray_modo.hint_cache); the kit is on the path only once commands run."""
+    from moonray_modo.hint_cache import same
+    return same(kind, *args)
+
+
 KEYS=os.path.join(os.path.dirname(os.path.dirname(__file__)),'moonray_keys.cfg')
 MAPPED='''<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
@@ -94,7 +100,7 @@ def choice(key,entries):
         def cmd_Flags(self):return lx.symbol.fCMD_UI
         def basic_Enable(self,msg):return True
         def listed(self):return entries() if callable(entries) else entries
-        def arg_UIValueHints(self,index):return Listed(self.listed())
+        def arg_UIValueHints(self,index):return _same(Listed,self.listed())
         def cmd_Query(self,index,query):
             values=[value for value,_ in self.listed()];now=held().get(key)
             lx.object.ValueArray(query).AddInt(values.index(now) if now in values else 0)

@@ -80,7 +80,7 @@ class CachedComposite(QtCore.QObject):
         self.process.setArguments(args); self.process.start()
 
     def read(self):
-        self.log = (self.log + bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace'))[-2048:]
+        self.log = (self.log + self.process.readAllStandardOutput().data().decode('utf-8', errors='replace'))[-2048:]
 
     def finished(self, code, status):
         if self.job is None:

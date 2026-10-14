@@ -2,6 +2,7 @@
 import ctypes,os
 from pathlib import Path
 from PySide2 import QtCore
+from .threads import forgotten
 from . import display,working_space
 
 KINDS={'beauty':0,'normal':1,'geometric_normal':1,'alpha':2,'wireframe':2,'uv':3,'diffuse_direct':0,'glossy_direct':0,'emission':0,'transmission':0}
@@ -18,6 +19,7 @@ class Worker(QtCore.QThread):
   # plain: a draft's lines, white on black, which no display transform of the user's has any bearing on. They are
   # converted here in the process, which takes a tenth of the time of sending them out to be converted.
   super().__init__(parent);self.plain=plain;self.pixels=pixels;self.width=width;self.height=height;self.kind=kind;self.settings=settings;self.runtime=Path(runtime);self.source=source
+ @forgotten
  def run(self):
   try:
    from .display_stream import available,convert

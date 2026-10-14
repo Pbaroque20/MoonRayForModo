@@ -3,6 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 from PySide2 import QtCore
+from .threads import forgotten
 from . import moonlightipr_scene
 
 EXECUTABLE = 'moonlightipr_session.exe'
@@ -40,6 +41,7 @@ class Packer(QtCore.QThread):
         # Set when the scene is no longer wanted by the time it is ready: stopped, or the process gone.
         self.abandoned = False
 
+    @forgotten
     def run(self):
         request = self.request
         try:
@@ -160,7 +162,7 @@ class Session(QtCore.QObject):
         self.process.write(b'view 0 denoised\n' if getattr(self, 'denoised_view', True) else b'view 0 beauty\n')
 
     def _read(self):
-        text = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
+        text = self.process.readAllStandardOutput().data().decode('utf-8', errors='replace')
         self.output.emit(text)
         self.partial += text
         while '\n' in self.partial:
