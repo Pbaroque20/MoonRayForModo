@@ -30,7 +30,7 @@ class Dialog(QtWidgets.QDialog):
   super().__init__(parent);self.setWindowTitle('Import MoonRay RDL as editable objects');self.resize(700,500)
   self.data=None;self.output=bytearray();self.errors='';self.path=None;self.auto=False
   layout=QtWidgets.QVBoxLayout(self)
-  layout.addWidget(QtWidgets.QLabel('Bring a MoonRay scene into the current Modo scene: meshes, instances and curves as Modo items, materials as MoonRay materials,\n'
+  layout.addWidget(QtWidgets.QLabel('Bring a MoonRay scene into the current Modo scene, or a new one: meshes, instances and curves as Modo items, materials as MoonRay materials,\n'
    'and lights, light filters, volumes and other MoonRay objects as MoonRay items. What cannot be held is listed before anything is made.'))
   self.report=QtWidgets.QPlainTextEdit();self.report.setReadOnly(True);layout.addWidget(self.report,1)
   # How far the reading of the scene's files has come: a large scene takes minutes before there is anything to list.
@@ -43,10 +43,18 @@ class Dialog(QtWidgets.QDialog):
   layout.addWidget(self.alone)
   row=QtWidgets.QHBoxLayout();layout.addLayout(row)
   self.choose=QtWidgets.QPushButton('Choose RDL scene…');self.choose.clicked.connect(lambda:self.load());row.addWidget(self.choose)
-  self.import_button=QtWidgets.QPushButton('Import editable objects');self.import_button.setEnabled(False);self.import_button.clicked.connect(self.apply);row.addWidget(self.import_button)
+  self.import_button=QtWidgets.QPushButton('Import editable objects');self.import_button.setEnabled(False);self.import_button.clicked.connect(lambda:self.apply());row.addWidget(self.import_button)
+  self.import_button.setToolTip('Bring the scene into the Modo scene that is open')
+  # Into a scene of its own, so that what is open is left as it is.
+  self.new_button=QtWidgets.QPushButton('Import into a new scene');self.new_button.setEnabled(False);self.new_button.clicked.connect(lambda:self.apply(True));row.addWidget(self.new_button)
+  self.new_button.setToolTip('Make a new Modo scene and bring the MoonRay scene into that; the scene that is open is left as it is')
   self.cancel=QtWidgets.QPushButton('Cancel loading');self.cancel.setEnabled(False);self.cancel.clicked.connect(self.abort);row.addWidget(self.cancel)
+  self.close_button=QtWidgets.QPushButton('Close');self.close_button.clicked.connect(self.close);row.addWidget(self.close_button)
   self.process=QtCore.QProcess(self);self.process.readyReadStandardOutput.connect(self.read);self.process.readyReadStandardError.connect(self.read_error)
   self.process.finished.connect(self.finished);self.process.errorOccurred.connect(self.error)
+ def ready(self,on):
+  """Whether there is a scene read and waiting to be brought in: both ways of bringing it in are offered, or neither."""
+  self.import_button.setEnabled(bool(on));self.new_button.setEnabled(bool(on))
  def load(self,path=None):
   if self.process.state()!=QtCore.QProcess.NotRunning:return
   if not path:path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Choose MoonRay scene','','MoonRay scenes (*.rdla *.rdlb *.rdl)')
@@ -58,7 +66,7 @@ class Dialog(QtWidgets.QDialog):
    settings=QtCore.QSettings('MoonRayForModo',native.settings_name());runtime=native.configured_runtime(settings)
    helper=runtime/'modo_rdl_import.exe'
    if not helper.is_file():raise ValueError('Install the RDL-import runtime before importing')
-   self.data=None;self.output.clear();self.errors='';self.told=None;self.pending_error='';self.import_button.setEnabled(False);self.choose.setEnabled(False);self.cancel.setEnabled(True)
+   self.data=None;self.output.clear();self.errors='';self.told=None;self.pending_error='';self.ready(False);self.choose.setEnabled(False);self.cancel.setEnabled(True)
    env=QtCore.QProcessEnvironment()
    for key,value in native.environment(runtime).items():env.insert(key,value)
    self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.path.parent));self.process.setProgram(str(helper));together=rdl_import.files(self.path);self.process.setArguments([together[0],str(runtime)]+together[1:])
@@ -118,7 +126,7 @@ class Dialog(QtWidgets.QDialog):
    self.data=rdl_import.plan(document,self.path)
    counts=rdl_import.summary(self.data);counts=counts[:1].upper()+counts[1:]+' ready.'
    self.report.setPlainText(counts+'\n\n'+'\n'.join(self.data['warnings']))
-   self.import_button.setEnabled(not rdl_import.empty(self.data))
+   self.ready(not rdl_import.empty(self.data))
    # Opened from File > Open: the scene was asked for, so it is brought in without a second asking.
    if self.auto and not rdl_import.empty(self.data):QtCore.QTimer.singleShot(0,self.apply)
    self.auto=False
@@ -130,10 +138,12 @@ class Dialog(QtWidgets.QDialog):
      'Choose the updated bundled runtime in MoonRay settings. Third-party geometry or shader plugins require a compatible Windows build.\n\n'+message)
    self.report.setPlainText('Cannot import: '+message)
   finally:self.settle()
- def apply(self):
+ def apply(self,new=False):
   if self.data is None:return
   try:
    import lx
+   # A scene of its own first: what is brought in then goes into that, and the scene that was open is untouched.
+   if new:lx.eval('scene.new')
    # Building heavy meshes takes a while, and Modo cannot answer meanwhile: say how far it has come, and let it be stopped.
    total=sum(len(m['faces']) for m in self.data['meshes'])
    bar=QtWidgets.QProgressDialog('Importing…','Stop',0,1000,self) if total>50000 else None
@@ -147,7 +157,7 @@ class Dialog(QtWidgets.QDialog):
    try:lx.eval('moonray.rdl.apply')
    finally:
     if bar:bar.close()
-   self.report.setPlainText(rdl_import.result);self.import_button.setEnabled(False)
+   self.report.setPlainText(rdl_import.result);self.ready(False)
   except Exception as exc:
    stopped=isinstance(exc,rdl_import.Cancelled) or 'Cancelled' in str(exc)
    self.report.setPlainText('Import stopped. What it had made was taken back; nothing in the scene has changed.' if stopped else 'Import failed: '+str(exc))

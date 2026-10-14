@@ -1,9 +1,10 @@
 """Modo's own colour management, for a preview shown as Modo would show it.
 
-A Modo scene names an OCIO configuration (one of Modo's own, or one added in its system preferences), the colour space
-its renders are in, and the colour space its Final Color Output is viewed in. Read here on Modo's main thread, each
-time a scene is read for a render, and kept: the display code, which also runs where Modo may not be asked anything,
-takes what was last read.
+Modo's system preferences name an OCIO configuration (one of Modo's own, or one added there) and the colour spaces
+used with it; they are what is followed, as they stand now. A scene's Final Color Output says which colour space it
+is viewed in where the scene uses that same configuration. Where the preferences cannot be read, the scene's own
+colour management is taken. Read here on Modo's main thread, each time a scene is read for a render, and kept: the
+display code, which also runs where Modo may not be asked anything, takes what was last read.
 """
 import re
 from pathlib import Path
@@ -61,6 +62,16 @@ def resolve(config, source, target):
     return None
 
 
+def preference(key):
+    """One of the colour management settings in Modo's system preferences; '' where it is not set or cannot be read."""
+    try:
+        import lx
+        value = lx.eval('pref.value colormanagement.%s ?' % key)
+        return '' if value is None or str(value).startswith('(') else str(value)
+    except Exception:
+        return ''
+
+
 def refresh():
     """Read Modo's colour management for the scene that is open. On Modo's main thread only."""
     global RESOLVED, _FROM
@@ -69,18 +80,21 @@ def refresh():
         import modo
         scene = modo.Scene()
         item = scene.sceneItem
-        name = item.channel('ocioConfig').get()
+        own = item.channel('ocioConfig').get()
+        # The system preferences as they stand now; the scene's own where they cannot be read.
+        name = preference('default_ocio_config') or own
         if not name or str(name).startswith('('):
             RESOLVED = _FROM = None
             return None
+        same = str(own) == str(name)
         service = lx.service.ColorMapping()
         config = next((service.ConfigFullPath(i) for i in range(service.ConfigCount()) if service.ConfigName(i) == name), '')
         if not config:
             RESOLVED = _FROM = None
             return None
-        source = space(item.channel('defFloatColorspace').get()) or 'linear'
+        source = space(preference('float_default_colorspace') or (item.channel('defFloatColorspace').get() if same else '')) or 'linear'
         target = ''
-        for output in scene.items('renderOutput'):
+        for output in (scene.items('renderOutput') if same else ()):
             try:
                 if output.channel('effect').get() != 'shade.color':
                     continue
@@ -89,7 +103,7 @@ def refresh():
             except (LookupError, RuntimeError, AttributeError):
                 continue
         if not target or str(target).startswith('(') or target == 'auto':
-            target = item.channel('def8bitColorspace').get()
+            target = preference('8bit_default_colorspace') or (item.channel('def8bitColorspace').get() if same else '') or 'sRGB'
         read = (config, source, space(target))
         if read == _FROM:
             return RESOLVED

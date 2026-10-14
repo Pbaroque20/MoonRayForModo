@@ -58,6 +58,16 @@ class ModoColor(unittest.TestCase):
         modo_color.RESOLVED = {'config': 'x', 'source': 'linear', 'display': 'default', 'view': 'sRGB'}
         self.assertEqual(display.values({'view': 'aces'})['config'], display.ACES_CONFIG)
 
+    def test_what_was_last_chosen_is_what_a_scene_starts_with(self):
+        from moonray_modo import display_memory, scene_settings
+        self.assertEqual(display_memory.remembered(), {})       # nothing is read outside Modo
+        display_memory._held = {'view': 'aces'}
+        try:
+            self.assertEqual(scene_settings.complete({})['display']['view'], 'aces')
+            self.assertEqual(scene_settings.complete({'display': {'view': 'srgb'}})['display']['view'], 'srgb')
+        finally:
+            display_memory._held = None
+
 
 if __name__ == '__main__':
     unittest.main()
