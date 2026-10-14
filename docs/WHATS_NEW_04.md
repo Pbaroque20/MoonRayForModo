@@ -1,4 +1,21 @@
-# What's new in 0.4
+# What's new in 0.4 and 0.4.1
+
+## New in 0.4.1
+
+- **MoonRay's toon material starts as a toon material**: its diffuse ramp and toon highlight are on as soon as it is added.
+- **MoonLightIPR draws the toon material**, ramp and highlight.
+- **Ramps are edited with the mouse**: drag a stop's handle, click the ramp to add one, double-click a handle for its color, right-click to remove it.
+- **A material's ramp shows in the preview as you edit it**, with MoonLightIPR and RT On. OK keeps the change; Cancel drops it.
+- **The scene importer can import into a new scene**, and has a Close button.
+- **Color management follows Modo's system preferences**, and what you choose in MoonRay's render settings is remembered for new scenes and the next time Modo opens.
+- **MoonRay LS shows and renders the beauty alone.**
+
+![A toon material, MoonRay left and MoonLightIPR right](images/moonlightipr-toon.jpg)
+*A toon material: MoonRay (left), MoonLightIPR (right).*
+
+0.4.1 needs its own runtime ZIP, as 0.4 did: install the kit and the runtime together.
+
+## New in 0.4
 
 New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with the kit. Items marked *(0.4 runtime)* are the ones that need it.
 

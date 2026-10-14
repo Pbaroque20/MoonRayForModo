@@ -7,18 +7,29 @@ MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Mo
 
 The plugin includes CPU and XPU rendering, a dockable live preview with a second GPU preview engine, native MoonRay materials with a graph editor, Shader Tree translation, MoonRay's own lights and other items, MaterialX and RDL scene import, AOVs, and denoising.
 
-**Current version: 0.4 — experimental development build.** It brings a compositor, playblasts, Smart Render, fur without a limit, and a preview with three engines that follows Modo's color management.
+**Current version: 0.4.1 — experimental development build.** It is 0.4 with a toon material that starts as toon and shows in MoonLightIPR, ramps edited with the mouse and shown live, and an importer that can import into a new scene.
 
-[Download 0.4: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4](docs/WHATS_NEW_04.md)
+[Download 0.4.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
 ![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
 
+## New in 0.4.1
+
+- **MoonRay's toon material** starts as a toon material, and MoonLightIPR draws it.
+- **Ramps are edited with the mouse**, and a material's ramp shows in the preview as you edit it.
+- **The scene importer can import into a new scene**, and has a Close button.
+- **Color management follows Modo's system preferences**, and what you choose in MoonRay is remembered.
+- **MoonRay LS** shows and renders the beauty alone.
+
+![A toon material, MoonRay left and MoonLightIPR right](docs/images/moonlightipr-toon.jpg)
+*A toon material: MoonRay (left), MoonLightIPR (right).*
+
 ## New in 0.4
 
-The full list, with pictures, is in [What's new in 0.4](docs/WHATS_NEW_04.md).
+The full list, with pictures, is in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md).
 
 **The preview window**
 
@@ -173,7 +184,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.4
+## Known issues in 0.4.1
 
 The ones you are most likely to meet:
 
