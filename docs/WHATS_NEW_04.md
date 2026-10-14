@@ -1,4 +1,17 @@
-# What's new in 0.4 and 0.4.1
+# What's new in 0.4, 0.4.1 and the coming 0.4.2
+
+## Coming in 0.4.2
+
+Not released yet: on the MoonLightIPR branch.
+
+- **Large MoonRay pictures the right way up**: a preview at 3840 x 2160 came out upside down in MoonRay, and now does not.
+- **MoonRay lights, cameras, light filters, shapes and volumes have a Transform section** in their Properties, laid out as Modo's: Position, Rotation with its order, and Scale as X, Y and Z, with the Reset, Freeze, Zero and Add menus.
+- **MoonLightIPR looks through MoonRay's own cameras** from their own place: perspective, orthographic and dome as well as fisheye and spherical. Modo's orthographic camera previews too.
+- **Less memory kept over a long session**: small leaks after each render and selection are gone.
+- **The About window** has MoonRay's forest picture.
+
+![An orthographic camera item, MoonRay left and MoonLightIPR right](images/moonlightipr-camera_ortho.png)
+*A MoonRay orthographic camera: MoonRay (left), MoonLightIPR (right).*
 
 ## New in 0.4.1
 
