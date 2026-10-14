@@ -109,22 +109,45 @@ PLACED = ('light', 'lightfilter', 'camera')
 
 
 def transform_section(form, name):
-    """A Transform section in a form: Position, Rotation and Scale, each a row of X, Y and Z fields as Modo's own are,
-    by Modo's transform.channel command. Each form has its own: Modo shows a section in one form only."""
+    """A Transform section in a form, laid out as Modo's own (itemproperties.cfg, locator-transform:sheet): Position,
+    Rotation with its order, and Scale, each X, Y and Z in a run of fields, then the Reset, Freeze, Zero and Add menus.
+    Modo's own section hides its rows for any item that is not one of Modo's; this one has the same commands without
+    that filter. Each form has its own copy: Modo shows a section in one form only."""
     key = 'MoonRayEntity_%s_transform:sheet' % name
     section = nested(form, key, 'Transform')
-    for channel, label, tip in (('pos', 'Position', 'Where the item is'), ('rot', 'Rotation', 'How the item is turned, in degrees'),
-                                ('scl', 'Scale', 'How the item is sized')):
-        row_key = 'MoonRayEntity_%s_transform_%s:sheet' % (name, channel)
-        row = ET.SubElement(section, 'list', type='Control', val='sub ' + row_key)
+
+    def run(part, label, style, controls):
+        row_key = 'MoonRayEntity_%s_transform_%s:sheet' % (name, part)
+        row = ET.SubElement(section if style == 'inlinegang' or part == 'menus' else menus, 'list', type='Control', val='sub ' + row_key)
         atom(row, 'Label', label)
-        atom(row, 'ShowLabel', 1)
-        atom(row, 'Style', 'inlinegang')
+        atom(row, 'ShowLabel', 1 if style == 'inlinegang' else 0)
+        atom(row, 'Style', style)
         atom(row, 'StartCollapsed', 0)
         atom(row, 'Hash', row_key)
-        fields = sheet(row_key, label)
-        for axis in 'XYZ':
-            control(fields, 'transform.channel %s.%s ?' % (channel, axis), axis, '%s, along %s' % (tip, axis))
+        fields = ET.SubElement(attributes, 'hash', type='Sheet', key=row_key)
+        atom(fields, 'Label', label)
+        atom(fields, 'Style', style)
+        for command, text, tip in controls:
+            control(fields, command, text, tip)
+        return fields
+
+    menus = None
+    for channel, label, tip in (('pos', 'Position', 'Where the item is'), ('rot', 'Rotation', 'How the item is turned'), ('scl', 'Scale', 'How the item is sized')):
+        controls = [('transform.channel %s.%s ?' % (channel, axis), ('%s %s' % (label, axis)) if axis == 'X' else axis, '%s, along %s' % (tip, axis))
+                    for axis in 'XYZ']
+        if channel == 'rot':
+            controls.append(('transform.channel order ?', 'Order', 'The order the three turns are made in'))
+        run(channel, label, 'inlinegang', controls)
+    menus = run('menus', 'Reset and Freeze', 'inlinegang', [])
+    for part, label, controls in (
+            ('reset', 'Reset', [('transform.reset translation', 'Position', ''), ('transform.reset rotation', 'Rotation', ''),
+                                ('transform.reset scale', 'Scale', ''), ('transform.reset shear', 'Shear', ''), ('transform.reset all', 'All', '')]),
+            ('freeze', 'Freeze', [('transform.freeze translation', 'Position', ''), ('transform.freeze rotation', 'Rotation', ''),
+                                  ('transform.freeze scale', 'Scale', ''), ('transform.freeze shear', 'Shear', ''), ('transform.freeze', 'All', '')]),
+            ('zero', 'Zero', [('transform.zero translation', 'Position', ''), ('transform.zero rotation', 'Rotation', ''),
+                              ('transform.zero scale', 'Scale', ''), ('transform.zero', 'All', '')]),
+            ('add', 'Add', [('transform.add type:pos', 'Position', ''), ('transform.add type:rot', 'Rotation', ''), ('transform.add type:scl', 'Scale', '')])):
+        run(part, label, 'popup', controls)
 
 
 
