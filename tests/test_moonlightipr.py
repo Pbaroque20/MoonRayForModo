@@ -30,8 +30,13 @@ class PackTests(unittest.TestCase):
     def test_invalid_scenes_are_refused(self):
         bad=scene();bad['meshes'][0]['faces']=[[0,1,9]]
         with self.assertRaises(ValueError):moonlightipr_scene.pack(bad,320,180)
-        ortho=scene();ortho['camera']['projection']='ortho'
+        # An orthographic camera is drawn, as wide as it says; one of no width, or a projection unknown, is refused.
+        ortho=scene();ortho['camera'].update(projection='ortho',ortho_width=4.0)
+        self.assertTrue(moonlightipr_scene.pack(ortho,320,180))
+        ortho['camera']['ortho_width']=0.0
         with self.assertRaises(ValueError):moonlightipr_scene.pack(ortho,320,180)
+        unknown=scene();unknown['camera']['projection']='cylinder'
+        with self.assertRaises(ValueError):moonlightipr_scene.pack(unknown,320,180)
         with self.assertRaises(ValueError):moonlightipr_scene.pack(scene(),8,8)
 
     def test_unsupported_layers_are_reported(self):
