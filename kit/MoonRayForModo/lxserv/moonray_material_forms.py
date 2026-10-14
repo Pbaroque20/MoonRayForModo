@@ -301,8 +301,13 @@ def register():
                 held=properties.read(items[0]).get('native_parameters',{})
                 lists=[held.get(key,node_defaults.value(schema[key])) or [] for key in keys]
                 if len({len(v) for v in lists})!=1:lists=[[],[],[]]
-                dialog=RampDialog(shader+': '+title,lists[0],lists[1],lists[2],schema[keys[1]]['type']=='RgbVector',QtWidgets.QApplication.activeWindow())
-                if dialog.exec_()!=QtWidgets.QDialog.Accepted:return
+                def live(result):
+                    # The ramp as it stands in the editor, shown in the preview without being kept.
+                    properties.try_out(items,{key:shader_library.typed(value,schema[key]) for key,value in zip(keys,result)})
+                dialog=RampDialog(shader+': '+title,lists[0],lists[1],lists[2],schema[keys[1]]['type']=='RgbVector',QtWidgets.QApplication.activeWindow(),live)
+                try:accepted=dialog.exec_()==QtWidgets.QDialog.Accepted
+                finally:properties.given_up(items)
+                if not accepted:return
                 values=[shader_library.typed(value,schema[key]) for key,value in zip(keys,dialog.result())]
                 updates=[]
                 for item in items:
