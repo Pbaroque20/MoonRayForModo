@@ -13,6 +13,12 @@ import lxifc
 import lxu.command
 
 
+def _same(kind, *args):
+    """One popup description for each set of choices (moonray_modo.hint_cache); the kit is on the path only once commands run."""
+    from moonray_modo.hint_cache import same
+    return same(kind, *args)
+
+
 class Hints(lxifc.UIValueHints):
     """The events a control follows and, for a popup, its (internal name, label) entries."""
     def __init__(self,notifiers,entries=()):self._notifiers,self._entries=notifiers,entries
@@ -40,7 +46,7 @@ def register():
                 self.dyna_Add('value',TYPES.get(kind,lx.symbol.sTYPE_STRING))
                 self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-            def arg_UIValueHints(self,index):return Hints(WATCHED,labels)
+            def arg_UIValueHints(self,index):return _same(Hints,WATCHED,labels)
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 value=scene_settings.get(scene_settings.complete(properties.scene_settings()),entry)

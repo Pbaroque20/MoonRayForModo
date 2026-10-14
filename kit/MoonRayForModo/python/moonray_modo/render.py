@@ -5,6 +5,7 @@ import tempfile
 import time
 import uuid
 from PySide2 import QtCore
+from .threads import forgotten
 from . import native, rdla, options, denoising, outputs
 from .progress import Progress, duration
 from .buffer_cache import BufferCache
@@ -43,6 +44,7 @@ class SceneWriter(QtCore.QThread):
         # Set when something newer was asked for before this was written.
         self.abandoned = False
 
+    @forgotten
     def run(self):
         try:
             text = rdla.scene_text(*self.arguments)
@@ -610,7 +612,7 @@ class Renderer(QtCore.QObject):
             self._begin_pending()
 
     def _read(self):
-        text = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
+        text = self.process.readAllStandardOutput().data().decode('utf-8', errors='replace')
         self._consume_log(text)
 
     def _consume_log(self,text):

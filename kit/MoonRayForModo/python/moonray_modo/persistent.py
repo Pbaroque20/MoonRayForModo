@@ -183,7 +183,7 @@ class Session(QtCore.QObject):
         self.status.emit('Updating loaded scene' if mode=='delta' else 'Reloading scene structure in persistent session')
 
     def _read(self):
-        text=bytes(self.process.readAllStandardOutput()).decode('utf-8',errors='replace')
+        text=self.process.readAllStandardOutput().data().decode('utf-8',errors='replace')
         self.output.emit(text)
         self.partial+=text
         while '\n' in self.partial:

@@ -99,11 +99,11 @@ class Dialog(QtWidgets.QDialog):
  def settle(self):
   self.ticker.stop();self.stage.setVisible(False);self.bar.setVisible(False)
  def read(self):
-  self.output.extend(bytes(self.process.readAllStandardOutput()))
+  self.output.extend(self.process.readAllStandardOutput().data())
   # As text a scene is three to four times the size of its binary file; a scene of a few hundred megabytes fits.
   if len(self.output)>2048*1024*1024:self.abort();self.report.setPlainText('Scene exceeds the import transfer limit (2 GiB as text).')
  def read_error(self):
-  text=self.pending_error+bytes(self.process.readAllStandardError()).decode('utf-8',errors='replace')
+  text=self.pending_error+self.process.readAllStandardError().data().decode('utf-8',errors='replace')
   lines=text.split('\n');self.pending_error=lines.pop()
   for line in lines:
    # The reader's own word of how far it has come is kept apart from what it says went wrong.

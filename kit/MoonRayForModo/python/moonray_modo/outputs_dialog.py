@@ -76,7 +76,7 @@ class OutputsDialog(QtWidgets.QDialog):
         except Exception as exc:
             self.problem.setText(str(exc));self.native_button.setEnabled(True)
     def native_read(self):
-        if self._native_process:self._native_log.extend(bytes(self._native_process.readAllStandardOutput()))
+        if self._native_process:self._native_log.extend(self._native_process.readAllStandardOutput().data())
     def native_timeout(self):
         if self._native_process and self._native_job:
             self._native_process.kill()

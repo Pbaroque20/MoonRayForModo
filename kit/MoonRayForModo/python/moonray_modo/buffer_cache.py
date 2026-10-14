@@ -220,7 +220,7 @@ class BufferCache(QtCore.QObject):
         self._prune()
 
     def _read(self):
-        self.log=(self.log+bytes(self.process.readAllStandardOutput()).decode('utf-8',errors='replace'))[-4096:]
+        self.log=(self.log+self.process.readAllStandardOutput().data().decode('utf-8',errors='replace'))[-4096:]
 
     def _show(self):
         self.displayed=dict(self.job['frame'],key=self.job['key'])
