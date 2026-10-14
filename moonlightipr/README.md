@@ -335,6 +335,11 @@ Added to what is translated since the table was written:
   a head of 2,500 strands: brightness 1.02 of MoonRay's, 77% (dark) and 80% (fair) of tiles
   within a tenth.
   ![Hair, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-hair_dark.jpg)
+- **Toon**: `DwaToonMaterial` is read as itself, with its diffuse ramp and its toon highlight worked out by MoonRay's
+  own rules (`BsdfToon.cc`), the highlight found from the lights alone and weighed as MoonRay weighs it. Brightness
+  1.00, 99% of tiles within a tenth, with and without the highlight (October 13). Not drawn: a stretched highlight,
+  its indirect reflections, a ramp extended into the unlit side, and cubic ramp blends (read as straight ones).
+  ![A toon material, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-toon.jpg)
 - **Skin**: `DwaSkinMaterial` is read as itself: albedo, scattering beneath the surface,
   moisture as a clear coat, and diffuse light passing through to the far side (diffuse
   transmission, on every Dwa surface material). Brightness 0.98, 95% of tiles within a tenth;

@@ -48,7 +48,8 @@ def register():
 
     def command(shader,key,spec):
         kind=spec['type']
-        try:default=node_defaults.value(spec)
+        # What is not kept is what the material starts with: MoonRay's default, or the plugin's own start.
+        try:default=node_defaults.start(shader,key,spec)
         except ValueError:default=None
         enum=spec.get('enum')
         if enum:

@@ -55,6 +55,25 @@ def value(spec):
     raise ValueError('Unsupported default type: '+kind)
 
 
+# What the plugin starts a material with where that is not MoonRay's own default. MoonRay's toon material comes
+# with its toon look switched off (an ordinary diffuse and highlight); here it starts as a toon material: its
+# diffuse model the ramp, its specular model Toon.
+STARTS={'DwaToonMaterial':{'diffuse_model':1,'specular_model':2}}
+
+
+def start(shader,key,spec):
+    """What a setting of a shader is before it has been set: the plugin's own start, else MoonRay's default."""
+    held=STARTS.get(shader,{})
+    return copy.deepcopy(held[key]) if key in held else value(spec)
+
+
+def started(shader,parameters):
+    """A material's settings with the plugin's starts filled in where nothing has been set."""
+    held=STARTS.get(shader)
+    if not held:return parameters
+    return dict(held,**(parameters or {}))
+
+
 def parameters(kind):
     from . import nodes,shader_library
     result={}
@@ -64,4 +83,5 @@ def parameters(kind):
         result[key]=shader_library.typed(value(spec),spec)
     # Keep the plugin's projector-free preview default for native projection maps.
     if 'projection_mode' in result and 'projector' in nodes.specs(kind):result['projection_mode']=2
+    result.update(STARTS.get(kind,{}))
     return result

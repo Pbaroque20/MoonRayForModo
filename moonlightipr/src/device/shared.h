@@ -36,6 +36,8 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                // Light beneath the surface is followed step by step through the solid (MoonRay's random walk
                // model), in place of being gathered by a diffusion profile.
                MATERIAL_RANDOM_WALK = 1u << 11,
+               // MoonRay's toon material: the diffuse light is banded by a ramp, and so is the highlight.
+               MATERIAL_TOON_DIFFUSE = 1u << 12, MATERIAL_TOON_SPECULAR = 1u << 13,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -102,7 +104,8 @@ struct DeviceMaterial {
     float absorptionDistance;   // depth of a solid at which light has its transmission colour; 0 for none
     float abbe;                 // Abbe number of a dispersive solid; 0 for none
     float specular;             // weight of the dielectric's reflection
-    unsigned hair;              // with MATERIAL_HAIR, this material's entry in LaunchParams::hairs; with MATERIAL_VOLUME, in volumes
+    unsigned hair;              // with MATERIAL_HAIR, this material's entry in LaunchParams::hairs; with MATERIAL_VOLUME, in volumes;
+                                // with either MATERIAL_TOON flag, in toons
     float back[3];              // diffuse light that passes through to the other side, as a thin ear lets it
     float frontKeep[3];         // what that leaves of the diffuse light on the lit side
 };
@@ -122,6 +125,20 @@ struct DeviceVolume {
     float rows[12];             // scene to the grid's unit cube, three rows of (x, y, z, offset)
     unsigned long long glow;    // a 3D texture of how much light the fog gives off, times emission; or 0
     float glowRows[12];         // scene to that grid's own unit cube
+};
+
+// A toon material's ramps, each read from 0 to 1 in TOON_STEPS steps. The diffuse ramp is looked up by how far the
+// light is from straight on (1 - cosine, over its input scale) and multiplies the surface's colour; the highlight's
+// by how far the reflected light is from the eye (MoonRay's BsdfToon).
+const unsigned TOON_STEPS = 256;
+struct DeviceToon {
+    float diffuse[TOON_STEPS * 3];
+    float specular[TOON_STEPS];
+    float diffuseScale, specularScale;
+    float intensity;            // of the highlight
+    float blend;                // how much of the highlight follows the surface's Fresnel reflection
+    float tint[3];
+    float level;                // MoonRay's normalization of the highlight for this ramp
 };
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
@@ -264,6 +281,7 @@ struct LaunchParams {
     DevicePtr albedo2;      // float, two ALBEDO_TABLE runs: GGX, then Beckmann
     DevicePtr hairs;        // DeviceHair, indexed by DeviceMaterial::hair
     DevicePtr volumes;      // DeviceVolume, likewise
+    DevicePtr toons;        // DeviceToon, likewise
     unsigned volumeCount;
     unsigned volumePad;
 

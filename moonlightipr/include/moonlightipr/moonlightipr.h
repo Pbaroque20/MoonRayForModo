@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace moonlightipr {
 
@@ -35,6 +36,11 @@ struct Material {
     float dissolve = 0.0f;          // 1 - presence: how much of the surface is absent
     float bumpStrength = 0.0f;      // height of a bump layer's full range, in scene units
     bool randomWalk = false;        // light beneath the surface is followed through the solid, MoonRay's random walk model
+    // MoonRay's toon material: the diffuse light banded by a ramp, the highlight by another. toon holds the diffuse
+    // ramp's 256 colours from 0 to 1, the highlight ramp's 256 values, then the diffuse ramp's input scale, the
+    // highlight's input scale, intensity and Fresnel blend, its tint, and its normalization.
+    bool toonDiffuse = false, toonSpecular = false;
+    std::vector<float> toon;
     bool noCaustics = false;        // DwaBaseMaterial with casts_caustics off: plain diffuse once a path has left a diffuse lobe
     int roughnessCurve = 0;         // the roughness the layers give is Modo's: 1 Blinn, 2 Ashikhmin, 3 GTR; 0 as it is
     bool beckmann = false;          // Beckmann specular lobe (DwaBaseMaterial as the plugin sets it up) rather than GGX

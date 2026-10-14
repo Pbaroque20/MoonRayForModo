@@ -687,6 +687,9 @@ struct Surface {
     float3 back, frontKeep; // diffuse light passed through to the other side, and what that leaves on this one
     bool passes;            // some does
     float3 diffuseNormal;   // the normal diffuse light falls on, in the shading frame
+    // MoonRay's toon material: its ramps, and which of the diffuse light and the highlight they band.
+    const DeviceToon* toon;
+    bool toonDiffuse, toonSpecular;
 };
 
 ML_INLINE Surface surfaceFrom(const Hit& hit) {
@@ -724,7 +727,15 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.back = hit.back;
     s.frontKeep = hit.frontKeep;
     s.passes = maxComponent(hit.back) > 0.0f;
+    const bool toon = !hit.curve && (hit.flags & (MATERIAL_TOON_DIFFUSE | MATERIAL_TOON_SPECULAR)) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME));
+    s.toon = toon ? reinterpret_cast<const DeviceToon*>(params.toons) + hit.hair : nullptr;
+    s.toonDiffuse = toon && (hit.flags & MATERIAL_TOON_DIFFUSE);
+    s.toonSpecular = toon && (hit.flags & MATERIAL_TOON_SPECULAR);
     return s;
+}
+// Where along a toon ramp a value falls: past its end, the end.
+ML_INLINE unsigned toonStep(float x) {
+    return x <= 0.0f ? 0u : min(unsigned(x * float(TOON_STEPS)), TOON_STEPS - 1);
 }
 
 // Unpolarized Fresnel reflectance crossing from a medium of index etaI into one of etaT; 1 when
@@ -877,6 +888,11 @@ ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
     lobes.back = behind > 0.0f ? behind / diffuse : 0.0f;
     lobes.coat = coat + specular > 0.0f ? coat / (coat + specular) : 0.0f;
     lobes.specular = s.matte ? 0.0f : diffuse <= 0.0f ? 1.0f : clamp((coat + specular) / (coat + specular + diffuse), 0.1f, 0.9f);
+    if (s.toonSpecular) {
+        // A toon highlight is found from the lights alone, as MoonRay finds it: no sample is spent looking for it.
+        lobes.coat = coat > 0.0f ? 1.0f : 0.0f;
+        lobes.specular = s.matte || coat <= 0.0f ? 0.0f : diffuse <= 0.0f ? 1.0f : clamp(coat / (coat + diffuse), 0.1f, 0.9f);
+    }
     return lobes;
 }
 
@@ -885,11 +901,24 @@ ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
 struct BsdfEval {
     float3 diffuse, specular;
     float diffusePdf, specularPdf;
+    // A toon highlight, which only the lights' own samples find. MoonRay still gives it a density, as if a sample
+    // could have found it, and weighs the lights' samples by that: a broad light then gives it little, a small
+    // one nearly all.
+    float3 toon;
+    float toonPdf;
 };
+ML_INLINE float powerHeuristic(float a, float b);
+// What a light's sample is worth at a surface, over the density it was drawn with: the lobes that a sample of the
+// surface could have found as well, and a toon highlight.
+ML_INLINE float3 litBy(const BsdfEval& e, float surfacePdf, float lightPdf) {
+    float3 found = (e.diffuse + e.specular) * (powerHeuristic(lightPdf, surfacePdf) / lightPdf);
+    if (e.toonPdf > 0.0f) found += e.toon * (powerHeuristic(lightPdf, e.toonPdf) / lightPdf);
+    return found;
+}
 ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, float3 wi) {
     BsdfEval e;
-    e.diffuse = e.specular = vec(0.0f);
-    e.diffusePdf = e.specularPdf = 0.0f;
+    e.diffuse = e.specular = e.toon = vec(0.0f);
+    e.diffusePdf = e.specularPdf = e.toonPdf = 0.0f;
     if (wo.z <= 0.0f) return e;
     if (wi.z <= 0.0f) {
         // From behind, only the diffuse light that passes through.
@@ -901,6 +930,18 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     }
     const float3 h = normalize(wo + wi);
     const float cosine = dot(wo, h);
+    if (s.toonSpecular) {
+        // MoonRay's toon highlight (BsdfToon.cc): a ramp over how far the reflected light is from the eye, by an
+        // approximation of the angle that MoonRay uses, times the surface's reflection seen from the eye.
+        const float toward = clamp(wo.z * wi.z - wo.x * wi.x - wo.y * wi.y, 0.0f, 1.0f);
+        const float theta = powf(1.0f - toward, 0.56f);
+        if (theta > 0.0f) {
+            const float ramp = s.toon->specular[toonStep(theta / s.toon->specularScale)];
+            const float3 seen = lerp(vec(s.specular), specularFresnel(s, wo.z) * s.toon->level, s.toon->blend);
+            e.toon = make_float3(s.toon->tint[0], s.toon->tint[1], s.toon->tint[2]) * seen * (ramp * s.toon->intensity * underCoat(s, wo) / ML_PI);
+            e.toonPdf = ramp / (2.0f * ML_PI);
+        }
+    } else
     if (s.beckmann) {
         // Sampled from the distribution of facets itself, so its density follows the half vector.
         const float d = beckmannD(s.alphaX, s.alphaY, h);
@@ -912,15 +953,26 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
         e.specular = specularFresnel(s, cosine) * (underCoat(s, wo) * d * g1o * g1i / (4.0f * wo.z));
         e.specularPdf = (1.0f - lobes.coat) * g1o * d / (4.0f * wo.z);
     }
-    const float broad = broadShare(s);
-    e.specular += multipleScattering(s, wo, wi) * underCoat(s, wo);
-    e.specularPdf = e.specularPdf * (1.0f - broad) + (1.0f - lobes.coat) * broad * wi.z / ML_PI;
+    if (!s.toonSpecular) {
+        const float broad = broadShare(s);
+        e.specular += multipleScattering(s, wo, wi) * underCoat(s, wo);
+        e.specularPdf = e.specularPdf * (1.0f - broad) + (1.0f - lobes.coat) * broad * wi.z / ML_PI;
+    }
     if (s.coat > 0.0f) {
         const float cd = ggxD(s.coatAlpha, h.z), cg1o = smithG1(s.coatAlpha, wo.z), cg1i = smithG1(s.coatAlpha, wi.z);
         e.specular += vec(s.coat * dielectricFresnel(cosine, s.ior) * cd * cg1o * cg1i / (4.0f * wo.z));
         e.specularPdf += lobes.coat * cg1o * cd / (4.0f * wo.z);
     }
     // Diffuse light falls on the surface's own smoothed normal; only reflections use the bent one.
+    if (s.toonDiffuse) {
+        // MoonRay's toon diffuse: the surface's colour times the ramp's, by how far the light is from straight on,
+        // and no falling off with the angle besides. A half of what a white surface would send back at most.
+        const unsigned step = toonStep((1.0f - dot(s.diffuseNormal, wi)) / s.toon->diffuseScale);
+        const float3 ramp = make_float3(s.toon->diffuse[step * 3], s.toon->diffuse[step * 3 + 1], s.toon->diffuse[step * 3 + 2]);
+        const float3 banded = ramp * s.albedo;
+        const float3 colour = make_float3(clamp(banded.x, 0.0f, 1.0f), clamp(banded.y, 0.0f, 1.0f), clamp(banded.z, 0.0f, 1.0f)) * s.frontKeep;
+        e.diffuse = colour * coatBounces(s, wo, colour) * (entering(s, wo) * (1.0f - s.transmission) * s.diffuseScale / (2.0f * ML_PI));
+    } else
     e.diffuse = diffuseColor(s, wo) * (fmaxf(0.0f, dot(s.diffuseNormal, wi)) / ML_PI);
     e.diffusePdf = (1.0f - lobes.back) * wi.z / ML_PI;
     return e;
@@ -1000,9 +1052,9 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         if (lightPdf > 0.0f && (surface.passes || dot(ng, toLight) > 0.0f)) {
             const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLight));
             const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-            if (maxComponent(e.diffuse + e.specular) > 0.0f)
-                radiance += clampSample(weight * (e.diffuse + e.specular) * envRadiance(toLight) * shadow(offsetOrigin(p, ng, toLight), toLight, seed)
-                                        * (powerHeuristic(lightPdf, pdf) / lightPdf), lit);
+            const float3 found = litBy(e, pdf, lightPdf);
+            if (maxComponent(found) > 0.0f)
+                radiance += clampSample(weight * found * envRadiance(toLight) * shadow(offsetOrigin(p, ng, toLight), toLight, seed), lit);
         }
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
@@ -1011,9 +1063,9 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         if (!surface.passes && dot(ng, toSun) <= 0.0f) continue;
         const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toSun));
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-        if (maxComponent(e.diffuse + e.specular) > 0.0f)
-            radiance += clampSample(weight * (e.diffuse + e.specular) * distantRadiance(light, toSun) * shadow(offsetOrigin(p, ng, toSun), toSun, seed)
-                                    * (powerHeuristic(distantPdf(light, toSun), pdf) / distantPdf(light, toSun)), lit);
+        const float3 found = litBy(e, pdf, distantPdf(light, toSun));
+        if (maxComponent(found) > 0.0f)
+            radiance += clampSample(weight * found * distantRadiance(light, toSun) * shadow(offsetOrigin(p, ng, toSun), toSun, seed), lit);
     }
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
@@ -1025,9 +1077,9 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         if (params.lightPick) lampPdf *= lights[i].pick;
         const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLamp));
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-        if (maxComponent(e.diffuse + e.specular) > 0.0f)
-            radiance += clampSample(weight * (e.diffuse + e.specular) * emitted * shadow(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f)
-                                    * (powerHeuristic(lampPdf, pdf) / lampPdf), lit);
+        const float3 found = litBy(e, pdf, lampPdf);
+        if (maxComponent(found) > 0.0f)
+            radiance += clampSample(weight * found * emitted * shadow(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f), lit);
     }
     return radiance;
 }

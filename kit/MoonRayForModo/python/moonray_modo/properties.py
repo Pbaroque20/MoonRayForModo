@@ -49,6 +49,11 @@ def read(item):
         # Its type says what it is, before anything has been written to it.
         data.update(shader='DwaBaseMaterial', moonshine_override=True, native_shader=shader)
         data.setdefault('native_parameters', {})
+    if data.get('native_shader') and not data.get('node_graph'):
+        # What the plugin starts such a material with, where it has not been set: a toon material's toon look.
+        from .node_defaults import STARTS, started
+        if data['native_shader'] in STARTS:
+            data['native_parameters'] = started(data['native_shader'], data.get('native_parameters'))
     return data
 
 
