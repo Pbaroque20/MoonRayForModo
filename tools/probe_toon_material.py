@@ -1,8 +1,8 @@
 # python
-"""Isolated GUI test: MoonRay's toon material, added from the Shader Tree's Add Layer list, in a MoonRay render.
+"""Isolated GUI test: MoonRay's toon material, added from the Shader Tree's Add Layer list.
 
-A ball with a DwaToonMaterial layer is rendered as the material comes, and again with its diffuse model set to ramp
-and its specular model to Toon. What the plugin reads of the material, the notices and each picture are kept."""
+A ball with a DwaToonMaterial layer is rendered as the material comes, in MoonRay and then in MoonLightIPR: it starts
+as a toon material. Its diffuse model is then set back to oren-nayar in its form, which must stay chosen."""
 import json
 import os
 import pathlib
@@ -59,25 +59,28 @@ def begin():
     panel.start.click()
 
 
-@step(45000)
-def toon_on():
-    note('as_added')
-    # As choosing them in the material's form: diffuse model ramp, specular model Toon.
+@step(25000)
+def realtime():
+    note('as_added_moonray')
+    panel = panel_widget()
+    panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonlightipr'))
+    panel.start.click()
+
+
+@step(3000)
+def plain_again():
+    note('as_added_moonlightipr')
+    panel_widget().stop()
+    # As choosing oren-nayar in the material's form: MoonRay's own default, which must stay chosen.
     lx.eval('!select.drop item')
     lx.eval('!select.subItem {%s} set textureLayer' % held['item'].id)
-    from moonray_modo import material_override, properties
-    result['selected'] = [(i.name, i.type, properties.is_material(i)) for i in modo.Scene().selected]
-    read = properties.read(held['item'])
-    result['override'] = [material_override.enabled(read), material_override.effective(read).get('native_shader')]
-    save()
-    lx.eval('!moonray.material.attr13_17 1')
-    lx.eval('!moonray.material.attr13_102 2')
-    panel_widget().start.click()
+    lx.eval('!moonray.material.attr13_17 0')
+    result['diffuse_model_shown'] = lx.eval('moonray.material.attr13_17 ?')
 
 
 @step(500)
 def finish_():
-    note('toon_switched_on')
+    note('diffuse_set_to_oren_nayar')
 
 
 def run(index=0):

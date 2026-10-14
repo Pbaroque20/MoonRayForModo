@@ -885,8 +885,13 @@ class Panel(Tools, QtWidgets.QWidget):
         only=self._engine()=='moonlightipr'
         denoises=self._moonlightipr_denoises()
         self.buffer.setItemText(0,'Beauty')
+        # MoonRay LS is a quick look: the beauty alone.
+        low=self._low()
         for row in range(1,self.buffer.count()):
-            self.buffer.view().setRowHidden(row,only and not (denoises and self.buffer.itemData(row)=='denoised_beauty'))
+            self.buffer.view().setRowHidden(row,low or (only and not (denoises and self.buffer.itemData(row)=='denoised_beauty')))
+        if low:
+            if self.buffer.currentData()!='beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+            return
         if not only:return
         shown=self.buffer.currentData()
         # The beauty is what is shown. The denoised picture is for whoever is looking to choose, and stays chosen

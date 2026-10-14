@@ -254,7 +254,7 @@ struct Renderer::Impl {
     std::vector<int32_t> distantTextures;
     std::vector<Instance> instances;
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
-    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, volumeTable, albedoTables, instanceInput, instanceAccel, accelTemp;
+    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, volumeTable, toonTable, albedoTables, instanceInput, instanceAccel, accelTemp;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
@@ -914,6 +914,27 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
     }
     impl->hairTable.upload(hairs);
     impl->params.hairs = impl->hairTable.ptr;
+    // Toon materials: their ramps, by the same number a hair or a fog would have had.
+    std::vector<DeviceToon> toons;
+    for (size_t i = 0; i < count; ++i) {
+        const Material& m = materials[i];
+        if (m.hair || m.volume || !(m.toonDiffuse || m.toonSpecular) || m.toon.size() != TOON_STEPS * 4 + 8) continue;
+        DeviceToon d{};
+        std::copy(m.toon.begin(), m.toon.begin() + TOON_STEPS * 3, d.diffuse);
+        std::copy(m.toon.begin() + TOON_STEPS * 3, m.toon.begin() + TOON_STEPS * 4, d.specular);
+        const float* numbers = m.toon.data() + TOON_STEPS * 4;
+        d.diffuseScale = std::max(numbers[0], 1e-4f);
+        d.specularScale = std::max(numbers[1], 1e-4f);
+        d.intensity = numbers[2];
+        d.blend = std::clamp(numbers[3], 0.0f, 1.0f);
+        std::copy(numbers + 4, numbers + 7, d.tint);
+        d.level = numbers[7];
+        table[i].flags |= (m.toonDiffuse ? MATERIAL_TOON_DIFFUSE : 0) | (m.toonSpecular ? MATERIAL_TOON_SPECULAR : 0);
+        table[i].hair = unsigned(toons.size());
+        toons.push_back(d);
+    }
+    impl->toonTable.upload(toons);
+    impl->params.toons = impl->toonTable.ptr;
     std::vector<DeviceVolume> volumes;
     std::vector<int32_t> usedGrids;
     for (size_t i = 0; i < count; ++i) {

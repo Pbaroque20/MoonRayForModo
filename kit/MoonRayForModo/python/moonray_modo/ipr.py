@@ -18,7 +18,8 @@ def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, erro
                     light_samples=1,bsdf_samples=1,bssrdf_samples=1)
     result=dict(scene,render_settings=settings,_ipr=True)
     result.pop('_denoise_guides',None)
-    if result.get('preview_buffer')=='denoised_beauty':result['preview_buffer']='beauty'
+    # A quick look is the beauty and nothing else: no other buffer is rendered or kept for it.
+    result['preview_buffer']='beauty';result['aovs']=['alpha'];result['custom_aovs']=[]
     # Cap both scene and normal preview width, so IPR never enlarges either.
     scale=min(1.0,float(width_cap)/max(1,width),float(scene['width'])/max(1,width))
     return result,max(16,round(width*scale)),max(16,round(height*scale))

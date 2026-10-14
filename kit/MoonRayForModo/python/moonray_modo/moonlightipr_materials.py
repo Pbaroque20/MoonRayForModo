@@ -31,6 +31,74 @@ LAYER_MASKED, LAYER_MASK_SHIFT = 1 << 11, 12
 MATERIAL_THIN, MATERIAL_COAT_DIMS, MATERIAL_BECKMANN, MATERIAL_CONDUCTOR, MATERIAL_HAIR, MATERIAL_VOLUME = 1, 2, 16, 32, 64, 128
 MATERIAL_NO_CAUSTICS = 1024
 MATERIAL_RANDOM_WALK = 2048
+# MoonRay's toon material: its diffuse light banded by a ramp, its highlight by another.
+MATERIAL_TOON_DIFFUSE, MATERIAL_TOON_SPECULAR = 4096, 8192
+TOON_STEPS = 256
+
+
+def toon_ramp(positions, values, blends, x):
+    """A ramp at x as MoonRay's RampControl reads it: the stop to the left says how it blends to the next. Cubic
+    blends are read as straight ones."""
+    order = sorted(range(len(positions)), key=lambda i: positions[i])
+    if not order:
+        return 0.0
+    if x < positions[order[0]]:
+        return values[order[0]]
+    left = order[0]
+    right = None
+    for index in order:
+        if positions[index] <= x:
+            left = index
+        else:
+            right = index
+            break
+    if right is None or positions[right] - positions[left] < 1e-6:
+        return values[left]
+    t = (x - positions[left]) / (positions[right] - positions[left])
+    how = int(blends[left]) if left < len(blends) else 0
+    weight = 0.0 if how == 0 else t * t if how == 2 else 1.0 - (1.0 - t) ** 2 if how == 3 else math.sin(t * math.pi / 2) if how == 4 else t
+    a, b = values[left], values[right]
+    if isinstance(a, (list, tuple)):
+        return [u + weight * (v - u) for u, v in zip(a, b)]
+    return a + weight * (b - a)
+
+
+def toon_surface(get, note):
+    """What MoonLightIPR draws of a DwaToonMaterial's toon look: each ramp as TOON_STEPS values from 0 to 1, and the
+    numbers that go with them. None where neither the diffuse nor the highlight is toon."""
+    diffuse = int(get('diffuse_model', 0)) == 1 and bool(get('show_diffuse', True))
+    specular = int(get('specular_model', 1)) == 2 and bool(get('show_specular', True))
+    if not diffuse and not specular:
+        return None
+    def centres(positions, values, blends, scale):
+        return [toon_ramp(positions, values, blends, (i + .5) / TOON_STEPS) for i in range(TOON_STEPS)]
+    positions, colours, blends = [float(v) for v in get('positions', [0, 1])], [[float(c) for c in v] for v in get('colors', [[0, 0, 0], [1, 1, 1]])], list(get('interpolations', []))
+    count = min(len(positions), len(colours))
+    lit = centres(positions[:count], colours[:count], blends, 1.0)
+    multiplier = [float(v) for v in get('ramp_color_multiplier', [1, 1, 1])]
+    lit = [[c * m for c, m in zip(colour, multiplier)] for colour in lit]
+    places, values, how = [float(v) for v in get('toon_specular_positions', [0, 1])], [float(v) for v in get('toon_specular_values', [1, 0])], list(get('toon_specular_interpolations', []))
+    count = min(len(places), len(values))
+    shine = centres(places[:count], values[:count], how, 1.0)
+    shine_scale = max(1e-4, float(get('toon_specular_ramp_input_scale', 1.0)))
+    # MoonRay's own normalization of the highlight (BsdfToon.cc): the ramp over 64 rings of the hemisphere.
+    area = average = 0.0
+    for i in range(64):
+        ramp = toon_ramp(places[:count], values[:count], how, ((i + .5) / 64.0) / shine_scale)
+        average += ramp
+        area += 2 * math.pi * (math.cos(i / 64.0 * math.pi / 2) - math.cos((i + 1) / 64.0 * math.pi / 2)) * ramp
+    level = (2 * math.pi / area) * (average / 64.0) if area > 1e-9 else 0.0
+    if any(int(v) in (5, 6) for v in list(blends) + list(how)):
+        note('cubic blends in a toon ramp, read as straight ones')
+    if get('toon_specular_enable_indirect_reflections', False) and specular:
+        note('a toon highlight\'s indirect reflections')
+    if specular and (float(get('toon_specular_stretch_u', 0.0)) or float(get('toon_specular_stretch_v', 0.0))):
+        note('a stretched toon highlight')
+    if diffuse and get('extend_ramp', False):
+        note('a toon ramp extended into the unlit side')
+    return {'diffuse': diffuse, 'specular': specular, 'lit': lit, 'shine': shine,
+            'numbers': [max(1e-4, float(get('ramp_input_scale', 1.0))), shine_scale, float(get('toon_specular_intensity', 1.0)),
+                        min(1.0, max(0.0, float(get('toon_specular_fresnel_blend', 1.0))))] + [float(v) for v in get('toon_specular_tint', [1, 1, 1])] + [level]}
 LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
@@ -85,9 +153,11 @@ def native_surface(shader, parameters, note):
     from . import node_defaults, shader_library
     if shader in ('HairMaterial_v3', 'HairDiffuseMaterial'):
         return hair_surface(shader, parameters, note)
-    if shader not in ('DwaBaseMaterial', 'DwaMetalMaterial', 'DwaSolidDielectricMaterial', 'DwaRefractiveMaterial', 'DwaEmissiveMaterial', 'DwaSkinMaterial'):
+    if shader not in ('DwaBaseMaterial', 'DwaMetalMaterial', 'DwaSolidDielectricMaterial', 'DwaRefractiveMaterial', 'DwaEmissiveMaterial', 'DwaSkinMaterial',
+                      'DwaToonMaterial'):
         return None
     attributes = shader_library.catalog()[shader]['attributes']
+    parameters = node_defaults.started(shader, parameters)
     def get(key, missing):
         if key in parameters:
             return parameters[key]
@@ -131,6 +201,7 @@ def native_surface(shader, parameters, note):
     passed = [min(1.0, max(0.0, float(v))) * min(1.0, max(0.0, float(get('diffuse_transmission', 1.0)))) for v in get('diffuse_transmission_color', black)]
     kept = [1.0 - v for v in passed] if int(get('diffuse_transmission_blending_behavior', 1)) == 0 else [1.0 - max(passed)] * 3
     return {
+        '_toon': toon_surface(get, note) if shader == 'DwaToonMaterial' else None,
         '_back': passed, '_front_keep': kept,
         'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': color, 'raw_color': color, 'diffuse_amount': 1.0,
         'roughness': roughness, 'metallic': metallic, 'ior': ior,
@@ -971,8 +1042,17 @@ class Compiler:
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Material %s contains a non-finite number' % name)
         fog = material.get('_volume')
+        toon = source.get('_toon') if not source.get('_hair') and not fog else None
+        if toon:
+            flags |= (MATERIAL_TOON_DIFFUSE if toon['diffuse'] else 0) | (MATERIAL_TOON_SPECULAR if toon['specular'] else 0)
         record = struct.pack('<39f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
                              UV_SLOTS if tangent_slot is None else tangent_slot)
+        if toon:
+            # A toon material's two ramps, and the numbers that go with them.
+            numbers = [float(c) for colour in toon['lit'] for c in colour] + [float(v) for v in toon['shine']] + [float(v) for v in toon['numbers']]
+            if len(numbers) != TOON_STEPS * 4 + 8 or not all(math.isfinite(v) for v in numbers):
+                raise ValueError('Material %s has a toon ramp that cannot be read' % name)
+            record += struct.pack('<%df' % len(numbers), *numbers)
         fibre = source.get('_hair')
         if fibre:
             # A hair fibre's four lobes, for where the material is on curves.
