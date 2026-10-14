@@ -104,6 +104,31 @@ def ganged(parent, key, label):
     return result
 
 
+# The kinds of MoonRay item whose forms carry a Transform section.
+PLACED = ('light', 'camera')
+
+
+def transform_section(form, name):
+    """A Transform section in a form: Position, Rotation and Scale, each a row of X, Y and Z fields as Modo's own are,
+    by Modo's transform.channel command. Each form has its own: Modo shows a section in one form only."""
+    key = 'MoonRayEntity_%s_transform:sheet' % name
+    section = nested(form, key, 'Transform')
+    for channel, label, tip in (('pos', 'Position', 'Where the item is'), ('rot', 'Rotation', 'How the item is turned, in degrees'),
+                                ('scl', 'Scale', 'How the item is sized')):
+        row_key = 'MoonRayEntity_%s_transform_%s:sheet' % (name, channel)
+        row = ET.SubElement(section, 'list', type='Control', val='sub ' + row_key)
+        atom(row, 'Label', label)
+        atom(row, 'ShowLabel', 1)
+        atom(row, 'Style', 'inlinegang')
+        atom(row, 'StartCollapsed', 0)
+        atom(row, 'Hash', row_key)
+        fields = sheet(row_key, label)
+        for axis in 'XYZ':
+            control(fields, 'transform.channel %s.%s ?' % (channel, axis), axis, '%s, along %s' % (tip, axis))
+
+
+
+
 # The sizes of a thing that are changed together: its width and height, and its depth where it has one.
 SIZES = ('width', 'height', 'depth')
 
@@ -129,6 +154,11 @@ for i, name in enumerate(sorted(catalog)):
     atom(form, 'FilterCommandPriorityInfluencesTabChoice', 1)
     atom(form, 'Group', 'itemprops')
     ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'
+    if catalog[name]['category'] in PLACED:
+        # Modo shows its Transform section (position, rotation and scale, each as X, Y and Z) only for its own kinds
+        # of item; its rows hide themselves for any other. A MoonRay light or camera is given rows of the same
+        # commands, which work on the item selected.
+        transform_section(form, name)
     groups = {}
     for j, (key, channel, kind, default, choices) in enumerate(entities.channels(name)):
         spec = dict(catalog[name]['attributes'][key], **REWORDED.get(key, {}))
