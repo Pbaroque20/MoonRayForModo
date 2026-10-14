@@ -314,7 +314,7 @@ Everything else is reported in the packer's warnings rather than dropped silentl
 the alpha of baked procedural layers, layers on channels the shader lacks (specular
 colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), combine light filters,
 moving lights during the shutter
-and film offset. A render region is rendered alone, with the rest left black. Orthographic cameras are refused.
+and film offset. A render region is rendered alone, with the rest left black.
 
 Added to what is translated since the table was written:
 
@@ -385,6 +385,12 @@ Added to what is translated since the table was written:
   is given the same disc as a second distant light.
   ![The sun's disc in a physical sky](../docs/images/moonlightipr-sun_disc.jpg)
 - **Lights that are not normalized**, as described above.
+- **Cameras**: Modo's orthographic camera, and MoonRay's own camera items set to render, each from the item's own
+  place: a perspective camera with its focal length, film width, depth of field and bokeh; an orthographic one;
+  a dome (a spherical camera by MoonRay's own formula, flips included); fisheye and spherical as before. Film offset,
+  pixel aspect, stereo eyes and a dome's zenith mode are not drawn. Against MoonRay: 1.00 to 1.01, 95 to 99% of tiles
+  within a tenth (October 14).
+  ![An orthographic camera item, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-camera_ortho.png)
 
 ## Build
 

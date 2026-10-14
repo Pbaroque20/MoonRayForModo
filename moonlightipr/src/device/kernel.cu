@@ -1407,6 +1407,7 @@ ML_INLINE bool draftEdge(const Hit& a, const Hit& b) {
 ML_INLINE float3 cameraDirection(float sx, float sy, bool& outside) {
     float3 direction = normalize(vec(params.cameraU) * sx + vec(params.cameraV) * sy + vec(params.cameraW));
     outside = false;
+    if (params.cameraProjection == 3) return normalize(vec(params.cameraW));
     if (params.cameraProjection != 0) {
         // MoonRay's fisheye and spherical cameras, by its own formulas. Their directions are in
         // the camera's frame: right, up, and back along the view.
@@ -1444,6 +1445,14 @@ ML_INLINE float3 cameraDirection(float sx, float sy, bool& outside) {
     return direction;
 }
 
+// Where a camera ray starts for a place on the picture: the eye, or for an orthographic camera the place on its window.
+ML_INLINE float3 cameraStart(float sx, float sy) {
+    const float3 eye = vec(params.cameraOrigin);
+    if (params.cameraProjection != 3) return eye;
+    const float half = 0.5f * params.cameraProjectionValues[0];
+    return eye + normalize(vec(params.cameraU)) * (sx * half) + normalize(vec(params.cameraV)) * (sy * half * float(params.height) / float(params.width));
+}
+
 extern "C" __global__ void __raygen__moonlightipr() {
     const uint3 index = optixGetLaunchIndex();
     const unsigned pixel = index.y * params.width + index.x;
@@ -1455,7 +1464,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         unsigned seed = tea(pixel, params.sample);
         const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
         const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
-        const float3 from = vec(params.cameraOrigin);
+        const float3 from = cameraStart(sx, sy);
         Hit here, beside, above;
         // Through the camera's own lens, so that the lines lie where a fisheye or spherical camera's picture does.
         bool unseen = false, unseenBeside = false, unseenAbove = false;
@@ -1463,8 +1472,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
         traceRadiance(from, through, here, 1e16f, SEEN_CAMERA);
         // A line is as wide on the picture whatever its size: about a thousandth of its width, a pixel at least.
         const float apart = 2.0f * fmaxf(1.0f, float(params.width) / 1100.0f);
-        traceRadiance(from, cameraDirection(sx + apart / params.width, sy, unseenBeside), beside, 1e16f, SEEN_CAMERA);
-        traceRadiance(from, cameraDirection(sx, sy + apart / params.height, unseenAbove), above, 1e16f, SEEN_CAMERA);
+        traceRadiance(cameraStart(sx + apart / params.width, sy), cameraDirection(sx + apart / params.width, sy, unseenBeside), beside, 1e16f, SEEN_CAMERA);
+        traceRadiance(cameraStart(sx, sy + apart / params.height), cameraDirection(sx, sy + apart / params.height, unseenAbove), above, 1e16f, SEEN_CAMERA);
         // Where the lens sees nothing there is no line; nor between two places it does not both see.
         const float line = !unseen && ((!unseenBeside && draftEdge(here, beside)) || (!unseenAbove && draftEdge(here, above))) ? 1.0f : 0.0f;
         const float weight = 1.0f / float(params.sample + 1);
@@ -1487,7 +1496,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
 
     const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
     const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
-    float3 origin = vec(params.cameraOrigin);
+    float3 origin = cameraStart(sx, sy);
     bool outside = false;
     float3 direction = cameraDirection(sx, sy, outside);
     if (outside) {

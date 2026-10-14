@@ -19,7 +19,7 @@ SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS = 1, 2,
 ENVIRONMENT_ROWS = 64
 ENVIRONMENT_IMAGE = (1024, 512)
 # How a camera turns a point of the picture into a direction, by the session's numbering.
-PROJECTIONS = {'persp': 0, 'fisheye': 1, 'spherical': 2}
+PROJECTIONS = {'persp': 0, 'fisheye': 1, 'spherical': 2, 'ortho': 3}
 ENVIRONMENT_BAKE = (256, 128)       # layered environments are composed in Python, pixel by pixel
 GRADIENTS = ('constant', 'grad2', 'grad4', 'overcast')
 LOCAL_LIGHTS = {'SphereLight': 0, 'RectLight': 1, 'DiskLight': 2, 'SpotLight': 3, 'CylinderLight': 4, 'PortalLight': 5}
@@ -587,7 +587,13 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     camera = scene['camera']
     projection = camera.get('projection', 'persp')
     if projection not in PROJECTIONS:
-        raise ValueError('MoonLightIPR previews perspective, fisheye and spherical cameras only')
+        raise ValueError('MoonLightIPR previews perspective, orthographic, fisheye and spherical cameras only')
+    if projection == 'ortho':
+        # An orthographic camera's rays run side by side over a window this wide, in the scene's units.
+        width_across = float(camera.get('ortho_width', 1.0))
+        if not width_across > 0:
+            raise ValueError('Orthographic width must be positive')
+        camera = dict(camera, projection_values=[width_across, 0.0, 0.0, 0.0], dof=False)
     if camera['focal_mm'] <= 0 or camera['film_mm'] <= 0:
         raise ValueError('Camera focal length and film width must be positive')
     # The part of the picture to render: left, top, right, bottom, as fractions. The rest is black.
