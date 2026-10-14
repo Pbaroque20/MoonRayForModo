@@ -4,11 +4,19 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 **MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and updates quickly after each edit. Final renders always come from MoonRay.
 
-The current release is [0.4](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4).
+The current release is [0.4.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.1).
+
+## New in 0.4.1
+
+- **MoonRay's toon material** starts as a toon material, and MoonLightIPR draws it.
+- **Ramps are edited with the mouse**, and a material's ramp shows in the preview as you edit it.
+- **The scene importer can import into a new scene**, and has a Close button.
+- **Color management follows Modo's system preferences**, and what you choose in MoonRay is remembered.
+- **MoonRay LS** shows and renders the beauty alone.
 
 ## New in 0.4
 
-More detail and pictures are in [What's new in 0.4](docs/WHATS_NEW_04.md).
+More detail and pictures are in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md).
 
 **New**
 
