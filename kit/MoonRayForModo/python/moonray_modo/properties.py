@@ -21,6 +21,38 @@ def is_material(item):
     return kind in MATERIAL_TYPES or kind.startswith(LAYER_PREFIX) or kind == MATERIALX_TYPE
 
 
+# Settings being tried out in an editor that is still open, by the material's identity: {identity: {setting:
+# value}}. They are read as the material's own, so that the preview shows them, and are written nowhere: the
+# editor keeps them with write() when it is accepted, and drops them when it is not.
+LIVE = {}
+
+
+def try_out(items, parameters):
+    """Have these materials read with these settings until given_up(), and tell the preview windows to look."""
+    for item in items:
+        LIVE[item.id] = dict(parameters)
+    looked_at(items)
+
+
+def given_up(items):
+    """The materials are read as they are stored again."""
+    for item in items:
+        LIVE.pop(item.id, None)
+    looked_at(items)
+
+
+def looked_at(items):
+    """Tell the preview windows that these materials are to be read again, as an edit in Modo would."""
+    try:
+        from PySide2 import QtWidgets
+        from .panel import Panel
+        for widget in QtWidgets.QApplication.allWidgets():
+            if isinstance(widget, Panel) and not widget.disposed:
+                widget.changes.items.update(item.id for item in items)
+    except Exception:
+        pass
+
+
 def layer_shader(item):
     """The shader an Add Layer material is, or '' for any other item."""
     kind = item.type
@@ -49,6 +81,17 @@ def read(item):
         # Its type says what it is, before anything has been written to it.
         data.update(shader='DwaBaseMaterial', moonshine_override=True, native_shader=shader)
         data.setdefault('native_parameters', {})
+    try:
+        tried = LIVE.get(item.id) if LIVE else None
+    except (LookupError, RuntimeError, AttributeError):
+        tried = None
+    if tried:
+        data['native_parameters'] = dict(data.get('native_parameters') or {}, **tried)
+        graph = data.get('node_graph')
+        if graph and graph.get('root') in graph.get('nodes', {}):
+            # The graph editor's output node is the same material.
+            node = graph['nodes'][graph['root']]
+            node['parameters'] = dict(node.get('parameters') or {}, **tried)
     if data.get('native_shader') and not data.get('node_graph'):
         # What the plugin starts such a material with, where it has not been set: a toon material's toon look.
         from .node_defaults import STARTS, started
