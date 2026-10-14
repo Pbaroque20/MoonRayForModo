@@ -88,6 +88,8 @@ def attributes(entry,multiple=False):
     return attrs
 
 def preview(scene):
+    # A quick low-sample look (MoonRay LS) is the beauty alone: no other buffer is rendered for it.
+    if scene.get('_ipr'):return {'beauty':{'result':0}}
     result={key:dict(value[1]) for key,value in options.AOVS.items()};result['beauty']={'result':0}
     for entry in values(scene.get('custom_aovs',[])):
         attrs=attributes(entry,sum(v.get('kind')=='cryptomatte' for v in scene.get('custom_aovs',[]))>1);attrs.pop('file_part',None);attrs.pop('channel_name',None);attrs['channel_format']=0
