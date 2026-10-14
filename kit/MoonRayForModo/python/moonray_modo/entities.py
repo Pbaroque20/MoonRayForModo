@@ -954,6 +954,51 @@ def camera_lines(scene, entity):
 
 # ---- MoonLightIPR ------------------------------------------------------------------------------
 
+def camera_view(camera, entity, matrix, note):
+    """The scene's camera as MoonLightIPR is to look through a MoonRay camera item: from the item's own place, by its own
+    lens and settings. None for a camera it has no reading of. note(what) records what is left out."""
+    import math
+    name = entity['class']
+    view = dict(camera, matrix=matrix, dof=False, film_offset=[0.0, 0.0], pixel_aspect=1.0, projection_values=[0.0, 0.0, 0.0, 0.0])
+    view.pop('matrix_close', None)
+    view.pop('focal_mm_close', None)
+    if name in ('PerspectiveCamera', 'OrthographicCamera'):
+        film = float(value(entity, 'film_width_aperture'))
+        offset = [float(value(entity, 'horizontal_film_offset')), float(value(entity, 'vertical_film_offset'))]
+        view.update(film_offset=offset, pixel_aspect=float(value(entity, 'pixel_aspect_ratio')))
+        if name == 'OrthographicCamera':
+            # As wide as its film, in the scene's units.
+            view.update(projection='ortho', ortho_width=film)
+            return view
+        view.update(projection='persp', focal_mm=float(value(entity, 'focal')), film_mm=film)
+        if value(entity, 'dof'):
+            # MoonRay's dof_aperture is an f-stop, as Modo's is.
+            view.update(dof=True, f_stop=float(value(entity, 'dof_aperture')), focus_distance=float(value(entity, 'dof_focus_distance')),
+                        iris_blades=int(value(entity, 'bokeh_sides')) if value(entity, 'bokeh') else 0,
+                        iris_rotation=math.radians(float(value(entity, 'bokeh_angle'))))
+            if value(entity, 'bokeh') and entity['parameters'].get('bokeh_image'):
+                note('a bokeh image')
+        if int(value(entity, 'stereo_view') or 0):
+            note('a stereo eye, shown from the middle')
+        return view
+    if name == 'DomeMaster3DCamera':
+        # Its rays are a spherical camera's (DomeMaster3DCamera.cc): across and up the picture by its two fields of
+        # view, about the middle. A flipped ray is the same picture mirrored.
+        if value(entity, 'zenith_mode'):
+            return None
+        across = math.radians(float(value(entity, 'FOV_horizontal_angle'))) * (-1.0 if value(entity, 'flip_ray_x') else 1.0)
+        up = math.radians(float(value(entity, 'FOV_vertical_angle'))) * (-1.0 if value(entity, 'flip_ray_y') else 1.0)
+        if int(value(entity, 'stereo_view') or 0):
+            note('a stereo eye, shown from the middle')
+        view.update(projection='spherical', projection_values=[up, -up / 2, across, -across / 2])
+        return view
+    lens = camera_projection(entity)
+    if lens is None:
+        return None
+    view.update(lens)
+    return view
+
+
 def camera_projection(entity):
     """How MoonLightIPR is to look through a MoonRay camera item: a projection and its numbers, as
     MoonRay works them out, or None for a camera it has no reading of."""
@@ -1128,13 +1173,12 @@ def preview(scene, warnings):
             continue
         elif category == 'camera':
             if entity['parameters'].get('modo_render_camera'):
-                lens = camera_projection(entity)
-                if lens is None:
+                # The view is from the item, through its own kind of lens.
+                view = camera_view(scene['camera'], entity, matrix, lambda what: warnings.append('MoonLightIPR leaves out %s of %s.' % (what, label)))
+                if view is None:
                     warnings.append('MoonLightIPR looks through the Modo camera, not %s.' % label)
                 else:
-                    # The view is from the item, through its own kind of lens.
-                    camera = dict(scene['camera'], matrix=matrix, dof=False, **lens)
-                    camera.pop('matrix_close', None)
+                    camera = view
         else:
             skipped.setdefault(name, []).append(label)
     for name, labels in sorted(skipped.items()):

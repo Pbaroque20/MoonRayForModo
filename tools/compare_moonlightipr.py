@@ -446,6 +446,17 @@ def scenes(folder):
             {'identity': 'e_key', 'name': 'Key', 'class': 'SphereLight', 'matrix': fixture.placed(-1, 5, 3), 'parameters': {'intensity': 50.0, 'radius': .4, 'color': [1.0, .9, .8]}},
             {'identity': 'e_box', 'name': 'Block', 'class': 'BoxGeometry', 'matrix': fixture.placed(-4.2, .6, 1.5), 'parameters': {'size': [1.2, 1.2, 1.2], 'modo_material': 'red'}},
             {'identity': 'e_ball', 'name': 'Globe', 'class': 'SphereGeometry', 'matrix': fixture.placed(4.3, .7, 1.8), 'parameters': {'radius': .7, 'modo_material': 'blue'}}]),
+        # MoonRay's own cameras set to render, each from a place of its own: a perspective one lower and to the side with
+        # a longer lens, an orthographic one from above and in front, and a dome.
+        'camera_item': dict(base, lights=fixture.snapshot()['lights'], entities=[
+            {'identity': 'c_persp', 'name': 'Side', 'class': 'PerspectiveCamera', 'matrix': aimed([5, 1.5, 7], [0, .5, 0]),
+             'parameters': {'focal': 40.0, 'film_width_aperture': 24.0, 'modo_render_camera': True}}]),
+        'camera_ortho': dict(base, lights=fixture.snapshot()['lights'], entities=[
+            {'identity': 'c_ortho', 'name': 'Plan', 'class': 'OrthographicCamera', 'matrix': aimed([0, 6, 8], [0, .5, 0]),
+             'parameters': {'film_width_aperture': 9.0, 'modo_render_camera': True}}]),
+        'camera_dome': dict(base, lights=fixture.snapshot()['lights'], entities=[
+            {'identity': 'c_dome', 'name': 'Dome', 'class': 'DomeMaster3DCamera', 'matrix': aimed([0, 1.5, 6], [0, .5, 0]),
+             'parameters': {'FOV_horizontal_angle': 160.0, 'FOV_vertical_angle': 90.0, 'modo_render_camera': True}}]),
         # Lights whose brightness is not spread over their size, as scenes made elsewhere for MoonRay often have them.
         'entity_unnormalized': dict(base, entities=[
             {'identity': 'u_rect', 'name': 'Window', 'class': 'RectLight', 'matrix': aimed([-2, 4, 3], [0, .5, 0]), 'parameters': {'color': [3.0, 3.0, 3.0], 'width': 2.0, 'height': 1.2, 'normalized': False}},

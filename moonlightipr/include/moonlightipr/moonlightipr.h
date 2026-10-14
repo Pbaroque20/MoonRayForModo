@@ -294,6 +294,7 @@ struct Camera {
     // 1 MoonRay's FisheyeCamera, with projectionValues its mapping, format, zoom and half field
     // of view in radians; 2 MoonRay's SphericalCamera, with projectionValues the latitude and
     // then the longitude as scale and offset over the picture's height and width.
+    // 3 orthographic, with projectionValues[0] the width of its window in scene units.
     uint32_t projection = 0;
     float projectionValues[4] = {0, 0, 0, 0};
     // The part of the picture to render, as fractions of it: left, top, right, bottom. The rest is black.
