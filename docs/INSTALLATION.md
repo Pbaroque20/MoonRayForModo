@@ -1,6 +1,6 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.4.1**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
+These instructions are for **0.4.1**, **Modo 16.1v9**, and **Windows x64**. The runtime is MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1) (MoonRay 18.4), built for Windows with the plugin's own patches. This is an experimental development release, not a production-certified build.
 
 ## Requirements
 
