@@ -105,7 +105,7 @@ def ganged(parent, key, label):
 
 
 # The kinds of MoonRay item whose forms carry a Transform section.
-PLACED = ('light', 'camera')
+PLACED = ('light', 'lightfilter', 'camera')
 
 
 def transform_section(form, name):
