@@ -30,7 +30,7 @@ if '--build-only' not in sys.argv or not (BUILD / 'build.ninja').exists():
     run([BIN / 'cmake.exe', '-S', ROOT / 'moonlightipr', '-B', BUILD, '-G', 'Ninja',
          '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=' + str(BIN / 'g++.exe'),
          '-DCMAKE_MAKE_PROGRAM=' + str(BIN / 'ninja.exe')], 'configure')
-run([BIN / 'cmake.exe', '--build', BUILD, '--target', 'moonlightipr_probe', 'moonlightipr_session'], 'compile')
+run([BIN / 'cmake.exe', '--build', BUILD, '--target', 'moonlightipr_probe', 'moonlightipr_session', 'modo_composite'], 'compile')
 if '--probe' in sys.argv:
     images = BUILD / 'probe'
     images.mkdir(exist_ok=True)

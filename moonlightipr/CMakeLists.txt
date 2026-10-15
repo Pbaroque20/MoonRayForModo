@@ -23,6 +23,15 @@ add_custom_command(OUTPUT "${MOONLIGHTIPR_PTX}"
   VERBATIM)
 add_custom_target(moonlightipr_ptx DEPENDS "${MOONLIGHTIPR_PTX}")
 
+# The compositor's device program: precise arithmetic, so that it matches the processor (composite/ops.h).
+set(COMPOSITE_PTX "${CMAKE_BINARY_DIR}/shaders/MoonLightIPRComposite.ptx")
+add_custom_command(OUTPUT "${COMPOSITE_PTX}"
+  COMMAND "${PYTHON_EXECUTABLE}" "${ROOT}/tools/compile_moonlightipr_ptx.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/composite/kernel.cu" "${COMPOSITE_PTX}" --precise
+  DEPENDS composite/kernel.cu composite/ops.h "${ROOT}/tools/compile_moonlightipr_ptx.py"
+  VERBATIM)
+add_custom_target(composite_ptx DEPENDS "${COMPOSITE_PTX}")
+
 add_library(moonlightipr STATIC src/renderer.cpp)
 target_include_directories(moonlightipr PUBLIC include PRIVATE src)
 target_link_libraries(moonlightipr PRIVATE CUDA::cudart OptiX::OptiX)
@@ -37,3 +46,9 @@ add_executable(moonlightipr_session session/moonlightipr_session.cpp session/sce
 target_include_directories(moonlightipr_session PRIVATE "${ROOT}/native-port")
 target_link_libraries(moonlightipr_session PRIVATE moonlightipr)
 target_link_options(moonlightipr_session PRIVATE -static -static-libgcc -static-libstdc++)
+
+# The scene compositor: the same steps on the graphics card or the processor.
+add_executable(modo_composite composite/composite.cpp)
+target_link_libraries(modo_composite PRIVATE CUDA::cudart)
+target_link_options(modo_composite PRIVATE -static -static-libgcc -static-libstdc++)
+add_dependencies(modo_composite composite_ptx)

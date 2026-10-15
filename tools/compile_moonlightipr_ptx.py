@@ -23,7 +23,11 @@ if result: raise RuntimeError('nvrtcCreateProgram failed: '+str(result))
 try:
     includes=[source.parent,xpu/'optix-dev/include',xpu/'cuda_cudart-windows-x86_64-12.8.90-archive/include',xpu/'cuda_nvcc-windows-x86_64-12.8.93-archive/include']
     # compute_75 matches the XPU program; the NVIDIA driver compiles the PTX for the installed GPU.
-    flags=['--std=c++14','--gpu-architecture=compute_75','--use_fast_math']+['--include-path='+str(p) for p in includes]
+    # --precise (the compositor): IEEE division, square roots and no fused multiply-adds, so that the graphics card works
+    # each value out as the processor does.
+    precise='--precise' in sys.argv[3:]
+    flags=['--std=c++14','--gpu-architecture=compute_75']+(['--fmad=false','--prec-div=true','--prec-sqrt=true','--ftz=false'] if precise else ['--use_fast_math'])
+    flags+=['--include-path='+str(p) for p in includes]
     options=(C.c_char_p*len(flags))(*(v.encode() for v in flags))
     result=lib.nvrtcCompileProgram(program,len(flags),options)
     size=C.c_size_t();lib.nvrtcGetProgramLogSize(program,C.byref(size))
@@ -32,5 +36,5 @@ try:
     if result: raise RuntimeError('NVRTC compilation failed: '+str(result))
     lib.nvrtcGetPTXSize(program,C.byref(size));ptx=C.create_string_buffer(size.value);lib.nvrtcGetPTX(program,ptx)
     output.parent.mkdir(parents=True,exist_ok=True);output.write_bytes(ptx.value)
-    print('Compiled MoonLightIPR PTX:',output,flush=True)
+    print('Compiled PTX:',output,flush=True)
 finally: lib.nvrtcDestroyProgram(C.byref(program))
