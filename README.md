@@ -240,7 +240,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | Volume quality and overlap settings | ![yes](docs/images/feature-yes.svg) | |
 | Volume attenuation and contribution factors | ![no](docs/images/feature-no.svg) | |
 | Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
-| Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![no](docs/images/feature-no.svg) | |
+| Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches. Coming in 0.4.2 |
 | Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![no](docs/images/feature-no.svg) |  |
 | AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression |
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
