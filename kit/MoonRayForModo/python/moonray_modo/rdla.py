@@ -144,6 +144,12 @@ def _pieces(mesh, inside):
             changed[key] = [values[c] for c in corners]
         if mesh.get('uv_sets') is not None:
             changed['uv_sets'] = {key: [values[c] for c in corners] for key, values in sets.items()}
+        # Vertex maps: a value for each point, cut to the piece's own points, and for each corner, to its corners.
+        if mesh.get('point_attributes'):
+            changed['point_attributes'] = {name: dict(held, values=[held['values'][v] for v in used]) for name, held in mesh['point_attributes'].items()}
+        if mesh.get('corner_attributes'):
+            changed['corner_attributes'] = {name: dict(held, values=[held['values'][c] for c in corners])
+                                            for name, held in mesh['corner_attributes'].items() if len(held['values']) == total}
         if mesh.get('creases'):
             changed['creases'] = [(order[a], order[b], sharpness) for a, b, sharpness in mesh['creases'] if a in order and b in order]
         if own is None:
@@ -457,6 +463,19 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["rate"] = 6,',
                       '  ["vec2f_values_0"] = %s,' % vector_array(values,'Vec2'), '}']
             user_data.append('UserData(%s)' % string(name))
+        # The mesh's weight and colour maps (vertex_maps), for its materials to read by their names: MoonRay's rate 4
+        # for a value at each point, 6 for one at each corner of each face.
+        for source, rate, count in (('point_attributes', 4, len(vertices)), ('corner_attributes', 6, sum(map(len, faces)))):
+            for map_index, (map_name, held) in enumerate(sorted((mesh.get(source) or {}).items())):
+                values = held['values']
+                if len(values) != count:
+                    raise ValueError('Vertex map %s of %s does not match its %s' % (map_name, mesh['name'], 'points' if rate == 4 else 'polygon corners'))
+                word = 'color' if held['kind'] == 'color' else 'float'
+                written = vector_array(values, 'Rgb') if word == 'color' else array(number(v[0]) for v in values)
+                name = '/modo/mesh/%d/map/%s/%d' % (index, source, map_index)
+                lines += ['UserData(%s) {' % string(name), '  [%s] = %s,' % (string(word + '_key'), string(map_name)),
+                          '  ["rate"] = %d,' % rate, '  [%s] = %s,' % (string(word + '_values_0'), written), '}']
+                user_data.append('UserData(%s)' % string(name))
         from . import primitive_attributes
         instance_values = []
         if mesh.get('instance_attributes') and len(mesh['instance_attributes']) == len(mesh.get('instances') or []):

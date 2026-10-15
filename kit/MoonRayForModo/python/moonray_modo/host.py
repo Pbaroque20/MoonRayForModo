@@ -400,11 +400,17 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             if not mesh.PolygonCount():
                 continue
             groups = {}
+            # For each group, which of the mesh's surface polygons its faces are, in order: for maps with a value for
+            # each face corner.
+            ordinals = {}
             # Worked out once for each material, not for each polygon: a node graph's is found by following its nodes.
             tag_descriptors = {}
             transform = world_matrix(item)
+            # The mesh's weight and colour maps, for its materials to read (vertex_maps).
+            from . import vertex_maps
+            painted = vertex_maps.read(mesh)
 
-            def polygon(face, tag, subdivision, uv_of, normals):
+            def polygon(face, tag, subdivision, uv_of, normals, ordinal):
                 """Put one polygon with its like. uv_of(name) is its corners' values in a UV map, or nothing."""
                 # Polygons no material is set on carry Modo's own tag, which names no material: they wear the
                 # scene's base material, and take the UVs its layers ask for.
@@ -427,6 +433,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                         source_uv = read[source_name]
                     extra_uvs[key] = coordinates.face(descriptor, [vertices[v] for v in face], source_uv, transform)
                 groups.setdefault((subdivision, uv_name), []).append((face, tag, face_uv, normals, extra_uvs))
+                ordinals.setdefault((subdivision, uv_name), []).append(ordinal)
 
             from . import mesh_reader
             whole = mesh_reader.read(mesh)
@@ -454,6 +461,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                     if complete or not uv_name:
                         normal = whole.normal_values is not None and whole.normal_valid.count(1) == len(whole.counts)
                         tags_of = whole.tags
+                        ordinals[(bool(whole.subdivided[0]), uv_name)] = list(range(len(whole.counts)))
                         groups[(bool(whole.subdivided[0]), uv_name)] = (whole.faces(), [tags_of[i] for i in whole.tag_indices],
                             whole.uv_values[which] if complete else [], whole.normal_values if normal else [], {})
                         whole = None
@@ -471,7 +479,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                         which = chosen[name]
                         return uv_values[which][offset:limit] if which is not None and uv_valid[which][index] else []
                     polygon(list(indices[offset:limit]), whole.tags[whole.tag_indices[index]], bool(whole.subdivided[index]), uv_of,
-                            normal_values[offset:limit] if normal_values is not None and normal_valid[index] else [])
+                            normal_values[offset:limit] if normal_values is not None and normal_valid[index] else [], index)
                     offset = limit
             elif not groups:
                 points = lx.object.Point(mesh.PointAccessor())
@@ -484,6 +492,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 uv_maps = {}
                 normal_map = first_map(mesh, lx.symbol.i_VMAP_NORMAL)
                 tags = lx.object.StringTag(polygons)
+                surfaces = 0
                 for index in range(mesh.PolygonCount()):
                     polygons.SelectByIndex(index)
                     if lxu.utils.decodeID4(polygons.Type()) in ('CURV','BEZR','BSPL','LINE','OPNT'):continue
@@ -501,7 +510,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                             uv_maps[name] = first_map(mesh, lx.symbol.i_VMAP_TEXTUREUV, name)
                         return corner_values(polygons, uv_maps[name], count, 2)
                     polygon([point_indices[int(polygons.VertexByIndex(v))] for v in range(count)], tag,
-                            lxu.utils.decodeID4(polygons.Type()) in ('SUBD', 'PSUB'), uv_of, corner_values(polygons, normal_map, count, 3))
+                            lxu.utils.decodeID4(polygons.Type()) in ('SUBD', 'PSUB'), uv_of, corner_values(polygons, normal_map, count, 3), surfaces)
+                    surfaces += 1
             transform = world_matrix(item)
             object_settings = options.object_values(properties.read(item))
             instance_records = sorted(instances.get(item.id, []),key=lambda pair:pair[0])
@@ -547,6 +557,12 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                         declared[face_tag] = said
                 if declared:
                     result['meshes'][-1]['material_smoothing'] = declared
+                if painted:
+                    point_maps, corner_maps = vertex_maps.for_faces(painted, ordinals.get((subdivision, uv_name), []))
+                    if point_maps:
+                        result['meshes'][-1]['point_attributes'] = point_maps
+                    if corner_maps:
+                        result['meshes'][-1]['corner_attributes'] = corner_maps
                 own_attributes = primitive_attributes.read(item)
                 if own_attributes:
                     result['meshes'][-1]['attributes'] = own_attributes

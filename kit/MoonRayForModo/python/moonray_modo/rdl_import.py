@@ -396,13 +396,23 @@ def plan(document, path, recover_instancer_materials=False):
             warnings.append(short(record['name']) + ': semi-sharp subdivision weights are not imported; fully sharp creases are retained')
         if volume_of(record['name']):
             warnings.append(short(record['name']) + ': the volume inside it is not imported; MoonRay volumes go in a MoonRay shape')
+        # Values that differ point by point, corner by corner or face by face become the mesh's vertex maps: numbers a
+        # weight map, colours an RGB map, as MoonRay's auto rate tells them apart, by how many there are.
+        painted = []
         for name_, kind_, held in carried(record):
-            if len(held) > 1:
-                warnings.append('%s: %s differs from face to face or point to point, which is not imported; only one value for a whole item is' % (short(record['name']), name_))
+            if len(held) <= 1:
+                continue
+            rate = 'points' if len(held) == len(vertices) else 'corners' if len(held) == len(indices) else 'faces' if len(held) == len(counts) else None
+            if kind_ not in ('float', 'int', 'color') or rate is None:
+                warnings.append('%s: %s differs from face to face or point to point as %s, which a Modo vertex map cannot hold; it is not imported'
+                                % (short(record['name']), name_, 'a %s' % kind_ if rate else 'a count of values matching nothing'))
+                continue
+            painted.append((name_, 'color' if kind_ == 'color' else 'float', rate,
+                            [list(v) if kind_ == 'color' else [float(v)] for v in held]))
         note_motion(record)
         name = label(key) if key not in mesh.made else unique_name(short(key))
         meshes.append({'name': name, 'vertices': vertices, 'faces': faces, 'uv': uv, 'normals': normals, 'tags': tags, 'subd': bool(a.get('is_subd', False)),
-                       'matrix': None, 'render': False, 'attributes': [], 'hard_edges':hard_edges, 'hard_corners':hard_corners})
+                       'matrix': None, 'render': False, 'attributes': [], 'hard_edges':hard_edges, 'hard_corners':hard_corners, 'maps': painted})
         mesh.made.setdefault(key, name)
         mesh.cache[cache_key] = mesh.scopes[scope] = name
         return name
@@ -879,6 +889,7 @@ def apply(data, alone=True, progress=None):
                 creased=bool(record.get('hard_edges') or record.get('hard_corners'))
                 kind = (lx.symbol.iPTYP_PSUB if creased else lx.symbol.iPTYP_SUBD) if record['subd'] else lx.symbol.iPTYP_FACE
                 tagger, uvs, face_tags = lx.object.StringTag(polygon), record['uv'], record['tags']
+                made_polygons = []
                 offset, corners, sized = 0, {}, 0
                 for face_index, face in enumerate(record['faces']):
                     count = len(face)
@@ -890,6 +901,8 @@ def apply(data, alone=True, progress=None):
                     if reverse_winding:ordered.reverse()
                     storage.set(tuple(vertices[i] for _,i in ordered))
                     made_polygon = polygon.New(kind, storage, count, 0)
+                    if record.get('maps'):
+                        made_polygons.append((made_polygon, ordered))
                     wears = tags.get(face_tags[face_index])
                     if wears or (uv and not by_point) or (normal_map and not normals_by_point):
                         polygon.Select(made_polygon)
@@ -907,6 +920,22 @@ def apply(data, alone=True, progress=None):
                     offset += count
                     if progress and not face_index % 20000 and progress(built + face_index, total, record['name']) is False:
                         raise Cancelled()
+                # The values a MoonRay shape carried for its materials, as vertex maps: at each point, or set apart on
+                # each polygon's corners (Modo's discontinuous values), which is how a face keeps a value of its own.
+                for map_name, word, rate, values in record.get('maps') or []:
+                    painted = lx.object.MeshMap(mesh.MeshMapAccessor()).New(lx.symbol.i_VMAP_RGB if word == 'color' else lx.symbol.i_VMAP_WEIGHT, map_name)
+                    value = lx.object.storage('f', 3 if word == 'color' else 1)
+                    if rate == 'points':
+                        for identity, held in zip(vertices, values):
+                            point.Select(identity); value.set(tuple(held)); point.SetMapValue(painted, value)
+                        continue
+                    offset = 0
+                    for face_index, (made_polygon, ordered) in enumerate(made_polygons):
+                        polygon.Select(made_polygon)
+                        for corner, index in ordered:
+                            value.set(tuple(values[offset + corner] if rate == 'corners' else values[face_index]))
+                            polygon.SetMapValue(vertices[index], painted, value)
+                        offset += len(ordered)
             # Commit topology before asking Modo for edge accessors. Newly created
             # polygons do not yet have a stable edge cache in the construction edit.
             if record['subd'] and creased:
