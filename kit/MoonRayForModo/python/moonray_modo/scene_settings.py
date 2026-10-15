@@ -23,6 +23,8 @@ DEFAULTS = {
     'exr': {'compression': 1, 'dwa_level': 85.0},
     'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some'},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
+    # The camera MoonRay tessellates adaptive geometry for, by its item's identity; '' for the render camera.
+    'dicing_camera': '',
     # The compositor's graph over a finished render's buffers (compositor.py); none until one is made.
     'compositor': {},
 }
@@ -129,6 +131,16 @@ GROUPS = [
         render_field('presence_threshold', 'Presence Threshold', 'A ray through see-through surfaces stops once they have hidden this much'),
         render_field('enable_presence_shadows', 'Presence Shadows', 'See-through surfaces cast lighter shadows. Slower'),
         render_field('lock_frame_noise', 'Same Noise Every Frame', 'The noise pattern does not change from frame to frame'),
+    ]),
+    # MoonRay's switches over the whole render, as it has them.
+    ('Global Switches', True, [
+        render_field('enable_displacement', 'Displacement', 'Off renders every displaced surface flat, as it is before its displacement'),
+        render_field('enable_subsurface_scattering', 'Subsurface Scattering', 'Off renders subsurface materials with plain diffuse light, which is quicker'),
+        render_field('enable_shadowing', 'Shadows', 'Off casts no shadows anywhere: lights reach everything they face'),
+        render_field('lights_visible_in_camera', 'Lights Seen by the Camera', 'On shows lights to the camera as glowing shapes. Each MoonRay light can say otherwise for itself'),
+        render_field('enable_max_geometry_resolution', 'Limit Geometry Resolution', 'Caps how finely subdivision surfaces and displacement are tessellated'),
+        render_field('max_geometry_resolution', 'Geometry Resolution Limit', 'The cap, as a tessellation resolution'),
+        field('dicing_camera', None, 'command', 'Dicing Camera', 'The camera adaptive tessellation is worked out for: the render camera, or another, for a render whose camera moves or is very close'),
     ]),
     ('Denoising', True, [
         field('denoiser', ('denoising', 'engine'), 'choice', 'Denoiser', '', choices=DENOISERS),

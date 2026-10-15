@@ -163,6 +163,34 @@ def _pieces(mesh, inside):
     return made + [piece([index for index, tag in enumerate(tags) if tag == own], own) for own in inside]
 
 
+def dicing_lines(scene, entity_camera, lines):
+    """The camera MoonRay works adaptive tessellation out for, written into lines where it is not the render camera;
+    what the scene variables name it by, or None."""
+    from . import entities
+    chosen = scene.get('dicing_camera')
+    if not chosen:
+        return None
+    if 'entity' in chosen:
+        found = [e for e in entities.checked(scene) if e['identity'] == chosen['entity'] and entities.catalog()[e['class']]['category'] == 'camera']
+        if not found or (entity_camera and entity_camera['identity'] == chosen['entity']):
+            return None
+        name, body = entities.block(entities.checked(scene), found[0])
+        lines += body
+        return name
+    orthographic = chosen.get('projection', 'persp') == 'ortho'
+    if not orthographic and chosen.get('focal_mm', 0) <= 0:
+        raise ValueError('The dicing camera\'s focal length must be positive')
+    lines += ['local dicing = %s("/modo/dicing_camera") {' % ('OrthographicCamera' if orthographic else 'PerspectiveCamera'),
+              '  ["node_xform"] = %s,' % node_matrix(chosen),
+              *([] if orthographic else ['  ["focal"] = %s,' % number(chosen['focal_mm'])]),
+              '  ["horizontal_film_offset"] = %s,' % number(chosen.get('film_offset', [0, 0])[0]),
+              '  ["vertical_film_offset"] = %s,' % number(chosen.get('film_offset', [0, 0])[1]),
+              '  ["pixel_aspect_ratio"] = %s,' % number(chosen.get('pixel_aspect', 1)),
+              '  ["film_width_aperture"] = %s,' % number(chosen.get('ortho_width', 1) if orthographic else chosen['film_mm']),
+              '  ["near"] = 0.001,', '}']
+    return 'dicing'
+
+
 def filter_inputs_file(target):
     """Where the outputs display filters take in are written: MoonRay writes every output it renders, and these are
     no part of what was asked for. A file of the temporary folder, one for each picture rendered."""
@@ -251,6 +279,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     if entity_camera:
         # A MoonRay camera item set to render takes the place of the Modo camera.
         lines[1:lines.index('}')+1]=entities.camera_lines(scene,entity_camera)
+    dicing=dicing_lines(scene,entity_camera,lines)
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
@@ -415,6 +444,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if found:
             lines.append('materials[%s] { ["sss_trace_set"] = TraceSet(%s)(%s) }' % (string(tag), string('/modo/traceSet/' + tag),
                          array('{RdlMeshGeometry("/modo/mesh/%d"), ""}' % place for place in found)))
+    # MoonRay's limit to geometry resolution, which it leaves to whatever makes the geometry: here, the plugin, for the
+    # resolution it tessellates subdivision surfaces and displacement at.
+    held_render = options.render_values(scene.get('render_settings', {}))
+    resolution_cap = held_render['max_geometry_resolution'] if held_render['enable_max_geometry_resolution'] else None
     for index, mesh in enumerate(render_meshes):
         vertices = mesh['vertices']
         faces = mesh['faces']
@@ -489,7 +522,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                   '    ["vertices_by_index"] = %s,' % mesh_array(faces),
                   '    ["face_vertex_count"] = %s,' % mesh_array(faces,True),
                   '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
-                  *(['    ["mesh_resolution"] = %d,' % mesh.get('mesh_resolution',2 ** level)] if subdivision or displaced else []),
+                  *(['    ["mesh_resolution"] = %d,' % min(mesh.get('mesh_resolution',2 ** level), resolution_cap or 2 ** 31)] if subdivision or displaced else []),
                   *(['    ["adaptive_error"] = %s,' % number(mesh['adaptive_error'])] if (subdivision or displaced) and 'adaptive_error' in mesh else []),
                   '    ["smooth_normal"] = %s,' % ('true' if mesh.get('smooth', True) else 'false')]
         if 'vertices_close' in mesh:
@@ -572,7 +605,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     entities.emit_geometry(scene,materials,lines)
     lines += ['GeometrySet("/modo/geometrySet")(geometries)',
               'local layer = Layer("/modo/layer")(assignments)', 'SceneVariables {',
-              '  ["camera"] = camera,', '  ["layer"] = layer,',
+              '  ["camera"] = camera,', '  ["layer"] = layer,', *(['  ["dicing_camera"] = %s,' % dicing] if dicing else []),
               '  ["scene_scale"] = 1,',
               '  ["fps"] = %s,'%number(scene.get('fps',24)),
               '  ["texture_cache_size"] = %d,'%max(64,min(131072,int(scene.get('asset_settings',{}).get('texture_cache_mb',4000)))),

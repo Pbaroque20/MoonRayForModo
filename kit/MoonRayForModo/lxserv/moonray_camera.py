@@ -54,6 +54,27 @@ def register():
 
     lx.bless(Camera,'moonray.camera')
 
+    class Dicing(lxu.command.BasicCommand):
+        """The camera MoonRay works adaptive tessellation out for: the render camera, or another of the scene's."""
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('camera',lx.symbol.sTYPE_INTEGER)
+            self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def arg_UIValueHints(self,index):
+            return _same(Hints,WATCHED,[('dicing%d'%i,label) for i,(label,_) in enumerate(camera_choice.dicing_choices())])
+        def cmd_Query(self,index,query):
+            identities=[identity for _,identity in camera_choice.dicing_choices()]
+            current=camera_choice.dicing_current()
+            lx.object.ValueArray(query).AddInt(identities.index(current) if current in identities else 0)
+        def basic_Execute(self,msg,flags):
+            entries=camera_choice.dicing_choices();index=self.dyna_Int(0)
+            if not 0<=index<len(entries):raise ValueError('No such camera')
+            camera_choice.dicing_choose(entries[index][1])
+            property_notifications.notify()
+
+    lx.bless(Dicing,'moonray.dicing_camera')
+
 
 # A fault here must not keep the rest of the kit from loading.
 try:register()
