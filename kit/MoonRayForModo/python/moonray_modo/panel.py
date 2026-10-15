@@ -1077,6 +1077,8 @@ class Panel(Tools, QtWidgets.QWidget):
         scene['recovery']=values['recovery']
         # Kept out of a scene that does not ask for it, so that a checkpoint saved before still matches.
         if values['deep']['enabled']:scene['deep']=values['deep']
+        # Likewise the EXR's compression, where it is not MoonRay's zip.
+        if values['exr']!={'compression':1,'dwa_level':85.0}:scene['exr']=values['exr']
         scene['preview_buffer'] = values['preview_buffer']
         scene['execution_mode'] = values['execution_mode']
         scene['denoising'] = values['denoising']

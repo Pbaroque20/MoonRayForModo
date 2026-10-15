@@ -843,6 +843,27 @@ index 80a81c8..ac00c0e 100644
      ISPC_INSTRUCTION_SETS ${GLOBAL_ISPC_INSTRUCTION_SETS}
      LINKER_LANGUAGE CXX
  )
+diff --git a/lib/rendering/mcrt_common/Clock.h b/lib/rendering/mcrt_common/Clock.h
+index 510e8eb..12db147 100644
+--- a/lib/rendering/mcrt_common/Clock.h
++++ b/lib/rendering/mcrt_common/Clock.h
+@@ -35,9 +35,16 @@ public:
+         return static_cast<int64_t>(sec * NSPERSEC);
+     }
+ 
++    // On Windows a thread's CPU time only moves on at the scheduler's tick (about 15.6 ms), which leaves the heat
++    // map with whole ticks in a few pixels and none in the rest: the monotonic clock, which counts in fractions of a
++    // microsecond, is used there instead.
+     __forceinline Clock(int64_t *stat,
+                         bool startNow = true,
++#ifdef _WIN32
++                        clockid_t clkId = CLOCK_MONOTONIC):
++#else
+                         clockid_t clkId = CLOCK_THREAD_CPUTIME_ID):
++#endif
+         mStat(stat),
+         mClkId(clkId),
+         mStopped(true)
 diff --git a/lib/rendering/mcrt_common/ThreadLocalState.cc b/lib/rendering/mcrt_common/ThreadLocalState.cc
 index 6a4142a..b5ef92c 100644
 --- a/lib/rendering/mcrt_common/ThreadLocalState.cc

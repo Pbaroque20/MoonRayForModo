@@ -658,6 +658,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             render_outputs=[(name,dict(attrs,file_part=attrs.get('file_part') or primary_part),channel)
                             for name,attrs,channel in render_outputs]
         from .recovery import attributes as recovery_attributes
+        # The final EXR's compression, the same for every output that goes into it, as MoonRay asks.
+        held=scene.get('exr') or {}
+        compression=int(held.get('compression',1))
+        if compression not in [value for _,value in options.EXR_COMPRESSIONS]:raise ValueError('Unknown EXR compression')
+        if compression in options.LOSSY_COMPRESSIONS and (recovery or safe):
+            # A render taken up again needs back exactly what it saved.
+            scene.setdefault('warnings',[]).append('A lossy EXR compression cannot be used with checkpoints or Safe Denoising; zip is used.')
+            compression=1
+        packing=['  ["compression"] = %d,'%compression]
+        if compression in (8,9):packing.append('  ["exr_dwa_compression_level"] = %s,'%number(max(0.0,float(held.get('dwa_level',85.0)))))
         for key, attributes, channel in render_outputs:
             crypto_category=next((v.get('category','object') for v in scene.get('custom_aovs',[]) if v.get('name')==key and v.get('kind')=='cryptomatte'),None)
             metadata_path='/modo/outputMetadata'+('/'+crypto_category if multi_crypto and crypto_category else '')
@@ -667,7 +677,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["file_name"] = %s,' % string(str(output_file)), *kept(output_file),
                       *(['  ["channel_name"] = %s,' % string(channel)] if 'channel_name' not in attributes else []),
                       '  ["exr_header_attributes"] = Metadata('+string(metadata_path)+'),',
-                      '  ["compression"] = 1,']
+                      *packing]
             lines += ['  [%s] = %s,' % (string(attr), (value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value))
                       for attr, value in attributes.items()]
             lines.append('}')
