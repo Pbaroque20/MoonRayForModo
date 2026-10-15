@@ -1,14 +1,27 @@
 """Isolated MoonRay Widget preview of draft native materials and node graphs."""
+import collections
 import copy
+import hashlib
 import json
 import math
 from pathlib import Path
-from PySide2 import QtCore, QtWidgets
+from PySide2 import QtCore, QtGui, QtWidgets
 from . import coordinates, native, nodes, options, shader_library
 from .rdla import IDENTITY
 from .preview_diagnostics import record
 from .render import Renderer
 from .viewer import SoftwarePreview as Preview
+
+
+# The widget's last finished pictures, kept while Modo runs: the same material, clay and runtime is shown again at once,
+# with no render (reopening the editor, undoing an edit, going back to a clay). Twelve pictures of 384 pixels.
+CACHE=collections.OrderedDict()
+CACHE_SIZE=12
+
+
+def cache_key(scene, runtime, width, height):
+    text=json.dumps(scene,sort_keys=True,default=str)+'|%s|%d|%d'%(runtime,width,height)
+    return hashlib.sha1(text.encode('utf-8')).hexdigest()
 
 
 def look_at(eye, target=(0, 0, 0)):
@@ -48,7 +61,8 @@ def snapshot(material, library, all_parts=False):
                 uv=mesh['uvs'][offset:offset+len(face)];offset+=len(face)
                 values.extend(coordinates.face(layer,[mesh['vertices'][i] for i in face],uv,IDENTITY))
             mesh['uv_sets'][key]=values
-    return {'camera':{'identity':'widget/camera','matrix':look_at((2.5,1.4,3.8)),
+    # The camera looks a little below the middle, for the object to sit higher in the picture and not sink to its foot.
+    return {'camera':{'identity':'widget/camera','matrix':look_at((2.5,1.4,3.8),(0,-.22,0)),
                       'focal_mm':55,'film_mm':36},
             'meshes':meshes,'materials':materials,'native_materials':library,'fps':24,
             'lights':[{'identity':'widget/key','kind':'RectLight','matrix':look_at((2,3,3)),
@@ -69,30 +83,19 @@ class WidgetPreview(Preview):
             image=image.copy(0,top,image.width(),image.height()-top)
         super().set_image(image)
 
-    @QtCore.Slot(object)
-    def set_buckets(self,packet):
-        if packet:
-            generation,width,height,rectangles=packet
-            cropped_height=height-min(height-1,int(height*self.TOP_CROP))
-            # Render telemetry uses bottom-left coordinates, so removing the
-            # upper edge leaves the origin unchanged. Clip the upper bounds.
-            rectangles=[(x0,y0,x1,min(y1,cropped_height))
-                        for x0,y0,x1,y1 in rectangles if y0<cropped_height]
-            packet=(generation,width,cropped_height,rectangles)
-        super().set_buckets(packet)
-
 
 class Panel(QtWidgets.QWidget):
     def __init__(self,item,draft,parent=None,embedded=False):
         super().__init__(parent)
         self.item,self.draft=item,draft;self.closed=False;self.refreshing=False;self.last_signature=None
+        self.embedded=embedded;self.warmed=False;self.rendering=None;self.picture=None;self.done=None
         layout=QtWidgets.QVBoxLayout(self);layout.setContentsMargins(4,4,4,4)
         layout.addWidget(QtWidgets.QLabel('MoonRay Widget'))
         bar=QtWidgets.QHBoxLayout();layout.addLayout(bar)
         self.live=QtWidgets.QCheckBox('Live material preview');self.live.setChecked(False);self.live.setVisible(embedded);bar.addWidget(self.live)
-        refresh=QtWidgets.QPushButton('Refresh');bar.addWidget(refresh)
-        stop=QtWidgets.QPushButton('Stop');bar.addWidget(stop)
-        for button in (refresh,stop):button.setAutoDefault(False);button.setDefault(False)
+        # One button: Refresh, or Stop while the widget renders.
+        self.button=QtWidgets.QPushButton('Refresh');bar.addWidget(self.button)
+        self.button.setAutoDefault(False);self.button.setDefault(False)
         self.parts=QtWidgets.QCheckBox('Apply material to base and stand');layout.addWidget(self.parts)
         from .clay import CHOICES
         self.clay_mode=QtWidgets.QComboBox()
@@ -107,13 +110,38 @@ class Panel(QtWidgets.QWidget):
         self.renderer=Renderer(self)
         self.renderer.image_object.connect(self.viewer.set_image);self.renderer.image_ready.connect(self.viewer.load)
         self.renderer.status.connect(self.status.setText);self.renderer.failed.connect(self.preview_failed)
-        self.renderer.buckets.connect(self.viewer.set_buckets)
+        # The widget shows its picture with no bucket outlines over it.
+        self.renderer.image_object.connect(self.keep);self.renderer.image_ready.connect(lambda path:self.keep(QtGui.QImage(path)))
+        self.renderer.finished.connect(self.cache);self.renderer.failed.connect(lambda *_:self.idle())
+        self.renderer.stopped.connect(self.idle)
         self.timer=QtCore.QTimer(self);self.timer.setSingleShot(True);self.timer.setInterval(650);self.timer.timeout.connect(self.refresh)
         self.live.toggled.connect(self.live_changed)
         self.parts.toggled.connect(lambda *_:self.schedule())
         self.clay_mode.currentIndexChanged.connect(self.refresh,QtCore.Qt.QueuedConnection)
-        refresh.clicked.connect(self.refresh,QtCore.Qt.QueuedConnection);stop.clicked.connect(self.stop)
+        self.button.clicked.connect(self.pressed)
         self.viewer.start_requested.connect(self.refresh,QtCore.Qt.QueuedConnection)
+    def showEvent(self,event):
+        super().showEvent(event)
+        # Opened in the graph editor, the widget starts its picture at once, a moment after the editor is up: MoonRay
+        # is loaded and the picture ready (or taken from the cache) before it is asked for.
+        if self.embedded and not self.warmed:
+            self.warmed=True;QtCore.QTimer.singleShot(300,self.refresh)
+    def pressed(self):
+        if self.rendering:self.stop()
+        else:QtCore.QTimer.singleShot(0,self.refresh)
+    def idle(self):
+        self.rendering=None
+        if not self.closed:self.button.setText('Refresh')
+    def keep(self,image):
+        if image.isNull():return
+        if self.rendering:self.picture=image.copy()
+        # The last picture can be converted after the render said it was done: it is the one kept.
+        elif self.done in CACHE:CACHE[self.done]=image.copy()
+    def cache(self,*args):
+        if self.rendering and self.picture is not None:
+            CACHE[self.rendering]=self.picture;CACHE.move_to_end(self.rendering);self.done=self.rendering
+            while len(CACHE)>CACHE_SIZE:CACHE.popitem(last=False)
+        self.picture=None;self.idle()
     def preview_failed(self,message):
         if not self.closed:self.status.setText('Preview failed: '+message)
     def live_changed(self,enabled):
@@ -131,7 +159,7 @@ class Panel(QtWidgets.QWidget):
         if signature!=self.last_signature:
             self.last_signature=signature;self.schedule()
     def stop(self):
-        self.timer.stop()
+        self.timer.stop();self.idle();self.done=None
         if self.live.isChecked():self.live.setChecked(False)
         else:self.renderer.stop()
     def capture_snapshot(self):
@@ -153,12 +181,27 @@ class Panel(QtWidgets.QWidget):
             scene=self.capture_snapshot()
             record("Capture draft complete")
             self.timer.stop()  # Draft commit can itself notify graph_changed.
-            size=256 if self.live.isChecked() else 384
-            if self.live.isChecked():scene['render_settings'].update(target_adaptive_error=10.0)
+            # MoonRay LS, as the render window's quick look, but with more samples to a pixel than its own default (16)
+            # and an adaptive error that stops once the picture is clean, to load fast. Live, while values are
+            # being dragged, it is held lighter to keep up.
+            live=self.live.isChecked()
+            size,samples,error=(256,4,50.0) if live else (384,64,5.0)
+            scene['render_settings'].update(sampling_mode=2,max_adaptive_samples=samples)
+            scene=dict(scene,width=size,height=size)
+            from .ipr import prepare
+            scene,width,height=prepare(scene,size,size,1,640,samples,error)
+            scene['_pixel_samples']=samples
             settings=QtCore.QSettings('MoonRayForModo',native.settings_name())
             runtime=native.default_runtime() or str(settings.value('runtime',''))
+            key=cache_key(scene,runtime,width,height)
+            if key in CACHE:
+                if self.rendering:self.renderer.stop()
+                self.idle();self.done=None;CACHE.move_to_end(key)
+                self.viewer.set_image(CACHE[key]);self.status.setText('Shown from the cache: nothing changed since it was rendered.')
+                return
             record("Submit material preview; runtime="+str(runtime))
-            self.renderer.submit(scene,runtime,size,size,2,.2,0)
+            self.rendering=key;self.picture=None;self.done=None;self.button.setText('Stop')
+            self.renderer.submit(scene,runtime,width,height,1,.2,0)
         except Exception as exc:self.status.setText('Preview could not start: '+str(exc))
         finally:self.refreshing=False
     def shutdown(self):
@@ -169,8 +212,7 @@ class Panel(QtWidgets.QWidget):
         for signal,slot in ((self.renderer.image_object,self.viewer.set_image),
                             (self.renderer.image_ready,self.viewer.load),
                             (self.renderer.status,self.status.setText),
-                            (self.renderer.failed,self.preview_failed),
-                            (self.renderer.buckets,self.viewer.set_buckets)):
+                            (self.renderer.failed,self.preview_failed)):
             try:signal.disconnect(slot)
             except (RuntimeError,TypeError):pass
         self.viewer.bucket_timeout.stop();self.renderer.close()
