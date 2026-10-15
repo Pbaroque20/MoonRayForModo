@@ -542,6 +542,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               '  ["two_stage_output"] = false,']
     if crypto:lines.append('  ["deep_id_attribute_names"] = '+array(string('modo_'+cat+'_id') for cat in (('object','material','asset') if multi_crypto else ('object',)))+',')
     for key, value in options.render_values(scene.get('render_settings', {})).items():
+        if key=='pixel_filter' and value in options.NEWER_PIXEL_FILTERS and not scene.get('_pixel_filters'):
+            # A MoonRay without that filter would quietly use a box filter: its own default is used, and said.
+            scene.setdefault('warnings',[]).append('This runtime has no %s pixel filter; its MoonRay is older. Cubic B-spline is used.'
+                                                   % options.NEWER_PIXEL_FILTERS[value])
+            value=1
         if key in options.OWN:pass
         elif key in options.BOOLS:
             lines.append('  [%s] = %s,' % (string(key), 'true' if value else 'false'))

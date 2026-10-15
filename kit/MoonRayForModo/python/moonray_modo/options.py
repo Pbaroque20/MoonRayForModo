@@ -43,7 +43,7 @@ RENDER = {
     'sample_clamping_depth': (1, 0, 64, 'Sample clamp from bounce'),
     'roughness_clamping_factor': (0.0, 0.0, 1.0, 'Roughness clamp'),
     'texture_blur': (0.0, 0.0, 1000.0, 'Texture blur'),
-    'pixel_filter': (1, 0, 2, 'Pixel filter'),
+    'pixel_filter': (1, 0, 5, 'Pixel filter'),
     'pixel_filter_width': (3.0, 0.1, 64.0, 'Pixel filter width'),
     'lock_frame_noise': (0, 0, 1, 'Lock noise across frames'),
 }
@@ -52,7 +52,10 @@ BOOLS = ('enable_presence_shadows', 'lock_frame_noise', 'important_first')
 # Settings that are the kit's own, and are not written into a MoonRay scene by their names.
 OWN = ('batch_tile_order', 'bucket_size', 'important_first')
 ENUMS['volume_overlap_mode'] = [('Add them up', 0), ('The densest', 1), ('One at random', 2)]
-ENUMS['pixel_filter'] = [('Box', 0), ('Cubic B-spline (default)', 1), ('Quadratic B-spline', 2)]
+ENUMS['pixel_filter'] = [('Box', 0), ('Cubic B-spline (default)', 1), ('Quadratic B-spline', 2), ('Gaussian', 3), ('Triangle', 4),
+                         ('Blackman-Harris', 5)]
+# The pixel filters a runtime has only where its MoonRay was built with them (modo-session.json says pixel_filters).
+NEWER_PIXEL_FILTERS = {3: 'Gaussian', 4: 'Triangle', 5: 'Blackman-Harris'}
 OBJECT = {
     'override': (False, 'Use object overrides'),
     'subdivision': (True, 'Subdivide in MoonRay'),

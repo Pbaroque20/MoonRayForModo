@@ -1,4 +1,5 @@
-"""Put the renderer just built (moonray.exe and librendering_rndr.dll from build/native-renderer-avx) into a runtime
+"""Put the renderer just built (moonray.exe, librendering_rndr.dll and libscene_rdl2.dll from build/native-renderer-avx)
+into a runtime
 folder, keeping what it replaces under backups/, and bring the folder's records of their hashes up to date.
 
 swap_renderer.py <runtime folder> [...]"""
@@ -11,7 +12,7 @@ import time
 
 root = pathlib.Path(__file__).resolve().parents[1]
 built = root / 'build/native-renderer-avx/bin'
-NAMES = ('moonray.exe', 'librendering_rndr.dll')
+NAMES = ('moonray.exe', 'librendering_rndr.dll', 'libscene_rdl2.dll')
 
 
 def digest(path):
@@ -32,7 +33,8 @@ def main():
         for name in NAMES:
             shutil.copy2(built / name, target / name)
         session = json.loads((target / 'modo-session.json').read_text(encoding='utf-8'))
-        session.update(executable_sha256=digest(target / 'moonray.exe'), saves=b'Modo session: saving the picture as it renders' in executable, drains=b'drain.txt' in executable, important=b'important.txt' in executable, holds=b'Modo held snapshot' in executable)
+        session.update(executable_sha256=digest(target / 'moonray.exe'), saves=b'Modo session: saving the picture as it renders' in executable, drains=b'drain.txt' in executable, important=b'important.txt' in executable, holds=b'Modo held snapshot' in executable,
+                       pixel_filters=b'blackman-harris' in (target / 'libscene_rdl2.dll').read_bytes())
         (target / 'modo-session.json').write_text(json.dumps(session, indent=2), encoding='utf-8')
         crypto = target / 'modo-crypto-categories.json'
         if crypto.is_file():
