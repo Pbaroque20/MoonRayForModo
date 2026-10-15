@@ -76,6 +76,9 @@ def values(entries):
                 raise ValueError('Each Cryptomatte category needs its own EXR part')
     return result
 
+class Raw(str):
+    """An output attribute written into the scene as it is, not as text: a reference to another scene object."""
+
 def attributes(entry,multiple=False):
     kind=entry['kind']
     attrs={'channel_format':entry['precision'],'math_filter':entry['filter'],'file_part':entry['part'],'channel_name':entry['name']}
@@ -94,10 +97,14 @@ def preview(scene):
     for entry in values(scene.get('custom_aovs',[])):
         attrs=attributes(entry,sum(v.get('kind')=='cryptomatte' for v in scene.get('custom_aovs',[]))>1);attrs.pop('file_part',None);attrs.pop('channel_name',None);attrs['channel_format']=0
         result[entry['name']]=attrs
+    # Each display filter is a buffer of its own.
+    from . import entities
+    for entity in entities.display_filters(scene):result[entities.filter_key(entity)]=entities.filter_output(entity)
     return result
 
 def display_kind(scene,key):
-    if key in ('denoised_beauty','composite'):return 'beauty'
+    from .entities import FILTER_PREFIX
+    if key in ('denoised_beauty','composite') or key.startswith(FILTER_PREFIX):return 'beauty'
     for entry in values(scene.get('custom_aovs',[])):
         if entry['name']==key:return entry['kind'] if entry['kind'] in ('depth','normal','position','alpha','motion','cryptomatte') else 'beauty'
     return key

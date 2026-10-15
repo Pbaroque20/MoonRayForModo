@@ -589,6 +589,64 @@
     "placed": false,
     "source": "upstream/openmoonray/moonray/moonray/dso/volume/Base/attributes.cc"
   },
+  "BlendDisplayFilter": {
+    "attributes": {
+      "blendAmt": {
+        "comment": "Float between [0,1] determining amount of blend between input1 and input2",
+        "default": 0.5,
+        "name": "blendAmt",
+        "type": "Float"
+      },
+      "blendType": {
+        "comment": "Method used to blend between input1 and input2.",
+        "default": 0,
+        "enum": {
+          "cubic": 1,
+          "linear": 0
+        },
+        "name": "blendType",
+        "type": "Int"
+      },
+      "input1": {
+        "comment": "First RenderOutput to use in the blend operation",
+        "interface": "RENDEROUTPUT",
+        "name": "input1",
+        "type": "SceneObject*"
+      },
+      "input2": {
+        "comment": "Second RenderOutput to use in the blend operation",
+        "interface": "RENDEROUTPUT",
+        "name": "input2",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/BlendDisplayFilter/BlendDisplayFilter.json"
+  },
   "BoxGeometry": {
     "attributes": {
       "contains_camera": {
@@ -789,6 +847,142 @@
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonshine/dso/geometry/Box/attributes.cc"
   },
+  "ClampDisplayFilter": {
+    "attributes": {
+      "input": {
+        "comment": "RenderOutput to clamp",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "max": {
+        "comment": "Maximum color value",
+        "default": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "name": "max",
+        "type": "Rgb"
+      },
+      "min": {
+        "comment": "Minimum color value",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "name": "min",
+        "type": "Rgb"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/ClampDisplayFilter/ClampDisplayFilter.json"
+  },
+  "ColorCorrectDisplayFilter": {
+    "attributes": {
+      "contrast": {
+        "comment": "Negative values decrease contrast, while positive values increase it",
+        "default": 0.0,
+        "name": "contrast",
+        "type": "Float"
+      },
+      "exposure": {
+        "comment": "Adjusts the exposure, in fstops",
+        "default": 0.0,
+        "name": "exposure",
+        "type": "Float"
+      },
+      "gamma": {
+        "comment": "Adjusts gamma of input",
+        "default": 1.0,
+        "name": "gamma",
+        "type": "Float"
+      },
+      "input": {
+        "comment": "RenderOutput to color correct",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "multiply": {
+        "comment": "Multiplies input using specified color",
+        "default": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "name": "multiply",
+        "type": "Rgb"
+      },
+      "offset": {
+        "comment": "Adds offset color to input",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "name": "offset",
+        "type": "Rgb"
+      },
+      "saturation": {
+        "comment": "Desaturates input below 1.0 and adds saturation above 1.0",
+        "default": 1.0,
+        "name": "saturation",
+        "type": "Float"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/ColorCorrectDisplayFilter/ColorCorrectDisplayFilter.json"
+  },
   "ColorRampLightFilter": {
     "attributes": {
       "begin_distance": {
@@ -920,6 +1114,107 @@
     "category_label": "Light Filters",
     "placed": false,
     "source": "upstream/openmoonray/moonray/moonray/dso/lightfilter/CombineLightFilter/attributes.cc"
+  },
+  "ConstantDisplayFilter": {
+    "attributes": {
+      "color": {
+        "comment": "Fill color value",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "name": "color",
+        "type": "Rgb"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/ConstantDisplayFilter/ConstantDisplayFilter.json"
+  },
+  "ConvolutionDisplayFilter": {
+    "attributes": {
+      "custom_kernel": {
+        "comment": "A list of kernel values for a custom filter. The number of values provided must be the square of an odd number (e.g. 3x3, 5x5, 7x7).",
+        "label": "custom kernel",
+        "name": "custom_kernel",
+        "type": "FloatVector"
+      },
+      "input": {
+        "comment": "RenderOutput to convolve",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "kernel_size": {
+        "comment": "Size of kernel in pixels. Size must be odd. If using a custom kernel, this attribute is ignored, and the size of the custom kernel is used instead.",
+        "default": 5,
+        "label": "kernel size",
+        "name": "kernel_size",
+        "type": "Int"
+      },
+      "kernel_type": {
+        "comment": "Kernel to use for convolution.",
+        "default": 0,
+        "enum": {
+          "box": 1,
+          "custom": 2,
+          "gaussian": 0
+        },
+        "label": "kernel type",
+        "name": "kernel_type",
+        "type": "Int"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/ConvolutionDisplayFilter/ConvolutionDisplayFilter.json"
   },
   "CookieLightFilter": {
     "attributes": {
@@ -1677,6 +1972,48 @@
     "placed": false,
     "source": "upstream/openmoonray/moonray/moonray/dso/lightfilter/DecayLightFilter/attributes.cc"
   },
+  "DiscretizeDisplayFilter": {
+    "attributes": {
+      "input": {
+        "comment": "RenderOutput to discretize",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "num_bins": {
+        "comment": "Number of discrete color bins",
+        "default": 8,
+        "name": "num_bins",
+        "type": "Int"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/DiscretizeDisplayFilter/DiscretizeDisplayFilter.json"
+  },
   "DiskLight": {
     "attributes": {
       "apply_scene_scale": {
@@ -2338,6 +2675,75 @@
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonray/dso/light/DistantLight/attributes.cc"
   },
+  "DofDisplayFilter": {
+    "attributes": {
+      "aperture": {
+        "comment": "Aperture in millimeters",
+        "default": 8.0,
+        "name": "aperture",
+        "type": "Float"
+      },
+      "depth": {
+        "comment": "The 'depth' RenderOutput to sample z-depth values from",
+        "interface": "RENDEROUTPUT",
+        "name": "depth",
+        "type": "SceneObject*"
+      },
+      "focal_length": {
+        "comment": "Focal length in millimeters",
+        "default": 30.0,
+        "label": "focal length",
+        "name": "focal_length",
+        "type": "Float"
+      },
+      "focus_distance": {
+        "comment": "Focus distance",
+        "default": 0.0,
+        "label": "focus distance",
+        "name": "focus_distance",
+        "type": "Float"
+      },
+      "input": {
+        "comment": "RenderOutput to which to apply depth of field",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "use_camera_attributes": {
+        "comment": "Read dof attributes from the active scene camera",
+        "default": true,
+        "label": "use camera attributes",
+        "name": "use_camera_attributes",
+        "type": "Bool"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/DofDisplayFilter/DofDisplayFilter.json"
+  },
   "DomeMaster3DCamera": {
     "attributes": {
       "FOV_horizontal_angle": {
@@ -2919,6 +3325,123 @@
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonray/dso/camera/FisheyeCamera/attributes.cc"
   },
+  "HalftoneDisplayFilter": {
+    "attributes": {
+      "filter_width": {
+        "comment": "The width in pixels of the antialiasing",
+        "default": 1.0,
+        "label": "filter width",
+        "name": "filter_width",
+        "type": "Float"
+      },
+      "grayscale": {
+        "comment": "Ignore color information, render as grayscale",
+        "default": false,
+        "name": "grayscale",
+        "type": "Bool"
+      },
+      "input": {
+        "comment": "RenderOutput to be represented in halftone",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert": {
+        "comment": "Whether the dots should be black (normal) or white/color (inverted)",
+        "default": false,
+        "name": "invert",
+        "type": "Bool"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "size": {
+        "comment": "The size in pixels of the halftone dots",
+        "default": 5,
+        "name": "size",
+        "type": "Int"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/HalftoneDisplayFilter/HalftoneDisplayFilter.json"
+  },
+  "ImageDisplayFilter": {
+    "attributes": {
+      "display_type": {
+        "comment": "Method used to fit the input image to the image plane.",
+        "default": 0,
+        "enum": {
+          "fit_by_largest_dimension": 4,
+          "fit_by_smallest_dimension": 3,
+          "fit_horizontal": 1,
+          "fit_vertical": 2,
+          "no_scale": 5,
+          "stretch": 0
+        },
+        "name": "display_type",
+        "type": "Int"
+      },
+      "image_path": {
+        "comment": "File path to the .exr we want to fit to the image plane",
+        "filename": true,
+        "name": "image_path",
+        "type": "String"
+      },
+      "input": {
+        "comment": "RenderOutput to use in the ImageDisplayFilter",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonray/dso/displayfilter/ImageDisplayFilter/ImageDisplayFilter.json"
+  },
   "IntensityLightFilter": {
     "attributes": {
       "color": {
@@ -3320,6 +3843,86 @@
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonray/dso/light/MeshLight/attributes.cc"
   },
+  "OpDisplayFilter": {
+    "attributes": {
+      "input1": {
+        "comment": "First RenderOutput; required",
+        "interface": "RENDEROUTPUT",
+        "name": "input1",
+        "type": "SceneObject*"
+      },
+      "input2": {
+        "comment": "Second RenderOutput; optional",
+        "interface": "RENDEROUTPUT",
+        "name": "input2",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "operation": {
+        "comment": "Operation to use on the input(s)",
+        "default": 0,
+        "enum": {
+          "abs": 21,
+          "acos": 28,
+          "add": 0,
+          "and": 16,
+          "ceil": 22,
+          "cosine": 26,
+          "cross": 7,
+          "divide": 3,
+          "dot": 8,
+          "equal": 14,
+          "floor": 23,
+          "greater_than": 10,
+          "greater_than_or_equal": 11,
+          "invert": 19,
+          "length": 24,
+          "less_than": 12,
+          "less_than_or_equal": 13,
+          "max": 5,
+          "min": 4,
+          "modulo": 9,
+          "multiply": 2,
+          "normalize": 20,
+          "not": 29,
+          "not_equal": 15,
+          "or": 17,
+          "power": 6,
+          "round": 27,
+          "sine": 25,
+          "subtract": 1,
+          "xor": 18
+        },
+        "name": "operation",
+        "type": "Int"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/OpDisplayFilter/OpDisplayFilter.json"
+  },
   "OrthographicCamera": {
     "attributes": {
       "bokeh": {
@@ -3497,6 +4100,48 @@
     "category_label": "Cameras",
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonray/dso/camera/OrthographicCamera/attributes.cc"
+  },
+  "OverDisplayFilter": {
+    "attributes": {
+      "alpha": {
+        "comment": "Alpha for over operation",
+        "interface": "RENDEROUTPUT",
+        "name": "alpha",
+        "type": "SceneObject*"
+      },
+      "input_bottom": {
+        "comment": "RenderOutput on bottom",
+        "interface": "RENDEROUTPUT",
+        "label": "input bottom",
+        "name": "input_bottom",
+        "type": "SceneObject*"
+      },
+      "input_top": {
+        "comment": "RenderOutput on top",
+        "interface": "RENDEROUTPUT",
+        "label": "input top",
+        "name": "input_top",
+        "type": "SceneObject*"
+      },
+      "invert_alpha": {
+        "comment": "Invert value of alpha",
+        "default": false,
+        "name": "invert_alpha",
+        "type": "Bool"
+      },
+      "mix": {
+        "comment": "Blend between input_top and input_bottom, using alpha as a mask.",
+        "default": 1.0,
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/OverDisplayFilter/OverDisplayFilter.json"
   },
   "PerspectiveCamera": {
     "attributes": {
@@ -4068,6 +4713,79 @@
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonray/dso/light/PortalLight/attributes.cc"
   },
+  "RampDisplayFilter": {
+    "attributes": {
+      "colors": {
+        "comment": "List of ramp colors",
+        "group": "Ramp Knot",
+        "name": "colors",
+        "type": "RgbVector"
+      },
+      "input": {
+        "comment": "RenderOutput fed into the ramp",
+        "group": "Ramp properties",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "interpolations": {
+        "comment": "List of ramp interpolations.",
+        "group": "Ramp Knot",
+        "name": "interpolations",
+        "type": "IntVector"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "positions": {
+        "comment": "List of ramp positions",
+        "group": "Ramp Knot",
+        "name": "positions",
+        "type": "FloatVector"
+      },
+      "ramp_type": {
+        "comment": "Type of ramp",
+        "default": 0,
+        "enum": {
+          "box_ramp": 5,
+          "circular_ramp": 4,
+          "diagonal_ramp": 2,
+          "four_corner_ramp": 7,
+          "input_ramp": 8,
+          "radial_ramp": 3,
+          "u_ramp": 1,
+          "uxv_ramp": 6,
+          "v_ramp": 0
+        },
+        "group": "Ramp properties",
+        "name": "ramp_type",
+        "type": "Int"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/RampDisplayFilter/RampDisplayFilter.json"
+  },
   "RectLight": {
     "attributes": {
       "apply_scene_scale": {
@@ -4417,6 +5135,297 @@
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonray/dso/light/RectLight/attributes.cc"
   },
+  "RemapDisplayFilter": {
+    "attributes": {
+      "clamp": {
+        "comment": "Enables/disables clamping of the output values. This is useful to prevent out-of-range values when expanding the input values.",
+        "default": true,
+        "name": "clamp",
+        "type": "Bool"
+      },
+      "clamp_RGB": {
+        "comment": "Enables/disables clamping of the RGB output values. This useful prevent out-of-range values when expanding the input values.",
+        "default": true,
+        "label": "clamp RGB",
+        "name": "clamp_RGB",
+        "type": "Bool"
+      },
+      "clamp_max": {
+        "comment": "The maximum value output by this map when 'clamp' is enabled",
+        "default": 1.0,
+        "label": "clamp max",
+        "name": "clamp_max",
+        "type": "Float"
+      },
+      "clamp_max_RGB": {
+        "comment": "The maximum RGB value output by this map when 'clamp' is enabled",
+        "default": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "group": "Channel",
+        "label": "clamp max RGB",
+        "name": "clamp_max_RGB",
+        "type": "Rgb"
+      },
+      "clamp_min": {
+        "comment": "The minimum value output by this map when 'clamp' is enabled",
+        "default": 0.0,
+        "label": "clamp min",
+        "name": "clamp_min",
+        "type": "Float"
+      },
+      "clamp_min_RGB": {
+        "comment": "The minimum RGB value output by this map when 'clamp' is enabled",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "group": "Channel",
+        "label": "clamp min RGB",
+        "name": "clamp_min_RGB",
+        "type": "Rgb"
+      },
+      "input": {
+        "comment": "RenderOutput to remap",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "input_max": {
+        "comment": "The input float that will be remapped to the 'output max' value",
+        "default": 1.0,
+        "label": "input max",
+        "name": "input_max",
+        "type": "Float"
+      },
+      "input_max_RGB": {
+        "comment": "The input RGB value that will be remapped to the 'output max RGB' value",
+        "default": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "group": "Channel",
+        "label": "input max RGB",
+        "name": "input_max_RGB",
+        "type": "Rgb"
+      },
+      "input_min": {
+        "comment": "The input float that will be remapped to the 'output min' value",
+        "default": 0.0,
+        "label": "input min",
+        "name": "input_min",
+        "type": "Float"
+      },
+      "input_min_RGB": {
+        "comment": "The input RGB value that will be remapped to the 'output min RGB' value",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "group": "Channel",
+        "label": "input min RGB",
+        "name": "input_min_RGB",
+        "type": "Rgb"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "midpoint_bias": {
+        "comment": "Biases the in-between values toward 'output min' or 'output max'. Default = 0.5",
+        "default": 0.5,
+        "label": "midpoint bias",
+        "name": "midpoint_bias",
+        "type": "Float"
+      },
+      "midpoint_bias_RGB": {
+        "comment": "Biases the in-between values toward 'output min RGB' or 'output max RGB'. Default = 0.5",
+        "default": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "group": "Channel",
+        "label": "midpoint bias RGB",
+        "name": "midpoint_bias_RGB",
+        "type": "Rgb"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "output_max": {
+        "comment": "The value that 'input max' will be remapped to",
+        "default": 1.0,
+        "label": "output max",
+        "name": "output_max",
+        "type": "Float"
+      },
+      "output_max_RGB": {
+        "comment": "The RGB value that 'input max RGB' is remapped to",
+        "default": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "group": "Channel",
+        "label": "output max RGB",
+        "name": "output_max_RGB",
+        "type": "Rgb"
+      },
+      "output_min": {
+        "comment": "The float that 'input min' will be remapped to",
+        "default": 0.0,
+        "label": "output min",
+        "name": "output_min",
+        "type": "Float"
+      },
+      "output_min_RGB": {
+        "comment": "The RGB value that 'input min RGB' is remapped to",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "group": "Channel",
+        "label": "output min RGB",
+        "name": "output_min_RGB",
+        "type": "Rgb"
+      },
+      "remap_method": {
+        "comment": "Choose whether you are remapping using single values (uniform) or with separate RGB channels",
+        "default": 0,
+        "enum": {
+          "RGB": 1,
+          "uniform": 0
+        },
+        "label": "remap method",
+        "name": "remap_method",
+        "type": "Int"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/RemapDisplayFilter/RemapDisplayFilter.json"
+  },
+  "RgbToFloatDisplayFilter": {
+    "attributes": {
+      "input": {
+        "comment": "RenderOutput to use in the RgbToFloat operation",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "mode": {
+        "comment": "The method used to convert RGB Color to float",
+        "default": 5,
+        "enum": {
+          "average": 5,
+          "b": 2,
+          "g": 1,
+          "luminance": 7,
+          "max": 4,
+          "min": 3,
+          "r": 0,
+          "sum": 6
+        },
+        "name": "mode",
+        "type": "Int"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/RgbToFloatDisplayFilter/RgbToFloatDisplayFilter.json"
+  },
+  "RgbToHsvDisplayFilter": {
+    "attributes": {
+      "input": {
+        "comment": "RenderOutput to use in the RgbToHsv operation",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "mode": {
+        "comment": "Specifies whether you are converting rgb->hsv or hsv->rgb",
+        "default": 0,
+        "enum": {
+          "hsv_to_rgb": 1,
+          "rgb_to_hsv": 0
+        },
+        "name": "mode",
+        "type": "Int"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/RgbToHsvDisplayFilter/RgbToHsvDisplayFilter.json"
+  },
   "RodLightFilter": {
     "attributes": {
       "color": {
@@ -4527,6 +5536,42 @@
     "category_label": "Light Filters",
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonray/dso/lightfilter/RodLightFilter/attributes.cc"
+  },
+  "ShadowDisplayFilter": {
+    "attributes": {
+      "density": {
+        "comment": "Blend value between occluded and unoccluded images. 1 = completely occluded. 0 = completely unoccluded.",
+        "default": 1.0,
+        "name": "density",
+        "type": "Float"
+      },
+      "occluded": {
+        "comment": "RenderOutput containing the occluded image",
+        "interface": "RENDEROUTPUT",
+        "name": "occluded",
+        "type": "SceneObject*"
+      },
+      "shadow_color": {
+        "comment": "Color of the shadow",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "name": "shadow_color",
+        "type": "Rgb"
+      },
+      "unoccluded": {
+        "comment": "RenderOutput containing the unoccluded image",
+        "interface": "RENDEROUTPUT",
+        "name": "unoccluded",
+        "type": "SceneObject*"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/ShadowDisplayFilter/ShadowDisplayFilter.json"
   },
   "SphereGeometry": {
     "attributes": {
@@ -5597,6 +6642,154 @@
     "category_label": "Lights",
     "placed": true,
     "source": "upstream/openmoonray/moonray/moonray/dso/light/SpotLight/attributes.cc"
+  },
+  "TangentSpaceDisplayFilter": {
+    "attributes": {
+      "N": {
+        "comment": "Connect a RenderOutput with State N AOV here. Used to construct tangent space.",
+        "interface": "RENDEROUTPUT",
+        "name": "N",
+        "type": "SceneObject*"
+      },
+      "dPds": {
+        "comment": "Connect a RenderOutput with State dPds AOV here. Used to construct tangent space.",
+        "interface": "RENDEROUTPUT",
+        "name": "dPds",
+        "type": "SceneObject*"
+      },
+      "input": {
+        "comment": "RenderOutput to transform into tangent space",
+        "interface": "RENDEROUTPUT",
+        "name": "input",
+        "type": "SceneObject*"
+      },
+      "invert_mask": {
+        "comment": "Invert the value of the mask",
+        "default": false,
+        "group": "Advanced",
+        "name": "invert_mask",
+        "type": "Bool"
+      },
+      "mask": {
+        "comment": "RenderOutput used to mask the output, revealing input1",
+        "interface": "RENDEROUTPUT",
+        "name": "mask",
+        "type": "SceneObject*"
+      },
+      "mix": {
+        "comment": "Blend [0,1] between input and output",
+        "default": 1.0,
+        "group": "Advanced",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "mix",
+        "type": "Float"
+      },
+      "normal_map_output": {
+        "comment": "When on, encodes the output to clamped [0, 1] in the same manner as a normal map",
+        "default": true,
+        "name": "normal_map_output",
+        "type": "Bool"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/TangentSpaceDisplayFilter/TangentSpaceDisplayFilter.json"
+  },
+  "ToonDisplayFilter": {
+    "attributes": {
+      "ambient": {
+        "comment": "Adds an ambient light to the cel shading",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "name": "ambient",
+        "type": "Rgb"
+      },
+      "edge_detector": {
+        "comment": "Type of edge detector to use",
+        "default": 0,
+        "enum": {
+          "Laplacian": 2,
+          "Laplacian of Gaussian": 3,
+          "None": 0,
+          "Sobel": 1
+        },
+        "label": "edge detector",
+        "name": "edge_detector",
+        "type": "Int"
+      },
+      "ink_depth_threshold": {
+        "comment": "The threshold for the depth-based ink outline",
+        "default": 0.01,
+        "label": "ink depth threshold",
+        "name": "ink_depth_threshold",
+        "type": "Float"
+      },
+      "ink_normal_scale": {
+        "comment": "Increase for a more pronounced normal-based ink outline",
+        "default": 0.01,
+        "label": "ink normal scale",
+        "name": "ink_normal_scale",
+        "type": "Float"
+      },
+      "ink_normal_threshold": {
+        "comment": "The threshold for the normal-based ink outline",
+        "default": 0.01,
+        "label": "ink normal threshold",
+        "name": "ink_normal_threshold",
+        "type": "Float"
+      },
+      "input_albedo": {
+        "comment": "RenderOutput that represents diffuse albedo material aov",
+        "interface": "RENDEROUTPUT",
+        "label": "input albedo",
+        "name": "input_albedo",
+        "type": "SceneObject*"
+      },
+      "input_depth": {
+        "comment": "RenderOutput with 'depth' result",
+        "interface": "RENDEROUTPUT",
+        "label": "input depth",
+        "name": "input_depth",
+        "type": "SceneObject*"
+      },
+      "input_diffuse": {
+        "comment": "RenderOutput that represents diffuse reflection LPE",
+        "interface": "RENDEROUTPUT",
+        "label": "input diffuse",
+        "name": "input_diffuse",
+        "type": "SceneObject*"
+      },
+      "input_glossy": {
+        "comment": "RenderOutput that represents glossy reflection LPE",
+        "interface": "RENDEROUTPUT",
+        "label": "input glossy",
+        "name": "input_glossy",
+        "type": "SceneObject*"
+      },
+      "input_normal": {
+        "comment": "RenderOutput with 'normal' result",
+        "interface": "RENDEROUTPUT",
+        "label": "input normal",
+        "name": "input_normal",
+        "type": "SceneObject*"
+      },
+      "num_cels": {
+        "comment": "Sets number of toon cels in diffuse shading",
+        "default": 2,
+        "label": "num cels",
+        "name": "num_cels",
+        "type": "Int"
+      }
+    },
+    "category": "displayfilter",
+    "category_label": "Display Filters",
+    "placed": false,
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.json"
   },
   "VdbGeometry": {
     "attributes": {

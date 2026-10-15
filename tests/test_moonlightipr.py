@@ -94,7 +94,7 @@ class EntityTests(unittest.TestCase):
 
     def test_values_are_checked_against_the_schema(self):
         from moonray_modo import entities
-        self.assertEqual(len(entities.classes()),30)
+        self.assertEqual(len(entities.classes()),48)  # 30, and the 18 display filters
         self.assertEqual(entities.validate('SpotLight',{'outer_cone_angle':40})['outer_cone_angle'],40.0)
         for name,parameters in (('SpotLight',{'outer_cone_angle':'wide'}),('SpotLight',{'no_such':1}),('NoSuchLight',{}),
                                 ('EnvLight',{'color':[1,1]}),('EnvLight',{'visible_in_camera':7})):

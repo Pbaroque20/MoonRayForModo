@@ -151,6 +151,8 @@ def register():
 
     def kinds(category):
         """The classes of a kind: a category by name, or the classes themselves."""
+        # What a display filter takes in may be another display filter, made new from the picker as well.
+        if category=='renderoutput':return entities.classes('displayfilter')
         return entities.classes(category) if isinstance(category,str) else list(category)
 
     def candidates(category,excluding=()):
@@ -160,6 +162,17 @@ def register():
         if category=='mesh':
             # A mesh light emits from a real mesh, so these are the scene's Modo meshes.
             return sorted({item.name for item in scene.items('mesh',superType=False)})
+        if category=='renderoutput':
+            # The render's outputs first, as the Outputs window and the AOV list name them.
+            try:
+                from moonray_modo import properties,scene_settings
+                custom=scene_settings.complete(properties.scene_settings()).get('custom_aovs',[])
+            except Exception:custom=[]
+            filters=[]
+            for name in kinds(category):
+                try:filters+=[item.name for item in scene.items(entities.item_type(name),superType=False) if item.id not in excluding]
+                except (LookupError,RuntimeError,TypeError):pass
+            return entities.output_names(custom)+sorted(set(filters))
         for name in kinds(category):
             try:names+=[item.name for item in scene.items(entities.item_type(name),superType=False) if item.id not in excluding]
             except (LookupError,RuntimeError,TypeError):pass

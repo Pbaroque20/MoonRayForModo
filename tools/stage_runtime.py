@@ -37,6 +37,10 @@ if validation.exists():
 for name in ('SphereGeometry.dll','SphereGeometry.so.proxy','BoxGeometry.dll','BoxGeometry.so.proxy'):
     if not (build/'bin'/name).is_file():
         raise ValueError('Rebuild the MoonShine geometry library before staging: '+name)
+# Nor without MoonRay's display filters (and its switch displacement), which scenes may name.
+for name in ('ColorCorrectDisplayFilter.so','ToonDisplayFilter.so','SwitchDisplacement.so'):
+    if not (build/'bin'/name).is_file() or not (build/'bin'/(name+'.proxy')).is_file():
+        raise ValueError('Build moonshine_displayfilter_library before staging: '+name)
 pending = [build / 'bin/moonray.exe']
 if (build/'bin/modo_rdl_import.exe').is_file(): pending.append(build/'bin/modo_rdl_import.exe')
 if (build/'bin/modo_display_stream.exe').is_file(): pending.append(build/'bin/modo_display_stream.exe')

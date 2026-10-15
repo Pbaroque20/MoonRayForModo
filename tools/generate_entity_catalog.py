@@ -1,7 +1,8 @@
 """Generate the schema of MoonRay's own scene objects from the vendored upstream declarations.
 
 Lights, light filters, cameras, procedural geometry and volume shaders declare their
-attributes in C++ rather than JSON, so this reads the declareAttribute calls. Writes
+attributes in C++ rather than JSON, so this reads the declareAttribute calls. Display filters
+declare theirs in JSON, which is read as it is. Writes
 kit/MoonRayForModo/python/moonray_modo/entity_catalog.json.
 """
 import json
@@ -29,6 +30,9 @@ CATEGORIES = {
         'BaseVolume': dso / 'volume/Base/attributes.cc', 'VdbVolume': dso / 'volume/Vdb/attributes.cc',
         'CutoutVolume': dso / 'volume/Cutout/attributes.cc'}),
 }
+# Display filters: image operations MoonRay does over its render outputs as it renders. Their declarations are JSON.
+DISPLAY_FILTERS = sorted(list((base / 'moonshine/dso/displayfilter').glob('*/*DisplayFilter.json'))
+                         + list((dso / 'displayfilter').glob('*/*DisplayFilter.json')))
 TYPES = {'Bool', 'Int', 'Long', 'Float', 'Double', 'String', 'Rgb', 'Rgba', 'Vec2f', 'Vec3f', 'Vec4f', 'Mat4f', 'Mat4d',
          'SceneObject*', 'SceneObjectVector', 'BoolVector', 'IntVector', 'FloatVector', 'RgbVector', 'Vec2fVector', 'Vec3fVector',
          'StringVector', 'SceneObjectIndexable'}
@@ -161,7 +165,46 @@ def declarations(path):
     return list(found.values())
 
 
+def json_declarations(path):
+    """Attributes declared in a JSON schema, its included files first, as declarations() gives them."""
+    schema = json.loads(path.read_text(encoding='utf-8'))
+    found = []
+    for included in (schema.get('directives') or {}).get('include', []):
+        # Includes are named from the library they belong to: lib/displayfilter/json/common.json is moonshine's.
+        found += json_declarations(base / 'moonshine' / included)
+    for entry in schema.get('attributes', {}).values():
+        kind = entry['type'].replace(' ', '')
+        if kind not in TYPES:
+            continue
+        spec = {'name': entry['name'], 'type': kind}
+        if 'default' in entry and not kind.startswith('SceneObject'):
+            value = default(kind, str(entry['default']))
+            if value is not None:
+                spec['default'] = value
+        interface = re.search(r'INTERFACE_(\w+)', entry.get('interface', ''))
+        if interface and kind.startswith('SceneObject'):
+            spec['interface'] = interface.group(1)
+        for key in ('group', 'comment', 'label'):
+            if key in entry:
+                spec[key] = ' '.join(str(entry[key]).split()) if key == 'comment' else entry[key]
+        for key in ('min', 'max'):
+            limit = number(str(entry[key])) if key in entry else None
+            if limit is not None:
+                spec[key] = limit
+        if 'enum' in entry:
+            spec['enum'] = {label: int(value) for label, value in entry['enum'].items()}
+        if entry.get('flags') and 'FLAGS_FILENAME' in entry['flags']:
+            spec['filename'] = True
+        found.append(spec)
+    return found
+
+
 catalog = {}
+for path in DISPLAY_FILTERS:
+    name = path.stem
+    attributes = {spec['name']: spec for spec in json_declarations(path)}
+    catalog[name] = {'category': 'displayfilter', 'category_label': 'Display Filters', 'attributes': attributes, 'placed': False,
+                     'source': path.relative_to(root).as_posix()}
 for category, (label, shared, classes) in CATEGORIES.items():
     for name, path in classes.items():
         attributes = {}

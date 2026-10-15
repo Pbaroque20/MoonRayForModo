@@ -52,7 +52,7 @@ class Tools:
         from .outputs_dialog import OutputsDialog
         dialog = OutputsDialog(self._settings_values()['custom_aovs'], self)
         if dialog.exec_() and self._store(custom_aovs=dialog.entries):
-            self._sync_output_menu(dialog.entries)
+            self._sync_output_menu(dialog.entries, self._display_filter_buffers())
             self.status.setText('Named outputs updated. Render to fill the new buffers.')
 
     def _edit_assets(self):
@@ -296,6 +296,11 @@ class Tools:
         held = frame.get('files', {})
         named = {'beauty': 'Beauty', 'denoised_beauty': 'Denoised Beauty', 'denoise_albedo': 'Denoiser albedo', 'denoise_normal': 'Denoiser normal', 'denoise_fine': 'Denoiser fur matte'}
         named.update({key: label for key, (label, _, _) in options.AOVS.items()})
+        # A display filter by its item's name.
+        try:
+            named.update({key: label for label, key in self._display_filter_buffers()})
+        except Exception:
+            pass
         order = ['beauty', 'denoised_beauty'] + list(options.AOVS)
         keys = [key for key in order if key in held] + sorted(key for key in held if key not in order)
         return [(key, named.get(key, key)) for key in keys]
