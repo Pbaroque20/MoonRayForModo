@@ -2,7 +2,7 @@
 """Isolated GUI test: the graph editor's MoonRay Widget, under MoonRay LS, started as the editor opens and kept.
 
 The graph editor is opened on a material; with nothing clicked, the time to the widget's first picture and to its
-finished one are written down, with the scene's sampling and what the one Refresh/Stop button reads, and the widget pictured. The editor is closed and opened
+finished one are written down, with the scene's sampling and what the one Refresh/Stop button reads, whether bucket outlines reach the widget, and the widget pictured. The editor is closed and opened
 again: the picture should be there at once, from the cache, with no render."""
 import json
 import time
@@ -37,6 +37,8 @@ def watch(name):
     start = held['opened']
     panel.renderer.image_object.connect(lambda *_: events.setdefault('first_picture_s', round(time.time() - start, 2)))
     panel.renderer.image_object.connect(lambda *_: events.setdefault('button_while_rendering', panel.button.text()))
+    panel.renderer.image_object.connect(lambda *_: events.setdefault('buckets_while_rendering', panel.viewer.buckets))
+    panel.renderer.buckets.connect(lambda packet: packet and events.setdefault('renderer_sent_buckets', True))
     panel.renderer.image_ready.connect(lambda *_: events.setdefault('first_picture_s', round(time.time() - start, 2)))
     panel.renderer.finished.connect(lambda *_: events.setdefault('finished_s', round(time.time() - start, 2)))
     original = panel.renderer.submit

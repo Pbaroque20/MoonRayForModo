@@ -82,18 +82,6 @@ class WidgetPreview(Preview):
             image=image.copy(0,top,image.width(),image.height()-top)
         super().set_image(image)
 
-    @QtCore.Slot(object)
-    def set_buckets(self,packet):
-        if packet:
-            generation,width,height,rectangles=packet
-            cropped_height=height-min(height-1,int(height*self.TOP_CROP))
-            # Render telemetry uses bottom-left coordinates, so removing the
-            # upper edge leaves the origin unchanged. Clip the upper bounds.
-            rectangles=[(x0,y0,x1,min(y1,cropped_height))
-                        for x0,y0,x1,y1 in rectangles if y0<cropped_height]
-            packet=(generation,width,cropped_height,rectangles)
-        super().set_buckets(packet)
-
 
 class Panel(QtWidgets.QWidget):
     def __init__(self,item,draft,parent=None,embedded=False):
@@ -121,7 +109,7 @@ class Panel(QtWidgets.QWidget):
         self.renderer=Renderer(self)
         self.renderer.image_object.connect(self.viewer.set_image);self.renderer.image_ready.connect(self.viewer.load)
         self.renderer.status.connect(self.status.setText);self.renderer.failed.connect(self.preview_failed)
-        self.renderer.buckets.connect(self.viewer.set_buckets)
+        # The widget shows its picture with no bucket outlines over it.
         self.renderer.image_object.connect(self.keep);self.renderer.image_ready.connect(lambda path:self.keep(QtGui.QImage(path)))
         self.renderer.finished.connect(self.cache);self.renderer.failed.connect(lambda *_:self.idle())
         self.renderer.stopped.connect(self.idle)
@@ -223,8 +211,7 @@ class Panel(QtWidgets.QWidget):
         for signal,slot in ((self.renderer.image_object,self.viewer.set_image),
                             (self.renderer.image_ready,self.viewer.load),
                             (self.renderer.status,self.status.setText),
-                            (self.renderer.failed,self.preview_failed),
-                            (self.renderer.buckets,self.viewer.set_buckets)):
+                            (self.renderer.failed,self.preview_failed)):
             try:signal.disconnect(slot)
             except (RuntimeError,TypeError):pass
         self.viewer.bucket_timeout.stop();self.renderer.close()
