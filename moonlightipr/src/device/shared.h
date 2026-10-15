@@ -139,7 +139,22 @@ struct DeviceToon {
     float blend;                // how much of the highlight follows the surface's Fresnel reflection
     float tint[3];
     float level;                // MoonRay's normalization of the highlight for this ramp
+    // MoonRay's HairToonMaterial has up to three highlights: the first entry says how many more follow it in the
+    // table. Each is a surface's toon highlight (TOON_SURFACE) or one read off a hair fibre's reflection (TOON_HAIR,
+    // MoonRay's Toon_Hair: its ramp looked up by how bright the fibre's first reflection is).
+    unsigned model;
+    unsigned more;
+    float variance;             // TOON_HAIR: how far the fibre's reflection spreads along it
+    unsigned plain;             // the highlight's Fresnel is that of glass (index 1.5), as MoonRay gives a hair toon's,
+                                // rather than the surface's own reflection's
+    float underBlend;           // with plain: how far what it lets through to the layers under it (the hair colour, the
+                                // highlights after it) moves to its value straight on, by its roughness (OneMinusRoughFresnel)
+    // Each ramp past its end, which only an input scale under 1 reaches: its last point's value. At its very end a
+    // ramp is still its last stretch's, which the last step holds.
+    float diffuseBeyond[3];
+    float specularBeyond;
 };
+const unsigned TOON_SURFACE = 0, TOON_HAIR = 1;
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
 // inside it (TRT), and everything after that (TRRT). The fibre's colour is the material's own.

@@ -165,13 +165,13 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
-    // the scene's sample clamp is written in it, "D" since a toon material's ramps are. A plugin and a session of different versions say so plainly, in
+    // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x44534c4d)
+    if (mark != 0x45534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'D'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'E'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -300,8 +300,15 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             // A toon material's two ramps follow, and the numbers that go with them.
             material.toonDiffuse = (materialFlags & 4096) != 0;
             material.toonSpecular = (materialFlags & 8192) != 0;
-            material.toon.resize(256 * 4 + 8);
-            in.floats(material.toon.data(), material.toon.size());
+            material.toon.resize(256 * 4 + 8 + 8);
+            in.floats(material.toon.data(), 256 * 4 + 8);
+            // How many highlights follow, the diffuse ramp's value past its end and what the first highlight is, then
+            // each further highlight's ramp and numbers.
+            material.toonMore = std::min(in.value<uint32_t>(), 2u);
+            in.floats(material.toon.data() + 256 * 4 + 8, 8);
+            const size_t extra = 256 + 8 + 5;
+            material.toon.resize(material.toon.size() + material.toonMore * extra);
+            in.floats(material.toon.data() + 256 * 4 + 8 + 8, material.toonMore * extra);
         }
         if (materialFlags & 64) {
             // A hair fibre's four lobes follow.

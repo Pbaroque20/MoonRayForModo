@@ -41,6 +41,7 @@ struct Material {
     // highlight's input scale, intensity and Fresnel blend, its tint, and its normalization.
     bool toonDiffuse = false, toonSpecular = false;
     std::vector<float> toon;
+    unsigned toonMore = 0;      // highlights after the first (a hair toon's second and third), each TOON_EXTRA more numbers
     bool noCaustics = false;        // DwaBaseMaterial with casts_caustics off: plain diffuse once a path has left a diffuse lobe
     int roughnessCurve = 0;         // the roughness the layers give is Modo's: 1 Blinn, 2 Ashikhmin, 3 GTR; 0 as it is
     bool beckmann = false;          // Beckmann specular lobe (DwaBaseMaterial as the plugin sets it up) rather than GGX

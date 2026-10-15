@@ -918,20 +918,45 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
     std::vector<DeviceToon> toons;
     for (size_t i = 0; i < count; ++i) {
         const Material& m = materials[i];
-        if (m.hair || m.volume || !(m.toonDiffuse || m.toonSpecular) || m.toon.size() != TOON_STEPS * 4 + 8) continue;
+        const size_t first = TOON_STEPS * 4 + 8 + 8, extra = TOON_STEPS + 8 + 5;
+        if (m.hair || m.volume || !(m.toonDiffuse || m.toonSpecular) || m.toon.size() != first + m.toonMore * extra) continue;
+        // A highlight's numbers: its ramp's input scale, intensity, Fresnel blend, tint, normalization, then what it is
+        // (a surface's or a hair fibre's), its roughness, whether its Fresnel is glass's, and the roughness it dims
+        // what is under it with, and its ramp's value past its end.
+        auto highlight = [](DeviceToon& d, const float* ramp, const float* numbers, const float* kind) {
+            std::copy(ramp, ramp + TOON_STEPS, d.specular);
+            d.specularScale = std::max(numbers[1], 1e-4f);
+            d.intensity = numbers[2];
+            d.blend = std::clamp(numbers[3], 0.0f, 1.0f);
+            std::copy(numbers + 4, numbers + 7, d.tint);
+            d.level = numbers[7];
+            d.model = kind[0] > 0.5f ? TOON_HAIR : TOON_SURFACE;
+            // MoonRay's HairUtil: a roughness as the variance of the reflection along the fibre.
+            const float r = std::clamp(kind[1], 0.01f, 0.999f);
+            const float root = 0.726f * r + 0.812f * r * r + 3.7f * std::pow(r, 20.0f);
+            d.variance = root * root;
+            d.plain = kind[2] > 0.5f ? 1u : 0u;
+            const float smooth = 1.0f - kind[3] * kind[3];
+            d.underBlend = std::clamp(1.0f - smooth * smooth * smooth, 0.0f, 1.0f);
+            d.specularBeyond = kind[4];
+        };
         DeviceToon d{};
         std::copy(m.toon.begin(), m.toon.begin() + TOON_STEPS * 3, d.diffuse);
-        std::copy(m.toon.begin() + TOON_STEPS * 3, m.toon.begin() + TOON_STEPS * 4, d.specular);
         const float* numbers = m.toon.data() + TOON_STEPS * 4;
         d.diffuseScale = std::max(numbers[0], 1e-4f);
-        d.specularScale = std::max(numbers[1], 1e-4f);
-        d.intensity = numbers[2];
-        d.blend = std::clamp(numbers[3], 0.0f, 1.0f);
-        std::copy(numbers + 4, numbers + 7, d.tint);
-        d.level = numbers[7];
+        std::copy(numbers + 8, numbers + 11, d.diffuseBeyond);
+        highlight(d, m.toon.data() + TOON_STEPS * 3, numbers, numbers + 11);
+        d.more = m.toonMore;
         table[i].flags |= (m.toonDiffuse ? MATERIAL_TOON_DIFFUSE : 0) | (m.toonSpecular ? MATERIAL_TOON_SPECULAR : 0);
         table[i].hair = unsigned(toons.size());
         toons.push_back(d);
+        // A hair toon's further highlights, straight after its first.
+        for (unsigned k = 0; k < m.toonMore; ++k) {
+            const float* block = m.toon.data() + first + k * extra;
+            DeviceToon e{};
+            highlight(e, block, block + TOON_STEPS, block + TOON_STEPS + 8);
+            toons.push_back(e);
+        }
     }
     impl->toonTable.upload(toons);
     impl->params.toons = impl->toonTable.ptr;
