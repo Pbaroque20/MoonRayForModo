@@ -37,6 +37,27 @@ def choices(scene=None):
     return [('Modo camera: ' + name, '')] + [(label(item), item.id) for item in cameras(scene)]
 
 
+def dicing_choices(scene=None):
+    """(label, item id) for every camera adaptive tessellation can be worked out for: the render camera (''), then each
+    Modo camera and each MoonRay camera item."""
+    scene = scene or modo.Scene()
+    modo_cameras = sorted(scene.items('camera', superType=False), key=lambda item: item.name.casefold())
+    return ([('Render camera (default)', '')] + [('Modo camera: ' + item.name, item.id) for item in modo_cameras]
+            + [(label(item), item.id) for item in cameras(scene)])
+
+
+def dicing_current():
+    from . import properties
+    return properties.scene_settings().get('dicing_camera', '') or ''
+
+
+def dicing_choose(identity):
+    from . import properties
+    stored = properties.scene_settings()
+    stored['dicing_camera'] = identity
+    properties.write(modo.Scene().renderItem, stored)
+
+
 def rendering(item):
     try:
         return bool(item.channel(CHANNEL).get())

@@ -55,6 +55,31 @@ def corner_values(polygons, map_id, count, dimension):
     return values
 
 
+def dicing_view(scene, identity, width, height, pixel_aspect, warnings):
+    """The camera chosen to work adaptive tessellation out for: {'entity': id} for a MoonRay camera item, a Modo
+    camera's view framed as the render camera's is, or None for the render camera itself or one that is gone."""
+    try:
+        item = scene.item(identity)
+    except LookupError:
+        warnings.append('The dicing camera chosen is no longer in the scene; the render camera is used.')
+        return None
+    if item.type != 'camera':
+        return {'entity': item.id}
+    if item.id == scene.renderCamera.id:
+        return None
+    projection = channel(item, 'projType', 'persp')
+    if projection not in ('persp', 'ortho'):
+        warnings.append('The dicing camera %s has a projection MoonRay does not dice for; the render camera is used.' % item.name)
+        return None
+    from .camera import framing, offsets
+    aperture_x, moonray_pixel_aspect = framing(width, height, float(channel(item, 'apertureX', .036)), float(channel(item, 'apertureY', .024)),
+                                               pixel_aspect, channel(item, 'filmFit', 'fill'))
+    ortho_width = float(properties.read(item).get('ortho_width', aperture_x * float(channel(item, 'target', 1)) / max(1e-9, float(channel(item, 'focalLen', .05)))))
+    return {'matrix': world_matrix(item), 'identity': item.id, 'projection': projection, 'ortho_width': ortho_width,
+            'film_offset': offsets(float(channel(item, 'offsetX', 0)), float(channel(item, 'offsetY', 0)), projection, aperture_x, ortho_width, pixel_aspect),
+            'pixel_aspect': moonray_pixel_aspect, 'focal_mm': float(channel(item, 'focalLen', .05)) * 1000, 'film_mm': aperture_x * 1000}
+
+
 def render_visible(item):
     """Whether Modo would render the item. Render: Yes or No settles it, for the item and what is under it. Left at
     Default, an item renders as it is shown: not with its eye off, nor under a parent hidden with its children."""
@@ -284,6 +309,12 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                          'iris_blades': int(channel(camera, 'irisBlades', 0)),
                          'iris_rotation': float(channel(camera, 'irisRot', 0))},
               'width': width, 'height': height, 'materials': {}, 'meshes': [], 'lights': []}
+    # Another camera for MoonRay's adaptive tessellation, where one is chosen.
+    chosen = properties.scene_settings().get('dicing_camera') or ''
+    if chosen:
+        view = dicing_view(scene, chosen, width, height, pixel_aspect, warnings)
+        if view:
+            result['dicing_camera'] = view
     if channel(render,'region',False):
         bounds = [float(channel(render,k,v)) for k,v in [('regX0',0),('regY0',0),('regX1',1),('regY1',1)]]
         if not (0<=bounds[0]<bounds[2]<=1 and 0<=bounds[1]<bounds[3]<=1):

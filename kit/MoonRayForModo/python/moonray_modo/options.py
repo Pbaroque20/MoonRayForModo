@@ -46,9 +46,18 @@ RENDER = {
     'pixel_filter': (1, 0, 5, 'Pixel filter'),
     'pixel_filter_width': (3.0, 0.1, 64.0, 'Pixel filter width'),
     'lock_frame_noise': (0, 0, 1, 'Lock noise across frames'),
+    # MoonRay's global switches, each at MoonRay's own value: on for displacement, subsurface and shadows, off for lights
+    # seen by the camera and for a limit to geometry resolution (whose limit then matters not).
+    'enable_displacement': (1, 0, 1, 'Displacement'),
+    'enable_subsurface_scattering': (1, 0, 1, 'Subsurface scattering'),
+    'enable_shadowing': (1, 0, 1, 'Shadows'),
+    'lights_visible_in_camera': (0, 0, 1, 'Lights seen by the camera'),
+    'enable_max_geometry_resolution': (0, 0, 1, 'Limit geometry resolution'),
+    'max_geometry_resolution': (1024, 1, 2147483647, 'Geometry resolution limit'),
 }
 # Settings MoonRay holds as on or off; they are kept here as 0 or 1.
-BOOLS = ('enable_presence_shadows', 'lock_frame_noise', 'important_first')
+BOOLS = ('enable_presence_shadows', 'lock_frame_noise', 'important_first', 'enable_displacement', 'enable_subsurface_scattering',
+         'enable_shadowing', 'lights_visible_in_camera', 'enable_max_geometry_resolution')
 # Settings that are the kit's own, and are not written into a MoonRay scene by their names.
 OWN = ('batch_tile_order', 'bucket_size', 'important_first')
 ENUMS['volume_overlap_mode'] = [('Add them up', 0), ('The densest', 1), ('One at random', 2)]
