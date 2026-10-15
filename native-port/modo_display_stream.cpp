@@ -69,10 +69,10 @@ int main(int argc,char** argv){
      std::copy(row.begin(),row.end(),rgb.begin()+size_t(h-1-y)*w*3);}
    }
    for(float& v:rgb)if(!std::isfinite(v))v=0;
-   const bool color=!(kind=="cryptomatte" || kind=="normal" || kind=="geometric_normal" || kind=="alpha" || kind=="wireframe" || kind=="depth" || kind=="sample_count" || kind=="uv" || kind=="motion" || kind=="position");
+   const bool color=!(kind=="cryptomatte" || kind=="normal" || kind=="geometric_normal" || kind=="alpha" || kind=="wireframe" || kind=="depth" || kind=="sample_count" || kind=="time_per_pixel" || kind=="uv" || kind=="motion" || kind=="position");
    for(size_t i=0;i<rgb.size();i+=3){
     float* v=rgb.data()+i;
-    if(kind=="alpha" || kind=="wireframe" || kind=="depth" || kind=="sample_count")v[1]=v[2]=v[0];
+    if(kind=="alpha" || kind=="wireframe" || kind=="depth" || kind=="sample_count" || kind=="time_per_pixel")v[1]=v[2]=v[0];
     if(kind=="uv" || kind=="motion")v[2]=0;
     if(color){
      // ACEScg pixels go to Rec.709 before a view that expects that: every view but raw, and an OCIO view whose source
@@ -85,6 +85,14 @@ int main(int argc,char** argv){
      }
      for(int c=0;c<3;++c)v[c]*=gain;
     }
+   }
+   if(kind=="time_per_pixel"){
+    // MoonRay's time per pixel, in seconds, mostly tiny with a few slow pixels far above the rest: shown with the
+    // picture's average pixel at a quarter of white, as the plugin's image tool path shows it.
+    double total=0;for(size_t i=0;i<rgb.size();i+=3)total+=std::max(0.f,rgb[i]);
+    const double average=total/std::max<size_t>(1,rgb.size()/3);
+    const float scale=average>0?float(0.25/average):0.f;
+    for(float& v:rgb)v=std::clamp(v*scale,0.f,1.f);
    }
    source=ImageBuf(ImageSpec(w,h,3,TypeDesc::FLOAT),rgb.data());
    auto check=[&](bool ok){if(!ok)throw std::runtime_error(source.geterror());};

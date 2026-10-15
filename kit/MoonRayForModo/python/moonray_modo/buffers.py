@@ -7,7 +7,7 @@ def conversion(key, source, destination, display=None):
     # Drop coverage alpha before any transform or PNG encoding. Never divide
     # RGB (which already includes the environment) by silhouette coverage.
     args=['--no-autopremult',str(source),'--fixnan','black']
-    if key in ('alpha','depth','wireframe','sample_count'):
+    if key in ('alpha','depth','wireframe','sample_count','time_per_pixel'):
         args += ['--ch','0,0,0']
     elif key in ('uv','motion','motion_vectors'):
         args += ['--ch','0,1,B=0']
@@ -17,6 +17,10 @@ def conversion(key, source, destination, display=None):
         args += ['--mulc','0.5','--addc','0.5']
     elif key in ('depth','sample_count'):
         args += ['--rangecompress']
+    elif key=='time_per_pixel':
+        # Seconds, mostly tiny, with a few slow pixels far above the rest: shown with the picture's average pixel at a
+        # quarter of white, so that where the time goes reads at a glance.
+        args += ['--divc','{TOP.AVGCOLOR}','--mulc','0.25','--clamp:min=0:max=1','--fixnan','black']
     elif key in ('motion','motion_vectors'):
         args += ['--mulc','0.5','--addc','0.5']
     elif key=='position':

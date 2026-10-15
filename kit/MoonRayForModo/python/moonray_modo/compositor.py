@@ -194,7 +194,7 @@ def signature(graph):
 
 def _channels(kind):
     """A buffer of any kind as three numbers a pixel."""
-    if kind in ('alpha', 'depth', 'wireframe', 'sample_count'):
+    if kind in ('alpha', 'depth', 'wireframe', 'sample_count', 'time_per_pixel'):
         return ['--ch', '0,0,0']
     if kind in ('uv', 'motion', 'motion_vectors'):
         return ['--ch', '0,1,B=0']

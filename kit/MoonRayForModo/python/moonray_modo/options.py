@@ -116,7 +116,14 @@ AOVS = {
     'motion_vectors': ('Motion vectors', {'result': 3, 'state_variable': 12}, 'motion_vectors'),
     'wireframe': ('Wireframe', {'result': 6}, 'wireframe'),
     'sample_count': ('Sample count', {'result': 11}, 'sample_count'),
+    # MoonRay's heat map: how long each pixel took to render.
+    'time_per_pixel': ('Time per pixel', {'result': 5}, 'time_per_pixel'),
 }
+# MoonRay's compressions for an EXR, by its own numbers. The lossy ones (pxr24, b44, b44a, dwaa, dwab) are not used
+# where a render may be taken up again from what it saved.
+EXR_COMPRESSIONS = [('Zip (default)', 1), ('None', 0), ('RLE', 2), ('Zips', 3), ('PIZ', 4), ('PXR24 (lossy)', 5), ('B44 (lossy)', 6),
+                    ('B44A (lossy)', 7), ('DWAA (lossy)', 8), ('DWAB (lossy)', 9)]
+LOSSY_COMPRESSIONS = (5, 6, 7, 8, 9)
 
 
 def render_values(values):
