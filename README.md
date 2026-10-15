@@ -234,7 +234,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | |
 | Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor |
-| Switch displacement | ![no](docs/images/feature-no.svg) | |
+| Switch displacement | ![yes](docs/images/feature-yes.svg) | In the node editor. Coming in 0.4.2, with its runtime |
 | Display filters (colour correct, toon, halftone and the rest) | ![yes](docs/images/feature-yes.svg) | All 18, as MoonRay items; each a preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
 | Uniform and adaptive sampling, light sampling, bounce limits, clamping | ![yes](docs/images/feature-yes.svg) | Render Settings |
 | Volume quality and overlap settings | ![yes](docs/images/feature-yes.svg) | |
