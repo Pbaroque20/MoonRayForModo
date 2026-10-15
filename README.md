@@ -220,6 +220,8 @@ What MoonRay 2026.29.1's source has, and whether the plugin gives you it in Modo
 | XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only |
 | Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window |
 | Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera |
+| Stereo cameras | ![partly](docs/images/feature-partly.svg) | MoonRay renders the eye a camera is set to; MoonLightIPR shows it from the middle |
+| Overscan (rendering past the frame edge) | ![no](docs/images/feature-no.svg) |  |
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
 | Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights |
 | Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | |
@@ -239,11 +241,16 @@ What MoonRay 2026.29.1's source has, and whether the plugin gives you it in Modo
 | Volume attenuation and contribution factors | ![no](docs/images/feature-no.svg) | |
 | Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![no](docs/images/feature-no.svg) | |
-| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | |
+| Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![no](docs/images/feature-no.svg) |  |
+| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Your own expressions too |
+| Time per pixel (where the render spent its time) | ![no](docs/images/feature-no.svg) |  |
+| Visibility outputs (how much of each light reaches a point) | ![no](docs/images/feature-no.svg) |  |
+| Primitive attribute outputs | ![no](docs/images/feature-no.svg) |  |
 | Cryptomatte | ![partly](docs/images/feature-partly.svg) | Volume coverage unfinished |
 | Deep EXR | ![yes](docs/images/feature-yes.svg) | |
 | Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
+| Choice of EXR compression | ![no](docs/images/feature-no.svg) | Always zip |
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | |
 | Primitive attributes (values a shape carries for its materials) | ![partly](docs/images/feature-partly.svg) | One value per item or per instance; not per face or per point; left out by RDL import |
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | Some things left out, named in its report |
