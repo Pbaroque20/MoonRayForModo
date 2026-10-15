@@ -17,12 +17,25 @@ Not released yet: on the MoonLightIPR branch.
 - **The compositor runs on the graphics card**, or on the processor where there is none, giving the same picture either way; wide blurs and glows are now true full-size blurs.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
+- **The preview shows MoonRay's wordmark** before anything is rendered.
 
 ![An orthographic camera item, MoonRay left and MoonLightIPR right](images/moonlightipr-camera_ortho.png)
 *A MoonRay orthographic camera: MoonRay (left), MoonLightIPR (right).*
 
 ![The six pixel filters on one spot of a render](images/pixel-filters.png)
 *Pixel filters at width 3. Top, from MoonRay's source: Box, Cubic B-spline, Quadratic B-spline. Bottom, added and MoonRay-compatible: Gaussian, Triangle, Blackman-Harris.*
+
+![The beauty and two display filters in the preview](images/display-filters.png)
+*Display filters in the preview's buffer list. Left, the beauty. Middle, a colour correct filter named Grey: no saturation, one stop up. Right, a second colour correct filter that takes Grey in and multiplies it by blue.*
+
+![A colour correct display filter's Properties](images/display-filter-form.png)
+*A display filter's Properties: MoonRay's own settings, and its input picked from the render's outputs and the other filters.*
+
+![Hair toon, MoonRay left and MoonLightIPR right](images/moonlightipr-hair_toon.jpg)
+*MoonRay's hair toon material with three highlights, tinted red, green and blue: MoonRay (left), MoonLightIPR (right).*
+
+![The preview before a render](images/preview-wordmark.png)
+*The preview before anything is rendered.*
 
 ## New in 0.4.1
 
