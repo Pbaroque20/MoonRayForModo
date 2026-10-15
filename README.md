@@ -242,7 +242,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![no](docs/images/feature-no.svg) | |
 | Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![no](docs/images/feature-no.svg) |  |
-| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Your own expressions too |
+| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression |
 | Time per pixel (where the render spent its time) | ![no](docs/images/feature-no.svg) |  |
 | Visibility outputs (how much of each light reaches a point) | ![no](docs/images/feature-no.svg) |  |
 | Primitive attribute outputs | ![no](docs/images/feature-no.svg) |  |
