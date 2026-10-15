@@ -340,6 +340,13 @@ Added to what is translated since the table was written:
   1.00, 99% of tiles within a tenth, with and without the highlight (October 13). Not drawn: a stretched highlight,
   its indirect reflections, a ramp extended into the unlit side, and cubic ramp blends (read as straight ones).
   ![A toon material, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-toon.jpg)
+- **Hair toon**: `HairToonMaterial` is its hair colour lit as a strand (as `HairDiffuseMaterial` is) under up to three
+  toon highlights, each by MoonRay's own rules: a surface's toon highlight (Toon_Surface, its default) with glass's
+  Fresnel, or one whose ramp is read at how bright the fibre's first reflection is (Toon_Hair). Each dims what is under
+  it as MoonRay's highlights do. Over the hair, each colour within about 3% of MoonRay's, with one, two and three
+  highlights and with Toon_Hair (October 15). Not drawn: subsurface scattering on hair, separate front and back hair
+  colours, a stretched highlight and indirect reflections.
+  ![Hair toon with three highlights, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-hair_toon.jpg)
 - **Skin**: `DwaSkinMaterial` is read as itself: albedo, scattering beneath the surface,
   moisture as a clear coat, and diffuse light passing through to the far side (diffuse
   transmission, on every Dwa surface material). Brightness 0.98, 95% of tiles within a tenth;

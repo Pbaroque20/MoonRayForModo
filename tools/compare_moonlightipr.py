@@ -175,6 +175,11 @@ def textured(folder):
                       native('cube', 'DwaToonMaterial', albedo=[.3, .6, .9], diffuse_model=1, show_specular=False))
     toon = lobes(native('ball', 'DwaToonMaterial', albedo=[.9, .5, .3], diffuse_model=1, specular_model=2),
                  native('cube', 'DwaToonMaterial', albedo=[.3, .6, .9], diffuse_model=1, specular_model=2))
+    # A broad toon highlight: a ramp that ends lit, read at half its scale (HairToonMaterial's second highlight by default).
+    toon_broad = lobes(native('ball', 'DwaToonMaterial', albedo=[.9, .5, .3], diffuse_model=1, specular_model=2,
+                              toon_specular_values=[1.0, .75, .25, 1.0], toon_specular_ramp_input_scale=.5),
+                       native('cube', 'DwaToonMaterial', albedo=[.3, .6, .9], diffuse_model=1, specular_model=2,
+                              toon_specular_values=[1.0, .75, .25, 1.0], toon_specular_ramp_input_scale=.5))
     # Skin thin enough for light to come through: the ball lit mostly from behind lets it pass, with and without scattering.
     thin = lobes(native('ball', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, diffuse_transmission_color=[.9, .35, .25]),
                  native('cube', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, diffuse_transmission_color=[.6, .6, .6],
@@ -251,7 +256,7 @@ def textured(folder):
     blinn = dict(stacked, materials=dict(layered, ball={'material_stack': [row('ball', [.8, .8, .8], .36, [layer('b3', 'rough', 'roughness', False)],
                                                                               shading_model='blinn', raw_roughness=.35, _beckmann=True, _specular_strength=.52)]}))
     return {'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
-            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'toon_diffuse': toon_flat, 'toon': toon, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
+            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
 
@@ -496,6 +501,21 @@ def scenes(folder):
                                         ('glint_even', [.45, .25, .1], {'show_hair_glint': True, 'glint_min_twists': 0.0, 'glint_max_twists': 0.0}),
                                         ('cuticle', [.45, .25, .1], {'fresnel_type': 2, 'cuticle_layer_thickness': .8}),
                                         ('pale_through', [.6, .3, .1], {'direct_transmission_saturation': .2}))},
+        # MoonRay's hair toon: the hair colour under one toon highlight (its default), under three of different tints,
+        # and under a highlight read off the fibre's own reflection (Toon_Hair).
+        **{'hair_toon' + name: dict(base, lights=fixture.snapshot()['lights'] + [
+               dict(lamp, identity='rim', kind='SphereLight', intensity=120.0, radius=.3, matrix=fixture.placed(1.5, 3.0, -4.0))], _environment=.3,
+               meshes=[base['meshes'][0]], materials=dict(base['materials'], hair={
+                   'color': [.5, .5, .5], 'roughness': .4, 'native_shader': 'HairToonMaterial', 'native_parameters': dict(values, hair_color=[.45, .25, .1])}),
+               extra_geometry=[tuft()])
+           for name, values in (('', {}), ('_none', {'specular_1_show': False}),
+                                ('_second', {'specular_1_show': False, 'specular_2_show': True, 'specular_2_tint': [.3, 1, .3], 'specular_2_ramp_input_scale': .5}),
+                                ('_two', {'specular_2_show': True, 'specular_2_tint': [.3, 1, .3], 'specular_2_ramp_input_scale': .5}),
+                                ('_three', {'specular_1_tint': [1, .3, .3], 'specular_2_show': True, 'specular_2_tint': [.3, 1, .3],
+                                            'specular_2_ramp_input_scale': .5, 'specular_3_show': True, 'specular_3_tint': [.3, .3, 1],
+                                            'specular_3_ramp_input_scale': 2.0, 'specular_3_intensity': .5}),
+                                ('_fibre', {'specular_1_model': 3, 'specular_1_roughness': .3, 'specular_1_positions': [0.0, .05, .3, 1.0],
+                                            'specular_1_values': [0.0, 0.0, 1.0, 1.0]}))},
         # Strands that are half there, and a strand that moves while the shutter is open.
         'curves_presence': dict(base, lights=fixture.snapshot()['lights'], _environment=.3, meshes=[base['meshes'][0]],
                                 materials=dict(base['materials'], sheer={'color': [.8, .2, .1], 'roughness': .5, 'metallic': 0, 'presence': .5}),

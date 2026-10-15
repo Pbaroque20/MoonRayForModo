@@ -690,6 +690,7 @@ struct Surface {
     // MoonRay's toon material: its ramps, and which of the diffuse light and the highlight they band.
     const DeviceToon* toon;
     bool toonDiffuse, toonSpecular;
+    float3 toonAlong;       // the way a strand runs (a surface's u direction), in the shading frame: a hair toon's highlight
 };
 
 ML_INLINE Surface surfaceFrom(const Hit& hit) {
@@ -727,10 +728,12 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.back = hit.back;
     s.frontKeep = hit.frontKeep;
     s.passes = maxComponent(hit.back) > 0.0f;
-    const bool toon = !hit.curve && (hit.flags & (MATERIAL_TOON_DIFFUSE | MATERIAL_TOON_SPECULAR)) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME));
+    // On a strand as on a surface: MoonRay's own strand is a ribbon facing the ray, which a toon look shades as a surface.
+    const bool toon = (hit.flags & (MATERIAL_TOON_DIFFUSE | MATERIAL_TOON_SPECULAR)) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME));
     s.toon = toon ? reinterpret_cast<const DeviceToon*>(params.toons) + hit.hair : nullptr;
     s.toonDiffuse = toon && (hit.flags & MATERIAL_TOON_DIFFUSE);
     s.toonSpecular = toon && (hit.flags & MATERIAL_TOON_SPECULAR);
+    s.toonAlong = make_float3(1.0f, 0.0f, 0.0f);
     return s;
 }
 // Where along a toon ramp a value falls: past its end, the end.
@@ -801,6 +804,13 @@ ML_INLINE float3 coatBounces(const Surface& s, float3 wo, float3 albedo) {
 ML_INLINE float entering(const Surface& s, float3 wo) {
     const float grazing = 1.0f - s.specular * dielectricFresnel(wo.z, s.ior), facing = 1.0f - s.specular * dielectricFresnel(1.0f, s.ior);
     return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo);
+}
+// What a hair toon's highlight lets through to the layers under it: one less its glass-like reflection, blended towards
+// its value straight on as the highlight's roughness grows, as MoonRay's OneMinusRoughFresnel has it.
+ML_INLINE float toonPass(const DeviceToon& toon, float cosine) {
+    if (!toon.plain) return 1.0f;
+    const float grazing = 1.0f - dielectricFresnel(cosine, 1.5f), facing = 1.0f - dielectricFresnel(1.0f, 1.5f);
+    return grazing + (facing - grazing) * toon.underBlend;
 }
 ML_INLINE float3 diffuseColor(const Surface& s, float3 wo) {
     const float3 colour = s.albedo * s.frontKeep;
@@ -908,11 +918,14 @@ struct BsdfEval {
     float toonPdf;
 };
 ML_INLINE float powerHeuristic(float a, float b);
+ML_INLINE float hairLongitudinal(float variance, float sinI, float cosI, float sinO, float cosO);
 // What a light's sample is worth at a surface, over the density it was drawn with: the lobes that a sample of the
 // surface could have found as well, and a toon highlight.
 ML_INLINE float3 litBy(const BsdfEval& e, float surfacePdf, float lightPdf) {
     float3 found = (e.diffuse + e.specular) * (powerHeuristic(lightPdf, surfacePdf) / lightPdf);
     if (e.toonPdf > 0.0f) found += e.toon * (powerHeuristic(lightPdf, e.toonPdf) / lightPdf);
+    // A highlight no sample of the surface could have found (a hair toon's where its fibre reflects nothing): the light's.
+    else found += e.toon * (1.0f / lightPdf);
     return found;
 }
 ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, float3 wi) {
@@ -930,16 +943,45 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     }
     const float3 h = normalize(wo + wi);
     const float cosine = dot(wo, h);
+    float passed = 1.0f;    // what the highlights let through to what is under them
     if (s.toonSpecular) {
-        // MoonRay's toon highlight (BsdfToon.cc): a ramp over how far the reflected light is from the eye, by an
-        // approximation of the angle that MoonRay uses, times the surface's reflection seen from the eye.
-        const float toward = clamp(wo.z * wi.z - wo.x * wi.x - wo.y * wi.y, 0.0f, 1.0f);
-        const float theta = powf(1.0f - toward, 0.56f);
-        if (theta > 0.0f) {
-            const float ramp = s.toon->specular[toonStep(theta / s.toon->specularScale)];
-            const float3 seen = lerp(vec(s.specular), specularFresnel(s, wo.z) * s.toon->level, s.toon->blend);
-            e.toon = make_float3(s.toon->tint[0], s.toon->tint[1], s.toon->tint[2]) * seen * (ramp * s.toon->intensity * underCoat(s, wo) / ML_PI);
-            e.toonPdf = ramp / (2.0f * ML_PI);
+        // MoonRay's toon highlights (BsdfToon.cc): one, or a hair toon's up to three, each found from the lights alone,
+        // each under the ones before it.
+        for (unsigned k = 0; k <= s.toon->more; ++k) {
+            const DeviceToon& toon = s.toon[k];
+            const float3 tint = make_float3(toon.tint[0], toon.tint[1], toon.tint[2]) * passed;
+            passed *= toonPass(toon, wo.z);
+            if (toon.model == TOON_HAIR) {
+                // MoonRay's Toon_Hair: a hair fibre's first reflection (R) worked out as MoonRay's hair does it, with no
+                // tilt and no Fresnel (MoonRay gives its Fresnel to the highlight around it, not to this reflection), and
+                // the ramp read at how bright that is.
+                const float3 along = s.toonAlong;
+                const float sinO = clamp(dot(wo, along), -1.0f, 1.0f), sinI = clamp(dot(wi, along), -1.0f, 1.0f);
+                if (fabsf(sinI) >= 1.0f - 1e-6f) continue;
+                const float cosO = sqrtf(fmaxf(0.0f, 1.0f - sinO * sinO)), cosI = sqrtf(fmaxf(0.0f, 1.0f - sinI * sinI));
+                const float3 flatO = wo - along * sinO, flatI = wi - along * sinI;
+                const float lengths = length(flatO) * length(flatI);
+                const float cosPhi = lengths > 1e-12f ? clamp(dot(flatO, flatI) / lengths, -1.0f, 1.0f) : 1.0f;
+                const float around = fmaxf(0.0f, 0.25f * sqrtf(fmaxf(0.0f, 0.5f * (1.0f + cosPhi))));
+                const float m = hairLongitudinal(toon.variance, sinI, cosI, sinO, cosO);
+                const float bright = luminance(tint) * m * around;
+                const float ramp = toon.specular[toonStep(bright)];
+                e.toon += tint * (ramp * toon.intensity / ML_PI);
+                e.toonPdf += m * around;
+                continue;
+            }
+            // A surface's: a ramp over how far the reflected light is from the eye, by an approximation of the angle
+            // that MoonRay uses, times the surface's reflection seen from the eye.
+            const float toward = clamp(wo.z * wi.z - wo.x * wi.x - wo.y * wi.y, 0.0f, 1.0f);
+            const float theta = powf(1.0f - toward, 0.56f);
+            if (theta > 0.0f) {
+                const float x = theta / toon.specularScale;
+                const float ramp = x > 1.0f ? toon.specularBeyond : toon.specular[toonStep(x)];
+                const float3 seen = toon.plain ? lerp(vec(1.0f), vec(dielectricFresnel(wo.z, 1.5f) * toon.level), toon.blend)
+                                               : lerp(vec(s.specular), specularFresnel(s, wo.z) * toon.level, toon.blend);
+                e.toon += tint * seen * (ramp * toon.intensity * underCoat(s, wo) / ML_PI);
+                e.toonPdf += ramp / (2.0f * ML_PI);
+            }
         }
     } else
     if (s.beckmann) {
@@ -967,13 +1009,16 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     if (s.toonDiffuse) {
         // MoonRay's toon diffuse: the surface's colour times the ramp's, by how far the light is from straight on,
         // and no falling off with the angle besides. A half of what a white surface would send back at most.
-        const unsigned step = toonStep((1.0f - dot(s.diffuseNormal, wi)) / s.toon->diffuseScale);
-        const float3 ramp = make_float3(s.toon->diffuse[step * 3], s.toon->diffuse[step * 3 + 1], s.toon->diffuse[step * 3 + 2]);
+        const float x = (1.0f - dot(s.diffuseNormal, wi)) / s.toon->diffuseScale;
+        const unsigned step = toonStep(x);
+        const float3 ramp = x > 1.0f ? vec(s.toon->diffuseBeyond)
+                                     : make_float3(s.toon->diffuse[step * 3], s.toon->diffuse[step * 3 + 1], s.toon->diffuse[step * 3 + 2]);
         const float3 banded = ramp * s.albedo;
         const float3 colour = make_float3(clamp(banded.x, 0.0f, 1.0f), clamp(banded.y, 0.0f, 1.0f), clamp(banded.z, 0.0f, 1.0f)) * s.frontKeep;
         e.diffuse = colour * coatBounces(s, wo, colour) * (entering(s, wo) * (1.0f - s.transmission) * s.diffuseScale / (2.0f * ML_PI));
     } else
     e.diffuse = diffuseColor(s, wo) * (fmaxf(0.0f, dot(s.diffuseNormal, wi)) / ML_PI);
+    e.diffuse = e.diffuse * passed;
     e.diffusePdf = (1.0f - lobes.back) * wi.z / ML_PI;
     return e;
 }
@@ -1882,6 +1927,11 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
         const float3 wo = frame.toLocal(toViewer);
         surface.diffuseNormal = frame.toLocal(smoothed);
+        if (surface.toonSpecular) {
+            // The way the strand runs, or the surface's tangent, for a hair toon's highlight.
+            const float3 along = hit.curve ? hit.curveTangent : hit.tangent - ns * dot(hit.tangent, ns);
+            surface.toonAlong = dot(along, along) > 1e-12f ? frame.toLocal(normalize(along)) : make_float3(1.0f, 0.0f, 0.0f);
+        }
 
         if (camera) {
             guideAlbedo = lerp(surface.albedo, vec(1.0f), surface.transmission * (1.0f - surface.metallic));
