@@ -210,6 +210,44 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 - **Cryptomatte**: volume coverage is unfinished; ID previews are not an interactive matte-selection tool.
 - **Preview**: some edits still need the whole scene read again; the compositor works on finished MoonRay renders, not on MoonLightIPR's. Safe Denoising and Continue are for the MoonRay engine.
 
+### MoonRay's features in the plugin
+
+What MoonRay 2026.29.1's source has, and whether the plugin gives you it in Modo.
+
+| MoonRay feature | Plugin | Notes |
+|---|:---:|---|
+| CPU rendering (scalar and vector) | ✓ | AVX build |
+| XPU rendering on the graphics card | ✓ | NVIDIA only |
+| Cameras: perspective, orthographic, fisheye, spherical, dome | ✓ | MoonRay camera items, or Modo's camera |
+| Bake camera | ✓ | Texture baking |
+| Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ✓ | MoonRay light items, or Modo's lights |
+| Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ✓ | |
+| Light, shadow and light filter linking | ✓ | |
+| Meshes, subdivision, curves, points, instancing | ✓ | From Modo's geometry |
+| Box and sphere shapes | ✓ | |
+| VDB volumes, base and cutout volumes | ✓ | |
+| Motion blur | ✓ | Final renders; not while the preview follows edits |
+| Depth of field | ✓ | |
+| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ✓ | |
+| Hair, toon and USD Preview Surface materials | ✓ | |
+| Maps, normal maps and displacement nodes | ✓ | In the node editor; MoonRay's test nodes are left out |
+| Switch displacement | ✗ | |
+| Display filters (colour correct, toon, halftone and the rest) | ✗ | |
+| Uniform and adaptive sampling, light sampling, bounce limits, clamping | ✓ | Render Settings |
+| Volume quality and overlap settings | ✓ | |
+| Volume attenuation and contribution factors | ✗ | |
+| Pixel filters: box, cubic and quadratic B-spline | ✓ | |
+| Global switches: displacement, subsurface, shadows, geometry resolution, dicing camera | ✗ | |
+| AOVs: light path expressions, material AOVs, Cryptomatte | ✓ | Cryptomatte volume coverage unfinished |
+| Deep EXR | ✓ | |
+| Checkpoints and resuming a render | ✓ | Recovery, Safe Denoising and Continue |
+| EXR metadata | ✓ | |
+| Denoising (OptiX, Open Image Denoise) | ✓ | |
+| Per-face and per-point values (primitive attributes) | ✗ | No form yet; left out by RDL import |
+| RDL scene import | ✓ | Some things left out, named in its report |
+| Arras: rendering spread over several machines | ✗ | |
+| Hydra render delegate and USD procedurals | ✗ | For USD applications; not part of Modo |
+
 ## Still to implement
 
 - Fur guides, and the fur vector and width maps.
