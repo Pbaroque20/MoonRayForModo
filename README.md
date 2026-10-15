@@ -218,6 +218,7 @@ What MoonRay 2026.29.1's source has, and whether the plugin gives you it in Modo
 |---|:---:|---|
 | CPU rendering (scalar and vector) | ✓ | AVX build |
 | XPU rendering on the graphics card | ✓ | NVIDIA only |
+| Progressive rendering, and region rendering | ✓ | The preview window |
 | Cameras: perspective, orthographic, fisheye, spherical, dome | ✓ | MoonRay camera items, or Modo's camera |
 | Bake camera | ✓ | Texture baking |
 | Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ✓ | MoonRay light items, or Modo's lights |
@@ -230,14 +231,14 @@ What MoonRay 2026.29.1's source has, and whether the plugin gives you it in Modo
 | Depth of field | ✓ | |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ✓ | |
 | Hair, toon and USD Preview Surface materials | ✓ | |
-| Maps, normal maps and displacement nodes | ✓ | In the node editor; MoonRay's test nodes are left out |
+| Maps, normal maps and displacement nodes | ✓ | In the node editor |
 | Switch displacement | ✗ | |
 | Display filters (colour correct, toon, halftone and the rest) | ✗ | |
 | Uniform and adaptive sampling, light sampling, bounce limits, clamping | ✓ | Render Settings |
 | Volume quality and overlap settings | ✓ | |
 | Volume attenuation and contribution factors | ✗ | |
 | Pixel filters: box, cubic and quadratic B-spline | ✓ | |
-| Global switches: displacement, subsurface, shadows, geometry resolution, dicing camera | ✗ | |
+| Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ✗ | |
 | AOVs: light path expressions, material AOVs, Cryptomatte | ✓ | Cryptomatte volume coverage unfinished |
 | Deep EXR | ✓ | |
 | Checkpoints and resuming a render | ✓ | Recovery, Safe Denoising and Continue |
