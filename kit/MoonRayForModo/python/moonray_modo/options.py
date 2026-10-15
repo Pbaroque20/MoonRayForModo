@@ -54,9 +54,9 @@ OWN = ('batch_tile_order', 'bucket_size', 'important_first')
 ENUMS['volume_overlap_mode'] = [('Add them up', 0), ('The densest', 1), ('One at random', 2)]
 # The first three are MoonRay's own, from its source. The other three are this plugin's additions to MoonRay: filters that
 # never go negative, which is what MoonRay's filter importance sampling needs (it places samples by the filter's shape).
-ENUMS['pixel_filter'] = [('Box (MoonRay source)', 0), ('Cubic B-spline (MoonRay source, default)', 1), ('Quadratic B-spline (MoonRay source)', 2),
-                         ('Gaussian (added, MoonRay-compatible)', 3), ('Triangle (added, MoonRay-compatible)', 4),
-                         ('Blackman-Harris (added, MoonRay-compatible)', 5)]
+ENUMS['pixel_filter'] = [('Box (from source)', 0), ('Cubic B-spline (from source, default)', 1), ('Quadratic B-spline (from source)', 2),
+                         ('Gaussian (MoonRay-compatible)', 3), ('Triangle (MoonRay-compatible)', 4),
+                         ('Blackman-Harris (MoonRay-compatible)', 5)]
 # The pixel filters a runtime has only where its MoonRay was built with them (modo-session.json says pixel_filters).
 NEWER_PIXEL_FILTERS = {3: 'Gaussian', 4: 'Triangle', 5: 'Blackman-Harris'}
 OBJECT = {
