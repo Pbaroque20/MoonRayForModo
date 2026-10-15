@@ -43,6 +43,9 @@ Not released yet: on the MoonLightIPR branch.
 ![Hair toon, MoonRay left and MoonLightIPR right](images/moonlightipr-hair_toon.jpg)
 *MoonRay's hair toon material with three highlights, tinted red, green and blue: MoonRay (left), MoonLightIPR (right).*
 
+![The graph editor's properties in their groups, above the MoonRay Widget](images/graph-editor-widget.png)
+*The graph editor's right side: a material's Diffuse group open, the others folded, and the MoonRay Widget's picture of it under MoonRay LS.*
+
 ![The preview before a render](images/preview-wordmark.png)
 *The preview before anything is rendered.*
 

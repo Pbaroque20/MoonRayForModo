@@ -141,6 +141,7 @@ class Panel(QtWidgets.QWidget):
         if self.rendering and self.picture is not None:
             CACHE[self.rendering]=self.picture;CACHE.move_to_end(self.rendering);self.done=self.rendering
             while len(CACHE)>CACHE_SIZE:CACHE.popitem(last=False)
+        if self.rendering and not self.closed:self.status.setText('Rendered.')
         self.picture=None;self.idle()
     def preview_failed(self,message):
         if not self.closed:self.status.setText('Preview failed: '+message)
