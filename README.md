@@ -14,6 +14,9 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 - **MoonRay lights, cameras, light filters, shapes and volumes have a Transform section** in their Properties, laid out as Modo's: Position, Rotation with its order, and Scale as X, Y and Z, with the Reset, Freeze, Zero and Add menus.
 - **MoonLightIPR looks through MoonRay's own cameras** from their own place: perspective, orthographic and dome as well as fisheye and spherical. Modo's orthographic camera previews too.
 - **Less memory kept over a long session**: small leaks after each render and selection are gone.
+- **Gaussian, Triangle and Blackman-Harris pixel filters** in Render Settings, built into MoonRay as its own filters are.
+- **The compositor runs on the graphics card**, or on the processor where there is none, giving the same picture either way; wide blurs and glows are now true full-size blurs.
+- **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
 
 ## New in 0.4.1
