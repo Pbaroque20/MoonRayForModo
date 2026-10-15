@@ -15,8 +15,11 @@ class OutputsDialog(QtWidgets.QDialog):
             action.triggered.connect(lambda checked=False,n=name,e=expression:self.add({'name':self.free(n),'kind':'lpe','expression':e}))
             presets.addAction(action)
         presets.setToolTipsVisible(True);preset.setMenu(presets);top.addWidget(preset)
-        group=QtWidgets.QPushButton('Add light-group output...');group.clicked.connect(self.light_group);top.addWidget(group);top.addStretch(1)
+        group=QtWidgets.QPushButton('Add light-group output...');group.clicked.connect(self.light_group);top.addWidget(group)
+        seen=QtWidgets.QPushButton('Add visibility output...');seen.clicked.connect(self.visibility);top.addWidget(seen);top.addStretch(1)
         self.table=QtWidgets.QTableWidget(0,8);self.table.setHorizontalHeaderLabels(['Name','Type','Expression','Precision','Filter','EXR part','Crypto depth','Crypto category']);layout.addWidget(self.table)
+        # Wide enough for the longer types' names, such as Visibility (light reaching a point).
+        self.table.setColumnWidth(1,240);self.table.setColumnWidth(2,220)
         row=QtWidgets.QHBoxLayout();layout.addLayout(row)
         add=QtWidgets.QPushButton('Add output');add.clicked.connect(lambda:self.add({'name':'pass_'+str(self.table.rowCount()+1),'kind':'lpe','expression':'diffuse'}));row.addWidget(add)
         remove=QtWidgets.QPushButton('Remove selected');remove.clicked.connect(lambda:self.table.removeRow(self.table.currentRow()));row.addWidget(remove)
@@ -41,7 +44,7 @@ class OutputsDialog(QtWidgets.QDialog):
         for row in range(self.table.rowCount()):
             cell,kind=self.table.item(row,2),self.table.cellWidget(row,1)
             if cell is None or kind is None:continue
-            wrong=outputs.lpe_problem(cell.text()) if kind.currentData()=='lpe' else None
+            wrong=outputs.lpe_problem(cell.text()) if kind.currentData()=='lpe' or (kind.currentData()=='visibility' and cell.text().strip()) else None
             blocked=self.table.blockSignals(True)
             cell.setForeground(QtGui.QBrush(QtGui.QColor('#b02010' if wrong else '#000000')));cell.setToolTip(wrong or '')
             self.table.blockSignals(blocked)
@@ -49,7 +52,8 @@ class OutputsDialog(QtWidgets.QDialog):
         self.problem.setText(first)
     def native_expressions(self):
         return [(row,self.table.item(row,2).text().strip()) for row in range(self.table.rowCount())
-                if self.table.cellWidget(row,1).currentData()=='lpe']
+                if self.table.cellWidget(row,1).currentData()=='lpe'
+                or (self.table.cellWidget(row,1).currentData()=='visibility' and self.table.item(row,2).text().strip())]
     def check_native(self):
         from pathlib import Path
         from . import native,lpe_validation
@@ -115,6 +119,14 @@ class OutputsDialog(QtWidgets.QDialog):
         import re
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):QtWidgets.QMessageBox.warning(self,'Light group','Use letters, numbers and underscores.');return
         self.add({'name':label+'_light','kind':'lpe','expression':"C.*<L.'"+label+"'>"})
+    def visibility(self):
+        """A visibility output: how much light reaches each point, from every light or from one light group."""
+        label,ok=QtWidgets.QInputDialog.getText(self,'Visibility output','Light group label (set in Lighting scene controls); leave empty for every light')
+        if not ok:return
+        import re
+        label=label.strip()
+        if label and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):QtWidgets.QMessageBox.warning(self,'Visibility','Use letters, numbers and underscores.');return
+        self.add({'name':self.free((label+'_visibility') if label else 'visibility'),'kind':'visibility','expression':outputs.visibility_expression(label)})
     def add(self,v):
         row=self.table.rowCount();self.table.insertRow(row)
         for col,key in ((0,'name'),(2,'expression'),(5,'part')):self.table.setItem(row,col,QtWidgets.QTableWidgetItem(str(v.get(key,''))))

@@ -22,6 +22,17 @@ WIDTH,HEADER,ROW=190,24,20
 SHOWN=6
 
 
+def grouped(kind):
+    """A node's properties in its groups, in the order the groups first come among them (as the material forms are laid
+    out): [(key, (group,))]. A node whose properties are all in one group has no group shown, (None,)."""
+    specs=nodes.specs(kind)
+    keys=list(specs)
+    names=[str(specs[key].get('group') or 'Parameters') for key in keys]
+    order=list(dict.fromkeys(names))
+    if len(order)<2:return [(key,(None,)) for key in keys]
+    return [(key,(name,)) for name in order for key,group in zip(keys,names) if group==name]
+
+
 def socket_category(editor,identity,key):
     kind=editor.graph['nodes'][identity]['type']
     if key is None:return nodes.category(kind)
@@ -289,6 +300,7 @@ class Editor(QtWidgets.QDialog):
         self.property_help=QtWidgets.QLabel('');self.property_help.setWordWrap(True);self.property_help.setEnabled(False)
         self.property_help.setAlignment(QtCore.Qt.AlignTop);self.property_help.setMinimumHeight(self.fontMetrics().lineSpacing()*3);right.addWidget(self.property_help)
         self.table.setMouseTracking(True);self.table.cellEntered.connect(self.describe_row);self.table.currentCellChanged.connect(lambda row,*_:self.describe_row(row))
+        self.table.cellClicked.connect(self.fold_group)
         from .material_preview import Panel
         self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([420,340])
         self.finished.connect(lambda *_:self.material_preview.shutdown())
@@ -735,7 +747,7 @@ class Editor(QtWidgets.QDialog):
         self.choose_node_file(identity,key)
     def property_menu(self,point):
         row=self.table.rowAt(point.y());identity=self.selected()
-        if row<0 or not identity:return
+        if row<0 or not identity or row in getattr(self,'group_rows',{}):return
         self.table.setCurrentCell(row,1)
         key=key_of(self.table,row);spec=nodes.specs(self.graph['nodes'][identity]['type'])[key]
         if spec['type']=='SceneObject*':return
@@ -771,7 +783,7 @@ class Editor(QtWidgets.QDialog):
     def reset_input(self):
         self.commit_inputs()
         identity=self.selected();row=self.table.currentRow()
-        if not identity or row<0:return
+        if not identity or row<0 or row in getattr(self,'group_rows',{}):return
         key=key_of(self.table,row);before=copy.deepcopy(self.graph)
         try:
             target=self.target(identity);target.setdefault('parameters',{}).pop(key,None);target.setdefault('inputs',{}).pop(key,None)
@@ -779,8 +791,43 @@ class Editor(QtWidgets.QDialog):
         except ValueError as exc:self.graph=before;self.error(exc)
     def filter_properties(self,*args):
         query=self.property_search.text().casefold()
-        hidden=getattr(self,'hidden_rows',set())
-        for row in range(self.table.rowCount()):self.table.setRowHidden(row,row in hidden or query not in (self.table.item(row,0).text()+' '+key_of(self.table,row)).casefold())
+        hidden=getattr(self,'hidden_rows',set());headers=getattr(self,'group_rows',{});groups=getattr(self,'row_groups',{})
+        folded=self.folded_groups()
+        matched=set()
+        for row in range(self.table.rowCount()):
+            if row in headers:continue
+            match=query in (self.table.item(row,0).text()+' '+key_of(self.table,row)).casefold()
+            if match and row not in hidden:matched.add(groups.get(row))
+            # Searching shows what matches even in a folded group; otherwise a folded group's rows are put away.
+            self.table.setRowHidden(row,row in hidden or not match or (not query and groups.get(row) in folded))
+        # A group with no row of its own to show (its inputs are connections only) has no header either.
+        present={groups[row] for row in range(self.table.rowCount()) if row in groups and row not in headers and row not in hidden}
+        for row,group in headers.items():
+            self.table.setRowHidden(row,group not in present or (bool(query) and group not in matched))
+            self.table.item(row,0).setText(('\u25b8 ' if group in folded and not query else '\u25be ')+group)
+    def folded_groups(self):
+        """The groups of the selected node's kind that are folded away, as last left: kept for each kind of node."""
+        identity=self.selected()
+        if not identity or identity not in self.graph['nodes']:return set()
+        kind=self.graph['nodes'][identity]['type']
+        held=QtCore.QSettings('MoonRayForModo','GraphEditor').value('folded/'+kind,'') or ''
+        return {name for name in str(held).split('|') if name}
+    def fold_group(self,row,column=0):
+        """A group's header was clicked: its rows are put away, or brought back."""
+        group=getattr(self,'group_rows',{}).get(row)
+        identity=self.selected()
+        if group is None or not identity:return
+        folded=self.folded_groups();folded^={group}
+        QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('folded/'+self.graph['nodes'][identity]['type'],'|'.join(sorted(folded)))
+        self.filter_properties()
+    def group_header(self,group):
+        """A row naming a group of properties, across the table, that folds the group away when clicked."""
+        row=self.table.rowCount();self.table.insertRow(row)
+        item=QtWidgets.QTableWidgetItem('\u25be '+group);item.setData(QtCore.Qt.UserRole,'')
+        item.setFlags(QtCore.Qt.ItemIsEnabled);font=item.font();font.setBold(True);item.setFont(font)
+        item.setBackground(QtGui.QColor('#3a3d42'));item.setForeground(QtGui.QBrush(QtGui.QColor('#e6e6e6')))
+        item.setToolTip('Click to fold or unfold the %s properties'%group)
+        self.table.setItem(row,0,item);self.table.setSpan(row,0,1,2);self.group_rows[row]=group
     def edit_ramp(self,identity,key):
         """Open the ramp editor on a ramp's three lists, and write them back together."""
         from .ramp_editor import RampDialog
@@ -875,11 +922,19 @@ class Editor(QtWidgets.QDialog):
         listed=bool(identity or controls)
         for widget,shown in ((self.table,listed),(self.property_search,listed),(self.property_help,listed),(self.property_hint,not listed)):widget.setVisible(shown)
         self.property_help.setText('')
-        self.hidden_rows=set()
+        self.hidden_rows=set();self.group_rows={};self.row_groups={}
         if listed:
             effective=nodes.effective(self.graph)['nodes']
-            rows=[(identity,key,None,False) for key in nodes.specs(effective[identity]['type'])] if identity else [(c['node'],c['key'],c.get('label'),c.get('kind')=='number') for c in controls]
+            rows=grouped(effective[identity]['type']) if identity else [(c['node'],c['key'],c.get('label'),c.get('kind')=='number') for c in controls]
+            if identity:rows=[(identity,key,group,False) for key,group in rows]
+            shown_group=None
             for identity,key,title,single in rows:
+                if identity is not None and isinstance(title,tuple):
+                    # A node's row carries its group: a header goes in front of the first of each.
+                    group=title[0];title=None
+                    if group is not None and group!=shown_group:
+                        shown_group=group;self.group_header(group)
+                    self.row_groups[self.table.rowCount()]=group
                 node=effective[identity];spec=nodes.specs(node['type'])[key]
                 # A control is a row of its own, never one of a ramp's three lists.
                 ramps=ramp_groups(nodes.specs(node['type'])) if title is None else {}

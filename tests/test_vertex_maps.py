@@ -83,5 +83,27 @@ class AttributeOutputTests(unittest.TestCase):
             outputs.values([{'name': 'heat', 'kind': 'attribute', 'expression': ' '}])
 
 
+
+class VisibilityOutputTests(unittest.TestCase):
+    def test_every_light_and_one_group(self):
+        from moonray_modo import outputs
+        scene = quad()
+        scene['custom_aovs'] = outputs.values([{'name': 'visibility', 'kind': 'visibility', 'expression': ''},
+                                               {'name': 'rim_visibility', 'kind': 'visibility', 'expression': outputs.visibility_expression('rim')}])
+        text = rdla.scene_text(scene, output_file='final.exr')
+        every = text[text.index('RenderOutput("/modo/aov/visibility")'):]
+        every = every[:every.index('}')]
+        self.assertIn('["result"] = 9', every)
+        self.assertIn('["visibility_aov"] = "C[<T.><RS>]*[<R[DG]><TD>][LO]"', every)
+        rim = text[text.index('RenderOutput("/modo/aov/rim_visibility")'):]
+        self.assertIn("<L.'rim'>", rim[:rim.index('}')])
+        self.assertEqual(outputs.display_kind(scene, 'visibility'), 'alpha')
+
+    def test_a_wrong_expression_is_refused(self):
+        from moonray_modo import outputs
+        with self.assertRaises(ValueError):
+            outputs.values([{'name': 'visibility', 'kind': 'visibility', 'expression': 'not an expression'}])
+
+
 if __name__ == '__main__':
     unittest.main()
