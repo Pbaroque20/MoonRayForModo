@@ -245,7 +245,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression |
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
 | Visibility outputs (how much of each light reaches a point) | ![no](docs/images/feature-no.svg) |  |
-| Primitive attribute outputs | ![no](docs/images/feature-no.svg) |  |
+| Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window. Coming in 0.4.2 |
 | Cryptomatte | ![partly](docs/images/feature-partly.svg) | Volume coverage unfinished |
 | Deep EXR | ![yes](docs/images/feature-yes.svg) | |
 | Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
