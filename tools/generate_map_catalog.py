@@ -11,11 +11,19 @@ for package in ('moonshine','moonray'):
         data=json.loads(path.read_text(encoding='utf-8'));attributes={}
         for include in data.get('directives',{}).get('include',[]):attributes.update(read(base/include,trail+(path,)))
         attributes.update(data.get('attributes',{}));return attributes
-    for category in (('map','normalmap','displacement') if package=='moonray' else ('map','normalmap')):
+    for category in ('map','normalmap','displacement'):
         for path in sorted((base/'dso'/category).rglob('*.json')):
             data=json.loads(path.read_text(encoding='utf-8'))
             if data.get('type') not in ('Map','NormalMap','Displacement') or data.get('name','').startswith(('Test','Template')):continue
-            attrs={a['name']:a for a in read(path).values()}
+            attrs={}
+            for a in read(path).values():
+                # A "multi" attribute is as many attributes as it says, numbered from 0, as MoonRay declares them:
+                # a switch's input0 to input63.
+                if 'multi' in a:
+                    for i in range(int(a['multi'])):
+                        one={k:v for k,v in a.items() if k!='multi'};one['name']=a['name']+str(i);one['label']='%s %d'%(a.get('label',a['name']),i)
+                        attrs[one['name']]=one
+                else:attrs[a['name']]=a
             if data['type']=='Displacement':attrs['bound_padding']={'name':'bound_padding','type':'Float','default':'0.0f','min':'0','comment':'Object-space bound padding for displaced geometry; keep close to the maximum displacement.'}
             catalog[data['name']]={'attributes':attrs,'type':data['type'],
                 'source':path.relative_to(root).as_posix(),'package':package}

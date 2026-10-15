@@ -27,7 +27,7 @@ RESOLUTION = 512
 ELSEWHERE = ('Project', 'TransformSpace', 'TransformNormal', 'Curvature', 'Wireframe', 'Directional', 'Toon', 'Hair', 'Deformation',
              'LODMap', 'DebugMap', 'Random', 'OpenVdb', 'TwoSided', 'UsdPrimvarReader', 'ExtraAov', 'AttributeMap', 'AxisAngle',
              'NormalToRgb', 'RgbToNormal', 'DistortNormal', 'CombineNormal', 'ImageNormal', 'SwitchNormal', 'NormalDisplacement',
-             'VectorDisplacement', 'CombineDisplacement')
+             'VectorDisplacement', 'CombineDisplacement', 'SwitchDisplacement')
 SPACES = (nodes.SPACE_WORLD, nodes.SPACE_OBJECT, nodes.SPACE_TEXTURE)
 RAMP_BY_INPUT = 8
 # Nodes that read the surface's UVs, which cannot share a picture with one laid out in space.

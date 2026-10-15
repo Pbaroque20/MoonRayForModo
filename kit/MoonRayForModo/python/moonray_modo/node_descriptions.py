@@ -75,6 +75,7 @@ DESCRIPTIONS={
  'NormalDisplacement':'Displaces a surface along its normal using a scalar input. Connect to Displacement output.',
  'VectorDisplacement':'Displaces a surface using a vector input. Connect to Displacement output and set appropriate bounds.',
  'CombineDisplacement':'Combines connected displacement inputs.',
+ 'SwitchDisplacement':'Selects one of up to 64 connected displacement inputs by its choice (0 to 63).',
  'CombineNormalMap':'Combines normal-map inputs.',
  'DistortNormalMap':'Distorts a normal-map input.',
  'NormalToRgbMap':'Encodes a normal as RGB values.',

@@ -10289,17 +10289,991 @@
         "name": "choice",
         "type": "Float"
       },
-      "input": {
+      "input0": {
         "default": "Rgb(1.0f, 1.0f, 1.0f)",
         "flags": "FLAGS_BINDABLE",
-        "multi": "64",
-        "name": "input",
+        "label": "input 0",
+        "name": "input0",
+        "type": "Rgb"
+      },
+      "input1": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 1",
+        "name": "input1",
+        "type": "Rgb"
+      },
+      "input10": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 10",
+        "name": "input10",
+        "type": "Rgb"
+      },
+      "input11": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 11",
+        "name": "input11",
+        "type": "Rgb"
+      },
+      "input12": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 12",
+        "name": "input12",
+        "type": "Rgb"
+      },
+      "input13": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 13",
+        "name": "input13",
+        "type": "Rgb"
+      },
+      "input14": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 14",
+        "name": "input14",
+        "type": "Rgb"
+      },
+      "input15": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 15",
+        "name": "input15",
+        "type": "Rgb"
+      },
+      "input16": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 16",
+        "name": "input16",
+        "type": "Rgb"
+      },
+      "input17": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 17",
+        "name": "input17",
+        "type": "Rgb"
+      },
+      "input18": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 18",
+        "name": "input18",
+        "type": "Rgb"
+      },
+      "input19": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 19",
+        "name": "input19",
+        "type": "Rgb"
+      },
+      "input2": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 2",
+        "name": "input2",
+        "type": "Rgb"
+      },
+      "input20": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 20",
+        "name": "input20",
+        "type": "Rgb"
+      },
+      "input21": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 21",
+        "name": "input21",
+        "type": "Rgb"
+      },
+      "input22": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 22",
+        "name": "input22",
+        "type": "Rgb"
+      },
+      "input23": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 23",
+        "name": "input23",
+        "type": "Rgb"
+      },
+      "input24": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 24",
+        "name": "input24",
+        "type": "Rgb"
+      },
+      "input25": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 25",
+        "name": "input25",
+        "type": "Rgb"
+      },
+      "input26": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 26",
+        "name": "input26",
+        "type": "Rgb"
+      },
+      "input27": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 27",
+        "name": "input27",
+        "type": "Rgb"
+      },
+      "input28": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 28",
+        "name": "input28",
+        "type": "Rgb"
+      },
+      "input29": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 29",
+        "name": "input29",
+        "type": "Rgb"
+      },
+      "input3": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 3",
+        "name": "input3",
+        "type": "Rgb"
+      },
+      "input30": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 30",
+        "name": "input30",
+        "type": "Rgb"
+      },
+      "input31": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 31",
+        "name": "input31",
+        "type": "Rgb"
+      },
+      "input32": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 32",
+        "name": "input32",
+        "type": "Rgb"
+      },
+      "input33": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 33",
+        "name": "input33",
+        "type": "Rgb"
+      },
+      "input34": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 34",
+        "name": "input34",
+        "type": "Rgb"
+      },
+      "input35": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 35",
+        "name": "input35",
+        "type": "Rgb"
+      },
+      "input36": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 36",
+        "name": "input36",
+        "type": "Rgb"
+      },
+      "input37": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 37",
+        "name": "input37",
+        "type": "Rgb"
+      },
+      "input38": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 38",
+        "name": "input38",
+        "type": "Rgb"
+      },
+      "input39": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 39",
+        "name": "input39",
+        "type": "Rgb"
+      },
+      "input4": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 4",
+        "name": "input4",
+        "type": "Rgb"
+      },
+      "input40": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 40",
+        "name": "input40",
+        "type": "Rgb"
+      },
+      "input41": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 41",
+        "name": "input41",
+        "type": "Rgb"
+      },
+      "input42": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 42",
+        "name": "input42",
+        "type": "Rgb"
+      },
+      "input43": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 43",
+        "name": "input43",
+        "type": "Rgb"
+      },
+      "input44": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 44",
+        "name": "input44",
+        "type": "Rgb"
+      },
+      "input45": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 45",
+        "name": "input45",
+        "type": "Rgb"
+      },
+      "input46": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 46",
+        "name": "input46",
+        "type": "Rgb"
+      },
+      "input47": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 47",
+        "name": "input47",
+        "type": "Rgb"
+      },
+      "input48": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 48",
+        "name": "input48",
+        "type": "Rgb"
+      },
+      "input49": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 49",
+        "name": "input49",
+        "type": "Rgb"
+      },
+      "input5": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 5",
+        "name": "input5",
+        "type": "Rgb"
+      },
+      "input50": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 50",
+        "name": "input50",
+        "type": "Rgb"
+      },
+      "input51": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 51",
+        "name": "input51",
+        "type": "Rgb"
+      },
+      "input52": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 52",
+        "name": "input52",
+        "type": "Rgb"
+      },
+      "input53": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 53",
+        "name": "input53",
+        "type": "Rgb"
+      },
+      "input54": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 54",
+        "name": "input54",
+        "type": "Rgb"
+      },
+      "input55": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 55",
+        "name": "input55",
+        "type": "Rgb"
+      },
+      "input56": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 56",
+        "name": "input56",
+        "type": "Rgb"
+      },
+      "input57": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 57",
+        "name": "input57",
+        "type": "Rgb"
+      },
+      "input58": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 58",
+        "name": "input58",
+        "type": "Rgb"
+      },
+      "input59": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 59",
+        "name": "input59",
+        "type": "Rgb"
+      },
+      "input6": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 6",
+        "name": "input6",
+        "type": "Rgb"
+      },
+      "input60": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 60",
+        "name": "input60",
+        "type": "Rgb"
+      },
+      "input61": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 61",
+        "name": "input61",
+        "type": "Rgb"
+      },
+      "input62": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 62",
+        "name": "input62",
+        "type": "Rgb"
+      },
+      "input63": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 63",
+        "name": "input63",
+        "type": "Rgb"
+      },
+      "input7": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 7",
+        "name": "input7",
+        "type": "Rgb"
+      },
+      "input8": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 8",
+        "name": "input8",
+        "type": "Rgb"
+      },
+      "input9": {
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 9",
+        "name": "input9",
         "type": "Rgb"
       }
     },
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/map/SwitchColorMap/SwitchColorMap.json",
     "type": "Map"
+  },
+  "SwitchDisplacement": {
+    "attributes": {
+      "bound_padding": {
+        "comment": "Object-space bound padding for displaced geometry; keep close to the maximum displacement.",
+        "default": "0.0f",
+        "min": "0",
+        "name": "bound_padding",
+        "type": "Float"
+      },
+      "choice": {
+        "comment": "Which of the 64 inputs (0 to 63) to use, values greater than 63 get cycled back to be in the [0,63] range",
+        "default": "0.0f",
+        "flags": "FLAGS_BINDABLE",
+        "name": "choice",
+        "type": "Float"
+      },
+      "displacement0": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 0",
+        "name": "displacement0",
+        "type": "SceneObject*"
+      },
+      "displacement1": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 1",
+        "name": "displacement1",
+        "type": "SceneObject*"
+      },
+      "displacement10": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 10",
+        "name": "displacement10",
+        "type": "SceneObject*"
+      },
+      "displacement11": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 11",
+        "name": "displacement11",
+        "type": "SceneObject*"
+      },
+      "displacement12": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 12",
+        "name": "displacement12",
+        "type": "SceneObject*"
+      },
+      "displacement13": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 13",
+        "name": "displacement13",
+        "type": "SceneObject*"
+      },
+      "displacement14": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 14",
+        "name": "displacement14",
+        "type": "SceneObject*"
+      },
+      "displacement15": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 15",
+        "name": "displacement15",
+        "type": "SceneObject*"
+      },
+      "displacement16": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 16",
+        "name": "displacement16",
+        "type": "SceneObject*"
+      },
+      "displacement17": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 17",
+        "name": "displacement17",
+        "type": "SceneObject*"
+      },
+      "displacement18": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 18",
+        "name": "displacement18",
+        "type": "SceneObject*"
+      },
+      "displacement19": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 19",
+        "name": "displacement19",
+        "type": "SceneObject*"
+      },
+      "displacement2": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 2",
+        "name": "displacement2",
+        "type": "SceneObject*"
+      },
+      "displacement20": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 20",
+        "name": "displacement20",
+        "type": "SceneObject*"
+      },
+      "displacement21": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 21",
+        "name": "displacement21",
+        "type": "SceneObject*"
+      },
+      "displacement22": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 22",
+        "name": "displacement22",
+        "type": "SceneObject*"
+      },
+      "displacement23": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 23",
+        "name": "displacement23",
+        "type": "SceneObject*"
+      },
+      "displacement24": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 24",
+        "name": "displacement24",
+        "type": "SceneObject*"
+      },
+      "displacement25": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 25",
+        "name": "displacement25",
+        "type": "SceneObject*"
+      },
+      "displacement26": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 26",
+        "name": "displacement26",
+        "type": "SceneObject*"
+      },
+      "displacement27": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 27",
+        "name": "displacement27",
+        "type": "SceneObject*"
+      },
+      "displacement28": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 28",
+        "name": "displacement28",
+        "type": "SceneObject*"
+      },
+      "displacement29": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 29",
+        "name": "displacement29",
+        "type": "SceneObject*"
+      },
+      "displacement3": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 3",
+        "name": "displacement3",
+        "type": "SceneObject*"
+      },
+      "displacement30": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 30",
+        "name": "displacement30",
+        "type": "SceneObject*"
+      },
+      "displacement31": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 31",
+        "name": "displacement31",
+        "type": "SceneObject*"
+      },
+      "displacement32": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 32",
+        "name": "displacement32",
+        "type": "SceneObject*"
+      },
+      "displacement33": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 33",
+        "name": "displacement33",
+        "type": "SceneObject*"
+      },
+      "displacement34": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 34",
+        "name": "displacement34",
+        "type": "SceneObject*"
+      },
+      "displacement35": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 35",
+        "name": "displacement35",
+        "type": "SceneObject*"
+      },
+      "displacement36": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 36",
+        "name": "displacement36",
+        "type": "SceneObject*"
+      },
+      "displacement37": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 37",
+        "name": "displacement37",
+        "type": "SceneObject*"
+      },
+      "displacement38": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 38",
+        "name": "displacement38",
+        "type": "SceneObject*"
+      },
+      "displacement39": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 39",
+        "name": "displacement39",
+        "type": "SceneObject*"
+      },
+      "displacement4": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 4",
+        "name": "displacement4",
+        "type": "SceneObject*"
+      },
+      "displacement40": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 40",
+        "name": "displacement40",
+        "type": "SceneObject*"
+      },
+      "displacement41": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 41",
+        "name": "displacement41",
+        "type": "SceneObject*"
+      },
+      "displacement42": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 42",
+        "name": "displacement42",
+        "type": "SceneObject*"
+      },
+      "displacement43": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 43",
+        "name": "displacement43",
+        "type": "SceneObject*"
+      },
+      "displacement44": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 44",
+        "name": "displacement44",
+        "type": "SceneObject*"
+      },
+      "displacement45": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 45",
+        "name": "displacement45",
+        "type": "SceneObject*"
+      },
+      "displacement46": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 46",
+        "name": "displacement46",
+        "type": "SceneObject*"
+      },
+      "displacement47": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 47",
+        "name": "displacement47",
+        "type": "SceneObject*"
+      },
+      "displacement48": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 48",
+        "name": "displacement48",
+        "type": "SceneObject*"
+      },
+      "displacement49": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 49",
+        "name": "displacement49",
+        "type": "SceneObject*"
+      },
+      "displacement5": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 5",
+        "name": "displacement5",
+        "type": "SceneObject*"
+      },
+      "displacement50": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 50",
+        "name": "displacement50",
+        "type": "SceneObject*"
+      },
+      "displacement51": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 51",
+        "name": "displacement51",
+        "type": "SceneObject*"
+      },
+      "displacement52": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 52",
+        "name": "displacement52",
+        "type": "SceneObject*"
+      },
+      "displacement53": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 53",
+        "name": "displacement53",
+        "type": "SceneObject*"
+      },
+      "displacement54": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 54",
+        "name": "displacement54",
+        "type": "SceneObject*"
+      },
+      "displacement55": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 55",
+        "name": "displacement55",
+        "type": "SceneObject*"
+      },
+      "displacement56": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 56",
+        "name": "displacement56",
+        "type": "SceneObject*"
+      },
+      "displacement57": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 57",
+        "name": "displacement57",
+        "type": "SceneObject*"
+      },
+      "displacement58": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 58",
+        "name": "displacement58",
+        "type": "SceneObject*"
+      },
+      "displacement59": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 59",
+        "name": "displacement59",
+        "type": "SceneObject*"
+      },
+      "displacement6": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 6",
+        "name": "displacement6",
+        "type": "SceneObject*"
+      },
+      "displacement60": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 60",
+        "name": "displacement60",
+        "type": "SceneObject*"
+      },
+      "displacement61": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 61",
+        "name": "displacement61",
+        "type": "SceneObject*"
+      },
+      "displacement62": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 62",
+        "name": "displacement62",
+        "type": "SceneObject*"
+      },
+      "displacement63": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 63",
+        "name": "displacement63",
+        "type": "SceneObject*"
+      },
+      "displacement7": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 7",
+        "name": "displacement7",
+        "type": "SceneObject*"
+      },
+      "displacement8": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 8",
+        "name": "displacement8",
+        "type": "SceneObject*"
+      },
+      "displacement9": {
+        "comment": "A reference to a displacement scene object",
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_DISPLACEMENT",
+        "label": "displacement 9",
+        "name": "displacement9",
+        "type": "SceneObject*"
+      }
+    },
+    "package": "moonshine",
+    "source": "upstream/openmoonray/moonray/moonshine/dso/displacement/SwitchDisplacement/SwitchDisplacement.json",
+    "type": "Displacement"
   },
   "SwitchFloatMap": {
     "attributes": {
@@ -10309,11 +11283,452 @@
         "name": "choice",
         "type": "Float"
       },
-      "input": {
+      "input0": {
         "default": "1.0f",
         "flags": "FLAGS_BINDABLE",
-        "multi": "64",
-        "name": "input",
+        "label": "input 0",
+        "name": "input0",
+        "type": "Float"
+      },
+      "input1": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 1",
+        "name": "input1",
+        "type": "Float"
+      },
+      "input10": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 10",
+        "name": "input10",
+        "type": "Float"
+      },
+      "input11": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 11",
+        "name": "input11",
+        "type": "Float"
+      },
+      "input12": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 12",
+        "name": "input12",
+        "type": "Float"
+      },
+      "input13": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 13",
+        "name": "input13",
+        "type": "Float"
+      },
+      "input14": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 14",
+        "name": "input14",
+        "type": "Float"
+      },
+      "input15": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 15",
+        "name": "input15",
+        "type": "Float"
+      },
+      "input16": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 16",
+        "name": "input16",
+        "type": "Float"
+      },
+      "input17": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 17",
+        "name": "input17",
+        "type": "Float"
+      },
+      "input18": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 18",
+        "name": "input18",
+        "type": "Float"
+      },
+      "input19": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 19",
+        "name": "input19",
+        "type": "Float"
+      },
+      "input2": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 2",
+        "name": "input2",
+        "type": "Float"
+      },
+      "input20": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 20",
+        "name": "input20",
+        "type": "Float"
+      },
+      "input21": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 21",
+        "name": "input21",
+        "type": "Float"
+      },
+      "input22": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 22",
+        "name": "input22",
+        "type": "Float"
+      },
+      "input23": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 23",
+        "name": "input23",
+        "type": "Float"
+      },
+      "input24": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 24",
+        "name": "input24",
+        "type": "Float"
+      },
+      "input25": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 25",
+        "name": "input25",
+        "type": "Float"
+      },
+      "input26": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 26",
+        "name": "input26",
+        "type": "Float"
+      },
+      "input27": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 27",
+        "name": "input27",
+        "type": "Float"
+      },
+      "input28": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 28",
+        "name": "input28",
+        "type": "Float"
+      },
+      "input29": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 29",
+        "name": "input29",
+        "type": "Float"
+      },
+      "input3": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 3",
+        "name": "input3",
+        "type": "Float"
+      },
+      "input30": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 30",
+        "name": "input30",
+        "type": "Float"
+      },
+      "input31": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 31",
+        "name": "input31",
+        "type": "Float"
+      },
+      "input32": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 32",
+        "name": "input32",
+        "type": "Float"
+      },
+      "input33": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 33",
+        "name": "input33",
+        "type": "Float"
+      },
+      "input34": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 34",
+        "name": "input34",
+        "type": "Float"
+      },
+      "input35": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 35",
+        "name": "input35",
+        "type": "Float"
+      },
+      "input36": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 36",
+        "name": "input36",
+        "type": "Float"
+      },
+      "input37": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 37",
+        "name": "input37",
+        "type": "Float"
+      },
+      "input38": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 38",
+        "name": "input38",
+        "type": "Float"
+      },
+      "input39": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 39",
+        "name": "input39",
+        "type": "Float"
+      },
+      "input4": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 4",
+        "name": "input4",
+        "type": "Float"
+      },
+      "input40": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 40",
+        "name": "input40",
+        "type": "Float"
+      },
+      "input41": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 41",
+        "name": "input41",
+        "type": "Float"
+      },
+      "input42": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 42",
+        "name": "input42",
+        "type": "Float"
+      },
+      "input43": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 43",
+        "name": "input43",
+        "type": "Float"
+      },
+      "input44": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 44",
+        "name": "input44",
+        "type": "Float"
+      },
+      "input45": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 45",
+        "name": "input45",
+        "type": "Float"
+      },
+      "input46": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 46",
+        "name": "input46",
+        "type": "Float"
+      },
+      "input47": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 47",
+        "name": "input47",
+        "type": "Float"
+      },
+      "input48": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 48",
+        "name": "input48",
+        "type": "Float"
+      },
+      "input49": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 49",
+        "name": "input49",
+        "type": "Float"
+      },
+      "input5": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 5",
+        "name": "input5",
+        "type": "Float"
+      },
+      "input50": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 50",
+        "name": "input50",
+        "type": "Float"
+      },
+      "input51": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 51",
+        "name": "input51",
+        "type": "Float"
+      },
+      "input52": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 52",
+        "name": "input52",
+        "type": "Float"
+      },
+      "input53": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 53",
+        "name": "input53",
+        "type": "Float"
+      },
+      "input54": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 54",
+        "name": "input54",
+        "type": "Float"
+      },
+      "input55": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 55",
+        "name": "input55",
+        "type": "Float"
+      },
+      "input56": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 56",
+        "name": "input56",
+        "type": "Float"
+      },
+      "input57": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 57",
+        "name": "input57",
+        "type": "Float"
+      },
+      "input58": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 58",
+        "name": "input58",
+        "type": "Float"
+      },
+      "input59": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 59",
+        "name": "input59",
+        "type": "Float"
+      },
+      "input6": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 6",
+        "name": "input6",
+        "type": "Float"
+      },
+      "input60": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 60",
+        "name": "input60",
+        "type": "Float"
+      },
+      "input61": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 61",
+        "name": "input61",
+        "type": "Float"
+      },
+      "input62": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 62",
+        "name": "input62",
+        "type": "Float"
+      },
+      "input63": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 63",
+        "name": "input63",
+        "type": "Float"
+      },
+      "input7": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 7",
+        "name": "input7",
+        "type": "Float"
+      },
+      "input8": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 8",
+        "name": "input8",
+        "type": "Float"
+      },
+      "input9": {
+        "default": "1.0f",
+        "flags": "FLAGS_BINDABLE",
+        "label": "input 9",
+        "name": "input9",
         "type": "Float"
       }
     },
@@ -10330,11 +11745,452 @@
         "name": "choice",
         "type": "Float"
       },
-      "input": {
+      "input0": {
         "flags": "FLAGS_NONE",
         "interface": "INTERFACE_NORMALMAP",
-        "multi": "64",
-        "name": "input",
+        "label": "input 0",
+        "name": "input0",
+        "type": "SceneObject*"
+      },
+      "input1": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 1",
+        "name": "input1",
+        "type": "SceneObject*"
+      },
+      "input10": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 10",
+        "name": "input10",
+        "type": "SceneObject*"
+      },
+      "input11": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 11",
+        "name": "input11",
+        "type": "SceneObject*"
+      },
+      "input12": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 12",
+        "name": "input12",
+        "type": "SceneObject*"
+      },
+      "input13": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 13",
+        "name": "input13",
+        "type": "SceneObject*"
+      },
+      "input14": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 14",
+        "name": "input14",
+        "type": "SceneObject*"
+      },
+      "input15": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 15",
+        "name": "input15",
+        "type": "SceneObject*"
+      },
+      "input16": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 16",
+        "name": "input16",
+        "type": "SceneObject*"
+      },
+      "input17": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 17",
+        "name": "input17",
+        "type": "SceneObject*"
+      },
+      "input18": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 18",
+        "name": "input18",
+        "type": "SceneObject*"
+      },
+      "input19": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 19",
+        "name": "input19",
+        "type": "SceneObject*"
+      },
+      "input2": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 2",
+        "name": "input2",
+        "type": "SceneObject*"
+      },
+      "input20": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 20",
+        "name": "input20",
+        "type": "SceneObject*"
+      },
+      "input21": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 21",
+        "name": "input21",
+        "type": "SceneObject*"
+      },
+      "input22": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 22",
+        "name": "input22",
+        "type": "SceneObject*"
+      },
+      "input23": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 23",
+        "name": "input23",
+        "type": "SceneObject*"
+      },
+      "input24": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 24",
+        "name": "input24",
+        "type": "SceneObject*"
+      },
+      "input25": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 25",
+        "name": "input25",
+        "type": "SceneObject*"
+      },
+      "input26": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 26",
+        "name": "input26",
+        "type": "SceneObject*"
+      },
+      "input27": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 27",
+        "name": "input27",
+        "type": "SceneObject*"
+      },
+      "input28": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 28",
+        "name": "input28",
+        "type": "SceneObject*"
+      },
+      "input29": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 29",
+        "name": "input29",
+        "type": "SceneObject*"
+      },
+      "input3": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 3",
+        "name": "input3",
+        "type": "SceneObject*"
+      },
+      "input30": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 30",
+        "name": "input30",
+        "type": "SceneObject*"
+      },
+      "input31": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 31",
+        "name": "input31",
+        "type": "SceneObject*"
+      },
+      "input32": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 32",
+        "name": "input32",
+        "type": "SceneObject*"
+      },
+      "input33": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 33",
+        "name": "input33",
+        "type": "SceneObject*"
+      },
+      "input34": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 34",
+        "name": "input34",
+        "type": "SceneObject*"
+      },
+      "input35": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 35",
+        "name": "input35",
+        "type": "SceneObject*"
+      },
+      "input36": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 36",
+        "name": "input36",
+        "type": "SceneObject*"
+      },
+      "input37": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 37",
+        "name": "input37",
+        "type": "SceneObject*"
+      },
+      "input38": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 38",
+        "name": "input38",
+        "type": "SceneObject*"
+      },
+      "input39": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 39",
+        "name": "input39",
+        "type": "SceneObject*"
+      },
+      "input4": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 4",
+        "name": "input4",
+        "type": "SceneObject*"
+      },
+      "input40": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 40",
+        "name": "input40",
+        "type": "SceneObject*"
+      },
+      "input41": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 41",
+        "name": "input41",
+        "type": "SceneObject*"
+      },
+      "input42": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 42",
+        "name": "input42",
+        "type": "SceneObject*"
+      },
+      "input43": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 43",
+        "name": "input43",
+        "type": "SceneObject*"
+      },
+      "input44": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 44",
+        "name": "input44",
+        "type": "SceneObject*"
+      },
+      "input45": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 45",
+        "name": "input45",
+        "type": "SceneObject*"
+      },
+      "input46": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 46",
+        "name": "input46",
+        "type": "SceneObject*"
+      },
+      "input47": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 47",
+        "name": "input47",
+        "type": "SceneObject*"
+      },
+      "input48": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 48",
+        "name": "input48",
+        "type": "SceneObject*"
+      },
+      "input49": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 49",
+        "name": "input49",
+        "type": "SceneObject*"
+      },
+      "input5": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 5",
+        "name": "input5",
+        "type": "SceneObject*"
+      },
+      "input50": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 50",
+        "name": "input50",
+        "type": "SceneObject*"
+      },
+      "input51": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 51",
+        "name": "input51",
+        "type": "SceneObject*"
+      },
+      "input52": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 52",
+        "name": "input52",
+        "type": "SceneObject*"
+      },
+      "input53": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 53",
+        "name": "input53",
+        "type": "SceneObject*"
+      },
+      "input54": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 54",
+        "name": "input54",
+        "type": "SceneObject*"
+      },
+      "input55": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 55",
+        "name": "input55",
+        "type": "SceneObject*"
+      },
+      "input56": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 56",
+        "name": "input56",
+        "type": "SceneObject*"
+      },
+      "input57": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 57",
+        "name": "input57",
+        "type": "SceneObject*"
+      },
+      "input58": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 58",
+        "name": "input58",
+        "type": "SceneObject*"
+      },
+      "input59": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 59",
+        "name": "input59",
+        "type": "SceneObject*"
+      },
+      "input6": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 6",
+        "name": "input6",
+        "type": "SceneObject*"
+      },
+      "input60": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 60",
+        "name": "input60",
+        "type": "SceneObject*"
+      },
+      "input61": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 61",
+        "name": "input61",
+        "type": "SceneObject*"
+      },
+      "input62": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 62",
+        "name": "input62",
+        "type": "SceneObject*"
+      },
+      "input63": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 63",
+        "name": "input63",
+        "type": "SceneObject*"
+      },
+      "input7": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 7",
+        "name": "input7",
+        "type": "SceneObject*"
+      },
+      "input8": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 8",
+        "name": "input8",
+        "type": "SceneObject*"
+      },
+      "input9": {
+        "flags": "FLAGS_NONE",
+        "interface": "INTERFACE_NORMALMAP",
+        "label": "input 9",
+        "name": "input9",
         "type": "SceneObject*"
       }
     },
