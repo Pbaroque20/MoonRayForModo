@@ -54,13 +54,14 @@ class CachedComposite(QtCore.QObject):
             self.directory = tempfile.TemporaryDirectory(prefix='MoonRayComposite-')
             root = Path(self.directory.name)
             kinds = {key: outputs.display_kind(frame['snapshot'], key) for key in frame['files']}
-            self.steps, self.result = compositor.jobs(graph, frame['files'], kinds, root)
+            # The compositor program where the runtime has it: the graph in one go, on the graphics card or the processor.
+            self.steps, self.result = compositor.jobs(graph, frame['files'], kinds, root, composite=compositor.program(frame['runtime']))
+            self.tool = str(Path(frame['runtime']) / 'oiiotool.exe')
             self.job = (frame, wanted)
             env = QtCore.QProcessEnvironment()
             for key, value in native.environment(frame['runtime']).items():
                 env.insert(key, value)
             self.process.setProcessEnvironment(env)
-            self.process.setProgram(str(Path(frame['runtime']) / 'oiiotool.exe'))
             self.log = ''
             if not self.steps:
                 # Nothing to run: the output is one of the frame's own buffers, as it is.
@@ -77,6 +78,11 @@ class CachedComposite(QtCore.QObject):
 
     def next(self):
         args, self.expected = self.steps.pop(0)
+        # ['@run', program, ...]: a step for another program than the image tool (the compositor program).
+        if args and args[0] == '@run':
+            self.process.setProgram(args[1]); args = args[2:]
+        else:
+            self.process.setProgram(self.tool)
         self.process.setArguments(args); self.process.start()
 
     def read(self):

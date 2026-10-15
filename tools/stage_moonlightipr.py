@@ -12,6 +12,8 @@ xpu = root / 'toolchain/xpu'
 destination = pathlib.Path(args.destination).resolve()
 assets = {'moonlightipr_session.exe': build / 'bin/moonlightipr_session.exe',
           'MoonLightIPRKernel.ptx': build / 'shaders/MoonLightIPRKernel.ptx',
+          # The scene compositor, on the graphics card or the processor.
+          'modo_composite.exe': build / 'bin/modo_composite.exe', 'MoonLightIPRComposite.ptx': build / 'shaders/MoonLightIPRComposite.ptx',
           # MoonLightIPR's own licence, and what it is and is not to MoonRay and DreamWorks.
           'licenses/MoonLightIPR.txt': root / 'moonlightipr/LICENSE', 'licenses/MoonLightIPR-NOTICE.md': root / 'moonlightipr/NOTICE.md',
           'licenses/CUDA.txt': xpu / 'cuda_cudart-windows-x86_64-12.8.90-archive/LICENSE',

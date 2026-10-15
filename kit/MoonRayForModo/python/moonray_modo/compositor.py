@@ -310,13 +310,211 @@ MAKERS = {
 }
 
 
-def jobs(graph, files, kinds, folder, channels=None):
+# ---- The compositor program ------------------------------------------------------------------------------------------
+# modo_composite (moonlightipr/composite) runs the whole graph in one go, on the graphics card where there is one and on
+# the processor otherwise, with the same code for every pixel either way. Its steps follow what the image tool does node
+# by node (measured: tools/measure_oiiotool_ops.py); where a runtime has no such program, the image tool does it as
+# before. A step the runners give to it is ['@run', program, ...arguments] in place of the image tool's arguments.
+PROGRAM = 'modo_composite.exe'
+STEP_KINDS = {'copy': 0, 'merge': 2, 'grade': 3, 'levels': 4, 'contrast': 5, 'invert': 6, 'clamp': 7, 'tonemap': 8, 'math': 9,
+              'blur_x': 10, 'blur_y': 11, 'sharpen': 12, 'median': 13, 'dilate': 14, 'erode': 15, 'edges': 16, 'grain': 17,
+              'vignette': 18, 'flip': 19, 'luma_matte': 20, 'channel': 21, 'constant': 22, 'ramp': 23, 'glow_add': 24, 'bright': 25}
+
+
+def program(runtime):
+    """The compositor program to use with a runtime, or None where there is none: in the MoonLightIPR folder the
+    preview uses (the kit's own, a development one named by MOONRAY_MODO_MOONLIGHTIPR, or the runtime's)."""
+    import os
+    from pathlib import Path
+    supplied = os.environ.get('MOONRAY_MODO_MOONLIGHTIPR', '')
+    places = [Path(supplied)] if supplied else []
+    places += [Path(__file__).resolve().parents[2] / 'runtime' / 'moonlightipr', Path(runtime) / 'moonlightipr']
+    for place in places:
+        if (place / PROGRAM).is_file() and (place / 'MoonLightIPRComposite.ptx').is_file():
+            return place / PROGRAM
+    return None
+
+
+def gaussian_taps(across):
+    """A Gaussian blur's weights across one row: as many as across (odd), of a standard deviation a quarter of it,
+    sampled at the pixel centres and made to add up to one, as the image tool makes them."""
+    import math
+    sigma = across / 4.0
+    half = across // 2
+    weights = [math.exp(-(k * k) / (2.0 * sigma * sigma)) for k in range(-half, half + 1)]
+    total = sum(weights)
+    return [w / total for w in weights]
+
+
+def program_jobs(graph, files, kinds, folder, channels, composite):
+    """The same picture as jobs(), made by the compositor program: the buffers read as the image tool reads them, the
+    graph run by the program, its picture written as an EXR. Returns (steps, the output's file) as jobs() does."""
+    from pathlib import Path
+    graph = validate(graph)
+    folder = Path(folder)
+    steps, lines = [], []
+    slot_of, count = {}, [0]
+
+    def slot():
+        count[0] += 1
+        return count[0] - 1
+
+    kernels_weights = []
+
+    def kernel(weights):
+        start = sum(len(k) for k in kernels_weights)
+        kernels_weights.append(weights)
+        return start
+
+    def step(kind, a=-1, b=-1, m=-1, i0=0, i1=0, f=()):
+        out = slot()
+        values = list(f) + [0.0] * (6 - len(f))
+        lines.append('step %d %d %d %d %d %d %d %s' % (STEP_KINDS[kind], a, b, m, out, i0, i1, ' '.join(repr(float(v)) for v in values)))
+        return out
+
+    black = [None]
+
+    def none():
+        if black[0] is None:
+            black[0] = step('constant', f=(0.0, 0.0, 0.0))
+        return black[0]
+
+    def blur(source, radius):
+        across = max(1, int(round(float(radius) * 4)) | 1)
+        start = kernel(gaussian_taps(across))
+        return step('blur_y', step('blur_x', source, i0=across, i1=start), i0=across, i1=start)
+
+    # The render's size comes from a buffer: the beauty, or the first there is, read whether or not the graph takes it.
+    size_source = files.get('beauty') or next(iter(files.values()))
+    loads = []
+    for identity in order(graph):
+        node = graph['nodes'][identity]
+        kind, held = node['type'], node['parameters']
+        taken = {key: slot_of[source] for key, source in node['inputs'].items()}
+        image = taken.get('image')
+        if kind == 'input':
+            key = held['buffer']
+            if key not in files or kinds.get(key) in UNUSABLE:
+                raise ValueError('The render has no %s buffer for the compositor to take' % key)
+            target = folder / (identity + '.pfm')
+            steps.append((['--no-autopremult', str(files[key]), '--fixnan', 'black'] + ((channels or {}).get(key) or _channels(kinds.get(key, key)))
+                          + ['-d', 'float', '-o', str(target)], target))
+            slot_of[identity] = slot()
+            loads.append('load %d %s' % (slot_of[identity], target))
+            continue
+        if kind == 'output':
+            slot_of[identity] = image if image is not None else none()
+            continue
+        if kind == 'merge':
+            a, b = taken.get('a'), taken.get('b')
+            if b is None:
+                slot_of[identity] = a if a is not None else none()
+                continue
+            slot_of[identity] = step('merge', a if a is not None else none(), b, taken.get('mask', -1), i0=MODES.index(held['mode']), f=(float(held['mix']),))
+            continue
+        if kind == 'constant':
+            slot_of[identity] = step('constant', f=[float(v) for v in held['color']])
+            continue
+        if kind == 'ramp':
+            slot_of[identity] = step('ramp', i0=RAMPS.index(held['direction']), f=[float(v) for v in held['start']] + [float(v) for v in held['end']])
+            continue
+        if image is None:
+            slot_of[identity] = none()
+            continue
+        out = None
+        if kind == 'grade':
+            gain = 2.0 ** float(held['exposure'])
+            gamma = float(held['gamma']) if abs(float(held['gamma']) - 1.0) > 1e-6 else 1.0
+            saturation = float(held['saturation']) if abs(float(held['saturation']) - 1.0) > 1e-6 else 1.0
+            out = step('grade', image, f=[gain * float(v) for v in held['tint']] + [gamma, saturation])
+        elif kind == 'blur':
+            out = image if float(held['radius']) < 0.25 else blur(image, held['radius'])
+        elif kind == 'glow':
+            bright = step('bright', image, f=(float(held['threshold']),))
+            if float(held['radius']) >= 0.25:
+                bright = blur(bright, held['radius'])
+            out = step('glow_add', image, bright, f=(float(held['strength']),))
+        elif kind == 'levels':
+            span = float(held['white']) - float(held['black'])
+            span = span if abs(span) > 1e-6 else 1e-6
+            out = step('levels', image, f=(float(held['black']), 1.0 / span, 1.0 / float(held['gamma']),
+                                           float(held['out_white']) - float(held['out_black']), float(held['out_black'])))
+        elif kind == 'contrast':
+            out = step('contrast', image, f=(float(held['contrast']), float(held['pivot'])))
+        elif kind == 'invert':
+            out = step('invert', image)
+        elif kind == 'clamp':
+            out = step('clamp', image, f=(float(held['least']), float(held['most'])))
+        elif kind == 'tonemap':
+            out = step('tonemap', image, f=(2.0 ** float(held['exposure']),))
+        elif kind == 'math':
+            value = float(held['value'])
+            if held['operation'] == 'divide':
+                value = 1.0 / value if abs(value) > 1e-9 else 0.0
+            out = step('math', image, i0=MATH.index(held['operation']), f=(value,))
+        elif kind == 'sharpen':
+            if float(held['amount']) < 1e-4:
+                out = image
+            else:
+                # The image tool's unsharp mask: its kernel as many pixels across as the width rounded up, one fewer if
+                # that is even; a Gaussian of a quarter of the width.
+                import math
+                width = 2 * float(held['radius']) + 1
+                across = int(math.ceil(width))
+                across -= 0 if across % 2 else 1
+                sigma = width / 4.0
+                half = across // 2
+                weights = [math.exp(-(k * k) / (2.0 * sigma * sigma)) for k in range(-half, half + 1)]
+                total = sum(weights)
+                start = kernel([w / total for w in weights])
+                blurred = step('blur_y', step('blur_x', image, i0=across, i1=start), i0=across, i1=start)
+                out = step('sharpen', image, blurred, f=(float(held['amount']),))
+        elif kind == 'median':
+            out = step('median', image, i0=2 * int(round(float(held['radius']))) + 1)
+        elif kind == 'grow':
+            pixels = int(round(float(held['pixels'])))
+            out = image if not pixels else step('dilate' if pixels > 0 else 'erode', image, i0=2 * abs(pixels) + 1)
+        elif kind == 'edges':
+            out = step('edges', image, f=(float(held['strength']),))
+        elif kind == 'grain':
+            out = image if float(held['amount']) < 1e-6 else step('grain', image, i0=int(float(held['seed'])), f=(float(held['amount']),))
+        elif kind == 'vignette':
+            out = step('vignette', image, f=(float(held['amount']), float(held['falloff'])))
+        elif kind == 'flip':
+            out = step('flip', image, i0={'left to right': 1, 'top to bottom': 2, 'both': 3}[held['direction']])
+        elif kind == 'luma_matte':
+            span = float(held['high']) - float(held['low'])
+            span = span if abs(span) > 1e-6 else 1e-6
+            out = step('luma_matte', image, i0=1 if held['take'] == 'the dark' else 0, f=(float(held['low']), 1.0 / span))
+        elif kind == 'channel':
+            out = step('channel', image, i0=CHANNELS.index(held['channel']))
+        else:
+            raise ValueError('The compositor program has no %s node' % kind)
+        slot_of[identity] = out
+    result = slot_of[graph['root']]
+    if not loads:
+        # A graph of made pictures only: a buffer is read all the same, for the render's size.
+        steps.append((['--no-autopremult', str(size_source), '--ch', '0,1,2', '-d', 'float', '-o', str(folder / 'size.pfm')], folder / 'size.pfm'))
+        loads.append('load %d %s' % (slot(), folder / 'size.pfm'))
+    plan = folder / 'composite.txt'
+    picture, final = folder / 'composite.pfm', folder / 'composite.exr'
+    text = ['size 0 0'] + ['kernel %d %s' % (len(w), ' '.join(repr(float(v)) for v in w)) for w in kernels_weights] + loads + lines + ['save %d %s' % (result, picture)]
+    plan.write_text('\n'.join(text) + '\n', encoding='utf-8')
+    steps.append((['@run', str(composite), str(plan)], picture))
+    steps.append(([str(picture), '-d', 'float', '-o', str(final)], final))
+    return steps, final
+
+
+def jobs(graph, files, kinds, folder, channels=None, composite=None):
     """What the image tool is to be run with, node after node: [(arguments, the file that run makes)], and the file
     that is the output's picture. files has each buffer's file and kinds what kind of buffer each is. A wired input
     that is left out of a node is black; a node with nothing to work on is black too. channels, where given, says
     for a buffer what picks it out of its file, in place of what its kind would: for buffers that are channels of
     one EXR."""
     from pathlib import Path
+    if composite is not None:
+        # The compositor program, given: the whole graph in one go, on the graphics card or the processor.
+        return program_jobs(graph, files, kinds, folder, channels, composite)
     graph = validate(graph)
     folder = Path(folder)
     made, steps = {}, []

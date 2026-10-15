@@ -66,9 +66,12 @@ def write(runtime, graph, rendered, denoised=None):
         files[key] = rendered; channels[key] = ['--ch', chosen]
     files.setdefault('beauty', rendered); channels.setdefault('beauty', ['--ch', 'R,G,B'])
     with tempfile.TemporaryDirectory(prefix='MoonRayComposite-') as held:
-        steps, result = compositor.jobs(graph, files, {key: 'beauty' for key in files}, held, channels=channels)
+        # The same program as the preview's Composite, where the runtime has it: the two always agree.
+        steps, result = compositor.jobs(graph, files, {key: 'beauty' for key in files}, held, channels=channels,
+                                        composite=compositor.program(runtime))
         for args, target in steps:
-            done = subprocess.run([str(runtime / 'oiiotool.exe')] + args, env=native.environment(runtime), stdout=subprocess.PIPE,
+            command = args[1:] if args and args[0] == '@run' else [str(runtime / 'oiiotool.exe')] + args
+            done = subprocess.run(command, env=native.environment(runtime), stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, timeout=600, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             if done.returncode or not Path(target).is_file():
                 raise RuntimeError('The image tool could not make the composite: ' + done.stdout.decode('utf-8', errors='replace')[-300:])
