@@ -383,11 +383,9 @@ class Renderer(QtCore.QObject):
             self._begin_moonlightipr();return
         target = int(self.active['samples'])
         adaptive=options.render_values(self.active['snapshot'].get('render_settings',{}))['sampling_mode']==2
-        # A render taken up again goes straight on with its long pass. So does one by the MoonRay kept loaded, which
-        # shows its picture as it comes on: two quick passes before the long one, each begun from nothing, were a
-        # first look that such a render gives anyway, and on a heavy scene took a third of the whole time. Only a
-        # MoonRay of its own, whose picture is seen when a pass ends, is still given them.
-        self.passes = [target] if self.active['output'] or self.active.get('resume') or adaptive or self.active['snapshot'].get('_ipr_refined') or self.active.get('persistent') else sorted(set([1, min(2, target), target]))
+        # One render, as MoonRay's own command makes it: no quick passes in front of it, each begun from nothing. MoonRay
+        # itself goes over the picture coarse to fine under adaptive sampling, and tile by tile under uniform.
+        self.passes = [target]
         # The estimate of the time left is of the whole render: it is told what passes there are, by their samples.
         self.progress_state.plan([side*side for side in self.passes],adaptive)
         self.log = ''
@@ -706,8 +704,7 @@ class Renderer(QtCore.QObject):
             return
         try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
-        # Smart Render: is the beauty clean enough yet? Not in the two quick passes before the long one, whose
-        # pictures are only a first look.
+        # Smart Render: is the beauty clean enough yet? Only while the render is under way.
         smart=getattr(self,'smart',None)
         if smart is not None and key=='beauty' and not self.passes and self.phase=='render':
             try:
