@@ -1379,6 +1379,190 @@ index 44c7b8c..b30a3f2 100644
 -//----------------------------------------------------------------------------
 \ No newline at end of file
 +//----------------------------------------------------------------------------
+diff --git a/lib/rendering/pbr/sampler/PixelFilter.h b/lib/rendering/pbr/sampler/PixelFilter.h
+index 0a048e2..2f0249d 100644
+--- a/lib/rendering/pbr/sampler/PixelFilter.h
++++ b/lib/rendering/pbr/sampler/PixelFilter.h
+@@ -111,6 +111,80 @@ private:
+     }
+ };
+ 
++// A Gaussian cut off at three standard deviations either side: at a pixel filter width of 3, a
++// standard deviation of half a pixel.
++class GaussianPixelFilter final : public PixelFilter
++{
++public:
++    explicit GaussianPixelFilter(float footprint) :
++        PixelFilter(footprint)
++    {
++    }
++
++private:
++    void applyFilter(utype dataSize, float* data) const override
++    {
++        ispc::PBR_gaussianWarp(dataSize, data);
++    }
++
++    void applyOffset(utype dataSize, float* data) const override
++    {
++        const float filterFootprint = 6.0f;
++        const float widthMultiplier = getDesiredFootprint()/filterFootprint;
++
++        ispc::PBR_filterOffset(dataSize, data, widthMultiplier);
++    }
++};
++
++// A tent: highest in the middle, falling straight to nothing at the edge of the filter width.
++class TrianglePixelFilter final : public PixelFilter
++{
++public:
++    explicit TrianglePixelFilter(float footprint) :
++        PixelFilter(footprint)
++    {
++    }
++
++private:
++    void applyFilter(utype dataSize, float* data) const override
++    {
++        ispc::PBR_triangleWarp(dataSize, data);
++    }
++
++    void applyOffset(utype dataSize, float* data) const override
++    {
++        const float filterFootprint = 2.0f;
++        const float widthMultiplier = getDesiredFootprint()/filterFootprint;
++
++        ispc::PBR_filterOffset(dataSize, data, widthMultiplier);
++    }
++};
++
++// The 4-term Blackman-Harris window across the filter width: positive throughout, a little
++// sharper than the Gaussian for the same width.
++class BlackmanHarrisPixelFilter final : public PixelFilter
++{
++public:
++    explicit BlackmanHarrisPixelFilter(float footprint) :
++        PixelFilter(footprint)
++    {
++    }
++
++private:
++    void applyFilter(utype dataSize, float* data) const override
++    {
++        ispc::PBR_blackmanHarrisWarp(dataSize, data);
++    }
++
++    void applyOffset(utype dataSize, float* data) const override
++    {
++        const float filterFootprint = 2.0f;
++        const float widthMultiplier = getDesiredFootprint()/filterFootprint;
++
++        ispc::PBR_filterOffset(dataSize, data, widthMultiplier);
++    }
++};
++
+ } // namespace pbr
+ } // namespace moonray
+ 
+diff --git a/lib/rendering/pbr/sampler/Sampling.ispc b/lib/rendering/pbr/sampler/Sampling.ispc
+index c3242d1..8c596a0 100644
+--- a/lib/rendering/pbr/sampler/Sampling.ispc
++++ b/lib/rendering/pbr/sampler/Sampling.ispc
+@@ -80,6 +80,94 @@ export void PBR_cubicBSplineWarp(uniform unsigned int size,
+     }
+ }
+ 
++// Warps samples to a Gaussian of unit standard deviation, cut off at -3 and 3: the inverse of its distribution,
++// by the inverse error function.
++// Separable: run once for x and y dimensions.
++// Input: samples in [0, 1].
++// Output: samples in [-3, 3]
++inline float erfinvApprox(float x)
++{
++    // M. Giles, "Approximating the erfinv function", GPU Computing Gems Jade Edition (2011): single precision.
++    float w = -log((1.0f - x) * (1.0f + x));
++    float p;
++    if (w < 5.0f) {
++        w = w - 2.5f;
++        p = 2.81022636e-08f;
++        p = 3.43273939e-07f + p*w;
++        p = -3.5233877e-06f + p*w;
++        p = -4.39150654e-06f + p*w;
++        p = 0.00021858087f + p*w;
++        p = -0.00125372503f + p*w;
++        p = -0.00417768164f + p*w;
++        p = 0.246640727f + p*w;
++        p = 1.50140941f + p*w;
++    } else {
++        w = sqrt(w) - 3.0f;
++        p = -0.000200214257f;
++        p = 0.000100950558f + p*w;
++        p = 0.00134934322f + p*w;
++        p = -0.00367342844f + p*w;
++        p = 0.00573950773f + p*w;
++        p = -0.0076224613f + p*w;
++        p = 0.00943887047f + p*w;
++        p = 1.00167406f + p*w;
++        p = 2.83297682f + p*w;
++    }
++    return p * x;
++}
++
++export void PBR_gaussianWarp(uniform unsigned int size,
++                             uniform float samples[])
++{
++    // erf(3 / sqrt(2)): the share of the Gaussian within three standard deviations.
++    const uniform float within = 0.99730020f;
++    foreach (i = 0 ... size) {
++        const float r = samples[i];
++        const float e = clamp((2.0f * r - 1.0f) * within, -0.9999999f, 0.9999999f);
++        samples[i] = clamp(1.41421356f * erfinvApprox(e), -3.0f, 3.0f);
++    }
++}
++
++// Warps samples to a tent filter.
++// Separable: run once for x and y dimensions.
++// Input: samples in [0, 1].
++// Output: samples in [-1, 1]
++export void PBR_triangleWarp(uniform unsigned int size,
++                             uniform float samples[])
++{
++    foreach (i = 0 ... size) {
++        const float r = samples[i];
++        samples[i] = r < 0.5f ? sqrt(2.0f * r) - 1.0f : 1.0f - sqrt(2.0f * (1.0f - r));
++    }
++}
++
++// Warps samples to the 4-term Blackman-Harris window
++//   w(t) = a0 - a1 cos(2 pi t) + a2 cos(4 pi t) - a3 cos(6 pi t), t in [0, 1],
++// by solving for the place where its integral reaches r of the whole: Newton's method, kept within a bracket that
++// halves whenever a step would leave it.
++// Separable: run once for x and y dimensions.
++// Input: samples in [0, 1].
++// Output: samples in [-1, 1]
++export void PBR_blackmanHarrisWarp(uniform unsigned int size,
++                                   uniform float samples[])
++{
++    const uniform float a0 = 0.35875f, a1 = 0.48829f, a2 = 0.14128f, a3 = 0.01168f;
++    foreach (i = 0 ... size) {
++        const float target = samples[i] * a0;
++        float low = 0.0f, high = 1.0f, t = samples[i];
++        for (uniform int j = 0; j < 12; ++j) {
++            const float c = a0 * t - a1 * sin(2.0f * PI * t) / (2.0f * PI) + a2 * sin(4.0f * PI * t) / (4.0f * PI)
++                          - a3 * sin(6.0f * PI * t) / (6.0f * PI) - target;
++            if (c > 0.0f) high = t; else low = t;
++            const float w = a0 - a1 * cos(2.0f * PI * t) + a2 * cos(4.0f * PI * t) - a3 * cos(6.0f * PI * t);
++            float next = w > 1e-6f ? t - c / w : 0.5f * (low + high);
++            if (next <= low || next >= high) next = 0.5f * (low + high);
++            t = next;
++        }
++        samples[i] = 2.0f * t - 1.0f;
++    }
++}
++
+ export void PBR_filterOffset(uniform unsigned int size, uniform float values[],
+                              uniform float widthMult)
+ {
 diff --git a/lib/rendering/rndr/CMakeLists.txt b/lib/rendering/rndr/CMakeLists.txt
 index b6eace6..b19dd62 100644
 --- a/lib/rendering/rndr/CMakeLists.txt
@@ -1915,7 +2099,7 @@ index f88d871..6d33635 100644
  
      // Non-copyable
 diff --git a/lib/rendering/rndr/RenderContext.cc b/lib/rendering/rndr/RenderContext.cc
-index 0a864ad..4e7ec5b 100644
+index 0a864ad..7142b0e 100644
 --- a/lib/rendering/rndr/RenderContext.cc
 +++ b/lib/rendering/rndr/RenderContext.cc
 @@ -1,3 +1,4 @@
@@ -1942,7 +2126,23 @@ index 0a864ad..4e7ec5b 100644
  #include <malloc.h>
  #endif
  #include <memory>
-@@ -204,6 +207,12 @@ cleanUpGlobalDriver()
+@@ -153,6 +156,15 @@ getPixelFilter(scene_rdl2::rdl2::PixelFilterType type, float width)
+     case scene_rdl2::rdl2::PixelFilterType::quadraticBSpline:
+         pixelFilter.reset(new pbr::QuadraticBSplinePixelFilter(width));
+         break;
++    case scene_rdl2::rdl2::PixelFilterType::gaussian:
++        pixelFilter.reset(new pbr::GaussianPixelFilter(width));
++        break;
++    case scene_rdl2::rdl2::PixelFilterType::triangle:
++        pixelFilter.reset(new pbr::TrianglePixelFilter(width));
++        break;
++    case scene_rdl2::rdl2::PixelFilterType::blackmanHarris:
++        pixelFilter.reset(new pbr::BlackmanHarrisPixelFilter(width));
++        break;
+     default:
+         Logger::warn("Unknown pixel filter type specified");
+         pixelFilter.reset(new pbr::BoxPixelFilter(width));
+@@ -204,6 +216,12 @@ cleanUpGlobalDriver()
  {
      // just a pass through to keep API clean
      cleanUpRenderDriver();
@@ -1955,7 +2155,7 @@ index 0a864ad..4e7ec5b 100644
  }
  
  //////////////////////// RenderContext //////////////////////////
-@@ -515,10 +524,12 @@ RenderContext::initActiveCamera(const scene_rdl2::rdl2::Camera *camera)
+@@ -515,10 +533,12 @@ RenderContext::initActiveCamera(const scene_rdl2::rdl2::Camera *camera)
  
  RenderContext::~RenderContext()
  {
@@ -1968,7 +2168,7 @@ index 0a864ad..4e7ec5b 100644
  
      if (mRendering) {
          stopFrame();
-@@ -756,7 +767,8 @@ RenderContext::updateScene(const std::string& filename)
+@@ -756,7 +776,8 @@ RenderContext::updateScene(const std::string& filename)
          return false;
      } else {
          RenderTimer funcTimer(mRenderStats->mUpdateSceneTime);
@@ -1978,7 +2178,7 @@ index 0a864ad..4e7ec5b 100644
          mSceneUpdated = true;
  
          return checkGeometryChangesRequireReload();
-@@ -815,6 +827,10 @@ RenderContext::startFrame(const bool simulationMode)
+@@ -815,6 +836,10 @@ RenderContext::startFrame(const bool simulationMode)
      const scene_rdl2::rdl2::SceneVariables &vars = mSceneContext->getSceneVariables();
  
  
@@ -1989,7 +2189,7 @@ index 0a864ad..4e7ec5b 100644
      { // renderContext console setup for debug purpose
          int debugConsolePort = vars.get(scene_rdl2::rdl2::SceneVariables::sDebugConsole);
          if (debugConsolePort >= 0) {
-@@ -828,6 +844,8 @@ RenderContext::startFrame(const bool simulationMode)
+@@ -828,6 +853,8 @@ RenderContext::startFrame(const bool simulationMode)
          }
      }
  
@@ -1998,7 +2198,7 @@ index 0a864ad..4e7ec5b 100644
      // Determine if to render this frame in scalar, vectorized, or xpu mode.
      mExecutionMode = ExecutionMode::XPU;
      ExecutionMode desiredExecutionMode = mOptions.getDesiredExecutionMode();
-@@ -875,16 +893,10 @@ RenderContext::startFrame(const bool simulationMode)
+@@ -875,16 +902,10 @@ RenderContext::startFrame(const bool simulationMode)
              executionModeString += ".";
              mExecutionMode = ExecutionMode::SCALAR;
          } else {
@@ -2019,7 +2219,7 @@ index 0a864ad..4e7ec5b 100644
          }    
      }
  
-@@ -1227,6 +1239,14 @@ RenderContext::requestStopRenderAtPassBoundary()
+@@ -1227,6 +1248,14 @@ RenderContext::requestStopRenderAtPassBoundary()
      }
  }
  
@@ -2034,7 +2234,7 @@ index 0a864ad..4e7ec5b 100644
  int
  RenderContext::getCurrentFrame() const
  {
-@@ -2104,6 +2124,7 @@ RenderContext::loadScene(std::stringstream &initMessages)
+@@ -2104,6 +2133,7 @@ RenderContext::loadScene(std::stringstream &initMessages)
      // Load each scene file in order.
      const auto& sceneFiles = mOptions.getSceneFiles();
      for (const auto& sceneFile : sceneFiles) {
@@ -2042,7 +2242,7 @@ index 0a864ad..4e7ec5b 100644
          if (!sceneFile.empty()) {
              mRenderStats->logLoadingScene(initMessages, sceneFile);
              // Grab the file extension and convert it to lower case.
-@@ -2534,7 +2555,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
+@@ -2534,7 +2564,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
  
      timer.stop();
  
@@ -2051,7 +2251,7 @@ index 0a864ad..4e7ec5b 100644
      // return unused memory from malloc() arena to OS so process memory usage
      // stats are accurate
      malloc_trim(0);
-@@ -3006,7 +3027,7 @@ RenderContext::buildFrameState(FrameState *fs, double frameStartTime, const bool
+@@ -3006,7 +3036,7 @@ RenderContext::buildFrameState(FrameState *fs, double frameStartTime, const bool
      switch (getRenderMode())
      {
      case RenderMode::BATCH:
@@ -2382,7 +2582,7 @@ index 0db9d7d..dc0d1e0 100644
              return attrTbl;
          };
 diff --git a/lib/rendering/rndr/RenderStatistics.cc b/lib/rendering/rndr/RenderStatistics.cc
-index 706473e..d3597e9 100644
+index 706473e..777101e 100644
 --- a/lib/rendering/rndr/RenderStatistics.cc
 +++ b/lib/rendering/rndr/RenderStatistics.cc
 @@ -1,3 +1,17 @@
@@ -2468,6 +2668,22 @@ index 706473e..d3597e9 100644
  }
  
  
+@@ -813,6 +848,15 @@ RenderStats::logSceneVariables(const scene_rdl2::rdl2::SceneVariables &vars, std
+         case scene_rdl2::rdl2::PixelFilterType::quadraticBSpline:
+             sceneVarTable.emplace_back("Pixel filter type", "quadraticBSpline");
+             break;
++        case scene_rdl2::rdl2::PixelFilterType::gaussian:
++            sceneVarTable.emplace_back("Pixel filter type", "gaussian");
++            break;
++        case scene_rdl2::rdl2::PixelFilterType::triangle:
++            sceneVarTable.emplace_back("Pixel filter type", "triangle");
++            break;
++        case scene_rdl2::rdl2::PixelFilterType::blackmanHarris:
++            sceneVarTable.emplace_back("Pixel filter type", "blackmanHarris");
++            break;
+         default:
+             sceneVarTable.emplace_back("Pixel filter type", "unknown");
+             break;
 diff --git a/lib/rendering/rndr/RenderStatistics.h b/lib/rendering/rndr/RenderStatistics.h
 index 8e500b3..7eb6838 100644
 --- a/lib/rendering/rndr/RenderStatistics.h

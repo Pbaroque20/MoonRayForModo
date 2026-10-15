@@ -1469,6 +1469,36 @@ index 4d57b80..1a7c18e 100644
      const SceneClass& sc = parentObj->getSceneClass();
      for (auto it = sc.beginAttributes(); it != sc.endAttributes(); ++it, ++i) {
  
+diff --git a/lib/scene/rdl2/SceneVariables.cc b/lib/scene/rdl2/SceneVariables.cc
+index 537e28e..48d7d44 100644
+--- a/lib/scene/rdl2/SceneVariables.cc
++++ b/lib/scene/rdl2/SceneVariables.cc
+@@ -604,6 +604,9 @@ SceneObjectInterface SceneVariables::declare(SceneClass& sceneClass)
+     sceneClass.setEnumValue(sPixelFilterType, 0, "box");
+     sceneClass.setEnumValue(sPixelFilterType, 1, "cubic b-spline");
+     sceneClass.setEnumValue(sPixelFilterType, 2, "quadratic b-spline");
++    sceneClass.setEnumValue(sPixelFilterType, 3, "gaussian");
++    sceneClass.setEnumValue(sPixelFilterType, 4, "triangle");
++    sceneClass.setEnumValue(sPixelFilterType, 5, "blackman-harris");
+     sceneClass.setMetadata(sPixelFilterType,
+         SceneClass::sComment,
+         "The type of filter used for filter importance sampling. A box filter with a width of 1 is analogous to "
+diff --git a/lib/scene/rdl2/SceneVariables.h b/lib/scene/rdl2/SceneVariables.h
+index 94563e9..c88f454 100644
+--- a/lib/scene/rdl2/SceneVariables.h
++++ b/lib/scene/rdl2/SceneVariables.h
+@@ -22,7 +22,10 @@ enum class PixelFilterType
+ {
+     box = 0,
+     cubicBSpline = 1,
+-    quadraticBSpline = 2
++    quadraticBSpline = 2,
++    gaussian = 3,
++    triangle = 4,
++    blackmanHarris = 5
+ };
+ 
+ enum class TaskDistributionType : int
 diff --git a/lib/scene/rdl2/ValueContainerDeq.h b/lib/scene/rdl2/ValueContainerDeq.h
 index e19a544..4033e5f 100644
 --- a/lib/scene/rdl2/ValueContainerDeq.h

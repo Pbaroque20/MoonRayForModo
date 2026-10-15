@@ -69,7 +69,7 @@ def texture(source):
     if target.is_file():return textures.register(target)
     runtime=Path(native.default_runtime());staged=folder/(digest+'.'+uuid.uuid4().hex+'.tx')
     try:
-        args=[str(runtime/'oiiotool.exe'),'--no-autopremult',str(source),'--colormatrix',matrix_argument(TO_AP1),'-d','float','-o',str(staged)]
+        args=[str(runtime/'oiiotool.exe'),'--no-autopremult',str(source),'--ccmatrix',matrix_argument(TO_AP1),'-d','float','-o',str(staged)]
         result=subprocess.run(args,env=native.environment(runtime),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=120,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         if result.returncode or not staged.is_file():raise ValueError('Environment working-space conversion failed: '+result.stdout.decode(errors='replace')[-800:])
         staged.replace(target)

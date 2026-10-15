@@ -72,7 +72,7 @@ def environment_image(item, runtime):
     if not target.is_file() or not target.stat().st_size:
         compiler = Compiler(runtime)
         steps = ((['--colorconvert', 'sRGB', 'linear'] if space == 'sRGB' else [])
-                 + (['--colormatrix', matrix_argument(TO_AP1)] if working else []) + ['--resize', '%dx%d' % ENVIRONMENT_IMAGE])
+                 + (['--ccmatrix', matrix_argument(TO_AP1)] if working else []) + ['--resize', '%dx%d' % ENVIRONMENT_IMAGE])
         if not ocio:
             compiler.convert(source, target, True, steps)
         else:
