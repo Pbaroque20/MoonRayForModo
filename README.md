@@ -218,7 +218,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 |---|:---:|---|
 | CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
 | XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only |
-| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window |
+| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget under MoonRay LS, quicker, coming in 0.4.2 |
 | Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera |
 | Stereo cameras | ![partly](docs/images/feature-partly.svg) | MoonRay renders the eye a camera is set to; MoonLightIPR shows it from the middle |
 | Overscan (rendering past the frame edge) | ![no](docs/images/feature-no.svg) |  |
