@@ -216,39 +216,39 @@ What MoonRay 2026.29.1's source has, and whether the plugin gives you it in Modo
 
 | MoonRay feature | Plugin | Notes |
 |---|:---:|---|
-| CPU rendering (scalar and vector) | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | AVX build |
-| XPU rendering on the graphics card | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | NVIDIA only |
-| Progressive rendering, and region rendering | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | The preview window |
-| Cameras: perspective, orthographic, fisheye, spherical, dome | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | MoonRay camera items, or Modo's camera |
-| Bake camera | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | Texture baking |
-| Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | MoonRay light items, or Modo's lights |
-| Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Light, shadow and light filter linking | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Meshes, subdivision, curves, points, instancing | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | From Modo's geometry |
-| Box and sphere shapes | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| VDB volumes, base and cutout volumes | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Motion blur | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | Final renders; not while the preview follows edits |
-| Depth of field | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Hair, toon and USD Preview Surface materials | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Maps, normal maps and displacement nodes | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | In the node editor |
-| Switch displacement | $\colorbox[RGB]{207,34,46}{\color{white}\textsf{ ✗ }}$ | |
-| Display filters (colour correct, toon, halftone and the rest) | $\colorbox[RGB]{207,34,46}{\color{white}\textsf{ ✗ }}$ | |
-| Uniform and adaptive sampling, light sampling, bounce limits, clamping | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | Render Settings |
-| Volume quality and overlap settings | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Volume attenuation and contribution factors | $\colorbox[RGB]{207,34,46}{\color{white}\textsf{ ✗ }}$ | |
-| Pixel filters: box, cubic and quadratic B-spline | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | $\colorbox[RGB]{207,34,46}{\color{white}\textsf{ ✗ }}$ | |
-| AOVs: light path expressions, material AOVs | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Cryptomatte | $\colorbox[RGB]{212,167,44}{\color{black}\textsf{ partly }}$ | Volume coverage unfinished |
-| Deep EXR | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Checkpoints and resuming a render | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | Recovery, Safe Denoising and Continue |
-| EXR metadata | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Denoising (OptiX, Open Image Denoise) | $\colorbox[RGB]{46,160,67}{\color{white}\textsf{ ✓ }}$ | |
-| Primitive attributes (values a shape carries for its materials) | $\colorbox[RGB]{212,167,44}{\color{black}\textsf{ partly }}$ | One value per item or per instance; not per face or per point; left out by RDL import |
-| RDL scene import | $\colorbox[RGB]{212,167,44}{\color{black}\textsf{ partly }}$ | Some things left out, named in its report |
-| Arras: rendering spread over several machines | $\colorbox[RGB]{207,34,46}{\color{white}\textsf{ ✗ }}$ | |
-| Hydra render delegate and USD procedurals | $\colorbox[RGB]{207,34,46}{\color{white}\textsf{ ✗ }}$ | For USD applications; not part of Modo |
+| CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
+| XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only |
+| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window |
+| Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera |
+| Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
+| Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights |
+| Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | |
+| Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | |
+| Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry |
+| Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
+| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
+| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders; not while the preview follows edits |
+| Depth of field | ![yes](docs/images/feature-yes.svg) | |
+| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | |
+| Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | |
+| Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor |
+| Switch displacement | ![no](docs/images/feature-no.svg) | |
+| Display filters (colour correct, toon, halftone and the rest) | ![no](docs/images/feature-no.svg) | |
+| Uniform and adaptive sampling, light sampling, bounce limits, clamping | ![yes](docs/images/feature-yes.svg) | Render Settings |
+| Volume quality and overlap settings | ![yes](docs/images/feature-yes.svg) | |
+| Volume attenuation and contribution factors | ![no](docs/images/feature-no.svg) | |
+| Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
+| Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![no](docs/images/feature-no.svg) | |
+| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | |
+| Cryptomatte | ![partly](docs/images/feature-partly.svg) | Volume coverage unfinished |
+| Deep EXR | ![yes](docs/images/feature-yes.svg) | |
+| Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
+| EXR metadata | ![yes](docs/images/feature-yes.svg) | |
+| Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | |
+| Primitive attributes (values a shape carries for its materials) | ![partly](docs/images/feature-partly.svg) | One value per item or per instance; not per face or per point; left out by RDL import |
+| RDL scene import | ![partly](docs/images/feature-partly.svg) | Some things left out, named in its report |
+| Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |
+| Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
 
 ## Still to implement
 
