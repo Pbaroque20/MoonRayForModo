@@ -690,6 +690,9 @@ def plan(document, path, recover_instancer_materials=False):
             entry = {'kind': 'cryptomatte', 'depth': max(1, min(16, int(a.get('cryptomatte_depth', 6)))), 'category': 'object'}
         elif kind_of == 3 and int(a.get('state_variable', 0)) == 12:
             entry = {'kind': 'motion'}
+        elif kind_of == 4 and int(a.get('primitive_attribute_type', 3)) in (0, 3) and a.get('primitive_attribute') and not builtin \
+                and not str(a['primitive_attribute']).startswith('modo_'):
+            entry = {'kind': 'attribute' if int(a.get('primitive_attribute_type', 3)) == 0 else 'attribute_color', 'expression': a['primitive_attribute']}
         elif builtin:
             aovs.append(builtin)
             continue

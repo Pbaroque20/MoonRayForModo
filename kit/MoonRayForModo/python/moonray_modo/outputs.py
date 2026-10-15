@@ -2,7 +2,10 @@
 import re
 from . import options
 KINDS={'lpe':'Light path expression','material':'Material AOV','cryptomatte':'Cryptomatte','motion':'Motion vectors',
-       'depth':'Depth','normal':'Normal','position':'World position','alpha':'Alpha'}
+       'depth':'Depth','normal':'Normal','position':'World position','alpha':'Alpha',
+       # A value the shapes carry for their materials (a vertex map, a MoonRay scene's UserData), by its name, as a picture.
+       'attribute':'Primitive attribute (number)','attribute_color':'Primitive attribute (colour)'}
+ATTRIBUTE_TYPES={'attribute':0,'attribute_color':3}     # MoonRay's primitive_attribute_type: float, rgb
 
 # Light path expressions that are often wanted, as (what it is called, a name for the output, the expression). The
 # single words are MoonRay's own shorthand for an expression.
@@ -60,6 +63,7 @@ def values(entries):
         if not isinstance(v['part'],str) or not re.fullmatch(r'[A-Za-z0-9_]*',v['part']):raise ValueError('EXR part name must use letters, numbers and underscores')
         if not isinstance(v['expression'],str) or len(v['expression'])>4096:raise ValueError('Invalid AOV expression')
         if v['kind'] in ('lpe','material') and not v['expression'].strip():raise ValueError('Enter a light path or material AOV expression')
+        if v['kind'] in ATTRIBUTE_TYPES and not v['expression'].strip():raise ValueError('%s: enter the name of the primitive attribute, such as a vertex map\'s'%name)
         if v['kind']=='lpe' and lpe_problem(v['expression']):raise ValueError('%s: %s'%(name,lpe_problem(v['expression'])))
         if type(v['depth']) is not int or not 1<=v['depth']<=16:raise ValueError('Cryptomatte depth must be between 1 and 16')
         if v['category'] not in ('object','material','asset'):raise ValueError('Unknown Cryptomatte category')
@@ -86,6 +90,7 @@ def attributes(entry,multiple=False):
     elif kind=='material':attrs.update(result=7,material_aov=entry['expression'])
     elif kind=='cryptomatte':attrs.update(result=13,cryptomatte_depth=entry['depth'],cryptomatte_support_resume_render=True)
     elif kind=='motion':attrs.update(result=3,state_variable=12)
+    elif kind in ATTRIBUTE_TYPES:attrs.update(result=4,primitive_attribute=entry['expression'].strip(),primitive_attribute_type=ATTRIBUTE_TYPES[kind])
     else:attrs.update(options.AOVS[kind][1])
     if kind=='cryptomatte' and multiple:attrs['cryptomatte_id_channel']=('object','material','asset').index(entry['category'])
     return attrs
@@ -106,5 +111,7 @@ def display_kind(scene,key):
     from .entities import FILTER_PREFIX
     if key in ('denoised_beauty','composite') or key.startswith(FILTER_PREFIX):return 'beauty'
     for entry in values(scene.get('custom_aovs',[])):
+        # A number shown as it is, in grey, as alpha is; a colour as the beauty.
+        if entry['name']==key and entry['kind']=='attribute':return 'alpha'
         if entry['name']==key:return entry['kind'] if entry['kind'] in ('depth','normal','position','alpha','motion','cryptomatte') else 'beauty'
     return key
