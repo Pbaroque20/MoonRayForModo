@@ -41,14 +41,23 @@ def values(settings):
     return result
 
 
+def from_ap1(v):
+    """Whether ACEScg pixels are to be taken to Rec.709 before they are shown: for every view but raw, and for an OCIO
+    view only where its source is not ACEScg itself (Modo's own configuration, whose linear is Rec.709)."""
+    if v['working_space']!='acescg' or v['view']=='raw':return False
+    if v['view']!='ocio':return True
+    named=str(v.get('source','')).lower().replace(' ','').replace('-','').replace('_','')
+    return not ('acescg' in named or 'ap1' in named)
+
+
 def arguments(settings):
     v=values(settings)
     for key in ('lut','config'):
         if v[key] and not built_in(v[key]) and not Path(v[key]).is_file(): raise ValueError('Missing '+key+' file: '+v[key])
     args=[]
-    if v['working_space']=='acescg' and v['view'] not in ('raw','ocio'):
+    if from_ap1(v):
         from .working_space import TO_REC709,matrix_argument
-        args += ['--colormatrix',matrix_argument(TO_REC709)]
+        args += ['--ccmatrix',matrix_argument(TO_REC709)]
     args += ['--mulc',str(2.0**v['exposure'])]
     if v['view']=='ocio' and v['config']: args += ['--colorconfig',v['config']]
     if v['lut'] and v['lut_space']=='linear': args += ['--ociofiletransform',v['lut']]

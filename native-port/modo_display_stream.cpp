@@ -75,7 +75,9 @@ int main(int argc,char** argv){
     if(kind=="alpha" || kind=="wireframe" || kind=="depth" || kind=="sample_count")v[1]=v[2]=v[0];
     if(kind=="uv" || kind=="motion")v[2]=0;
     if(color){
-     if(space=="acescg" && view!="raw" && view!="ocio"){
+     // ACEScg pixels go to Rec.709 before a view that expects that: every view but raw, and an OCIO view whose source
+     // is not ACEScg itself, which the host says by naming the space "acescg-ocio".
+     if((space=="acescg" && view!="raw" && view!="ocio") || space=="acescg-ocio"){
       const float a=v[0],b=v[1],c=v[2];
       v[0]=matrix[0]*a+matrix[1]*b+matrix[2]*c;
       v[1]=matrix[3]*a+matrix[4]*b+matrix[5]*c;
