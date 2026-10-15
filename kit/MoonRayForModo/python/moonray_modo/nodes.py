@@ -49,6 +49,13 @@ def effective(graph):
     if not isinstance(graph,dict) or graph.get('version')!=1: raise ValueError('Unsupported node graph version')
     result=copy.deepcopy(graph)
     if not isinstance(result.get('nodes'),dict) or len(result['nodes'])>1000: raise ValueError('Node graph requires at most 1000 nodes')
+    for node in result['nodes'].values():
+        # A switch's first input was once kept as its unnumbered name (input), which MoonRay does not have: input0.
+        try:schema=specs(node['type'])
+        except Exception:continue
+        for group in ('parameters','inputs'):
+            if node.get(group):node[group]=shader_library.numbered(schema,node[group]) if group=='parameters' else {
+                (k+'0' if k not in schema and k+'0' in schema else k):v for k,v in node[group].items()}
     for override in result.get('overrides',[]):
         if not override.get('enabled',True): continue
         node=result['nodes'].get(override.get('node'))

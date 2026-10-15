@@ -3829,12 +3829,452 @@
         "name": "fallback_thin_geometry",
         "type": "Bool"
       },
-      "material": {
+      "material0": {
         "comment": "material input",
         "interface": "INTERFACE_DWABASELAYERABLE",
-        "label": "material",
-        "multi": "64",
-        "name": "material",
+        "label": "#0 material",
+        "name": "material0",
+        "type": "SceneObject*"
+      },
+      "material1": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#1 material",
+        "name": "material1",
+        "type": "SceneObject*"
+      },
+      "material10": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#10 material",
+        "name": "material10",
+        "type": "SceneObject*"
+      },
+      "material11": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#11 material",
+        "name": "material11",
+        "type": "SceneObject*"
+      },
+      "material12": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#12 material",
+        "name": "material12",
+        "type": "SceneObject*"
+      },
+      "material13": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#13 material",
+        "name": "material13",
+        "type": "SceneObject*"
+      },
+      "material14": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#14 material",
+        "name": "material14",
+        "type": "SceneObject*"
+      },
+      "material15": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#15 material",
+        "name": "material15",
+        "type": "SceneObject*"
+      },
+      "material16": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#16 material",
+        "name": "material16",
+        "type": "SceneObject*"
+      },
+      "material17": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#17 material",
+        "name": "material17",
+        "type": "SceneObject*"
+      },
+      "material18": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#18 material",
+        "name": "material18",
+        "type": "SceneObject*"
+      },
+      "material19": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#19 material",
+        "name": "material19",
+        "type": "SceneObject*"
+      },
+      "material2": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#2 material",
+        "name": "material2",
+        "type": "SceneObject*"
+      },
+      "material20": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#20 material",
+        "name": "material20",
+        "type": "SceneObject*"
+      },
+      "material21": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#21 material",
+        "name": "material21",
+        "type": "SceneObject*"
+      },
+      "material22": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#22 material",
+        "name": "material22",
+        "type": "SceneObject*"
+      },
+      "material23": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#23 material",
+        "name": "material23",
+        "type": "SceneObject*"
+      },
+      "material24": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#24 material",
+        "name": "material24",
+        "type": "SceneObject*"
+      },
+      "material25": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#25 material",
+        "name": "material25",
+        "type": "SceneObject*"
+      },
+      "material26": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#26 material",
+        "name": "material26",
+        "type": "SceneObject*"
+      },
+      "material27": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#27 material",
+        "name": "material27",
+        "type": "SceneObject*"
+      },
+      "material28": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#28 material",
+        "name": "material28",
+        "type": "SceneObject*"
+      },
+      "material29": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#29 material",
+        "name": "material29",
+        "type": "SceneObject*"
+      },
+      "material3": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#3 material",
+        "name": "material3",
+        "type": "SceneObject*"
+      },
+      "material30": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#30 material",
+        "name": "material30",
+        "type": "SceneObject*"
+      },
+      "material31": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#31 material",
+        "name": "material31",
+        "type": "SceneObject*"
+      },
+      "material32": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#32 material",
+        "name": "material32",
+        "type": "SceneObject*"
+      },
+      "material33": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#33 material",
+        "name": "material33",
+        "type": "SceneObject*"
+      },
+      "material34": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#34 material",
+        "name": "material34",
+        "type": "SceneObject*"
+      },
+      "material35": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#35 material",
+        "name": "material35",
+        "type": "SceneObject*"
+      },
+      "material36": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#36 material",
+        "name": "material36",
+        "type": "SceneObject*"
+      },
+      "material37": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#37 material",
+        "name": "material37",
+        "type": "SceneObject*"
+      },
+      "material38": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#38 material",
+        "name": "material38",
+        "type": "SceneObject*"
+      },
+      "material39": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#39 material",
+        "name": "material39",
+        "type": "SceneObject*"
+      },
+      "material4": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#4 material",
+        "name": "material4",
+        "type": "SceneObject*"
+      },
+      "material40": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#40 material",
+        "name": "material40",
+        "type": "SceneObject*"
+      },
+      "material41": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#41 material",
+        "name": "material41",
+        "type": "SceneObject*"
+      },
+      "material42": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#42 material",
+        "name": "material42",
+        "type": "SceneObject*"
+      },
+      "material43": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#43 material",
+        "name": "material43",
+        "type": "SceneObject*"
+      },
+      "material44": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#44 material",
+        "name": "material44",
+        "type": "SceneObject*"
+      },
+      "material45": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#45 material",
+        "name": "material45",
+        "type": "SceneObject*"
+      },
+      "material46": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#46 material",
+        "name": "material46",
+        "type": "SceneObject*"
+      },
+      "material47": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#47 material",
+        "name": "material47",
+        "type": "SceneObject*"
+      },
+      "material48": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#48 material",
+        "name": "material48",
+        "type": "SceneObject*"
+      },
+      "material49": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#49 material",
+        "name": "material49",
+        "type": "SceneObject*"
+      },
+      "material5": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#5 material",
+        "name": "material5",
+        "type": "SceneObject*"
+      },
+      "material50": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#50 material",
+        "name": "material50",
+        "type": "SceneObject*"
+      },
+      "material51": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#51 material",
+        "name": "material51",
+        "type": "SceneObject*"
+      },
+      "material52": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#52 material",
+        "name": "material52",
+        "type": "SceneObject*"
+      },
+      "material53": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#53 material",
+        "name": "material53",
+        "type": "SceneObject*"
+      },
+      "material54": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#54 material",
+        "name": "material54",
+        "type": "SceneObject*"
+      },
+      "material55": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#55 material",
+        "name": "material55",
+        "type": "SceneObject*"
+      },
+      "material56": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#56 material",
+        "name": "material56",
+        "type": "SceneObject*"
+      },
+      "material57": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#57 material",
+        "name": "material57",
+        "type": "SceneObject*"
+      },
+      "material58": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#58 material",
+        "name": "material58",
+        "type": "SceneObject*"
+      },
+      "material59": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#59 material",
+        "name": "material59",
+        "type": "SceneObject*"
+      },
+      "material6": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#6 material",
+        "name": "material6",
+        "type": "SceneObject*"
+      },
+      "material60": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#60 material",
+        "name": "material60",
+        "type": "SceneObject*"
+      },
+      "material61": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#61 material",
+        "name": "material61",
+        "type": "SceneObject*"
+      },
+      "material62": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#62 material",
+        "name": "material62",
+        "type": "SceneObject*"
+      },
+      "material63": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#63 material",
+        "name": "material63",
+        "type": "SceneObject*"
+      },
+      "material7": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#7 material",
+        "name": "material7",
+        "type": "SceneObject*"
+      },
+      "material8": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#8 material",
+        "name": "material8",
+        "type": "SceneObject*"
+      },
+      "material9": {
+        "comment": "material input",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#9 material",
+        "name": "material9",
         "type": "SceneObject*"
       },
       "mix": {
@@ -6985,12 +7425,452 @@
         "name": "fallback_bssrdf",
         "type": "Int"
       },
-      "material": {
+      "material0": {
         "comment": "material input option",
         "interface": "INTERFACE_DWABASELAYERABLE",
-        "label": "material",
-        "multi": "64",
-        "name": "material",
+        "label": "#0 material",
+        "name": "material0",
+        "type": "SceneObject*"
+      },
+      "material1": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#1 material",
+        "name": "material1",
+        "type": "SceneObject*"
+      },
+      "material10": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#10 material",
+        "name": "material10",
+        "type": "SceneObject*"
+      },
+      "material11": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#11 material",
+        "name": "material11",
+        "type": "SceneObject*"
+      },
+      "material12": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#12 material",
+        "name": "material12",
+        "type": "SceneObject*"
+      },
+      "material13": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#13 material",
+        "name": "material13",
+        "type": "SceneObject*"
+      },
+      "material14": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#14 material",
+        "name": "material14",
+        "type": "SceneObject*"
+      },
+      "material15": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#15 material",
+        "name": "material15",
+        "type": "SceneObject*"
+      },
+      "material16": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#16 material",
+        "name": "material16",
+        "type": "SceneObject*"
+      },
+      "material17": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#17 material",
+        "name": "material17",
+        "type": "SceneObject*"
+      },
+      "material18": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#18 material",
+        "name": "material18",
+        "type": "SceneObject*"
+      },
+      "material19": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#19 material",
+        "name": "material19",
+        "type": "SceneObject*"
+      },
+      "material2": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#2 material",
+        "name": "material2",
+        "type": "SceneObject*"
+      },
+      "material20": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#20 material",
+        "name": "material20",
+        "type": "SceneObject*"
+      },
+      "material21": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#21 material",
+        "name": "material21",
+        "type": "SceneObject*"
+      },
+      "material22": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#22 material",
+        "name": "material22",
+        "type": "SceneObject*"
+      },
+      "material23": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#23 material",
+        "name": "material23",
+        "type": "SceneObject*"
+      },
+      "material24": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#24 material",
+        "name": "material24",
+        "type": "SceneObject*"
+      },
+      "material25": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#25 material",
+        "name": "material25",
+        "type": "SceneObject*"
+      },
+      "material26": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#26 material",
+        "name": "material26",
+        "type": "SceneObject*"
+      },
+      "material27": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#27 material",
+        "name": "material27",
+        "type": "SceneObject*"
+      },
+      "material28": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#28 material",
+        "name": "material28",
+        "type": "SceneObject*"
+      },
+      "material29": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#29 material",
+        "name": "material29",
+        "type": "SceneObject*"
+      },
+      "material3": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#3 material",
+        "name": "material3",
+        "type": "SceneObject*"
+      },
+      "material30": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#30 material",
+        "name": "material30",
+        "type": "SceneObject*"
+      },
+      "material31": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#31 material",
+        "name": "material31",
+        "type": "SceneObject*"
+      },
+      "material32": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#32 material",
+        "name": "material32",
+        "type": "SceneObject*"
+      },
+      "material33": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#33 material",
+        "name": "material33",
+        "type": "SceneObject*"
+      },
+      "material34": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#34 material",
+        "name": "material34",
+        "type": "SceneObject*"
+      },
+      "material35": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#35 material",
+        "name": "material35",
+        "type": "SceneObject*"
+      },
+      "material36": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#36 material",
+        "name": "material36",
+        "type": "SceneObject*"
+      },
+      "material37": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#37 material",
+        "name": "material37",
+        "type": "SceneObject*"
+      },
+      "material38": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#38 material",
+        "name": "material38",
+        "type": "SceneObject*"
+      },
+      "material39": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#39 material",
+        "name": "material39",
+        "type": "SceneObject*"
+      },
+      "material4": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#4 material",
+        "name": "material4",
+        "type": "SceneObject*"
+      },
+      "material40": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#40 material",
+        "name": "material40",
+        "type": "SceneObject*"
+      },
+      "material41": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#41 material",
+        "name": "material41",
+        "type": "SceneObject*"
+      },
+      "material42": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#42 material",
+        "name": "material42",
+        "type": "SceneObject*"
+      },
+      "material43": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#43 material",
+        "name": "material43",
+        "type": "SceneObject*"
+      },
+      "material44": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#44 material",
+        "name": "material44",
+        "type": "SceneObject*"
+      },
+      "material45": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#45 material",
+        "name": "material45",
+        "type": "SceneObject*"
+      },
+      "material46": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#46 material",
+        "name": "material46",
+        "type": "SceneObject*"
+      },
+      "material47": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#47 material",
+        "name": "material47",
+        "type": "SceneObject*"
+      },
+      "material48": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#48 material",
+        "name": "material48",
+        "type": "SceneObject*"
+      },
+      "material49": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#49 material",
+        "name": "material49",
+        "type": "SceneObject*"
+      },
+      "material5": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#5 material",
+        "name": "material5",
+        "type": "SceneObject*"
+      },
+      "material50": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#50 material",
+        "name": "material50",
+        "type": "SceneObject*"
+      },
+      "material51": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#51 material",
+        "name": "material51",
+        "type": "SceneObject*"
+      },
+      "material52": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#52 material",
+        "name": "material52",
+        "type": "SceneObject*"
+      },
+      "material53": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#53 material",
+        "name": "material53",
+        "type": "SceneObject*"
+      },
+      "material54": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#54 material",
+        "name": "material54",
+        "type": "SceneObject*"
+      },
+      "material55": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#55 material",
+        "name": "material55",
+        "type": "SceneObject*"
+      },
+      "material56": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#56 material",
+        "name": "material56",
+        "type": "SceneObject*"
+      },
+      "material57": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#57 material",
+        "name": "material57",
+        "type": "SceneObject*"
+      },
+      "material58": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#58 material",
+        "name": "material58",
+        "type": "SceneObject*"
+      },
+      "material59": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#59 material",
+        "name": "material59",
+        "type": "SceneObject*"
+      },
+      "material6": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#6 material",
+        "name": "material6",
+        "type": "SceneObject*"
+      },
+      "material60": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#60 material",
+        "name": "material60",
+        "type": "SceneObject*"
+      },
+      "material61": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#61 material",
+        "name": "material61",
+        "type": "SceneObject*"
+      },
+      "material62": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#62 material",
+        "name": "material62",
+        "type": "SceneObject*"
+      },
+      "material63": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#63 material",
+        "name": "material63",
+        "type": "SceneObject*"
+      },
+      "material7": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#7 material",
+        "name": "material7",
+        "type": "SceneObject*"
+      },
+      "material8": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#8 material",
+        "name": "material8",
+        "type": "SceneObject*"
+      },
+      "material9": {
+        "comment": "material input option",
+        "interface": "INTERFACE_DWABASELAYERABLE",
+        "label": "#9 material",
+        "name": "material9",
         "type": "SceneObject*"
       },
       "sss_trace_set": {
@@ -8150,7 +9030,7 @@
         "name": "prevent_light_culling",
         "type": "Bool"
       },
-      "ramp_color_multiplier": {
+      "ramp_color_multiplier0": {
         "comment": "Bindable multiplier on the ramp color",
         "default": "Rgb(1.0f, 1.0f, 1.0f)",
         "enable if": {
@@ -8159,9 +9039,134 @@
         },
         "flags": "FLAGS_BINDABLE",
         "group": "Diffuse",
-        "label": "ramp color multiplier",
-        "multi": "10",
-        "name": "ramp_color_multiplier",
+        "label": "#0 ramp color multiplier",
+        "name": "ramp_color_multiplier0",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier1": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#1 ramp color multiplier",
+        "name": "ramp_color_multiplier1",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier2": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#2 ramp color multiplier",
+        "name": "ramp_color_multiplier2",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier3": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#3 ramp color multiplier",
+        "name": "ramp_color_multiplier3",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier4": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#4 ramp color multiplier",
+        "name": "ramp_color_multiplier4",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier5": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#5 ramp color multiplier",
+        "name": "ramp_color_multiplier5",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier6": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#6 ramp color multiplier",
+        "name": "ramp_color_multiplier6",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier7": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#7 ramp color multiplier",
+        "name": "ramp_color_multiplier7",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier8": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#8 ramp color multiplier",
+        "name": "ramp_color_multiplier8",
+        "subgroup": "Ramp Color Multipliers",
+        "type": "Rgb"
+      },
+      "ramp_color_multiplier9": {
+        "comment": "Bindable multiplier on the ramp color",
+        "default": "Rgb(1.0f, 1.0f, 1.0f)",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#9 ramp color multiplier",
+        "name": "ramp_color_multiplier9",
         "subgroup": "Ramp Color Multipliers",
         "type": "Rgb"
       },
@@ -8179,7 +9184,7 @@
         "name": "ramp_input_scale",
         "type": "Float"
       },
-      "ramp_position_offset": {
+      "ramp_position_offset0": {
         "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
         "default": "0.0f",
         "enable if": {
@@ -8188,9 +9193,134 @@
         },
         "flags": "FLAGS_BINDABLE",
         "group": "Diffuse",
-        "label": "ramp position offset",
-        "multi": "10",
-        "name": "ramp_position_offset",
+        "label": "#0 ramp position offset",
+        "name": "ramp_position_offset0",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset1": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#1 ramp position offset",
+        "name": "ramp_position_offset1",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset2": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#2 ramp position offset",
+        "name": "ramp_position_offset2",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset3": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#3 ramp position offset",
+        "name": "ramp_position_offset3",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset4": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#4 ramp position offset",
+        "name": "ramp_position_offset4",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset5": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#5 ramp position offset",
+        "name": "ramp_position_offset5",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset6": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#6 ramp position offset",
+        "name": "ramp_position_offset6",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset7": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#7 ramp position offset",
+        "name": "ramp_position_offset7",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset8": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#8 ramp position offset",
+        "name": "ramp_position_offset8",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "ramp_position_offset9": {
+        "comment": "Bindable offset to the ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "enable if": {
+          "diffuse_model": "1",
+          "show_diffuse": "true"
+        },
+        "flags": "FLAGS_BINDABLE",
+        "group": "Diffuse",
+        "label": "#9 ramp position offset",
+        "name": "ramp_position_offset9",
         "subgroup": "Ramp Position Offsets",
         "type": "Float"
       },
@@ -8540,27 +9670,223 @@
         "structure_type": "ramp_float",
         "type": "IntVector"
       },
-      "toon_specular_mult": {
+      "toon_specular_mult0": {
         "comment": "Bindable multiplier on the toon specular ramp value",
         "default": "1.0f",
         "disable when": "{ show_specular == 0 } { specular_model != Toon }",
         "flags": "FLAGS_BINDABLE",
         "group": "Specular",
-        "label": "toon specular mult",
-        "multi": "10",
-        "name": "toon_specular_mult",
+        "label": "#0 toon specular mult",
+        "name": "toon_specular_mult0",
         "subgroup": "Ramp Multipliers",
         "type": "Float"
       },
-      "toon_specular_offset": {
+      "toon_specular_mult1": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#1 toon specular mult",
+        "name": "toon_specular_mult1",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_mult2": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#2 toon specular mult",
+        "name": "toon_specular_mult2",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_mult3": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#3 toon specular mult",
+        "name": "toon_specular_mult3",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_mult4": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#4 toon specular mult",
+        "name": "toon_specular_mult4",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_mult5": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#5 toon specular mult",
+        "name": "toon_specular_mult5",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_mult6": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#6 toon specular mult",
+        "name": "toon_specular_mult6",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_mult7": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#7 toon specular mult",
+        "name": "toon_specular_mult7",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_mult8": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#8 toon specular mult",
+        "name": "toon_specular_mult8",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_mult9": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#9 toon specular mult",
+        "name": "toon_specular_mult9",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "toon_specular_offset0": {
         "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
         "default": "0.0f",
         "disable when": "{ show_specular == 0 } { specular_model != Toon }",
         "flags": "FLAGS_BINDABLE",
         "group": "Specular",
-        "label": "toon specular offset",
-        "multi": "10",
-        "name": "toon_specular_offset",
+        "label": "#0 toon specular offset",
+        "name": "toon_specular_offset0",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset1": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#1 toon specular offset",
+        "name": "toon_specular_offset1",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset2": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#2 toon specular offset",
+        "name": "toon_specular_offset2",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset3": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#3 toon specular offset",
+        "name": "toon_specular_offset3",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset4": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#4 toon specular offset",
+        "name": "toon_specular_offset4",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset5": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#5 toon specular offset",
+        "name": "toon_specular_offset5",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset6": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#6 toon specular offset",
+        "name": "toon_specular_offset6",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset7": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#7 toon specular offset",
+        "name": "toon_specular_offset7",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset8": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#8 toon specular offset",
+        "name": "toon_specular_offset8",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "toon_specular_offset9": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ show_specular == 0 } { specular_model != Toon }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular",
+        "label": "#9 toon specular offset",
+        "name": "toon_specular_offset9",
         "subgroup": "Ramp Position Offsets",
         "type": "Float"
       },
@@ -10566,27 +11892,223 @@
         "name": "specular_1_model",
         "type": "Int"
       },
-      "specular_1_mult": {
+      "specular_1_mult0": {
         "comment": "Bindable multiplier on the toon specular ramp value",
         "default": "1.0f",
         "disable when": "{ specular_1_show == 0 }",
         "flags": "FLAGS_BINDABLE",
         "group": "Specular 1",
-        "label": "specular 1 mult",
-        "multi": "10",
-        "name": "specular_1_mult",
+        "label": "#0 specular 1 mult",
+        "name": "specular_1_mult0",
         "subgroup": "Ramp Multipliers",
         "type": "Float"
       },
-      "specular_1_offset": {
+      "specular_1_mult1": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#1 specular 1 mult",
+        "name": "specular_1_mult1",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_mult2": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#2 specular 1 mult",
+        "name": "specular_1_mult2",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_mult3": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#3 specular 1 mult",
+        "name": "specular_1_mult3",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_mult4": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#4 specular 1 mult",
+        "name": "specular_1_mult4",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_mult5": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#5 specular 1 mult",
+        "name": "specular_1_mult5",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_mult6": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#6 specular 1 mult",
+        "name": "specular_1_mult6",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_mult7": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#7 specular 1 mult",
+        "name": "specular_1_mult7",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_mult8": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#8 specular 1 mult",
+        "name": "specular_1_mult8",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_mult9": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#9 specular 1 mult",
+        "name": "specular_1_mult9",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_1_offset0": {
         "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
         "default": "0.0f",
         "disable when": "{ specular_1_show == 0 }",
         "flags": "FLAGS_BINDABLE",
         "group": "Specular 1",
-        "label": "specular 1 offset",
-        "multi": "10",
-        "name": "specular_1_offset",
+        "label": "#0 specular 1 offset",
+        "name": "specular_1_offset0",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset1": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#1 specular 1 offset",
+        "name": "specular_1_offset1",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset2": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#2 specular 1 offset",
+        "name": "specular_1_offset2",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset3": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#3 specular 1 offset",
+        "name": "specular_1_offset3",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset4": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#4 specular 1 offset",
+        "name": "specular_1_offset4",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset5": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#5 specular 1 offset",
+        "name": "specular_1_offset5",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset6": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#6 specular 1 offset",
+        "name": "specular_1_offset6",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset7": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#7 specular 1 offset",
+        "name": "specular_1_offset7",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset8": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#8 specular 1 offset",
+        "name": "specular_1_offset8",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_1_offset9": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_1_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 1",
+        "label": "#9 specular 1 offset",
+        "name": "specular_1_offset9",
         "subgroup": "Ramp Position Offsets",
         "type": "Float"
       },
@@ -10817,27 +12339,223 @@
         "name": "specular_2_model",
         "type": "Int"
       },
-      "specular_2_mult": {
+      "specular_2_mult0": {
         "comment": "Bindable multiplier on the toon specular ramp value",
         "default": "1.0f",
         "disable when": "{ specular_2_show == 0 }",
         "flags": "FLAGS_BINDABLE",
         "group": "Specular 2",
-        "label": "specular 2 mult",
-        "multi": "10",
-        "name": "specular_2_mult",
+        "label": "#0 specular 2 mult",
+        "name": "specular_2_mult0",
         "subgroup": "Ramp Multipliers",
         "type": "Float"
       },
-      "specular_2_offset": {
+      "specular_2_mult1": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#1 specular 2 mult",
+        "name": "specular_2_mult1",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_mult2": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#2 specular 2 mult",
+        "name": "specular_2_mult2",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_mult3": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#3 specular 2 mult",
+        "name": "specular_2_mult3",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_mult4": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#4 specular 2 mult",
+        "name": "specular_2_mult4",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_mult5": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#5 specular 2 mult",
+        "name": "specular_2_mult5",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_mult6": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#6 specular 2 mult",
+        "name": "specular_2_mult6",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_mult7": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#7 specular 2 mult",
+        "name": "specular_2_mult7",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_mult8": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#8 specular 2 mult",
+        "name": "specular_2_mult8",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_mult9": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#9 specular 2 mult",
+        "name": "specular_2_mult9",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_2_offset0": {
         "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
         "default": "0.0f",
         "disable when": "{ specular_2_show == 0 }",
         "flags": "FLAGS_BINDABLE",
         "group": "Specular 2",
-        "label": "specular 2 offset",
-        "multi": "10",
-        "name": "specular_2_offset",
+        "label": "#0 specular 2 offset",
+        "name": "specular_2_offset0",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset1": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#1 specular 2 offset",
+        "name": "specular_2_offset1",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset2": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#2 specular 2 offset",
+        "name": "specular_2_offset2",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset3": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#3 specular 2 offset",
+        "name": "specular_2_offset3",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset4": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#4 specular 2 offset",
+        "name": "specular_2_offset4",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset5": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#5 specular 2 offset",
+        "name": "specular_2_offset5",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset6": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#6 specular 2 offset",
+        "name": "specular_2_offset6",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset7": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#7 specular 2 offset",
+        "name": "specular_2_offset7",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset8": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#8 specular 2 offset",
+        "name": "specular_2_offset8",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_2_offset9": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_2_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 2",
+        "label": "#9 specular 2 offset",
+        "name": "specular_2_offset9",
         "subgroup": "Ramp Position Offsets",
         "type": "Float"
       },
@@ -11068,27 +12786,223 @@
         "name": "specular_3_model",
         "type": "Int"
       },
-      "specular_3_mult": {
+      "specular_3_mult0": {
         "comment": "Bindable multiplier on the toon specular ramp value",
         "default": "1.0f",
         "disable when": "{ specular_3_show == 0 }",
         "flags": "FLAGS_BINDABLE",
         "group": "Specular 3",
-        "label": "specular 3 mult",
-        "multi": "10",
-        "name": "specular_3_mult",
+        "label": "#0 specular 3 mult",
+        "name": "specular_3_mult0",
         "subgroup": "Ramp Multipliers",
         "type": "Float"
       },
-      "specular_3_offset": {
+      "specular_3_mult1": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#1 specular 3 mult",
+        "name": "specular_3_mult1",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_mult2": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#2 specular 3 mult",
+        "name": "specular_3_mult2",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_mult3": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#3 specular 3 mult",
+        "name": "specular_3_mult3",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_mult4": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#4 specular 3 mult",
+        "name": "specular_3_mult4",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_mult5": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#5 specular 3 mult",
+        "name": "specular_3_mult5",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_mult6": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#6 specular 3 mult",
+        "name": "specular_3_mult6",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_mult7": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#7 specular 3 mult",
+        "name": "specular_3_mult7",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_mult8": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#8 specular 3 mult",
+        "name": "specular_3_mult8",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_mult9": {
+        "comment": "Bindable multiplier on the toon specular ramp value",
+        "default": "1.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#9 specular 3 mult",
+        "name": "specular_3_mult9",
+        "subgroup": "Ramp Multipliers",
+        "type": "Float"
+      },
+      "specular_3_offset0": {
         "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
         "default": "0.0f",
         "disable when": "{ specular_3_show == 0 }",
         "flags": "FLAGS_BINDABLE",
         "group": "Specular 3",
-        "label": "specular 3 offset",
-        "multi": "10",
-        "name": "specular_3_offset",
+        "label": "#0 specular 3 offset",
+        "name": "specular_3_offset0",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset1": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#1 specular 3 offset",
+        "name": "specular_3_offset1",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset2": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#2 specular 3 offset",
+        "name": "specular_3_offset2",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset3": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#3 specular 3 offset",
+        "name": "specular_3_offset3",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset4": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#4 specular 3 offset",
+        "name": "specular_3_offset4",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset5": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#5 specular 3 offset",
+        "name": "specular_3_offset5",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset6": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#6 specular 3 offset",
+        "name": "specular_3_offset6",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset7": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#7 specular 3 offset",
+        "name": "specular_3_offset7",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset8": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#8 specular 3 offset",
+        "name": "specular_3_offset8",
+        "subgroup": "Ramp Position Offsets",
+        "type": "Float"
+      },
+      "specular_3_offset9": {
+        "comment": "Bindable offset to the toon specular ramp-position, add a small variation using noise etc for art-directable ramp thresholds",
+        "default": "0.0f",
+        "disable when": "{ specular_3_show == 0 }",
+        "flags": "FLAGS_BINDABLE",
+        "group": "Specular 3",
+        "label": "#9 specular 3 offset",
+        "name": "specular_3_offset9",
         "subgroup": "Ramp Position Offsets",
         "type": "Float"
       },
@@ -11308,12 +13222,452 @@
         "name": "choice",
         "type": "Int"
       },
-      "material": {
+      "material0": {
         "comment": "material input option",
         "interface": "INTERFACE_MATERIAL",
-        "label": "material",
-        "multi": "64",
-        "name": "material",
+        "label": "#0 material",
+        "name": "material0",
+        "type": "SceneObject*"
+      },
+      "material1": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#1 material",
+        "name": "material1",
+        "type": "SceneObject*"
+      },
+      "material10": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#10 material",
+        "name": "material10",
+        "type": "SceneObject*"
+      },
+      "material11": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#11 material",
+        "name": "material11",
+        "type": "SceneObject*"
+      },
+      "material12": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#12 material",
+        "name": "material12",
+        "type": "SceneObject*"
+      },
+      "material13": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#13 material",
+        "name": "material13",
+        "type": "SceneObject*"
+      },
+      "material14": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#14 material",
+        "name": "material14",
+        "type": "SceneObject*"
+      },
+      "material15": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#15 material",
+        "name": "material15",
+        "type": "SceneObject*"
+      },
+      "material16": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#16 material",
+        "name": "material16",
+        "type": "SceneObject*"
+      },
+      "material17": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#17 material",
+        "name": "material17",
+        "type": "SceneObject*"
+      },
+      "material18": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#18 material",
+        "name": "material18",
+        "type": "SceneObject*"
+      },
+      "material19": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#19 material",
+        "name": "material19",
+        "type": "SceneObject*"
+      },
+      "material2": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#2 material",
+        "name": "material2",
+        "type": "SceneObject*"
+      },
+      "material20": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#20 material",
+        "name": "material20",
+        "type": "SceneObject*"
+      },
+      "material21": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#21 material",
+        "name": "material21",
+        "type": "SceneObject*"
+      },
+      "material22": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#22 material",
+        "name": "material22",
+        "type": "SceneObject*"
+      },
+      "material23": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#23 material",
+        "name": "material23",
+        "type": "SceneObject*"
+      },
+      "material24": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#24 material",
+        "name": "material24",
+        "type": "SceneObject*"
+      },
+      "material25": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#25 material",
+        "name": "material25",
+        "type": "SceneObject*"
+      },
+      "material26": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#26 material",
+        "name": "material26",
+        "type": "SceneObject*"
+      },
+      "material27": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#27 material",
+        "name": "material27",
+        "type": "SceneObject*"
+      },
+      "material28": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#28 material",
+        "name": "material28",
+        "type": "SceneObject*"
+      },
+      "material29": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#29 material",
+        "name": "material29",
+        "type": "SceneObject*"
+      },
+      "material3": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#3 material",
+        "name": "material3",
+        "type": "SceneObject*"
+      },
+      "material30": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#30 material",
+        "name": "material30",
+        "type": "SceneObject*"
+      },
+      "material31": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#31 material",
+        "name": "material31",
+        "type": "SceneObject*"
+      },
+      "material32": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#32 material",
+        "name": "material32",
+        "type": "SceneObject*"
+      },
+      "material33": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#33 material",
+        "name": "material33",
+        "type": "SceneObject*"
+      },
+      "material34": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#34 material",
+        "name": "material34",
+        "type": "SceneObject*"
+      },
+      "material35": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#35 material",
+        "name": "material35",
+        "type": "SceneObject*"
+      },
+      "material36": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#36 material",
+        "name": "material36",
+        "type": "SceneObject*"
+      },
+      "material37": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#37 material",
+        "name": "material37",
+        "type": "SceneObject*"
+      },
+      "material38": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#38 material",
+        "name": "material38",
+        "type": "SceneObject*"
+      },
+      "material39": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#39 material",
+        "name": "material39",
+        "type": "SceneObject*"
+      },
+      "material4": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#4 material",
+        "name": "material4",
+        "type": "SceneObject*"
+      },
+      "material40": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#40 material",
+        "name": "material40",
+        "type": "SceneObject*"
+      },
+      "material41": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#41 material",
+        "name": "material41",
+        "type": "SceneObject*"
+      },
+      "material42": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#42 material",
+        "name": "material42",
+        "type": "SceneObject*"
+      },
+      "material43": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#43 material",
+        "name": "material43",
+        "type": "SceneObject*"
+      },
+      "material44": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#44 material",
+        "name": "material44",
+        "type": "SceneObject*"
+      },
+      "material45": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#45 material",
+        "name": "material45",
+        "type": "SceneObject*"
+      },
+      "material46": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#46 material",
+        "name": "material46",
+        "type": "SceneObject*"
+      },
+      "material47": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#47 material",
+        "name": "material47",
+        "type": "SceneObject*"
+      },
+      "material48": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#48 material",
+        "name": "material48",
+        "type": "SceneObject*"
+      },
+      "material49": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#49 material",
+        "name": "material49",
+        "type": "SceneObject*"
+      },
+      "material5": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#5 material",
+        "name": "material5",
+        "type": "SceneObject*"
+      },
+      "material50": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#50 material",
+        "name": "material50",
+        "type": "SceneObject*"
+      },
+      "material51": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#51 material",
+        "name": "material51",
+        "type": "SceneObject*"
+      },
+      "material52": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#52 material",
+        "name": "material52",
+        "type": "SceneObject*"
+      },
+      "material53": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#53 material",
+        "name": "material53",
+        "type": "SceneObject*"
+      },
+      "material54": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#54 material",
+        "name": "material54",
+        "type": "SceneObject*"
+      },
+      "material55": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#55 material",
+        "name": "material55",
+        "type": "SceneObject*"
+      },
+      "material56": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#56 material",
+        "name": "material56",
+        "type": "SceneObject*"
+      },
+      "material57": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#57 material",
+        "name": "material57",
+        "type": "SceneObject*"
+      },
+      "material58": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#58 material",
+        "name": "material58",
+        "type": "SceneObject*"
+      },
+      "material59": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#59 material",
+        "name": "material59",
+        "type": "SceneObject*"
+      },
+      "material6": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#6 material",
+        "name": "material6",
+        "type": "SceneObject*"
+      },
+      "material60": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#60 material",
+        "name": "material60",
+        "type": "SceneObject*"
+      },
+      "material61": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#61 material",
+        "name": "material61",
+        "type": "SceneObject*"
+      },
+      "material62": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#62 material",
+        "name": "material62",
+        "type": "SceneObject*"
+      },
+      "material63": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#63 material",
+        "name": "material63",
+        "type": "SceneObject*"
+      },
+      "material7": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#7 material",
+        "name": "material7",
+        "type": "SceneObject*"
+      },
+      "material8": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#8 material",
+        "name": "material8",
+        "type": "SceneObject*"
+      },
+      "material9": {
+        "comment": "material input option",
+        "interface": "INTERFACE_MATERIAL",
+        "label": "#9 material",
+        "name": "material9",
         "type": "SceneObject*"
       }
     },

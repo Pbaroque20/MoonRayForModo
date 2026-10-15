@@ -19,7 +19,15 @@ for package in ('moonshine','moonray'):
     for path in sorted((base/'dso/material').rglob('*.json')):
         data=json.loads(path.read_text(encoding='utf-8'))
         if data.get('type')!='Material': continue
-        attrs={a['name']:a for a in read(path).values()}
+        attrs={}
+        for a in read(path).values():
+            # A "multi" attribute is as many attributes as it says, numbered from 0, as MoonRay declares them: a
+            # switch's material0 to material63, a toon ramp's multiplier for each of its ten points.
+            if 'multi' in a:
+                for i in range(int(a['multi'])):
+                    one={k:v for k,v in a.items() if k!='multi'};one['name']=a['name']+str(i);one['label']='#%d %s'%(i,a.get('label',a['name']))
+                    attrs[one['name']]=one
+            else:attrs[a['name']]=a
         catalog[data['name']]={'attributes':attrs,'interface':data.get('interface_flags','INTERFACE_MATERIAL'),
             'source':path.relative_to(root).as_posix(), 'package':package}
 target=root/'kit/MoonRayForModo/python/moonray_modo/material_catalog.json'
