@@ -61,7 +61,8 @@ def snapshot(material, library, all_parts=False):
                 uv=mesh['uvs'][offset:offset+len(face)];offset+=len(face)
                 values.extend(coordinates.face(layer,[mesh['vertices'][i] for i in face],uv,IDENTITY))
             mesh['uv_sets'][key]=values
-    return {'camera':{'identity':'widget/camera','matrix':look_at((2.5,1.4,3.8)),
+    # The camera looks a little below the middle, for the object to sit higher in the picture and not sink to its foot.
+    return {'camera':{'identity':'widget/camera','matrix':look_at((2.5,1.4,3.8),(0,-.22,0)),
                       'focal_mm':55,'film_mm':36},
             'meshes':meshes,'materials':materials,'native_materials':library,'fps':24,
             'lights':[{'identity':'widget/key','kind':'RectLight','matrix':look_at((2,3,3)),
