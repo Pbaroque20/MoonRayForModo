@@ -252,7 +252,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
 | Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default. Coming in 0.4.2 |
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | |
-| Primitive attributes (values a shape carries for its materials) | ![partly](docs/images/feature-partly.svg) | One value per item or per instance; not per face or per point; left out by RDL import |
+| Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes. Per point and per face coming in 0.4.2 |
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | Some things left out, named in its report |
 | Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
@@ -261,7 +261,6 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 
 - Fur guides, and the fur vector and width maps.
 - More of Modo's material: the Principled model's diffuse (which brightens with roughness in Modo) and smooth highlights under every model.
-- Per-face and per-point values (primitive attributes) with a form for editing them.
 - Motion from imported RDL scenes as Modo animation; subdivision creases and authored normals on import.
 - Motion blur while the preview follows edits; the remaining Shader Tree effects and masks.
 - Modo 17.1 on Windows, then macOS.
