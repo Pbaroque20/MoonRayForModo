@@ -4,7 +4,17 @@ from . import options
 KINDS={'lpe':'Light path expression','material':'Material AOV','cryptomatte':'Cryptomatte','motion':'Motion vectors',
        'depth':'Depth','normal':'Normal','position':'World position','alpha':'Alpha',
        # A value the shapes carry for their materials (a vertex map, a MoonRay scene's UserData), by its name, as a picture.
-       'attribute':'Primitive attribute (number)','attribute_color':'Primitive attribute (colour)'}
+       'attribute':'Primitive attribute (number)','attribute_color':'Primitive attribute (colour)',
+       # How much of the light reaches each point, from 0 in full shadow to 1: MoonRay's visibility AOV.
+       'visibility':'Visibility (light reaching a point)'}
+# MoonRay's own visibility expression: direct light, seen straight on or through mirrors and glass, on diffuse and glossy
+# surfaces, from any light. A light group's own ends in <L.'label'> instead of [LO].
+VISIBILITY_DEFAULT="C[<T.><RS>]*[<R[DG]><TD>][LO]"
+
+
+def visibility_expression(label=''):
+    """The visibility of every light, or of the lights of one group (their label)."""
+    return VISIBILITY_DEFAULT if not label else "C[<T.><RS>]*[<R[DG]><TD>]<L.'%s'>"%label
 ATTRIBUTE_TYPES={'attribute':0,'attribute_color':3}     # MoonRay's primitive_attribute_type: float, rgb
 
 # Light path expressions that are often wanted, as (what it is called, a name for the output, the expression). The
@@ -65,6 +75,10 @@ def values(entries):
         if v['kind'] in ('lpe','material') and not v['expression'].strip():raise ValueError('Enter a light path or material AOV expression')
         if v['kind'] in ATTRIBUTE_TYPES and not v['expression'].strip():raise ValueError('%s: enter the name of the primitive attribute, such as a vertex map\'s'%name)
         if v['kind']=='lpe' and lpe_problem(v['expression']):raise ValueError('%s: %s'%(name,lpe_problem(v['expression'])))
+        if v['kind']=='visibility':
+            # Left empty, MoonRay's own: every light.
+            v['expression']=v['expression'].strip() or VISIBILITY_DEFAULT
+            if lpe_problem(v['expression']):raise ValueError('%s: %s'%(name,lpe_problem(v['expression'])))
         if type(v['depth']) is not int or not 1<=v['depth']<=16:raise ValueError('Cryptomatte depth must be between 1 and 16')
         if v['category'] not in ('object','material','asset'):raise ValueError('Unknown Cryptomatte category')
         if v['kind']=='cryptomatte':v.update(precision=0,filter=0)
@@ -91,6 +105,7 @@ def attributes(entry,multiple=False):
     elif kind=='cryptomatte':attrs.update(result=13,cryptomatte_depth=entry['depth'],cryptomatte_support_resume_render=True)
     elif kind=='motion':attrs.update(result=3,state_variable=12)
     elif kind in ATTRIBUTE_TYPES:attrs.update(result=4,primitive_attribute=entry['expression'].strip(),primitive_attribute_type=ATTRIBUTE_TYPES[kind])
+    elif kind=='visibility':attrs.update(result=9,visibility_aov=entry['expression'].strip() or VISIBILITY_DEFAULT)
     else:attrs.update(options.AOVS[kind][1])
     if kind=='cryptomatte' and multiple:attrs['cryptomatte_id_channel']=('object','material','asset').index(entry['category'])
     return attrs
@@ -112,6 +127,6 @@ def display_kind(scene,key):
     if key in ('denoised_beauty','composite') or key.startswith(FILTER_PREFIX):return 'beauty'
     for entry in values(scene.get('custom_aovs',[])):
         # A number shown as it is, in grey, as alpha is; a colour as the beauty.
-        if entry['name']==key and entry['kind']=='attribute':return 'alpha'
+        if entry['name']==key and entry['kind'] in ('attribute','visibility'):return 'alpha'
         if entry['name']==key:return entry['kind'] if entry['kind'] in ('depth','normal','position','alpha','motion','cryptomatte') else 'beauty'
     return key
