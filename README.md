@@ -21,6 +21,7 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 - **The compositor runs on the graphics card**, or on the processor where there is none, giving the same picture either way; wide blurs and glows are now true full-size blurs.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
+- **The preview shows MoonRay's wordmark** before anything is rendered.
 
 ## New in 0.4.1
 
