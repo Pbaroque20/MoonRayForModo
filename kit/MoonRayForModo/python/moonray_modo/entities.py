@@ -98,6 +98,9 @@ def starting(name):
     """What a newly added item of a class starts with: the values above, with a light's intensity as the MoonRay page
     of Modo's Preferences has it."""
     held = dict(STARTING.get(name, {}))
+    # A display filter with one picture to work on starts on the beauty.
+    if catalog()[name]['category'] == 'displayfilter' and 'input' in catalog()[name]['attributes']:
+        held['input'] = 'Beauty'
     if 'intensity' in held:
         try:
             from .preferences import Preferences
@@ -164,7 +167,9 @@ def channels(name):
     return result
 
 
-INTERFACES = {'LIGHT': 'light', 'LIGHTFILTER': 'lightfilter', 'CAMERA': 'camera', 'GEOMETRY': 'geometry', 'VOLUME': 'volume'}
+INTERFACES = {'LIGHT': 'light', 'LIGHTFILTER': 'lightfilter', 'CAMERA': 'camera', 'GEOMETRY': 'geometry', 'VOLUME': 'volume',
+              # What a display filter takes in: one of the render's outputs, or another display filter.
+              'RENDEROUTPUT': 'renderoutput'}
 # Lengths, angles and sizes cannot be negative; MoonRay's schema seldom says so itself.
 NEVER_NEGATIVE = ('radius', 'width', 'height', 'distance', 'angular_extent', 'cone_angle', 'near', 'far', 'focal', 'spread')
 
@@ -749,6 +754,9 @@ def proxy(name, number):
                                  + [(-w * .3, h, -d), (0, h * 1.5, -d), (0, h * 1.5, -d), (w * .3, h, -d)])]
     if category == 'geometry':
         return [('boxes', [((-.5, -.5, -.5), (.5, .5, .5))])]
+    if category == 'displayfilter':
+        # Works on the picture, not in the scene: nothing to draw.
+        return []
     # Filters and volumes with no shape of their own: a small diamond.
     s = .2
     return [('strip', [(s, 0, 0), (0, s, 0), (-s, 0, 0), (0, -s, 0), (s, 0, 0)]), ('strip', [(0, s, 0), (0, 0, s), (0, -s, 0), (0, 0, -s), (0, s, 0)])]
@@ -769,6 +777,14 @@ def proxy_inputs(name):
 
 def reference(entities, name, interface, owner):
     """The RDLA expression for another MoonRay item, named as the user typed it."""
+    if interface == 'RENDEROUTPUT':
+        # Another display filter, or else one of the render's outputs, written for the filters as input_output().
+        found = [e for e in entities if name in (e['name'], e['identity']) and catalog()[e['class']]['category'] == 'displayfilter']
+        if len(found) == 1:
+            return '%s(%s)' % (found[0]['class'], _string('/modo/entity/' + found[0]['identity']))
+        if len(found) > 1:
+            raise ValueError('%s refers to %s, which is the name of more than one display filter' % (owner, name))
+        return 'RenderOutput(%s)' % _string(INPUT_PREFIX + name)
     category = {'LIGHT': 'light', 'LIGHTFILTER': 'lightfilter', 'CAMERA': 'camera', 'GEOMETRY': 'geometry', 'VOLUME': 'volume'}.get(interface)
     found = [e for e in entities if name in (e['name'], e['identity'])
              and (category is None or catalog()[e['class']]['category'] == category)]
@@ -845,6 +861,86 @@ def emit_lights(scene, lines, refs=None):
             lines += body + ['table.insert(lights, %s)' % name]
             if refs is not None:
                 refs.setdefault(entity['identity'], []).append(name)
+
+
+# ---- Display filters ---------------------------------------------------------------------------
+# Image operations MoonRay does over its render outputs as it renders. A filter takes in outputs of the render, by
+# name (the beauty, an AOV, an output of the Outputs window), or other filters; each filter is a picture of its own,
+# written as a render output: a buffer of the preview and a channel of the final EXR.
+INPUT_PREFIX = '/modo/displayfilter/input/'
+FILTER_PREFIX = 'displayfilter_'
+
+
+def display_filters(scene):
+    """The scene's display filters the runtime has (all of them, where it is not said which it has)."""
+    available = scene.get('_display_filter_classes')
+    return [e for e in checked(scene) if catalog()[e['class']]['category'] == 'displayfilter' and (available is None or e['class'] in available)]
+
+
+def missing_display_filters(scene):
+    """The scene's display filters the runtime does not have, by item name."""
+    available = scene.get('_display_filter_classes')
+    if available is None:
+        return []
+    return [e['name'] for e in checked(scene) if catalog()[e['class']]['category'] == 'displayfilter' and e['class'] not in available]
+
+
+def output_names(custom_aovs=()):
+    """The render's outputs a display filter can take in, as they are offered: the beauty, the AOVs, then the
+    outputs of the Outputs window (the Cryptomattes are no picture to filter)."""
+    from . import options
+    return (['Beauty'] + [label for label, _, _ in options.AOVS.values()]
+            + [v['name'] for v in custom_aovs if v.get('kind') != 'cryptomatte' and v.get('name')])
+
+
+def input_attributes(name, custom_aovs=()):
+    """The RenderOutput attributes of an output a display filter takes in, by the name it was picked by."""
+    from . import options, outputs
+    if name.lower() == 'beauty':
+        return {'result': 0}
+    for key, (label, attributes, _) in options.AOVS.items():
+        if name in (key, label):
+            return dict(attributes)
+    for entry in outputs.values(list(custom_aovs)):
+        if entry['name'] == name and entry['kind'] != 'cryptomatte':
+            attributes = outputs.attributes(entry)
+            for key in ('file_part', 'channel_name', 'channel_format'):
+                attributes.pop(key, None)
+            return attributes
+    raise ValueError('A display filter takes in %s, which is no output of the render' % name)
+
+
+def filter_inputs(scene):
+    """The outputs the scene's display filters take in, by name, in a steady order."""
+    filters = display_filters(scene)
+    names = {e['name'] for e in filters} | {e['identity'] for e in filters}
+    used = []
+    for entity in filters:
+        attributes = catalog()[entity['class']]['attributes']
+        for key, authored in sorted(entity['parameters'].items()):
+            if attributes[key].get('interface') == 'RENDEROUTPUT' and authored not in names and authored not in used:
+                used.append(authored)
+    return used
+
+
+def filter_key(entity):
+    """The buffer a display filter is in the preview."""
+    import re
+    return FILTER_PREFIX + re.sub(r'[^A-Za-z0-9]+', '_', entity['identity'])
+
+
+def filter_output(entity):
+    """The RenderOutput attributes that make a display filter's picture."""
+    from .outputs import Raw
+    return {'result': 15, 'display_filter': Raw('%s(%s)' % (entity['class'], _string('/modo/entity/' + entity['identity'])))}
+
+
+def emit_display_filters(scene, lines):
+    """Every display filter of the scene, each as it was set."""
+    entities = checked(scene)
+    for entity in entities:
+        if catalog()[entity['class']]['category'] == 'displayfilter':
+            lines += block(entities, entity)[1]
 
 
 def shadow_receiver_references(scene, identities):

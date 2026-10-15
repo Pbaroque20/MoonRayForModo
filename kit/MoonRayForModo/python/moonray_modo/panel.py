@@ -738,10 +738,11 @@ class Panel(Tools, QtWidgets.QWidget):
         self._hud_update()
         from . import modo_color
         # With what was read of Modo's own colour management: changed in Modo, the picture is shown again by it.
-        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']),repr(modo_color.RESOLVED))
+        filters=self._display_filter_buffers()
+        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']),repr(modo_color.RESOLVED),filters)
         if watched==self._shown:return
         previous,self._shown=self._shown,watched
-        self._sync_output_menu(values['custom_aovs'])
+        self._sync_output_menu(values['custom_aovs'],filters)
         # The Composite buffer is made again by the graph as it now is, of the render that is kept.
         self.renderer.buffers.compositor.request(values['compositor'])
         if not self.display_timer.isActive():
@@ -823,8 +824,20 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception as exc:
             self.status.setText('Cannot open the compositor: '+str(exc))
 
-    def _sync_output_menu(self,custom_aovs):
+    def _display_filter_buffers(self):
+        """The scene's display filters that render, as (name, buffer): each is a picture of its own."""
+        import modo
+        from . import entities
+        from .host import render_visible
+        result=[]
+        for name in entities.classes('displayfilter'):
+            try:result+=[(item.name,entities.filter_key({'identity':item.id})) for item in modo.Scene().items(entities.item_type(name),superType=False) if render_visible(item)]
+            except (LookupError,RuntimeError,TypeError,AttributeError):pass
+        return tuple(sorted(result))
+
+    def _sync_output_menu(self,custom_aovs,filters=()):
         names=[(v['name'],v['name']) for v in custom_aovs if v['kind']!='cryptomatte']
+        names+=list(filters)
         held={v.get('category','object'):v['name'] for v in custom_aovs if v['kind']=='cryptomatte'}
         names+=[(label,held.get(category,'crypto_'+category)) for category,label in CRYPTOMATTES]
         # The compositor's picture, first after MoonRay's own buffers. It is always listed; chosen while the scene's

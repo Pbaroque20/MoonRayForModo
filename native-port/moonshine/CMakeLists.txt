@@ -71,3 +71,11 @@ add_dependencies(moonshine_material_library moonshine_map_library)
 add_subdirectory("${PROJECT_SOURCE_DIR}/dso/geometry" geometries)
 add_custom_target(moonshine_geometry_library DEPENDS SphereGeometry SphereGeometry_proxy BoxGeometry BoxGeometry_proxy)
 add_dependencies(moonshine_material_library moonshine_geometry_library)
+
+# MoonRay's display filters (image operations over render outputs, done as the render goes) and its switch displacement.
+add_subdirectory("${PROJECT_SOURCE_DIR}/dso/displayfilter" displayfilters)
+add_subdirectory("${PROJECT_SOURCE_DIR}/dso/displacement" displacements)
+collect_desktop_dsos("${PROJECT_SOURCE_DIR}/dso/displayfilter" displayfilter_targets)
+collect_desktop_dsos("${PROJECT_SOURCE_DIR}/dso/displacement" displacement_targets)
+add_custom_target(moonshine_displayfilter_library DEPENDS ${displayfilter_targets} ${displacement_targets})
+add_dependencies(moonshine_material_library moonshine_displayfilter_library)

@@ -472,6 +472,7 @@ class Renderer(QtCore.QObject):
         snapshot['_crypto_categories']=native.supports_crypto_categories(request['runtime'])
         snapshot['_bump_step']=native.supports_bump_step(request['runtime'])
         snapshot['_pixel_filters']=native.supports_pixel_filters(request['runtime'])
+        snapshot['_display_filter_classes']=native.display_filter_classes(request['runtime'])
         snapshot['_paired_instance_motion']=native.supports_paired_instance_motion(request['runtime'])
         if not request['output'] and not request.get('linear_preview'):
             self.preview_files={key:self.current_base.with_suffix('.'+key+'.exr') for key in outputs.preview(snapshot)}

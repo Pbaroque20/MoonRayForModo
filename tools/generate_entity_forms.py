@@ -159,7 +159,7 @@ SIZES = ('width', 'height', 'depth')
 # The menu: a submenu per kind of object. layout.cfg places this sheet in the kit's MoonRay menu.
 menu = sheet('MoonRayEntityMenu:sheet', 'Add MoonRay Item')
 categories = {}
-ORDER = ('light', 'lightfilter', 'camera', 'geometry', 'volume')
+ORDER = ('light', 'lightfilter', 'camera', 'geometry', 'volume', 'displayfilter')
 for name in sorted(catalog, key=lambda name: (ORDER.index(catalog[name]['category']), name)):
     entry = catalog[name]
     if entry['category'] not in categories:

@@ -157,6 +157,31 @@ def _pieces(mesh, inside):
     return made + [piece([index for index, tag in enumerate(tags) if tag == own], own) for own in inside]
 
 
+def filter_inputs_file(target):
+    """Where the outputs display filters take in are written: MoonRay writes every output it renders, and these are
+    no part of what was asked for. A file of the temporary folder, one for each picture rendered."""
+    import hashlib
+    import tempfile
+    from pathlib import Path
+    folder = Path(tempfile.gettempdir()) / 'MoonRayForModo' / 'display-filter-inputs'
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / (hashlib.sha1(str(target).encode('utf-8')).hexdigest()[:16] + '.exr')
+
+
+def display_filter_lines(scene, lines, target):
+    """The scene's display filters, and the outputs they take in, for a picture written to target."""
+    from . import entities
+    entities.emit_display_filters(scene, lines)
+    inputs = filter_inputs_file(target)
+    for index, name in enumerate(entities.filter_inputs(scene)):
+        attributes = entities.input_attributes(name, scene.get('custom_aovs', []))
+        lines += ['RenderOutput(%s) {' % string(entities.INPUT_PREFIX + name), '  ["file_name"] = %s,' % string(str(inputs)),
+                  '  ["channel_name"] = %s,' % string('input%d' % index), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
+        lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value, str) else ('true' if value else 'false') if isinstance(value, bool) else number(value))
+                  for attr, value in attributes.items()]
+        lines.append('}')
+
+
 def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     from . import graph as graph_
     graph_.BUMP_STEP = bool(scene.get('_bump_step'))
@@ -541,6 +566,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               # publishes the finished EXR; avoid a second OS-specific staging layer.
               '  ["two_stage_output"] = false,']
     if crypto:lines.append('  ["deep_id_attribute_names"] = '+array(string('modo_'+cat+'_id') for cat in (('object','material','asset') if multi_crypto else ('object',)))+',')
+    missing=entities.missing_display_filters(scene)
+    if missing:
+        # A MoonRay without the filter's plugin would not render at all: the filter is left out, and said.
+        scene.setdefault('warnings',[]).append('This runtime has no plugin for the display filter%s %s; its MoonRay is older. Left out.'
+                                               % ('s' if len(missing)>1 else '',', '.join(missing)))
     for key, value in options.render_values(scene.get('render_settings', {})).items():
         if key=='pixel_filter' and value in options.NEWER_PIXEL_FILTERS and not scene.get('_pixel_filters'):
             # A MoonRay without that filter would quietly use a box filter: its own default is used, and said.
@@ -608,6 +638,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         render_outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
         if crypto:render_outputs.append(('object_id',{'result':4,'primitive_attribute':'modo_object_id','primitive_attribute_type':0},'modo_object_id'))
         render_outputs += [(v['name'],outputs.attributes(v,multi_crypto),v['name']) for v in outputs.values(scene.get('custom_aovs',[]))]
+        # Each display filter's picture is a channel of the EXR, named after its item; what the filters take in goes
+        # to a file of its own, out of the way.
+        if entities.display_filters(scene):
+            display_filter_lines(scene, lines, output_file)
+            render_outputs += [(entities.filter_key(e), entities.filter_output(e), e['name']) for e in entities.display_filters(scene)]
         if recovery:
             # MoonRay needs sample weights and odd-sample beauty/alpha to resume.
             # Keep these in the primary EXR part alongside the regular beauty AOV.
@@ -633,7 +668,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       *(['  ["channel_name"] = %s,' % string(channel)] if 'channel_name' not in attributes else []),
                       '  ["exr_header_attributes"] = Metadata('+string(metadata_path)+'),',
                       '  ["compression"] = 1,']
-            lines += ['  [%s] = %s,' % (string(attr), string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value))
+            lines += ['  [%s] = %s,' % (string(attr), (value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value))
                       for attr, value in attributes.items()]
             lines.append('}')
     if deep:
@@ -643,6 +678,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     if not preview_files and scene.get('preview_buffer_file'):
         preview_files={scene.get('preview_buffer','beauty'):scene['preview_buffer_file']}
     if not output_file:
+        # A display filter is shown: the filters are written, with what they take in.
+        if any(key.startswith(entities.FILTER_PREFIX) for key in preview_files):
+            display_filter_lines(scene, lines, next(path for key, path in preview_files.items() if key.startswith(entities.FILTER_PREFIX)))
         for key,path in preview_files.items():
             available=outputs.preview(scene)
             if key not in available:raise ValueError('Unknown preview buffer')
@@ -652,7 +690,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["channel_format"] = 0,', '  ["compression"] = 1,']
             attributes={k:v for k,v in available[key].items() if k!='channel_format'}
             for attr,value in attributes.items():
-                lines.append('  [%s] = %s,'%(string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
+                lines.append('  [%s] = %s,'%(string(attr),(value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
             lines.append('}')
     for key,path in scene.get('_denoise_guides',{}).items():
         attributes=({'result':7,'material_aov':'albedo'} if key=='albedo'
@@ -666,7 +704,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         # stands when the render is stopped part way.
         lines += ['RenderOutput(%s) {' % string(('/modo/denoise/' if output_file else '/modo/preview/denoise_')+key),
                   '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
-        for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),string(value) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
+        for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),(value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
     if safe and safe.get('data'):
         # What MoonRay needs beside the pictures themselves to take a render up again: how much each pixel has had,

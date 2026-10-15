@@ -156,6 +156,11 @@ def supports_pixel_filters(directory):
     try:return bool(json.loads((Path(directory)/'modo-session.json').read_text(encoding='utf-8')).get('pixel_filters'))
     except (OSError,ValueError,TypeError,AttributeError):return False
 
+def display_filter_classes(directory):
+    """The display filters this runtime's MoonRay has: each is a plugin of its own, and an older runtime has one or none."""
+    from . import entities
+    return sorted(name for name in entities.classes('displayfilter') if (Path(directory)/(name+'.so')).is_file())
+
 def supports_bump_step(directory):
     """Whether this runtime's texture plugin reads a tiled bump image as finely as it is tiled (its bump_step)."""
     import json
