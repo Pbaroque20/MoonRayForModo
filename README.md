@@ -11,7 +11,7 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 **Current version: 0.4.1 — experimental development build.** It is 0.4 with a toon material that starts as toon and shows in MoonLightIPR, ramps edited with the mouse and shown live, and an importer that can import into a new scene.
 
-[Download 0.4.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md)
+[Download 0.4.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -243,14 +243,14 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![no](docs/images/feature-no.svg) | |
 | Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![no](docs/images/feature-no.svg) |  |
 | AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression |
-| Time per pixel (where the render spent its time) | ![no](docs/images/feature-no.svg) |  |
+| Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
 | Visibility outputs (how much of each light reaches a point) | ![no](docs/images/feature-no.svg) |  |
 | Primitive attribute outputs | ![no](docs/images/feature-no.svg) |  |
 | Cryptomatte | ![partly](docs/images/feature-partly.svg) | Volume coverage unfinished |
 | Deep EXR | ![yes](docs/images/feature-yes.svg) | |
 | Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
-| Choice of EXR compression | ![no](docs/images/feature-no.svg) | Always zip |
+| Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default. Coming in 0.4.2 |
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | |
 | Primitive attributes (values a shape carries for its materials) | ![partly](docs/images/feature-partly.svg) | One value per item or per instance; not per face or per point; left out by RDL import |
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | Some things left out, named in its report |
