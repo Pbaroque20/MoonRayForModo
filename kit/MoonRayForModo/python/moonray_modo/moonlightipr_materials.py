@@ -74,11 +74,16 @@ def toon_surface(get, note):
         return [toon_ramp(positions, values, blends, (i + .5) / TOON_STEPS) for i in range(TOON_STEPS)]
     positions, colours, blends = [float(v) for v in get('positions', [0, 1])], [[float(c) for c in v] for v in get('colors', [[0, 0, 0], [1, 1, 1]])], list(get('interpolations', []))
     count = min(len(positions), len(colours))
+    # Each of a ramp's first ten points has its own offset to its place and multiplier to its colour (DwaBase.cc).
+    for i in range(min(count, 10)):
+        positions[i] += float(get('ramp_position_offset%d' % i, 0.0))
+        colours[i] = [c * float(m) for c, m in zip(colours[i], get('ramp_color_multiplier%d' % i, [1, 1, 1]))]
     lit = centres(positions[:count], colours[:count], blends, 1.0)
-    multiplier = [float(v) for v in get('ramp_color_multiplier', [1, 1, 1])]
-    lit = [[c * m for c, m in zip(colour, multiplier)] for colour in lit]
     places, values, how = [float(v) for v in get('toon_specular_positions', [0, 1])], [float(v) for v in get('toon_specular_values', [1, 0])], list(get('toon_specular_interpolations', []))
     count = min(len(places), len(values))
+    for i in range(min(count, 10)):
+        places[i] += float(get('toon_specular_offset%d' % i, 0.0))
+        values[i] *= float(get('toon_specular_mult%d' % i, 1.0))
     shine = centres(places[:count], values[:count], how, 1.0)
     shine_scale = max(1e-4, float(get('toon_specular_ramp_input_scale', 1.0)))
     # MoonRay's own normalization of the highlight (BsdfToon.cc): the ramp over 64 rings of the hemisphere.

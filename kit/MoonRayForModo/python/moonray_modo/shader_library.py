@@ -61,10 +61,25 @@ def typed(value, attribute):
     return int(value) if kind in ('Int','Long') else float(value)
 
 
+def numbered(attributes, held):
+    """Values kept under the unnumbered name of an attribute MoonRay numbers (material, ramp_color_multiplier), as the
+    plugin once kept them, under MoonRay's own names: a material link as the first (material0), a number for each of
+    the numbered ones, as it was meant for all of them."""
+    import re
+    result=dict(held)
+    for key in [k for k in held if k not in attributes and k+'0' in attributes]:
+        value=result.pop(key)
+        names=[k for k in attributes if re.fullmatch(re.escape(key)+r'\d+',k)]
+        if attributes[key+'0']['type']=='SceneObject*':names=[key+'0']
+        for name in names:result.setdefault(name,value)
+    return result
+
+
 def validate(shader, parameters):
     if shader not in catalog(): raise ValueError('Unknown MoonRay material: '+str(shader))
     attributes=catalog()[shader]['attributes']
     if not isinstance(parameters,dict): raise ValueError('Material parameters must be an object')
+    parameters=numbered(attributes,parameters)
     result={}
     for key,value in parameters.items():
         if key not in attributes: raise ValueError('Unknown '+shader+' parameter: '+key)

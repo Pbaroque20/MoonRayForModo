@@ -46,5 +46,35 @@ class SwitchNodeTests(unittest.TestCase):
         self.assertNotIn('["input"]', text)
 
 
+class NumberedMaterialTests(unittest.TestCase):
+    def test_switch_and_mix_materials_have_numbered_inputs(self):
+        from moonray_modo import shader_library
+        for shader in ('DwaSwitchMaterial', 'DwaMixMaterial', 'SwitchMaterial'):
+            attributes = shader_library.catalog()[shader]['attributes']
+            self.assertNotIn('material', attributes)
+            self.assertEqual(sum(k.startswith('material') and k[8:].isdigit() for k in attributes), 64)
+        toon = shader_library.catalog()['DwaToonMaterial']['attributes']
+        self.assertIn('ramp_color_multiplier9', toon)
+        self.assertNotIn('ramp_color_multiplier10', toon)
+
+    def test_old_unnumbered_values_are_carried_over(self):
+        from moonray_modo import shader_library
+        switched = shader_library.validate('DwaSwitchMaterial', {'choice': 0, 'material': {'material': 'red'}})
+        self.assertEqual(switched['material0'], {'material': 'red'})
+        self.assertNotIn('material1', switched)
+        # A multiplier once kept as one value was meant for the whole ramp: every point has it.
+        toon = shader_library.validate('DwaToonMaterial', {'ramp_color_multiplier': [0, 0, 1]})
+        self.assertEqual([toon['ramp_color_multiplier%d' % i] for i in range(10)], [[0.0, 0.0, 1.0]] * 10)
+
+    def test_moonlightipr_follows_each_toon_point(self):
+        from moonray_modo import moonlightipr_materials
+        held = {'diffuse_model': 1, 'positions': [0.0, 1.0], 'colors': [[1, 1, 1], [1, 1, 1]], 'interpolations': [0, 0]}
+        plain = moonlightipr_materials.toon_surface(lambda key, default=None: held.get(key, default), lambda text: None)
+        held.update(ramp_color_multiplier0=[0, 0, 1], ramp_color_multiplier1=[0, 0, 1])
+        blue = moonlightipr_materials.toon_surface(lambda key, default=None: held.get(key, default), lambda text: None)
+        self.assertTrue(all(c == [1.0, 1.0, 1.0] for c in plain['lit']))
+        self.assertTrue(all(c == [0.0, 0.0, 1.0] for c in blue['lit']))
+
+
 if __name__ == '__main__':
     unittest.main()

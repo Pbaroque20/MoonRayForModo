@@ -54,8 +54,8 @@ def effective(graph):
         try:schema=specs(node['type'])
         except Exception:continue
         for group in ('parameters','inputs'):
-            held=node.get(group) or {}
-            for key in [k for k in held if k not in schema and k+'0' in schema and (k+'0') not in held]:held[key+'0']=held.pop(key)
+            if node.get(group):node[group]=shader_library.numbered(schema,node[group]) if group=='parameters' else {
+                (k+'0' if k not in schema and k+'0' in schema else k):v for k,v in node[group].items()}
     for override in result.get('overrides',[]):
         if not override.get('enabled',True): continue
         node=result['nodes'].get(override.get('node'))
