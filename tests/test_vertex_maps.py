@@ -58,5 +58,30 @@ class VertexMapTests(unittest.TestCase):
         self.assertEqual(pieces[None]['corner_attributes']['Faces']['values'], [[1]] * 4)
 
 
+
+class AttributeOutputTests(unittest.TestCase):
+    def test_written_as_moonray_primitive_attribute_outputs(self):
+        from moonray_modo import outputs
+        scene = quad(point_attributes={'Heat': {'kind': 'float', 'values': [[0]] * 6}})
+        scene['custom_aovs'] = [{'name': 'heat', 'kind': 'attribute', 'expression': 'Heat'},
+                                {'name': 'paint', 'kind': 'attribute_color', 'expression': ' Paint '}]
+        text = rdla.scene_text(scene, output_file='final.exr')
+        heat = text[text.index('RenderOutput("/modo/aov/heat")'):]
+        heat = heat[:heat.index('}')]
+        self.assertIn('["result"] = 4', heat)
+        self.assertIn('["primitive_attribute"] = "Heat"', heat)
+        self.assertIn('["primitive_attribute_type"] = 0', heat)
+        paint = text[text.index('RenderOutput("/modo/aov/paint")'):]
+        self.assertIn('["primitive_attribute"] = "Paint"', paint[:paint.index('}')])
+        self.assertIn('["primitive_attribute_type"] = 3', paint[:paint.index('}')])
+        self.assertEqual(outputs.display_kind(scene, 'heat'), 'alpha')
+        self.assertEqual(outputs.display_kind(scene, 'paint'), 'beauty')
+
+    def test_a_name_is_needed(self):
+        from moonray_modo import outputs
+        with self.assertRaisesRegex(ValueError, 'name of the primitive attribute'):
+            outputs.values([{'name': 'heat', 'kind': 'attribute', 'expression': ' '}])
+
+
 if __name__ == '__main__':
     unittest.main()
