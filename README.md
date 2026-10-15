@@ -212,7 +212,7 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 
 ### MoonRay's features in the plugin
 
-What MoonRay 2026.29.1's source has, and whether the plugin gives you it in Modo.
+Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 
 | MoonRay feature | Plugin | Notes |
 |---|:---:|---|
