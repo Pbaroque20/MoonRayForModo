@@ -1,8 +1,9 @@
-"""MoonRay's crest, drawn where the preview has no picture yet: the shape in the kit's assets/mooncrest.svg.
+"""MoonRay's crest, drawn where the preview has no picture yet: the shapes in the kit's assets/mooncrest.svg, the
+MOONRAY wordmark between its two arcs.
 
-The shape is read from the file's one path by a reader of its own, since Modo's Qt comes without the SVG module. It
-knows the commands that file uses: move, line, the two cubic curves and close, each absolute or relative. A file it
-cannot read gives no shape, and the view then says in words what a click does.
+The shapes are read from the file's paths, all of them together, by a reader of its own, since Modo's Qt comes
+without the SVG module. It knows the commands that file uses: move, line, the two cubic curves and close, each
+absolute or relative. A file it cannot read gives no shape, and the view then says in words what a click does.
 """
 import re
 from pathlib import Path
@@ -14,11 +15,19 @@ _held = {}
 
 
 def outline(text):
-    """The path of an SVG file's first path element, in the file's own units; None if it has none this can read."""
-    found = re.search(r'<path\b[^>]*\bd="([^"]+)"', text, re.S)
-    if not found:
-        return None
-    tokens = re.findall(r'[MmLlHhVvCcSsZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?', found.group(1))
+    """The paths of an SVG file, together, in the file's own units; None if it has none this can read."""
+    whole = QtGui.QPainterPath()
+    for data in re.findall(r'<path\b[^>]*\bd="([^"]+)"', text, re.S):
+        path = one(data)
+        if path is None:
+            return None
+        whole.addPath(path)
+    return whole if not whole.isEmpty() else None
+
+
+def one(data):
+    """One path element's outline, from its d attribute; None if it uses what this does not read."""
+    tokens = re.findall(r'[MmLlHhVvCcSsZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?', data)
     path, at, last, command, i = QtGui.QPainterPath(), QtCore.QPointF(), None, None, 0
     take = {'M': 2, 'L': 2, 'H': 1, 'V': 1, 'C': 6, 'S': 4}
     while i < len(tokens):
@@ -79,16 +88,16 @@ def shape():
     return _held['shape']
 
 
-def draw(painter, area, share=.34, opacity=.5):
-    """Draw the crest in the middle of an area, a share of its smaller side across, half seen through. Returns whether
-    there was a crest to draw."""
+def draw(painter, area, share=.34, across=.5, opacity=.5):
+    """Draw the crest in the middle of an area, half seen through: at most a share of the area's height tall and of its
+    width (across) wide, so that a wide wordmark is as big as it fits. Returns whether there was a crest to draw."""
     path = shape()
     if path is None:
         return False
     bounds = path.boundingRect()
     if bounds.width() <= 0 or bounds.height() <= 0:
         return False
-    scale = share * min(area.width(), area.height()) / max(bounds.width(), bounds.height())
+    scale = min(across * area.width() / bounds.width(), share * area.height() / bounds.height())
     painter.save()
     try:
         painter.setRenderHint(QtGui.QPainter.Antialiasing)

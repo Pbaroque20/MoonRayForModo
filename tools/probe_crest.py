@@ -28,4 +28,4 @@ def look():
     lx.eval('!app.quit')
 
 
-QtCore.QTimer.singleShot(5000, look)
+QtCore.QTimer.singleShot(15000, look)
