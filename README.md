@@ -11,7 +11,7 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 **Current version: 0.4.1 — experimental development build.** It is 0.4 with a toon material that starts as toon and shows in MoonLightIPR, ramps edited with the mouse and shown live, and an importer that can import into a new scene.
 
-[Download 0.4.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin)
+[Download 0.4.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
