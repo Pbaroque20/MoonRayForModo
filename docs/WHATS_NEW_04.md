@@ -82,6 +82,14 @@ Not released yet: on the MoonLightIPR branch.
 
 *Volume factors on a cloud at four volume bounces, MoonRay (left) and MoonLightIPR (right): MoonRay's defaults above; all three at 0.2 below, where each further bounce counts for much less and the cloud is darker.*
 
+![Four partly see-through panes in front of two boxes, at Presence Quality 0 and 1](images/presence-quality.png)
+
+*Presence Quality: four partly see-through panes in front of the orange boxes, at the same samples. At 0 (left) chance picks which pane a ray stops on, and the boxes behind break into orange and blue speckle (enlarged below); at 1 (right) every pane is followed and only the usual grain is left. Here 1 took twice as long.*
+
+![The Render item's Bounces section with Sample Hair Lobes Separately](images/hair-lobes-setting.png)
+
+*Sample Hair Lobes Separately sits under the Hair bounces. Presence Quality and Cryptomatte Multi-Presence are further down, after Presence Shadows.*
+
 ![The same scene through a Modo camera and through the MoonRay camera converted from it](images/convert-camera.png)
 
 *A Modo camera converted to a MoonRay camera renders the same view in MoonRay. Both boxes are one mesh given an orange MoonRay material whole: the right one was made in it afterwards and takes the material too.*
