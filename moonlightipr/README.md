@@ -377,6 +377,12 @@ Added to what is translated since the table was written:
   from a velocity grid.
   ![A VDB cloud, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-vdb_cloud.jpg)
   ![Fog, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-fog_coloured.jpg)
+- **Volume bounces**: with Volume bounces above 1, light in fog bounces again as MoonRay works it out
+  (after Wrenninge), each further bounce stopped less, adding less and thrown more evenly, by the scene's
+  volume attenuation, contribution and phase attenuation factors (Render Settings, Volumes). On a cloud at four
+  bounces, brightness 1.00 with MoonRay's defaults and with all three at 0.2 (October 16).
+
+  ![A cloud at four volume bounces with the default factors and with all three at 0.2, MoonRay left and MoonLightIPR right](../docs/images/volume-factors.png)
 - **Pictures on lights**: sphere, disk, spot, cylinder and distant lights show their texture as
   rect lights did, each laid out as MoonRay lays it (91 to 95% of tiles within a tenth). A
   distant light with `normalized` off is as bright as MoonRay makes it (98%). Rect, disk,
