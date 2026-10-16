@@ -27,6 +27,7 @@ Not released yet: on the MoonLightIPR branch.
 - **Toon materials denoise cleanly**: MoonRay's albedo output, the denoiser's guide, was full of bright specks on toon surfaces, and a denoised toon stayed as noisy as it was rendered. A preference of its own on the MoonRay page, on by default.
 - **A new toon material is brightest facing the light**: its diffuse ramp starts bright where the surface faces the light and darkens towards the shadow side, as Modo's toon does. MoonRay's own default runs the other way; a toon material whose ramp was never set takes the new start, and a MoonRay scene's own materials keep MoonRay's.
 - **Motion blur in MoonLightIPR, on by default**: while the scene is followed too (an edit is shown blurred once it is let go; a drag is followed sharp), and moving lights blur, in MoonLightIPR and in MoonRay, which held them still before. MoonRay's own items (its lights and shapes) blur when they move, as Modo's do.
+- **MoonRay Source Overrides**: the MoonRay page of Modo's Preferences gathers, in a section named for the MoonRay release (2026.29.1), where the plugin changes how MoonRay itself renders: smooth toon edges, toon materials that denoise cleanly, and blurred moving lights. Each is on by default; off renders as MoonRay's source does.
 - **The compositor runs on the graphics card**, or on the processor where there is none, giving the same picture either way; wide blurs and glows are now true full-size blurs.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
@@ -55,6 +56,9 @@ Not released yet: on the MoonLightIPR branch.
 
 ![A toon render, denoised with the preference off and on](images/toon-denoise.png)
 *Denoise toon materials cleanly: the render, then denoised with the preference off (as noisy as rendered) and on.*
+
+![A moving cube and a moving spot light, in MoonRay and MoonLightIPR](images/moonlightipr-motion.png)
+*Motion blur: a cube moving during the shutter, then a spot light moving, in MoonRay (left) and MoonLightIPR (right). A moving light blurs its highlights and the edges of its shadows.*
 
 ![The preview before a render](images/preview-wordmark.png)
 *The preview before anything is rendered.*

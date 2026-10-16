@@ -23,6 +23,8 @@ KEYS = {
     # Toon materials denoise as other materials do: MoonRay's albedo output gives them their own colour
     # (native.toon_albedo).
     'toon_albedo': (True, bool),
+    # Moving lights blur: MoonRay's mb switch set on a light that moves during the shutter (native.light_motion).
+    'light_motion': (True, bool),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (640, int), 'ipr/samples': (16, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.

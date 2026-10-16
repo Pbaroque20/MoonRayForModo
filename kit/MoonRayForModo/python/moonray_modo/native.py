@@ -164,6 +164,12 @@ def toon_terminator():
     return _switch('toon_terminator', 'MOONRAY_MODO_TOON_TERMINATOR')
 
 
+def light_motion():
+    """Whether a light that moves during the shutter is blurred: MoonRay moves one only when its own mb switch is on,
+    which it leaves off, and the plugin then sets it (MoonLightIPR follows the same choice)."""
+    return _switch('light_motion', 'MOONRAY_MODO_LIGHT_MOTION')
+
+
 def toon_albedo():
     """Whether MoonRay's albedo output gives a toon material its own colour: the denoiser's guide, which is otherwise
     full of bright specks on toon surfaces, and the denoised picture as noisy as the render."""
