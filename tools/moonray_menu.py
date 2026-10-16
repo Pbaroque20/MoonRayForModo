@@ -34,6 +34,7 @@ MENU = (
     # Making things.
     ('cmd moonray.material.assign', 'Assign MoonShine Material to Mesh', 'assign'),
     ('sub MoonRayEntityMenu:sheet', 'Add MoonRay Item', None),
+    ('cmd moonray.camera.convert', 'Convert Camera to MoonRay Camera...', 'convert_camera'),
     ('cmd moonray.library', 'Asset Library...', 'library'),
     None,
     # Bringing things in and sending them out.
