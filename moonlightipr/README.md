@@ -21,6 +21,7 @@ chosen in the preview window's engine popup. `tools/install_moonlightipr.py` add
 build to an installed kit during development.
 
 ![A glass ball and a clearcoated cube, in MoonRay and in MoonLightIPR](../docs/images/moonlightipr-dwa_glass_coat.jpg)
+
 *MoonRay on the left, MoonLightIPR on the right. Every pair on this page is laid out that way and comes from `tools/compare_moonlightipr.py`.*
 
 ## Where it stands
@@ -112,6 +113,7 @@ October 6, 2026 against `xpu-paths-0349-candidate` (MoonLightIPR 2048 samples, M
 | Spot light | 1.005 | 91% |
 
 ![Nine lights of different power](../docs/images/moonlightipr-many_lights.jpg)
+
 *Nine sphere and rect lights of different power.*
 
 Three more scenes cover textures and the two ways a material reaches MoonRay:
@@ -146,9 +148,11 @@ samples, MoonRay 36):
 | Checker, noise, a gradient and layer curves | 1.012 | 89% |
 
 ![Depth of field](../docs/images/moonlightipr-depth_of_field.jpg)
+
 *Depth of field through a disc lens.*
 
 ![A physical sky](../docs/images/moonlightipr-physical_sky.jpg)
+
 *A physical sky.*
 
 In the last scene the checker, the noise and the gradient agree by eye; the stripes where
@@ -231,6 +235,7 @@ Later comparisons, October 8 and 9, 2026:
 | Five MaterialX materials from a library (a wood, a marble, two wallpapers, a car paint), on a ball | not recorded | 92 to 100% on four, 72% on the car paint |
 
 ![Lights that are not normalized](../docs/images/moonlightipr-entity_unnormalized.jpg)
+
 *A rect, a disk and a sphere light with `normalized` off, after the fix described next.*
 
 Lights with `normalized` off were drawn far too dim until October 9: MoonLightIPR treated every
@@ -241,6 +246,7 @@ windows level with MoonRay. A distant light set that way is not worked out and g
 ![A wood from a MaterialX library](../docs/images/moonlightipr-materialx-TH_Wood_Table.jpg)
 ![A wallpaper from a MaterialX library](../docs/images/moonlightipr-materialx-Indigo_Palm_Wallpaper.jpg)
 ![A car paint from a MaterialX library](../docs/images/moonlightipr-materialx-Car_Paint.jpg)
+
 *TH Wood Table, Indigo Palm Wallpaper and Car Paint from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all) (MIT License or public domain), MoonRay left, MoonLightIPR right.*
 
 The car paint's flakes are in its reflection, not its colour, so the denoiser softens them
@@ -494,6 +500,7 @@ recapture, which waits for release. Why it was classified so was not established
   reports it only then.
 
 ![A moving cube and a moving spot light, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-motion.png)
+
 *Motion blur of a moving cube and of a moving spot light: MoonRay on the left, MoonLightIPR on the right (October 15).*
 
 ## Not done yet

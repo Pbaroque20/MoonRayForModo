@@ -91,9 +91,11 @@ More detail and pictures are in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.
 0.4 comes with a new runtime ZIP: install it together with the kit.
 
 ![The preview window with MoonLightIPR chosen and realtime on](docs/images/preview-engines.png)
+
 *MoonLightIPR chosen, RT On.*
 
 ![The compositor](docs/images/compositor-editor.png)
+
 *The compositor: the beauty graded, given a vignette and sharpened, with the nodes to add listed on the left.*
 
 ## Released in 0.3.51
@@ -107,6 +109,7 @@ More detail and pictures are in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.
 - **MoonRay's crest** in the window before the first render; click it to start one.
 
 ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png)
+
 *Draft, with a region rendered among the lines.*
 
 **Rendering with MoonRay**
@@ -114,6 +117,7 @@ More detail and pictures are in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.
 - **Safe Denoising**: stop a MoonRay render at any time after a first pass and keep it, denoised. **Continue** then takes it up where it stood.
 
 ![A MoonRay preview stopped part way, kept and denoised](docs/images/safe-denoising.png)
+
 *Stopped part way, kept and denoised, with Continue on offer.*
 
 **In the MoonLightIPR preview**
@@ -127,9 +131,11 @@ More detail and pictures are in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.
 - **Render region**, and **mesh lights seen glowing**, clean in MoonRay too.
 
 ![Hair, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-hair_dark.jpg)
+
 *Hair in MoonRay (left) and in the MoonLightIPR preview (right).*
 
 ![A VDB cloud, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-vdb_cloud.jpg)
+
 *A cloud from a VDB file, MoonRay (left) and MoonLightIPR (right).*
 
 **Closer to Modo**
@@ -168,6 +174,7 @@ More detail and pictures are in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.
 - **Modo's Fur material** grows fur in MoonRay and in the preview, with its curls, clumps, kink, frizz, strays and weight maps. Guides are not read yet.
 
 ![Modo's Fur material with curls, clumps and a weight map](docs/images/fur-extras.jpg)
+
 *Modo's Fur material in MoonRay: curls, clumps with kink, and fur thinned by a weight map.*
 
 ## Known issues
