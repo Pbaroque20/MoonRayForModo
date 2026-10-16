@@ -20,6 +20,9 @@ KEYS = {
     # Toon materials lit by their smooth normals on coarse meshes, without steps along the faces (MoonRay reads it
     # as it starts; native.toon_terminator).
     'toon_terminator': (True, bool),
+    # Toon materials denoise as other materials do: MoonRay's albedo output gives them their own colour
+    # (native.toon_albedo).
+    'toon_albedo': (True, bool),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (640, int), 'ipr/samples': (16, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.

@@ -24,6 +24,7 @@ Not released yet: on the MoonLightIPR branch.
 - **The graph editor's MoonRay Widget is quicker**: it renders under MoonRay LS with more samples to a pixel, starts as the editor opens, and shows a material it has already rendered at once. It has one Refresh/Stop button, no bucket outlines, and the object sits higher in the picture.
 - **A MoonRay preview is always one render**, as MoonRay's own command makes it: it no longer starts over twice at 1 and 4 samples before the full render.
 - **Toon materials have smooth edges on coarse meshes**: the lit band no longer comes out in steps along the faces of a low-poly or subdivided mesh, in MoonRay and in MoonLightIPR. A preference on the MoonRay page of Modo's Preferences, on by default; off renders as MoonRay itself does.
+- **Toon materials denoise cleanly**: MoonRay's albedo output, the denoiser's guide, was full of bright specks on toon surfaces, and a denoised toon stayed as noisy as it was rendered. A preference of its own on the MoonRay page, on by default.
 - **The compositor runs on the graphics card**, or on the processor where there is none, giving the same picture either way; wide blurs and glows are now true full-size blurs.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
@@ -46,6 +47,12 @@ Not released yet: on the MoonLightIPR branch.
 
 ![The graph editor's properties in their groups, above the MoonRay Widget](images/graph-editor-widget.png)
 *The graph editor's right side: a material's Diffuse group open, the others folded, and the MoonRay Widget's picture of it under MoonRay LS.*
+
+![A coarse toon torus, stepped with the preference off and smooth with it on](images/toon-smooth-edges.png)
+*Smooth toon edges on coarse meshes: a 24 × 12 torus with MoonRay's toon material. Off, as MoonRay's source has it, the lit band is stepped along the faces; on, it is smooth in MoonRay and in MoonLightIPR.*
+
+![A toon render, denoised with the preference off and on](images/toon-denoise.png)
+*Denoise toon materials cleanly: the render, then denoised with the preference off (as noisy as rendered) and on.*
 
 ![The preview before a render](images/preview-wordmark.png)
 *The preview before anything is rendered.*

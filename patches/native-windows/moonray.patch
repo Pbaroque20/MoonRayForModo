@@ -1194,6 +1194,82 @@ index bb6f65e..212e04f 100644
      HUD_VALIDATE(CryptomatteData, mPosition);           \
      HUD_VALIDATE(CryptomatteData, mNormal);             \
      HUD_VALIDATE(CryptomatteData, mPresenceDepth);      \
+diff --git a/lib/rendering/pbr/core/Aov.cc b/lib/rendering/pbr/core/Aov.cc
+index 77fd882..e66fdab 100644
+--- a/lib/rendering/pbr/core/Aov.cc
++++ b/lib/rendering/pbr/core/Aov.cc
+@@ -15,6 +15,8 @@
+ #include <moonray/rendering/pbr/integrator/BsdfSampler.h>
+ #include <moonray/rendering/shading/AovLabels.h>
+ #include <moonray/rendering/shading/bsdf/BsdfSlice.h>
++#include <moonray/rendering/shading/bsdf/npr/BsdfToon.h>
++#include <moonray/rendering/shading/ModoToonTerminator.h>
+ #include <moonray/rendering/shading/bssrdf/Bssrdf.h>
+ #include <moonray/rendering/shading/bsdf/Bsdfv.h>
+ #include <moonray/rendering/shading/bssrdf/VolumeSubsurface.h>
+@@ -1205,6 +1207,11 @@ trim(const std::string &in)
+ 
+ // returns albedo sum for all matching selections
+ 
++// Modo: the vector code is told once, as the library loads.
++namespace {
++const bool sModoToonAlbedoSet = (ispc::Aov_setModoToonAlbedo(shading::modoToonAlbedo()), true);
++}
++
+ static void
+ computeAlbedo(const MaterialAovs::ComputeParams &p, float *dest)
+ {
+@@ -1234,6 +1241,11 @@ computeAlbedo(const MaterialAovs::ComputeParams &p, float *dest)
+                     if (lobe->matchesFlags(flags) &&
+                         labelMatch(shading::aovDecodeLabel(lobe->getLabel()), p.mEntry.mLabelIndices)) {
+                         ++numContributions;
++                        // Modo: under MOONRAY_MODO_TOON_ALBEDO, a toon diffuse lobe's own albedo. Its samples are
++                        // albedo / (2 cos): the lobe is flat and sampled by the cosine (ModoToonTerminator.h).
++                        if (shading::modoToonAlbedo() && dynamic_cast<const shading::ToonBsdfLobe *>(lobe)) {
++                            result += lobe->albedo(p.mBSampler->getBsdfSlice());
++                        } else
+                         for (int i = 0; i < ni; ++i) {
+                             const BsdfSample &bsmp = p.mBsmps[s + i];
+                             if (bsmp.isValid()) {
+diff --git a/lib/rendering/pbr/core/Aov.ispc b/lib/rendering/pbr/core/Aov.ispc
+index d4658cd..8ff02ff 100644
+--- a/lib/rendering/pbr/core/Aov.ispc
++++ b/lib/rendering/pbr/core/Aov.ispc
+@@ -16,6 +16,15 @@
+ #include <moonray/rendering/shading/ispc/bsdf/BsdfSlice.isph>
+ #include <moonray/rendering/shading/ispc/bssrdf/Bssrdf.isph>
+ 
++// Modo: MOONRAY_MODO_TOON_ALBEDO, set once from C++ (Aov.cc).
++uniform bool gModoToonAlbedo = false;
++
++export void
++Aov_setModoToonAlbedo(uniform bool on)
++{
++    gModoToonAlbedo = on;
++}
++
+ #include <scene_rdl2/common/math/ispc/Mat4.isph>
+ #include <scene_rdl2/common/math/ispc/ReferenceFrame.isph>
+ #include <scene_rdl2/common/math/ispc/Vec3.isph>
+@@ -187,6 +196,10 @@ computeAlbedo(const uniform int flags,
+                         BsdfLobe_matchesFlags(lobe, flags) &&
+                         labelMatch(aovDecodeLabel(lobeLabel), entryLabelIndices)) {
+                         ++numContributions;
++                        // Modo: under MOONRAY_MODO_TOON_ALBEDO, a toon diffuse lobe's own albedo (as in Aov.cc).
++                        if (gModoToonAlbedo && lobe->mName == BSDF_LOBE_TOON) {
++                            result = result + BsdfLobe_albedo(lobe, *bSampler->mSlice);
++                        } else {
+                         uniform int s = bSampler->mLobeToSampleIndex[lobeIdx];
+                         for (int i = 0; i < lobeSampleCount; ++i, ++s) {
+                             const varying BsdfSample &bsmp = bsmps[s];
+@@ -195,6 +208,7 @@ computeAlbedo(const uniform int flags,
+                                 result = result + bsmp.f * (1.0f / (floatLobeSampleCount * bsmp.pdf));
+                             }
+                         }
++                        }
+ 
+                     }
+                 }
 diff --git a/lib/rendering/pbr/core/Cryptomatte.cc b/lib/rendering/pbr/core/Cryptomatte.cc
 index e2f9e10..41fe295 100644
 --- a/lib/rendering/pbr/core/Cryptomatte.cc
@@ -3966,7 +4042,7 @@ diff --git a/lib/rendering/shading/ModoToonTerminator.h b/lib/rendering/shading/
 new file mode 100644
 --- /dev/null
 +++ b/lib/rendering/shading/ModoToonTerminator.h
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,31 @@
 +// Modo: toon materials lit by their smooth shading normals, not by the faces under them (tools/port_toon_terminator.py).
 +#pragma once
 +
@@ -3980,6 +4056,17 @@ new file mode 100644
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++
++/// True when MoonRay was started with MOONRAY_MODO_TOON_ALBEDO=1: the albedo AOV gives a toon diffuse lobe its own
++/// albedo, a clean guide for the denoisers. Read once.
++inline bool modoToonAlbedo()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_TOON_ALBEDO");
 +        return value && value[0] == '1';
 +    }();
 +    return on;

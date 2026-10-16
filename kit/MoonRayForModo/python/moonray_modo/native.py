@@ -28,6 +28,8 @@ def environment(directory):
     # Toon materials lit by their smooth normals, not cut into steps along a coarse mesh's faces: read by MoonRay as it
     # starts (a runtime without the patch ignores it).
     env['MOONRAY_MODO_TOON_TERMINATOR'] = '1' if toon_terminator() else '0'
+    # And a clean albedo of toon materials for the denoiser's guide (toon_albedo).
+    env['MOONRAY_MODO_TOON_ALBEDO'] = '1' if toon_albedo() else '0'
     # A child process must not load Modo's Python/Qt libraries into MoonRay.
     for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'MOONRAY_MODO_SESSION', 'MOONRAY_MODO_GENERATION', 'MOONRAY_MODO_COMMAND'):
         env.pop(key, None)
@@ -146,15 +148,26 @@ def configured_runtime(settings):
 
 
 _CRYPTO_LIBS=('libscene_rdl2.dll','librendering_rndr.dll','moonray.exe')
-def toon_terminator():
-    """Whether toon materials are lit by their smooth normals on coarse meshes (MoonRay's preference in Modo, on by
-    default). Outside Modo, from MOONRAY_MODO_TOON_TERMINATOR as it stands, on when it is not set."""
+def _switch(key, variable):
+    """One of MoonRay's preferences in Modo that MoonRay reads as it starts, on by default. Outside Modo, from its
+    environment variable as it stands, on when that is not set."""
     try:
         from PySide2 import QtCore
     except ImportError:
-        return os.environ.get('MOONRAY_MODO_TOON_TERMINATOR', '1') == '1'
-    value = QtCore.QSettings('MoonRayForModo', settings_name()).value('toon_terminator', True)
+        return os.environ.get(variable, '1') == '1'
+    value = QtCore.QSettings('MoonRayForModo', settings_name()).value(key, True)
     return str(value).lower() in ('true', '1')
+
+
+def toon_terminator():
+    """Whether toon materials are lit by their smooth normals on coarse meshes."""
+    return _switch('toon_terminator', 'MOONRAY_MODO_TOON_TERMINATOR')
+
+
+def toon_albedo():
+    """Whether MoonRay's albedo output gives a toon material its own colour: the denoiser's guide, which is otherwise
+    full of bright specks on toon surfaces, and the denoised picture as noisy as the render."""
+    return _switch('toon_albedo', 'MOONRAY_MODO_TOON_ALBEDO')
 
 
 def settings_name():

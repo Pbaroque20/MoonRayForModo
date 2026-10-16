@@ -101,3 +101,32 @@ A torus of 24 × 12 quads with `DwaToonMaterial` under a low distant light (`tes
 stepped without the variable, smooth with it, in scalar, vector and XPU modes. The same scene with `DwaBaseMaterial`
 renders identically with the variable on and off in scalar mode, and within the run-to-run variation of vector and XPU
 modes (two renders with it off differ as much).
+
+## `moonray.patch`: a toon material's albedo output (`MOONRAY_MODO_TOON_ALBEDO`)
+
+Applied by `tools/port_toon_terminator.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+The `albedo` material AOV (`Aov.cc` and `Aov.ispc`, `computeAlbedo`) averages `f / pdf` over each lobe's BSDF samples.
+For a lobe whose `f` carries the cosine and whose samples are drawn by the cosine, that is its albedo.
+
+### Why it fails for toon
+
+`ToonBsdfLobe` is deliberately flat: its `f` is `albedo × ramp / 2π`, with no cosine, but it is sampled by the
+cosine (`pdf = cos / π`). Each sample is then `albedo × ramp / (2 cos)`, which grows without bound towards grazing
+directions. On a toon torus at 4 samples a pixel the AOV reaches 202,000 in scalar mode (its true values are under 1).
+The denoisers take this AOV as their albedo guide; a guide full of bright specks is read as detail, and the denoised
+toon surface comes out as noisy as it was rendered. Clamping or median-filtering the guide afterwards does not recover
+it.
+
+### The change
+
+With the switch on, a `ToonBsdfLobe` (`BSDF_LOBE_TOON` in ISPC) contributes its own `albedo()`, the Lambertian
+albedo it inherits, the same for every sample. Other lobes are unchanged.
+
+### How it was checked
+
+The toon torus of `test-results/issue-129/make_repro.py` with the albedo and normal guides: the guide stays within the
+material's colour (0.9, 0.5, 0.3) in scalar and vector modes, and Open Image Denoise then cleans the toon surface as
+it does a `DwaBaseMaterial` one (`test-results/issue-129/check_albedo.py`).

@@ -232,7 +232,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders; not while the preview follows edits |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | |
-| Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, a preference: coming in 0.4.2 |
+| Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference: coming in 0.4.2 |
 | Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor |
 | Switch displacement | ![yes](docs/images/feature-yes.svg) | In the node editor. Coming in 0.4.2, with its runtime |
 | Display filters (colour correct, toon, halftone and the rest) | ![yes](docs/images/feature-yes.svg) | All 18, as MoonRay items; each a preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |

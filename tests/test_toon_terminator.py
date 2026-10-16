@@ -32,6 +32,16 @@ class ToonTerminator(unittest.TestCase):
                 os.environ.pop('MOONRAY_MODO_TOON_TERMINATOR', None)
                 self.assertTrue(native.toon_terminator())
 
+    def test_toon_albedo_reaches_moonray(self):
+        text = (KIT / 'python/moonray_modo/preferences.py').read_text(encoding='utf-8')
+        self.assertIn("'toon_albedo': (True, bool)", text)
+        with mock.patch.object(native, 'toon_albedo', return_value=False):
+            self.assertEqual(native.environment(ROOT)['MOONRAY_MODO_TOON_ALBEDO'], '0')
+        with mock.patch.dict(sys.modules, {'PySide2': None}):
+            with mock.patch.dict(os.environ, {'MOONRAY_MODO_TOON_ALBEDO': '1'}):
+                self.assertTrue(native.toon_albedo())
+        self.assertIn('cmd moonray.pref.toonAlbedo ?', (KIT / 'preferences.cfg').read_text(encoding='utf-8'))
+
     def test_on_the_preferences_page(self):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.toonTerminator ?', page)
