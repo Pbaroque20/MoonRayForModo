@@ -74,6 +74,13 @@ class CryptoVolumes(unittest.TestCase):
         with mock.patch.object(native, 'crypto_volumes', lambda: False):
             self.assertEqual(native.environment('.')['MOONRAY_MODO_CRYPTO_VOLUMES'], '0')
 
+    def test_moonray_hears_the_two_fixes(self):
+        for on in (True, False):
+            with mock.patch.object(native, 'fog_alpha', lambda: on), mock.patch.object(native, 'crypto_once', lambda: on):
+                env = native.environment('.')
+            self.assertEqual(env['MOONRAY_MODO_FOG_ALPHA'], '1' if on else '0')
+            self.assertEqual(env['MOONRAY_MODO_CRYPTO_ONCE'], '1' if on else '0')
+
 
 if __name__ == '__main__':
     unittest.main()

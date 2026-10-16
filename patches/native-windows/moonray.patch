@@ -1510,8 +1510,94 @@ index 2fa6c14..d5260d0 100644
      unsigned mHeight;
  
      bool mFinalized;
+diff --git a/lib/rendering/pbr/core/RayState.hh b/lib/rendering/pbr/core/RayState.hh
+index 2e41df1..d23180f 100644
+--- a/lib/rendering/pbr/core/RayState.hh
++++ b/lib/rendering/pbr/core/RayState.hh
+@@ -70,7 +70,10 @@
+     /* only used by bundling incoherent ray */                                         \
+     /* queue, invalid in all other cases    */                                         \
+     HVD_MEMBER(int, lpeStateIdLight);                                       /*   80  */\
+-    HVD_MEMBER(int, lobeType)                                               /*   84  */
++    HVD_MEMBER(int, lobeType);                                              /*   84  */\
++    /* Modo: fog in a camera ray's alpha (tools/port_fog_alpha.py) */                  \
++    HVD_MEMBER(float, modoFogFront);                                        /*   88  */\
++    HVD_MEMBER(float, modoFogPending)                                       /*   92  */
+ 
+ 
+ #define PATH_VERTEX_VALIDATION(vlen)                \
+@@ -93,6 +96,8 @@
+     HVD_VALIDATE(PathVertex, lpeStateId);           \
+     HVD_VALIDATE(PathVertex, lpeStateIdLight);      \
+     HVD_VALIDATE(PathVertex, lobeType);             \
++    HVD_VALIDATE(PathVertex, modoFogFront);         \
++    HVD_VALIDATE(PathVertex, modoFogPending);       \
+     HVD_END_VALIDATION
+ 
+ 
+@@ -120,9 +125,9 @@
+ //----------------------------------------------------------------------------
+ 
+ #if CACHE_LINE_SIZE == 128
+-#define RAY_STATE_MEMBERS_PAD   76
++#define RAY_STATE_MEMBERS_PAD   68 /* Modo: 8 bytes to PathVertex (tools/port_fog_alpha.py) */
+ #else
+-#define RAY_STATE_MEMBERS_PAD   28
++#define RAY_STATE_MEMBERS_PAD   20 /* Modo: 8 bytes to PathVertex (tools/port_fog_alpha.py) */
+ #endif
+ 
+ #define RAY_STATE_MEMBERS                                                   \
+diff --git a/lib/rendering/pbr/handlers/RayHandlers.cc b/lib/rendering/pbr/handlers/RayHandlers.cc
+index a031d6d..766cf93 100644
+--- a/lib/rendering/pbr/handlers/RayHandlers.cc
++++ b/lib/rendering/pbr/handlers/RayHandlers.cc
+@@ -14,6 +14,7 @@
+ #include <moonray/rendering/mcrt_common/ThreadLocalState.h>
+ #include <moonray/rendering/pbr/core/PathVisualizer.h>
+ #include <moonray/rendering/pbr/core/PbrTLState.h>
++#include <moonray/rendering/pbr/core/ModoFogAlpha.h>
+ #include <moonray/rendering/pbr/core/RayState.h>
+ #include <moonray/rendering/pbr/core/Scene.h>
+ #include <moonray/rendering/pbr/integrator/PathIntegrator.h>
+@@ -367,6 +368,13 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+         rs.mVolTalpha = vt.mTransmittanceAlpha;
+         rs.mVolTm = vt.mTransmittanceMin;
+         rs.mVolumeSurfaceT = volumeSurfaceT;
++        // Modo: the volumes a camera ray passed are counted in its alpha once, and what lies behind them as much as
++        // shows through (tools/port_fog_alpha.py).
++        if (modoFogAlpha() && ray.getDepth() == 0) {
++            const float shown = rs.mVolHit ? reduceTransparency(vt.mTransmittanceAlpha) : 1.f;
++            pv.modoFogPending += pv.pathPixelWeight * pv.modoFogFront * (1.f - shown);
++            pv.modoFogFront *= shown;
++        }
+     }
+ 
+     CHECK_CANCELLATION(pbrTls, return);
+@@ -481,7 +489,8 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                     // We will add the radiance from the volume to the radiance
+                     // queue and set the alpha based on the volume alpha.
+                     const float alpha = ray.getDepth() == 0 ?
+-                        rs.mPathVertex.pathPixelWeight * (1.0f - reduceTransparency(rs.mVolTalpha)) : 0.f;
++                        (modoFogAlpha() ? rs.mPathVertex.modoFogPending :
++                         rs.mPathVertex.pathPixelWeight * (1.0f - reduceTransparency(rs.mVolTalpha))) : 0.f;
+                     BundledRadiance rad;
+                     rad.mRadiance = RenderColor(rs.mVolRad.r, rs.mVolRad.g, rs.mVolRad.b, alpha);
+                     rad.mPathPixelWeight = rs.mPathVertex.pathPixelWeight;
+@@ -605,6 +614,12 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                     }
+                 }
+ 
++                // Modo: a camera ray that hits nothing counts the volumes it passed, as much as shows through
++                // those before them (tools/port_fog_alpha.py).
++                if (modoFogAlpha() && rs->mRay.getDepth() == 0) {
++                    alpha = rs->mPathVertex.modoFogPending;
++                }
++
+                 // add in any volume radiance
+                 radiance += rs->mVolRad;
+ 
 diff --git a/lib/rendering/pbr/handlers/ShadeBundleHandler.cc b/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
-index 0b0687c..f8e028d 100644
+index 0b0687c..a9ed134 100644
 --- a/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
 +++ b/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
 @@ -253,6 +253,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
@@ -1522,7 +1608,19 @@ index 0b0687c..f8e028d 100644
                  // Retrieve the first deep id (if present) for this intersection from the primitive attrs.
                  // At the request of production, cryptomatte currently only supports one deep id associated
                  // with each layer, rather than a generalized vector of ids. So here we are only interested
-@@ -592,7 +593,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -560,6 +561,11 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                         presenceRay->mPathVertex.pathThroughput *= (1.f - presences[i]);
+                         presenceRay->mPathVertex.presenceDepth++;
+                         presenceRay->mPathVertex.totalPresence = totalPresence;
++                        // Modo: the fog's opacity not yet counted goes with the continuation only when this surface,
++                        // which counts it, is not shaded (tools/port_fog_alpha.py).
++                        if (presences[i] > 0.f) {
++                            presenceRay->mPathVertex.modoFogPending = 0.f;
++                        }
+                         presenceRay->mRay.geomID = -1;
+                         presenceRay->mRay.primID = -1;
+                         presenceRay->mRay.instID = -1;
+@@ -592,7 +598,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                              if (cryptomatteData->mCryptomatteBuffer != nullptr && rs->mPathVertex.pathPixelWeight > 0.01f) {
                                  scene_rdl2::math::Color4 beauty(0.f, 0.f, 0.f, presences[i]);
                                  cryptomatteData->mCryptomatteBuffer->addSampleVector(px, py, cryptomatteData->mId, 
@@ -1531,7 +1629,7 @@ index 0b0687c..f8e028d 100644
                                                                                      cryptomatteData->mPosition,
                                                                                      cryptomatteData->mNormal, 
                                                                                      beauty,
-@@ -600,7 +601,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -600,7 +606,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                                                                                      rs->mCryptoP0,
                                                                                      rs->mCryptoRefN,
                                                                                      rs->mCryptoUV,
@@ -1540,7 +1638,7 @@ index 0b0687c..f8e028d 100644
                              }
                              // update cryptomatte info for current presence ray
                              cryptomatteData->mPrevPresence = 1;
-@@ -612,6 +613,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -612,6 +618,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                              cryptomatteDataNext->mPrevPresence = 1;
                              cryptomatteDataNext->mPathPixelWeight = rs->mPathVertex.pathPixelWeight;
                              cryptomatteDataNext->mCryptomatteBuffer = cryptomatteData->mCryptomatteBuffer;
@@ -1548,7 +1646,7 @@ index 0b0687c..f8e028d 100644
                          }
  
                          // LPE
-@@ -638,7 +640,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -638,7 +645,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                          if (cryptomatteData->mCryptomatteBuffer != nullptr && rs->mPathVertex.pathPixelWeight > 0.01f) {
                              scene_rdl2::math::Color4 beauty(0.f, 0.f, 0.f, presences[i]);
                              cryptomatteData->mCryptomatteBuffer->addSampleVector(px, py, cryptomatteData->mId, 
@@ -1557,7 +1655,7 @@ index 0b0687c..f8e028d 100644
                                                                                  cryptomatteData->mPosition,
                                                                                  cryptomatteData->mNormal, 
                                                                                  beauty, 
-@@ -646,7 +648,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -646,7 +653,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                                                                                  rs->mCryptoP0,
                                                                                  rs->mCryptoRefN,
                                                                                  rs->mCryptoUV,
@@ -1566,19 +1664,69 @@ index 0b0687c..f8e028d 100644
                          }
                          // update cryptomatte info for current ray
                          cryptomatteData->mPresenceDepth = rs->mPathVertex.presenceDepth;
+diff --git a/lib/rendering/pbr/handlers/XPURayHandlers.cc b/lib/rendering/pbr/handlers/XPURayHandlers.cc
+index 1cc70f8..1b192c7 100644
+--- a/lib/rendering/pbr/handlers/XPURayHandlers.cc
++++ b/lib/rendering/pbr/handlers/XPURayHandlers.cc
+@@ -13,6 +13,7 @@
+ #include <moonray/rendering/mcrt_common/ProfileAccumulatorHandles.h>
+ #include <moonray/rendering/mcrt_common/ThreadLocalState.h>
+ #include <moonray/rendering/pbr/core/PbrTLState.h>
++#include <moonray/rendering/pbr/core/ModoFogAlpha.h>
+ #include <moonray/rendering/pbr/core/RayState.h>
+ #include <moonray/rendering/pbr/integrator/PathIntegrator.h>
+ #include <moonray/rendering/pbr/integrator/PathIntegratorUtil.h>
+@@ -365,6 +366,13 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+         rs.mVolTalpha = vt.mTransmittanceAlpha;
+         rs.mVolTm = vt.mTransmittanceMin;
+         rs.mVolumeSurfaceT = volumeSurfaceT;
++        // Modo: the volumes a camera ray passed are counted in its alpha once, and what lies behind them as much as
++        // shows through (tools/port_fog_alpha.py).
++        if (modoFogAlpha() && ray.getDepth() == 0) {
++            const float shown = rs.mVolHit ? reduceTransparency(vt.mTransmittanceAlpha) : 1.f;
++            pv.modoFogPending += pv.pathPixelWeight * pv.modoFogFront * (1.f - shown);
++            pv.modoFogFront *= shown;
++        }
+     }
+ 
+     CHECK_CANCELLATION(pbrTls, return);
+@@ -464,7 +472,8 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+                     // We will add the radiance from the volume to the radiance
+                     // queue and set the alpha based on the volume alpha.
+                     const float alpha = ray.getDepth() == 0 ?
+-                        rs.mPathVertex.pathPixelWeight * (1.0f - reduceTransparency(rs.mVolTalpha)) : 0.f;
++                        (modoFogAlpha() ? rs.mPathVertex.modoFogPending :
++                         rs.mPathVertex.pathPixelWeight * (1.0f - reduceTransparency(rs.mVolTalpha))) : 0.f;
+                     BundledRadiance rad;
+                     rad.mRadiance = RenderColor(rs.mVolRad.r, rs.mVolRad.g, rs.mVolRad.b, alpha);
+                     rad.mPathPixelWeight = rs.mPathVertex.pathPixelWeight;
+@@ -588,6 +597,12 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+                     }
+                 }
+ 
++                // Modo: a camera ray that hits nothing counts the volumes it passed, as much as shows through
++                // those before them (tools/port_fog_alpha.py).
++                if (modoFogAlpha() && rs->mRay.getDepth() == 0) {
++                    alpha = rs->mPathVertex.modoFogPending;
++                }
++
+                 // add in any volume radiance
+                 radiance += rs->mVolRad;
+ 
 diff --git a/lib/rendering/pbr/integrator/PathIntegrator.cc b/lib/rendering/pbr/integrator/PathIntegrator.cc
-index 227c68e..fdccc3b 100644
+index 227c68e..8a2f078 100644
 --- a/lib/rendering/pbr/integrator/PathIntegrator.cc
 +++ b/lib/rendering/pbr/integrator/PathIntegrator.cc
-@@ -16,6 +16,7 @@
+@@ -16,6 +16,8 @@
  #include <moonray/rendering/pbr/core/Aov.h>
  #include <moonray/rendering/pbr/core/Constants.h>
  #include <moonray/rendering/pbr/core/Cryptomatte.h>
 +#include "ModoCryptoVolumes.h"
++#include <moonray/rendering/pbr/core/ModoFogAlpha.h>
  #include <moonray/rendering/pbr/core/DeepBuffer.h>
  #include <moonray/rendering/pbr/core/PathVisualizer.h>
  #include <moonray/rendering/pbr/core/RayState.h>
-@@ -226,6 +227,7 @@ PathIntegrator::update(const FrameState &fs, const PathIntegratorParams& params)
+@@ -226,6 +228,7 @@ PathIntegrator::update(const FrameState &fs, const PathIntegratorParams& params)
      }
  
      mCryptoIdAttrIdx = mDeepIDAttrIdxs.empty() ? -1 : mDeepIDAttrIdxs[0];
@@ -1586,7 +1734,7 @@ index 227c68e..fdccc3b 100644
  
      scene_rdl2::rdl2::String cryptoUVAttributeName = vars.get(scene_rdl2::rdl2::SceneVariables::sCryptoUVAttributeName);
      if (!cryptoUVAttributeName.empty()) {
-@@ -424,6 +426,8 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -424,6 +427,8 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
          if (deepParams) deepParams->mHitVolume = hitVolume;
          pv.pathThroughput *= vt.transmittance();
      }
@@ -1595,7 +1743,7 @@ index 227c68e..fdccc3b 100644
  
      //---------------------------------------------------------------------
      // Add contribution from light hit by the primary ray
-@@ -763,7 +767,7 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -763,7 +768,7 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
              float reciprocalWeight = 1.0f / scene_rdl2::math::max(pv.pathPixelWeight, 0.01f);
              scene_rdl2::math::Color beauty = (radiance - presenceRadiance) * reciprocalWeight;
  
@@ -1604,7 +1752,16 @@ index 227c68e..fdccc3b 100644
                                                                            cryptomatteResults,
                                                                            beauty,
                                                                            pv.presenceDepth,
-@@ -1326,6 +1330,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
+@@ -1184,6 +1189,8 @@ PathIntegrator::initPrimaryRay(pbr::TLState *pbrTls,
+     pv.hairDepth = 0;
+     pv.volumeDepth = 0;
+     pv.accumOpacity = 0;
++    pv.modoFogFront = 1.f;
++    pv.modoFogPending = 0.f;
+     pv.lpeStateId = 0;
+     pv.lobeType = 0;
+ 
+@@ -1326,6 +1333,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
      VolumeTransmittance vt;
  
      sp.mCryptomatteBuffer = (void *)cryptomatteBuffer;
@@ -1612,6 +1769,47 @@ index 227c68e..fdccc3b 100644
      CryptomatteResults cryptomatteResultsArray[NUM_CRYPTOMATTE_TYPES];
      sp.mCryptomatteResultsArray = (void *)cryptomatteResultsArray;
  
+@@ -1559,7 +1567,10 @@ PathIntegrator::computeRadiancePresence(pbr::TLState *pbrTls, mcrt_common::RayDi
+     }
+ 
+     vt.mTransmittanceE *= vtPresence.mTransmittanceE;
+-    transparency = (1 - presence) * presenceTransparency;
++    // Modo: the volumes before this surface hide what is behind it too, as MoonRay's cutout above has it
++    // (tools/port_fog_alpha.py).
++    transparency = (modoFogAlpha() ? reduceTransparency(vt.mTransmittanceAlpha) : 1.f) *
++                   (1 - presence) * presenceTransparency;
+     return presenceRadiance;
+ }
+ 
+diff --git a/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc b/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
+index 05df5b0..8c9a69e 100644
+--- a/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
++++ b/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
+@@ -120,7 +120,12 @@ fillBundledRadiance(       uniform PbrTLState *     uniform pbrTls,
+     // For each primary ray which takes this code path, we want to initialize
+     // the frame buffer alpha to the pathPixelWeight. Rays at higher depths only
+     // subtract transparency from this value.
+-    const varying float alpha = (depth ? 0.f : pathPixelWeight) - transparency * pathPixelWeight;
++    varying float alpha = (depth ? 0.f : pathPixelWeight) - transparency * pathPixelWeight;
++    // Modo: a camera ray's alpha counts the volumes it passed once, and the rest as much as shows through them
++    // (tools/port_fog_alpha.py); without MOONRAY_MODO_FOG_ALPHA these are 0 and 1.
++    if (depth == 0) {
++        alpha = rayState.mPathVertex.modoFogPending + rayState.mPathVertex.modoFogFront * alpha;
++    }
+ 
+     if (!isBlack(radiance) || !isEqual(pathPixelWeight, 0.f) || !isEqual(alpha, 0.f)) {
+ 
+@@ -294,6 +299,10 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+         if ((1 << programIndex) & bsdf->mEarlyTerminationMask) {
+             if (rayDepth == 0) {
+                 transparency = reduceTransparency(rs->mVolTalpha);
++                // Modo: with the volumes counted as pending (tools/port_fog_alpha.py), a cutout adds nothing more.
++                if (pv.modoFogFront < 1.f || pv.modoFogPending > 0.f) {
++                    transparency = 1.f;
++                }
+             } else {
+                 transparency = reduceTransparency(pv.pathThroughput);
+             }
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc
 index 6c7d5e7..0072981 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc
@@ -2197,10 +2395,23 @@ index ad064bd..a214dc3 100644
      if (strerror_r(errno, errbuf.data(), errbuf.size()) >= 0) {
          e = errbuf.data();
 diff --git a/lib/rendering/rndr/Film.cc b/lib/rendering/rndr/Film.cc
-index 7c8ff55..3373e27 100644
+index 7c8ff55..a8010d5 100644
 --- a/lib/rendering/rndr/Film.cc
 +++ b/lib/rendering/rndr/Film.cc
-@@ -1020,18 +1020,18 @@ Film::addSampleBundleHandlerHelper(mcrt_common::ThreadLocalState *tls,
+@@ -14,6 +14,7 @@
+ 
+ #include <moonray/rendering/pbr/core/Aov.h>
+ #include <moonray/rendering/pbr/core/PbrTLState.h>
++#include <moonray/rendering/pbr/core/ModoCryptoOnce.h>
+ 
+ #include <scene_rdl2/common/fb_util/TileExtrapolation.h>
+ #include <scene_rdl2/render/util/Random.h>
+@@ -1016,22 +1017,22 @@ Film::addSampleBundleHandlerHelper(mcrt_common::ThreadLocalState *tls,
+ 
+                     if (cryptomatteData->mHit && cryptomatteData->mPresenceDepth < 0) {
+                         // non-presence path
+-                        if (cryptomatteData->mIsFirstSample) {
++                        if (pbr::modoTakeFirstSample(cryptomatteData->mIsFirstSample)) {
                              // we only want to increment coverage, position, normal, and the normalization factor
                              // numFragSamples if we're dealing with the first sample for this path. We don't want 
                              // any data from the subsequent bounces except for the beauty (for GI)
@@ -4289,6 +4500,67 @@ new file mode 100644
 +    for name in sys.argv[2:]:
 +        with Path(name).open('rb') as source:
 +            shutil.copyfileobj(source, destination, 1024 * 1024)
+diff --git a/lib/rendering/pbr/core/ModoCryptoOnce.h b/lib/rendering/pbr/core/ModoCryptoOnce.h
+new file mode 100644
+--- /dev/null
++++ b/lib/rendering/pbr/core/ModoCryptoOnce.h
+@@ -0,0 +1,31 @@
++// Modo: each Cryptomatte sample counted once in vector and XPU modes (tools/port_crypto_once.py).
++#pragma once
++
++#include <cstdint>
++#include <cstdlib>
++
++namespace moonray {
++namespace pbr {
++
++/// True when MoonRay was started with MOONRAY_MODO_CRYPTO_ONCE=1. Read once.
++inline bool modoCryptoOnce()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_CRYPTO_ONCE");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++
++/// Whether this is the path's first entry: with the switch on, read and cleared at once, so that only one thread
++/// sees it set; without it, read as MoonRay does (the caller clears it).
++inline bool modoTakeFirstSample(uint8_t &first)
++{
++    if (modoCryptoOnce()) {
++        return __atomic_exchange_n(&first, uint8_t(0), __ATOMIC_ACQ_REL) != 0;
++    }
++    return first != 0;
++}
++
++} // namespace pbr
++} // namespace moonray
+diff --git a/lib/rendering/pbr/core/ModoFogAlpha.h b/lib/rendering/pbr/core/ModoFogAlpha.h
+new file mode 100644
+--- /dev/null
++++ b/lib/rendering/pbr/core/ModoFogAlpha.h
+@@ -0,0 +1,20 @@
++// Modo: fog in a camera ray's alpha past a see-through surface (tools/port_fog_alpha.py).
++#pragma once
++
++#include <cstdlib>
++
++namespace moonray {
++namespace pbr {
++
++/// True when MoonRay was started with MOONRAY_MODO_FOG_ALPHA=1. Read once.
++inline bool modoFogAlpha()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_FOG_ALPHA");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++
++} // namespace pbr
++} // namespace moonray
 diff --git a/lib/rendering/pbr/integrator/ModoCryptoVolumes.h b/lib/rendering/pbr/integrator/ModoCryptoVolumes.h
 new file mode 100644
 --- /dev/null

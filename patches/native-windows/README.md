@@ -175,3 +175,69 @@ A partly see-through pane behind the fog shows a separate issue in MoonRay's alp
 surface, the alpha (`transparency = (1 - presence) * presenceTransparency` in `computeRadianceRecurse0`) leaves out the
 volume in front, so with fog of 0.60 in front of a 0.4 pane against the sky MoonRay's alpha is 0.40 where the fog and
 pane hide 0.76. The coverage is 0.76.
+
+## `moonray.patch`: fog in front of a see-through surface in alpha (`MOONRAY_MODO_FOG_ALPHA`)
+
+Applied by `tools/port_fog_alpha.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+In scalar mode, `computeRadiancePresence` sets a presence surface's transparency to
+`(1 - presence) * presenceTransparency`. The cutout branch of `computeRadianceRecurse0` just above multiplies by the
+volume's transmittance alpha ("We also multiply by the volume's transmittanceAlpha"); the presence branch does not. In
+vector and XPU modes a camera path's alpha is the sum of its entries (`fillBundledRadiance`; the miss branches of
+`RayHandlers.cc` and `XPURayHandlers.cc`): a surface after a volume counts its pixel weight in full, and the volume's
+opacity is counted only for a ray that misses.
+
+### Why that fails
+
+Where the fog's own opacity is not counted, fog in front of a presence surface is missing from alpha. Fog hiding 0.60
+in front of a pane of presence 0.4 against the sky gives an alpha of 0.40, where the two hide 0.60 + 0.40 x 0.4 = 0.76.
+The picture composites thinner than it renders.
+
+### The change
+
+- Scalar: the presence transparency is multiplied by `reduceTransparency(vt.mTransmittanceAlpha)`, as the cutout's is.
+- Vector and XPU: `PathVertex` gains `modoFogFront` (1 at the camera: how much of what lies behind the volumes passed
+  so far shows through) and `modoFogPending` (0 at the camera: those volumes' opacity not yet counted). RayState's ISPC
+  padding gives up the 8 bytes (`RAY_STATE_MEMBERS_PAD` 28 to 20, 76 to 68). After a camera ray's volumes are marched,
+  `pending += pathPixelWeight * front * (1 - transmittance)` and `front *= transmittance`. A camera ray's alpha entry is
+  `pending + front * MoonRay's alpha`; a miss, a hit light or a hit on geometry with no material counts `pending`
+  alone. A presence continuation keeps `pending` only when the surface it leaves has presence 0 (it is not shaded and
+  so counts nothing). A cutout counts `pending` and nothing behind it.
+- Without the switch the two floats stay 1 and 0, and every alpha is MoonRay's.
+
+### How it was checked
+
+The fog ball of the Cryptomatte check with a pane of presence 0.4 between it and the boxes
+(`test-results/fog-alpha`), scalar, vector and XPU: with the switch on, every pixel's alpha equals the sum of its
+Cryptomatte coverages (0.0000 worst difference; 0.76 at the pane against the sky); off, MoonRay's (0.36 worst). Colour
+is unchanged: identical in scalar, and in vector within the run-to-run noise of two renders with the switch off. In a
+scene without a presence surface the alpha is unchanged.
+
+## `moonray.patch`: each Cryptomatte sample counted once (`MOONRAY_MODO_CRYPTO_ONCE`)
+
+Applied by `tools/port_crypto_once.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+In vector and XPU modes a camera path reaches the film as several radiance entries, which film threads can add at once.
+`Film::addSampleBundleHandlerHelper` gives the path's surface its Cryptomatte coverage with the first of them: it reads
+the path's `CryptomatteData::mIsFirstSample`, adds the sample, then clears the flag.
+
+### Why that fails
+
+Two threads that read the flag before either clears it both add the coverage. Now and then every sample of a pixel is
+counted twice, and its mattes add up to twice its alpha (coverage 2.0 for an opaque surface).
+
+### The change
+
+With the switch on, the flag is read and cleared in one atomic exchange (`modoTakeFirstSample`, `ModoCryptoOnce.h`),
+so one entry alone adds the coverage. Off, MoonRay's read then clear.
+
+### How it was checked
+
+Vector renders of the fog Cryptomatte scene, counting pixels whose coverage goes over 1: at 480 x 270 and 16 samples,
+2 of 16 renders without this switch had one (one with fog in Cryptomatte on, one with it off); at 32 samples, 1 of
+31 off and none of 31 on. A rare race is not proven gone by this, but the exchange leaves no
+window for it.

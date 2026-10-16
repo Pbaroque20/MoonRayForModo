@@ -32,6 +32,10 @@ def environment(directory):
     env['MOONRAY_MODO_TOON_ALBEDO'] = '1' if toon_albedo() else '0'
     # And fog in Cryptomatte, with what lies behind it covered only as much as shows through (crypto_volumes).
     env['MOONRAY_MODO_CRYPTO_VOLUMES'] = '1' if crypto_volumes() else '0'
+    # The fog in front of a see-through surface in alpha (fog_alpha), and each Cryptomatte sample counted once
+    # (crypto_once).
+    env['MOONRAY_MODO_FOG_ALPHA'] = '1' if fog_alpha() else '0'
+    env['MOONRAY_MODO_CRYPTO_ONCE'] = '1' if crypto_once() else '0'
     # A child process must not load Modo's Python/Qt libraries into MoonRay.
     for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'MOONRAY_MODO_SESSION', 'MOONRAY_MODO_GENERATION', 'MOONRAY_MODO_COMMAND'):
         env.pop(key, None)
@@ -182,6 +186,18 @@ def crypto_volumes():
     """Whether fog has mattes of its own in MoonRay's Cryptomatte, and what lies behind it is covered only as much
     as shows through. MoonRay's own leaves fog out, and covers what lies behind it whole."""
     return _switch('crypto_volumes', 'MOONRAY_MODO_CRYPTO_VOLUMES')
+
+
+def fog_alpha():
+    """Whether fog in front of a partly see-through surface is in the picture's alpha. MoonRay's own leaves it out
+    there, so that fog in front of a pane against the sky is less opaque than it looks."""
+    return _switch('fog_alpha', 'MOONRAY_MODO_FOG_ALPHA')
+
+
+def crypto_once():
+    """Whether each Cryptomatte sample is counted once in MoonRay's vector and XPU modes, where MoonRay's own now
+    and then counts a pixel's surface twice."""
+    return _switch('crypto_once', 'MOONRAY_MODO_CRYPTO_ONCE')
 
 
 def settings_name():

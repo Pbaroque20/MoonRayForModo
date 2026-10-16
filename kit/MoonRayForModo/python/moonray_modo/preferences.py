@@ -27,6 +27,10 @@ KEYS = {
     'light_motion': (True, bool),
     # Fog in Cryptomatte, with mattes of its own (native.crypto_volumes).
     'crypto_volumes': (True, bool),
+    # Fog in front of a see-through surface in alpha (native.fog_alpha), and each Cryptomatte sample counted once
+    # (native.crypto_once).
+    'fog_alpha': (True, bool),
+    'crypto_once': (True, bool),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (640, int), 'ipr/samples': (16, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
