@@ -217,7 +217,7 @@ The ones you are most likely to meet:
 
 Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
 
-## Limitations
+## This Version's Current Limitations
 
 - **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU; they have been exercised on an RTX 3090 only.
 - **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; [moonlightipr/README.md](moonlightipr/README.md) says how closely, scene by scene, and what it leaves out.
@@ -230,7 +230,7 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 
 ### MoonRay's features in the plugin
 
-Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
+Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 
 | MoonRay feature | Plugin | Notes |
 |---|:---:|---|
