@@ -844,6 +844,10 @@ def apply(data, alone=True, progress=None):
             created.append(layer)
             layer.setParent(mask, 0)
             material_items[key] = layer
+            # Where the scene left a setting at MoonRay's default that the plugin starts otherwise (a toon's ramp), it
+            # is MoonRay's default here: the material is the scene's.
+            from .node_defaults import keep_moonray_defaults
+            keep_moonray_defaults(record['graph'])
             properties.write(layer, {'shader': 'DwaBaseMaterial', 'moonshine_override': True, 'native_shader': shader,
                                      'native_parameters': record['graph']['nodes'][record['graph']['root']].get('parameters', {}),
                                      'node_graph': record['graph'], 'node_override': True})
