@@ -334,6 +334,8 @@ struct LaunchParams {
     unsigned opaqueShadows; // a surface that is partly absent casts a whole shadow all the same: MoonRay with its presence shadows off
     unsigned sampleClampDepth;  // how many rough things: MoonRay's sample_clamping_depth, 1 leaving alone what the camera sees directly
     float sampleClamp;      // largest value of one light sample once the path has scattered off enough rough things; 0 is unlimited
+    // MoonRay's volume_attenuation_factor, volume_contribution_factor and volume_phase_attenuation_factor.
+    float volumeAttenuation, volumeContribution, volumePhaseAttenuation;
     unsigned presence;      // some material can be partly absent or is a fog's edge, so rays must run the any-hit test
     // A toon material lit by its smooth normals on a coarse mesh, not cut into steps along its faces: MoonRay patched
     // for it, under the same MOONRAY_MODO_TOON_TERMINATOR (tools/port_toon_terminator.py).

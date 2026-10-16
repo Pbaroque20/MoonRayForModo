@@ -724,6 +724,8 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     impl->params.maxVolumeDepth = 1;
     impl->params.sampleClamp = 10.0f;
     impl->params.sampleClampDepth = 1;
+    impl->params.volumeAttenuation = impl->params.volumeContribution = 0.65f;
+    impl->params.volumePhaseAttenuation = 0.5f;
     {
         const char* toon = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
         impl->params.toonTerminator = toon && toon[0] == '1';
@@ -1473,6 +1475,13 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     if (impl->denoiser) ML_CHECK(optixDenoiserDestroy(impl->denoiser));
     impl->denoiser = nullptr;
     impl->updateCamera();
+    impl->restart();
+}
+
+void Renderer::setVolumeScattering(float attenuation, float contribution, float phaseAttenuation) {
+    impl->params.volumeAttenuation = std::clamp(attenuation, 0.0f, 1.0f);
+    impl->params.volumeContribution = std::clamp(contribution, 0.0f, 1.0f);
+    impl->params.volumePhaseAttenuation = std::clamp(phaseAttenuation, 0.0f, 1.0f);
     impl->restart();
 }
 
