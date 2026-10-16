@@ -33,6 +33,12 @@ RENDER = {
     'transparency_threshold': (1.0, 0.0, 1.0, 'Transparency threshold'),
     'presence_threshold': (0.999, 0.0, 1.0, 'Presence threshold'),
     'enable_presence_shadows': (0, 0, 1, 'Presence shadows'),
+    # Below this path throughput, presence is sampled by chance (as Russian roulette): 1 never, 0 always.
+    'presence_quality': (0.75, 0.0, 1.0, 'Presence quality'),
+    # Each see-through surface a ray passes a sample of the Cryptomatte of its own.
+    'cryptomatte_multi_presence': (0, 0, 1, 'Cryptomatte multi-presence'),
+    # Each hair lobe sampled on its own, as light path expressions need to tell the lobes apart.
+    'disable_optimized_hair_sampling': (0, 0, 1, 'Sample hair lobes separately'),
     'volume_quality': (0.5, 0.0, 1.0, 'Volume quality'),
     'volume_shadow_quality': (1.0, 0.0, 1.0, 'Volume shadow quality'),
     'volume_illumination_samples': (4, 0, 64, 'Volume illumination samples'),
@@ -61,7 +67,7 @@ RENDER = {
     'max_geometry_resolution': (1024, 1, 2147483647, 'Geometry resolution limit'),
 }
 # Settings MoonRay holds as on or off; they are kept here as 0 or 1.
-BOOLS = ('enable_presence_shadows', 'lock_frame_noise', 'important_first', 'enable_displacement', 'enable_subsurface_scattering',
+BOOLS = ('enable_presence_shadows', 'cryptomatte_multi_presence', 'disable_optimized_hair_sampling', 'lock_frame_noise', 'important_first', 'enable_displacement', 'enable_subsurface_scattering',
          'enable_shadowing', 'lights_visible_in_camera', 'enable_max_geometry_resolution')
 # Settings that are the kit's own, and are not written into a MoonRay scene by their names.
 OWN = ('batch_tile_order', 'bucket_size', 'important_first')
