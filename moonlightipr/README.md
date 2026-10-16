@@ -74,7 +74,7 @@ build to an installed kit during development.
 - `render.py` and `panel.py`: an engine popup in the preview window's toolbar, saved as
   a user preference. With MoonLightIPR selected, preview requests go to the session and
   its frames reach the preview through the normal buffer and display path, at the
-  preview size and with its own pixel samples (Options > Preferences). Its warnings
+  preview size and with its own pixel samples (Options > Preview Preferences). Its warnings
   are added to the window's Notices. Output renders always use MoonRay. The preview
   material choices in the Options menu are honoured.
 
@@ -266,7 +266,7 @@ runtime, and falls back to the copy in the kit's own runtime:
 For development, the `MOONRAY_MODO_MOONLIGHTIPR` environment variable names a staged
 folder instead. Then choose **MoonLightIPR** in the preview window's engine popup and press
 RT Off; it follows the scene until the button is pressed again. Motion blur in
-MoonLightIPR renders is a preference (Options > Preferences).
+MoonLightIPR renders is a preference (Options > Preview Preferences).
 
 Edits cost what the design intends: a camera or material change only restarts
 accumulation, a transform change rebuilds the instance layer, and only a new mesh

@@ -84,7 +84,7 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **Opens on MoonRay, with the crest**, and renders nothing until asked.
 - **Each engine has its own size.** MoonRay renders at the camera's resolution; MoonRay LS and MoonLightIPR at the preview size (640 px unless changed).
 - **Sampling beside the picture size.** A MoonRay render says how it was sampled, such as "Uniform 16 ps" or "Adaptive 4-12 ps" (fewest to most pixel samples).
-- **Pixel samples for MoonRay LS and MoonLightIPR**, in Options > Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64.
+- **Pixel samples for MoonRay LS and MoonLightIPR**, in Options > Preview Preferences: MoonLightIPR 32 to 256, MoonRay LS 1 to 64.
 - **The preview follows Modo's color management by default**: the OCIO configuration and color spaces set in Modo's system preferences, as they stand now. What you choose in MoonRay's render settings is followed in their place, and is remembered for new scenes and the next time Modo opens. View Transform in the render settings chooses between that, ACES, sRGB, raw, or an OCIO display and view of your own.
 - **The view transform and LUT are named at the foot of the window**, bottom right, such as "Modo: nuke-default, sRGB" or "ACES + LUT film.cube".
 - **Beauty is what every engine shows by default.** Denoised Beauty is in the buffer list to choose; only Smart Render switches to it by itself.

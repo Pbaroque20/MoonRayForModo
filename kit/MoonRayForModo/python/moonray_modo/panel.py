@@ -271,7 +271,7 @@ class Panel(Tools, QtWidgets.QWidget):
             action=QtWidgets.QAction(label,self);action.setCheckable(True);target.addAction(action)
             return action
         menu.addAction('Render Settings',self.open_settings)
-        menu.addAction('Preferences...',self.edit_preferences)
+        menu.addAction('Preview Preferences...',self.edit_preferences)
         menu.addSeparator()
         self.preview_lock=checkable(menu,'Lock Preview')
         self.preview_lock.setToolTip('Hold automatic updates; the current render continues.')
@@ -439,7 +439,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
 
     def _preferences_changed(self):
-        self.status.setText('Preferences saved.')
+        self.status.setText('Preview preferences saved.')
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
 
