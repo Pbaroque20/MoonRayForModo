@@ -18,11 +18,10 @@ class Compatibility0326(unittest.TestCase):
             self.assertIn('crypto_'+category,text)
             self.assertIn('Metadata("/modo/outputMetadata/'+category+'")',text)
         for index in range(3):self.assertIn('["cryptomatte_id_channel"] = '+str(index),text)
-    def test_incompatible_runtime_and_volume_fail_explicitly(self):
+    def test_incompatible_runtime_fails_explicitly(self):
+        # Volumes no longer fail: they have mattes of their own (tests/test_crypto_volumes.py).
         scene=self.scene();scene.pop('_crypto_categories')
         with self.assertRaisesRegex(ValueError,'category-enabled'):rdla.scene_text(scene,16,16,1,0,'test.exr')
-        scene['_crypto_categories']=True;scene['extra_geometry']=[{'kind':'vdb'}]
-        with self.assertRaisesRegex(ValueError,'Volume Cryptomatte'):rdla.scene_text(scene,16,16,1,0,'test.exr')
     def test_instance_material_ids_inherit_prototype(self):
         scene=self.scene();mesh=dict(scene['meshes'][0],instance_ids=['i1','i2'])
         lines=[];values=cryptomatte.userdata_set(mesh,lines,scene,instances=True)

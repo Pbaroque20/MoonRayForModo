@@ -30,6 +30,8 @@ def environment(directory):
     env['MOONRAY_MODO_TOON_TERMINATOR'] = '1' if toon_terminator() else '0'
     # And a clean albedo of toon materials for the denoiser's guide (toon_albedo).
     env['MOONRAY_MODO_TOON_ALBEDO'] = '1' if toon_albedo() else '0'
+    # And fog in Cryptomatte, with what lies behind it covered only as much as shows through (crypto_volumes).
+    env['MOONRAY_MODO_CRYPTO_VOLUMES'] = '1' if crypto_volumes() else '0'
     # A child process must not load Modo's Python/Qt libraries into MoonRay.
     for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'MOONRAY_MODO_SESSION', 'MOONRAY_MODO_GENERATION', 'MOONRAY_MODO_COMMAND'):
         env.pop(key, None)
@@ -174,6 +176,12 @@ def toon_albedo():
     """Whether MoonRay's albedo output gives a toon material its own colour: the denoiser's guide, which is otherwise
     full of bright specks on toon surfaces, and the denoised picture as noisy as the render."""
     return _switch('toon_albedo', 'MOONRAY_MODO_TOON_ALBEDO')
+
+
+def crypto_volumes():
+    """Whether fog has mattes of its own in MoonRay's Cryptomatte, and what lies behind it is covered only as much
+    as shows through. MoonRay's own leaves fog out, and covers what lies behind it whole."""
+    return _switch('crypto_volumes', 'MOONRAY_MODO_CRYPTO_VOLUMES')
 
 
 def settings_name():

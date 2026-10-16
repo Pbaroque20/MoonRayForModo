@@ -130,3 +130,48 @@ albedo it inherits, the same for every sample. Other lobes are unchanged.
 The toon torus of `test-results/issue-129/make_repro.py` with the albedo and normal guides: the guide stays within the
 material's colour (0.9, 0.5, 0.3) in scalar and vector modes, and Open Image Denoise then cleans the toon surface as
 it does a `DwaBaseMaterial` one (`test-results/issue-129/check_albedo.py`).
+
+## `moonray.patch`: volumes in Cryptomatte (`MOONRAY_MODO_CRYPTO_VOLUMES`)
+
+Applied by `tools/port_crypto_volumes.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+Cryptomatte records the surface a camera ray, or a presence continuation of it, hits (`PathIntegrator.cc`,
+`computeRadianceRecurse0`; in vector and XPU modes `ShadeBundleHandler.cc` and `Film.cc`), at the ray's full pixel
+weight. Volumes on the way are never recorded, and `computeRadianceVolume` is called with `cryptomatteFlags = 0`.
+
+### Why that fails
+
+A cloud, smoke or fog has no matte. And a surface behind a thick volume has as much coverage as one in the clear, so
+where a volume lies in front of a surface the coverages in a pixel add up to more than the volume and surface hide
+together; where it lies in front of nothing they add up to less than the pixel's alpha (by 0.60 in the test below).
+
+### The change
+
+- As the frame starts (`PathIntegrator::update`), each layer assignment that holds a volume shader is mapped to the
+  Cryptomatte IDs on its geometry's `primitive_attributes` UserData: the first `deep_id_attribute_names` entry, and
+  the plugin's `modo_material_id` and `modo_asset_id`. `VdbGeometry` declares `primitive_attributes` for this; it reads
+  nothing else from it (`ModoCryptoVolumes.h`).
+- At the end of `computeRadianceVolume` for a camera ray (depth 0, lobe type 0; scalar, vector and XPU all march
+  volumes there), the `VolumeProperties` steps of the march are walked: each step's share of the opacity, by luminance
+  of its extinction as MoonRay's own volume surface depth has it, goes to the step's assignment (the densest volume in
+  it). Each volume is recorded once per ray with `addSampleVector` (which locks the pixel), with that share times the
+  ray's pixel weight as coverage, at the depth its share is centred on, facing the camera, with the volume's light as
+  its beauty. A ray stopped by the transmittance threshold gives what is left to the last volume.
+- What shows through the volumes so far is kept for the surface the ray then hits, and for presence surfaces after it:
+  per thread for a scalar camera sample, and in `CryptomatteData` for vector and XPU, where `mPresenceDepth` gives up
+  16 bits to a 16-bit `mVolumeFront` (the struct is at its 64-byte bound). Those surfaces are recorded at their weight
+  times it, and a presence continuation ray inherits it.
+
+### How it was checked
+
+A VDB ball of fog with a hole, in front of two boxes on a floor, with an object Cryptomatte and with all three
+categories, rendered in scalar, vector and XPU modes (`test-results/crypto-volumes`): with the switch on, every
+pixel's coverage equals its alpha (to 1e-4) in every category and mode, and the fog's matte has the ball's shape and
+hole; with the switch off, the output is MoonRay's (no fog matte; coverage short of alpha by up to 0.60).
+
+A partly see-through pane behind the fog shows a separate issue in MoonRay's alpha, not changed here: past a presence
+surface, the alpha (`transparency = (1 - presence) * presenceTransparency` in `computeRadianceRecurse0`) leaves out the
+volume in front, so with fog of 0.60 in front of a 0.4 pane against the sky MoonRay's alpha is 0.40 where the fog and
+pane hide 0.76. The coverage is 0.76.

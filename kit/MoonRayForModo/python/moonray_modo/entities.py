@@ -967,7 +967,14 @@ def shadow_receiver_references(scene, identities):
     return result
 
 
-def emit_geometry(scene, materials, lines):
+def volume_shapes(scene):
+    """MoonRay boxes and spheres that hold a volume, as Cryptomatte names them (cryptomatte.labels)."""
+    return [{'name': entity['name'], 'identity': entity['identity'], 'material': entity['parameters'].get('modo_material', ''),
+             'volume': True} for entity in checked(scene)
+            if entity['parameters'].get('modo_volume') and entity['class'] in ('BoxGeometry', 'SphereGeometry')]
+
+
+def emit_geometry(scene, materials, lines, crypto=False):
     """Volume shaders, then the shapes, each assigned its material and whatever fills it."""
     from .rdla import string
     entities = checked(scene)
@@ -995,6 +1002,12 @@ def emit_geometry(scene, materials, lines):
                     '  ["vertices_by_index"] = {%s},' % ', '.join(str(index) for face in faces for index in face),
                     '  ["face_vertex_count"] = {%s},' % ', '.join(str(len(face)) for face in faces),
                     '  ["is_subd"] = false,', '}']
+            if crypto:
+                # The fog's IDs, read by MoonRay for its mattes (cryptomatte.volumes).
+                from . import cryptomatte
+                if cryptomatte.volumes():
+                    shape = next(s for s in volume_shapes(scene) if s['identity'] == entity['identity'])
+                    body.insert(-1, '  ["primitive_attributes"] = {%s},' % ', '.join(cryptomatte.userdata_set(shape, lines, scene)))
         tag = entity['parameters'].get('modo_material', '')
         if tag not in materials:
             tag = ''

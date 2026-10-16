@@ -30,6 +30,7 @@ Not released yet: on the MoonLightIPR branch.
 - **MoonRay Source Overrides**: the MoonRay page of Modo's Preferences, now named with the MoonRay release it renders with (MoonRay (2026.29.1)), gathers in a section that folds where the plugin changes how MoonRay itself renders: smooth toon edges, toon materials that denoise cleanly, and blurred moving lights. Each is on by default; off renders as MoonRay's source does.
 - **Volume attenuation, contribution and phase attenuation factors** in Render Settings, Volumes: with Volume bounces above 1, how much less each further bounce of light in fog is stopped, adds and keeps its direction (MoonRay's defaults 0.65, 0.65 and 0.5). MoonLightIPR follows them.
 - **Presence quality, Cryptomatte multi-presence and Sample hair lobes separately** in Render Settings: how finely partly see-through surfaces are sampled (MoonRay's 0.75), Cryptomatte mattes that count each layer seen through a partly see-through surface, and hair that samples its lobes one by one in place of MoonRay's faster way.
+- **Fog in Cryptomatte**: fog, smoke and clouds, from a VDB or in a MoonRay box or sphere, have mattes of their own, as strong as the fog is thick, and what lies behind fog is covered only as much as shows through. Fog also no longer stops a render with Object, Material and Asset Cryptomatte together. A MoonRay Source Override in Preferences, on by default.
 - **Convert a Modo camera to a MoonRay camera**: in the MoonRay menu, and in the Item List's right-click menu on a camera. A popup asks which kind (perspective, orthographic, fisheye, spherical or dome); the new camera stands where the Modo camera does, with its lens, film offset and depth of field where the kind has them.
 - **Assign MoonRay Material** in the Item List's right-click menu on a mesh.
 - **A whole mesh's MoonRay material covers what is made in it later**: Assign MoonRay Material on one mesh binds its material to the mesh, as Modo's item masks do, so new polygons take it too. Picked polygons, or several meshes sharing one material, are still tagged.
@@ -89,6 +90,10 @@ Not released yet: on the MoonLightIPR branch.
 ![The Render item's Bounces section with Sample Hair Lobes Separately](images/hair-lobes-setting.png)
 
 *Sample Hair Lobes Separately sits under the Hair bounces. Presence Quality and Cryptomatte Multi-Presence are further down, after Presence Shadows.*
+
+![A ball of fog in front of two boxes, the fog's matte, and the boxes' matte without and with fog in Cryptomatte](images/crypto-volumes.png)
+
+*Fog in Cryptomatte: a ball of fog with a hole in it, in front of the left box (top left). The fog's own matte (top right). The boxes' matte as MoonRay makes it, solid behind the fog (bottom left), and with fog in Cryptomatte, faded where the fog hides the box (bottom right).*
 
 ![The same scene through a Modo camera and through the MoonRay camera converted from it](images/convert-camera.png)
 

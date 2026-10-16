@@ -225,7 +225,7 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 - **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, arithmetic and UV transforms. Nodes outside that subset are not read.
 - **RDL import leaves some things out**, and names each in its report: motion (the scene comes in as it stands at shutter open), values that differ face by face or point by point, subdivision creases, authored normals and light filter sets.
 - **Geometry**: some instancing, motion, subdivision, UV-projection and normal-map cases differ from Modo. A mesh that mixes polygon kinds or needs per-polygon projection is read the slower way. A shadow a coarse mesh casts on itself, as a torus's on the inside of its hole, follows its faces, in MoonRay and MoonLightIPR alike; subdivision smooths it.
-- **Cryptomatte**: volume coverage is unfinished; ID previews are not an interactive matte-selection tool.
+- **Cryptomatte**: ID previews are not an interactive matte-selection tool. Fog has mattes of its own coming in 0.4.2.
 - **Preview**: some edits still need the whole scene read again; the compositor works on finished MoonRay renders, not on MoonLightIPR's. Safe Denoising and Continue are for the MoonRay engine.
 
 ### MoonRay's features in the plugin
@@ -264,7 +264,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
 | Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window. Coming in 0.4.2 |
 | Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window. Coming in 0.4.2 |
-| Cryptomatte | ![partly](docs/images/feature-partly.svg) | Volume coverage unfinished |
+| Cryptomatte | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: fog, from a VDB or in a MoonRay box or sphere, has mattes of its own |
 | Deep EXR | ![yes](docs/images/feature-yes.svg) | |
 | Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
