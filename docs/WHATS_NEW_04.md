@@ -86,7 +86,7 @@ Not released yet: on the MoonLightIPR branch.
 
 ![Four partly see-through panes in front of two boxes, at Presence Quality 0 and 1](images/presence-quality.png)
 
-*Presence Quality: four partly see-through panes in front of the orange boxes, at the same samples. At 0 (left) chance picks which pane a ray stops on, and the boxes behind break into orange and blue speckle (enlarged below); at 1 (right) every pane is followed and only the usual grain is left. Here 1 took twice as long.*
+*Presence Quality: four partly see-through panes in front of the orange boxes, at 16 samples a pixel. At 0 (left) chance picks which pane a ray stops on, and the boxes behind break into orange and blue speckle (enlarged below); at 1 (right) every pane is followed and only the usual grain is left. Here 1 took two and a half times as long.*
 
 ![The Render item's Bounces section with Sample Hair Lobes Separately](images/hair-lobes-setting.png)
 
