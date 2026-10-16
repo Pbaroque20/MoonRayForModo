@@ -830,11 +830,16 @@ def literal(entities, entity, key, authored):
 
 def block(entities, entity, extra=()):
     """The lines that define one entity: its place, then what the user set."""
-    from .rdla import matrix, string
+    from .rdla import node_matrix, string
     name = '%s(%s)' % (entity['class'], string('/modo/entity/' + entity['identity']))
     lines = [name + ' {']
     if catalog()[entity['class']]['placed']:
-        lines.append('  ["node_xform"] = %s,' % matrix(entity.get('matrix', IDENTITY)))
+        # Where it stands, or, moving during the shutter, where it stands as it opens and as it closes.
+        lines.append('  ["node_xform"] = %s,' % node_matrix(dict(matrix=entity.get('matrix', IDENTITY), **(
+            {'matrix_close': entity['matrix_close']} if entity.get('matrix_close') else {}))))
+        if entity.get('matrix_close') and catalog()[entity['class']]['category'] == 'light' and 'mb' not in entity['parameters']:
+            # MoonRay moves a light during the shutter only when the light says so.
+            lines.append('  ["mb"] = true,')
     lines += ['  [%s] = %s,' % (string(key), text) for key, text in extra]
     for key, authored in sorted(entity['parameters'].items()):
         if not key.startswith('modo_'):
@@ -980,10 +985,11 @@ def emit_geometry(scene, materials, lines):
         if entity['parameters'].get('modo_volume') and entity['class'] in ('BoxGeometry', 'SphereGeometry'):
             # MoonRay fills a mesh with a volume but not its own box or sphere, in which nothing shows. A shape that
             # holds one is therefore written as the mesh of that shape.
-            from .rdla import matrix
+            from .rdla import node_matrix
             vertices, faces = box(value(entity, 'size')) if entity['class'] == 'BoxGeometry' else sphere(float(value(entity, 'radius')))
             name = 'RdlMeshGeometry(%s)' % string('/modo/entity/' + entity['identity'])
-            body = [name + ' {', '  ["node_xform"] = %s,' % matrix(entity.get('matrix', IDENTITY)),
+            body = [name + ' {', '  ["node_xform"] = %s,' % node_matrix(dict(matrix=entity.get('matrix', IDENTITY), **(
+                        {'matrix_close': entity['matrix_close']} if entity.get('matrix_close') else {}))),
                     '  ["vertex_list_0"] = {%s},' % ', '.join('Vec3(%r, %r, %r)' % tuple(float(v) for v in vertex) for vertex in vertices),
                     '  ["vertices_by_index"] = {%s},' % ', '.join(str(index) for face in faces for index in face),
                     '  ["face_vertex_count"] = {%s},' % ', '.join(str(len(face)) for face in faces),
@@ -1220,6 +1226,8 @@ def preview(scene, warnings):
                 continue
             light = {'kind': name, 'identity': entity['identity'], 'name': label, 'color': color, 'intensity': intensity, 'matrix': matrix,
                      'filters': filters}
+            if entity.get('matrix_close'):
+                light['matrix_close'] = entity['matrix_close']
             if name != 'PortalLight' and value(entity, 'texture'):
                 light['texture'] = value(entity, 'texture')
             if filters and name == 'DistantLight':
@@ -1241,6 +1249,8 @@ def preview(scene, warnings):
             vertices, faces = box(value(entity, 'size')) if name == 'BoxGeometry' else sphere(float(value(entity, 'radius')))
             mesh = {'name': label, 'identity': entity['identity'], 'vertices': vertices, 'faces': faces, 'matrix': matrix,
                     'material': entity['parameters'].get('modo_material', ''), 'smooth': name == 'SphereGeometry'}
+            if entity.get('matrix_close'):
+                mesh['matrix_close'] = entity['matrix_close']
             if entity['parameters'].get('modo_volume'):
                 # A shape that holds a fog and has no material is the fog alone, which MoonLightIPR draws when it is
                 # the same all through.

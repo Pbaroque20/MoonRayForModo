@@ -345,6 +345,9 @@ public:
     // moment per sample, so the accumulated image is blurred; moving instances and meshes that
     // change shape say so themselves. Lights hold still.
     void setCameraMotion(const Camera* close);
+    // The lights where they are when the shutter closes, after setDistantLights and setLights and as many of each;
+    // only where they are and which way they face is read. Counts of 0 hold every light still.
+    void setLightMotion(const DistantLight* distantClose, size_t distantCount, const Light* close, size_t count);
     // Nine numbers, the rows of the matrix that takes material colours from Rec.709 to the
     // space the scene is lit in; null when they are the same.
     void setWorkingSpace(const float* matrix);
