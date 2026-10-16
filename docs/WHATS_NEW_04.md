@@ -120,10 +120,6 @@ Not released yet: on the MoonLightIPR branch.
 
 *A Modo camera converted to a MoonRay camera renders the same view in MoonRay. Both boxes are one mesh given an orange MoonRay material whole: the right one was made in it afterwards and takes the material too.*
 
-![The preview window's toolbar with MoonLightIPR chosen](images/preview-engine-list.png)
-
-*The engine list shows MoonLightIPR in full.*
-
 ![The preview before a render](images/preview-wordmark.png)
 
 *The preview before anything is rendered.*
