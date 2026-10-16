@@ -42,6 +42,27 @@ class ToonTerminator(unittest.TestCase):
                 self.assertTrue(native.toon_albedo())
         self.assertIn('cmd moonray.pref.toonAlbedo ?', (KIT / 'preferences.cfg').read_text(encoding='utf-8'))
 
+    def test_overrides_in_their_own_section_named_with_moonray_version(self):
+        from moonray_modo import MOONRAY_RELEASE
+        page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
+        self.assertIn('<atom type="Label">MoonRay Source Overrides (%s)</atom>' % MOONRAY_RELEASE, page)
+        section = page[page.index('<hash type="Sheet" key="MoonRaySourceOverrides:sheet">'):]
+        section = section[:section.index('</hash>')]
+        for command in ('toonTerminator', 'toonAlbedo', 'lightMotion'):
+            self.assertIn('cmd moonray.pref.%s ?' % command, section)
+        self.assertIn("lx.bless(switch('light_motion'),'moonray.pref.lightMotion')",
+                      (KIT / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8'))
+
+    def test_moving_lights_follow_the_switch(self):
+        from moonray_modo import lighting
+        light = {'kind': 'SpotLight', 'identity': 'l', 'name': 'L', 'color': [1, 1, 1], 'intensity': 1.0,
+                 'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], 'matrix_close': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1]}
+        for on in (True, False):
+            with mock.patch.object(native, 'light_motion', return_value=on):
+                lines = []
+                lighting.emit({'lights': [light]}, [], 0.0, lines)
+                self.assertEqual(any('["mb"] = true' in line for line in lines), on)
+
     def test_on_the_preferences_page(self):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.toonTerminator ?', page)

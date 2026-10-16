@@ -493,6 +493,9 @@ recapture, which waits for release. Why it was classified so was not established
 - Viewport navigation reaches MoonLightIPR only when the mouse button comes up, because Modo
   reports it only then.
 
+![A moving cube and a moving spot light, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-motion.png)
+*Motion blur of a moving cube and of a moving spot light: MoonRay on the left, MoonLightIPR on the right (October 15).*
+
 ## Not done yet
 
 - Volumes with ramps, and a VDB volume's motion from a velocity grid.

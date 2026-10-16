@@ -277,7 +277,9 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None):
             warnings.append('MoonLightIPR does not show %s %s yet.' % (kind, light.get('name', '')))
             continue
         matrix = finite(light.get('matrix', IDENTITY))
-        ending = finite(light.get('matrix_close') or matrix)
+        # Held still unless moving lights blur (MoonRay's own way, which MoonLightIPR then follows).
+        from .native import light_motion
+        ending = finite(light.get('matrix_close') or matrix) if light_motion() else matrix
         color = [c * float(light['intensity']) for c in working_color(finite(light['color']))]
         # Filters from Lighting controls, and those a MoonRay light item names.
         filters = control_filters(settings, light, scene, warnings) + list(light.get('filters', []))

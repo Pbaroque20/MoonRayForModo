@@ -837,7 +837,8 @@ def block(entities, entity, extra=()):
         # Where it stands, or, moving during the shutter, where it stands as it opens and as it closes.
         lines.append('  ["node_xform"] = %s,' % node_matrix(dict(matrix=entity.get('matrix', IDENTITY), **(
             {'matrix_close': entity['matrix_close']} if entity.get('matrix_close') else {}))))
-        if entity.get('matrix_close') and catalog()[entity['class']]['category'] == 'light' and 'mb' not in entity['parameters']:
+        from .native import light_motion
+        if entity.get('matrix_close') and catalog()[entity['class']]['category'] == 'light' and 'mb' not in entity['parameters']                 and light_motion():
             # MoonRay moves a light during the shutter only when the light says so.
             lines.append('  ["mb"] = true,')
     lines += ['  [%s] = %s,' % (string(key), text) for key, text in extra]

@@ -36,7 +36,9 @@ def emit(scene,meshes,environment,lines):
         name='/modo/light/'+identity;ref='%s(%s)'%(kind,string(name));refs[identity]=[ref]
         attrs={'node_xform':node_matrix(light),'color':vector(working_color(light['color']),'Rgb'),'intensity':number(light['intensity'])}
         # MoonRay moves a light during the shutter only when the light says so.
-        if light.get('matrix_close') and light['matrix_close']!=light.get('matrix'):attrs['mb']='true'
+        if light.get('matrix_close') and light['matrix_close']!=light.get('matrix'):
+            from .native import light_motion
+            if light_motion():attrs['mb']='true'
         label=settings.get('label','')
         if label:
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Light group labels must use letters, numbers and underscores')
