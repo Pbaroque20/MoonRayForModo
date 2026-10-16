@@ -258,9 +258,13 @@ class Panel(Tools, QtWidgets.QWidget):
         self.start.setFixedWidth(wide(self.start,'Continue',28))
         # Room for the menu arrow beside the word, which it otherwise covers.
         gear.setFixedWidth(wide(gear,'Options',34))
-        for combo,least,most in ((self.preview_engine,96,124),(self.camera,96,170),(self.buffer,96,150)):
+        for combo,least,most in ((self.camera,96,170),(self.buffer,96,150)):
             combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
             combo.setMinimumWidth(least);combo.setMaximumWidth(most)
+        # The engines are few and their names short: the list is as wide as the longest, with room for its arrow, and
+        # never gives way, so that no name is cut off.
+        engine=self.preview_engine
+        engine.setFixedWidth(max(wide(engine,engine.itemText(i),40) for i in range(engine.count())))
         return row
 
     def _options_menu(self):
