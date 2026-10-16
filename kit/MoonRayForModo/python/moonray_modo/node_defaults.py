@@ -57,8 +57,25 @@ def value(spec):
 
 # What the plugin starts a material with where that is not MoonRay's own default. MoonRay's toon material comes
 # with its toon look switched off (an ordinary diffuse and highlight); here it starts as a toon material: its
-# diffuse model the ramp, its specular model Toon.
-STARTS={'DwaToonMaterial':{'diffuse_model':1,'specular_model':2}}
+# diffuse model the ramp, its specular model Toon. Its diffuse ramp is read from the side facing the light (0) to
+# where the surface turns away (1), and MoonRay's own runs from black to white, so that a surface was darkest facing
+# the light; it starts the other way round, brightest facing the light, as Modo's toon is (issue 127).
+STARTS={'DwaToonMaterial':{'diffuse_model':1,'specular_model':2,
+                           'colors':[[1.0,1.0,1.0],[0.75,0.75,0.75],[0.25,0.25,0.25],[0.0,0.0,0.0]]}}
+
+
+def keep_moonray_defaults(graph):
+    """A graph from a MoonRay scene, its nodes given MoonRay's own default wherever the scene left one the plugin
+    starts otherwise: the material is the scene's, not a new one, and renders as the scene had it."""
+    from . import nodes
+    for node in (graph or {}).get('nodes', {}).values():
+        held = STARTS.get(node.get('type'))
+        if not held:continue
+        parameters = node.setdefault('parameters', {})
+        specs = nodes.specs(node['type'])
+        for key in held:
+            if key not in parameters and key in specs:parameters[key] = value(specs[key])
+    return graph
 
 
 def start(shader,key,spec):
