@@ -275,6 +275,24 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
 
+### Where the plugin changes MoonRay (coming in 0.4.2)
+
+Besides the patches that build MoonRay on Windows, 0.4.2 changes MoonRay's source where it renders something wrongly
+for an artist: six MoonRay Source Overrides, each a checkbox in Preferences (MoonRay, MoonRay Source Overrides), on by
+default; off renders as MoonRay's source does. Smooth toon edges on coarse meshes, toon materials that denoise cleanly,
+blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, and each Cryptomatte sample
+counted once. What each changes, why, and how it was checked is in the [engineers' notes](patches/native-windows/README.md).
+
+![A coarse and a subdivided toon torus in MoonRay, each with the override off and on](docs/images/toon-edges-subdivided.png)
+
+*Smooth toon edges on coarse meshes: MoonRay's toon steps along the faces of a coarse mesh, and still, more finely, on
+a subdivided one (left); with the override, both are smooth (right).*
+
+![A ball of fog in front of two boxes, the fog's matte, and the boxes' matte without and with fog in Cryptomatte](docs/images/crypto-volumes.png)
+
+*Fog in Cryptomatte: the render, the fog's own matte, and the boxes' matte as MoonRay makes it, solid behind the fog
+(bottom left), and with the override, faded where the fog hides the box (bottom right).*
+
 ## Still to implement
 
 - Fur guides, and the fur vector and width maps.

@@ -23,11 +23,11 @@ Not released yet: on the MoonLightIPR branch.
 - **The graph editor's properties fold by group**: a MoonShine material's settings sit under its own groups (Diffuse, Specular, Clearcoat and the rest), each folded or unfolded with a click and kept that way for that kind of material.
 - **The graph editor's MoonRay Widget is quicker**: it renders under MoonRay LS with more samples to a pixel, starts as the editor opens, and shows a material it has already rendered at once. It has one Refresh/Stop button, no bucket outlines, and the object sits higher in the picture.
 - **A MoonRay preview is always one render**, as MoonRay's own command makes it: it no longer starts over twice at 1 and 4 samples before the full render.
-- **Toon materials have smooth edges on coarse meshes**: the lit band no longer comes out in steps along the faces of a low-poly or subdivided mesh, in MoonRay and in MoonLightIPR. A preference on the MoonRay page of Modo's Preferences, on by default; off renders as MoonRay itself does.
-- **Toon materials denoise cleanly**: MoonRay's albedo output, the denoiser's guide, was full of bright specks on toon surfaces, and a denoised toon stayed as noisy as it was rendered. A preference of its own on the MoonRay page, on by default.
+- **Toon materials have smooth edges on coarse meshes**: the lit band no longer comes out in steps along the faces of a low-poly or subdivided mesh, in MoonRay and in MoonLightIPR. "Smooth toon edges on coarse meshes" under MoonRay Source Overrides in Preferences, on by default; off renders as MoonRay itself does.
+- **Toon materials denoise cleanly**: MoonRay's albedo output, the denoiser's guide, was full of bright specks on toon surfaces, and a denoised toon stayed as noisy as it was rendered. "Denoise toon materials cleanly" under MoonRay Source Overrides, on by default.
 - **A new toon material is brightest facing the light**: its diffuse ramp starts bright where the surface faces the light and darkens towards the shadow side, as Modo's toon does. MoonRay's own default runs the other way; a toon material whose ramp was never set takes the new start, and a MoonRay scene's own materials keep MoonRay's.
 - **Motion blur in MoonLightIPR, on by default**: while the scene is followed too (an edit is shown blurred once it is let go; a drag is followed sharp), and moving lights blur, in MoonLightIPR and in MoonRay, which held them still before. MoonRay's own items (its lights and shapes) blur when they move, as Modo's do.
-- **MoonRay Source Overrides**: the MoonRay page of Modo's Preferences, now named with the MoonRay release it renders with (MoonRay (2026.29.1)), gathers in a section that folds where the plugin changes how MoonRay itself renders: smooth toon edges, toon materials that denoise cleanly, and blurred moving lights. Each is on by default; off renders as MoonRay's source does.
+- **MoonRay Source Overrides**: the MoonRay page of Modo's Preferences, now named with the MoonRay release it renders with (MoonRay (2026.29.1)), gathers in a section that folds where the plugin changes how MoonRay itself renders: smooth toon edges, toon materials that denoise cleanly, blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, and each Cryptomatte sample counted once. Each is a checkbox of its own, on by default; off renders as MoonRay's source does. What each changes in MoonRay's source, why, and how it was checked is in the [engineers' notes](../patches/native-windows/README.md).
 - **Volume attenuation, contribution and phase attenuation factors** in Render Settings, Volumes: with Volume bounces above 1, how much less each further bounce of light in fog is stopped, adds and keeps its direction (MoonRay's defaults 0.65, 0.65 and 0.5). MoonLightIPR follows them.
 - **Presence quality, Cryptomatte multi-presence and Sample hair lobes separately** in Render Settings: how finely partly see-through surfaces are sampled (MoonRay's 0.75), Cryptomatte mattes that count each layer seen through a partly see-through surface, and hair that samples its lobes one by one in place of MoonRay's faster way.
 - **Fog in Cryptomatte**: fog, smoke and clouds, from a VDB or in a MoonRay box or sphere, have mattes of their own, as strong as the fog is thick, and what lies behind fog is covered only as much as shows through. Fog also no longer stops a render with Object, Material and Asset Cryptomatte together. A MoonRay Source Override in Preferences, on by default.
@@ -64,13 +64,29 @@ Not released yet: on the MoonLightIPR branch.
 
 *The graph editor's right side: a material's Diffuse group open, the others folded, and the MoonRay Widget's picture of it under MoonRay LS.*
 
-![A coarse toon torus, stepped with the preference off and smooth with it on](images/toon-smooth-edges.png)
+![A coarse toon torus, stepped with the override off and smooth with it on](images/toon-smooth-edges.png)
 
-*Smooth toon edges on coarse meshes: a 24 × 12 torus with MoonRay's toon material. Off, as MoonRay's source has it, the lit band is stepped along the faces; on, it is smooth in MoonRay and in MoonLightIPR.*
+*"Smooth toon edges on coarse meshes" in MoonRay Source Overrides: a 24 × 12 torus with MoonRay's toon material. Off, as MoonRay's source has it, the lit band is stepped along the faces; on, it is smooth in MoonRay and in MoonLightIPR.*
 
-![A toon render, denoised with the preference off and on](images/toon-denoise.png)
+![A coarse and a subdivided toon torus in MoonRay, each with the override off and on](images/toon-edges-subdivided.png)
 
-*Denoise toon materials cleanly: the render, then denoised with the preference off (as noisy as rendered) and on.*
+*The same in MoonRay, coarse and subdivided. Subdividing makes MoonRay's steps smaller but leaves them; with the override on, both are smooth.*
+
+![A close-up of the lit band, stepped with the override off and smooth with it on](images/toon-edges-closeup.png)
+
+*Close up on the coarse torus.*
+
+![Four renders of the coarse torus: as MoonRay renders it, without light culling, without shadows, and with shadow rays started further out](images/toon-edges-why.png)
+
+*Why it steps: a toon is lit to the very edge of its ramp, and MoonRay starts its shadow rays on the flat faces under the smooth shading, so near the edge they hit the next face. Turning off MoonRay's light culling and fade leaves the steps (2); turning off shadows (3), or starting shadow rays further out (4), removes them. The override starts a toon's shadow rays from the smooth surface instead, and lights it by its shading normal, so shadows stay on. The [engineers' notes](../patches/native-windows/README.md) give the changes file by file.*
+
+![A toon torus with MoonRay's own ramp and with the plugin's starting ramp](images/toon-ramp-start.png)
+
+*A new toon material is brightest facing the light: MoonRay's own ramp, dark facing the light with its brightest band near the shadow side (left), and the plugin's starting ramp, brightest facing the light and darkening towards the shadow side (right). A toon material from a MoonRay scene keeps MoonRay's ramp.*
+
+![A toon render, denoised with the override off and on](images/toon-denoise.png)
+
+*"Denoise toon materials cleanly" in MoonRay Source Overrides: the render, then denoised with it off (as noisy as rendered) and on.*
 
 ![A moving cube and a moving spot light, in MoonRay and MoonLightIPR](images/moonlightipr-motion.png)
 

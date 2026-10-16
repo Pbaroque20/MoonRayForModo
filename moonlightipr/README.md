@@ -345,9 +345,10 @@ Added to what is translated since the table was written:
   own rules (`BsdfToon.cc`), the highlight found from the lights alone and weighed as MoonRay weighs it. Brightness
   1.00, 99% of tiles within a tenth, with and without the highlight (October 13). Not drawn: a stretched highlight,
   its indirect reflections, a ramp extended into the unlit side, and cubic ramp blends (read as straight ones).
-  With MoonRay's toon terminator preference on (`MOONRAY_MODO_TOON_TERMINATOR`, as MoonRay is patched for it), the
-  toon diffuse is lit by its smooth normals on a coarse mesh and its shadow rays start from the smooth surface, so
-  its lit band has no steps along the faces; off, it is cut by the faces as MoonRay's own (October 15).
+  With "Smooth toon edges on coarse meshes" on (MoonRay Source Overrides in Preferences; `MOONRAY_MODO_TOON_TERMINATOR`,
+  as MoonRay is patched for it), the toon diffuse is lit by its smooth normals on a coarse mesh and its shadow rays
+  start from the smooth surface, so its lit band has no steps along the faces; off, it is cut by the faces as
+  MoonRay's own (October 15).
   ![A toon material, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-toon.jpg)
 - **Hair toon**: `HairToonMaterial` is its hair colour lit as a strand (as `HairDiffuseMaterial` is) under up to three
   toon highlights, each by MoonRay's own rules: a surface's toon highlight (Toon_Surface, its default) with glass's
