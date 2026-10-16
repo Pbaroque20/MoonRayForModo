@@ -34,36 +34,47 @@ Not released yet: on the MoonLightIPR branch.
 - **The preview shows MoonRay's wordmark** before anything is rendered.
 
 ![An orthographic camera item, MoonRay left and MoonLightIPR right](images/moonlightipr-camera_ortho.png)
+
 *A MoonRay orthographic camera: MoonRay (left), MoonLightIPR (right).*
 
 ![The six pixel filters on one spot of a render](images/pixel-filters.png)
+
 *Pixel filters at width 3. Top, from MoonRay's source: Box, Cubic B-spline, Quadratic B-spline. Bottom, added and MoonRay-compatible: Gaussian, Triangle, Blackman-Harris.*
 
 ![The beauty and two display filters in the preview](images/display-filters.png)
+
 *Display filters in the preview's buffer list. Left, the beauty. Middle, a colour correct filter named Grey: no saturation, one stop up. Right, a second colour correct filter that takes Grey in and multiplies it by blue.*
 
 ![A colour correct display filter's Properties](images/display-filter-form.png)
+
 *A display filter's Properties: MoonRay's own settings, and its input picked from the render's outputs and the other filters.*
 
 ![Hair toon, MoonRay left and MoonLightIPR right](images/moonlightipr-hair_toon.jpg)
+
 *MoonRay's hair toon material with three highlights, tinted red, green and blue: MoonRay (left), MoonLightIPR (right).*
 
 ![The graph editor's properties in their groups, above the MoonRay Widget](images/graph-editor-widget.png)
+
 *The graph editor's right side: a material's Diffuse group open, the others folded, and the MoonRay Widget's picture of it under MoonRay LS.*
 
 ![A coarse toon torus, stepped with the preference off and smooth with it on](images/toon-smooth-edges.png)
+
 *Smooth toon edges on coarse meshes: a 24 × 12 torus with MoonRay's toon material. Off, as MoonRay's source has it, the lit band is stepped along the faces; on, it is smooth in MoonRay and in MoonLightIPR.*
 
 ![A toon render, denoised with the preference off and on](images/toon-denoise.png)
+
 *Denoise toon materials cleanly: the render, then denoised with the preference off (as noisy as rendered) and on.*
 
 ![A moving cube and a moving spot light, in MoonRay and MoonLightIPR](images/moonlightipr-motion.png)
+
 *Motion blur: a cube moving during the shutter, then a spot light moving, in MoonRay (left) and MoonLightIPR (right). A moving light blurs its highlights and the edges of its shadows.*
 
 ![The MoonRay page of Modo's Preferences, with its MoonRay Source Overrides section](images/preferences-source-overrides.png)
+
 *The MoonRay page of Modo's Preferences, named with the MoonRay release it renders with, and its MoonRay Source Overrides section: where the plugin changes how MoonRay itself renders, each switch on by default.*
 
 ![The preview before a render](images/preview-wordmark.png)
+
 *The preview before anything is rendered.*
 
 ## New in 0.4.1
@@ -77,6 +88,7 @@ Not released yet: on the MoonLightIPR branch.
 - **MoonRay LS shows and renders the beauty alone.**
 
 ![A toon material, MoonRay left and MoonLightIPR right](images/moonlightipr-toon.jpg)
+
 *A toon material: MoonRay (left), MoonLightIPR (right).*
 
 0.4.1 needs its own runtime ZIP, as 0.4 did: install the kit and the runtime together.
@@ -108,9 +120,11 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **The MoonRay menu is regrouped**: preview, rendering to files, settings, creating, import and export, scene files.
 
 ![The view transform named at the foot of the window](images/view-at-the-foot.png)
+
 *Bottom right: the size, the sampling, and the view the picture is shown through.*
 
 ![The preview window with MoonLightIPR chosen and realtime on](images/preview-engines.png)
+
 *MoonLightIPR chosen, RT On.*
 
 ## Draft
@@ -126,9 +140,11 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **Draft and realtime are one or the other.** Choosing an engine never switches realtime on, and Draft switched on takes realtime off.
 
 ![A region marked on the draft with a dotted outline](images/region-outline.png)
+
 *A region marked on the Draft: press Render to render it.*
 
 ![The cheetah in Draft](images/draft-refined.png)
+
 *Draft, with black outside the camera's frame.*
 
 ## MoonLightIPR Playblast
@@ -155,6 +171,7 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - Not yet: compositing during a render, Cryptomatte mattes, MoonLightIPR renders.
 
 ![The compositor](images/compositor-editor.png)
+
 *The nodes to add on the left, a graph of Grade, Vignette and Sharpen, and the selected node's settings.*
 
 ## Rendering with MoonRay
@@ -167,26 +184,32 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
   - Your Bucket Order is kept.
 
 ![The noise reading at the foot of the picture during a render](images/smart-render-noise.png)
+
 *Smart Render at Fine, 18 seconds in: the noise reads 5.6% and the render will stop at 3.0%.*
 
 ![Smart Render on the picture's right-click menu](images/picture-menu-smart-render.png)
+
 *Right-click the picture: Smart Render, with Safe Denoising below it.*
 
 - **Keep Fine Detail**, in the render settings under Denoising: Off, Some (the default) or More. Hair, fur and other things about a pixel wide, which the denoiser smooths away, are let through from the render.
 - **Fur, hair and curves have a matte of their own for the denoiser**: the surface under them is denoised, and the fibres are laid back over it as rendered.
 
 ![The fur matte](images/fur-matte.png)
+
 *The fur matte. Scene provided by tester.*
 
 ![Denoised with the fur matte](images/fur-matte-result.png)
+
 *The result: the surface denoised, the fibres as rendered. Scene provided by tester.*
 
 - **Important Parts First** *(0.4 runtime)*. Tick it in the render settings under System: MoonRay looks over the whole picture first, then renders the buckets with the most detail before the plain ones, in the Bucket Order you chose. The finished picture is the same; you see what matters sooner. It works with or without Smart Render.
 
 ![Important Parts First on](images/important-first-on.png)
+
 *On: the ball is finished while the plain floor waits.*
 
 ![Important Parts First off](images/important-first-off.png)
+
 *Off, at the same moment: the ball is still rough.*
 
 - **New sampling defaults** for new scenes: Uniform at 4 x 4 pixel samples, with uniform lights. Switched to Adaptive, it starts at 16 to 4096 samples and a target error of 10.
@@ -195,9 +218,11 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **Stop keeps a whole picture.** MoonRay finishes the tiles it is working on before it stops, so nothing is left dark or blocky, and every buffer is kept, not only the beauty. It takes a few seconds *(0.4 runtime)*.
 
 ![Stopped the old way: dark and patterned tiles](images/stop-before-drain.png)
+
 *Stopped at once, as before: the tiles in progress are left dark and patterned.*
 
 ![Stopped the new way: an even picture](images/stop-after-drain.png)
+
 *Stopped the new way: MoonRay finishes those tiles first.*
 
 - **Safe Denoising shows the render as it goes**, like any other render *(0.4 runtime)*. A stop tells you how far behind the kept picture is.
@@ -205,9 +230,11 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **An idle MoonRay uses no processor**, and closes itself if Modo goes away *(0.4 runtime)*.
 
 ![A normal render stopped part way, kept and denoised](images/stop-keeps-picture.png)
+
 *Stopped after 25 seconds: kept and denoised.*
 
 ![A safe render stopped part way](images/safe-stop-last-save.png)
+
 *Stopped under Safe Denoising: the status says the picture is the last save.*
 
 ## MoonLightIPR closer to MoonRay
@@ -217,17 +244,21 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **Subsurface on small, thin and backlit shapes matches MoonRay.** Light is now looked for across the surface and through the solid as MoonRay does, and small shapes keep their light. On test scenes the share of the picture within 10% of MoonRay went from 68-75% to 91-94%.
 
 ![Backlit subsurface before](images/sss-backlit-before.png)
+
 *Lit from behind, before: MoonRay (left), MoonLightIPR (right).*
 
 ![Backlit subsurface after](images/sss-backlit-after.png)
+
 *After.*
 
 - **Random walk subsurface is a real random walk.** It used to be drawn with the default model, which came out darker and less translucent than MoonRay. It now has MoonRay's look, and is about 9% brighter than MoonRay.
 
 ![Random walk subsurface before](images/sss-random-walk-before.png)
+
 *Before: MoonRay (left), MoonLightIPR (right).*
 
 ![Random walk subsurface after](images/sss-random-walk-after.png)
+
 *After.*
 
 - **Sample Clamp** settings are followed.
@@ -243,6 +274,7 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **A procedural layer left on Solid projection renders**, laid on as Cubic. Notices says so.
 
 ![Cellular, Wood, Weave and Ripples](images/procedural-patterns.png)
+
 *Cellular, Wood, Weave and Ripples at their default settings.*
 
 - **A texture layer under the Render item shows on polygons with no material set.** MoonRay left it out.
@@ -252,6 +284,7 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **Notices says when a Fur material grows nothing**, which is usually a mesh that is hidden or set to Render: Off.
 
 ![A bump image on a subdivision surface](images/bump-on-subdivision.png)
+
 *A chequered bump image on a subdivision surface, in MoonRay.*
 
 ## Visibility
@@ -262,9 +295,11 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **Or have it follow Modo**: in System > Preferences > MoonRay, set Environment lights the scene to Follow Modo, and it lights the scene only with Global Illumination on.
 
 ![Environment lights the scene, in MoonRay's system preferences](images/environment-preference.png)
+
 *System > Preferences > MoonRay: Environment lights the scene.*
 
 ![Follow Modo with the light hidden](images/environment-follow-modo.png)
+
 *Follow Modo, Global Illumination off, the light's eye off: the backdrop shows and the ball is unlit.*
 
 - **MoonLightIPR follows per-ray visibility**: camera, indirect light, reflections, refractions and shadows.
@@ -272,9 +307,11 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **A Shader's Cast Shadows switch is followed.**
 
 ![Four cubes, two of them hidden](images/visibility-eye.png)
+
 *The second cube has its eye off and the third is Render: No. The fourth has its eye off but Render: Yes.*
 
 ![An object that only casts its shadow](images/moonlightipr-seen_shadow_only.jpg)
+
 *Shadow-only objects: MoonRay (left), MoonLightIPR (right).*
 
 ## Importing MoonRay scenes
@@ -283,6 +320,7 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **Large scenes render.** The bedroom example scene (1.5 million polygons) stopped with "Scene text exceeds the 256 MB shared-scene limit"; a scene of any size is now handed to MoonRay.
 
 ![The bedroom example scene in the preview window](images/bedroom-preview.png)
+
 *The bedroom example scene, part way through its render.*
 
 - **Imported lights are no longer far too bright.** Lights left at MoonRay's defaults came in fifty times brighter (seen on the Veach scenes in the asset library). Re-import scenes brought in before this fix.

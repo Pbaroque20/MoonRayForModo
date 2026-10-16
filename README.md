@@ -16,6 +16,7 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
 ![The MoonRay Preview window in Modo, rendering an imported MoonRay scene](docs/images/preview-window.png)
+
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
 
 ## New in 0.4.1
@@ -27,6 +28,7 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 - **MoonRay LS** shows and renders the beauty alone.
 
 ![A toon material, MoonRay left and MoonLightIPR right](docs/images/moonlightipr-toon.jpg)
+
 *A toon material: MoonRay (left), MoonLightIPR (right).*
 
 ## New in 0.4
@@ -43,6 +45,7 @@ The full list, with pictures, is in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW
 - **Draft** redraws in about a third of a second after a move, and follows the scene by itself.
 
 ![The preview window with MoonLightIPR chosen and realtime on](docs/images/preview-engines.png)
+
 *MoonLightIPR chosen, RT On.*
 
 **New tools**
@@ -52,6 +55,7 @@ The full list, with pictures, is in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW
 - **File > Open reads MoonRay scenes** (`.rdla`, `.rdlb`), of any size.
 
 ![The compositor](docs/images/compositor-editor.png)
+
 *The compositor: the beauty graded, given a vignette and sharpened.*
 
 **Closer to Modo**
@@ -64,6 +68,7 @@ The full list, with pictures, is in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW
 - **MoonLightIPR is much closer to MoonRay** on layered materials, glass, coats and subsurface.
 
 ![Stopped the new way: an even picture](docs/images/stop-after-drain.png)
+
 *Stopped part way: MoonRay finishes the tiles it is on, so nothing is left dark or blocky.*
 
 ## From 0.3.51
@@ -77,6 +82,7 @@ The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
 - **Export AOVs as Images** from the picture's right-click menu.
 
 ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png)
+
 *Draft, with a region rendered among the lines.*
 
 **Rendering with MoonRay**
@@ -86,6 +92,7 @@ The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
 - **Mesh lights** are seen glowing; MoonRay light items can be **linked**; an object can cast **no shadow onto chosen objects**.
 
 ![A MoonRay preview stopped part way, kept and denoised](docs/images/safe-denoising.png)
+
 *Stopped part way, kept and denoised, with Continue on offer.*
 
 **The MoonLightIPR preview** (echoing DreamWorks' earlier rasterizer MoonLight; it was shown as "MoonLight" in 0.3.50)
@@ -94,6 +101,7 @@ The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
 - **Rod, barn door, cookie and VDB light filters**, textures on every kind of light, and **render regions**.
 
 ![Hair, MoonRay on the left and MoonLightIPR on the right](docs/images/moonlightipr-hair_dark.jpg)
+
 *Hair in MoonRay (left) and in the MoonLightIPR preview (right).*
 
 **Materials and scenes**
@@ -104,6 +112,7 @@ The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
 - **Imported MoonRay scenes** keep their light, shadow and shadow receiver sets.
 
 ![Modo's Fur material with curls, clumps and a weight map](docs/images/fur-extras.jpg)
+
 *Modo's Fur material in MoonRay: curls, clumps with kink, and fur thinned by a weight map.*
 
 **Working with the plugin**
@@ -114,6 +123,7 @@ The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
 - **Dense hair** grows and re-renders several times faster.
 
 ![The asset library with MoonRay's example scenes](docs/images/asset-library.png)
+
 *The asset library, showing MoonRay's example scenes.*
 
 ## From 0.3.50
@@ -134,14 +144,17 @@ The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
 ### The graph editor
 
 ![The material graph editor with a MoonRay material](docs/images/graph-editor.png)
+
 *A MoonRay material in the graph editor: nodes to add on the left, the graph in the middle, and a control for every property of the selected node on the right. Edits here, in the material's form and in the Shader Tree show in each other, and IPR follows them.*
 
 ![The graph editor with an imported MaterialX material](docs/images/graph-editor-materialx.png)
+
 *An imported MaterialX car paint. With no node selected the panel shows the material's own controls: the colours, numbers and images its file names.*
 
 ### Curves as tubes
 
 ![Curves rendered as tubes, in MoonRay and in MoonLightIPR](docs/images/curves-tubes.jpg)
+
 *A mesh's curves, splines and line polygons rendered with a width at the root and at the tip: MoonRay on the left, MoonLightIPR on the right. The gold strands taper to a point; the red ones keep their width.*
 
 ### Imported MoonRay scenes, before and after
@@ -158,22 +171,27 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 ### Imported MaterialX materials
 
 ![A wood from a MaterialX library, in MoonRay and in MoonLightIPR](docs/images/moonlightipr-materialx-TH_Wood_Table.jpg)
+
 *TH Wood Table from [AMD's GPUOpen MaterialX Library](https://matlib.gpuopen.com/main/materials/all), imported from its `.mtlx` file: MoonRay on the left, MoonLightIPR on the right.*
 
 ![Car paint flakes close up, in MoonRay and in MoonLightIPR](docs/images/materialx-flakes.jpg)
+
 *The flakes of the library's Car Paint, close up: MoonRay on the left, MoonLightIPR on the right. The flakes are in the reflection, driven by the file's own flake textures.*
 
 ![The car paint in the preview window with each engine](docs/images/materialx-flakes-preview.png)
+
 *The same material at a normal viewing distance in the preview window, with MoonRay and then MoonLightIPR chosen. MoonLightIPR's denoiser softens the flakes at this distance until the picture has gathered more samples.*
 
 ### View transforms
 
 ![One render shown as sRGB, ACES and highlight compression](docs/images/view-transforms.jpg)
+
 *One linear render shown three ways: plain sRGB, ACES (the default), and highlight compression + sRGB. Modern Hall by NewSee2l035, CC BY.*
 
 ### MoonLightIPR beside MoonRay
 
 ![Lights that are not normalized, in MoonRay and in MoonLightIPR](docs/images/moonlightipr-entity_unnormalized.jpg)
+
 *MoonRay on the left, MoonLightIPR on the right: a rect, a disk and a sphere light. [moonlightipr/README.md](moonlightipr/README.md) has more pairs and the measured differences.*
 
 ## Currently implemented
