@@ -42,10 +42,12 @@ class ToonTerminator(unittest.TestCase):
                 self.assertTrue(native.toon_albedo())
         self.assertIn('cmd moonray.pref.toonAlbedo ?', (KIT / 'preferences.cfg').read_text(encoding='utf-8'))
 
-    def test_overrides_in_their_own_section_named_with_moonray_version(self):
+    def test_overrides_in_their_own_section_and_the_page_named_with_moonray_version(self):
         from moonray_modo import MOONRAY_RELEASE
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
-        self.assertIn('<atom type="Label">MoonRay Source Overrides (%s)</atom>' % MOONRAY_RELEASE, page)
+        # The MoonRay page is named with the release it renders with; its overrides section is not.
+        self.assertIn('<hash type="T" key="moonray">MoonRay (%s)</hash>' % MOONRAY_RELEASE, page)
+        self.assertIn('<atom type="Label">MoonRay Source Overrides</atom>', page)
         section = page[page.index('<hash type="Sheet" key="MoonRaySourceOverrides:sheet">'):]
         section = section[:section.index('</hash>')]
         for command in ('toonTerminator', 'toonAlbedo', 'lightMotion'):
