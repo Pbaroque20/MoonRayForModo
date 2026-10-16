@@ -1095,6 +1095,15 @@ ML_INLINE float3 clampSample(float3 contribution, bool scattered) {
 
 // ---- Programs ----------------------------------------------------------------------------------
 
+// Where a shadow ray starts. A toon lit by its smooth normals starts from the smooth surface, and is moved off it along
+// its smooth normal, towards the light: moved off its face towards the side the ray leaves from, as other surfaces are,
+// it would start below the face wherever the light is behind the face and the lift is less than that, near a row of
+// corners, and the faces beside it would shadow it in a thin line.
+ML_INLINE float3 shadowFrom(const Surface& surface, float3 p, float3 lift, float3 ng, float3 ns, float3 direction) {
+    if (!surface.smoothToon) return offsetOrigin(p, ng, direction);
+    return offsetOrigin(shadowStart(p, lift, ng, ns, direction), ns, direction);
+}
+
 // Next event estimation at one surface point: the environment, the distant lights, then the
 // local lights. weight is the path's weight on arriving at the surface.
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
@@ -1111,7 +1120,7 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
             const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
             const float3 found = litBy(e, pdf, lightPdf);
             if (maxComponent(found) > 0.0f)
-                radiance += clampSample(weight * found * envRadiance(toLight) * shadow(offsetOrigin(shadowStart(p, lift, ng, frame.n, toLight), ng, toLight), toLight, seed), lit);
+                radiance += clampSample(weight * found * envRadiance(toLight) * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed), lit);
         }
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
@@ -1122,7 +1131,7 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         const float3 found = litBy(e, pdf, distantPdf(light, toSun));
         if (maxComponent(found) > 0.0f)
-            radiance += clampSample(weight * found * distantRadiance(light, toSun) * shadow(offsetOrigin(shadowStart(p, lift, ng, frame.n, toSun), ng, toSun), toSun, seed), lit);
+            radiance += clampSample(weight * found * distantRadiance(light, toSun) * shadow(shadowFrom(surface, p, lift, ng, frame.n, toSun), toSun, seed), lit);
     }
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
@@ -1136,7 +1145,7 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         const float3 found = litBy(e, pdf, lampPdf);
         if (maxComponent(found) > 0.0f)
-            radiance += clampSample(weight * found * emitted * shadow(offsetOrigin(shadowStart(p, lift, ng, frame.n, toLamp), ng, toLamp), toLamp, seed, distance * 0.999f), lit);
+            radiance += clampSample(weight * found * emitted * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLamp), toLamp, seed, distance * 0.999f), lit);
     }
     return radiance;
 }
