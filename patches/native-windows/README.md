@@ -238,6 +238,6 @@ so one entry alone adds the coverage. Off, MoonRay's read then clear.
 ### How it was checked
 
 Vector renders of the fog Cryptomatte scene, counting pixels whose coverage goes over 1: at 480 x 270 and 16 samples,
-2 of 16 renders without this switch had one (one with fog in Cryptomatte on, one with it off); at 32 samples, 1 of
-31 off and none of 31 on. A rare race is not proven gone by this, but the exchange leaves no
+2 of 16 renders without this switch had one (one with fog in Cryptomatte on, one with it off); at 32 samples, 2 of
+54 off and none of 54 on. A rare race is not proven gone by this, but the exchange leaves no
 window for it.
