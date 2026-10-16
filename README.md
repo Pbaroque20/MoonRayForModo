@@ -229,7 +229,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
-| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders; not while the preview follows edits |
+| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews. Coming in 0.4.2: on by default in MoonLightIPR, also while it follows edits, and moving lights |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon brightest facing the light: coming in 0.4.2 |

@@ -35,6 +35,8 @@ def emit(scene,meshes,environment,lines):
         if kind not in LIGHT_KINDS:raise ValueError('Unsupported light: '+kind)
         name='/modo/light/'+identity;ref='%s(%s)'%(kind,string(name));refs[identity]=[ref]
         attrs={'node_xform':node_matrix(light),'color':vector(working_color(light['color']),'Rgb'),'intensity':number(light['intensity'])}
+        # MoonRay moves a light during the shutter only when the light says so.
+        if light.get('matrix_close') and light['matrix_close']!=light.get('matrix'):attrs['mb']='true'
         label=settings.get('label','')
         if label:
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Light group labels must use letters, numbers and underscores')

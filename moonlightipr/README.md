@@ -74,7 +74,7 @@ build to an installed kit during development.
 - `render.py` and `panel.py`: an engine popup in the preview window's toolbar, saved as
   a user preference. With MoonLightIPR selected, preview requests go to the session and
   its frames reach the preview through the normal buffer and display path, at the
-  preview size and with its own pixel samples (Options > Preferences). Its warnings
+  preview size and with its own pixel samples (Options > Preview Preferences). Its warnings
   are added to the window's Notices. Output renders always use MoonRay. The preview
   material choices in the Options menu are honoured.
 
@@ -266,7 +266,7 @@ runtime, and falls back to the copy in the kit's own runtime:
 For development, the `MOONRAY_MODO_MOONLIGHTIPR` environment variable names a staged
 folder instead. Then choose **MoonLightIPR** in the preview window's engine popup and press
 RT Off; it follows the scene until the button is pressed again. Motion blur in
-MoonLightIPR renders is a preference (Options > Preferences).
+MoonLightIPR renders is a preference (Options > Preview Preferences).
 
 Edits cost what the design intends: a camera or material change only restarts
 accumulation, a transform change rebuilds the instance layer, and only a new mesh
@@ -306,7 +306,7 @@ running session leaves out the data of meshes it already holds.
 | Mesh lights (Object controls) | The object's triangles emit from both faces, chosen by area, normalized by the total area; the object is seen shining, as MoonRay shows a light that is visible to the camera, unless that is switched off. Up to 50,000 triangles, not instanced |
 | A surface's visibility to the camera, indirect light, reflections, refractions and shadows | Each instance carries a mask and each ray asks for its kind. Light a scattered ray comes upon is stopped by what casts shadows, as in MoonRay, whatever the ray itself goes on to meet. Checked on four scenes (hidden from the camera; no shadow; camera only; shadow only): 96 to 100% of the picture within 10% of MoonRay. Visibility to subsurface light is not told apart. |
 | Depth of field, f-stop, focus distance, iris blades and rotation | MoonRay's lens: radius from the focal length and f-stop, a disc or a polygon |
-| A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. The panel captures such a snapshot for Render Preview when **System > Motion blur in MoonLightIPR previews** is on; IPR updates stay sharp |
+| A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. Lights move too: each light's pose when the shutter closes is blended in (mesh lights stay still). The panel captures such a snapshot when **Motion blur in MoonLightIPR renders** is on (Options > Preview Preferences; on by default): for Render Preview, and while the scene is followed, once an edit is let go (a drag is followed sharp) |
 | Working colour space | The same conversion `rdla.py` applies to colours |
 | MoonRay items (`entities`, from **MoonRay > Add MoonRay Item**) | `dwEnvLight` becomes a constant or image environment, and can replace Modo's own; distant, sphere, rect, disk, spot, cylinder and portal lights become the lights above; a rect light's texture is shown across it; `dwBoxGeometry` and `dwSphereGeometry` become meshes; a `dwMeshLight` makes the Modo mesh it names emit. Intensity, decay, colour ramp, rod, barn door, cookie and VDB light filters are applied (also those set in Lighting controls), and textures on every kind of light. Combine filters and what else has no counterpart are named in the notices. Compared with MoonRay: an environment, a sphere light, a box and a ball 1.014 (96% of tiles within 10%); decay, tint and ramp filters 1.009 (97%); a textured rect light 1.014 (93%); a mesh light item 1.014 (85%) |
 
@@ -497,7 +497,7 @@ recapture, which waits for release. Why it was classified so was not established
 
 - Volumes with ramps, and a VDB volume's motion from a velocity grid.
 - The layer features listed above as reported; combined light filters.
-- Motion blur during IPR updates, moving lights, and a comparison of motion blur with MoonRay.
+- Moving mesh lights and light filters during the shutter, and a measured comparison of motion blur with MoonRay (moving objects, instances and lights were compared by eye on October 15).
 - A test of OCIO colour spaces, and of UDIM against a MoonRay that loads the tiles.
 - Comparison against MoonRay on scenes captured from Modo. The comparisons above use
   scenes built by `tools/compare_moonlightipr.py`.

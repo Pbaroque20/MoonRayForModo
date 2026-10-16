@@ -266,7 +266,10 @@ struct Renderer::Impl {
 
     LaunchParams params = {};
     Camera camera, cameraClose;
-    bool cameraMoves = false, instancesMove = false, meshesMove = false;
+    bool cameraMoves = false, instancesMove = false, meshesMove = false, lightsMove = false;
+    // The light tables as the shutter opens and as it closes, from which each moment's are blended.
+    std::vector<DeviceDistantLight> distantOpen, distantClose;
+    std::vector<DeviceLight> lightsOpen, lightsClose;
     uint32_t samples = 0;
     bool validated = false;
 
@@ -538,6 +541,34 @@ struct Renderer::Impl {
             }
         }
         if (instancesMove || meshesMove) buildInstances(time);
+        if (lightsMove) {
+            const auto blend = [time](const float* a, const float* b, float* out, bool unitLength) {
+                for (int k = 0; k < 3; ++k) out[k] = a[k] + (b[k] - a[k]) * time;
+                if (unitLength) scaleTo(out, 1.0f);
+            };
+            std::vector<DeviceDistantLight> distant = distantOpen;
+            for (size_t i = 0; i < distant.size(); ++i) {
+                blend(distantOpen[i].direction, distantClose[i].direction, distant[i].direction, true);
+                blend(distantOpen[i].u, distantClose[i].u, distant[i].u, distant[i].texture != 0);
+                blend(distantOpen[i].v, distantClose[i].v, distant[i].v, distant[i].texture != 0);
+            }
+            std::vector<DeviceLight> local = lightsOpen;
+            for (size_t i = 0; i < local.size(); ++i) {
+                if (local[i].type == LIGHT_MESH) continue;
+                blend(lightsOpen[i].position, lightsClose[i].position, local[i].position, false);
+                blend(lightsOpen[i].u, lightsClose[i].u, local[i].u, false);
+                blend(lightsOpen[i].v, lightsClose[i].v, local[i].v, false);
+                blend(lightsOpen[i].normal, lightsClose[i].normal, local[i].normal, true);
+            }
+            if (!distant.empty()) {
+                distantLights.upload(distant);
+                params.distantLights = distantLights.ptr;
+            }
+            if (!local.empty()) {
+                lights.upload(local);
+                params.lights = lights.ptr;
+            }
+        }
     }
 
     void updateCamera() {
@@ -1215,6 +1246,8 @@ void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
     impl->distantLights.upload(table);
     impl->params.distantLights = impl->distantLights.ptr;
     impl->params.distantLightCount = unsigned(count);
+    impl->distantOpen = table;
+    impl->lightsMove = false;
     impl->restart();
 }
 
@@ -1359,11 +1392,52 @@ void Renderer::setLights(const Light* lights, size_t count) {
     impl->lights.upload(table);
     impl->params.lights = impl->lights.ptr;
     impl->params.lightCount = unsigned(count);
+    impl->lightsOpen = table;
+    impl->lightsMove = false;
     impl->lightCount = count;
     impl->lightFilters.upload(filters);
     impl->params.lightFilters = impl->lightFilters.ptr;
     impl->lightTextures = std::move(used);
     impl->lightGrids = std::move(usedGrids);
+    impl->restart();
+}
+
+void Renderer::setLightMotion(const DistantLight* distantClose, size_t distantCount, const Light* close, size_t count) {
+    impl->lightsMove = false;
+    impl->distantClose = impl->distantOpen;
+    impl->lightsClose = impl->lightsOpen;
+    if (distantCount && distantCount != impl->distantOpen.size()) throw std::runtime_error("MoonLightIPR closing distant lights do not match the lights");
+    if (count && count != impl->lightsOpen.size()) throw std::runtime_error("MoonLightIPR closing lights do not match the lights");
+    const auto differ = [](const float* a, const float* b) { return a[0] != b[0] || a[1] != b[1] || a[2] != b[2]; };
+    for (size_t i = 0; i < distantCount; ++i) {
+        DeviceDistantLight& out = impl->distantClose[i];
+        std::copy(distantClose[i].direction, distantClose[i].direction + 3, out.direction);
+        scaleTo(out.direction, 1.0f);
+        if (out.texture) {
+            std::copy(distantClose[i].axisX, distantClose[i].axisX + 3, out.u);
+            std::copy(distantClose[i].axisY, distantClose[i].axisY + 3, out.v);
+            scaleTo(out.u, 1.0f);
+            scaleTo(out.v, 1.0f);
+        }
+        if (differ(out.direction, impl->distantOpen[i].direction)) impl->lightsMove = true;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        const Light& light = close[i];
+        DeviceLight& out = impl->lightsClose[i];
+        if (out.type == LIGHT_MESH) continue;
+        // As setLights places it: a rect's and a portal's axes are its half extents, the others' unit.
+        const bool rect = light.kind == Light::Rect || light.kind == Light::Portal;
+        std::copy(light.position, light.position + 3, out.position);
+        std::copy(light.axisX, light.axisX + 3, out.u);
+        std::copy(light.axisY, light.axisY + 3, out.v);
+        std::copy(light.direction, light.direction + 3, out.normal);
+        scaleTo(out.u, rect ? 0.5f * light.width : 1.0f);
+        scaleTo(out.v, rect ? 0.5f * light.height : 1.0f);
+        scaleTo(out.normal, 1.0f);
+        const DeviceLight& open = impl->lightsOpen[i];
+        if (differ(out.position, open.position) || differ(out.u, open.u) || differ(out.v, open.v) || differ(out.normal, open.normal))
+            impl->lightsMove = true;
+    }
     impl->restart();
 }
 
@@ -1419,7 +1493,7 @@ void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t g
 
 void Renderer::render() {
     impl->validate();
-    if (impl->cameraMoves || impl->instancesMove || impl->meshesMove) {
+    if (impl->cameraMoves || impl->instancesMove || impl->meshesMove || impl->lightsMove) {
         // One moment per sample: the bits of the sample index reversed, which spreads any number
         // of samples evenly over the shutter.
         uint32_t bits = impl->samples, reversed = 0;

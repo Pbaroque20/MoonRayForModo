@@ -165,13 +165,14 @@ std::vector<float> smoothNormals(const std::vector<float>& positions, const std:
 SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
-    // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are. A plugin and a session of different versions say so plainly, in
+    // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
+    // "F" since the lights' poses at the shutter's close are. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x45534c4d)
+    if (mark != 0x46534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'E'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'F'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -582,6 +583,31 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             instance.moves = !std::equal(instance.transform, instance.transform + 12, instance.closeTransform);
         }
     }
+    // In a scene with motion, where each light is when the shutter closes; everything else about it is as it opens.
+    std::vector<DistantLight> closingDistant;
+    std::vector<Light> closingLocal;
+    if (sceneFlags & SCENE_MOTION) {
+        const uint32_t distantCount = in.value<uint32_t>();
+        if (distantCount != lights.size()) throw std::runtime_error("MoonLightIPR scene's closing distant lights do not match its lights");
+        closingDistant = lights;
+        for (DistantLight& light : closingDistant) {
+            in.floats(light.direction, 3);
+            in.floats(light.axisX, 3);
+            in.floats(light.axisY, 3);
+        }
+        const uint32_t localCount = in.value<uint32_t>();
+        if (localCount != localLights.size()) throw std::runtime_error("MoonLightIPR scene's closing lights do not match its lights");
+        closingLocal = localLights;
+        for (Light& light : closingLocal) {
+            float pose[12];
+            in.floats(pose, 12);
+            if (light.kind == Light::Mesh) continue;
+            std::copy(pose, pose + 3, light.position);
+            std::copy(pose + 3, pose + 6, light.axisX);
+            std::copy(pose + 6, pose + 9, light.axisY);
+            std::copy(pose + 9, pose + 12, light.direction);
+        }
+    }
     if (!in.finished()) throw std::runtime_error("MoonLightIPR scene has trailing data");
 
     renderer.setMaterials(materials.data(), materials.size(), layers.data(), layers.size(), tiles.data(), tiles.size());
@@ -602,6 +628,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // Lights before the instances that may be the surface of one.
     renderer.setDistantLights(lights.data(), lights.size());
     renderer.setLights(localLights.data(), localLights.size());
+    renderer.setLightMotion(closingDistant.data(), closingDistant.size(), closingLocal.data(), closingLocal.size());
     renderer.setInstances(instances.data(), instances.size());
     for (auto entry = meshes.begin(); entry != meshes.end();) {
         if (generation - entry->second.lastUsed >= MESH_RETENTION) {

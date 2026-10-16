@@ -19,7 +19,7 @@ def scene():
 class PackTests(unittest.TestCase):
     def test_known_meshes_are_sent_once(self):
         first,keys,warnings=moonlightipr_scene.pack(scene(),320,180,.2)
-        self.assertEqual(first[:4],b'MLSE')
+        self.assertEqual(first[:4],b'MLSF')
         self.assertEqual(struct.unpack_from('<2I',first,4),(320,180))
         self.assertEqual(len(keys),1)
         self.assertFalse(any('CylinderLight' in w for w in warnings))
@@ -72,8 +72,10 @@ class PackTests(unittest.TestCase):
         moving['camera']['matrix_close']=[1,0,0,0,0,1,0,0,0,0,1,0,.5,1,5,1]
         moving['meshes'][0]['vertices_close']=[[x,y+.2,z] for x,y,z in moving['meshes'][0]['vertices']]
         blurred,keys,_=moonlightipr_scene.pack(moving,320,180)
-        # The closing camera, two closing transforms and four closing vertices.
-        self.assertEqual(len(blurred)-len(plain),40+2*48+48)
+        # The closing camera, two closing transforms and four closing vertices; then each light's closing pose, after a
+        # count of each kind: 9 floats a distant light, 12 a local one.
+        lights=moonlightipr_scene.lights(moving,[])
+        self.assertEqual(len(blurred)-len(plain),40+2*48+48+8+36*len(lights[0])+48*len(lights[1]))
         self.assertNotEqual(keys,moonlightipr_scene.pack(scene(),320,180)[1])
         lit=scene();lit['meshes'][0].pop('instances');lit['meshes'][0].pop('instance_ids')
         lit['production']={'objects':{'quad':{'mesh_light':True,'light_intensity':5.0}}}

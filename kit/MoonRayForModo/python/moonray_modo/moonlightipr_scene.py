@@ -261,8 +261,11 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
     return struct.pack('<I', len(parts)) + b''.join(parts)
 
 
-def lights(scene, warnings, environment=0.0, compiler=None):
-    """Return (distant, local) light records, with MoonRay's default normalization applied."""
+def lights(scene, warnings, environment=0.0, compiler=None, closing=None):
+    """Return (distant, local) light records, with MoonRay's default normalization applied.
+
+    closing, given a dict, is given each light's pose when the shutter closes, in the order of the records: under
+    'distant' its direction and axes (9 floats), under 'local' its position, axes and direction (12)."""
     import subprocess
     from .working_space import color as working_color
     controls = scene.get('production', {}).get('lights', {})
@@ -274,6 +277,7 @@ def lights(scene, warnings, environment=0.0, compiler=None):
             warnings.append('MoonLightIPR does not show %s %s yet.' % (kind, light.get('name', '')))
             continue
         matrix = finite(light.get('matrix', IDENTITY))
+        ending = finite(light.get('matrix_close') or matrix)
         color = [c * float(light['intensity']) for c in working_color(finite(light['color']))]
         # Filters from Lighting controls, and those a MoonRay light item names.
         filters = control_filters(settings, light, scene, warnings) + list(light.get('filters', []))
@@ -303,6 +307,8 @@ def lights(scene, warnings, environment=0.0, compiler=None):
             shown = working_color(finite(seen['radiance'])) + [float(seen['angle'])] if seen else [c * scale for c in color] + [angle]
             distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, 1 if seen or light.get('camera_visible') else 0]
                            + unit(matrix[0:3]) + unit(matrix[4:7]) + [texture] + shown)
+            if closing is not None:
+                closing.setdefault('distant', []).append(unit(ending[8:11]) + unit(ending[0:3]) + unit(ending[4:7]))
             continue
         # Sizes follow the node's scale; the flat lights emit along local -Z.
         scale_x, scale_y = math.sqrt(sum(v * v for v in matrix[0:3])), math.sqrt(sum(v * v for v in matrix[4:7]))
@@ -325,6 +331,8 @@ def lights(scene, warnings, environment=0.0, compiler=None):
         # Normalized with MoonRay's default apply_scene_scale: color * intensity is flux / pi at scene scale 1.
         # A portal is not normalized; its colour and intensity multiply what shows through it.
         normalization = 1.0 if kind == 'PortalLight' else 1 / (math.pi * area)
+        if closing is not None:
+            closing.setdefault('local', []).append(ending[12:15] + unit(ending[0:3]) + unit(ending[4:7]) + [-v for v in unit(ending[8:11])])
         local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
             + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture)
@@ -628,7 +636,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSE', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSF', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
@@ -642,8 +650,6 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))
-        if any(light.get('matrix_close', light.get('matrix')) != light.get('matrix') for light in scene.get('lights', [])):
-            warnings.append('MoonLightIPR holds lights still during the shutter.')
 
     materials = dict(scene.get('materials', {}))
     materials.setdefault('', {'color': [.5, .5, .5], 'roughness': .4, 'metallic': 0})
@@ -660,7 +666,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     compiler = Compiler(runtime)
     records = [compiler.material(materials[tag], tag or 'base material') for tag in sorted(materials)]
     # Lights now, since a filter's ramp or a light's picture adds to the images.
-    distant, local = lights(scene, warnings, environment, compiler)
+    # Where each light is when the shutter closes: lights move as the camera and the meshes do.
+    closing = {'distant': [], 'local': []}
+    distant, local = lights(scene, warnings, environment, compiler, closing)
     # Images first: the session reads them before the layers and lights that name them.
     parts += [struct.pack('<I', len(compiler.textures))] + list(compiler.textures)
     parts += [struct.pack('<I', len(compiler.grids))] + list(compiler.grids)
@@ -698,6 +706,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             if record:
                 light = len(local)
                 local.append(record)
+                # A mesh light is held where it is during the shutter.
+                closing['local'].append([0.0] * 12)
         opening = mesh['instances'] if 'instances' in mesh else [mesh.get('matrix', IDENTITY)]
         ending = (mesh.get('instances_close') or opening) if 'instances' in mesh else [mesh.get('matrix_close', opening[0])]
         if len(ending) != len(opening):
@@ -742,6 +752,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     parts += [struct.pack('<7fI6fi4f', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local
     parts += [struct.pack('<I', len(meshes))] + meshes + [struct.pack('<I', len(instances))] + instances
+    if motion:
+        # Form 'F': the lights' poses when the shutter closes, as many as there are lights of each kind.
+        parts += [struct.pack('<I', len(closing['distant']))] + [struct.pack('<9f', *pose) for pose in closing['distant']]
+        parts += [struct.pack('<I', len(closing['local']))] + [struct.pack('<12f', *pose) for pose in closing['local']]
     # Drop cached triangulations of meshes that have left the scene.
     for identity in [k for k, v in _packed.items() if v[0] not in used]:
         del _packed[identity]

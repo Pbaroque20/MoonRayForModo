@@ -22,6 +22,19 @@ def instances(mesh):
     return dict(zip(identities,transforms))
 
 
+def moves(scene):
+    """Whether anything in a snapshot captured with motion blur moves during the shutter: the camera, a mesh, its
+    instances or points, a light, a MoonRay item, curves or points."""
+    def differs(node, key, closing):
+        return closing in node and node[closing] != node.get(key)
+    if differs(scene.get('camera', {}), 'matrix', 'matrix_close') or differs(scene.get('camera', {}), 'focal_mm', 'focal_mm_close'):
+        return True
+    for node in list(scene.get('meshes', [])) + list(scene.get('lights', [])) + list(scene.get('entities', [])) + list(scene.get('extra_geometry', [])):
+        if differs(node, 'matrix', 'matrix_close') or differs(node, 'vertices', 'vertices_close') or differs(node, 'instances', 'instances_close'):
+            return True
+    return False
+
+
 def apply_motion(scene, start, end, endpoints):
     if len(endpoints)!=2 or not all(math.isfinite(float(value)) for value in endpoints) or endpoints[0]>=endpoints[1]:
         raise ValueError('Motion blur requires two finite, increasing shutter endpoints')
@@ -99,6 +112,14 @@ def apply_motion(scene, start, end, endpoints):
                 outputs.append(node)
         if category=='meshes': expanded=outputs
         else: lights=outputs
+    # MoonRay's own items (its lights, cameras and shapes) where they stand when the shutter opens and closes.
+    placed_at={key:{entity.get('identity'):entity.get('matrix') for entity in sample.get('entities',[])} for key,sample in (('open',start),('close',end))}
+    moved=[]
+    for entity in scene.get('entities',[]):
+        opening=placed_at['open'].get(entity.get('identity'));closing=placed_at['close'].get(entity.get('identity'))
+        if opening and closing and opening!=closing:entity=dict(entity,matrix=opening,matrix_close=closing)
+        moved.append(entity)
+    if scene.get('entities'):scene['entities']=moved
     extras=[]
     center=indexed(scene.get('extra_geometry',[]),'curves/points');first=indexed(start.get('extra_geometry',[]),'curves/points');last=indexed(end.get('extra_geometry',[]),'curves/points')
     affected=set(center)^set(first) | set(center)^set(last)

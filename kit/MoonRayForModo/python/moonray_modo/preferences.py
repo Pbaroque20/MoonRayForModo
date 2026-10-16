@@ -11,7 +11,7 @@ KEYS = {
     # Illumination on in the Render item, as Modo's own renderer has it ('modo').
     'environment_lighting': ('moonray', str),
     'idle_release_minutes': (5, int),
-    'persistent_preview': (True, bool), 'preview_motion': (False, bool),
+    'persistent_preview': (True, bool), 'preview_motion': (True, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a

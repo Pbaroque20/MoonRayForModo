@@ -271,7 +271,7 @@ class Panel(Tools, QtWidgets.QWidget):
             action=QtWidgets.QAction(label,self);action.setCheckable(True);target.addAction(action)
             return action
         menu.addAction('Render Settings',self.open_settings)
-        menu.addAction('Preferences...',self.edit_preferences)
+        menu.addAction('Preview Preferences...',self.edit_preferences)
         menu.addSeparator()
         self.preview_lock=checkable(menu,'Lock Preview')
         self.preview_lock.setToolTip('Hold automatic updates; the current render continues.')
@@ -439,7 +439,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
 
     def _preferences_changed(self):
-        self.status.setText('Preferences saved.')
+        self.status.setText('Preview preferences saved.')
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
 
@@ -1428,7 +1428,20 @@ class Panel(Tools, QtWidgets.QWidget):
                 # middle of a tool waits for the release.
                 self.changes.full=self.changes.full or full;self.changes.items.update(items)
                 self.release_timer.start();return
-            scene = self._capture(reuse,items if reuse=='transforms' else None)
+            # MoonLightIPR with motion blur: once an edit is let go, the scene is read at both ends of the shutter as well
+            # (three readings in all). Only a material edit to a scene last found to hold nothing that moves skips that:
+            # any other edit may have keyed something to move. While dragging, it is followed sharp, as fast as it can be.
+            blurred=False
+            if not held and self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
+                still=(time,modo.Scene().renderItem.id,repr(sorted(settings.items(),key=lambda entry:entry[0])))
+                if full or changed or reuse!='materials' or getattr(self,'_live_still',None)!=still:
+                    from .motion import moves
+                    scene=self._capture_preview();blurred=True
+                    # The meshes are read whole again on the next edit: a reading at the shutter's ends leaves none to reuse.
+                    self._geometry_cache=None
+                    self._live_still=None if moves(scene) else still
+            if not blurred:
+                scene = self._capture(reuse,items if reuse=='transforms' else None)
             if held:
                 # Whatever was dragged, if it changed what lights the scene from all around (an environment, one of
                 # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
