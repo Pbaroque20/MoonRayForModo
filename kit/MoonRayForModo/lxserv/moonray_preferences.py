@@ -143,6 +143,7 @@ lx.bless(choice('environment_lighting',(('moonray','MoonRay: always'),('modo','F
 lx.bless(switch('ipr'),'moonray.pref.live')
 lx.bless(switch('render_on_open'),'moonray.pref.renderOnOpen')
 lx.bless(switch('notices_open'),'moonray.pref.noticesOpen')
+lx.bless(switch('toon_terminator'),'moonray.pref.toonTerminator')
 lx.bless(choice('assign/shader',shaders),'moonray.pref.assignType')
 lx.bless(switch('assign/smooth'),'moonray.pref.assignSmooth')
 lx.bless(number('assign/angle',0.0,180.0),'moonray.pref.assignAngle')

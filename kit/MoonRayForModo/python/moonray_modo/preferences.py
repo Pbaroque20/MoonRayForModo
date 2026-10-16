@@ -17,6 +17,9 @@ KEYS = {
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
     # preview starts as its window opens, how bright a new MoonRay light is, and whether notices open by themselves.
     'assign/shader': ('DwaBaseMaterial', str), 'assign/smooth': (True, bool), 'assign/angle': (40.0, float),
+    # Toon materials lit by their smooth normals on coarse meshes, without steps along the faces (MoonRay reads it
+    # as it starts; native.toon_terminator).
+    'toon_terminator': (True, bool),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (640, int), 'ipr/samples': (16, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.

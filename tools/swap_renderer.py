@@ -2,7 +2,10 @@
 into a runtime
 folder, keeping what it replaces under backups/, and bring the folder's records of their hashes up to date.
 
-swap_renderer.py <runtime folder> [...]"""
+swap_renderer.py [--files a,b,...] <runtime folder> [...]
+
+--files names the built files to put in, in place of those three (the toon terminator, for one, rebuilt the shading,
+geometry and application libraries and left libscene_rdl2.dll alone)."""
 import hashlib
 import json
 import pathlib
@@ -20,9 +23,14 @@ def digest(path):
 
 
 def main():
+    global NAMES
+    arguments = sys.argv[1:]
+    if arguments[:1] == ['--files']:
+        NAMES = tuple(arguments[1].split(','))
+        arguments = arguments[2:]
     stamp = time.strftime('%Y%m%d-%H%M%S')
     executable = (built / 'moonray.exe').read_bytes()
-    for target in (pathlib.Path(argument).resolve() for argument in sys.argv[1:]):
+    for target in (pathlib.Path(argument).resolve() for argument in arguments):
         if not (target / 'moonray.exe').is_file():
             raise SystemExit('Not a runtime: %s' % target)
         backup = root / 'backups' / ('renderer-before-' + stamp) / (target.parent.name + '-' + target.name)
