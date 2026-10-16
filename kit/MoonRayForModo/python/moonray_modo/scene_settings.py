@@ -108,6 +108,7 @@ GROUPS = [
         render_field('shadow_terminator_fix', 'Shadow Terminator', 'Softens the faceted shadow edge on coarse meshes'),
         render_field('max_volume_depth', 'Volume', 'How many times light bounces inside fog, smoke and clouds. 1 is quick; more brightens thick clouds'),
         render_field('max_hair_depth', 'Hair', 'Bounces from hair to hair. More brightens light hair'),
+        render_field('disable_optimized_hair_sampling', 'Sample Hair Lobes Separately', 'Each part of a hair material (its highlights, its colour and what passes through) is sampled on its own, so that light path expressions can pick them out one by one. Slower'),
         render_field('max_presence_depth', 'Presence', 'How many see-through surfaces a ray passes before it stops'),
         render_field('max_subsurface_per_path', 'Subsurface', 'How many times one path may go beneath a surface'),
     ]),
@@ -133,6 +134,8 @@ GROUPS = [
         render_field('transparency_threshold', 'Transparency Threshold', 'A ray stops once surfaces have hidden this much of what is behind them'),
         render_field('presence_threshold', 'Presence Threshold', 'A ray through see-through surfaces stops once they have hidden this much'),
         render_field('enable_presence_shadows', 'Presence Shadows', 'See-through surfaces cast lighter shadows. Slower'),
+        render_field('presence_quality', 'Presence Quality', 'How finely light through layered see-through surfaces is followed: 1 follows every layer (cleanest), lower lets chance decide past a point (faster, noisier)'),
+        render_field('cryptomatte_multi_presence', 'Cryptomatte Multi-Presence', 'With a Cryptomatte output: each see-through surface a ray passes is a matte sample of its own, so objects behind see-through ones keep their mattes'),
         render_field('lock_frame_noise', 'Same Noise Every Frame', 'The noise pattern does not change from frame to frame'),
     ]),
     # MoonRay's switches over the whole render, as it has them.
