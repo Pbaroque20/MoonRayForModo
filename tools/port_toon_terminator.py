@@ -18,7 +18,13 @@ Only when MoonRay is started with MOONRAY_MODO_TOON_TERMINATOR=1 (the plugin's p
    by the time it is 0.1 (in cosine) above it. Other materials record nothing, and their shadow rays are MoonRay's.
    Instanced copies are left as MoonRay has them.
 
-Without the variable, MoonRay renders exactly as its source does."""
+Without the variable, MoonRay renders exactly as its source does.
+
+And, only with MOONRAY_MODO_TOON_ALBEDO=1 (a preference of its own): the "albedo" material AOV, which the denoisers take
+as their albedo guide, gives a toon diffuse lobe its own albedo. MoonRay's averages f / pdf over the lobe's samples,
+which is the albedo for a lobe with the cosine in f, but the toon lobe is flat (no cosine) and sampled by the cosine,
+so each sample is albedo / (2 cos) and the AOV is full of fireflies far above 1: the denoiser takes them for detail and
+leaves the toon surface as noisy as it was (Aov.cc and Aov.ispc, computeAlbedo)."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +44,17 @@ inline bool modoToonTerminator()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
+        return value && value[0] == '1';
+    }();
+    return on;
+}
+
+/// True when MoonRay was started with MOONRAY_MODO_TOON_ALBEDO=1: the albedo AOV gives a toon diffuse lobe its own
+/// albedo, a clean guide for the denoisers. Read once.
+inline bool modoToonAlbedo()
+{
+    static const bool on = [] {
+        const char *value = std::getenv("MOONRAY_MODO_TOON_ALBEDO");
         return value && value[0] == '1';
     }();
     return on;
@@ -228,6 +245,59 @@ EDITS = {
          "    // Modo: under MOONRAY_MODO_TOON_TERMINATOR, cut off by the shading normal alone, not faded by the faces'.\n"
          "    const float Gs = modoToonTerminator() ? (cosThetaWi > 0.0f ? 1.0f : 0.0f)\n"
          "                                          : slice.computeShadowTerminatorFix(N, wi);\n"),
+    ],
+    'pbr/core/Aov.cc': [
+        ("#include <moonray/rendering/shading/bsdf/BsdfSlice.h>\n",
+         "#include <moonray/rendering/shading/bsdf/BsdfSlice.h>\n"
+         "#include <moonray/rendering/shading/bsdf/npr/BsdfToon.h>\n"
+         "#include <moonray/rendering/shading/ModoToonTerminator.h>\n"),
+        ("static void\ncomputeAlbedo(const MaterialAovs::ComputeParams &p, float *dest)\n",
+         "// Modo: the vector code is told once, as the library loads.\n"
+         "namespace {\n"
+         "const bool sModoToonAlbedoSet = (ispc::Aov_setModoToonAlbedo(shading::modoToonAlbedo()), true);\n"
+         "}\n\n"
+         "static void\ncomputeAlbedo(const MaterialAovs::ComputeParams &p, float *dest)\n"),
+        ("                        ++numContributions;\n"
+         "                        for (int i = 0; i < ni; ++i) {\n"
+         "                            const BsdfSample &bsmp = p.mBsmps[s + i];\n",
+         "                        ++numContributions;\n"
+         "                        // Modo: under MOONRAY_MODO_TOON_ALBEDO, a toon diffuse lobe's own albedo. Its samples are\n"
+         "                        // albedo / (2 cos): the lobe is flat and sampled by the cosine (ModoToonTerminator.h).\n"
+         "                        if (shading::modoToonAlbedo() && dynamic_cast<const shading::ToonBsdfLobe *>(lobe)) {\n"
+         "                            result += lobe->albedo(p.mBSampler->getBsdfSlice());\n"
+         "                        } else\n"
+         "                        for (int i = 0; i < ni; ++i) {\n"
+         "                            const BsdfSample &bsmp = p.mBsmps[s + i];\n"),
+    ],
+    'pbr/core/Aov.ispc': [
+        ("#include <moonray/rendering/shading/ispc/bssrdf/Bssrdf.isph>\n",
+         "#include <moonray/rendering/shading/ispc/bssrdf/Bssrdf.isph>\n\n"
+         "// Modo: MOONRAY_MODO_TOON_ALBEDO, set once from C++ (Aov.cc).\n"
+         "uniform bool gModoToonAlbedo = false;\n\n"
+         "export void\nAov_setModoToonAlbedo(uniform bool on)\n{\n    gModoToonAlbedo = on;\n}\n"),
+        ("                        ++numContributions;\n"
+         "                        uniform int s = bSampler->mLobeToSampleIndex[lobeIdx];\n"
+         "                        for (int i = 0; i < lobeSampleCount; ++i, ++s) {\n"
+         "                            const varying BsdfSample &bsmp = bsmps[s];\n"
+         "                            if (BsdfSample_isValid(&bsmp)) {\n"
+         "                                MNRY_ASSERT(!isSampleInvalid(bsmp.f, bsmp.pdf));\n"
+         "                                result = result + bsmp.f * (1.0f / (floatLobeSampleCount * bsmp.pdf));\n"
+         "                            }\n"
+         "                        }\n",
+         "                        ++numContributions;\n"
+         "                        // Modo: under MOONRAY_MODO_TOON_ALBEDO, a toon diffuse lobe's own albedo (as in Aov.cc).\n"
+         "                        if (gModoToonAlbedo && lobe->mName == BSDF_LOBE_TOON) {\n"
+         "                            result = result + BsdfLobe_albedo(lobe, *bSampler->mSlice);\n"
+         "                        } else {\n"
+         "                        uniform int s = bSampler->mLobeToSampleIndex[lobeIdx];\n"
+         "                        for (int i = 0; i < lobeSampleCount; ++i, ++s) {\n"
+         "                            const varying BsdfSample &bsmp = bsmps[s];\n"
+         "                            if (BsdfSample_isValid(&bsmp)) {\n"
+         "                                MNRY_ASSERT(!isSampleInvalid(bsmp.f, bsmp.pdf));\n"
+         "                                result = result + bsmp.f * (1.0f / (floatLobeSampleCount * bsmp.pdf));\n"
+         "                            }\n"
+         "                        }\n"
+         "                        }\n"),
     ],
     'shading/ispc/bsdf/npr/BsdfToon.ispc': [
         ("varying Color\nToonBsdfLobe_eval(",
