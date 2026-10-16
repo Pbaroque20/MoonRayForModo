@@ -96,6 +96,10 @@ Not released yet: on the MoonLightIPR branch.
 
 *Fog in Cryptomatte: a ball of fog with a hole in it, in front of the left box (top left). The fog's own matte (top right). The boxes' matte as MoonRay makes it, solid behind the fog (bottom left), and with fog in Cryptomatte, faded where the fog hides the box (bottom right).*
 
+![A pane behind fog against the sky, with its alpha as MoonRay makes it and with the fog counted](images/fog-alpha.png)
+
+*Fog in front of see-through surfaces in alpha: a pane of presence 0.4 (the tall strip) with fog in front of it and the sky behind (left). Its alpha as MoonRay makes it: the pane alone, as if the fog were not there (middle). With the override: the fog counts in front of the pane as it does against the open sky (right).*
+
 ![The same scene through a Modo camera and through the MoonRay camera converted from it](images/convert-camera.png)
 
 *A Modo camera converted to a MoonRay camera renders the same view in MoonRay. Both boxes are one mesh given an orange MoonRay material whole: the right one was made in it afterwards and takes the material too.*
