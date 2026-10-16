@@ -83,6 +83,10 @@ A Lambertian lobe is close to black where the geometric and shading normals part
 per face, smaller under subdivision but still there. `prevent_light_culling` removes the culling, but not the fade or
 the self-shadowing.
 
+![Four renders of the coarse torus: as MoonRay renders it, without light culling and fade, without shadows, and with shadow rays started further out](../../docs/images/toon-edges-why.png)
+
+*The torus as MoonRay renders it (1); without light culling and the geometric-normal fade, still stepped (2); with shadows off, smooth (3); with shadow rays started 0.3 out, smooth (4). The steps come from shadow rays starting on the flat faces.*
+
 ### The change
 
 1. The toon diffuse lobe is made spherical, as `prevent_light_culling` makes it, and cuts light off by its own shading
@@ -101,6 +105,14 @@ A torus of 24 × 12 quads with `DwaToonMaterial` under a low distant light (`tes
 stepped without the variable, smooth with it, in scalar, vector and XPU modes. The same scene with `DwaBaseMaterial`
 renders identically with the variable on and off in scalar mode, and within the run-to-run variation of vector and XPU
 modes (two renders with it off differ as much).
+
+![A coarse and a subdivided toon torus in MoonRay, each with the switch off and on](../../docs/images/toon-edges-subdivided.png)
+
+*Coarse and subdivided, with the switch off (left) and on (right). Subdivision makes the steps smaller without removing them.*
+
+![A close-up of the lit band, stepped with the switch off and smooth with it on](../../docs/images/toon-edges-closeup.png)
+
+*Close up on the coarse torus.*
 
 ## `moonray.patch`: a toon material's albedo output (`MOONRAY_MODO_TOON_ALBEDO`)
 
@@ -130,6 +142,10 @@ albedo it inherits, the same for every sample. Other lobes are unchanged.
 The toon torus of `test-results/issue-129/make_repro.py` with the albedo and normal guides: the guide stays within the
 material's colour (0.9, 0.5, 0.3) in scalar and vector modes, and Open Image Denoise then cleans the toon surface as
 it does a `DwaBaseMaterial` one (`test-results/issue-129/check_albedo.py`).
+
+![A toon render, denoised with the switch off and on](../../docs/images/toon-denoise.png)
+
+*The render, then denoised with the switch off (as noisy as rendered: the albedo guide is full of specks) and on.*
 
 ## `moonray.patch`: volumes in Cryptomatte (`MOONRAY_MODO_CRYPTO_VOLUMES`)
 
@@ -176,6 +192,10 @@ surface, the alpha (`transparency = (1 - presence) * presenceTransparency` in `c
 volume in front, so with fog of 0.60 in front of a 0.4 pane against the sky MoonRay's alpha is 0.40 where the fog and
 pane hide 0.76. The coverage is 0.76.
 
+![A ball of fog in front of two boxes, the fog's matte, and the boxes' matte without and with the switch](../../docs/images/crypto-volumes.png)
+
+*The check scene at 16 samples a pixel (vector): the render, the fog's own matte, and the boxes' matte with the switch off (bottom left, solid behind the fog) and on (bottom right, faded where the fog hides the box).*
+
 ## `moonray.patch`: fog in front of a see-through surface in alpha (`MOONRAY_MODO_FOG_ALPHA`)
 
 Applied by `tools/port_fog_alpha.py`, behind a switch of its own (the plugin's preference, on by default).
@@ -214,6 +234,10 @@ The fog ball of the Cryptomatte check with a pane of presence 0.4 between it and
 Cryptomatte coverages (0.0000 worst difference; 0.76 at the pane against the sky); off, MoonRay's (0.36 worst). Colour
 is unchanged: identical in scalar, and in vector within the run-to-run noise of two renders with the switch off. In a
 scene without a presence surface the alpha is unchanged.
+
+![A pane behind fog against the sky, with its alpha as MoonRay makes it and with the switch on](../../docs/images/fog-alpha.png)
+
+*A pane of presence 0.4 with fog in front of it and sky behind (left); its alpha with the switch off, the pane alone (middle), and on, the fog counted in front of the pane (right). 16 samples a pixel, scalar.*
 
 ## `moonray.patch`: each Cryptomatte sample counted once (`MOONRAY_MODO_CRYPTO_ONCE`)
 
