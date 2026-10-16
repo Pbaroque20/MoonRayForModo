@@ -60,6 +60,9 @@ Not released yet: on the MoonLightIPR branch.
 ![A moving cube and a moving spot light, in MoonRay and MoonLightIPR](images/moonlightipr-motion.png)
 *Motion blur: a cube moving during the shutter, then a spot light moving, in MoonRay (left) and MoonLightIPR (right). A moving light blurs its highlights and the edges of its shadows.*
 
+![The MoonRay page of Modo's Preferences, with its MoonRay Source Overrides section](images/preferences-source-overrides.png)
+*The MoonRay page of Modo's Preferences, named with the MoonRay release it renders with, and its MoonRay Source Overrides section: where the plugin changes how MoonRay itself renders, each switch on by default.*
+
 ![The preview before a render](images/preview-wordmark.png)
 *The preview before anything is rendered.*
 
