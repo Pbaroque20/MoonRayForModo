@@ -25,6 +25,9 @@ def environment(directory):
     env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
     dsos = [directory / 'rdl2dso', directory.parent / 'rdl2dso', directory.parent / 'lib' / 'rdl2dso', directory]
     env['RDL2_DSO_PATH'] = os.pathsep.join(str(p) for p in dsos if p.is_dir())
+    # Toon materials lit by their smooth normals, not cut into steps along a coarse mesh's faces: read by MoonRay as it
+    # starts (a runtime without the patch ignores it).
+    env['MOONRAY_MODO_TOON_TERMINATOR'] = '1' if toon_terminator() else '0'
     # A child process must not load Modo's Python/Qt libraries into MoonRay.
     for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'MOONRAY_MODO_SESSION', 'MOONRAY_MODO_GENERATION', 'MOONRAY_MODO_COMMAND'):
         env.pop(key, None)
@@ -143,6 +146,17 @@ def configured_runtime(settings):
 
 
 _CRYPTO_LIBS=('libscene_rdl2.dll','librendering_rndr.dll','moonray.exe')
+def toon_terminator():
+    """Whether toon materials are lit by their smooth normals on coarse meshes (MoonRay's preference in Modo, on by
+    default). Outside Modo, from MOONRAY_MODO_TOON_TERMINATOR as it stands, on when it is not set."""
+    try:
+        from PySide2 import QtCore
+    except ImportError:
+        return os.environ.get('MOONRAY_MODO_TOON_TERMINATOR', '1') == '1'
+    value = QtCore.QSettings('MoonRayForModo', settings_name()).value('toon_terminator', True)
+    return str(value).lower() in ('true', '1')
+
+
 def settings_name():
     """Where the preview's settings are kept. A test copy of Modo is given a name of its own, so that what a test
     sets (its runtime above all) is never what the user's own Modo reads while the test runs."""

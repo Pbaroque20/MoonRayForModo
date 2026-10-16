@@ -32,6 +32,7 @@ struct Hit {
     float curveCos;             // how squarely the ray met the strand: 1 on its middle, 0 at its edge
     float curveAlong, curveChance;  // how far along its strand the hit is, and the strand's own number
     float3 curveTangent;
+    float3 lift;                // a toon surface's way up to the smooth surface its corner normals describe, or 0
 };
 
 ML_INLINE Hit* hitPayload() {
@@ -115,6 +116,15 @@ ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float d
 ML_INLINE float3 offsetOrigin(float3 p, float3 ng, float3 direction) {
     const float scale = 1e-4f * (1.0f + fmaxf(fabsf(p.x), fmaxf(fabsf(p.y), fabsf(p.z))));
     return p + ng * (dot(ng, direction) > 0.0f ? scale : -scale);
+}
+
+// A toon's shadow ray toward a light near the terminator starts from the smooth surface, not the flat face, whose
+// neighbours would otherwise shadow it: fully when the light is at or behind the face, none once it is 0.1 (in cosine)
+// above it. As MoonRay patched for it (tools/port_toon_terminator.py).
+ML_INLINE float3 shadowStart(float3 p, float3 lift, float3 ng, float3 ns, float3 direction) {
+    if (dot(lift, lift) == 0.0f || dot(ns, direction) <= 0.0f || dot(lift, ns) < 0.0f) return p;
+    if (dot(ns, ng) < 0.0f) ng = ng * -1.0f;
+    return p + lift * clamp(1.0f - dot(ng, direction) / 0.1f, 0.0f, 1.0f);
 }
 
 // ---- Environment light -------------------------------------------------------------------------
@@ -691,6 +701,7 @@ struct Surface {
     const DeviceToon* toon;
     bool toonDiffuse, toonSpecular;
     float3 toonAlong;       // the way a strand runs (a surface's u direction), in the shading frame: a hair toon's highlight
+    bool smoothToon;        // a toon lit by its smooth normals, not its faces' (params.toonTerminator)
 };
 
 ML_INLINE Surface surfaceFrom(const Hit& hit) {
@@ -732,6 +743,7 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     const bool toon = (hit.flags & (MATERIAL_TOON_DIFFUSE | MATERIAL_TOON_SPECULAR)) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME));
     s.toon = toon ? reinterpret_cast<const DeviceToon*>(params.toons) + hit.hair : nullptr;
     s.toonDiffuse = toon && (hit.flags & MATERIAL_TOON_DIFFUSE);
+    s.smoothToon = s.toonDiffuse && params.toonTerminator;
     s.toonSpecular = toon && (hit.flags & MATERIAL_TOON_SPECULAR);
     s.toonAlong = make_float3(1.0f, 0.0f, 0.0f);
     return s;
@@ -1086,7 +1098,7 @@ ML_INLINE float3 clampSample(float3 contribution, bool scattered) {
 // Next event estimation at one surface point: the environment, the distant lights, then the
 // local lights. weight is the path's weight on arriving at the surface.
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
-                             float3 p, float3 ng, float3 weight, bool lit, unsigned& seed) {
+                             float3 p, float3 ng, float3 weight, bool lit, unsigned& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f)) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
@@ -1094,23 +1106,23 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
     if (!params.envPortal) {
         float lightPdf;
         const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
-        if (lightPdf > 0.0f && (surface.passes || dot(ng, toLight) > 0.0f)) {
+        if (lightPdf > 0.0f && (surface.passes || surface.smoothToon || dot(ng, toLight) > 0.0f)) {
             const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLight));
             const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
             const float3 found = litBy(e, pdf, lightPdf);
             if (maxComponent(found) > 0.0f)
-                radiance += clampSample(weight * found * envRadiance(toLight) * shadow(offsetOrigin(p, ng, toLight), toLight, seed), lit);
+                radiance += clampSample(weight * found * envRadiance(toLight) * shadow(offsetOrigin(shadowStart(p, lift, ng, frame.n, toLight), ng, toLight), toLight, seed), lit);
         }
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
         const DeviceDistantLight& light = distantLights[i];
         const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
-        if (!surface.passes && dot(ng, toSun) <= 0.0f) continue;
+        if (!surface.passes && !surface.smoothToon && dot(ng, toSun) <= 0.0f) continue;
         const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toSun));
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         const float3 found = litBy(e, pdf, distantPdf(light, toSun));
         if (maxComponent(found) > 0.0f)
-            radiance += clampSample(weight * found * distantRadiance(light, toSun) * shadow(offsetOrigin(p, ng, toSun), toSun, seed), lit);
+            radiance += clampSample(weight * found * distantRadiance(light, toSun) * shadow(offsetOrigin(shadowStart(p, lift, ng, frame.n, toSun), ng, toSun), toSun, seed), lit);
     }
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
@@ -1118,13 +1130,13 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         float3 toLamp, emitted;
         float distance, lampPdf;
         if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
-        if (!surface.passes && dot(ng, toLamp) <= 0.0f) continue;
+        if (!surface.passes && !surface.smoothToon && dot(ng, toLamp) <= 0.0f) continue;
         if (params.lightPick) lampPdf *= lights[i].pick;
         const BsdfEval e = evalBsdf(surface, lobes, wo, frame.toLocal(toLamp));
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         const float3 found = litBy(e, pdf, lampPdf);
         if (maxComponent(found) > 0.0f)
-            radiance += clampSample(weight * found * emitted * shadow(offsetOrigin(p, ng, toLamp), toLamp, seed, distance * 0.999f), lit);
+            radiance += clampSample(weight * found * emitted * shadow(offsetOrigin(shadowStart(p, lift, ng, frame.n, toLamp), ng, toLamp), toLamp, seed, distance * 0.999f), lit);
     }
     return radiance;
 }
@@ -1989,7 +2001,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             lobes.specular = glossyBounces ? 1.0f : 0.0f;
         }
         const bool lit = roughDepth >= params.sampleClampDepth;   // this surface was reached by scattering off something rough
-        radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed);
+        radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift);
 
         // The light that enters a transmissive surface goes through it rather than scattering.
         const float through = mayBounce ? transmitted(surface, wo) : 0.0f;
@@ -2753,6 +2765,23 @@ extern "C" __global__ void __closesthit__radiance() {
 
     const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[primitive] : instance.material;
     const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
+    // A toon's way up to the smooth surface: the point moved up to the tangent planes at the triangle's corners,
+    // weighted as the point is (Hanika, "Hacking the Shadow Terminator", 2021).
+    hit->lift = vec(0.0f);
+    if (params.toonTerminator && mesh.normals && (material.flags & MATERIAL_TOON_DIFFUSE) && !(material.flags & (MATERIAL_HAIR | MATERIAL_VOLUME))) {
+        const float3* normals = reinterpret_cast<const float3*>(mesh.normals);
+        const float3 at = p0 * w + p1 * uv.x + p2 * uv.y;
+        const float3 corners[3] = {p0, p1, p2};
+        const float3 cornerNormals[3] = {normals[triangle.x], normals[triangle.y], normals[triangle.z]};
+        const float weights[3] = {w, uv.x, uv.y};
+        float3 lift = vec(0.0f);
+        for (int k = 0; k < 3; ++k) {
+            const float3 n = normalize(cornerNormals[k]);
+            const float below = dot(at - corners[k], n);
+            if (below < 0.0f) lift = lift - n * (weights[k] * below);
+        }
+        hit->lift = optixTransformVectorFromObjectToWorldSpace(lift);
+    }
     float3 channel[CHANNEL_COUNT];
     float anisotropy;
     const MappedSlots slots = resolveMaterial(hit, material, mesh, primitive, uv, channel, anisotropy);
@@ -2811,6 +2840,7 @@ extern "C" __global__ void __closesthit__radiance() {
 // A hit on a curve: a round segment, straight or a cubic B-spline, whose control points OptiX hands back.
 extern "C" __global__ void __closesthit__curve() {
     Hit* hit = hitPayload();
+    hit->lift = vec(0.0f);
     const DeviceInstance& instance = reinterpret_cast<const DeviceInstance*>(params.instances)[optixGetInstanceId()];
     const DeviceMesh& mesh = reinterpret_cast<const DeviceMesh*>(params.meshes)[instance.mesh];
     const unsigned primitive = optixGetPrimitiveIndex();

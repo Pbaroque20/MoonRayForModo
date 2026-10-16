@@ -2,7 +2,7 @@
 import unittest,sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"kit/MoonRayForModo/python"))
-from moonray_modo import options,rdla
+from moonray_modo import native,options,rdla
 from test_compatibility_035 import scene
 
 def persistent_session():
@@ -46,7 +46,7 @@ class BucketSettings(unittest.TestCase):
         from types import SimpleNamespace
         Session=persistent_session()
         calls=[]
-        state=SimpleNamespace(running=lambda:True,signature=('runtime',0,'auto',0),
+        state=SimpleNamespace(running=lambda:True,signature=('runtime',0,'auto',0,native.toon_terminator()),
             stopping=False,sent=None,process=SimpleNamespace(kill=lambda:calls.append('restart')),
             _dispatch=lambda:calls.append('dispatch'),idle=SimpleNamespace(cancel=lambda:None))
         Session.submit(state,'scene','runtime',0,'auto',1,0)

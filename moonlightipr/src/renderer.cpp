@@ -693,6 +693,10 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     impl->params.maxVolumeDepth = 1;
     impl->params.sampleClamp = 10.0f;
     impl->params.sampleClampDepth = 1;
+    {
+        const char* toon = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
+        impl->params.toonTerminator = toon && toon[0] == '1';
+    }
     std::vector<float> albedo = albedoTable(false);
     const std::vector<float> beckmann = albedoTable(true);
     albedo.insert(albedo.end(), beckmann.begin(), beckmann.end());

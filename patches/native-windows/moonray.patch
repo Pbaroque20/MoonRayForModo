@@ -675,7 +675,7 @@ index 808dbdd..3814962 100644
      template<typename T> void
      computeVaryingAttributeDerivatives(shading::TypedAttributeKey<T> key,
 diff --git a/lib/rendering/geom/prim/OpenSubdivMesh.cc b/lib/rendering/geom/prim/OpenSubdivMesh.cc
-index 3f7e1a1..1e6fb48 100644
+index 3f7e1a1..d8c6219 100644
 --- a/lib/rendering/geom/prim/OpenSubdivMesh.cc
 +++ b/lib/rendering/geom/prim/OpenSubdivMesh.cc
 @@ -1541,7 +1541,7 @@ generatePatchCvs(const OpenSubdiv::Far::TopologyRefiner* refiner,
@@ -711,6 +711,20 @@ index 3f7e1a1..1e6fb48 100644
  
          // texture coordinates for this quad
          Vec2f st0, st1, st2, st3;
+@@ -3207,6 +3207,13 @@ OpenSubdivMesh::postIntersect(mcrt_common::ThreadLocalState& tls,
+         }
+     }
+ 
++    // Modo: shadow rays of a toon material start from the smooth surface (shading/ModoToonTerminator.h).
++    if (shading::modoToonTerminator() && !ray.isInstanceHit()) {
++        intersection.setModoSmoothOffset(intersection.getP(),
++            Vec3f(mTessellatedVertices(isecId1)), Vec3f(mTessellatedVertices(isecId2)), Vec3f(mTessellatedVertices(isecId3)),
++            mSurfaceNormal(isecId1), mSurfaceNormal(isecId2), mSurfaceNormal(isecId3), w, u, v);
++    }
++
+     intersection.setDifferentialGeometry(Ng,
+                                          N,
+                                          St,
 diff --git a/lib/rendering/geom/prim/PolyMeshCalcNv.cc b/lib/rendering/geom/prim/PolyMeshCalcNv.cc
 index f729162..a5d8f6f 100644
 --- a/lib/rendering/geom/prim/PolyMeshCalcNv.cc
@@ -817,6 +831,52 @@ index e49b7e5..10ef4c4 100644
      bool mFixInvalid;
  };
  
+diff --git a/lib/rendering/geom/prim/QuadMesh.cc b/lib/rendering/geom/prim/QuadMesh.cc
+index f083739..b518078 100644
+--- a/lib/rendering/geom/prim/QuadMesh.cc
++++ b/lib/rendering/geom/prim/QuadMesh.cc
+@@ -368,6 +368,18 @@ QuadMesh::postIntersect(mcrt_common::ThreadLocalState& tls,
+         }
+     }
+ 
++    // Modo: shadow rays of a toon material start from the smooth surface (shading/ModoToonTerminator.h).
++    if (shading::modoToonTerminator() && !ray.isInstanceHit()) {
++        Vec3f n1, n2, n3;
++        getQuadNormal(baseFaceId, tessFaceId, n1, n2, n3, ray.time, isFirst);
++        const auto at = [&](uint32_t id) {
++            return isMotionBlurOn() ? Vec3f(lerp(Vec3f(mVertices(id, 0)), Vec3f(mVertices(id, 1)), ray.time))
++                                    : Vec3f(mVertices(id));
++        };
++        intersection.setModoSmoothOffset(intersection.getP(), at(isecId1), at(isecId2), at(isecId3),
++                                         n1, n2, n3, w, u, v);
++    }
++
+     intersection.setDifferentialGeometry(Ng,
+                                          N,
+                                          St,
+diff --git a/lib/rendering/geom/prim/TriMesh.cc b/lib/rendering/geom/prim/TriMesh.cc
+index 0ffa409..b13d464 100644
+--- a/lib/rendering/geom/prim/TriMesh.cc
++++ b/lib/rendering/geom/prim/TriMesh.cc
+@@ -402,6 +402,18 @@ TriMesh::postIntersect(mcrt_common::ThreadLocalState& tls,
+         }
+     }
+ 
++    // Modo: shadow rays of a toon material start from the smooth surface (shading/ModoToonTerminator.h).
++    if (shading::modoToonTerminator() && !ray.isInstanceHit()) {
++        Vec3f n1, n2, n3;
++        getTriangleNormal(baseFaceId, tessFaceId, n1, n2, n3, ray.time, isFirst);
++        const auto at = [&](uint32_t id) {
++            return isMotionBlurOn() ? Vec3f(lerp(Vec3f(mVertices(id, 0)), Vec3f(mVertices(id, 1)), ray.time))
++                                    : Vec3f(mVertices(id));
++        };
++        intersection.setModoSmoothOffset(intersection.getP(), at(isecId1), at(isecId2), at(isecId3),
++                                         n1, n2, n3, w, u, v);
++    }
++
+     intersection.setDifferentialGeometry(Ng,
+                                          N,
+                                          St,
 diff --git a/lib/rendering/lpe/CMakeLists.txt b/lib/rendering/lpe/CMakeLists.txt
 index e77f2ff..bf36ebe 100644
 --- a/lib/rendering/lpe/CMakeLists.txt
@@ -1358,6 +1418,109 @@ index 0b0687c..f224efa 100644
                          }
                          // update cryptomatte info for current ray
                          cryptomatteData->mPresenceDepth = rs->mPathVertex.presenceDepth;
+diff --git a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc
+index 6c7d5e7..0072981 100644
+--- a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc
++++ b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc
+@@ -28,6 +28,22 @@ using RenderTimer = moonray::time::RAIITimerAverageDouble;
+ namespace moonray {
+ namespace pbr {
+ 
++// Modo: a toon material's shadow ray toward a light near the terminator starts from the smooth surface, not the
++// flat face, whose neighbours would otherwise shadow it (shading/ModoToonTerminator.h). Fully when the light is at
++// or behind the face, fading out by the time it is 0.1 (in cosine) above it.
++static finline scene_rdl2::math::Vec3f
++modoShadowOrigin(const shading::Intersection &isect, const scene_rdl2::math::Vec3f &P, const scene_rdl2::math::Vec3f &wi)
++{
++    const scene_rdl2::math::Vec3f &offset = isect.getModoSmoothOffset();
++    const scene_rdl2::math::Vec3f &N = isect.getN();
++    if (scene_rdl2::math::dot(offset, offset) == 0.0f || scene_rdl2::math::dot(N, wi) <= 0.0f ||
++        scene_rdl2::math::dot(offset, N) < 0.0f) return P;
++    scene_rdl2::math::Vec3f Ng = isect.getNg();
++    if (scene_rdl2::math::dot(N, Ng) < 0.0f) Ng = -Ng;
++    const float amount = scene_rdl2::math::clamp(1.0f - scene_rdl2::math::dot(Ng, wi) / 0.1f, 0.0f, 1.0f);
++    return P + offset * amount;
++}
++
+ finline void
+ PathIntegrator::addDirectVisibleBsdfLobeSampleContribution(pbr::TLState *pbrTls,
+         const Subpixel &sp, const PathVertex &pv,
+@@ -55,7 +71,7 @@ PathIntegrator::addDirectVisibleBsdfLobeSampleContribution(pbr::TLState *pbrTls,
+     // bsmp[s].distance is the distance from the surface point to
+     // the light, so we use that for the ray length minus an
+     // epsilon factor.
+-    const scene_rdl2::math::Vec3f& P = parentRay.getOrigin();
++    const scene_rdl2::math::Vec3f P = modoShadowOrigin(isect, parentRay.getOrigin(), bsmp.wi);
+     float tfar = bsmp.distance * sHitEpsilonEnd;
+     float time = parentRay.getTime();
+     int rayDepth = parentRay.getDepth() + 1;
+@@ -163,7 +179,7 @@ PathIntegrator::addDirectVisibleLightSampleContributions(pbr::TLState* pbrTls, S
+         if (isBlack(lightT)) {
+             continue;
+         }
+-        const scene_rdl2::math::Vec3f &P = parentRay.getOrigin();
++        const scene_rdl2::math::Vec3f P = modoShadowOrigin(isect, parentRay.getOrigin(), lsmp[i].wi);
+         float tfar = lsmp[i].distance * sHitEpsilonEnd;
+         float time = parentRay.getTime();
+         int rayDepth = parentRay.getDepth() + 1;
+diff --git a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
+index f9aed75..15ad373 100644
+--- a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
++++ b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
+@@ -94,6 +94,24 @@ fillOcclRay(       uniform PbrTLState *      uniform pbrTls,
+     return numNewEntries;
+ }
+ 
++// Modo: a toon material's shadow ray toward a light near the terminator starts from the smooth surface, not the
++// flat face (as modoShadowOrigin in PathIntegratorMultiSampler.cc).
++inline varying Vec3f
++modoShadowOrigin(const varying Intersection &isect, const varying Vec3f &P, const varying Vec3f &wi)
++{
++    const varying Vec3f offset = isect.mModoSmoothOffset;
++    const varying Vec3f N = isect.mN;
++    varying Vec3f Ng = isect.mNg;
++    if (dot(offset, offset) == 0.0f || dot(N, wi) <= 0.0f || dot(offset, N) < 0.0f) {
++        return P;
++    }
++    if (dot(N, Ng) < 0.0f) {
++        Ng = Ng * -1.0f;
++    }
++    const varying float amount = clamp(1.0f - dot(Ng, wi) / 0.1f, 0.0f, 1.0f);
++    return P + offset * amount;
++}
++
+ // fill out occlusion or presence shadow ray based on light attribute
+ // (whether this light request presence shadow)
+ void
+@@ -161,6 +179,10 @@ prepareOcclusionTestRays(
+ 
+     int32_t assignmentId = isect.mLayerAssignmentId;
+ 
++    // Modo: the shadow ray's start, moved up to the smooth surface for a toon material.
++    varying RayDifferential shadowParent = parentRay;
++    shadowParent.org = modoShadowOrigin(isect, parentRay.org, wi);
++
+     // pass in light for shadow linking purpose
+     b->mLight = light;
+     if (light->mPresenceShadows) {
+@@ -174,7 +196,7 @@ prepareOcclusionTestRays(
+             dstPresenceShadowRays,
+             &dstPresenceShadowsRayIndices[numPresenceShadowsRays],
+             srcRayIndices,
+-            parentRay, wi,
++            shadowParent, wi,
+             rayEpsilon, maxT,
+             tDirect, rayState, bundledOcclRayData, occlTestType, assignmentId, lsmpVisibility);
+     } else {
+@@ -182,7 +204,7 @@ prepareOcclusionTestRays(
+             dstOcclRays,
+             &dstOcclRayIndices[numOcclRays],
+             srcRayIndices,
+-            parentRay, wi,
++            shadowParent, wi,
+             rayEpsilon, maxT,
+             tDirect, rayState, bundledOcclRayData, occlTestType, assignmentId, lsmpVisibility);
+     }
 diff --git a/lib/rendering/pbr/light/LightTree.cc b/lib/rendering/pbr/light/LightTree.cc
 index 392ca34..ade8c56 100644
 --- a/lib/rendering/pbr/light/LightTree.cc
@@ -2994,10 +3157,18 @@ index 31c070c..ace62fc 100644
  
          MNRY_ASSERT(mTextureHandles[0]);
 diff --git a/lib/rendering/shading/BsdfBuilder.cc b/lib/rendering/shading/BsdfBuilder.cc
-index 0cfbd60..389b0ea 100644
+index 0cfbd60..aaf846c 100644
 --- a/lib/rendering/shading/BsdfBuilder.cc
 +++ b/lib/rendering/shading/BsdfBuilder.cc
-@@ -1099,6 +1099,29 @@ public:
+@@ -21,6 +21,7 @@
+ #include "bsdf/under/BsdfUnderClearcoatTransmission.h"
+ #include "bsdf/fabric/BsdfFabric.h"
+ #include "bsdf/npr/BsdfToon.h"
++#include "ModoToonTerminator.h"
+ #include "bsdf/npr/BsdfFlatDiffuse.h"
+ #include "bssrdf/Bssrdf.h"
+ #include "bssrdf/VolumeSubsurface.h"
+@@ -1099,6 +1100,29 @@ public:
          }
      }
  
@@ -3027,7 +3198,17 @@ index 0cfbd60..389b0ea 100644
      finline void
      addComponent(const MicrofacetIsotropicBRDF& component,
                   float weight,
-@@ -2273,6 +2296,17 @@ BsdfBuilder::BsdfBuilder(Bsdf& bsdf,
+@@ -1922,7 +1946,8 @@ public:
+             component.getRampColors(),
+             component.getExtendRamp());
+ 
+-        if (mPreventLightCulling) {
++        // Modo: under MOONRAY_MODO_TOON_TERMINATOR, as if prevent_light_culling were on (ModoToonTerminator.h).
++        if (mPreventLightCulling || modoToonTerminator()) {
+             // Force lobe to be "spherical" to prevent culling
+             // when light sample is on backside
+             const shading::BsdfLobe::Type lobeType = shading::BsdfLobe::ALL_DIFFUSE;
+@@ -2273,6 +2298,17 @@ BsdfBuilder::BsdfBuilder(Bsdf& bsdf,
      mImpl(tls->mArena->allocWithArgs<Impl>(bsdf, tls, state, objPtr))
  {}
  
@@ -3084,6 +3265,52 @@ index fb5d5cb..ccc9a25 100644
 +else()
 +    target_link_libraries(rendering_shading PUBLIC ${PROJECT_NAME}::shading_eval_ispc ${PROJECT_NAME}::shading_ispc)
 +endif()
+diff --git a/lib/rendering/shading/Intersection.h b/lib/rendering/shading/Intersection.h
+index 0df2162..a9ab93c 100644
+--- a/lib/rendering/shading/Intersection.h
++++ b/lib/rendering/shading/Intersection.h
+@@ -14,11 +14,13 @@
+ #include <moonray/rendering/shading/Interpolator.h>
+ #include <moonray/rendering/shading/ispc/Intersection.hh>
+ #include <moonray/rendering/shading/MipSelector.h>
++#include <moonray/rendering/shading/ModoToonTerminator.h>
+ 
+ #include <moonray/rendering/mcrt_common/Ray.h>
+ #include <moonray/rendering/mcrt_common/ThreadLocalState.h>
+ #include <scene_rdl2/scene/rdl2/Layer.h>
+ #include <scene_rdl2/scene/rdl2/Material.h>
++#include <scene_rdl2/scene/rdl2/SceneClass.h>
+ #include <scene_rdl2/scene/rdl2/Types.h>
+ 
+ namespace moonray {
+@@ -137,6 +139,27 @@ public:
+         mShadowEpsilonHint = value;
+     }
+ 
++    // Modo: on a toon material, how far the smooth surface the corner normals describe lies above the flat
++    // face at P: P moved up to the tangent planes at the corners, weighted by its barycentric coordinates
++    // (Hanika, "Hacking the Shadow Terminator", 2021). Shadow rays near the terminator start there.
++    void setModoSmoothOffset(const scene_rdl2::math::Vec3f &P,
++                             const scene_rdl2::math::Vec3f &p1, const scene_rdl2::math::Vec3f &p2,
++                             const scene_rdl2::math::Vec3f &p3, const scene_rdl2::math::Vec3f &n1,
++                             const scene_rdl2::math::Vec3f &n2, const scene_rdl2::math::Vec3f &n3,
++                             float w1, float w2, float w3)
++    {
++        if (!mMaterial || mMaterial->getSceneClass().getName() != "DwaToonMaterial") return;
++        scene_rdl2::math::Vec3f offset(0.0f);
++        const auto lift = [&](const scene_rdl2::math::Vec3f &corner, const scene_rdl2::math::Vec3f &n, float weight) {
++            const scene_rdl2::math::Vec3f unit = scene_rdl2::math::normalize(n);
++            const float below = scene_rdl2::math::dot(P - corner, unit);
++            if (below < 0.0f) offset = offset - (weight * below) * unit;
++        };
++        lift(p1, n1, w1); lift(p2, n2, w2); lift(p3, n3, w3);
++        if (scene_rdl2::math::isFinite(offset)) mModoSmoothOffset = offset;
++    }
++    finline const scene_rdl2::math::Vec3f &getModoSmoothOffset() const { return mModoSmoothOffset; }
++
+     finline void setDifferentialGeometry(const scene_rdl2::math::Vec3f &Ng, const scene_rdl2::math::Vec3f &N,
+             const scene_rdl2::math::Vec2f &St, const scene_rdl2::math::Vec3f &dPds, const scene_rdl2::math::Vec3f &dPdt,
+             bool hasDerivatives, bool hasExplicitAttributes=false)
 diff --git a/lib/rendering/shading/ThreadLocalObjectState.h b/lib/rendering/shading/ThreadLocalObjectState.h
 index 26d6e7b..2be3ae0 100644
 --- a/lib/rendering/shading/ThreadLocalObjectState.h
@@ -3154,8 +3381,44 @@ index 9af3ab0..396db2f 100644
  
      return true;
  }
+diff --git a/lib/rendering/shading/bsdf/npr/BsdfToon.cc b/lib/rendering/shading/bsdf/npr/BsdfToon.cc
+index e5a2d65..b7447b8 100644
+--- a/lib/rendering/shading/bsdf/npr/BsdfToon.cc
++++ b/lib/rendering/shading/bsdf/npr/BsdfToon.cc
+@@ -9,6 +9,8 @@
+ #include "BsdfToon.h"
+ #include <scene_rdl2/common/math/MathUtil.h>
+ #include <moonray/rendering/shading/Util.h>
++#include <moonray/rendering/shading/ModoToonTerminator.h>
++#include <moonray/rendering/shading/ispc/bsdf/npr/BsdfToon_ispc_stubs.h>
+ 
+ #include <algorithm>
+ 
+@@ -376,6 +378,11 @@ ToonSpecularBsdfLobe::show(std::ostream& os,
+     }
+ }
+ 
++// Modo: the vector code is told once, as the library loads.
++namespace {
++const bool sModoToonTerminatorSet = (ispc::BsdfToon_setModoToonTerminator(modoToonTerminator()), true);
++}
++
+ scene_rdl2::math::Color
+ ToonBsdfLobe::eval(const BsdfSlice &slice,
+                    const Vec3f &wi,
+@@ -409,7 +416,9 @@ ToonBsdfLobe::eval(const BsdfSlice &slice,
+ 
+     const Color albedo = clamp(ramp*mAlbedo, sBlack, sWhite);
+     // Soften hard shadow terminator due to shading normals
+-    const float Gs = slice.computeShadowTerminatorFix(N, wi);
++    // Modo: under MOONRAY_MODO_TOON_TERMINATOR, cut off by the shading normal alone, not faded by the faces'.
++    const float Gs = modoToonTerminator() ? (cosThetaWi > 0.0f ? 1.0f : 0.0f)
++                                          : slice.computeShadowTerminatorFix(N, wi);
+ 
+     // We use the upper bound of 1/2pi as the normalization factor
+     // for the maximum possible toon step function
 diff --git a/lib/rendering/shading/ispc/BsdfBuilder.ispc b/lib/rendering/shading/ispc/BsdfBuilder.ispc
-index e35ced8..1995f76 100644
+index e35ced8..0f71270 100644
 --- a/lib/rendering/shading/ispc/BsdfBuilder.ispc
 +++ b/lib/rendering/shading/ispc/BsdfBuilder.ispc
 @@ -845,6 +845,43 @@ BsdfBuilder_addMicrofacetAnisotropicBRDF(
@@ -3202,6 +3465,16 @@ index e35ced8..1995f76 100644
  void
  BsdfBuilder_addMicrofacetIsotropicBRDF(
          varying BsdfBuilder& builder,
+@@ -1400,7 +1437,8 @@ BsdfBuilder_addToonBRDF(
+                       brdf.mRampColors,
+                       brdf.mExtendRamp);
+ 
+-    if (me.mPreventLightCulling) {
++    // Modo: under MOONRAY_MODO_TOON_TERMINATOR, as if prevent_light_culling were on (ModoToonTerminator.h).
++    if (me.mPreventLightCulling || gModoToonTerminator) {
+         // Force lobe to be "spherical" to prevent culling
+         // when light sample is on backside
+         const uniform BsdfLobeType lobeType = BSDF_LOBE_TYPE_ALL_DIFFUSE;
 diff --git a/lib/rendering/shading/ispc/BsdfBuilder.isph b/lib/rendering/shading/ispc/BsdfBuilder.isph
 index 21abba9..11e1df3 100644
 --- a/lib/rendering/shading/ispc/BsdfBuilder.isph
@@ -3487,6 +3760,89 @@ index 3ce34f9..648d791 100644
 +    target_include_directories(shading_ispc INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 +    install(TARGETS shading_eval_ispc shading_ispc EXPORT ${exportGroup})
 +endif()
+diff --git a/lib/rendering/shading/ispc/Intersection.hh b/lib/rendering/shading/ispc/Intersection.hh
+index d3b890c..40b2705 100644
+--- a/lib/rendering/shading/ispc/Intersection.hh
++++ b/lib/rendering/shading/ispc/Intersection.hh
+@@ -86,7 +86,9 @@ enum AttributeStatus
+     /* 64-bit index separated into two 32-bit values */                     \
+     HVD_MEMBER(uint32_t, mIdLo);                                            \
+     HVD_MEMBER(uint32_t, mIdHi);                                            \
+-    HVD_ISPC_PAD(mPad2, 44)
++    /* Modo: where a toon material's shadow rays start, from the hit */     \
++    HVD_MEMBER(HVD_NAMESPACE(scene_rdl2::math, Vec3f), mModoSmoothOffset);  \
++    HVD_ISPC_PAD(mPad2, 32)
+ 
+ #define INTERSECTION_VALIDATION(vlen)                                       \
+     HVD_BEGIN_VALIDATION(Intersection, vlen);                               \
+@@ -121,6 +123,7 @@ enum AttributeStatus
+     HVD_VALIDATE(Intersection, mWo);                                        \
+     HVD_VALIDATE(Intersection, mIdLo);                                      \
+     HVD_VALIDATE(Intersection, mIdHi);                                      \
++    HVD_VALIDATE(Intersection, mModoSmoothOffset);                          \
+     HVD_END_VALIDATION
+ 
+ 
+diff --git a/lib/rendering/shading/ispc/State.isph b/lib/rendering/shading/ispc/State.isph
+index e9ae811..21829a5 100644
+--- a/lib/rendering/shading/ispc/State.isph
++++ b/lib/rendering/shading/ispc/State.isph
+@@ -198,6 +198,10 @@ extract(const varying State &vState,
+     uIntersection.mWo.y = extract(vState.mWo.y, lane);
+     uIntersection.mWo.z = extract(vState.mWo.z, lane);
+ 
++    uIntersection.mModoSmoothOffset.x = extract(vState.mModoSmoothOffset.x, lane);
++    uIntersection.mModoSmoothOffset.y = extract(vState.mModoSmoothOffset.y, lane);
++    uIntersection.mModoSmoothOffset.z = extract(vState.mModoSmoothOffset.z, lane);
++
+     uIntersection.mIdLo = extract(vState.mIdLo, lane);
+     uIntersection.mIdHi = extract(vState.mIdHi, lane);
+ 
+diff --git a/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.ispc b/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.ispc
+index a4a1a3f..00b68bd 100644
+--- a/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.ispc
++++ b/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.ispc
+@@ -10,6 +10,15 @@
+ 
+ #include <scene_rdl2/common/platform/IspcUtil.isph>
+ 
++// Modo: MOONRAY_MODO_TOON_TERMINATOR, set once from C++ (BsdfToon.cc).
++uniform bool gModoToonTerminator = false;
++
++export void
++BsdfToon_setModoToonTerminator(uniform bool on)
++{
++    gModoToonTerminator = on;
++}
++
+ varying Color
+ ToonBsdfLobe_eval(const varying BsdfLobe * uniform lobe,
+                   const varying BsdfSlice &slice,
+@@ -48,7 +57,9 @@ ToonBsdfLobe_eval(const varying BsdfLobe * uniform lobe,
+ 
+     const Color albedo = clamp(toon->mAlbedo * ramp, 0.0f, 1.0f);
+     // Soften hard shadow terminator due to shading normals
+-    const float Gs = BsdfSlice_computeShadowTerminatorFix(&slice, N, wi);
++    // Modo: under MOONRAY_MODO_TOON_TERMINATOR, cut off by the shading normal alone, not faded by the faces'.
++    const float Gs = gModoToonTerminator ? (cosThetaWi > 0.0f ? 1.0f : 0.0f)
++                                         : BsdfSlice_computeShadowTerminatorFix(&slice, N, wi);
+ 
+     // We use the upper bound of 1/2pi as the normalization factor
+     // for the maximum possible toon step function
+diff --git a/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.isph b/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.isph
+index ffa00c3..5639469 100644
+--- a/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.isph
++++ b/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.isph
+@@ -10,6 +10,9 @@
+ #include <moonray/rendering/shading/ispc/bsdf/cook_torrance/BsdfGGXCookTorrance.isph>
+ #include <moonray/rendering/shading/ispc/bsdf/hair/BsdfHairLobes.isph>
+ 
++// Modo: set once from C++ (BsdfToon.cc) to MOONRAY_MODO_TOON_TERMINATOR (ModoToonTerminator.h).
++extern uniform bool gModoToonTerminator;
++
+ // Derive a directional differential scale that varies according to roughness
+ // Experimentally, we found that we want 1.0 when roughness is 0
+ // and 8 when it is 1.
 diff --git a/lib/rendering/texturing/sampler/CMakeLists.txt b/lib/rendering/texturing/sampler/CMakeLists.txt
 index 31f5d3c..2ba07cd 100644
 --- a/lib/rendering/texturing/sampler/CMakeLists.txt
@@ -3606,3 +3962,28 @@ new file mode 100644
 +    for name in sys.argv[2:]:
 +        with Path(name).open('rb') as source:
 +            shutil.copyfileobj(source, destination, 1024 * 1024)
+diff --git a/lib/rendering/shading/ModoToonTerminator.h b/lib/rendering/shading/ModoToonTerminator.h
+new file mode 100644
+--- /dev/null
++++ b/lib/rendering/shading/ModoToonTerminator.h
+@@ -0,0 +1,20 @@
++// Modo: toon materials lit by their smooth shading normals, not by the faces under them (tools/port_toon_terminator.py).
++#pragma once
++
++#include <cstdlib>
++
++namespace moonray {
++namespace shading {
++
++/// True when MoonRay was started with MOONRAY_MODO_TOON_TERMINATOR=1. Read once.
++inline bool modoToonTerminator()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++
++} // namespace shading
++} // namespace moonray

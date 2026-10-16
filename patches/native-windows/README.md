@@ -59,3 +59,45 @@ to mean anything there.
   above).
 - Every other output is unchanged: the display filter check, and a toon scene compared between MoonRay and the
   plugin's own preview renderer, give the same results as before the patch.
+
+## `moonray.patch`: toon materials on coarse smooth-shaded meshes (`MOONRAY_MODO_TOON_TERMINATOR`)
+
+Applied by `tools/port_toon_terminator.py`. Only active when MoonRay is started with `MOONRAY_MODO_TOON_TERMINATOR=1`
+(the plugin's preference, on by default); without it MoonRay renders exactly as its source does.
+
+### What MoonRay does
+
+On a smooth-shaded polygon mesh (`smooth_normal`, or a subdivision surface) MoonRay shades with the interpolated
+normals, but treats the surface as its flat faces in two places:
+
+- Light culling: for a reflection-only BSDF, light from behind the face's geometric normal is dropped before the lobe
+  sees it (`PathIntegrator.cc`, the culling normal; `DistantLight.cc` and the other lights' `sample`;
+  `BsdfSlice::getSurfaceFlags`). Every `shadow_terminator_fix` mode also fades light by the geometric normal
+  (`BsdfSlice::computeShadowTerminatorFix`).
+- Shadow rays start on the flat face (`isRayOccluded`), so near the terminator they hit the neighbouring faces.
+
+### Why it shows with toon
+
+A Lambertian lobe is close to black where the geometric and shading normals part, so the face-shaped cut is not seen.
+`DwaToonMaterial`'s toon diffuse (`ToonBsdfLobe`) is lit to the edge of its ramp, so its lit band ends in steps, one
+per face, smaller under subdivision but still there. `prevent_light_culling` removes the culling, but not the fade or
+the self-shadowing.
+
+### The change
+
+1. The toon diffuse lobe is made spherical, as `prevent_light_culling` makes it, and cuts light off by its own shading
+   normal instead of being faded by the geometric one (`BsdfBuilder`, `BsdfToon`, scalar and ISPC; the ISPC side reads
+   the switch from a global set once from C++, which assumes one ISPC target, as this build has).
+2. At a hit on `DwaToonMaterial`, the triangle, quad and subdivision meshes record how far the smooth surface the
+   vertex normals describe lies above the flat face (Hanika, "Hacking the Shadow Terminator", Ray Tracing Gems II,
+   2021): `Intersection::mModoSmoothOffset`, a new field in the structure's existing padding, so its size and the
+   C++/ISPC layout check are unchanged. Shadow rays toward a light near the terminator start from there: fully when the
+   light is at or behind the face, fading out by the time it is 0.1 (in cosine) above it
+   (`PathIntegratorMultiSampler.cc` and `.ispc`). Other materials record nothing. Instanced copies are left as they are.
+
+### How it was checked
+
+A torus of 24 × 12 quads with `DwaToonMaterial` under a low distant light (`test-results/issue-129/make_repro.py`):
+stepped without the variable, smooth with it, in scalar, vector and XPU modes. The same scene with `DwaBaseMaterial`
+renders identically with the variable on and off in scalar mode, and within the run-to-run variation of vector and XPU
+modes (two renders with it off differ as much).

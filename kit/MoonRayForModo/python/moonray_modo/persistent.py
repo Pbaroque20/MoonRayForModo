@@ -98,7 +98,8 @@ class Session(QtCore.QObject):
             staged=self.root/'important.tmp';staged.write_text('1' if important else '0',encoding='ascii');staged.replace(self.root/'important.txt')
         except (OSError,AttributeError):pass
         request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared)
-        signature=(str(runtime),threads,mode,bucket_size)
+        # A change of the toon preference is read by MoonRay only as it starts: it starts again.
+        signature=(str(runtime),threads,mode,bucket_size,native.toon_terminator())
         self.latest=request
         if self.running() and signature!=self.signature:
             self.stopping=True;self.process.kill();return
@@ -138,7 +139,7 @@ class Session(QtCore.QObject):
             if path.is_file():path.unlink()
         self.select_view(self.view)
         self.partial='';self.applied=None;self.sent=request
-        self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'])
+        self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'],native.toon_terminator())
         metadata=json.loads((request['runtime']/'modo-session.json').read_text(encoding='utf-8'))
         self.scene_memory=metadata.get('scene_memory',False)
         scene=self._write_scene(request,'full',request['text'],(request.get('prepared') or {}).get('full_bytes'))

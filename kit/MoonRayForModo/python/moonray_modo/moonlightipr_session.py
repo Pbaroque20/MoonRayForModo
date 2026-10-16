@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from PySide2 import QtCore
 from .threads import forgotten
-from . import moonlightipr_scene
+from . import moonlightipr_scene, native
 
 EXECUTABLE = 'moonlightipr_session.exe'
 PROGRAM = 'MoonLightIPRKernel.ptx'
@@ -73,7 +73,7 @@ class Session(QtCore.QObject):
         self.process.errorOccurred.connect(self._error)
         self.workspace = tempfile.TemporaryDirectory(prefix='MoonLightIPRSession-')
         self.root = Path(self.workspace.name)
-        self.latest = None; self.sent = None; self.current = None; self.directory = None
+        self.latest = None; self.sent = None; self.current = None; self.directory = None; self.toon = None
         # Mesh keys the running process is known to hold; their data is not sent again.
         self.known = set()
         self.partial = ''; self.stopping = False; self.closed = False
@@ -95,7 +95,8 @@ class Session(QtCore.QObject):
         request = dict(snapshot=snapshot, directory=Path(directory), width=width, height=height, environment=environment,
                        id=generation, samples=samples, denoise=denoise, runtime=runtime)
         self.latest = request
-        if self.running() and request['directory'] != self.directory:
+        # The toon preference is read by MoonLightIPR only as it starts: it starts again.
+        if self.running() and (request['directory'] != self.directory or native.toon_terminator() != self.toon):
             self.stopping = True; self.process.kill(); return
         if self.stopping: return
         if not self.running(): self._launch()
@@ -105,12 +106,15 @@ class Session(QtCore.QObject):
         request = self.latest
         if not request or self.closed: return
         self.partial = ''; self.sent = None; self.known = set(); self.directory = request['directory']
+        self.toon = native.toon_terminator()
         # A scene made ready for the process before this one left out what that one held.
         self._abandon()
         env = QtCore.QProcessEnvironment.systemEnvironment()
         # A child process must not load Modo's Python/Qt libraries.
         for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'): env.remove(key)
         env.insert('PATH', str(self.directory) + ';' + env.value('PATH', ''))
+        # Toon materials lit by their smooth normals on coarse meshes, as MoonRay is (native.toon_terminator).
+        env.insert('MOONRAY_MODO_TOON_TERMINATOR', '1' if self.toon else '0')
         self.process.setProcessEnvironment(env); self.process.setWorkingDirectory(str(self.root))
         self.process.setProgram(str(self.directory / EXECUTABLE))
         self.process.setArguments([str(self.directory / PROGRAM)])
