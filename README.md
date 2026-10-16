@@ -298,7 +298,7 @@ a subdivided one (left); with the override, both are smooth (right).*
 - Fur guides, and the fur vector and width maps.
 - More of Modo's material: the Principled model's diffuse (which brightens with roughness in Modo) and smooth highlights under every model.
 - Motion from imported RDL scenes as Modo animation; subdivision creases and authored normals on import.
-- Motion blur while the preview follows edits; the remaining Shader Tree effects and masks.
+- The remaining Shader Tree effects and masks. (Motion blur while the preview follows edits is coming in 0.4.2.)
 - Modo 17.1 on Windows, then macOS.
 - Broader validation: other GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.
 
