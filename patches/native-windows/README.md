@@ -215,10 +215,6 @@ Cryptomatte coverages (0.0000 worst difference; 0.76 at the pane against the sky
 is unchanged: identical in scalar, and in vector within the run-to-run noise of two renders with the switch off. In a
 scene without a presence surface the alpha is unchanged.
 
-Not changed here: where fog in front of a presence surface is dense enough to cross the volume opacity threshold
-(0.995), whole pixels of MoonRay's alpha jump to 1 (and with the switch off, to nearly 0) between ones of the expected
-value. The Cryptomatte coverage follows the alpha there too. Thinner fog does not show it.
-
 ## `moonray.patch`: each Cryptomatte sample counted once (`MOONRAY_MODO_CRYPTO_ONCE`)
 
 Applied by `tools/port_crypto_once.py`, behind a switch of its own (the plugin's preference, on by default).
@@ -241,7 +237,7 @@ so one entry alone adds the coverage. Off, MoonRay's read then clear.
 
 ### How it was checked
 
-Vector renders of the fog Cryptomatte scene, counting pixels whose coverage goes over 1: at 480 x 270 and 16 samples,
-2 of 16 renders without this switch had one (one with fog in Cryptomatte on, one with it off); at 32 samples, 2 of
-54 off and none of 54 on. A rare race is not proven gone by this, but the exchange leaves no
+Vector renders of the fog Cryptomatte scene at 480 x 270 and one sample a pixel, counting pixels whose coverage goes
+over 1: 2 of 16 renders without this switch had one (one with fog in Cryptomatte on, one with it off); then 2 of 54
+off and none of 54 on. A rare race is not proven gone by this, but the exchange leaves no
 window for it.
