@@ -118,6 +118,9 @@ GROUPS = [
         render_field('volume_indirect_samples', 'Indirect Samples', 'Samples of bounced light inside volumes'),
         render_field('volume_opacity_threshold', 'Opacity Threshold', 'A ray stops once a volume has hidden this much of what is behind it'),
         render_field('volume_overlap_mode', 'Overlapping Volumes', 'What is rendered where volumes overlap'),
+        render_field('volume_attenuation_factor', 'Attenuation Factor', 'With Volume bounces above 1: how much less each further bounce of light is stopped by the volume. Lower looks more see-through'),
+        render_field('volume_contribution_factor', 'Contribution Factor', 'With Volume bounces above 1: how much less each further bounce of light adds. Lower looks darker'),
+        render_field('volume_phase_attenuation_factor', 'Phase Attenuation Factor', 'With Volume bounces above 1: how much more evenly each further bounce of light is thrown, whatever way the volume throws it at first'),
     ]),
     ('Noise and Filtering', True, [
         render_field('sample_clamping_value', 'Sample Clamp', 'Limits how bright one sample may be, which removes fireflies; 0 is no limit'),

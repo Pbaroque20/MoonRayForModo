@@ -34,6 +34,7 @@ MENU = (
     # Making things.
     ('cmd moonray.material.assign', 'Assign MoonShine Material to Mesh', 'assign'),
     ('sub MoonRayEntityMenu:sheet', 'Add MoonRay Item', None),
+    ('cmd moonray.camera.convert', 'Convert Camera to MoonRay Camera...', 'convert_camera'),
     ('cmd moonray.library', 'Asset Library...', 'library'),
     None,
     # Bringing things in and sending them out.
@@ -130,6 +131,21 @@ def rdl_entry(text):
     end = text.index('</list>', text.index(anchor)) + len('</list>')
     eol = '\r\n' if '\r\n' in text else '\n'
     return text[:end] + eol + '      <list type="Control" val="cmd moonray.rdl.import"><atom type="Label">Import MoonRay Scene (RDL)...</atom></list>' + text[end:]
+
+
+def context_menus(text):
+    """The kit's right-click entries in Modo's Item List (a camera made into a MoonRay camera, a MoonRay material for a
+    mesh), as the checkout's layout.cfg has them, at the head of the attributes; unchanged if they are there."""
+    if 'MoonRayCameraContext:sheet' in text or '<atom type="Attributes">' not in text:
+        return text
+    source = (Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/layout.cfg').read_bytes().decode('utf-8').replace('\r\n', '\n')
+    begin = source.index('    <!-- Right-clicking a camera in the Item List')
+    # The sheet's own closing tag, at its indent: the first </hash> after its key closes its InCategory.
+    end = source.index(chr(10) + '    </hash>', source.index('key="MoonRayMeshContext:sheet"')) + len(chr(10) + '    </hash>')
+    eol = '\r\n' if '\r\n' in text else '\n'
+    block = source[begin:end].replace('\n', eol)
+    head = text.index('<atom type="Attributes">') + len('<atom type="Attributes">')
+    return text[:head] + eol + block + text[head:]
 
 
 def viewport_title(text):

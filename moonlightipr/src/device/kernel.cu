@@ -1718,8 +1718,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
                         }
                         if (!(thick > 0.0f)) break;
                         carried = carried * kept * (1.0f / thick);
-                        const float less = powf(0.65f, float(order)), even = turned / thick * powf(0.5f, float(order));
-                        radiance += fogLight(here, -way, even, carried * less, true, seed, less);
+                        // The scene's volume factors (MoonRay's defaults 0.65, 0.65 and 0.5), raised to the bounce's number.
+                        const float less = powf(params.volumeAttenuation, float(order)), sent = powf(params.volumeContribution, float(order));
+                        const float even = turned / thick * powf(params.volumePhaseAttenuation, float(order));
+                        radiance += fogLight(here, -way, even, carried * sent, true, seed, less);
                         way = samplePhase(way, even, rnd(seed), rnd(seed));
                         stops = thick;
                     }
@@ -1759,8 +1761,9 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     if (met.valid) break;
                     here = here + way * step;
                     carried = carried * stops * vec(fog.albedo) * (1.0f / thickness);
-                    const float less = powf(0.65f, float(order)), even = fog.anisotropy * powf(0.5f, float(order));
-                    radiance += fogLight(here, -way, even, carried * less, true, seed, less);
+                    const float less = powf(params.volumeAttenuation, float(order)), sent = powf(params.volumeContribution, float(order));
+                    const float even = fog.anisotropy * powf(params.volumePhaseAttenuation, float(order));
+                    radiance += fogLight(here, -way, even, carried * sent, true, seed, less);
                     way = samplePhase(way, even, rnd(seed), rnd(seed));
                 }
                 break;

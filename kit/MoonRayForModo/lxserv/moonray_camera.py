@@ -75,6 +75,36 @@ def register():
 
     lx.bless(Dicing,'moonray.dicing_camera')
 
+    class Convert(lxu.command.BasicCommand):
+        """The selected Modo cameras (or the render camera) made into MoonRay camera items of the kind chosen in its popup;
+        run from a menu, Modo asks for the kind, starting on the one the camera is most like."""
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('kind',lx.symbol.sTYPE_INTEGER)
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Enable(self,msg):
+            from moonray_modo.camera_convert import selected_cameras
+            try:return bool(selected_cameras())
+            except Exception:return False
+        def arg_UIValueHints(self,index):
+            from moonray_modo.camera_convert import KINDS
+            return _same(Hints,(),[(kind,label) for kind,label in KINDS])
+        def cmd_DialogInit(self):
+            from moonray_modo.camera_convert import KINDS,selected_cameras,suited
+            cameras=selected_cameras()
+            kinds=[kind for kind,_ in KINDS]
+            self.attr_SetInt(0,kinds.index(suited(cameras[0])) if cameras else 0)
+        def basic_Execute(self,msg,flags):
+            import modo
+            from moonray_modo.camera_convert import KINDS,convert,selected_cameras
+            index=self.dyna_Int(0)
+            if not 0<=index<len(KINDS):raise ValueError('No such MoonRay camera')
+            made=[convert(camera,KINDS[index][0]) for camera in selected_cameras()]
+            if made:modo.Scene().select(made)
+            property_notifications.notify()
+
+    lx.bless(Convert,'moonray.camera.convert')
+
 
 # A fault here must not keep the rest of the kit from loading.
 try:register()

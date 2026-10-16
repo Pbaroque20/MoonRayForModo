@@ -62,6 +62,7 @@ def names_in_use():
 def assign(shader=None, kind='advancedMaterial', name=None, color=None, smoothing=None, angle=40.0):
     """Give the selected meshes a MoonRay material of their own. With polygons selected, in polygon mode, only those
     polygons take it and the rest of each mesh keeps what it had; otherwise every polygon of each selected mesh does.
+    One whole mesh is given the material through an item mask, so that geometry made in it later takes it as well.
 
     name is what the material and its polygon tag are called, as with Modo's own Polygon Set Material. color goes to
     the material's main colour. smoothing, where it is given, has this material say how its polygons are smoothed:
@@ -88,7 +89,15 @@ def assign(shader=None, kind='advancedMaterial', name=None, color=None, smoothin
             count+=1;tag='%s %d'%(name,count)
     mask=scene.addItem('mask',name=tag if name else 'MoonShine - '+meshes[0].name+(' (%d polygons)'%sum(len(v) for v in picked.values()) if picked else ''))
     mask.setParent(scene.renderItem,above_base(scene,mask))
-    mask.channel('ptyp').set('Material'); mask.channel('ptag').set(tag)
+    # One whole mesh: the mask is the mesh's, as Modo's item masks are, so what is made in it later takes the
+    # material too. Picked polygons, or several meshes sharing the one material, are tagged as Modo's Polygon Set
+    # Material tags them.
+    whole=not picked and len(meshes)==1
+    if whole:
+        mask.channel('ptyp').set('');mask.channel('ptag').set('')
+        mask.itemGraph('shadeLoc') >> meshes[0].itemGraph('shadeLoc')
+    else:
+        mask.channel('ptyp').set('Material'); mask.channel('ptag').set(tag)
     material=scene.addItem(kind,name='MoonShine Material')
     material.setParent(mask,0)
     held={'shader':'DwaBaseMaterial','thin_geometry':False,'moonshine_override':True,'native_shader':shader,'native_parameters':{}}
@@ -106,7 +115,7 @@ def assign(shader=None, kind='advancedMaterial', name=None, color=None, smoothin
         except (LookupError,RuntimeError,AttributeError,TypeError):pass
     material.channel('diffAmt').set(1)
     material.channel('rough').set(.35)
-    for mesh in meshes:
+    for mesh in ([] if whole else meshes):
         if mesh.id in picked:
             # Each picked polygon is found again by its ID and tagged through the mesh's own accessor.
             with mesh.geometry as geometry:
@@ -126,7 +135,7 @@ def assign(shader=None, kind='advancedMaterial', name=None, color=None, smoothin
                 for index in missed:geometry.polygons[index].materialTag=tag
     # Named for what it is; the mask above it already says MoonShine.
     material.name=shader
-    if name:mask.name=tag
+    if name:mask.name=tag if not whole else name
     scene.select(material)
     return material
 

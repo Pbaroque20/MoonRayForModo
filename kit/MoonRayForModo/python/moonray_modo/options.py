@@ -39,6 +39,11 @@ RENDER = {
     'volume_indirect_samples': (0, 0, 64, 'Volume indirect samples'),
     'volume_opacity_threshold': (0.995, 0.0, 1.0, 'Volume opacity threshold'),
     'volume_overlap_mode': (0, 0, 2, 'Overlapping volumes'),
+    # How each further bounce of light inside a volume counts for less (MoonRay's multiple scattering, after
+    # Wrenninge): its fog stops less, it sends less, and it is thrown more evenly. Only with Volume bounces above 1.
+    'volume_attenuation_factor': (0.65, 0.0, 1.0, 'Volume attenuation factor'),
+    'volume_contribution_factor': (0.65, 0.0, 1.0, 'Volume contribution factor'),
+    'volume_phase_attenuation_factor': (0.5, 0.0, 1.0, 'Volume phase attenuation factor'),
     'sample_clamping_value': (10.0, 0.0, 1000000.0, 'Sample clamp'),
     'sample_clamping_depth': (1, 0, 64, 'Sample clamp from bounce'),
     'roughness_clamping_factor': (0.0, 0.0, 1.0, 'Roughness clamp'),

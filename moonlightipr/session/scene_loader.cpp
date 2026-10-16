@@ -166,13 +166,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
-    // "F" since the lights' poses at the shutter's close are. A plugin and a session of different versions say so plainly, in
+    // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x46534c4d)
+    if (mark != 0x47534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'F'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'G'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -184,6 +184,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     settings.denoise = (sceneFlags & SCENE_DENOISE) != 0;
     const float sampleClamp = in.value<float>();
     const uint32_t sampleClampDepth = in.value<uint32_t>();
+    float volumeFactors[3];
+    in.floats(volumeFactors, 3);
     float workingSpace[9];
     in.floats(workingSpace, 9);
 
@@ -684,6 +686,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     }
     renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth, maxVolumeDepth, (sceneFlags & SCENE_PRESENCE_SHADOWS) != 0);
     renderer.setSampleClamp(sampleClamp, sampleClampDepth);
+    renderer.setVolumeScattering(volumeFactors[0], volumeFactors[1], volumeFactors[2]);
     if (settings.width != renderer.width() || settings.height != renderer.height()) renderer.resize(settings.width, settings.height);
     renderer.setCamera(camera);
     renderer.setCameraMotion(sceneFlags & SCENE_MOTION ? &cameraClose : nullptr);

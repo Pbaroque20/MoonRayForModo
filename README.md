@@ -256,7 +256,7 @@ Comparison Audit between MoonRay 2026.29.1's source and the current plugin.
 | Display filters (colour correct, toon, halftone and the rest) | ![yes](docs/images/feature-yes.svg) | All 18, as MoonRay items; each a preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
 | Uniform and adaptive sampling, light sampling, bounce limits, clamping | ![yes](docs/images/feature-yes.svg) | Render Settings |
 | Volume quality and overlap settings | ![yes](docs/images/feature-yes.svg) | |
-| Volume attenuation and contribution factors | ![no](docs/images/feature-no.svg) | |
+| Volume attenuation and contribution factors | ![yes](docs/images/feature-yes.svg) | Render Settings, Volumes, with the phase attenuation factor; MoonLightIPR follows them. Coming in 0.4.2 |
 | Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches. Coming in 0.4.2 |
 | Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![no](docs/images/feature-no.svg) |  |
