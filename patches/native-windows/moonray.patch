@@ -198,6 +198,33 @@ index 152b1b6..16bda1c 100644
      attrPositions =
          sceneClass.declareAttribute<scene_rdl2::rdl2::Vec3fVector>("positions");
      sceneClass.setMetadata(attrPositions, "comment",
+diff --git a/dso/geometry/Vdb/attributes.cc b/dso/geometry/Vdb/attributes.cc
+index c3c63b7..5b1c9cc 100644
+--- a/dso/geometry/Vdb/attributes.cc
++++ b/dso/geometry/Vdb/attributes.cc
+@@ -15,6 +15,7 @@ RDL2_DSO_ATTR_DECLARE
+     rdl2::AttributeKey<rdl2::Float>  attrVelocityScale;
+     rdl2::AttributeKey<rdl2::Float>  attrVelocitySampleRate;
+     rdl2::AttributeKey<rdl2::Float>  attrEmissionSampleRate;
++    rdl2::AttributeKey<rdl2::SceneObjectVector> attrPrimitiveAttributes;
+ 
+ RDL2_DSO_ATTR_DEFINE(rdl2::Geometry)
+ 
+@@ -98,6 +99,14 @@ RDL2_DSO_ATTR_DEFINE(rdl2::Geometry)
+         "with the cost of lower fidelity of emission shape and illumination");
+     sceneClass.setGroup("VDB", attrEmissionSampleRate);
+ 
++    // Modo: what the plugin gives a VDB for Cryptomatte to read its IDs from (tools/port_crypto_volumes.py).
++    attrPrimitiveAttributes =
++        sceneClass.declareAttribute<rdl2::SceneObjectVector>("primitive_attributes", { "primitive attributes" });
++    sceneClass.setMetadata(attrPrimitiveAttributes, "label", "primitive attributes");
++    sceneClass.setMetadata(attrPrimitiveAttributes, "comment",
++        "Vector of UserData. Read only for the volume's Cryptomatte IDs.");
++    sceneClass.setGroup("User Data", attrPrimitiveAttributes);
++
+ 
+ RDL2_DSO_ATTR_END
+ 
 diff --git a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc b/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
 index 598a705..224e4ab 100644
 --- a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
@@ -1138,10 +1165,21 @@ index 3101e16..8266d94 100644
 +    install(TARGETS rendering_pbr EXPORT ${exportGroup})
 +endif()
 diff --git a/lib/rendering/pbr/Types.h b/lib/rendering/pbr/Types.h
-index c326b86..812b6da 100644
+index c326b86..3ae8998 100644
 --- a/lib/rendering/pbr/Types.h
 +++ b/lib/rendering/pbr/Types.h
-@@ -251,6 +251,7 @@ struct CryptomatteData
+@@ -245,20 +245,29 @@ struct CryptomatteData
+     CRYPTOMATTE_DATA_MEMBERS;
+ 
+     static uint32_t hudValidation(bool verbose) { CRYPTOMATTE_DATA_VALIDATION; }
++    // Modo: how much of what lies behind the volumes this ray has passed shows through (tools/port_crypto_volumes.py).
++    float volumeFront() const { return float(mVolumeFront) * (1.f / 65535.f); }
++    void setVolumeFront(float front) {
++        mVolumeFront = uint16_t((front < 0.f ? 0.f : front > 1.f ? 1.f : front) * 65535.f + 0.5f);
++    }
+     void init(CryptomatteBuffer* buffer) {
+         mRefCount = 1;                              // number of "owners" of this data; when 0, data is released
+         mCryptomatteBuffer = buffer;                // cryptomatte buffer
          mHit = 0;                                   // if zero, hit a presence surface or terminated early
          mPrevPresence = 0;                          // whether previously on presence path (0 = false, 1 = true)
          mId = 0;                                    // id for hit
@@ -1149,7 +1187,9 @@ index c326b86..812b6da 100644
          mPosition = scene_rdl2::math::Vec3f(0.f);   // position at hit
          mNormal = scene_rdl2::math::Vec3f(0.f);     // shading normal at hit
          mPresenceDepth = -1;                        // presence depth, -1 indicates that this isn't a presence path
-@@ -259,6 +260,8 @@ struct CryptomatteData
++        mVolumeFront = 65535;                       // Modo: no volume before yet
+         mPathPixelWeight = 1.f;                     // accumulated presence (used to remove presence from beauty) 
+         mIsFirstSample = 1;                         // is this the first sample added for this path? (0 = false, 1 = true)
      }
  };
  
@@ -1159,10 +1199,10 @@ index c326b86..812b6da 100644
  uint32ToPixelLocation(uint32_t val, unsigned *px, unsigned *py)
  {
 diff --git a/lib/rendering/pbr/Types.hh b/lib/rendering/pbr/Types.hh
-index bb6f65e..212e04f 100644
+index bb6f65e..dd7dd0b 100644
 --- a/lib/rendering/pbr/Types.hh
 +++ b/lib/rendering/pbr/Types.hh
-@@ -210,14 +210,17 @@ enum BundledOcclRayDataFlags
+@@ -210,14 +210,18 @@ enum BundledOcclRayDataFlags
  #define CRYPTOMATTE_DATA_MEMBERS                                    \
      HUD_CPP_MEMBER(std::atomic<int>, mRefCount, 4);                 \
      HUD_CPP_PTR(pbr::CryptomatteBuffer*, mCryptomatteBuffer);       \
@@ -1177,14 +1217,16 @@ index bb6f65e..212e04f 100644
 +    HUD_MEMBER(float, mAssetId);                                         \
      HUD_MEMBER(HVD_NAMESPACE(scene_rdl2::math, Vec3f), mPosition);  \
      HUD_MEMBER(HVD_NAMESPACE(scene_rdl2::math, Vec3f), mNormal);    \
-     HUD_MEMBER(int32_t, mPresenceDepth);                            \
+-    HUD_MEMBER(int32_t, mPresenceDepth);                            \
 -    HUD_MEMBER(float, mPathPixelWeight);                            \
 -    HUD_MEMBER(uint32_t, mIsFirstSample)                   
++    HUD_MEMBER(int16_t, mPresenceDepth);                            \
++    HUD_MEMBER(uint16_t, mVolumeFront); /* Modo: what shows through the volumes before, 0-65535 */ \
 +    HUD_MEMBER(float, mPathPixelWeight) /* compact category record */                   
  
  #define CRYPTOMATTE_DATA_VALIDATION                     \
      HUD_BEGIN_VALIDATION(CryptomatteData);              \
-@@ -226,6 +229,9 @@ enum BundledOcclRayDataFlags
+@@ -226,9 +230,13 @@ enum BundledOcclRayDataFlags
      HUD_VALIDATE(CryptomatteData, mHit);                \
      HUD_VALIDATE(CryptomatteData, mPrevPresence);       \
      HUD_VALIDATE(CryptomatteData, mId);                 \
@@ -1194,6 +1236,10 @@ index bb6f65e..212e04f 100644
      HUD_VALIDATE(CryptomatteData, mPosition);           \
      HUD_VALIDATE(CryptomatteData, mNormal);             \
      HUD_VALIDATE(CryptomatteData, mPresenceDepth);      \
++    HUD_VALIDATE(CryptomatteData, mVolumeFront);        \
+     HUD_VALIDATE(CryptomatteData, mPathPixelWeight);    \
+     HUD_VALIDATE(CryptomatteData, mIsFirstSample);      \
+     HUD_END_VALIDATION
 diff --git a/lib/rendering/pbr/core/Aov.cc b/lib/rendering/pbr/core/Aov.cc
 index 77fd882..e66fdab 100644
 --- a/lib/rendering/pbr/core/Aov.cc
@@ -1465,7 +1511,7 @@ index 2fa6c14..d5260d0 100644
  
      bool mFinalized;
 diff --git a/lib/rendering/pbr/handlers/ShadeBundleHandler.cc b/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
-index 0b0687c..f224efa 100644
+index 0b0687c..f8e028d 100644
 --- a/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
 +++ b/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
 @@ -253,6 +253,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
@@ -1476,6 +1522,15 @@ index 0b0687c..f224efa 100644
                  // Retrieve the first deep id (if present) for this intersection from the primitive attrs.
                  // At the request of production, cryptomatte currently only supports one deep id associated
                  // with each layer, rather than a generalized vector of ids. So here we are only interested
+@@ -592,7 +593,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                             if (cryptomatteData->mCryptomatteBuffer != nullptr && rs->mPathVertex.pathPixelWeight > 0.01f) {
+                                 scene_rdl2::math::Color4 beauty(0.f, 0.f, 0.f, presences[i]);
+                                 cryptomatteData->mCryptomatteBuffer->addSampleVector(px, py, cryptomatteData->mId, 
+-                                                                                    rs->mPathVertex.pathPixelWeight,
++                                                                                    rs->mPathVertex.pathPixelWeight * cryptomatteData->volumeFront(),
+                                                                                     cryptomatteData->mPosition,
+                                                                                     cryptomatteData->mNormal, 
+                                                                                     beauty,
 @@ -600,7 +601,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                                                                                      rs->mCryptoP0,
                                                                                      rs->mCryptoRefN,
@@ -1485,7 +1540,24 @@ index 0b0687c..f224efa 100644
                              }
                              // update cryptomatte info for current presence ray
                              cryptomatteData->mPrevPresence = 1;
-@@ -646,7 +647,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -612,6 +613,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                             cryptomatteDataNext->mPrevPresence = 1;
+                             cryptomatteDataNext->mPathPixelWeight = rs->mPathVertex.pathPixelWeight;
+                             cryptomatteDataNext->mCryptomatteBuffer = cryptomatteData->mCryptomatteBuffer;
++                            cryptomatteDataNext->setVolumeFront(cryptomatteData->volumeFront());
+                         }
+ 
+                         // LPE
+@@ -638,7 +640,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                         if (cryptomatteData->mCryptomatteBuffer != nullptr && rs->mPathVertex.pathPixelWeight > 0.01f) {
+                             scene_rdl2::math::Color4 beauty(0.f, 0.f, 0.f, presences[i]);
+                             cryptomatteData->mCryptomatteBuffer->addSampleVector(px, py, cryptomatteData->mId, 
+-                                                                                rs->mPathVertex.pathPixelWeight,
++                                                                                rs->mPathVertex.pathPixelWeight * cryptomatteData->volumeFront(),
+                                                                                 cryptomatteData->mPosition,
+                                                                                 cryptomatteData->mNormal, 
+                                                                                 beauty, 
+@@ -646,7 +648,7 @@ void shadeBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                                                                                  rs->mCryptoP0,
                                                                                  rs->mCryptoRefN,
                                                                                  rs->mCryptoUV,
@@ -1494,6 +1566,52 @@ index 0b0687c..f224efa 100644
                          }
                          // update cryptomatte info for current ray
                          cryptomatteData->mPresenceDepth = rs->mPathVertex.presenceDepth;
+diff --git a/lib/rendering/pbr/integrator/PathIntegrator.cc b/lib/rendering/pbr/integrator/PathIntegrator.cc
+index 227c68e..fdccc3b 100644
+--- a/lib/rendering/pbr/integrator/PathIntegrator.cc
++++ b/lib/rendering/pbr/integrator/PathIntegrator.cc
+@@ -16,6 +16,7 @@
+ #include <moonray/rendering/pbr/core/Aov.h>
+ #include <moonray/rendering/pbr/core/Constants.h>
+ #include <moonray/rendering/pbr/core/Cryptomatte.h>
++#include "ModoCryptoVolumes.h"
+ #include <moonray/rendering/pbr/core/DeepBuffer.h>
+ #include <moonray/rendering/pbr/core/PathVisualizer.h>
+ #include <moonray/rendering/pbr/core/RayState.h>
+@@ -226,6 +227,7 @@ PathIntegrator::update(const FrameState &fs, const PathIntegratorParams& params)
+     }
+ 
+     mCryptoIdAttrIdx = mDeepIDAttrIdxs.empty() ? -1 : mDeepIDAttrIdxs[0];
++    modoCryptoVolumesBuild(scene->getLayer(), attrNames);
+ 
+     scene_rdl2::rdl2::String cryptoUVAttributeName = vars.get(scene_rdl2::rdl2::SceneVariables::sCryptoUVAttributeName);
+     if (!cryptoUVAttributeName.empty()) {
+@@ -424,6 +426,8 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
+         if (deepParams) deepParams->mHitVolume = hitVolume;
+         pv.pathThroughput *= vt.transmittance();
+     }
++    // Modo: what shows through the volumes before this surface, for its Cryptomatte coverage.
++    const float modoCryptoFront = modoCryptoVolumes() ? modoCryptoVolumeFront() : 1.f;
+ 
+     //---------------------------------------------------------------------
+     // Add contribution from light hit by the primary ray
+@@ -763,7 +767,7 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
+             float reciprocalWeight = 1.0f / scene_rdl2::math::max(pv.pathPixelWeight, 0.01f);
+             scene_rdl2::math::Color beauty = (radiance - presenceRadiance) * reciprocalWeight;
+ 
+-            ((CryptomatteBuffer *)sp.mCryptomatteBuffer)->addSampleScalar(px, py, pv.pathPixelWeight,
++            ((CryptomatteBuffer *)sp.mCryptomatteBuffer)->addSampleScalar(px, py, pv.pathPixelWeight * modoCryptoFront,
+                                                                           cryptomatteResults,
+                                                                           beauty,
+                                                                           pv.presenceDepth,
+@@ -1326,6 +1330,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
+     VolumeTransmittance vt;
+ 
+     sp.mCryptomatteBuffer = (void *)cryptomatteBuffer;
++    modoCryptoVolumeFront() = 1.f;
+     CryptomatteResults cryptomatteResultsArray[NUM_CRYPTOMATTE_TYPES];
+     sp.mCryptomatteResultsArray = (void *)cryptomatteResultsArray;
+ 
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc
 index 6c7d5e7..0072981 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.cc
@@ -1597,6 +1715,137 @@ index f9aed75..15ad373 100644
              rayEpsilon, maxT,
              tDirect, rayState, bundledOcclRayData, occlTestType, assignmentId, lsmpVisibility);
      }
+diff --git a/lib/rendering/pbr/integrator/PathIntegratorVolume.cc b/lib/rendering/pbr/integrator/PathIntegratorVolume.cc
+index 2626266..3be0dad 100644
+--- a/lib/rendering/pbr/integrator/PathIntegratorVolume.cc
++++ b/lib/rendering/pbr/integrator/PathIntegratorVolume.cc
+@@ -15,6 +15,8 @@
+ #include "VolumeEmissionBsdfSampler.h"
+ #include "VolumeEmissionLightSampler.h"
+ #include <moonray/rendering/pbr/core/Constants.h>
++#include <moonray/rendering/pbr/core/Cryptomatte.h>
++#include "ModoCryptoVolumes.h"
+ #include <moonray/rendering/pbr/core/DeepBuffer.h>
+ #include <moonray/rendering/pbr/core/PbrTLState.h>
+ #include <moonray/rendering/pbr/core/RayState.h>
+@@ -1408,6 +1410,97 @@ PathIntegrator::approximateVolumeMultipleScattering(pbr::TLState *pbrTls,
+     return lMultiScatter;
+ }
+ 
++namespace {
++
++// Modo: the volumes a camera ray passes through, each recorded in Cryptomatte with the share of the opacity it gives,
++// and what shows through them kept for the surface behind (tools/port_crypto_volumes.py).
++void
++modoRecordCryptoVolumes(pbr::TLState *pbrTls, const mcrt_common::Ray &ray, const Subpixel &sp, const PathVertex &pv,
++                        const RayState *rs, const VolumeProperties *volumeProperties, size_t stepCount, bool opaque,
++                        const scene_rdl2::math::Color &volumeRadiance)
++{
++    CryptomatteBuffer *buffer = nullptr;
++    CryptomatteData *data = nullptr;
++    if (rs) {
++        if (rs->mCryptomatteDataHandle == nullHandle) {
++            return;
++        }
++        data = static_cast<CryptomatteData *>(pbrTls->getListItem(rs->mCryptomatteDataHandle, 0));
++        buffer = data->mCryptomatteBuffer;
++    } else {
++        buffer = static_cast<CryptomatteBuffer *>(sp.mCryptomatteBuffer);
++    }
++    if (!buffer || stepCount == 0) {
++        return;
++    }
++    const float front = data ? data->volumeFront() : modoCryptoVolumeFront();
++
++    struct Share { int mAssignmentId; float mCoverage; float mDepth; };
++    constexpr int maxShares = 16;
++    Share shares[maxShares];
++    int shareCount = 0;
++    auto add = [&](int assignmentId, float coverage, float depth) {
++        if (coverage <= 0.f) {
++            return;
++        }
++        for (int i = 0; i < shareCount; ++i) {
++            if (shares[i].mAssignmentId == assignmentId) {
++                shares[i].mCoverage += coverage;
++                shares[i].mDepth += coverage * depth;
++                return;
++            }
++        }
++        if (shareCount < maxShares) {
++            shares[shareCount++] = {assignmentId, coverage, coverage * depth};
++        }
++    };
++
++    float shown = 1.f;
++    for (size_t i = 0; i < stepCount; ++i) {
++        const VolumeProperties &step = volumeProperties[i];
++        const float sigmaT = scene_rdl2::math::luminance(step.mSigmaT);
++        const float covered = shown * (1.f - std::exp(-sigmaT * step.mDelta));
++        add(step.mAssignmentId, covered, step.mTStart + 0.5f * step.mDelta);
++        shown -= covered;
++    }
++    if (opaque) {
++        const VolumeProperties &last = volumeProperties[stepCount - 1];
++        add(last.mAssignmentId, shown, last.mTStart + last.mDelta);
++        shown = 0.f;
++    }
++    shown = scene_rdl2::math::clamp(shown, 0.f, 1.f);
++
++    const float weight = pv.pathPixelWeight * front;
++    const float opacity = 1.f - shown;
++    if (weight > 0.f && opacity > 0.f) {
++        unsigned px, py;
++        uint32ToPixelLocation(sp.mPixel, &px, &py);
++        const scene_rdl2::math::Color light = volumeRadiance / scene_rdl2::math::max(weight * opacity, 0.01f);
++        const scene_rdl2::math::Color4 beauty(light.r, light.g, light.b, 1.f);
++        const scene_rdl2::math::Vec3f normal = -scene_rdl2::math::normalize(ray.getDirection());
++        const unsigned presenceDepth = pv.presenceDepth > 0 ? unsigned(pv.presenceDepth) : 0u;
++        for (int i = 0; i < shareCount; ++i) {
++            const ModoCryptoIds *ids = modoCryptoVolumeIds(shares[i].mAssignmentId);
++            if (!ids) {
++                continue;
++            }
++            const scene_rdl2::math::Vec3f position = ray.getOrigin() +
++                ray.getDirection() * (shares[i].mDepth / shares[i].mCoverage);
++            buffer->addSampleVector(px, py, ids->mId, weight * shares[i].mCoverage, position, normal, beauty,
++                                    position, scene_rdl2::math::Vec3f(0.f), normal, scene_rdl2::math::Vec2f(0.f),
++                                    presenceDepth, true, ids->mMaterialId, ids->mAssetId);
++        }
++    }
++
++    if (data) {
++        data->setVolumeFront(front * shown);
++    } else {
++        modoCryptoVolumeFront() = front * shown;
++    }
++}
++
++} // namespace
++
+ bool
+ PathIntegrator::computeRadianceVolume(pbr::TLState *pbrTls, const mcrt_common::Ray& ray,
+         Subpixel& sp, PathVertex& pv, const int lobeType,
+@@ -1418,6 +1511,7 @@ PathIntegrator::computeRadianceVolume(pbr::TLState *pbrTls, const mcrt_common::R
+     EXCL_ACCUMULATOR_PROFILE(pbrTls, EXCL_ACCUM_VOL_INTEGRATION);
+ 
+     vt.reset();
++    const scene_rdl2::math::Color modoRadianceBefore = radiance;
+ 
+     // Set the proper ray mask. If lobeType is 0,
+     // it's a primary ray from camera.
+@@ -1629,6 +1723,11 @@ PathIntegrator::computeRadianceVolume(pbr::TLState *pbrTls, const mcrt_common::R
+         }
+     }
+ 
++    if (modoCryptoVolumes() && ray.getDepth() == 0 && lobeType == 0) {
++        modoRecordCryptoVolumes(pbrTls, ray, sp, pv, rs, volumeProperties, marchingStepsCount,
++                                reachTransmittanceThreshold, radiance - modoRadianceBefore);
++    }
++
+     return true;
+ }
+ 
 diff --git a/lib/rendering/pbr/light/LightTree.cc b/lib/rendering/pbr/light/LightTree.cc
 index 392ca34..ade8c56 100644
 --- a/lib/rendering/pbr/light/LightTree.cc
@@ -1948,14 +2197,16 @@ index ad064bd..a214dc3 100644
      if (strerror_r(errno, errbuf.data(), errbuf.size()) >= 0) {
          e = errbuf.data();
 diff --git a/lib/rendering/rndr/Film.cc b/lib/rendering/rndr/Film.cc
-index 7c8ff55..2792b87 100644
+index 7c8ff55..3373e27 100644
 --- a/lib/rendering/rndr/Film.cc
 +++ b/lib/rendering/rndr/Film.cc
-@@ -1021,17 +1021,17 @@ Film::addSampleBundleHandlerHelper(mcrt_common::ThreadLocalState *tls,
+@@ -1020,18 +1020,18 @@ Film::addSampleBundleHandlerHelper(mcrt_common::ThreadLocalState *tls,
+                             // we only want to increment coverage, position, normal, and the normalization factor
                              // numFragSamples if we're dealing with the first sample for this path. We don't want 
                              // any data from the subsequent bounces except for the beauty (for GI)
-                             film.mCryptomatteBuf->addSampleVector(px, py, id, 1.f, position, normal, beauty,
+-                            film.mCryptomatteBuf->addSampleVector(px, py, id, 1.f, position, normal, beauty,
 -                                                                  refP, p0, refN, uv, depth);
++                            film.mCryptomatteBuf->addSampleVector(px, py, id, cryptomatteData->volumeFront(), position, normal, beauty,
 +                                                                  refP, p0, refN, uv, depth, true, cryptomatteData->mMaterialId, cryptomatteData->mAssetId);
                              cryptomatteData->mIsFirstSample = 0;
                          } else {
@@ -4038,6 +4289,112 @@ new file mode 100644
 +    for name in sys.argv[2:]:
 +        with Path(name).open('rb') as source:
 +            shutil.copyfileobj(source, destination, 1024 * 1024)
+diff --git a/lib/rendering/pbr/integrator/ModoCryptoVolumes.h b/lib/rendering/pbr/integrator/ModoCryptoVolumes.h
+new file mode 100644
+--- /dev/null
++++ b/lib/rendering/pbr/integrator/ModoCryptoVolumes.h
+@@ -0,0 +1,101 @@
++// Modo: fog in Cryptomatte (tools/port_crypto_volumes.py).
++#pragma once
++
++#include <scene_rdl2/scene/rdl2/rdl2.h>
++
++#include <cstdlib>
++#include <string>
++#include <vector>
++
++namespace moonray {
++namespace pbr {
++
++/// True when MoonRay was started with MOONRAY_MODO_CRYPTO_VOLUMES=1. Read once.
++inline bool modoCryptoVolumes()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_CRYPTO_VOLUMES");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++
++/// A volume's Cryptomatte IDs, as the plugin gives them to its geometry.
++struct ModoCryptoIds
++{
++    bool mValid = false;
++    float mId = 0.f;
++    float mMaterialId = 0.f;
++    float mAssetId = 0.f;
++};
++
++/// The IDs of each assignment that holds a volume shader, by assignment ID. Built as the frame starts.
++inline std::vector<ModoCryptoIds>& modoCryptoVolumeTable()
++{
++    static std::vector<ModoCryptoIds> table;
++    return table;
++}
++
++inline const ModoCryptoIds* modoCryptoVolumeIds(int assignmentId)
++{
++    const std::vector<ModoCryptoIds> &table = modoCryptoVolumeTable();
++    if (assignmentId < 0 || size_t(assignmentId) >= table.size() || !table[assignmentId].mValid) {
++        return nullptr;
++    }
++    return &table[assignmentId];
++}
++
++/// For a scalar camera sample: how much of what lies behind the volumes passed so far shows through.
++inline float& modoCryptoVolumeFront()
++{
++    static thread_local float front = 1.f;
++    return front;
++}
++
++inline bool modoReadCryptoId(const scene_rdl2::rdl2::SceneObjectVector &data, const std::string &key, float &value)
++{
++    for (const scene_rdl2::rdl2::SceneObject *object : data) {
++        const scene_rdl2::rdl2::UserData *userData = object ? object->asA<scene_rdl2::rdl2::UserData>() : nullptr;
++        if (userData && userData->hasFloatData() && userData->getFloatKey() == key &&
++            !userData->getFloatValues().empty()) {
++            value = userData->getFloatValues()[0];
++            return true;
++        }
++    }
++    return false;
++}
++
++inline void modoCryptoVolumesBuild(const scene_rdl2::rdl2::Layer *layer, const scene_rdl2::rdl2::StringVector &idNames)
++{
++    std::vector<ModoCryptoIds> &table = modoCryptoVolumeTable();
++    table.clear();
++    if (!modoCryptoVolumes() || !layer) {
++        return;
++    }
++    const std::string objectKey = idNames.empty() ? std::string("modo_object_id") : idNames[0];
++    const int count = layer->getAssignmentCount();
++    table.resize(count > 0 ? count : 0);
++    for (int i = 0; i < count; ++i) {
++        if (!layer->lookupVolumeShader(i)) {
++            continue;
++        }
++        const scene_rdl2::rdl2::Geometry *geometry = layer->lookupGeomAndPart(i).first;
++        if (!geometry) {
++            continue;
++        }
++        scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::SceneObjectVector> key;
++        try {
++            key = geometry->getSceneClass().getAttributeKey<scene_rdl2::rdl2::SceneObjectVector>("primitive_attributes");
++        } catch (...) {
++            continue;
++        }
++        const scene_rdl2::rdl2::SceneObjectVector &data = geometry->get(key);
++        ModoCryptoIds &ids = table[i];
++        ids.mValid = modoReadCryptoId(data, objectKey, ids.mId);
++        modoReadCryptoId(data, "modo_material_id", ids.mMaterialId);
++        modoReadCryptoId(data, "modo_asset_id", ids.mAssetId);
++    }
++}
++
++} // namespace pbr
++} // namespace moonray
 diff --git a/lib/rendering/shading/ModoToonTerminator.h b/lib/rendering/shading/ModoToonTerminator.h
 new file mode 100644
 --- /dev/null

@@ -535,8 +535,8 @@ def emit(scene,materials,lines,crypto=False):
             camera,indirect,reflection,refraction,subsurface,shadow=entry['visibility']
             for key,value in [('visible_in_camera',camera),('visible_shadow',shadow),('visible_diffuse_reflection',indirect),('visible_diffuse_transmission',indirect),('visible_glossy_reflection',reflection),('visible_mirror_reflection',reflection),('visible_glossy_transmission',refraction),('visible_mirror_transmission',refraction)]:attrs[key]='true' if value else 'false'
         carried=[]
-        if crypto and kind!='vdb':
-            from .cryptomatte import userdata_set
+        from .cryptomatte import userdata_set,volumes
+        if crypto and (kind!='vdb' or volumes()):
             carried=list(userdata_set(entry,lines,scene))
         if entry.get('attributes') and kind=='curves':
             from . import primitive_attributes

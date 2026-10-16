@@ -287,13 +287,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     multi_crypto=crypto and cryptomatte.multiple(scene)
     if multi_crypto and not scene.get('_crypto_categories'):
         raise ValueError('Multiple Cryptomatte categories require a matching category-enabled runtime')
-    if multi_crypto and any(g.get('kind')=='vdb' for g in scene.get('extra_geometry',[])):
-        raise ValueError('Volume Cryptomatte coverage is not implemented; disable Cryptomatte or exclude volumes')
+    # Fog, from a VDB or in a MoonRay box or sphere, is in the mattes as MoonRay with the plugin's patch has it.
+    matted=render_meshes+scene.get('extra_geometry',[])+(entities.volume_shapes(scene) if crypto and cryptomatte.volumes() else [])
     if output_file:
-        cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,crypto and not multi_crypto,scene)
+        cryptomatte.metadata(matted,lines,crypto and not multi_crypto,scene)
         if multi_crypto:
             for cat in ('object','material','asset'):
-                cryptomatte.metadata(render_meshes+scene.get('extra_geometry',[]),lines,True,scene,cat)
+                cryptomatte.metadata(matted,lines,True,scene,cat)
     lighting.emit(scene,render_meshes,float(environment),lines)
     # Keep material handles in a table to avoid Lua's local variable limit.
     lines.append('local materials = {}')
@@ -602,7 +602,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         lines.append('end')
     from .extra_geometry import emit as emit_extra
     emit_extra(scene,materials,lines,crypto)
-    entities.emit_geometry(scene,materials,lines)
+    entities.emit_geometry(scene,materials,lines,crypto)
     lines += ['GeometrySet("/modo/geometrySet")(geometries)',
               'local layer = Layer("/modo/layer")(assignments)', 'SceneVariables {',
               '  ["camera"] = camera,', '  ["layer"] = layer,', *(['  ["dicing_camera"] = %s,' % dicing] if dicing else []),

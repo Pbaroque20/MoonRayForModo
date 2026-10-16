@@ -37,9 +37,17 @@ def category(scene):
     return next((v.get('category','object') for v in scene.get('custom_aovs',[]) if v.get('kind')=='cryptomatte'),'object')
 
 
+def volumes():
+    """Whether fog has mattes of its own (MoonRay with the plugin's patch, and the preference on)."""
+    from .native import crypto_volumes
+    return crypto_volumes()
+
+
 def name(geometry,category='object',scene=None,identity=None):
     from .lighting import owner
     item=identity or owner(geometry)
+    # Fog given no material is its own matte in the material category, not the scene's base material.
+    if category=='material' and not geometry.get('material') and (geometry.get('kind')=='vdb' or geometry.get('volume')):category='object'
     if category=='material':return material_name(geometry.get('material',''),scene)
     if category=='asset':return (scene or {}).get('production',{}).get('objects',{}).get(item.split('|')[0],{}).get('asset_label') or item
     return geometry.get('name','Object')+' ['+item+']'
@@ -75,7 +83,7 @@ def metadata(geometries,lines,crypto=False,scene=None,category_override=None):
     if crypto:
         cat=category_override or category(scene or {});manifest={}
         for g in geometries:
-            if g.get('kind')=='vdb':continue
+            if g.get('kind')=='vdb' and not volumes():continue
             entries=labels(g,cat,scene,instances='instances' in g and cat!='material')
             for value in entries:manifest[value]='%08x'%hash32(value)
         prefix='cryptomatte/'+('%08x'%hash32('Cryptomatte'))[:7]+'/'
