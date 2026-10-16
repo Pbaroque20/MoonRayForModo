@@ -77,6 +77,10 @@ Not released yet: on the MoonLightIPR branch.
 
 *The MoonRay page of Modo's Preferences, named with the MoonRay release it renders with, and its MoonRay Source Overrides section: where the plugin changes how MoonRay itself renders, each switch on by default.*
 
+![A cloud at four volume bounces, with MoonRay's default volume factors and with all three at 0.2](images/volume-factors.png)
+
+*Volume factors on a cloud at four volume bounces, MoonRay (left) and MoonLightIPR (right): MoonRay's defaults above; all three at 0.2 below, where each further bounce counts for much less and the cloud is darker.*
+
 ![The preview before a render](images/preview-wordmark.png)
 
 *The preview before anything is rendered.*
