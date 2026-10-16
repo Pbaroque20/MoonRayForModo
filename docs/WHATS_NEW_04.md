@@ -81,6 +81,14 @@ Not released yet: on the MoonLightIPR branch.
 
 *Volume factors on a cloud at four volume bounces, MoonRay (left) and MoonLightIPR (right): MoonRay's defaults above; all three at 0.2 below, where each further bounce counts for much less and the cloud is darker.*
 
+![The same scene through a Modo camera and through the MoonRay camera converted from it](images/convert-camera.png)
+
+*A Modo camera converted to a MoonRay camera renders the same view in MoonRay. Both boxes are one mesh given an orange MoonRay material whole: the right one was made in it afterwards and takes the material too.*
+
+![The preview window's toolbar with MoonLightIPR chosen](images/preview-engine-list.png)
+
+*The engine list shows MoonLightIPR in full.*
+
 ![The preview before a render](images/preview-wordmark.png)
 
 *The preview before anything is rendered.*
