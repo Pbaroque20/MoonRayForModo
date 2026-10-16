@@ -48,6 +48,12 @@ Not released yet: on the MoonLightIPR branch.
 ![The graph editor's properties in their groups, above the MoonRay Widget](images/graph-editor-widget.png)
 *The graph editor's right side: a material's Diffuse group open, the others folded, and the MoonRay Widget's picture of it under MoonRay LS.*
 
+![A coarse toon torus, stepped with the preference off and smooth with it on](images/toon-smooth-edges.png)
+*Smooth toon edges on coarse meshes: a 24 × 12 torus with MoonRay's toon material. Off, as MoonRay's source has it, the lit band is stepped along the faces; on, it is smooth in MoonRay and in MoonLightIPR.*
+
+![A toon render, denoised with the preference off and on](images/toon-denoise.png)
+*Denoise toon materials cleanly: the render, then denoised with the preference off (as noisy as rendered) and on.*
+
 ![The preview before a render](images/preview-wordmark.png)
 *The preview before anything is rendered.*
 
