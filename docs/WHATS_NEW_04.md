@@ -45,6 +45,10 @@ Not released yet: on the MoonLightIPR branch.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
 - **The preview shows MoonRay's wordmark** before anything is rendered.
 
+![The MoonRay Terminal after a MoonRay render and a stereo composite](images/terminal.png)
+
+*The Terminal after a MoonRay render and a red/cyan stereo composite: each program's command, what it printed, and how it ended (green for success); "ready" while nothing runs.*
+
 ![A stereo camera's left eye, right eye and red/cyan picture](images/stereo-eyes.png)
 
 *A stereo render camera set to both eyes: the left eye, the right eye, and Modo's red/cyan composite of the two, all from one Render EXR.*
