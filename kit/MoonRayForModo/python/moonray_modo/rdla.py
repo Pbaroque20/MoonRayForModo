@@ -333,6 +333,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     lines.append('local materials = {}')
     materials = dict(scene.get('materials', {}))
     materials.setdefault('', {'color': [0.5, 0.5, 0.5], 'roughness': 0.4, 'metallic': 0})
+    # What would crash MoonRay, mended and named (as the plugin does before a render; this keeps any other writer safe).
+    from .shader_library import mend
+    materials,native_library=mend(materials,scene.get('native_materials',{}),scene.setdefault('warnings',[]))
     from . import absorption
     from .clay import material as clay_material
     clay=clay_material(scene.get('_clay_preview'))
@@ -342,16 +345,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if clay:material=dict(clay)
         if material.get('material_stack'):
             from .moonshine import emit_stack
-            emit_stack([absorption.surface(child) for child in material['material_stack']],tag,index,lines,scene.get('native_materials',{}),native_index)
+            emit_stack([absorption.surface(child) for child in material['material_stack']],tag,index,lines,native_library,native_index)
             continue
         if material.get('node_graph'):
             from .nodes import emit as emit_graph
-            ref=emit_graph(material,'/modo/nodes/%s'%index,native_index,lines,scene.get('native_materials',{}))
+            ref=emit_graph(material,'/modo/nodes/%s'%index,native_index,lines,native_library)
             lines.append('materials[%s] = %s'%(string(tag),ref))
             continue
         if material.get('native_shader'):
             from .shader_library import emit as emit_native
-            ref = emit_native(material,'/modo/native/%s'%index,native_index,lines,scene.get('native_materials',{}))
+            ref = emit_native(material,'/modo/native/%s'%index,native_index,lines,native_library)
             lines.append('materials[%s] = %s'%(string(tag),ref))
             continue
         material = absorption.surface(material)
@@ -412,7 +415,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         source=next((m for m in reversed(material.get('material_stack',[material])) if m.get('node_graph',{} ) and m['node_graph'].get('displacement')),None)
         if source:
             from .nodes import emit as emit_graph
-            ref=emit_graph(source,'/modo/displacement/%d'%index,native_index,lines,scene.get('native_materials',{}),output='displacement')
+            ref=emit_graph(source,'/modo/displacement/%d'%index,native_index,lines,native_library,output='displacement')
             lines.append('displacements[%s] = %s'%(string(tag),ref));displacement_tags.add(tag)
     lines.append('local volumes = {}')
     for index,(tag,material) in enumerate(sorted(media.items())):

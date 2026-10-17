@@ -443,6 +443,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 except ValueError:
                     tag = None
                 library[item.id] = material_stack(scene,[item],warnings,tag)[0]
+        names = {item.id: item.UniqueName() for item in scene.items('advancedMaterial', superType=True)}
+        result['materials'], library = shader_library.mend(result['materials'], library, warnings, names)
         result['native_materials'] = library
         shader_library.attach_dependencies(result['materials'],library)
         if evaluated_geometry:
@@ -452,6 +454,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             result['_evaluated_data']=data
             native_shape_materials = result['materials']
             result['materials'] = evaluated.assign_materials(data, scene, warnings)
+            result['materials'], _ = shader_library.mend(result['materials'], library, warnings, names)
             shader_library.attach_dependencies(result['materials'],library)
             result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)
             result['extra_geometry']=evaluated.extra_geometry(data,warnings)
