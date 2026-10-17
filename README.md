@@ -260,7 +260,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches. Coming in 0.4.2 |
 | Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: in Render Settings |
-| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression |
+| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. Coming in 0.4.2: the compositor adds the light passes or light groups and puts them back together, each with its own Grade |
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
 | Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window. Coming in 0.4.2 |
 | Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window. Coming in 0.4.2 |
