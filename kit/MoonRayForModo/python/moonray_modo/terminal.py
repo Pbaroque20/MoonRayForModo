@@ -81,7 +81,11 @@ def output(ident, text):
         _partial[ident] = rest[-65536:]
 
 
-def ended(ident, code, crashed=False, known=True):
+# The exit code Qt gives a program it ends by force on Windows (QProcess.kill): stopped by the plugin, not crashed.
+KILLED = 0xF291
+
+
+def ended(ident, code, crashed=False, known=True, stopped=False):
     with _lock:
         rest = _partial.pop(ident, '')
         if ident not in _running:
@@ -92,6 +96,8 @@ def ended(ident, code, crashed=False, known=True):
         seconds = time.time() - began
         if not known:
             _add('end', source, 'ended (exit code not known) after %.1f s' % seconds)
+        elif stopped:
+            _add('stop', source, 'stopped after %.1f s' % seconds)
         elif crashed:
             _add('fail', source, 'crashed (0x%08X) after %.1f s' % (code & 0xffffffff, seconds))
         else:
@@ -107,9 +113,10 @@ def watch(process, source):
     connecting its readers: the process's read functions are wrapped to copy what they return. source is the name
     shown, or a function giving it as the process starts (one process can run different programs)."""
     from PySide2 import QtCore
-    state = {'id': None}
+    state = {'id': None, 'stopped': False}
 
     def started():
+        state['stopped'] = False
         named = source() if callable(source) else source
         state['id'] = command(process.program(), process.arguments(), named, process.workingDirectory())
 
@@ -124,7 +131,10 @@ def watch(process, source):
     def finished(code, status):
         if state['id'] is not None:
             # What is left unread is the program's too.
-            ended(state['id'], code, status == QtCore.QProcess.CrashExit)
+            crashed = status == QtCore.QProcess.CrashExit
+            # Ended by the plugin (a render stopped by hand, a session closed): a stop, though Qt calls it a crash.
+            stopped = state['stopped'] or (crashed and (code & 0xffffffff) == KILLED)
+            ended(state['id'], code, crashed, stopped=stopped)
             state['id'] = None
 
     def failed(error):
@@ -137,6 +147,14 @@ def watch(process, source):
     process.readAllStandardOutput = tapped(process.readAllStandardOutput)
     process.readAllStandardError = tapped(process.readAllStandardError)
     process.readAll = tapped(process.readAll)
+
+    def stopping(end):
+        def stop(*arguments):
+            state['stopped'] = True
+            return end(*arguments)
+        return stop
+    process.kill = stopping(process.kill)
+    process.terminate = stopping(process.terminate)
     return process
 
 

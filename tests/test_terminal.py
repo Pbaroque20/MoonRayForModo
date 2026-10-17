@@ -41,6 +41,13 @@ class Record(unittest.TestCase):
         ends = [(k, t.split(' after')[0]) for k, s, t in kinds(start) if k in ('end', 'fail')]
         self.assertEqual(ends, [('fail', 'exited 3'), ('fail', 'crashed (0xC0000005)')])
 
+    def test_a_program_the_plugin_stops_is_stopped_not_crashed(self):
+        start = last()
+        terminal.ended(terminal.command('moonray.exe', [], 'MoonRay session'), terminal.KILLED, crashed=True, stopped=True)
+        got = kinds(start)[-1]
+        self.assertEqual(got[0], 'stop')
+        self.assertTrue(got[2].startswith('stopped after'))
+
     def test_the_record_is_kept_to_its_limit(self):
         self.assertEqual(terminal._entries.maxlen, terminal.LIMIT)
 
