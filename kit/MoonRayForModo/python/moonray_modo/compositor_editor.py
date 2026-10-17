@@ -15,7 +15,8 @@ WIDTH, HEADER, ROW = 170, 24, 20
 HEADERS = {'input': '#35627f', 'merge': '#3d7449', 'sum': '#3d7449', 'grade': '#86682f', 'blur': '#65548a', 'glow': '#65548a', 'output': '#7a3f3f'}
 WIRES = {'input': '#77bce8', 'merge': '#89ce94', 'sum': '#89ce94', 'grade': '#e4b367', 'blur': '#c6a0e9', 'glow': '#c6a0e9', 'output': '#e89a9a'}
 # The other nodes are coloured by what they are for: colour as Grade is, filters as Blur is, and so on.
-FAMILIES = {'colour': ('#86682f', '#e4b367'), 'filter': ('#65548a', '#c6a0e9'), 'matte': ('#59636e', '#c8d2dc'), 'make': ('#35627f', '#77bce8')}
+FAMILIES = {'colour': ('#86682f', '#e4b367'), 'filter': ('#65548a', '#c6a0e9'), 'matte': ('#59636e', '#c8d2dc'), 'make': ('#35627f', '#77bce8'),
+            'note': ('#8a7d3a', '#d8c86a')}
 for _kind, _node in compositor.NODES.items():
     if _kind not in HEADERS:
         HEADERS[_kind], WIRES[_kind] = FAMILIES[_node.get('family', 'filter')]
@@ -128,7 +129,11 @@ class Node(QtWidgets.QGraphicsRectItem):
     def __init__(self, editor, identity, value):
         kind = value['type']; schema = compositor.NODES[kind]
         ports = compositor.ports(value)
-        height = HEADER + max(1, len(ports)) * ROW + 8
+        held = compositor.parameters(value)
+        # A note is its words; every other node, in probe mode, has a line more for its value at the probed pixel.
+        words = held.get('text', '').splitlines() or ['(empty note)'] if kind == 'note' else []
+        probed = editor.probe_line(identity) if kind != 'note' else None
+        height = HEADER + (len(words) * ROW if kind == 'note' else max(1, len(ports)) * ROW) + (ROW if probed else 0) + 8
         super().__init__(0, 0, WIDTH, height)
         self.editor, self.identity = editor, identity
         self.setFlags(self.ItemIsMovable | self.ItemIsSelectable | self.ItemSendsGeometryChanges | self.ItemHasNoContents)
@@ -136,7 +141,6 @@ class Node(QtWidgets.QGraphicsRectItem):
         self.body.setBrush(QtGui.QColor(NODE_BODY)); self.body.setPen(QtGui.QPen(QtGui.QColor(NODE_EDGE), 1))
         header = QtWidgets.QGraphicsPathItem(rounded(WIDTH, HEADER, 6, square_bottom=True), self)
         header.setBrush(QtGui.QColor(HEADERS[kind])); header.setPen(QtGui.QPen(QtCore.Qt.NoPen))
-        held = compositor.parameters(value)
         title = schema['label']
         if kind == 'input':
             title = editor.buffer_label(held['buffer'])
@@ -144,6 +148,14 @@ class Node(QtWidgets.QGraphicsRectItem):
             title = 'Merge: ' + held['mode']
         label(self, title, TEXT, 10, 4, WIDTH - 20).setToolTip(schema['tip'])
         self.sockets = {}
+        if kind == 'note':
+            for index, line in enumerate(words):
+                label(self, line, TEXT, 10, HEADER + 4 + index * ROW, WIDTH - 20, size=-1)
+            self.setPos(*value.get('position', [0, 0]))
+            return
+        if probed:
+            text, ink = probed
+            label(self, text, ink, 10, HEADER + 4 + max(1, len(ports)) * ROW, WIDTH - 20, size=-1)
         if kind != 'output':
             self.sockets[None] = Socket(editor, identity, None, self, WIRES[kind]); self.sockets[None].setPos(WIDTH, HEADER / 2)
         wired = value.get('inputs') or {}
@@ -185,6 +197,8 @@ class View(GraphView):
             if connection:
                 menu.addSeparator()
             entry('Duplicate\tCtrl+D', 'duplicate', identity != self.editor.graph['root'])
+            if self.editor.probing:
+                entry('Note Probed Values', 'note_probe', self.editor.probe_point is not None)
             entry('Delete\tDel', 'delete', identity != self.editor.graph['root'])
         if not menu.isEmpty():
             menu.addSeparator()
@@ -201,6 +215,7 @@ class View(GraphView):
             return
         if what == 'disconnect': self.editor.unlink(*connection)
         elif what == 'duplicate': self.editor.duplicate()
+        elif what == 'note_probe': self.editor.note_probe()
         elif what == 'delete': self.editor.remove()
         elif what == 'add': self.editor.quick_add(self.mapToScene(event.pos()), event.globalPos())
         elif what == 'frame': self.editor.frame()
@@ -233,6 +248,16 @@ class Editor(QtWidgets.QDialog):
         menu_button('Add', [(compositor.NODES[kind]['label'], lambda kind=kind: self.add(kind)) for kind in compositor.NODES if kind != 'output'])
         menu_button('Node', [('Duplicate\tCtrl+D', self.duplicate), ('Delete\tDel', self.remove)])
         menu_button('Build', [('From Light Passes', lambda: self.build('passes')), ('From Light Groups', lambda: self.build('groups'))])
+        # Probe mode: each node's value at the pixel under the pointer in the preview, and notes of those values.
+        self.probe_button = QtWidgets.QToolButton(); self.probe_button.setText('Probe'); self.probe_button.setCheckable(True); self.probe_button.setAutoRaise(True)
+        self.probe_button.setToolTip('Show what each node makes at the pixel under the pointer in the preview window. The point stays where the pointer left the picture.')
+        self.probe_button.toggled.connect(self.set_probing); toolbar.addWidget(self.probe_button)
+        self.note_button = QtWidgets.QToolButton(); self.note_button.setText('Note Values'); self.note_button.setAutoRaise(True); self.note_button.setEnabled(False)
+        self.note_button.setToolTip('A note of the probed values of the selected nodes, or of every node when none is selected')
+        self.note_button.clicked.connect(self.note_probe); toolbar.addWidget(self.note_button)
+        self.probing = False; self.probe_point = None; self.probed = {}
+        self.probe_timer = QtCore.QTimer(self); self.probe_timer.setSingleShot(True); self.probe_timer.setInterval(120)
+        self.probe_timer.timeout.connect(self.update_probe)
         menu_button('View', [('Frame Selected\tF', self.frame), ('Frame All\tA', lambda: self.frame(everything=True))])
         for words, tip, callback in [('Undo', 'Ctrl+Z', self.undo), ('Redo', 'Ctrl+Y', self.redo)]:
             button = QtWidgets.QToolButton(); button.setText(words); button.setToolTip(tip); button.setAutoRaise(True); button.clicked.connect(callback); toolbar.addWidget(button)
@@ -350,8 +375,9 @@ class Editor(QtWidgets.QDialog):
             graph = compositor.validate(self.graph)
         except ValueError as exc:
             self.info.setText(str(exc)); return
-        # A graph that does nothing is not kept: the scene then has no Composite buffer.
-        held = {} if compositor.trivial(graph) else graph
+        # A graph that does nothing is not kept: the scene then has no Composite buffer. One with notes on it is kept for
+        # them, and still makes no Composite (compositor.trivial).
+        held = {} if compositor.trivial(graph) and not any(node['type'] == 'note' for node in graph['nodes'].values()) else graph
         if (self.stored() or {}) == held:
             return
         if self.panel._store(compositor=held):
@@ -379,6 +405,8 @@ class Editor(QtWidgets.QDialog):
 
     def closing(self):
         self.watch_timer.stop()
+        if self.probing:
+            self.set_probing(False)
         if self.write_timer.isActive():
             self.write_timer.stop(); self.write()
         try:
@@ -444,6 +472,87 @@ class Editor(QtWidgets.QDialog):
                     if entities.catalog()[entity['class']]['category'] == 'light']
         except Exception:
             return []
+
+    # ---- probe mode ----
+    def set_probing(self, on):
+        """Probe mode on or off: on, the preview's pointer gives the pixel each node's value is shown at."""
+        self.probing = bool(on)
+        self.note_button.setEnabled(self.probing)
+        try:
+            if self.probing:
+                self.panel.preview.hovered.connect(self.probe_hovered)
+            else:
+                self.panel.preview.hovered.disconnect(self.probe_hovered)
+        except (RuntimeError, TypeError):
+            pass
+        if not self.probing:
+            self.probed = {}
+            self.rebuild()
+        else:
+            self.info.setText('Probe: move the pointer over the picture in the preview window. The point stays where it left it.')
+            if self.probe_point is not None:
+                self.update_probe()
+
+    def probe_hovered(self, x, y):
+        # Off the picture, the last point is kept, so that the values can be read in the editor.
+        if x < 0 or y < 0:
+            return
+        self.probe_point = (x, y)
+        self.probe_timer.start()
+
+    def update_probe(self):
+        """Work out each node's value at the probed pixel, and show it on the canvas."""
+        if not self.probing or self.probe_point is None:
+            return
+        from . import compositor_probe
+        frame = getattr(self.panel.renderer.buffers, 'frame', None) or {}
+        x, y = self.probe_point
+        size = compositor_probe.size(frame) if frame else None
+        if size is None:
+            self.info.setText('Probe: there is no finished render to read values from.')
+            self.probed = {}
+        else:
+            try:
+                self.probed = compositor.sample(self.graph, lambda key: compositor_probe.value(frame, key, x, y), x, y, size[0], size[1])
+                self.info.setText('Probe at %d, %d.' % (x, y))
+            except (ValueError, OSError) as exc:
+                self.probed = {}
+                self.info.setText('Probe: ' + str(exc))
+        selected = self.selected_nodes()
+        self.rebuild()
+        for identity in selected:
+            if identity in self.items:
+                self.items[identity].setSelected(True)
+
+    def probe_line(self, identity):
+        """What a node shows in probe mode: its value at the probed pixel and the colour to show it in, or None."""
+        if not self.probing or identity not in self.probed:
+            return None
+        picked = self.probed[identity]
+        if picked is None:
+            return 'needs the pixels around it', TEXT_DIM
+        return 'R %.3f  G %.3f  B %.3f' % tuple(picked), '#d8c86a'
+
+    def note_probe(self):
+        """A note of the probed values of the selected nodes, or of every node when none is selected, beside them."""
+        if not self.probing or self.probe_point is None or not self.probed:
+            self.info.setText('Probe a pixel first: switch Probe on and move the pointer over the preview picture.'); return
+        chosen = [identity for identity in self.selected_nodes() if identity in self.probed and self.graph['nodes'][identity]['type'] != 'note'] or \
+                 [identity for identity in compositor.order(compositor.validate(self.graph)) if identity in self.probed]
+
+        def called(identity):
+            node = self.graph['nodes'][identity]
+            if node['type'] == 'input':
+                return self.buffer_label(compositor.parameters(node)['buffer'])
+            return compositor.NODES[node['type']]['label']
+        text = compositor.probe_note([(called(identity), self.probed[identity]) for identity in chosen], *self.probe_point)
+        right = max(self.graph['nodes'][identity]['position'][0] for identity in chosen) + WIDTH + 60
+        top = min(self.graph['nodes'][identity]['position'][1] for identity in chosen)
+        before = copy.deepcopy(self.graph)
+        identity = 'note_' + uuid.uuid4().hex[:6]
+        self.graph['nodes'][identity] = {'type': 'note', 'parameters': {'text': text}, 'inputs': {}, 'position': self.free_place(right, top)}
+        self.rebuild(); self.remember(before)
+        self.info.setText('Noted the values at %d, %d.' % self.probe_point)
 
     def aov_menu(self, menu):
         """Fill the Add Input AOV menu: the render's buffers, then the light passes and light groups the scene does not
@@ -780,6 +889,9 @@ class Editor(QtWidgets.QDialog):
             elif spec[0] == 'choice':
                 field = QtWidgets.QComboBox(); field.addItems(list(spec[2])); field.setCurrentText(held[key])
                 field.currentTextChanged.connect(lambda value, key=key: self.set_value(identity, key, value, redraw=True))
+            elif spec[0] == 'text':
+                field = QtWidgets.QPlainTextEdit(held[key]); field.setMinimumHeight(140)
+                field.textChanged.connect(lambda key=key, field=field: self.set_value(identity, key, field.toPlainText(), redraw=True))
             elif spec[0] == 'buffer':
                 field = QtWidgets.QComboBox()
                 for words, name in self.buffer_choices():
