@@ -85,3 +85,33 @@ backend. Preserve native fallback and shadow validation while isolating film
 repeatability differences. Performance measurements must follow correctness and
 remove diagnostic overhead explicitly. Other lobes, textures, scene-loading
 acceleration and demand geometry streaming are not covered by this milestone.
+
+## Follow-up: capacity and timeout stress
+
+[Queue stress evidence](queue-stress-20261017.json) records a standalone harness
+that includes the **unchanged actual queue source** and executes the real CUDA
+shader against pinned native AVX8 inputs. This exercises queue behavior directly;
+it does not render another scene or validate Modo shutdown.
+
+Two capacity runs each kept one request in flight, filled all 64 pending slots,
+and checked eight overflow requests retained their CPU answers. All 65 accepted
+requests reached the correct callers without duplicates. The worker processed
+520 samples in two batches (8 and 512), with zero shader mismatches or errors.
+
+A separate run held the worker behind its device mutex until the real ten-second
+caller timeout fired (10,010 ms observed). The caller kept its native answer,
+then overwrote both input and output buffers before the worker was released.
+The late result was discarded without changing those buffers. A subsequent
+request completed with the expected GPU result. Both requests' CUDA results
+matched the captured native inputs, confirming the worker used owned input copies.
+
+This advances timeout evidence beyond the initial render matrix, which did not
+exercise it. The test deliberately holds a mutex; it is not a device-loss or GPU
+hang test. Pending-request cancellation, renderer shutdown and DLL unloading
+remain separate work. The four-worker image parity gate remains unresolved.
+
+    python tools/xpu2_queue_stress.py --source <shared-source-read-only> --ptx test-results/xpu2-ray-image-final/sampler.ptx --output test-results/queue-stress-new
+
+The runner freezes preprocessing, records compiler/executable/source hashes,
+checks the GPU identity before and after, and requires a fresh output folder.
+It never starts Modo, installs a runtime, or edits the shared source build.
