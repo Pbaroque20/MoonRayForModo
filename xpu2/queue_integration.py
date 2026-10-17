@@ -10,9 +10,9 @@ def verify(log, gpu_samples, full=False):
     r=summaries[-1]
     fields={'calls','submitted','delivered','cpu_batches','queue_full','timeouts','late_discarded','worker_failures','worker_batches',
             'max_batch_samples','max_queue','cpu_completed_while_gpu_pending','kernel_window_cpu_observations','kernel_microseconds'}
-    if set(r) not in (fields,fields|{'cancelled_before_dispatch'}) or any(type(v) is not int or v<0 for v in r.values()):raise ValueError('Invalid queue counters')
-    if r['calls']!=r['submitted']+r['cpu_batches']+r['queue_full']:raise ValueError('Unaccounted request')
-    if r['submitted']!=r['delivered'] or r['timeouts'] or r['late_discarded'] or r['worker_failures'] or r.get('cancelled_before_dispatch',0):raise ValueError('Incomplete or failed publication')
+    if set(r) not in (fields,fields|{'cancelled_before_dispatch'},fields|{'cancelled_before_dispatch','closed_fallback'}) or any(type(v) is not int or v<0 for v in r.values()):raise ValueError('Invalid queue counters')
+    if r['calls']!=r['submitted']+r['cpu_batches']+r['queue_full']+r.get('closed_fallback',0):raise ValueError('Unaccounted request')
+    if r['submitted']!=r['delivered'] or r['timeouts'] or r['late_discarded'] or r['worker_failures'] or r.get('cancelled_before_dispatch',0) or r.get('closed_fallback',0):raise ValueError('Incomplete or failed publication')
     if r['max_queue']>64 or r['max_batch_samples']>512 or r['worker_batches']>r['submitted']:raise ValueError('Queue capacity violation')
     ids=[];samples=0
     for row in deliveries:

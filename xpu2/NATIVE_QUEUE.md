@@ -186,3 +186,53 @@ inside CUDA event windows. These scheduling observations are not speed metrics.
 No source in the shared checkout or installed kit was changed. The native test
 still uses synchronous callers and duplicate CPU reference shading. It does not
 establish a production XPU2 backend or a render-time improvement.
+
+## Bounded diagnostic drain and empty-batch validation
+
+The queue now has an explicit `stop(deadline)` admission-close/drain handshake.
+It rejects new calls to native CPU fallback, drains already accepted requests,
+and signals when the worker has reached its exit path. If work is held, it
+returns false after the condition-variable wait expires, leaving ownership
+intact; a later call can wait again. Repeated calls after draining succeed.
+The deadline applies after acquiring the queue mutex and is not a hard realtime
+bound. The native hook does not yet call this method during renderer shutdown.
+
+[Drain evidence](queue-drain-20261017.json) records six passing standalone checks
+and 208 passing unit checks. Two drain runs each held one in-flight request and
+32 pending requests. The requested 20-ms wait returned false after 32 and 31 ms.
+Calls arriving while closing and after stopping kept native answers. Releasing
+the worker delivered all 33 accepted requests correctly, with exact CUDA/native
+shader results and no duplicate publications. The later stop succeeded and a
+zero-duration repeated stop succeeded. Capacity and both timeout regressions
+also passed. Each stress case now requests an idle drain before process exit.
+
+The formerly review-only empty-batch edge case is now exercised. The harness
+sets `coalesceUs` directly to 11,000,000 under the queue mutex, solely to keep
+batch assembly open past the real ten-second caller timeout. Production
+configuration remains clamped to 1000 microseconds. The request times out and
+is pruned; stopping interrupts the coalescing loop. The worker observes exactly
+one empty batch, performs no shader dispatch, never initializes its GPU bridge,
+and reaches the exit path. A subsequent call retains its CPU answer.
+
+**This is not a reusable renderer shutdown implementation.** The thread remains
+detached and the queue/CUDA resources remain process-owned. The exit handshake
+is not a thread join or permission to unload the DLL or destroy the queue;
+callers and thread lifetime must be handled by a future reusable owner. CUDA
+resource cleanup, device-loss recovery and Modo shutdown remain unvalidated.
+
+    python tools/xpu2_queue_stress.py --source <shared-source-read-only> --ptx test-results/xpu2-ray-image-final/sampler.ptx --output test-results/queue-drain-new --cases shutdown,shutdown,capacity,timeout,pending_timeout,coalesce_timeout
+
+### Native regression with drain-capable queue
+
+[Native drain evidence](native-drain-20261017.json) records the final retained-object
+build and complete 15-case normal-render matrix. Single-worker replacement,
+mixed repeats and fallback cases retain exact RGBA and selected-path results;
+the intentional sentinel still changes the image. Native GPU shader comparisons
+remain exact. These renders do not invoke the drain method; that method is
+covered by the standalone checks above.
+
+Four-worker native controls differ in 5 pixels. Mixed runs differ from the first
+control in 5 and 3 pixels, and from each other in 4. Maximum channel difference
+is again 1.4901161193847656e-08; the bitwise image gate remains false. No tolerance
+was relaxed. The native source hash matches the final stress candidate. No
+installed kit, shared checkout source, or original XPU architecture was changed.

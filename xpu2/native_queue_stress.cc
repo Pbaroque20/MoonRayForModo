@@ -40,7 +40,48 @@ int main(int argc,char** argv) {
         require(data.size()>=4+66*8*164 && !std::memcmp(data.data(),"XNI1",4),"Missing reference packets");
         auto* q=new Queue; // Same process-owned lifecycle as the native diagnostic.
         std::unique_lock<std::mutex> hold(q->device.mutex);
-        if(!std::strcmp(argv[1],"capacity")) {
+        if(!std::strcmp(argv[1],"coalesce_timeout")) {
+            // Test-only direct field override exceeds the production 1000-us clamp.
+            // Keep the real ten-second caller deadline and force its batch to empty.
+            {std::lock_guard<std::mutex> lock(q->mutex);q->coalesceUs=11000000;}
+            auto p=packet(data,0);auto native=p.output;
+            q->run(p.input.data(),p.output.data(),8);
+            require(!std::memcmp(p.output.data(),native.data(),sizeof(native)),"Coalescing timeout changed native result");
+            hold.unlock();
+            require(q->stop(std::chrono::milliseconds(5000)),"Empty coalesced batch did not stop");
+            q->run(p.input.data(),p.output.data(),8);
+            require(p.output==native,"Post-stop fallback changed native result");
+            std::lock_guard<std::mutex> lock(q->mutex);
+            require(q->emptyBatches==1 && q->merged==0 && !q->device.attempted && q->pruned==1 && q->timeouts==1 && q->closed==1 && q->workerExited,"Empty-batch path was not exercised");
+            q->snapshot();
+            std::cout<<"{\"case\":\"coalesce_timeout\",\"test_coalesce_us\":11000000,\"empty_batches_observed\":1,\"gpu_initialized\":false,\"worker_exited\":true,\"passed\":true}\n";
+        } else if(!std::strcmp(argv[1],"shutdown")) {
+            std::array<Packet,33> packets;
+            for(size_t i=0;i<packets.size();++i)packets[i]=packet(data,i*8);
+            std::vector<std::thread> producers;
+            producers.emplace_back([&]{q->run(packets[0].input.data(),packets[0].output.data(),8);});
+            waitFor(*q,[&]{return q->submitted==1 && q->pending.empty();});
+            for(size_t i=1;i<packets.size();++i)producers.emplace_back([&,i]{q->run(packets[i].input.data(),packets[i].output.data(),8);});
+            waitFor(*q,[&]{return q->submitted==33 && q->pending.size()==32;});
+            const auto began=std::chrono::steady_clock::now();
+            require(!q->stop(std::chrono::milliseconds(20)),"Blocked worker falsely reported stopped");
+            auto waited=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-began).count();
+            require(waited<2000,"Stop deadline did not bound caller wait");
+            auto declined=packet(data,33*8);auto native=declined.output;
+            q->run(declined.input.data(),declined.output.data(),8);
+            require(declined.output==native,"Closing queue did not retain native answer");
+            hold.unlock();
+            for(auto& t:producers)t.join();
+            require(q->stop(std::chrono::milliseconds(5000)),"Worker failed to drain and stop");
+            require(q->stop(std::chrono::milliseconds(0)),"Repeated stop was not idempotent");
+            for(const auto& p:packets)require(!std::memcmp(p.output.data(),p.expected.data(),sizeof(p.output)),"Shutdown lost an accepted result");
+            q->run(declined.input.data(),declined.output.data(),8);
+            require(declined.output==native,"Stopped queue did not retain native answer");
+            std::lock_guard<std::mutex> lock(q->mutex);
+            require(q->workerExited && q->pending.empty() && q->submitted==33 && q->delivered==33 && q->closed==2 && !q->timeouts && !q->late && !q->failed,"Incomplete shutdown accounting");
+            q->snapshot();
+            std::cout<<"{\"case\":\"shutdown\",\"bounded_wait_ms\":"<<waited<<",\"accepted_results_delivered\":33,\"closed_fallbacks\":2,\"worker_exited\":true,\"idempotent_stop\":true,\"passed\":true}\n";
+        } else if(!std::strcmp(argv[1],"capacity")) {
             std::array<Packet,65> packets;
             for(size_t i=0;i<packets.size();++i)packets[i]=packet(data,i*8);
             std::vector<std::thread> producers;
@@ -113,6 +154,7 @@ int main(int argc,char** argv) {
             require(q->submitted==2 && q->delivered==1 && q->timeouts==1 && q->late==1 && !q->failed,"Timeout accounting failure");q->snapshot();
             std::cout<<"{\"case\":\"timeout\",\"waited_ms\":"<<waited<<",\"caller_buffers_preserved\":true,\"recovery_delivered\":true,\"passed\":true}\n";
         }
+        require(q->stop(std::chrono::milliseconds(5000)),"Idle worker failed to stop");
         std::cout.flush();return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

@@ -154,14 +154,16 @@ struct Request {
 };
 struct Queue {
     std::mutex mutex;
-    std::condition_variable available;
+    std::condition_variable available,stopped;
+    bool stopping=false,workerExited=false;
     std::deque<std::shared_ptr<Request>> pending;
     Bridge device;
     FILE* log=nullptr;
     unsigned capacity=32,coalesceUs=0;
     bool mixed=false,split=false;
     unsigned producers=0;
-    unsigned long long next=0,submitted=0,delivered=0,cpu=0,full=0,timeouts=0,late=0,pruned=0,merged=0,maxBatch=0,maxQueue=0,cpuPending=0,failed=0;
+    unsigned long long emptyBatches=0;
+    unsigned long long next=0,submitted=0,delivered=0,cpu=0,full=0,timeouts=0,late=0,pruned=0,closed=0,merged=0,maxBatch=0,maxQueue=0,cpuPending=0,failed=0;
     Queue() {
         const char* p=std::getenv("XPU2_QUEUE_POLICY");mixed=p && !std::strcmp(p,"mixed");split=p && !std::strcmp(p,"split");
         p=std::getenv("XPU2_QUEUE_COALESCE_US");if(p)coalesceUs=std::min(1000,std::max(0,std::atoi(p)));
@@ -171,14 +173,22 @@ struct Queue {
     }
     void snapshot() {
         if(!log)return;
-        std::fprintf(log,"{\"calls\":%llu,\"submitted\":%llu,\"delivered\":%llu,\"cpu_batches\":%llu,\"queue_full\":%llu,\"timeouts\":%llu,\"late_discarded\":%llu,\"cancelled_before_dispatch\":%llu,\"worker_failures\":%llu,\"worker_batches\":%llu,\"max_batch_samples\":%llu,\"max_queue\":%llu,\"cpu_completed_while_gpu_pending\":%llu,\"kernel_window_cpu_observations\":%llu,\"kernel_microseconds\":%llu}\n",
-          next,submitted,delivered,cpu,full,timeouts,late,pruned,failed,merged,maxBatch,maxQueue,cpuPending,kernelOverlap.load(),kernelMicroseconds.load());
+        std::fprintf(log,"{\"calls\":%llu,\"submitted\":%llu,\"delivered\":%llu,\"cpu_batches\":%llu,\"queue_full\":%llu,\"timeouts\":%llu,\"late_discarded\":%llu,\"cancelled_before_dispatch\":%llu,\"closed_fallback\":%llu,\"worker_failures\":%llu,\"worker_batches\":%llu,\"max_batch_samples\":%llu,\"max_queue\":%llu,\"cpu_completed_while_gpu_pending\":%llu,\"kernel_window_cpu_observations\":%llu,\"kernel_microseconds\":%llu}\n",
+          next,submitted,delivered,cpu,full,timeouts,late,pruned,closed,failed,merged,maxBatch,maxQueue,cpuPending,kernelOverlap.load(),kernelMicroseconds.load());
         std::fflush(log);
+    }
+    // Diagnostic drain only: retain this object if the deadline expires.
+    // Callers must also be joined before any future reusable-owner destruction.
+    bool stop(std::chrono::milliseconds deadline) {
+        std::unique_lock<std::mutex> lock(mutex);
+        stopping=true;available.notify_all();
+        return stopped.wait_for(lock,deadline,[&]{return workerExited;});
     }
     void run(float* input,float* output,int count) {
         if(count<1 || count>8)return;
         std::unique_lock<std::mutex> lock(mutex);
         auto id=next++;
+        if(stopping){++closed;snapshot();return;}
         thread_local int role=-1;
         if(role<0)role=int(producers++);
         if((mixed && id%2==0) || (split && role%2==0)) {++cpu;if(gpuPending.load())++cpuPending;snapshot();return;}
@@ -203,17 +213,20 @@ struct Queue {
             std::vector<std::shared_ptr<Request>> batch;
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                available.wait(lock,[&]{return !pending.empty();});
+                available.wait(lock,[&]{return stopping || !pending.empty();});
+                if(stopping && pending.empty()){
+                    workerExited=true;snapshot();stopped.notify_all();return;
+                }
                 // Bounded coalescing opportunity; a single producer cannot deadlock waiting for a full batch.
                 if(coalesceUs) {
                     const auto until=std::chrono::steady_clock::now()+std::chrono::microseconds(coalesceUs);
-                    while(pending.size()<4 && std::chrono::steady_clock::now()<until) {
+                    while(!stopping && pending.size()<4 && std::chrono::steady_clock::now()<until) {
                         lock.unlock();std::this_thread::yield();lock.lock();
                     }
                 }
                 while(!pending.empty() && batch.size()<64){batch.push_back(pending.front());pending.pop_front();}
                 // Callers may remove all pending work while coalescing releases the lock.
-                if(batch.empty()){snapshot();continue;}
+                if(batch.empty()){++emptyBatches;snapshot();continue;}
             }
             int count=0;for(auto &r:batch)count+=r->count;
             std::vector<float> input(count*24),output(count*8);
