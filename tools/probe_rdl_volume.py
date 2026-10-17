@@ -27,6 +27,7 @@ try:
     # As the import set it: Modo's environment kept out of MoonRay's picture.
     snapshot['environments'] = []
     snapshot['scene_variables'] = properties.scene_settings().get('scene_variables', {})
+    (out / 'snapshot.json').write_text(json.dumps(snapshot, default=str))
     text = rdla.scene_text(snapshot, 320, 180, 2, 0.0, str(out / 'imported.exr'))
     (out / 'imported.rdla').write_text(text, encoding='utf-8')
     result['volume_lines'] = [line.strip() for line in text.splitlines() if line.startswith('volumes[') or '= nil' in line]

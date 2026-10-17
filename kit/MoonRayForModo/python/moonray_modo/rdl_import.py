@@ -427,11 +427,15 @@ def plan(document, path, recover_instancer_materials=False):
         hard_edges,hard_corners,semi_sharp=hard_creases(a,faces,len(vertices))
         # Values that differ point by point, corner by corner or face by face become the mesh's vertex maps: numbers a
         # weight map, colours an RGB map, as MoonRay's auto rate tells them apart, by how many there are.
-        painted = []
+        painted, strings = [], []
         for name_, kind_, held in carried(record):
             if len(held) <= 1:
                 continue
             rate = 'points' if len(held) == len(vertices) else 'corners' if len(held) == len(indices) else 'faces' if len(held) == len(counts) else None
+            if kind_ == 'string' and rate is not None:
+                # Words have no Modo vertex map: they are kept on the mesh, by point, corner or face (vertex_maps.strings).
+                strings.append((name_, rate, [str(v) for v in held]))
+                continue
             if kind_ not in ('float', 'int', 'color', 'vec2', 'vec3') or rate is None:
                 warnings.append('%s: %s differs from face to face or point to point as %s, which a Modo vertex map cannot hold; it is not imported'
                                 % (short(record['name']), name_, 'a %s' % kind_ if rate else 'a count of values matching nothing'))
@@ -455,6 +459,7 @@ def plan(document, path, recover_instancer_materials=False):
         name = label(key) if key not in mesh.made else unique_name(short(key))
         meshes.append({'name': name, 'vertices': vertices, 'faces': faces, 'uv': uv, 'normals': normals, 'tags': tags, 'subd': bool(a.get('is_subd', False)),
                        'matrix': None, 'render': False, 'attributes': [], 'hard_edges':hard_edges, 'hard_corners':hard_corners, 'maps': painted,
+                       **({'strings': strings} if strings else {}),
                        **({'vertices_close': closing_points} if closing_points is not None else {})})
         mesh.made.setdefault(key, name)
         mesh.cache[cache_key] = mesh.scopes[scope] = name
@@ -1112,6 +1117,10 @@ def apply(data, alone=True, progress=None):
             if record['attributes']:
                 primitive_attributes.write(item, record['attributes'])
             vectors = {map_name: word for map_name, word, rate, values in record.get('maps') or [] if word in ('vec2', 'vec3')}
+            if record.get('strings'):
+                stored = dict(properties.read(item))
+                stored['string_attributes'] = {name_: {'rate': rate, 'values': values} for name_, rate, values in record['strings']}
+                properties.write(item, stored)
             if vectors:
                 # Which of its colour maps hold vectors, for them to go out to MoonRay as vectors (vertex_maps.as_vectors).
                 stored = dict(properties.read(item))

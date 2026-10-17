@@ -1180,7 +1180,7 @@ def even_fog(entities, name):
     """The volume of that name as an even fog: what it stops in a unit of distance, what of that it scatters on, what
     it gives off and which way it scatters. None unless it is a BaseVolume with one value all through, without ramps."""
     from .working_space import color as working_color
-    found = next((e for e in entities if e['name'] == name and e['class'] == 'BaseVolume'), None)
+    found = next((e for e in entities if name in (e['name'], e['identity']) and e['class'] == 'BaseVolume'), None)
     if found is None or value(found, 'use_attenuation_ramp') or value(found, 'use_diffuse_ramp') or found['parameters'].get('densities'):
         return None
     white = [1.0, 1.0, 1.0]
@@ -1268,6 +1268,9 @@ def preview(scene, warnings):
             if filters and name == 'DistantLight':
                 warnings.append('MoonLightIPR applies only intensity filters to distant light %s.' % label)
             light.update({target: float(value(entity, key)) for key, target in PREVIEW_LIGHTS[name].items()})
+            # Whether MoonRay brightens it by the scene's scale, as a normalized light does by default.
+            if 'apply_scene_scale' in catalog()[name]['attributes']:
+                light['scene_scaled'] = bool(value(entity, 'apply_scene_scale'))
             # MoonLightIPR draws each kind of light the usual way for its kind: its brightness spread over its size, except
             # for a portal. A light set the other way is given the brightness that comes to the same thing.
             usual = name != 'PortalLight'

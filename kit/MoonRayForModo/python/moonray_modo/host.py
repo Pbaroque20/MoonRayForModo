@@ -502,7 +502,18 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             from . import vertex_maps
             painted = vertex_maps.read(mesh)
             # Colour maps that hold vectors, as a MoonRay scene brought in had them: given back as vectors.
-            vertex_maps.as_vectors(painted, properties.read(item).get('vertex_map_kinds') or {})
+            kept = properties.read(item)
+            vertex_maps.as_vectors(painted, kept.get('vertex_map_kinds') or {})
+            if kept.get('string_attributes'):
+                # Words kept by point, face or corner, while the mesh still has the points and polygons they were for.
+                polygons_of = lx.object.Polygon(mesh.PolygonAccessor())
+                sizes = []
+                for index in range(mesh.PolygonCount()):
+                    polygons_of.SelectByIndex(index)
+                    if polygons_of.VertexCount() >= 3:
+                        sizes.append(polygons_of.VertexCount())
+                for name in vertex_maps.strings(painted, kept['string_attributes'], sizes, mesh.PointCount()):
+                    warnings.append('%s: the words of %s no longer match its points or polygons, and are left out' % (item.name, name))
 
             def polygon(face, tag, subdivision, uv_of, normals, ordinal):
                 """Put one polygon with its like. uv_of(name) is its corners' values in a UV map, or nothing."""

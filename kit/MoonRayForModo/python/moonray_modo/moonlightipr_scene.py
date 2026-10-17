@@ -261,11 +261,22 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
     return struct.pack('<I', len(parts)) + b''.join(parts)
 
 
+def scene_scale_of(scene):
+    """How many metres a unit of the scene is, as the scene's own scene_scale says (rdla writes 1 for Modo's scenes;
+    one brought in from MoonRay keeps its own, MoonRay's default being 0.01)."""
+    try:
+        held = float((scene.get('scene_variables') or {}).get('scene_scale', 1.0))
+    except (TypeError, ValueError):
+        return 1.0
+    return held if held > 0 and math.isfinite(held) else 1.0
+
+
 def lights(scene, warnings, environment=0.0, compiler=None, closing=None):
     """Return (distant, local) light records, with MoonRay's default normalization applied.
 
     closing, given a dict, is given each light's pose when the shutter closes, in the order of the records: under
     'distant' its direction and axes (9 floats), under 'local' its position, axes and direction (12)."""
+    scene_scale = scene_scale_of(scene)
     import subprocess
     from .working_space import color as working_color
     controls = scene.get('production', {}).get('lights', {})
@@ -330,9 +341,12 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None):
             if lighting != 1:
                 warnings.append('MoonLightIPR passes all %d lighting environments through portal %s; MoonRay needs one chosen.'
                                 % (lighting, light.get('name', '')))
-        # Normalized with MoonRay's default apply_scene_scale: color * intensity is flux / pi at scene scale 1.
-        # A portal is not normalized; its colour and intensity multiply what shows through it.
-        normalization = 1.0 if kind == 'PortalLight' else 1 / (math.pi * area)
+        # Normalized with MoonRay's default apply_scene_scale: color * intensity is flux / pi, a unit of the scene being
+        # scene_scale metres, so a smaller unit brightens the light by its square (LightUtil.h). A MoonRay light set not
+        # to apply the scene scale is flux alone, without the pi. A portal is not normalized; its colour and intensity
+        # multiply what shows through it.
+        scaled = light.get('scene_scaled', True)
+        normalization = 1.0 if kind == 'PortalLight' else (1 / (math.pi * area * scene_scale ** 2) if scaled else 1 / area)
         if closing is not None:
             closing.setdefault('local', []).append(ending[12:15] + unit(ending[0:3]) + unit(ending[4:7]) + [-v for v in unit(ending[8:11])])
         local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
@@ -593,6 +607,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     from .entities import preview as preview_entities, replaces_environment
     if replaces_environment(scene):
         environment = 0.0   # the preview environment light goes too
+    # The MoonRay items as the scene has them, before they are made into what MoonLightIPR draws: a material's volume
+    # item is looked up among them.
+    from .entities import checked as checked_entities
+    listed = checked_entities(scene)
     scene = preview_entities(scene, warnings)
     # A stereo camera's eye: moved sideways, its film the other way (stereo.placed); the left for both eyes.
     from . import stereo
@@ -608,6 +626,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         camera = dict(camera, projection_values=[width_across, 0.0, 0.0, 0.0], dof=False)
     if camera['focal_mm'] <= 0 or camera['film_mm'] <= 0:
         raise ValueError('Camera focal length and film width must be positive')
+    # How many metres a unit of the scene is: 1 for Modo's scenes, MoonRay's 0.01 for one brought in that set none.
+    scene_scale = scene_scale_of(scene)
     # The part of the picture to render: left, top, right, bottom, as fractions. The rest is black.
     region = [float(v) for v in (scene.get('region') or camera.get('region') or [0, 0, 1, 1])]
     if len(region) != 4 or not all(math.isfinite(v) for v in region) or region[2] <= region[0] or region[3] <= region[1]:
@@ -619,7 +639,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         if stop <= 0 or focus <= 0:
             raise ValueError('Depth of field requires positive f-stop and focus distance')
         blades = int(camera.get('iris_blades', 0))
-        lens = [camera['focal_mm'] / stop / 2000, focus, blades if blades >= 3 else 0, float(camera.get('iris_rotation', 0))]
+        # The lens in units of the scene, a unit being scene_scale metres (ProjectiveCamera.cc).
+        lens = [camera['focal_mm'] / stop / 2000 / scene_scale, focus, blades if blades >= 3 else 0, float(camera.get('iris_rotation', 0))]
     # A perspective camera's film offset moves the middle of the picture, in halves of the film's width, as MoonRay's
     # window does; other cameras keep theirs at the middle.
     film_shift = [0.0, 0.0]
@@ -674,6 +695,25 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     clay = clay_material(scene.get('_clay_preview'))
     if clay:
         materials = {tag: clay for tag in materials}
+    # A material filled with a MoonRay volume item (rdla.material_volume): the volume alone is drawn as the fog it is
+    # when it is even all through (entities.even_fog), as a MoonRay box or sphere of fog is; otherwise its meshes are
+    # left out. A surface filled with fog shows its surface.
+    from .rdla import material_volume
+    from .entities import even_fog
+    alone = set()
+    for tag, held in list(materials.items()):
+        name, only = material_volume(held)
+        if not name:
+            continue
+        fog = even_fog(listed, name)
+        if only and fog is not None:
+            materials[tag] = {'color': [0.0, 0.0, 0.0], 'roughness': 1.0, 'metallic': 0, '_volume': fog}
+            if any(name in (e['name'], e['identity']) and e.get('bindings') for e in listed):
+                warnings.append('MoonLightIPR shows the fog %s even all through, without the maps wired into it; MoonRay renders them.' % (held.get('name') or name))
+        elif only:
+            alone.add(tag)
+        else:
+            warnings.append('MoonLightIPR shows %s without the fog MoonRay fills it with.' % (held.get('name') or tag))
     # VDB volumes: each a unit cube over its grid, in a material that is the fog.
     from .moonlightipr_volumes import fogs as vdb_fogs
     fogs = vdb_fogs(scene, runtime, warnings)
@@ -698,15 +738,12 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     objects = scene.get('production', {}).get('objects', {})
 
     used, meshes, instances, order = set(), [], [], {}
-    from .rdla import material_volume
     for mesh in list(geometry.render_meshes(scene.get('meshes', []))) + [fog for fog, _, _ in fogs]:
         if not mesh['faces']:
             continue
-        held = {tag: material_volume((scene.get('materials') or {}).get(tag)) for tag in set(mesh.get('face_materials') or [mesh.get('material', '')])}
-        if held and all(only for _, only in held.values()):
-            # A mesh that is a MoonRay volume alone, with no surface: MoonLightIPR draws such fog in MoonRay's own
-            # boxes and spheres only.
-            warnings.append('MoonLightIPR leaves out %s, which is a MoonRay volume alone; MoonRay renders it.' % mesh['name'])
+        if set(mesh.get('face_materials') or [mesh.get('material', '')]) <= alone:
+            # A fog that is not even all through (a VDB's, or one with ramps), which MoonLightIPR draws in VDB items only.
+            warnings.append('MoonLightIPR leaves out %s, whose fog is not even all through; MoonRay renders it.' % mesh['name'])
             continue
         if mesh.get('subdivision'):
             if mesh.get('vertices_close') is not None and mesh['vertices_close'] != mesh['vertices']:

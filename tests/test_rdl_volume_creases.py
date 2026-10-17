@@ -89,3 +89,19 @@ class Vectors(unittest.TestCase):
         text = rdla.scene_text({'camera': {'matrix': rdla.IDENTITY, 'film_mm': 36, 'focal_mm': 50}, 'lights': [], 'materials': {}, 'meshes': [mesh]}, 16, 16)
         self.assertIn('["vec3f_key"] = "rest",', text)
         self.assertIn('vec3f_values_0', text)
+
+
+class Words(unittest.TestCase):
+    def test_words_at_each_point_are_kept_and_go_out_to_moonray(self):
+        value = document('/paint')
+        value['objects'][1]['attributes'].pop('volume_shaders')
+        value['objects'][2]['attributes']['primitive_attributes'] = ['/data']
+        value['objects'].append({'name': '/data', 'type': 'UserData', 'attributes': {
+            'string_key': 'part', 'string_values': ['left', 'right', 'top'], 'rate': 4}})
+        data = rdl_import.plan(value, 'words.rdla')
+        self.assertEqual(data['meshes'][0]['strings'], [('part', 'points', ['left', 'right', 'top'])])
+        mesh = {'identity': 'tri||', 'name': 'Tri', 'vertices': [[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'faces': [[0, 1, 2]], 'material': '',
+                'matrix': rdla.IDENTITY, 'point_attributes': {'part': {'kind': 'string', 'values': [['left'], ['right'], ['top']]}}}
+        text = rdla.scene_text({'camera': {'matrix': rdla.IDENTITY, 'film_mm': 36, 'focal_mm': 50}, 'lights': [], 'materials': {}, 'meshes': [mesh]}, 16, 16)
+        self.assertIn('["string_key"] = "part",', text)
+        self.assertIn('["string_values"] = {"left", "right", "top"},', text)
