@@ -1,0 +1,69 @@
+// Guard tests with the same bridge and real GPU queue as the native adapter.
+#include "batched_bridge.cc"
+#include <fstream>
+#include <iostream>
+static void require(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
+int main(int argc,char** argv){
+    try{
+        require(argc==3,"case and correlated capture required");
+        const std::string mode=argv[1];
+        std::ifstream file(argv[2],std::ios::binary);
+        std::vector<char> raw((std::istreambuf_iterator<char>(file)),{});
+        require(raw.size()>=244 && !std::memcmp(raw.data(),"XCL1",4),"Missing native event");
+        if(mode=="window"){
+            std::array<std::array<float,64>,16> output{},expected{};
+            const size_t records=(raw.size()-4)/240;
+            for(int n=0;n<16;++n){
+                std::array<float,24> input{};std::array<float,8> value{};
+                const char* record=raw.data()+4+(n%records)*240;
+                std::memcpy(input.data(),record+112,96);std::memcpy(value.data(),record+208,32);
+                int lane=n%8;std::copy(value.begin(),value.end(),output[n].begin()+lane*8);
+                expected[n]=output[n];for(int c=3;c<6;++c)expected[n][lane*8+c]*=.5f;
+                xpu2BatchedBegin(n);xpu2BatchedLambert(input.data(),value.data(),&lane,1);xpu2BatchedSampleEnd();
+                input.fill(-99);value.fill(-77);
+            }
+            require(metrics().open==16 && metrics().peakOpen==16,"Batch ownership not bounded/retained");
+            for(int n: {-1,16,0}){
+                bool rejected=false;try{xpu2BatchedBegin(n);}catch(const std::runtime_error&){rejected=true;}
+                require(rejected,"Invalid/reused slot accepted");
+            }
+            for(int n=15;n>=0;--n){
+                xpu2BatchedCollect(output[n].data(),1<<(n%8),n);
+                require(output[n]==expected[n],"Batch slot/lane result misrouted");
+            }
+            auto& q=deferredQueue();
+            require(!metrics().open && metrics().collected==16 && q.stop(std::chrono::milliseconds(5000)) &&
+                    !q.worker.joinable() && !q.retainedAsync && !q.device.cleanupErrors,"Batch resources retained");
+            std::cout<<"{\"case\":\"window\",\"passed\":true,\"cleanup\":true}\n";return 0;
+        }
+        std::array<float,24> input;std::array<float,8> native;
+        std::memcpy(input.data(),raw.data()+4+112,96);std::memcpy(native.data(),raw.data()+4+208,32);
+        std::array<float,64> post{};std::copy(native.begin(),native.end(),post.begin());
+        int lane=0;
+        xpu2BatchedBegin(0);
+        if(mode=="nested"){
+            bool rejected=false;try{xpu2BatchedBegin(0);}catch(const std::runtime_error&){rejected=true;}
+            require(rejected,"Nested native scope accepted");
+        }
+        xpu2BatchedLambert(input.data(),native.data(),&lane,1);
+        require(bool(current().ticket),"Missing ticket");
+        if(mode=="multiple")xpu2BatchedLambert(input.data(),native.data(),&lane,1);
+        xpu2BatchedSampleEnd();
+        if(mode=="transformed")post[3]+=1.f;
+        auto original=post;
+        xpu2BatchedCollect(post.data(),mode=="mask" ? 0 : 1,0);
+        require(!current().open && !current().ticket && activeCpu.load()==0,"Scope leaked");
+        auto& q=deferredQueue();
+        require(q.stop(std::chrono::milliseconds(5000)) && !q.worker.joinable(),"Queue cleanup failed");
+        require(q.retainedAsync==0 && !q.device.cleanupErrors,"Resources retained");
+        if(mode=="transformed" || mode=="mask"){
+            require(metrics().guardFallback==1 && !metrics().collected && post==original,"Changed post-sampler data published");
+        }else if(mode=="multiple"){
+            require(metrics().multipleHooks==1 && !metrics().collected && post==original,"Nested lobe output published");
+        }else if(mode=="nested" || mode=="positive"){
+            for(int i=3;i<6;++i)original[i]*=.5f;
+            require(metrics().collected==1 && post==original,"Deferred GPU result not consumed");
+        }else throw std::runtime_error("Unknown case");
+        std::cout<<"{\"case\":\""<<mode<<"\",\"passed\":true,\"cleanup\":true}\n";
+    }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
+}

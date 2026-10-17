@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [native deferred shading](DEFERRED_SHADING.md),
+See [bounded native shading batches](BATCHED_SHADING.md),
+[native deferred shading](DEFERRED_SHADING.md),
 [correlated native sampler/shader capture](CORRELATED_STATE.md),
 [native numeric state capture](NATIVE_SURFACE_STATE.md),
 [owned CPU-resume leases](CONTINUATIONS.md) and

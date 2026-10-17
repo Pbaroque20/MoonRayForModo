@@ -106,3 +106,8 @@ link inputs, retains contribution-tracing objects in both control and candidate,
 and records hashes of source, compiler, preprocessed source and output DLLs.
 The final native matrix also compares the rebuilt control with the original
 retained tracing runtime.
+
+## Batching follow-up
+
+[BATCHED_SHADING.md](BATCHED_SHADING.md) extends this handoff to bounded windows
+of native samples before ordered collection. Full path suspension remains separate.
