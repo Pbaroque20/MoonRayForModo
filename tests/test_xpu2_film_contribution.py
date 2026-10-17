@@ -38,3 +38,29 @@ class FilmEvidenceTests(unittest.TestCase):
     def test_overlapping_timing_totals_rejected(self):
         p=self.profile();p['upload_ns']=100
         with self.assertRaises(ValueError):validate_profile(p,'fast')
+
+
+class WindowEvidenceTests(unittest.TestCase):
+    profile=FilmEvidenceTests.profile
+    def controls(self):
+        packet=self.profile();packet.update(calls=4,packets=4,dispatches=4,max_slots=1)
+        window=dict(packet,calls=1,dispatches=1,max_slots=4)
+        return packet,window
+    def test_batch_requires_identical_work(self):
+        from xpu2.film_evidence import compare_windows
+        packet,window=self.controls()
+        self.assertEqual(compare_windows(packet,window)['dispatch_reduction'],4)
+        window.update(eligible=19,accepted=19,replaced=19,cpu_skipped=19)
+        with self.assertRaises(ValueError):compare_windows(packet,window)
+    def test_no_batch_rejected(self):
+        from xpu2.film_evidence import compare_windows
+        packet,window=self.controls();window['max_slots']=1
+        with self.assertRaises(ValueError):compare_windows(packet,window)
+    def test_missing_dispatch_evidence_rejected(self):
+        from xpu2.film_evidence import compare_windows
+        packet,window=self.controls();del window['packets']
+        with self.assertRaises(ValueError):compare_windows(packet,window)
+    def test_impossible_accounting_rejected(self):
+        from xpu2.film_evidence import compare_windows
+        packet,window=self.controls();window['dispatches']=2
+        with self.assertRaises(ValueError):compare_windows(packet,window)

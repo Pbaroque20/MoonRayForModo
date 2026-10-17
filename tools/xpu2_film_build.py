@@ -37,7 +37,7 @@ def main():
             if digest_file(base/label/name)!=manifest[label+'_'+name]:raise ValueError('Retained DLL drift')
         if digest_file(base/label/'xpu2_batched.dll')!=manifest['bridge_sha256']:raise ValueError('Retained bridge drift')
     report=dict(status='incomplete',base_manifest_sha256=digest_file(base/'build-inputs.json'))
-    paths=[ROOT/'xpu2/film_contribution.py',ROOT/'xpu2/film_contribution_bridge.cc',ROOT/'xpu2/film_contribution_cuda.cu',Path(__file__).resolve()]
+    paths=[ROOT/'xpu2/film_window.ispc.inc',ROOT/'xpu2/batched_collect.ispc.inc',ROOT/'xpu2/film_contribution.py',ROOT/'xpu2/film_contribution_bridge.cc',ROOT/'xpu2/film_contribution_cuda.cu',Path(__file__).resolve()]
     report['source_hashes']={str(f.relative_to(ROOT)):digest_file(f) for f in paths}
     compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';ispc=compiler.with_name('ispc.exe');env=environment(compiler.parent,out)
     def run(args,name,stdout=None):

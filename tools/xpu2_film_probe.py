@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path[:0]=[str(ROOT),str(ROOT/'tools')]
 from xpu2.reference import digest_file,inventory,verify
 from xpu2.images import read_rgba,compare_rgba
-from xpu2.film_evidence import validate_profile
+from xpu2.film_evidence import validate_profile,compare_windows
 from xpu2_baseline import environment
 from xpu2_repeatability import successful,gpu_identity
 
@@ -33,14 +33,15 @@ def main():
         else:scene.write_bytes(original.read_bytes())
         report['scene_sha256']=digest_file(scene);report['showcase']=a.showcase
         images={}
-        cases=('reference','audit','fast') if a.showcase else ('reference','disabled','shading','audit','fast','repeat','sentinel','missing')
+        cases=('reference','shading','audit','fast_packet','fast','repeat') if a.showcase else ('reference','disabled','shading','audit','fast','repeat','sentinel','missing')
         for label in cases:
             folder=out/label;folder.mkdir();rt=reference if label=='reference' else runtime;env=environment(rt,folder)
             if label not in ('reference','disabled'):
                 env.update(XPU2_NATIVE_LAMBERT='replace',XPU2_NATIVE_LAMBERT_PTX=str(lambert),XPU2_NATIVE_BATCH_WIDTH='16',XPU2_WINDOW_DISPATCH='1',XPU2_ASYNC_TRANSFERS='1',XPU2_PACKED_READBACK='1',XPU2_SHADER_AUDIT='1',XPU2_NATIVE_LIGHT_OVERLAP='1',XPU2_PROFILE_FILE=str(folder/'shading.json'),XPU2_PROFILE_QUIET='1')
-            if label in ('audit','fast','repeat','sentinel','missing'):
-                mode='fast' if label in ('repeat','missing') else label
+            if label in ('audit','fast_packet','fast','repeat','sentinel','missing'):
+                mode='fast' if label in ('fast_packet','repeat','missing') else label
                 env.update(XPU2_FILM_CONTRIBUTION=mode,XPU2_FILM_PTX=str(folder/'missing.ptx' if label=='missing' else build/'film.ptx'),XPU2_FILM_PROFILE=str(folder/'film.json'))
+            if label=='fast_packet':env['XPU2_FILM_WINDOW']='1'
             print(label,flush=True);start=time.perf_counter()
             with (folder/'render.log').open('w') as log:
                 r=subprocess.run([str(rt/'moonray.exe'),'-in',str(scene),'-out',str(folder/'beauty.exr'),'-exec_mode','xpu','-threads','1','-info','-stats',str(folder/'stats.csv')],cwd=folder,env=env,stdout=log,stderr=log,timeout=240,creationflags=subprocess.CREATE_NO_WINDOW)
@@ -56,10 +57,13 @@ def main():
             if label not in ('reference','disabled'):
                 profile=json.loads((folder/'shading.json').read_text());row['shading_profile']=profile
                 if profile['errors'] or profile['mismatch'] or not profile['replaced']:raise ValueError('GPU Lambert missing or invalid')
-            if label in ('audit','fast','repeat','sentinel','missing'):
+            if label in ('audit','fast_packet','fast','repeat','sentinel','missing'):
                 profile=json.loads((folder/'film.json').read_text());row['contribution_profile']=profile
-                row['contribution_validation']=validate_profile(profile,'fast' if label=='repeat' else label)
+                row['contribution_validation']=validate_profile(profile,'fast' if label in ('repeat','fast_packet') else label)
             (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
+        if a.showcase:
+            profiles={r['label']:r.get('contribution_profile') for r in report['runs']}
+            report['window_validation']=compare_windows(profiles['fast_packet'],profiles['fast'])
         fast=out/'fast';env=environment(runtime,fast)
         display=subprocess.run([str(runtime/'oiiotool.exe'),str(fast/'beauty.exr'),'--ch','R,G,B','--powc','0.45454545','-d','uint8','-o',str(out/'gpu-image.png')],env=env,capture_output=True,text=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
         if display.returncode:raise ValueError('Display conversion failed: '+display.stderr)

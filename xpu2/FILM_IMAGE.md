@@ -5,6 +5,10 @@ renderer now uses live GPU Lambert RGB plus GPU-computed BSDF-sampled direct and
 indirect contributions in the native image. This is not an installable or fully
 asynchronous XPU2 renderer.
 
+The follow-up [contribution-window experiment](FILM_WINDOWS.md) reduces dispatch
+overhead while preserving these image/fallback controls. Measurements below
+describe the earlier per-packet milestone.
+
 ## What reaches the image
 
 The new hook receives live light results, BSDF RGB/PDF, path throughput and sample
