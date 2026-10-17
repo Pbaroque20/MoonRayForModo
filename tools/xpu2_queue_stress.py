@@ -22,7 +22,7 @@ def main():
     p.add_argument('--cases',default='capacity,timeout,pending_timeout,shutdown,shutdown,coalesce_timeout',help='Comma-separated cases; repetitions allowed')
     a=p.parse_args();source=a.source.resolve();out=a.output.resolve();ptx=a.ptx.resolve()
     cases=a.cases.split(',')
-    if not cases or any(c not in ('capacity','timeout','pending_timeout','shutdown','coalesce_timeout','lifecycle','lifecycle_missing_ptx') for c in cases):p.error('Unknown stress case')
+    if not cases or any(c not in ('capacity','timeout','pending_timeout','shutdown','coalesce_timeout','lifecycle','lifecycle_missing_ptx','async','async_cancel','async_missing_ptx') for c in cases):p.error('Unknown stress case')
     if out.is_relative_to(source):p.error('Isolated output required')
     out.mkdir(parents=True,exist_ok=False)
     files=[ROOT/'xpu2/native_queue_stress.cc',ROOT/'xpu2/native_lambert_queue.cc',Path(__file__).resolve(),ptx]
@@ -46,7 +46,7 @@ def main():
         for name in cases:
             folder=out/(name+'-'+str(len(report['runs'])));folder.mkdir()
             runenv=environment(compiler.parent,folder)
-            runenv.update(XPU2_NATIVE_LAMBERT='sentinel',XPU2_NATIVE_LAMBERT_PTX=str(folder/'missing.ptx' if name=='lifecycle_missing_ptx' else ptx),XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),XPU2_QUEUE_CAPACITY='64',XPU2_QUEUE_POLICY='all',XPU2_QUEUE_LOG=str(folder/'queue.log'))
+            runenv.update(XPU2_NATIVE_LAMBERT='sentinel',XPU2_NATIVE_LAMBERT_PTX=str(folder/'missing.ptx' if name.endswith('missing_ptx') else ptx),XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),XPU2_QUEUE_CAPACITY='64',XPU2_QUEUE_POLICY='all',XPU2_QUEUE_LOG=str(folder/'queue.log'))
             print('Queue stress '+folder.name,flush=True)
             done=subprocess.run([str(exe),name,str(capture)],env=runenv,capture_output=True,text=True,timeout=40,creationflags=subprocess.CREATE_NO_WINDOW)
             (folder/'process.log').write_text(done.stdout+done.stderr,encoding='utf-8')
@@ -75,14 +75,19 @@ def main():
             else:
                 counts=native_integration.summary((folder/'shading.log').read_text())
                 observations=native_integration.records((folder/'shading.bin').read_bytes())
-                native_integration.verify_counts(counts,observations,'replace')
-            expected=0 if name=='coalesce_timeout' else 520 if name=='capacity' else 264 if name=='shutdown' else 16
+                if name=='async_missing_ptx':
+                    if not counts['errors'] or counts['samples']!=512 or counts['accepted'] or counts['replaced'] or observations['records']:raise ValueError('Async native fallback failed')
+                else:native_integration.verify_counts(counts,observations,'replace')
+            expected=0 if name=='async_missing_ptx' else 512 if name in ('async','async_cancel') else 0 if name=='coalesce_timeout' else 520 if name=='capacity' else 264 if name=='shutdown' else 16
             if observations['records']!=expected:raise ValueError('Unexpected shader sample count')
             rows=[json.loads(x) for x in (folder/'queue.log').read_text().splitlines() if x.startswith('{')]
             counters=[r for r in rows if 'calls' in r][-1]
             deliveries=[r for r in rows if 'delivered_id' in r]
             ids=[r['delivered_id'] for r in deliveries]
             if len(set(ids))!=len(ids) or len(ids)!=counters['delivered']:raise ValueError('Duplicate/missing publication')
+            if name in ('async','async_cancel','async_missing_ptx'):
+                wanted=set(range(3,66)) if name=='async_cancel' else set(range(64))
+                if set(ids)!=wanted or counters.get('retained_async') or counters.get('cancelled_requests')!=(3 if name=='async_cancel' else 0):raise ValueError('Async publication/credit mismatch')
             if name=='capacity' and set(ids)!=set(range(65)):raise ValueError('Capacity delivery identities differ')
             if name=='coalesce_timeout' and (ids or counters.get('cancelled_before_dispatch')!=1 or counters['worker_batches']):raise ValueError('Empty batch submitted work')
             if name=='shutdown' and (set(ids)!=set(range(33)) or counters.get('closed_fallback')!=2):raise ValueError('Shutdown request accounting failed')
@@ -91,7 +96,7 @@ def main():
                 if ids!=[64]:raise ValueError('Pending cancelled request published')
                 if counters.get('cancelled_before_dispatch')!=63 or counters['late_discarded']!=1:raise ValueError('Cancelled work was not pruned')
             if counters['calls']!=counters['submitted']+counters['cpu_batches']+counters['queue_full']+counters.get('closed_fallback',0):raise ValueError('Unaccounted caller')
-            if counters['submitted']!=counters['delivered']+counters['timeouts'] or counters['timeouts']!=counters['late_discarded']+counters.get('cancelled_before_dispatch',0):raise ValueError('Incomplete request accounting')
+            if counters['submitted']!=counters['delivered']+counters['timeouts']+counters.get('cancelled_requests',0) or counters['timeouts']+counters.get('cancelled_requests',0)!=counters['late_discarded']+counters.get('cancelled_before_dispatch',0):raise ValueError('Incomplete request accounting')
             record={'case':folder.name,'checks':result,'queue':counters,'delivery_ids':ids,'shading':counts,'observations':observations,'log_hashes':{f.name:digest_file(f) for f in folder.iterdir() if f.is_file()}}
             report['runs'].append(record)
         if identities!={str(x):digest_file(x) for x in files} or report['gpu']!=gpu_identity():raise ValueError('Source or device drift')

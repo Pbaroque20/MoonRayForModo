@@ -182,10 +182,16 @@ struct Request {
     float input[8*24],output[8*8];
     int count=0;
     unsigned long long id=0;
-    bool done=false,cancelled=false;
+    bool done=false,cancelled=false,consumed=false,credit=false;
+    std::shared_ptr<const int> owner;
+    uint64_t revision=0;
     std::condition_variable completed;
 };
+enum class Collect { Pending, Ready, Cancelled, Duplicate, WrongOwner, Stale };
 struct Queue {
+    using Ticket=std::shared_ptr<Request>;
+    const std::shared_ptr<const int> ownerToken=std::make_shared<const int>(0);
+    unsigned long long retainedAsync=0,explicitCancelled=0;
     std::mutex mutex;
     std::condition_variable available,stopped;
     std::mutex lifecycleMutex;
@@ -210,8 +216,8 @@ struct Queue {
     ~Queue(){if(worker.joinable())std::terminate();if(log)std::fclose(log);}
     void snapshot() {
         if(!log)return;
-        std::fprintf(log,"{\"calls\":%llu,\"submitted\":%llu,\"delivered\":%llu,\"cpu_batches\":%llu,\"queue_full\":%llu,\"timeouts\":%llu,\"late_discarded\":%llu,\"cancelled_before_dispatch\":%llu,\"closed_fallback\":%llu,\"worker_failures\":%llu,\"worker_batches\":%llu,\"max_batch_samples\":%llu,\"max_queue\":%llu,\"cpu_completed_while_gpu_pending\":%llu,\"kernel_window_cpu_observations\":%llu,\"kernel_microseconds\":%llu}\n",
-          next,submitted,delivered,cpu,full,timeouts,late,pruned,closed,failed,merged,maxBatch,maxQueue,cpuPending,kernelOverlap.load(),kernelMicroseconds.load());
+        std::fprintf(log,"{\"calls\":%llu,\"submitted\":%llu,\"delivered\":%llu,\"cpu_batches\":%llu,\"queue_full\":%llu,\"timeouts\":%llu,\"late_discarded\":%llu,\"cancelled_before_dispatch\":%llu,\"closed_fallback\":%llu,\"cancelled_requests\":%llu,\"retained_async\":%llu,\"worker_failures\":%llu,\"worker_batches\":%llu,\"max_batch_samples\":%llu,\"max_queue\":%llu,\"cpu_completed_while_gpu_pending\":%llu,\"kernel_window_cpu_observations\":%llu,\"kernel_microseconds\":%llu}\n",
+          next,submitted,delivered,cpu,full,timeouts,late,pruned,closed,explicitCancelled,retainedAsync,failed,merged,maxBatch,maxQueue,cpuPending,kernelOverlap.load(),kernelMicroseconds.load());
         std::fflush(log);
     }
     // Explicit owner operation, never called from DLL detach. A timed-out stop
@@ -224,6 +230,49 @@ struct Queue {
         lock.unlock();
         if(worker.joinable())worker.join();
         return cleanupOk;
+    }
+    // Nonblocking with respect to GPU completion. These operations can acquire
+    // the queue mutex and allocate; they are not lock-free or real-time APIs.
+    Ticket submit(const float* input,const float* native,int count,uint64_t revision) {
+        if(count<1 || count>8)return {};
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto id=next++;
+        if(stopping){++closed;snapshot();return {};}
+        // Credit includes completed but uncollected results, not just pending work.
+        if(retainedAsync>=capacity || pending.size()>=capacity){++full;snapshot();return {};}
+        auto request=std::make_shared<Request>();request->id=id;request->count=count;
+        request->owner=ownerToken;request->revision=revision;request->credit=true;
+        std::memcpy(request->input,input,count*96);std::memcpy(request->output,native,count*32);
+        pending.push_back(request);++submitted;++retainedAsync;
+        maxQueue=std::max(maxQueue,(unsigned long long)pending.size());available.notify_one();
+        snapshot();return request;
+    }
+    void releaseCredit(const Ticket& request) {
+        if(request->credit){request->credit=false;--retainedAsync;}
+    }
+    bool cancelLocked(const Ticket& request) {
+        if(!request || request->owner!=ownerToken || request->cancelled || request->consumed)return false;
+        request->cancelled=true;++explicitCancelled;
+        auto queued=std::find(pending.begin(),pending.end(),request);
+        if(queued!=pending.end()){pending.erase(queued);++pruned;releaseCredit(request);}
+        else if(request->done){++late;releaseCredit(request);}
+        // In-flight cancellation retains its credit until the worker discards it.
+        snapshot();return true;
+    }
+    bool cancel(const Ticket& request) {
+        std::lock_guard<std::mutex> lock(mutex);return cancelLocked(request);
+    }
+    Collect tryCollect(const Ticket& request,uint64_t revision,float* output) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if(!request || request->owner!=ownerToken)return Collect::WrongOwner;
+        if(request->consumed)return Collect::Duplicate;
+        if(request->cancelled)return Collect::Cancelled;
+        if(request->revision!=revision){cancelLocked(request);return Collect::Stale;}
+        if(!request->done)return Collect::Pending;
+        std::memcpy(output,request->output,request->count*32);
+        request->consumed=true;++delivered;releaseCredit(request);
+        if(log)std::fprintf(log,"{\"delivered_id\":%llu,\"samples\":%d}\n",request->id,request->count);
+        snapshot();return Collect::Ready;
     }
     void run(float* input,float* output,int count) {
         if(count<1 || count>8)return;
@@ -282,7 +331,7 @@ struct Queue {
                 ++merged;maxBatch=std::max(maxBatch,(unsigned long long)count);if(failure)++failed;
                 offset=0;
                 for(auto &r:batch) {
-                    if(r->cancelled)++late;
+                    if(r->cancelled){++late;releaseCredit(r);}
                     else {if(!failure)std::memcpy(r->output,output.data()+offset*8,r->count*32);r->done=true;r->completed.notify_one();}
                     offset+=r->count;
                 }

@@ -1,6 +1,8 @@
 # XPU2 â€” experimental runtime extension
 
-Status: **foundation only; no XPU2 GPU shader or renderer is enabled**.
+Status: **experimental native GPU shading and queue validation; no installable
+or selectable XPU2 renderer yet**.
+See [nonblocking queue tickets](ASYNC_QUEUE.md) for the latest integration step.
 Started from MoonLightIPR commit `1f8e54b`. This directory is outside the
 installed Modo kit and is not included by its packaging tools.
 

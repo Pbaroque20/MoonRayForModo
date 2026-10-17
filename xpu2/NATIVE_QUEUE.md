@@ -323,3 +323,10 @@ owner lifecycle. Existing native image tests were not repeated because the queue
 implementation is unchanged; multithread bitwise image parity remains unresolved.
 
     python tools/xpu2_dll_probe.py --source <shared-source-read-only> --ptx test-results/xpu2-ray-image-final/sampler.ptx --output test-results/dll-boundary-new
+
+## Nonblocking submission milestone
+
+The queue now also exposes owned asynchronous tickets with bounded outstanding
+results, revision checks and explicit cancellation. See [ASYNC_QUEUE.md](ASYNC_QUEUE.md)
+for the contract and recorded stress checks. The native hook still uses `run()`;
+this does not yet replace synchronous native calls with path continuations.

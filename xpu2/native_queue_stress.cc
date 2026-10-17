@@ -64,7 +64,49 @@ int main(int argc,char** argv) {
         }
         auto* q=new Queue; // Explicitly stopped and deleted by this standalone owner.
         std::unique_lock<std::mutex> hold(q->device.mutex);
-        if(!std::strcmp(argv[1],"coalesce_timeout")) {
+        if(!std::strcmp(argv[1],"async") || !std::strcmp(argv[1],"async_cancel") || !std::strcmp(argv[1],"async_missing_ptx")) {
+            const bool missing=!std::strcmp(argv[1],"async_missing_ptx");
+            const bool cancellation=!std::strcmp(argv[1],"async_cancel");
+            std::array<Packet,66> packets;
+            std::array<Queue::Ticket,66> tickets;
+            for(size_t i=0;i<packets.size();++i){packets[i]=packet(data,i*8);if(missing)packets[i].expected=packets[i].output;}
+            tickets[0]=q->submit(packets[0].input.data(),packets[0].output.data(),8,17);
+            require(bool(tickets[0]),"First async request declined");
+            waitFor(*q,[&]{return q->pending.empty();});
+            for(size_t i=1;i<64;++i){tickets[i]=q->submit(packets[i].input.data(),packets[i].output.data(),8,17);require(bool(tickets[i]),"Async credit rejected too soon");}
+            std::array<float,64> destination;destination.fill(9876.f);
+            require(q->tryCollect(tickets[0],17,destination.data())==Collect::Pending,"Held GPU request did not remain pending");
+            require(q->tryCollect(std::make_shared<Request>(),17,destination.data())==Collect::WrongOwner,"Foreign owner accepted");
+            if(cancellation) {
+                require(q->cancel(tickets[0]),"In-flight cancel failed");
+                require(q->cancel(tickets[1]),"Pending cancel failed");
+                require(!q->cancel(tickets[1]),"Cancellation was counted twice");
+                require(q->tryCollect(tickets[2],18,destination.data())==Collect::Stale,"Stale scene revision accepted");
+                for(size_t i=64;i<66;++i){tickets[i]=q->submit(packets[i].input.data(),packets[i].output.data(),8,17);require(bool(tickets[i]),"Pruned credits were not reusable");}
+            }
+            require(!q->submit(packets[0].input.data(),packets[0].output.data(),8,17),"Async credit limit not enforced");
+            for(size_t i=0;i<(cancellation?66u:64u);++i){packets[i].input.fill(-1234.f);packets[i].output.fill(5678.f);}
+            require(std::all_of(destination.begin(),destination.end(),[](float v){return v==9876.f;}),"Unready/rejected collection wrote output");
+            // All submissions returned with the GPU worker still held by this thread.
+            hold.unlock();
+            waitFor(*q,[&]{for(size_t i=cancellation?3:0;i<(cancellation?66u:64u);++i)if(!tickets[i]->done)return false;return true;});
+            if(!cancellation)require(!q->submit(packets[0].input.data(),packets[0].output.data(),8,17),"Uncollected ready results did not retain credits");
+            unsigned collected=0;
+            for(int i=cancellation?65:63;i>=(cancellation?3:0);--i) {
+                require(q->tryCollect(tickets[i],17,destination.data())==Collect::Ready,"Ready async result not delivered");
+                require(!std::memcmp(destination.data(),packets[i].expected.data(),sizeof(destination)),"Async ownership/order corrupted output");
+                destination.fill(9876.f);
+                require(q->tryCollect(tickets[i],17,destination.data())==Collect::Duplicate,"Duplicate result published");
+                require(std::all_of(destination.begin(),destination.end(),[](float v){return v==9876.f;}),"Duplicate collection wrote output");++collected;
+            }
+            if(cancellation)for(int i=0;i<3;++i)require(q->tryCollect(tickets[i],17,destination.data())==Collect::Cancelled,"Cancelled async result published");
+            require(q->stop(std::chrono::milliseconds(5000)),"Async queue did not drain");
+            require(!q->submit(packets[0].input.data(),packets[0].output.data(),8,17),"Closed async queue admitted work");
+            {std::lock_guard<std::mutex> lock(q->mutex);
+             require(q->retainedAsync==0 && q->delivered==collected && q->explicitCancelled==(cancellation?3u:0u),"Async terminal accounting mismatch");
+             require(q->pruned==(cancellation?2u:0u) && q->late==(cancellation?1u:0u),"Async cancellation accounting mismatch");q->snapshot();}
+            std::cout<<"{\"case\":\""<<argv[1]<<"\",\"submissions_while_gpu_held\":"<<(cancellation?66:64)<<",\"reverse_order_collections\":"<<collected<<",\"pending_and_duplicate_writes\":0,\"retained_credits\":0,\"passed\":true}\n";
+        } else if(!std::strcmp(argv[1],"coalesce_timeout")) {
             // Test-only direct field override exceeds the production 1000-us clamp.
             // Keep the real ten-second caller deadline and force its batch to empty.
             {std::lock_guard<std::mutex> lock(q->mutex);q->coalesceUs=11000000;}
