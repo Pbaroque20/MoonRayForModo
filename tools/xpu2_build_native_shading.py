@@ -17,6 +17,7 @@ def main():
     p.add_argument('--source',required=True,type=Path)
     p.add_argument('--runtime',required=True,type=Path)
     p.add_argument('--output',required=True,type=Path)
+    p.add_argument('--queued',action='store_true',help='Build the bounded GPU worker-queue diagnostic')
     a=p.parse_args();source,runtime,out=a.source.resolve(),a.runtime.resolve(),a.output.resolve()
     if out.is_relative_to(source) or out.is_relative_to(runtime):p.error('Isolated output required')
     out.mkdir(parents=True,exist_ok=False)
@@ -49,8 +50,13 @@ def main():
     anchor='    return LambertBsdfLobe_eval(lobe, slice, wi, &pdf);'
     if text.count(anchor)!=1:raise ValueError('Unexpected native sample layout')
     text='extern "C" void xpu2NativeLambert(uniform float input[], uniform float output[], uniform int count);\n'+text.replace(anchor,(ROOT/'xpu2/native_lambert_hook.ispc.inc').read_text(encoding='utf-8'))
+    if a.queued:
+        text='extern \"C\" void xpu2NativeCpuBegin();\n'+text
+        anchor='    wi = localToGlobal(lambert->mFrame, sampleLocalHemisphereCosine(r1, r2));'
+        if text.count(anchor)!=1:raise ValueError('Unknown native CPU sampling entry')
+        text=text.replace(anchor,'    xpu2NativeCpuBegin();\n'+anchor)
     code=out/'BsdfLambert.ispc';code.write_text(text,encoding='utf-8')
-    bridge=out/'bridge.cc';bridge.write_bytes((ROOT/'xpu2/native_lambert_bridge.cc').read_bytes())
+    bridge=out/'bridge.cc';bridge.write_bytes((ROOT/'xpu2'/('native_lambert_queue.cc' if a.queued else 'native_lambert_bridge.cc')).read_bytes())
     compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';ispc=compiler.with_name('ispc.exe')
     flags+=['-I'+str(original.parent)]
     env=dict(os.environ);env['PATH']=str(compiler.parent)+os.pathsep+env.get('PATH','')
@@ -68,7 +74,7 @@ def main():
     ccflags=['-std=c++17','-O2','-mavx','-mno-avx2','-mno-fma','-ffp-contract=off','-I'+str(includes)]
     run([str(compiler),*ccflags,'-E',str(bridge),'-o',str(out/'bridge.ii')],'cpp-preprocess')
     run([str(compiler),*ccflags,'-c',str(out/'bridge.ii'),'-o',str(out/'bridge.obj')],'cpp-compile')
-    report={'status':'incomplete','scope':'Retained shading objects plus isolated Lambert hook; no clean source/runtime rebuild',
+    report={'status':'incomplete','queued':a.queued,'scope':'Retained shading objects plus isolated Lambert hook; no clean source/runtime rebuild',
             'source':str(source),'runtime':str(runtime),'source_sha256':original_sha,'inputs':manifest,
             'ispc_flags':flags,'compiler_sha256':sha(compiler),'ispc_compiler_sha256':sha(ispc),
             'hook_sha256':sha(code),'bridge_sha256':sha(bridge),'ispc_preprocessed_sha256':sha(out/'lambert.pp'),

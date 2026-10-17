@@ -102,3 +102,8 @@ documents. Neither command modifies the source build or installs a runtime.
     python tools/xpu2_build_native_shading.py --source <shared-source-read-only> --runtime test-results/xpu2-origin-build/trace --output test-results/native-shading-build-new
     python tools/xpu2_native_shading_probe.py --build test-results/native-shading-build-new --ptx-reference test-results/xpu2-ray-image-final --scene-reference test-results/xpu2-primary-state --output test-results/native-shading-new
     python -m unittest discover -s tests -p "test_xpu2*.py" -q
+
+[NATIVE_QUEUE.md](NATIVE_QUEUE.md) adds bounded GPU dispatch and measured CPU/GPU
+overlap in the native integrator. Single-worker results remain exact; the separate
+four-worker bitwise image gate is unresolved. GPU callers still wait, and no
+acceleration or production lifecycle is claimed.

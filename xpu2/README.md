@@ -205,3 +205,8 @@ operation to the native XPU integrator in an isolated diagnostic DLL. Two live
 replacement renders match every float32 RGBA pixel and all measured shader
 outputs; an intentional color perturbation proves the bridge reaches the film.
 Calls are still synchronous and retain CPU validation, so no acceleration is claimed.
+
+[NATIVE_QUEUE.md](NATIVE_QUEUE.md) adds bounded GPU dispatch and measured CPU/GPU
+overlap in the native integrator. Single-worker results remain exact; the separate
+four-worker bitwise image gate is unresolved. GPU callers still wait, and no
+acceleration or production lifecycle is claimed.
