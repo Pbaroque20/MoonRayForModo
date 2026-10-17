@@ -152,6 +152,8 @@ def _pieces(mesh, inside):
                                             for name, held in mesh['corner_attributes'].items() if len(held['values']) == total}
         if mesh.get('creases'):
             changed['creases'] = [(order[a], order[b], sharpness) for a, b, sharpness in mesh['creases'] if a in order and b in order]
+        if mesh.get('corners'):
+            changed['corners'] = [(order[a], sharpness) for a, sharpness in mesh['corners'] if a in order]
         if own is None:
             changed['face_materials'] = [tags[index] for index in chosen]
         else:
@@ -226,6 +228,35 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     with WRITING,working_configuration(scene.get('asset_settings',{})),reference_configuration(scene),textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
         return _scene_text(scene,width,height,samples,environment,output_file)
 
+def material_volume(material):
+    """The MoonRay volume item a material is filled with, and whether it is that volume alone: (name, only), the
+    topmost layer of a stack that names one having the last word. ('', False) for none."""
+    for layer in reversed((material or {}).get('material_stack') or [material or {}]):
+        if layer.get('moonray_volume'):
+            return str(layer['moonray_volume']), bool(layer.get('volume_only'))
+    return '', False
+
+
+def overscan_margin(scene, width, height, output_file):
+    """How many pixels a render to a file goes past the frame on each side, across and up: Modo's camera overscan
+    (1 for none) makes the picture that many times larger, the frame in its middle. A preview shows the frame alone."""
+    scale = float((scene.get('camera') or {}).get('overscan', 1.0) or 1.0)
+    if not output_file or scale <= 1.0 or not math.isfinite(scale):
+        return 0, 0
+    return int(round(int(width) * (scale - 1.0) / 2.0)), int(round(int(height) * (scale - 1.0) / 2.0))
+
+
+def overscan_lines(scene, width, height, output_file):
+    """MoonRay's windows for overscan: the frame stays the picture's display window, and the region rendered reaches
+    past it on every side; the EXR keeps the frame as its display window and the rest as its data."""
+    across, up = overscan_margin(scene, width, height, output_file)
+    if not (across or up):
+        return []
+    width, height = int(width), int(height)
+    return ['  ["aperture_window"] = {0, 0, %d, %d},' % (width, height),
+            '  ["region_window"] = {%d, %d, %d, %d},' % (-across, -up, width + across, height + up)]
+
+
 def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     """Serialize a snapshot to an RDLA scene. samples is MoonRay's grid side."""
     if not 16 <= int(width) <= 16384 or not 16 <= int(height) <= 16384:
@@ -251,6 +282,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         raise ValueError('Orthographic width must be positive')
     if camera.get('pixel_aspect',1)<=0:
         raise ValueError('Camera pixel aspect must be positive')
+    from . import stereo
     film_offset=camera.get('film_offset',[0,0])
     if len(film_offset)!=2:
         raise ValueError('Camera film offset must have two components')
@@ -273,7 +305,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
              '  ["bokeh_angle"] = %s,' % number(math.degrees(camera.get('iris_rotation', 0))),
              '  ["mb_shutter_open"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[0]),
              '  ["mb_shutter_close"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[-1]),
-             '  ["near"] = 0.001,', '}',
+             '  ["near"] = 0.001,',
+             # A stereo camera's eye (stereo.lines): none for one that renders from the middle.
+             *stereo.lines(camera, scene), '}',
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
     entity_camera=entities.render_camera(scene)
     if entity_camera:
@@ -408,9 +442,21 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["attenuation_color"] = %s,' % attenuation,
                       '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
                       '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
+    # A material filled with a MoonRay volume item: that item's shader, over any absorption of Modo's; a material that is
+    # the volume alone has no surface, as MoonRay renders a mesh given a volume and no material.
+    entity_list = entities.checked(scene)
+    for tag, material in sorted(materials.items()):
+        name, only = material_volume(material)
+        if name:
+            lines.append('volumes[%s] = %s' % (string(tag), entities.reference(entity_list, name, 'VOLUME', material.get('name') or tag)))
+            if only:
+                lines.append('materials[%s] = nil' % string(tag))
     lines += ['local objectShadowReceiverSets = {}', 'local materialShadowReceiverSets = {}',
               'local function assign(g, part, tag, owner)',
-              '  local a = {g, part, materials[tag], objectLightSets[owner] or materialLightSets[tag] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
+              '  local a = {g, part}',
+              # A material that is a volume alone has no surface, and so none here.
+              '  if materials[tag] then table.insert(a, materials[tag]) end',
+              '  table.insert(a, objectLightSets[owner] or materialLightSets[tag] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet)',
               '  if objectLightFilterSets[owner] or materialLightFilterSets[tag] then table.insert(a, objectLightFilterSets[owner] or materialLightFilterSets[tag]) end',
               '  if objectShadowSets[owner] or materialShadowSets[tag] then table.insert(a, objectShadowSets[owner] or materialShadowSets[tag]) end',
               '  if objectShadowReceiverSets[owner] or materialShadowReceiverSets[tag] then table.insert(a, objectShadowReceiverSets[owner] or materialShadowReceiverSets[tag]) end',
@@ -503,11 +549,15 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                 values = held['values']
                 if len(values) != count:
                     raise ValueError('Vertex map %s of %s does not match its %s' % (map_name, mesh['name'], 'points' if rate == 4 else 'polygon corners'))
-                word = 'color' if held['kind'] == 'color' else 'float'
-                written = vector_array(values, 'Rgb') if word == 'color' else array(number(v[0]) for v in values)
+                # A colour, a vector (a colour map holding one: vertex_maps.as_vectors), or a number.
+                word = {'color': 'color', 'vec2': 'vec2f', 'vec3': 'vec3f', 'string': 'string'}.get(held['kind'], 'float')
+                written = (vector_array(values, 'Rgb') if word == 'color' else vector_array(values, 'Vec2') if word == 'vec2f'
+                           else vector_array(values, 'Vec3') if word == 'vec3f' else array(string(str(v[0])) for v in values) if word == 'string'
+                           else array(number(v[0]) for v in values))
                 name = '/modo/mesh/%d/map/%s/%d' % (index, source, map_index)
                 lines += ['UserData(%s) {' % string(name), '  [%s] = %s,' % (string(word + '_key'), string(map_name)),
-                          '  ["rate"] = %d,' % rate, '  [%s] = %s,' % (string(word + '_values_0'), written), '}']
+                          # MoonRay's words are string_values, without the _0 the numbers have.
+                          '  ["rate"] = %d,' % rate, '  [%s] = %s,' % (string(word + ('_values' if word == 'string' else '_values_0')), written), '}']
                 user_data.append('UserData(%s)' % string(name))
         from . import primitive_attributes
         instance_values = []
@@ -540,6 +590,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     raise ValueError('Invalid subdivision crease')
             lines += ['    ["subd_crease_indices"] = %s,' % array(str(v) for edge in creases for v in edge[:2]),
                       '    ["subd_crease_sharpnesses"] = %s,' % array(number(edge[2]) for edge in creases)]
+        corners = mesh.get('corners', []) if subdivision else []
+        if corners:
+            # Points made sharp: Modo's subdivision weight on a point, as MoonRay's corner sharpness.
+            if any(type(a) is not int or not 0 <= a < len(vertices) or sharpness < 0 for a, sharpness in corners):
+                raise ValueError('Invalid subdivision corner')
+            lines += ['    ["subd_corner_indices"] = %s,' % array(str(a) for a, _ in corners),
+                      '    ["subd_corner_sharpnesses"] = %s,' % array(number(sharpness) for _, sharpness in corners)]
         emitting = scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{})
         if emitting.get('mesh_light') and lighting.mesh_camera(emitting)[0]:
             # A mesh light that is seen is the light itself, which lies exactly on the mesh: were the mesh seen too, each
@@ -610,6 +667,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               '  ["fps"] = %s,'%number(scene.get('fps',24)),
               '  ["texture_cache_size"] = %d,'%max(64,min(131072,int(scene.get('asset_settings',{}).get('texture_cache_mb',4000)))),
               '  ["image_width"] = %d,' % int(width), '  ["image_height"] = %d,' % int(height),
+              *overscan_lines(scene, width, height, output_file),
               '  ["pixel_samples"] = %d,' % int(samples),
               '  ["enable_motion_blur"] = %s,' % ('true' if scene.get('motion_steps') else 'false'),
               '  ["motion_steps"] = %s,' % array(number(v) for v in scene.get('motion_steps',[-.25,.25])),
@@ -672,6 +730,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         # UI bounds use top-left coordinates, native sub_viewport uses bottom-left.
         bounds = [math.floor(left*width), math.floor((1-bottom)*height),
                   math.ceil(right*width), math.ceil((1-top)*height)]
+        # With overscan, MoonRay counts the region from the corner of the larger picture.
+        across, up = overscan_margin(scene, width, height, output_file)
+        bounds = [bounds[0]+across, bounds[1]+up, bounds[2]+across, bounds[3]+up]
         lines.append('  ["sub_viewport"] = %s,' % array(str(v) for v in bounds))
     # Scene variables the scene holds beyond the plugin's own settings, as a scene brought in from MoonRay does: each
     # has the last word over what the plugin would have written for it.

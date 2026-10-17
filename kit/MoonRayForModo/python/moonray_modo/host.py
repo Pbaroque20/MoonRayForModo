@@ -21,6 +21,53 @@ def world_matrix(item):
     return [float(value) for row in rows for value in row]
 
 
+def subdivision_creases(mesh, faces):
+    """Modo's subdivision weights on a subdivided mesh's edges and points, as MoonRay's creases: (a, b, sharpness) for
+    each weighted edge of faces, and (point, sharpness) for each weighted point, by point index. A weight of 1 (100%)
+    is a sharpness of 10, as sharp as MoonRay's creases go; the importer reads them back the same way (rdl_import). None
+    of either for a mesh without a Subdivision weight map."""
+    map_id = first_map(mesh, lx.symbol.i_VMAP_SUBDIV)
+    if map_id is None:
+        return [], []
+    points = lx.object.Point(mesh.PointAccessor())
+    edge = lx.object.Edge(mesh.EdgeAccessor())
+    value = lx.object.storage('f', 1)
+    ids = {}
+
+    def point_id(index):
+        if index not in ids:
+            points.SelectByIndex(index)
+            ids[index] = points.ID()
+        return ids[index]
+
+    creases, seen = [], set()
+    for face in faces:
+        for a, b in zip(face, face[1:] + face[:1]):
+            pair = (min(a, b), max(a, b))
+            if pair in seen:
+                continue
+            seen.add(pair)
+            try:
+                edge.SelectEndpoints(point_id(pair[0]), point_id(pair[1]))
+                found = edge.MapValue(map_id, value)
+            except (LookupError, RuntimeError):
+                continue
+            weight = value.get()[0] if found else 0.0
+            if weight > 0:
+                creases.append((pair[0], pair[1], min(1.0, weight) * 10.0))
+    corners = []
+    for index in sorted({v for face in faces for v in face}):
+        try:
+            points.Select(point_id(index))
+            found = points.MapValue(map_id, value)
+        except (LookupError, RuntimeError):
+            continue
+        weight = value.get()[0] if found else 0.0
+        if weight > 0:
+            corners.append((index, min(1.0, weight) * 10.0))
+    return creases, corners
+
+
 def first_map(mesh, map_type, name=None):
     accessor = lx.object.MeshMap(mesh.MeshMapAccessor())
     if not accessor.test():
@@ -178,6 +225,10 @@ def material_values(material):
                                 'specular_fresnel':float(channel(material,'specFres',1)),
                                 'reflection_fresnel':float(channel(material,'reflFres',1)),
                                 'thin_geometry': settings.get('thin_geometry',False),
+                                # A MoonRay volume item that fills what wears this material, and whether the material is
+                                # that volume alone, with no surface (as a MoonRay scene's mesh full of fog is).
+                                'moonray_volume': settings.get('moonray_volume',''),
+                                'volume_only': bool(settings.get('volume_only',False)),
                                 # The objects whose surfaces join in this material's subsurface light: MoonRay's sss trace set.
                                 'rdl_layer_links': settings.get('rdl_layer_links', {}),
                                 'sss_trace_set': sorted(str(v) for v in (settings.get('sss_trace_set') or [])),
@@ -309,6 +360,16 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                          'iris_blades': int(channel(camera, 'irisBlades', 0)),
                          'iris_rotation': float(channel(camera, 'irisRot', 0))},
               'width': width, 'height': height, 'materials': {}, 'meshes': [], 'lights': []}
+    # Modo's stereo: which eye or eyes, how far apart, where they converge, and the composite of the two.
+    if channel(camera, 'stereo', 0):
+        result['camera']['stereo'] = {'eye': str(channel(camera, 'stereoEye', 'both')),
+                                      'interocular': float(channel(camera, 'ioDist', .065)),
+                                      'convergence': float(channel(camera, 'convDist', 2.0)),
+                                      'composite': str(channel(camera, 'stereoComp', 'stereoNone'))}
+    # Modo's overscan: how much more than the frame is rendered, 1 for none.
+    overscan = float(channel(camera, 'overscan', 1.0))
+    if overscan > 1.0:
+        result['camera']['overscan'] = overscan
     # Another camera for MoonRay's adaptive tessellation, where one is chosen.
     chosen = properties.scene_settings().get('dicing_camera') or ''
     if chosen:
@@ -440,6 +501,19 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             # The mesh's weight and colour maps, for its materials to read (vertex_maps).
             from . import vertex_maps
             painted = vertex_maps.read(mesh)
+            # Colour maps that hold vectors, as a MoonRay scene brought in had them: given back as vectors.
+            kept = properties.read(item)
+            vertex_maps.as_vectors(painted, kept.get('vertex_map_kinds') or {})
+            if kept.get('string_attributes'):
+                # Words kept by point, face or corner, while the mesh still has the points and polygons they were for.
+                polygons_of = lx.object.Polygon(mesh.PolygonAccessor())
+                sizes = []
+                for index in range(mesh.PolygonCount()):
+                    polygons_of.SelectByIndex(index)
+                    if polygons_of.VertexCount() >= 3:
+                        sizes.append(polygons_of.VertexCount())
+                for name in vertex_maps.strings(painted, kept['string_attributes'], sizes, mesh.PointCount()):
+                    warnings.append('%s: the words of %s no longer match its points or polygons, and are left out' % (item.name, name))
 
             def polygon(face, tag, subdivision, uv_of, normals, ordinal):
                 """Put one polygon with its like. uv_of(name) is its corners' values in a UV map, or nothing."""
@@ -570,6 +644,13 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                                          'smooth': object_settings['smooth'] if object_settings['override'] else True,
                                          'subdivision_level': object_settings['level'],
                                          'subdivision': object_settings['subdivision'] if object_settings['override'] else subdivision})
+                if result['meshes'][-1]['subdivision']:
+                    # Its creases: Modo's subdivision weights, as MoonRay's crease sharpness.
+                    creases, corners = subdivision_creases(mesh, result['meshes'][-1]['faces'])
+                    if creases:
+                        result['meshes'][-1]['creases'] = creases
+                    if corners:
+                        result['meshes'][-1]['corners'] = corners
                 declared = {}
                 for face_tag in set(face_materials):
                     # Polygons no material is set on wear the scene's base material.

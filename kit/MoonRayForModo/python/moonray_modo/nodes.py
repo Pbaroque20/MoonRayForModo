@@ -277,10 +277,15 @@ def normal_descriptor(node,graph):
     return image_descriptor(source)
 
 
-def emit(material,name,index,lines,library,output="root"):
+def emit_map(graph,name,lines,library=None):
+    """A map and what is wired into it, written for a MoonRay item's attribute to be bound to; its reference."""
+    return emit({'node_graph':graph},name,[2000000000],lines,library or {},validated=False)
+
+
+def emit(material,name,index,lines,library,output="root",validated=True):
     from .rdla import string,number,vector
     from .textures import prepare
-    g=validate(material['node_graph']);cache={}
+    g=validate(material['node_graph']) if validated else effective(material['node_graph']);cache={}
     def definition(kind,path,attributes):
         lines.append('%s(%s) {'%(kind,string(path)))
         lines.extend('  [%s] = %s,'%(string(key),value) for key,value in attributes.items())

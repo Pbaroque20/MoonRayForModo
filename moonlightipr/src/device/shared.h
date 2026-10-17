@@ -353,6 +353,7 @@ struct LaunchParams {
     float lensAngle;
     unsigned cameraProjection;      // 0 perspective, 1 fisheye, 2 spherical, 3 orthographic
     float cameraProjectionValues[4];
+    float cameraShift[2];           // a perspective camera's film offset, in halves of the picture across and up
     unsigned region[4];     // the pixels to render: from column, from row, to column, to row; the rest are black
     unsigned draft;         // 0 none, 1 lines outside the region, 2 lines everywhere
     unsigned mixedVisibility;   // some instance is hidden from one kind of ray and not from another

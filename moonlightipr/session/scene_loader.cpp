@@ -166,13 +166,14 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     Reader in(path);
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
-    // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are. A plugin and a session of different versions say so plainly, in
+    // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
+    // camera's film offset is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x47534c4d)
+    if (mark != 0x48534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'G'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'H'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -202,6 +203,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     in.floats(camera.projectionValues, 4);
     in.floats(camera.region, 4);
     camera.draft = in.value<uint32_t>();
+    in.floats(camera.filmShift, 2);
     // With motion blur, the camera again as it is when the shutter closes.
     Camera cameraClose = camera;
     if (sceneFlags & SCENE_MOTION) {

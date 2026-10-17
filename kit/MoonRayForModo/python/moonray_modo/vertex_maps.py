@@ -97,6 +97,43 @@ def read(mesh):
     return result
 
 
+def strings(maps, held, polygon_sizes, point_count):
+    """Add the words a mesh keeps for MoonRay (held: {name: {'rate', 'values'}}), as a MoonRay scene brought in had
+    them, to its maps as the kind 'string': by point, or by each corner of each surface polygon (a word by face is
+    given to each of its corners). Those whose count no longer matches the mesh are left out and named."""
+    missed = []
+    for name, entry in (held or {}).items():
+        rate, values = entry.get('rate'), list(entry.get('values') or [])
+        if rate == 'points' and len(values) == point_count:
+            maps[name] = {'kind': 'string', 'points': [[v] for v in values]}
+        elif rate == 'faces' and len(values) == len(polygon_sizes):
+            maps[name] = {'kind': 'string', 'corners': [[[v]] * size for v, size in zip(values, polygon_sizes)]}
+        elif rate == 'corners' and len(values) == sum(polygon_sizes):
+            corners, offset = [], 0
+            for size in polygon_sizes:
+                corners.append([[v] for v in values[offset:offset + size]]); offset += size
+            maps[name] = {'kind': 'string', 'corners': corners}
+        else:
+            missed.append(name)
+    return missed
+
+
+def as_vectors(maps, kinds):
+    """Give back as vectors the colour maps that hold them (kinds: {name: 'vec2' or 'vec3'}, kept on the mesh where a
+    MoonRay scene's vectors came in as colour maps); a vec2 keeps the first two of each colour's three numbers."""
+    for name, kind in kinds.items():
+        held = maps.get(name)
+        if not held or held['kind'] != 'color' or kind not in ('vec2', 'vec3'):
+            continue
+        size = 2 if kind == 'vec2' else 3
+        held['kind'] = kind
+        if 'points' in held:
+            held['points'] = [list(v)[:size] for v in held['points']]
+        else:
+            held['corners'] = [[list(v)[:size] for v in face] for face in held['corners']]
+    return maps
+
+
 def for_faces(maps, ordinals):
     """What one shape made of some of the mesh's polygons carries: the point maps whole (the shape holds every point),
     and the corner maps for its own polygons, in its own order (ordinals, as the scene reader counts polygons)."""

@@ -223,7 +223,7 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 - **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; [moonlightipr/README.md](moonlightipr/README.md) says how closely, scene by scene, and what it leaves out.
 - **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is not remapped. A Modo material's smoothing angle is followed, except on a mesh of more than 300,000 faces, which is smoothed all over and named in a notice. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy is untested, rough environment reflections come out dimmer in MoonRay, and remaining Shader Tree effects and some masks are not translated. Modo's own group light linking is translated but experimental; check it against Modo.
 - **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, arithmetic and UV transforms. Nodes outside that subset are not read.
-- **RDL import leaves some things out**, and names each in its report: motion (the scene comes in as it stands at shutter open), values that differ face by face or point by point, subdivision creases, authored normals and light filter sets.
+- **RDL import leaves a few things out**, and names each in its report. Coming in 0.4.2: motion, values that differ face by face or point by point, subdivision creases and meshes filled with fog come in.
 - **Geometry**: some instancing, motion, subdivision, UV-projection and normal-map cases differ from Modo. A mesh that mixes polygon kinds or needs per-polygon projection is read the slower way. A shadow a coarse mesh casts on itself, as a torus's on the inside of its hole, follows its faces, in MoonRay and MoonLightIPR alike; subdivision smooths it.
 - **Cryptomatte**: ID previews are not an interactive matte-selection tool. Fog has mattes of its own coming in 0.4.2.
 - **Preview**: some edits still need the whole scene read again; the compositor works on finished MoonRay renders, not on MoonLightIPR's. Safe Denoising and Continue are for the MoonRay engine.
@@ -238,13 +238,13 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only |
 | Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget under MoonRay LS, quicker, coming in 0.4.2 |
 | Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. Coming in 0.4.2: a Modo camera converted to any of them |
-| Stereo cameras | ![partly](docs/images/feature-partly.svg) | MoonRay renders the eye a camera is set to; MoonLightIPR shows it from the middle |
-| Overscan (rendering past the frame edge) | ![no](docs/images/feature-no.svg) |  |
+| Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows each eye. Coming in 0.4.2 |
+| Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, in final renders. Coming in 0.4.2 |
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
 | Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights |
 | Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | |
 | Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | |
-| Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry |
+| Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Coming in 0.4.2: creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews. Coming in 0.4.2: on by default in MoonLightIPR, also while it follows edits, and moving lights |
@@ -271,7 +271,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default. Coming in 0.4.2 |
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | |
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes. Per point and per face coming in 0.4.2 |
-| RDL scene import | ![partly](docs/images/feature-partly.svg) | Some things left out, named in its report |
+| RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Coming in 0.4.2: motion, creases, fog meshes, values by point or face, and instancers of any size |
 | Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
 
@@ -297,7 +297,6 @@ a subdivided one (left); with the override, both are smooth (right).*
 
 - Fur guides, and the fur vector and width maps.
 - More of Modo's material: the Principled model's diffuse (which brightens with roughness in Modo) and smooth highlights under every model.
-- Motion from imported RDL scenes as Modo animation; subdivision creases and authored normals on import.
 - The remaining Shader Tree effects and masks. (Motion blur while the preview follows edits is coming in 0.4.2.)
 - Modo 17.1 on Windows, then macOS.
 - Broader validation: other GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.

@@ -378,9 +378,14 @@ def collect(scene, warnings):
             try:
                 if render_visible(item):
                     from . import primitive_attributes
-                    result.append({'identity': item.id, 'name': item.name, 'class': name, 'matrix': world_matrix(item),
-                                   'parameters': from_channels(name, lambda channel: item.channel(channel).get()),
-                                   'attributes': primitive_attributes.read(item)})
+                    held = {'identity': item.id, 'name': item.name, 'class': name, 'matrix': world_matrix(item),
+                            'parameters': from_channels(name, lambda channel: item.channel(channel).get()),
+                            'attributes': primitive_attributes.read(item)}
+                    # Maps wired into its values, as a MoonRay scene brought in had them (block binds them).
+                    bindings = properties.read(item).get('map_bindings')
+                    if bindings:
+                        held['bindings'] = bindings
+                    result.append(held)
             except (ValueError, LookupError, RuntimeError, AttributeError, TypeError) as exc:
                 warnings.append('MoonRay item %s: %s.' % (getattr(item, 'name', '?'), exc))
     # The first, generic item kept its class and values in a tag; plain locators may carry one too.
@@ -842,10 +847,23 @@ def block(entities, entity, extra=()):
             # MoonRay moves a light during the shutter only when the light says so.
             lines.append('  ["mb"] = true,')
     lines += ['  [%s] = %s,' % (string(key), text) for key, text in extra]
+    # Maps wired into its values: each map's nodes are written before the item, and the value is bound to the map,
+    # which MoonRay then scales by the value.
+    maps, bound = [], {}
+    for key, held in sorted((entity.get('bindings') or {}).items()):
+        if key not in catalog()[entity['class']]['attributes']:
+            continue
+        from .nodes import emit_map
+        bound[key] = emit_map(held, '/modo/entity/%s/map/%s' % (entity['identity'], key), maps)
     for key, authored in sorted(entity['parameters'].items()):
         if not key.startswith('modo_'):
-            lines.append('  [%s] = %s,' % (string(key), literal(entities, entity, key, authored)))
-    return name, lines + ['}']
+            text = literal(entities, entity, key, authored)
+            lines.append('  [%s] = %s,' % (string(key), 'bind(%s, %s)' % (bound[key], text) if key in bound else text))
+    for key in sorted(set(bound) - set(entity['parameters'])):
+        spec = catalog()[entity['class']]['attributes'][key]
+        unit = 'Rgb(1, 1, 1)' if spec['type'] == 'Rgb' else '1'
+        lines.append('  [%s] = bind(%s, %s),' % (string(key), bound[key], unit))
+    return name, maps + lines + ['}']
 
 
 def emit_lights(scene, lines, refs=None):
@@ -1094,8 +1112,11 @@ def camera_view(camera, entity, matrix, note):
                         iris_rotation=math.radians(float(value(entity, 'bokeh_angle'))))
             if value(entity, 'bokeh') and entity['parameters'].get('bokeh_image'):
                 note('a bokeh image')
-        if int(value(entity, 'stereo_view') or 0):
-            note('a stereo eye, shown from the middle')
+        eye = int(value(entity, 'stereo_view') or 0)
+        if eye in (1, 2):
+            # The eye it renders, moved to as MoonRay moves it (stereo.placed).
+            view['stereo'] = {'eye': 'left' if eye == 1 else 'right', 'interocular': float(value(entity, 'stereo_interocular_distance')),
+                              'convergence': float(value(entity, 'stereo_convergence_distance'))}
         return view
     if name == 'DomeMaster3DCamera':
         # Its rays are a spherical camera's (DomeMaster3DCamera.cc): across and up the picture by its two fields of
@@ -1159,7 +1180,7 @@ def even_fog(entities, name):
     """The volume of that name as an even fog: what it stops in a unit of distance, what of that it scatters on, what
     it gives off and which way it scatters. None unless it is a BaseVolume with one value all through, without ramps."""
     from .working_space import color as working_color
-    found = next((e for e in entities if e['name'] == name and e['class'] == 'BaseVolume'), None)
+    found = next((e for e in entities if name in (e['name'], e['identity']) and e['class'] == 'BaseVolume'), None)
     if found is None or value(found, 'use_attenuation_ramp') or value(found, 'use_diffuse_ramp') or found['parameters'].get('densities'):
         return None
     white = [1.0, 1.0, 1.0]
@@ -1247,6 +1268,9 @@ def preview(scene, warnings):
             if filters and name == 'DistantLight':
                 warnings.append('MoonLightIPR applies only intensity filters to distant light %s.' % label)
             light.update({target: float(value(entity, key)) for key, target in PREVIEW_LIGHTS[name].items()})
+            # Whether MoonRay brightens it by the scene's scale, as a normalized light does by default.
+            if 'apply_scene_scale' in catalog()[name]['attributes']:
+                light['scene_scaled'] = bool(value(entity, 'apply_scene_scale'))
             # MoonLightIPR draws each kind of light the usual way for its kind: its brightness spread over its size, except
             # for a portal. A light set the other way is given the brightness that comes to the same thing.
             usual = name != 'PortalLight'

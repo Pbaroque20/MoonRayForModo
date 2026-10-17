@@ -1659,6 +1659,21 @@ class Panel(Tools, QtWidgets.QWidget):
         self.image_info.setStyleSheet('QLabel,QLabel:disabled{color:#ffd166;}' if note else '')
 
     def _finished(self, output):
+        step = (getattr(self, '_stereo_after', None) or {}).pop(output, None) if output else None
+        if step and step[0] == 'render':
+            # The left eye is saved: now the right (panel_tools.render_final).
+            try:self._submit(step[1], step[2])
+            except Exception as exc:self._failed(str(exc))
+            return
+        if step and step[0] == 'composite':
+            # Both eyes are saved: their composite in the file chosen.
+            from . import stereo
+            try:
+                from .native import find_runtime
+                stereo.composite(find_runtime(self.runtime_path()), step[1], step[2][0], step[2][1], step[3])
+                output = step[3]
+            except Exception as exc:
+                self._failed(str(exc));return
         if not output and getattr(self,'_draft_then',None) is not None and self.draft.isChecked():
             # The draft's lines are drawn: now the region, by the engine chosen.
             scene,self._draft_then=self._draft_then,None

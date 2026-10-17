@@ -1471,7 +1471,8 @@ ML_INLINE bool draftEdge(const Hit& a, const Hit& b) {
 // The way a camera ray goes for a place on the picture, from -1 to 1 across and up, by the camera's own lens;
 // outside is set where the lens sees nothing.
 ML_INLINE float3 cameraDirection(float sx, float sy, bool& outside) {
-    float3 direction = normalize(vec(params.cameraU) * sx + vec(params.cameraV) * sy + vec(params.cameraW));
+    float3 direction = normalize(vec(params.cameraU) * (sx + params.cameraShift[0])
+                                 + vec(params.cameraV) * (sy + params.cameraShift[1]) + vec(params.cameraW));
     outside = false;
     if (params.cameraProjection == 3) return normalize(vec(params.cameraW));
     if (params.cameraProjection != 0) {
