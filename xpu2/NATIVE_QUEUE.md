@@ -292,3 +292,34 @@ channel difference 2.9802322387695312e-08. Mixed candidates differ from the firs
 control in 25 and 16 pixels (maximum 1.4901161193847656e-08), and from each other
 in 17. These observations do not establish a tolerance or the cause of each
 candidate difference; exact multithread parity remains an open gate.
+
+## Windows DLL boundary validation
+
+[DLL boundary evidence](dll-boundary-20261017.json) records a separately compiled
+Windows test DLL containing the unchanged actual queue stress code, plus a host
+loader. This is a diagnostic module, not the complete MoonRay shading DLL or a
+Modo plugin. The queue source hash matches the last native-render candidate.
+
+The final loader completed ten load/run/cleanup/unload cycles: four loads each
+running four successful GPU owner lifecycles; four loads each running four
+missing-PTX/native-fallback lifecycles; and two loads each running a held-worker
+drain with 33 accepted requests. Every GPU result matched its pinned native
+reference. Every lifecycle joined its worker, checked resource cleanup and
+deleted its owner before returning across the exported C ABI boundary.
+
+For every cycle, the loader verified the module was absent before loading,
+confirmed that the same lookup returned the loaded module's handle, then called
+`FreeLibrary` and verified absence again. A short post-unload scheduling interval
+and repeated reloads completed without process failure. Held-worker scenarios
+still returned false at the initial stop deadline, retained CPU answers for
+closed admission, then delivered all accepted results before cleanup/unload.
+No renderer operations or CUDA cleanup run from `DllMain`.
+
+This closes the controlled diagnostic DLL-boundary gap, not general plugin
+unload safety. Actual Modo admission/callback lifetime, the complete native
+shading DLL, device loss and long-duration memory behavior still need testing.
+The native hook remains process-owned and is not yet connected to this explicit
+owner lifecycle. Existing native image tests were not repeated because the queue
+implementation is unchanged; multithread bitwise image parity remains unresolved.
+
+    python tools/xpu2_dll_probe.py --source <shared-source-read-only> --ptx test-results/xpu2-ray-image-final/sampler.ptx --output test-results/dll-boundary-new
