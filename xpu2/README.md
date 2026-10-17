@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [dedicated GPU queue during active rendering](DEDICATED_QUEUE.md),
+See [live GPU contribution images and measured overhead](FILM_IMAGE.md),
+[dedicated GPU queue during active rendering](DEDICATED_QUEUE.md),
 [native scene drains and persistent-session validation](NATIVE_SCENE_DRAIN.md),
 [scene lifetime and retained GPU jobs](SCENE_LIFETIME.md),
 [owned shadow requests and native visibility](SHADOW_REQUESTS.md),
