@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [live fused shading and contribution dispatch](LIVE_FUSED_FILM.md),
+See [live transfer and graph replay measurements](FILM_TRANSFERS.md),
+[live fused shading and contribution dispatch](LIVE_FUSED_FILM.md),
 [live contribution-window batching](FILM_WINDOWS.md),
 [live GPU contribution images and measured overhead](FILM_IMAGE.md),
 [dedicated GPU queue during active rendering](DEDICATED_QUEUE.md),

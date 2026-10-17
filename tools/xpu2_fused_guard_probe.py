@@ -15,13 +15,19 @@ def bind(dll,name,args):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--build',required=True,type=Path);p.add_argument('--output',required=True,type=Path)
-    a=p.parse_args();build=a.build.resolve();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
+    p.add_argument('--streamed',action='store_true')
+    p.add_argument('--graphs',action='store_true')
+    a=p.parse_args()
+    if a.graphs and not a.streamed:p.error('--graphs requires --streamed')
+    build=a.build.resolve();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
     report=dict(status='incomplete',scope='Synthetic capture ownership and fused CUDA lane rejection; not scene validation',capture=[],windows=[])
     try:
         m=json.loads((build/'report.json').read_text());assert m['status']=='built' and m['fused']
         for name in ('film.ptx','xpu2_film.dll','runtime/xpu2_batched.dll'):
             if digest_file(build/name)!=m['files'][name]:raise ValueError('Build drift')
         os.environ.update(XPU2_FILM_CONTRIBUTION='fast',XPU2_FUSED_FILM='1',XPU2_FILM_PTX=str(build/'film.ptx'),XPU2_FILM_PROFILE=str(out/'film.json'))
+        if a.streamed:os.environ['XPU2_FILM_ASYNC_TRANSFERS']='1'
+        if a.graphs:os.environ['XPU2_FILM_GRAPH']='1'
         directory=os.add_dll_directory(str(build/'runtime'))
         capture=C.CDLL(str(build/'runtime/xpu2_batched.dll'))
         begin=bind(capture,'xpu2BatchedBegin',[C.c_int]);end=bind(capture,'xpu2BatchedSampleEnd',[])
@@ -82,7 +88,11 @@ def main():
         finish();profile=json.loads((out/'film.json').read_text());report['profile']=profile
         if profile['shader_checked']!=52 or profile['accepted']!=104 or profile['cpu_skipped']!=104 or profile['shader_mismatch']!=26 or profile['mismatch']!=26 or profile['shader_unsupported']!=52:raise ValueError('Guard accounting incorrect')
         if profile['errors'] or profile['cleanup_errors']:raise ValueError('GPU or cleanup failed')
-        report.update(status='passed',build_manifest_sha256=digest_file(build/'report.json'))
+        if a.streamed:
+            if profile['async_completed']!=6 or profile['completion_waits']!=6 or profile['pinned_allocations']!=2 or profile['pinned_frees']!=2:raise ValueError('Pinned transfer completion/lifetime failure')
+        if a.graphs:
+            if profile['graph_builds']!=6 or profile['graph_frees']!=6 or profile['graph_launches']!=6 or profile['graph_captures']!=6 or profile['graph_sources_freed']!=6:raise ValueError('Graph lifecycle or replay failure')
+        report.update(graphs=a.graphs,streamed=a.streamed,status='passed',build_manifest_sha256=digest_file(build/'report.json'))
     except Exception as exc:report['error']=str(exc)
     (out/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8');print(report['status'],report.get('error',''))
     return 0 if report['status']=='passed' else 1
