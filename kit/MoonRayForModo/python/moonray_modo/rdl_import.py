@@ -19,8 +19,10 @@ import uuid
 from pathlib import Path
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-# More instances than this of one instancer are not made into Modo items, which would be too many to work with.
+# More instances than this of one instancer are not made into Modo items, which would be too many to work with: the
+# rest come in merged into meshes, each of at most MERGED_POINTS points (combined).
 INSTANCE_LIMIT = 20000
+MERGED_POINTS = 1000000
 LINE, BEZIER, BSPLINE = 0, 1, 2
 pending = None
 result = ''
@@ -91,6 +93,80 @@ def hard_creases(attributes, faces, vertex_count):
 def product(a, b):
     """a then b, for matrices that move a row vector: the order MoonRay writes them in."""
     return [sum(a[row * 4 + k] * b[k * 4 + col] for k in range(4)) for row in range(4) for col in range(4)]
+
+
+def moved(point, matrix):
+    """A point moved by a matrix that moves a row vector."""
+    return [point[0] * matrix[i] + point[1] * matrix[4 + i] + point[2] * matrix[8 + i] + matrix[12 + i] for i in range(3)]
+
+
+def turned(normal, matrix):
+    """A normal turned by a matrix: by the inverse of its transpose, which keeps it square to a stretched surface."""
+    a, b, c, d, e, f, g, h, k = (matrix[i] for i in (0, 1, 2, 4, 5, 6, 8, 9, 10))
+    # The cofactors of the turning part; their rows, times a row vector, give the normal up to its length.
+    rows = [[e * k - f * h, f * g - d * k, d * h - e * g], [c * h - b * k, a * k - c * g, b * g - a * h], [b * f - c * e, c * d - a * f, a * e - b * d]]
+    result_ = [sum(normal[j] * rows[j][i] for j in range(3)) for i in range(3)]
+    length = math.sqrt(sum(v * v for v in result_))
+    return [v / length for v in result_] if length > 1e-20 else list(normal)
+
+
+def combined(source, copies, title):
+    """Copies of one mesh merged into meshes in the scene's own space, each of at most MERGED_POINTS points. Values a
+    copy carries for the whole of it become values face by face; those all copies share stay the merged mesh's own."""
+    per = max(1, MERGED_POINTS // max(1, len(source['vertices'])))
+    shared = [entry for entry in copies[0]['attributes']
+              if all(any(other['name'] == entry['name'] and other['value'] == entry['value'] for other in copy['attributes']) for copy in copies)]
+    names, varying = {entry['name'] for entry in shared}, {}
+    for copy in copies:
+        for entry in copy['attributes']:
+            if entry['name'] not in names:
+                varying.setdefault(entry['name'], entry['type'])
+    moving = any('matrix_close' in copy for copy in copies) or 'vertices_close' in source
+    count = len(source['faces'])
+    made = []
+    for start in range(0, len(copies), per):
+        chunk = copies[start:start + per]
+        record = {'name': '%s merged %d' % (title, start // per + 1), 'vertices': [], 'faces': [], 'uv': [], 'normals': [], 'tags': [],
+                  'subd': source['subd'], 'matrix': list(IDENTITY), 'render': True, 'attributes': [dict(entry) for entry in shared],
+                  'hard_edges': [], 'hard_corners': [], 'maps': []}
+        maps = {name: (word, rate, []) for name, word, rate, values in source.get('maps') or []}
+        strings = {name: (rate, []) for name, rate, values in source.get('strings') or []}
+        closing = [] if moving else None
+        for copy in chunk:
+            offset, matrix = len(record['vertices']), copy['matrix']
+            record['vertices'] += [moved(p, matrix) for p in source['vertices']]
+            record['faces'] += [[i + offset for i in face] for face in source['faces']]
+            record['uv'] += [list(v) for v in source['uv']]
+            record['normals'] += [turned(n, matrix) for n in source['normals']]
+            record['tags'] += source['tags']
+            record['hard_edges'] += [[a + offset, b + offset, w] for a, b, w in source['hard_edges']]
+            record['hard_corners'] += [[i + offset, w] for i, w in source['hard_corners']]
+            for name, word, rate, values in source.get('maps') or []:
+                maps[name][2].extend(values)
+            for name, rate, values in source.get('strings') or []:
+                strings[name][1].extend(values)
+            if closing is not None:
+                closing += [moved(p, copy.get('matrix_close', matrix)) for p in source.get('vertices_close') or source['vertices']]
+            own = {entry['name']: entry['value'] for entry in copy['attributes']}
+            for name, kind in varying.items():
+                value = own.get(name)
+                if kind == 'string':
+                    strings.setdefault(name, ('faces', []))[1].extend([str(value if value is not None else '')] * count)
+                    continue
+                if kind in ('color', 'vec2', 'vec3'):
+                    held = [float(v) for v in list(value or [])[:3]]
+                    held += [0.0] * (3 - len(held))
+                else:
+                    held = [float(value or 0)]
+                word = kind if kind in ('color', 'vec2', 'vec3') else 'float'
+                maps.setdefault(name, (word, 'faces', []))[2].extend([held] * count)
+        record['maps'] = [(name, word, rate, values) for name, (word, rate, values) in maps.items()]
+        if strings:
+            record['strings'] = [(name, rate, values) for name, (rate, values) in strings.items()]
+        if closing is not None:
+            record['vertices_close'] = closing
+        made.append(record)
+    return made
 
 
 def placed(position, orientation=None, scale=None):
@@ -601,8 +677,11 @@ def plan(document, path, recover_instancer_materials=False):
 
     emitter_geometries={v.get('attributes',{}).get('geometry') for v in objects.values() if v['type']=='MeshLight'}
 
-    def place(name, matrix, title, owner=None, depth=0, outer=(), close=None):
-        """Put one object into the scene at a matrix: a mesh, a MoonRay shape, curves, or everything an instancer repeats."""
+    left_out = {}
+
+    def place(name, matrix, title, owner=None, depth=0, outer=(), close=None, merge=None):
+        """Put one object into the scene at a matrix: a mesh, a MoonRay shape, curves, or everything an instancer repeats.
+        With merge, it is one of the copies past INSTANCE_LIMIT, merged into meshes named after merge (combined)."""
         record = objects.get(name)
         if record is None:
             return
@@ -619,17 +698,20 @@ def plan(document, path, recover_instancer_materials=False):
             source = mesh(record, owner)
             if source:
                 instances.append({'name': title, 'source': source, 'matrix': matrix, 'attributes': merged(picked(carried(record)), outer),
-                                  **({'matrix_close': close} if close is not None else {})})
+                                  **({'matrix_close': close} if close is not None else {}), **({'merge': merge} if merge is not None else {})})
+        elif kind == 'RdlInstancerGeometry':
+            repeated(record, matrix, title, depth, outer, owner, close, merge)
+        elif merge is not None:
+            # Only meshes merge; a copy of anything else past the limit is left out, and counted.
+            left_out[merge] = left_out.get(merge, 0) + 1
         elif kind == 'RdlCurveGeometry':
             strands(dict(record, name=name), matrix, outer, None if title == label(name) else title, owner, close)
-        elif kind == 'RdlInstancerGeometry':
-            repeated(record, matrix, title, depth, outer, owner, close)
         elif kind in catalog and catalog[kind]['category'] == 'geometry':
             entity(record, matrix, title, owner, outer, close)
         else:
             warnings.append('%s: %s has no counterpart in Modo and is not imported' % (short(name), kind))
 
-    def repeated(record, parent, title, depth, outer=(), owner=None, parent_close=None):
+    def repeated(record, parent, title, depth, outer=(), owner=None, parent_close=None, merge=None):
         a, name = record.get('attributes', {}), record['name']
         references = [r for r in a.get('references', [])]
         if not references:
@@ -672,9 +754,9 @@ def plan(document, path, recover_instancer_materials=False):
             warnings.append(short(name) + ': ref_indices does not match the instances; the first prototype is used, as MoonRay does')
         # Per-instance attribute arrays describe the original list, including skipped entries.
         values, total = carried(record), len(transforms)
-        if len(transforms) > INSTANCE_LIMIT:
-            warnings.append('%s: only the first %d of its %d instances are imported' % (short(name), INSTANCE_LIMIT, len(transforms)))
-            transforms = transforms[:INSTANCE_LIMIT]
+        if len(transforms) > INSTANCE_LIMIT and merge is None:
+            warnings.append('%s: of its %d instances, the first %d come in as Modo instances and the rest merged into meshes'
+                            % (short(name), len(transforms), INSTANCE_LIMIT))
         # A referenced instancer's node transform is already included by its parent
         # when use_reference_xforms is enabled; otherwise it must stay excluded.
         own = checked_matrix(a.get('node_xform', IDENTITY), name) if depth == 0 else IDENTITY
@@ -699,7 +781,8 @@ def plan(document, path, recover_instancer_materials=False):
                 matrix = product(at_open, base)
                 if close is not None or at_close is not None:
                     close = product(at_close or at_open, close if close is not None else base)
-            place(reference, matrix, '%s %d' % (title, index + 1), (name,) + owners(owner), depth + 1, merged(picked(values, index, total), outer), close)
+            place(reference, matrix, '%s %d' % (title, index + 1), (name,) + owners(owner), depth + 1, merged(picked(values, index, total), outer), close,
+                  merge if merge is not None else title if index >= INSTANCE_LIMIT else None)
 
     # A shape an instancer repeats is not in the picture itself, only where the instancer puts it.
     referenced = {name for v in objects.values() if v['type'] == 'RdlInstancerGeometry' for name in v.get('attributes', {}).get('references', [])}
@@ -746,9 +829,12 @@ def plan(document, path, recover_instancer_materials=False):
                 warnings.append(name + ': material graph could not be converted: ' + str(exc))
 
     # A mesh placed once keeps its place as the item's own transform; placed more than once, the rest are instances of it.
-    first = {}
+    first, merging = {}, {}
     for entry in instances:
-        first.setdefault(entry['source'], entry)
+        if 'merge' in entry:
+            merging.setdefault((entry['merge'], entry['source']), []).append(entry)
+        else:
+            first.setdefault(entry['source'], entry)
     for record in meshes:
         entry = first.get(record['name'])
         if entry:
@@ -757,7 +843,16 @@ def plan(document, path, recover_instancer_materials=False):
                 record['matrix_close'] = entry['matrix_close']
             # The mesh takes the place and the name of its first instance.
             entry['source'] = None
-    instances = [entry for entry in instances if entry['source']]
+    instances = [entry for entry in instances if entry['source'] and 'merge' not in entry]
+    # The copies past INSTANCE_LIMIT, merged into meshes: a set for each instancer, and for each mesh it repeats.
+    sources = {record['name']: record for record in meshes}
+    for (title, source), copies in merging.items():
+        named = title if sum(1 for key in merging if key[0] == title) == 1 else '%s %s' % (title, source)
+        for record in combined(sources[source], copies, named):
+            record['name'] = unique_name(record['name'])
+            meshes.append(record)
+    for title, count in left_out.items():
+        warnings.append('%s: %d of its copies past the first %d are not meshes, which alone merge, and are not imported' % (title, count, INSTANCE_LIMIT))
 
     # The scene's own settings, where it set them.
     settings, set_keys = {}, authored(variables) if 'authored' in variables else set()
