@@ -52,6 +52,10 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 - **The preview shows MoonRay's wordmark** before anything is rendered.
 - **The MoonRay mark moves**: it comes in as the preview opens, breathes while a render is on its way, and fades out over the first picture.
 
+![The MoonRay mark coming in as the preview opens](docs/images/crest-entrance.gif)
+
+*The MoonRay mark as the preview opens: after a second the letters rise in from the left, then the crescent fades in from the right.*
+
 ![The MoonRay Terminal after a MoonRay render and a stereo composite](docs/images/terminal.png)
 
 *The Terminal after a MoonRay render and a red/cyan stereo composite: each program's command, what it printed, and how it ended (green for success); "ready" while nothing runs.*
