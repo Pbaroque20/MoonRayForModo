@@ -161,7 +161,7 @@ struct Queue {
     unsigned capacity=32,coalesceUs=0;
     bool mixed=false,split=false;
     unsigned producers=0;
-    unsigned long long next=0,submitted=0,delivered=0,cpu=0,full=0,timeouts=0,late=0,merged=0,maxBatch=0,maxQueue=0,cpuPending=0,failed=0;
+    unsigned long long next=0,submitted=0,delivered=0,cpu=0,full=0,timeouts=0,late=0,pruned=0,merged=0,maxBatch=0,maxQueue=0,cpuPending=0,failed=0;
     Queue() {
         const char* p=std::getenv("XPU2_QUEUE_POLICY");mixed=p && !std::strcmp(p,"mixed");split=p && !std::strcmp(p,"split");
         p=std::getenv("XPU2_QUEUE_COALESCE_US");if(p)coalesceUs=std::min(1000,std::max(0,std::atoi(p)));
@@ -171,8 +171,8 @@ struct Queue {
     }
     void snapshot() {
         if(!log)return;
-        std::fprintf(log,"{\"calls\":%llu,\"submitted\":%llu,\"delivered\":%llu,\"cpu_batches\":%llu,\"queue_full\":%llu,\"timeouts\":%llu,\"late_discarded\":%llu,\"worker_failures\":%llu,\"worker_batches\":%llu,\"max_batch_samples\":%llu,\"max_queue\":%llu,\"cpu_completed_while_gpu_pending\":%llu,\"kernel_window_cpu_observations\":%llu,\"kernel_microseconds\":%llu}\n",
-          next,submitted,delivered,cpu,full,timeouts,late,failed,merged,maxBatch,maxQueue,cpuPending,kernelOverlap.load(),kernelMicroseconds.load());
+        std::fprintf(log,"{\"calls\":%llu,\"submitted\":%llu,\"delivered\":%llu,\"cpu_batches\":%llu,\"queue_full\":%llu,\"timeouts\":%llu,\"late_discarded\":%llu,\"cancelled_before_dispatch\":%llu,\"worker_failures\":%llu,\"worker_batches\":%llu,\"max_batch_samples\":%llu,\"max_queue\":%llu,\"cpu_completed_while_gpu_pending\":%llu,\"kernel_window_cpu_observations\":%llu,\"kernel_microseconds\":%llu}\n",
+          next,submitted,delivered,cpu,full,timeouts,late,pruned,failed,merged,maxBatch,maxQueue,cpuPending,kernelOverlap.load(),kernelMicroseconds.load());
         std::fflush(log);
     }
     void run(float* input,float* output,int count) {
@@ -187,7 +187,12 @@ struct Queue {
         std::memcpy(request->input,input,count*96);std::memcpy(request->output,output,count*32);
         pending.push_back(request);++submitted;maxQueue=std::max(maxQueue,(unsigned long long)pending.size());available.notify_one();
         if(!request->completed.wait_for(lock,std::chrono::seconds(10),[&]{return request->done;})) {
-            request->cancelled=true;++timeouts;snapshot();return; // Never publish after caller gives up.
+            request->cancelled=true;++timeouts;
+            // Both queue membership and cancellation are protected by the same lock.
+            // If the worker already owns it, retain late-publication suppression.
+            auto queued=std::find(pending.begin(),pending.end(),request);
+            if(queued!=pending.end()){pending.erase(queued);++pruned;}
+            snapshot();return; // Never publish after caller gives up.
         }
         std::memcpy(output,request->output,count*32);++delivered;
         if(log)std::fprintf(log,"{\"delivered_id\":%llu,\"samples\":%d}\n",id,count);
@@ -207,6 +212,8 @@ struct Queue {
                     }
                 }
                 while(!pending.empty() && batch.size()<64){batch.push_back(pending.front());pending.pop_front();}
+                // Callers may remove all pending work while coalescing releases the lock.
+                if(batch.empty()){snapshot();continue;}
             }
             int count=0;for(auto &r:batch)count+=r->count;
             std::vector<float> input(count*24),output(count*8);
