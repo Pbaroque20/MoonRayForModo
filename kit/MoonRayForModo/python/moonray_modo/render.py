@@ -5,6 +5,7 @@ import tempfile
 import time
 import uuid
 from PySide2 import QtCore
+from . import terminal
 from .threads import forgotten
 from . import native, rdla, options, denoising, outputs
 from .progress import Progress, duration
@@ -112,6 +113,7 @@ class Renderer(QtCore.QObject):
         for signal in (self.buffers.image_ready,self.buffers.image_object,self.buffers.notice):
             signal.connect(self._moonlightipr_flush)
         self.process = QtCore.QProcess(self)
+        terminal.watch(self.process, lambda: 'Denoiser' if self.phase == 'denoise' else 'MoonRay')
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.finished.connect(self._exited)

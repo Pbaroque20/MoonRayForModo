@@ -1,6 +1,7 @@
 """Named output editor with explicit precision and filtering controls."""
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import outputs
+from . import terminal
 
 class OutputsDialog(QtWidgets.QDialog):
     def __init__(self,entries,parent=None):
@@ -64,7 +65,7 @@ class OutputsDialog(QtWidgets.QDialog):
             self._native_temp=QtCore.QTemporaryDir()
             if not self._native_temp.isValid():raise ValueError('Cannot create a temporary validation folder')
             directory=Path(self._native_temp.path());path=lpe_validation.prepare(directory,[v for _,v in expressions])
-            process=QtCore.QProcess(self);self._native_process=process;self._native_job=(expressions,directory)
+            process=QtCore.QProcess(self);terminal.watch(process,'MoonRay outputs');self._native_process=process;self._native_job=(expressions,directory)
             self._native_log=bytearray();self.native_button.setEnabled(False)
             process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
             environment=QtCore.QProcessEnvironment()

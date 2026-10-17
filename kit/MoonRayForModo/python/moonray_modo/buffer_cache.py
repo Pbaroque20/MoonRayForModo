@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
+from . import terminal
 from PySide2 import QtCore,QtGui
 _retired_workers=set()
 
@@ -41,6 +42,7 @@ class BufferCache(QtCore.QObject):
         self.directory=tempfile.TemporaryDirectory(prefix='MoonRayBuffers-')
         self.root=Path(self.directory.name)
         self.process=QtCore.QProcess(self)
+        terminal.watch(self.process,'Buffers')
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.finished.connect(self._finished)
         self.process.errorOccurred.connect(self._error)

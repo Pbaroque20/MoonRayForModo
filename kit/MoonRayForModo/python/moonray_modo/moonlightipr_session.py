@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide2 import QtCore
 from .threads import forgotten
 from . import moonlightipr_scene, native
+from . import terminal
 
 EXECUTABLE = 'moonlightipr_session.exe'
 PROGRAM = 'MoonLightIPRKernel.ptx'
@@ -67,6 +68,7 @@ class Session(QtCore.QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.process = QtCore.QProcess(self)
+        terminal.watch(self.process, 'MoonLightIPR')
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.finished.connect(self._exit)

@@ -14,7 +14,34 @@ class Normals(unittest.TestCase):
    with self.subTest(values=values):
     data=self.plan(values)
     self.assertTrue(any('invalid authored normals' in w for w in data['warnings']))
-    self.assertTrue(all(not m['normals'] for m in data['meshes']))
+    # Left out, the mesh shades as MoonRay shades one given none: the triangle's own facing.
+    self.assertTrue(all(m['normals']==[[0,0,1]]*3 for m in data['meshes']))
+class MoonRaysOwn(unittest.TestCase):
+ CUBE=[[x,y,z] for x in (0,1) for y in (0,1) for z in (0,1)]
+ QUADS=[[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]]
+ def test_given_none_a_cube_is_smooth_as_moonray_shades_it(self):
+  normals=rdl_import.shaded_normals(self.CUBE,self.QUADS)
+  self.assertEqual(len(normals),8)
+  # Each corner of a cube points out along its diagonal, as the three faces around it add up.
+  for point,normal in zip(self.CUBE,normals):
+   expected=[(c-.5)/abs(c-.5)/3**.5 for c in point]
+   for got,want in zip(normal,expected):self.assertAlmostEqual(got,want)
+ def test_without_smooth_normal_each_face_keeps_its_own(self):
+  normals=rdl_import.shaded_normals(self.CUBE,self.QUADS,smooth=False)
+  self.assertEqual(len(normals),24)
+  self.assertEqual(normals[:4],[[-1.0,0.0,0.0]]*4)
+ def test_bigger_faces_count_for_more(self):
+  points=[[0,0,0],[1,0,0],[0,1,0],[0,0,1],[0,0,-9]]
+  faces=[[0,1,2],[0,3,1],[0,1,4]]
+  normal=rdl_import.shaded_normals(points,faces)[0]
+  self.assertGreater(abs(normal[1]),abs(normal[2]))
+ def test_a_plan_brings_them_in_unless_subdivided(self):
+  source=scene({})
+  data=rdl_import.plan(source,'test.rdla')
+  self.assertTrue(all(m['normals']==[[0,0,1]]*3 for m in data['meshes']))
+  source=scene({});source['objects'][2]['attributes']['is_subd']=True;source['objects'][3]['attributes']['is_subd']=True
+  data=rdl_import.plan(source,'test.rdla')
+  self.assertTrue(all(m['normals']==[] for m in data['meshes']))
 class NormalTransforms(unittest.TestCase):
  def test_shear_stays_perpendicular_to_transformed_tangents(self):
   matrix=[2,1,0,0,0,3,0,0,0,0,4,0,8,9,10,1]

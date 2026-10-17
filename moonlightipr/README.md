@@ -368,7 +368,10 @@ Added to what is translated since the table was written:
   once (MoonRay's default) with its anisotropy, glows with its emission, and thins shadows.
   Brightness 1.03 to 1.04, 80 to 89% of tiles within a tenth. The camera or a light may stand
   inside it. Not drawn: volumes with ramps, and a volume inside a shape that also has a surface
-  material.
+  material. A mesh MoonRay fills with an even volume is the same fog, bounded by its faces (box of
+  fog on a floor: brightness 1.018, tiles 1.8% apart on average). Where a face of the fog lies in
+  the plane of a surface, as its bottom on the floor, the ray looks again for a surface there before
+  crossing, so the surface is not missed in stripes.
 - **VDB volumes**: a Modo volume item with a VDB file, or a `VdbGeometry` item with a `VdbVolume`,
   is fog as thick at each place as the file's density grid says. The runtime's `modo_vdb_grid`
   reads the grid once into a plain block of at most 192 cells along an edge, which the session

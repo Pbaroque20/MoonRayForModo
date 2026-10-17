@@ -95,6 +95,34 @@ def product(a, b):
     return [sum(a[row * 4 + k] * b[k * 4 + col] for k in range(4)) for row in range(4) for col in range(4)]
 
 
+def shaded_normals(vertices, faces, smooth=True):
+    """The normals MoonRay shades a polygon mesh with when it is given none: with smooth_normal, at each point the
+    faces around it added up by their area (PolyMeshCalcNv), one for each point; without, each face's own, one for each
+    corner. A point no face gives a direction keeps straight up."""
+    def facing(face):
+        # Newell's sum: twice the face's area, along its normal, for a face of any number of sides.
+        x = y = z = 0.0
+        for i, index in enumerate(face):
+            a, b = vertices[index], vertices[face[(i + 1) % len(face)]]
+            x += (a[1] - b[1]) * (a[2] + b[2])
+            y += (a[2] - b[2]) * (a[0] + b[0])
+            z += (a[0] - b[0]) * (a[1] + b[1])
+        return [x, y, z]
+
+    def unit(v):
+        length = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+        return [v[0] / length, v[1] / length, v[2] / length] if length > 1e-30 else [0.0, 1.0, 0.0]
+    if not smooth:
+        return [unit(facing(face)) for face in faces for _ in face]
+    summed = [[0.0, 0.0, 0.0] for _ in vertices]
+    for face in faces:
+        direction = facing(face)
+        for index in face:
+            held = summed[index]
+            held[0] += direction[0]; held[1] += direction[1]; held[2] += direction[2]
+    return [unit(v) for v in summed]
+
+
 def moved(point, matrix):
     """A point moved by a matrix that moves a row vector."""
     return [point[0] * matrix[i] + point[1] * matrix[4 + i] + point[2] * matrix[8 + i] + matrix[12 + i] for i in range(3)]
@@ -500,6 +528,10 @@ def plan(document, path, recover_instancer_materials=False):
         for count in counts:
             faces.append(indices[offset:offset + count])
             offset += count
+        if not normals and not bool(a.get('is_subd', False)):
+            # Given none, MoonRay works the normals out itself, smooth unless smooth_normal is off; Modo would shade by
+            # its material's smoothing angle instead (a cube comes out faceted that MoonRay rounds), so they come in.
+            normals = shaded_normals(vertices, faces, bool(a.get('smooth_normal', True)))
         hard_edges,hard_corners,semi_sharp=hard_creases(a,faces,len(vertices))
         # Values that differ point by point, corner by corner or face by face become the mesh's vertex maps: numbers a
         # weight map, colours an RGB map, as MoonRay's auto rate tells them apart, by how many there are.

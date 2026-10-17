@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from PySide2 import QtCore
 from . import denoising, native
+from . import terminal
 
 class CachedDenoise(QtCore.QObject):
     def __init__(self, cache):
@@ -11,6 +12,7 @@ class CachedDenoise(QtCore.QObject):
         self.cache=cache;self.job=None;self.requested=None;self.directory=None
         self.fallbacks=[]
         self.process=QtCore.QProcess(self)
+        terminal.watch(self.process,'Denoiser')
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self.process.readAllStandardOutput)
         self.process.finished.connect(self.finished)
