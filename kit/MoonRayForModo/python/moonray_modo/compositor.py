@@ -138,6 +138,13 @@ def light_group_expression(label):
     return "C.*<L.'%s'>" % label
 
 
+def scene_passes(custom_aovs, wanted):
+    """The light path outputs a scene has besides the wanted passes, as passes to offer too: (name, name, expression)."""
+    known = {expression for words, name, expression in wanted}
+    return [(entry['name'], entry['name'], entry['expression'].strip()) for entry in custom_aovs or []
+            if entry.get('kind') == 'lpe' and entry.get('expression', '').strip() and entry['expression'].strip() not in known]
+
+
 def pass_outputs(custom_aovs, wanted):
     """The scene's outputs with each wanted pass ((what it is called, name, expression)) that it lacks added, and the
     name each pass has in it: an output with the same expression is taken as it is, whatever it is called."""
