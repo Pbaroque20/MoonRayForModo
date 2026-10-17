@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from xpu2.reference import inventory, verify
-from xpu2.sampler import compare, matches_reference
+from xpu2.sampler import compare, matches_reference, compare_handoffs
 
 
 def sha(path):
@@ -24,7 +24,10 @@ def main():
                         help="Existing isolated ray-probe build with retained inputs")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--reference", type=Path, help="Pinned .jsonl or .jsonl.gz native corpus")
+    parser.add_argument("--handoff", action="store_true", help="Test serialized native sampler handoffs")
     args = parser.parse_args()
+    if args.handoff and not args.reference:
+        parser.error("--handoff requires the pinned --reference corpus")
     build, out = args.build.resolve(), args.output.resolve()
     manifest = json.loads((build / "build-inputs.json").read_text(encoding="utf-8"))
     if manifest.get("status") != "built":
@@ -47,7 +50,9 @@ def main():
     env = dict(os.environ)
     env["PATH"] = str(runtime) + os.pathsep + str(Path(compiler).parent) + os.pathsep + env.get("PATH", "")
     cpp = out / "sampler_probe.cc"
-    cpp.write_bytes((ROOT / "xpu2/sampler_probe.cc").read_bytes())
+    cpp.write_bytes((ROOT / "xpu2" / ("sampler_handoff.cc" if args.handoff else "sampler_probe.cc")).read_bytes())
+    if args.handoff:
+        (out / "sampler_state.h").write_bytes((ROOT / "xpu2/sampler_state.h").read_bytes())
     def run(command, name, stdout=None):
         with (out / (name + ".log")).open("w", encoding="utf-8") as log:
             if stdout:
@@ -76,8 +81,8 @@ def main():
         output = out / ("samples-" + str(index) + ".jsonl")
         run([str(exe), str(workers)], "run-" + str(index), output)
         outputs.append(output)
-    result = compare(outputs)
-    if args.reference:
+    result = compare_handoffs(outputs, args.reference) if args.handoff else compare(outputs)
+    if args.reference and not args.handoff:
         result["reference_match"] = matches_reference(outputs[0], args.reference)
         result["reference_sha256"] = sha(args.reference)
         if not result["reference_match"]:
@@ -91,6 +96,10 @@ def main():
         if sha(path) != digest:
             raise ValueError("Retained build input changed")
     verify(runtime, runtime_lock)
+    if args.reference:
+        result["reference_sha256"] = sha(args.reference)
+    if args.handoff:
+        result["state_header_sha256"] = sha(out / "sampler_state.h")
     result.update({
         "build_manifest_sha256": sha(build / "build-inputs.json"),
         "cpp_sha256": sha(cpp), "preprocessed_sha256": sha(pp),

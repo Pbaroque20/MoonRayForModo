@@ -84,3 +84,50 @@ tested native sampler values. The next implementation must:
 
 RNG agreement does not fix the grazing shadow disagreement in ORIGINS.md, prove
 RGB image parity or establish a performance gain.
+
+## Serialized handoff follow-up
+
+XPU remains intact and independently available. XPU2 is intended as an additional
+selectable architecture after validation, not a replacement. No selector or
+installed renderer is changed by these tests.
+
+sampler_state.h now defines an experimental 60-byte little-endian state envelope
+and a native SamplerCursor wrapper. The envelope records magic/version,
+dimensions, sampling depth, known total (or explicit unknown sentinel), next
+sample index, pseudo-random flag, six sequence words and a checksum. It rebuilds
+the native sampler with the complete state. It never calls resume() as a
+substitute for known-count restoration and never serializes a C++ object layout.
+
+This schema covers the six-word SequenceID signature used in this corpus only.
+It is not yet a general path-state format. A production transport still needs
+attempt/resource ownership, pinned sampler/build identity, other sequence
+signatures, all active samplers and shading state. The checksum detects accidental
+corruption; it is not authentication. It cannot detect a semantically wrong but
+otherwise valid sender-supplied value.
+
+sampler_handoff.cc serializes after each chunk of up to seven samples and returns
+the record to a shared native CPU work queue. A deferred job does not advance its
+sampler. Selected jobs are recomputed from the same record to test retries; only
+one copy is published. All handoff records are decoded and validated.
+
+Three native executions (one worker twice, four workers once) matched the pinned
+uninterrupted corpus exactly: 648 cases and 47,304 components per execution.
+Each execution covered 3,888 simulated resource waits and 778 recomputations.
+The four-worker execution recorded 2,395 actual worker-to-worker handoffs; its
+four workers processed 1,138, 727, 1,172 and 851 chunks. These scheduling counts
+may vary while the sample values remain fixed.
+
+Eleven native guards rejected incomplete/corrupted envelopes, unsupported
+magic/version/arity, invalid dimensions/flags/count/cursor, exhausted sampling
+and a cursor/template dimension mismatch. 115 focused Python checks pass,
+including evidence completeness and the requirement that multiple workers
+actually participate. Evidence is in sampler-handoff-20261016.json.
+
+Reproduce into a fresh directory:
+
+    python tools/xpu2_sampler_probe.py --build test-results/xpu2-origin-build --output test-results/handoff-new --reference xpu2/reference/sampler-avx8-20261016.jsonl.gz --handoff
+
+This is an actual native CPU handoff test; resource waits/retries are simulated.
+It does not exercise CUDA, PCIe, real texture/geometry I/O, shading or rendered
+images. The resume hazard is avoidable in the tested paths with full-state
+restoration; it is neither a fatal test failure nor a reason to change XPU.

@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from xpu2.sampler import UNKNOWN, FIELDS, MODES, read, compare, matches_reference
+from xpu2.sampler import UNKNOWN, FIELDS, MODES, read, compare, matches_reference, compare_handoffs
 
 
 def corpus():
@@ -102,6 +102,61 @@ class NativeSamplerReportTests(unittest.TestCase):
         self.assertEqual(result["status"], "passed")
         self.assertEqual(result["components_per_mode"], 47304)
         self.assertEqual(result["different_components"]["naive_resume"], 2916)
+
+    def handoff(self):
+        baseline = corpus()
+        chunks = sum(((65 if r["total"] == UNKNOWN else r["total"]) + 6) // 7
+                     for r in baseline[1:])
+        retries = sum((r["id"] + start) % 5 == 0 for r in baseline[1:]
+                      for start in range(0, 65 if r["total"] == UNKNOWN else r["total"], 7))
+        header = {"schema": 2, "simd_width": 8, "cases": 648, "guards": 11,
+                  "waits": chunks, "retries": retries, "transfers": 0, "work": [chunks]}
+        return [header, *({"id": r["id"], "values": r["baseline"]} for r in baseline[1:])]
+
+    def test_handoff_matches_reference_and_checks_coverage(self):
+        reference = self.save(corpus(), "reference.jsonl")
+        handoff = self.save(self.handoff())
+        self.assertEqual(compare_handoffs([handoff, handoff], reference)["status"], "passed")
+
+    def test_handoff_sample_drift_fails(self):
+        reference = self.save(corpus(), "reference.jsonl")
+        data = self.handoff()
+        data[1]["values"][0] = 0x3e800000
+        result = compare_handoffs([self.save(data)] * 2, reference)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["different_components"]["transport_vs_pinned"], 2)
+
+    def test_handoff_missing_wait_retry_or_guard_rejected(self):
+        reference = self.save(corpus(), "reference.jsonl")
+        for name in ("waits", "retries", "guards"):
+            data = self.handoff()
+            data[0][name] -= 1
+            with self.assertRaises(ValueError):
+                compare_handoffs([self.save(data)] * 2, reference)
+
+    def test_handoff_must_actually_use_multiple_workers(self):
+        reference = self.save(corpus(), "reference.jsonl")
+        data = self.handoff()
+        total = sum(data[0]["work"])
+        for work, transfers in (([total, 0], 1), ([total // 2] * 2, 0), ([total], 1)):
+            data[0].update(work=work, transfers=transfers)
+            with self.assertRaises(ValueError):
+                compare_handoffs([self.save(data)] * 2, reference)
+        data[0].update(work=[total // 2] * 2, transfers=1)
+        self.assertEqual(compare_handoffs([self.save(data)] * 2, reference)["status"], "passed")
+
+    def test_handoff_duplicate_or_partial_results_rejected(self):
+        reference = self.save(corpus(), "reference.jsonl")
+        for kind in ("duplicate", "partial", "nonword"):
+            data = self.handoff()
+            if kind == "duplicate":
+                data[2] = data[1]
+            elif kind == "partial":
+                data[1]["values"].pop()
+            else:
+                data[1]["values"][0] = True
+            with self.assertRaises(ValueError):
+                compare_handoffs([self.save(data)] * 2, reference)
 
     def test_single_execution_cannot_certify_repeat(self):
         with self.assertRaises(ValueError):

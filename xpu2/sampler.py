@@ -75,3 +75,50 @@ def compare(runs):
 def matches_reference(actual, reference):
     """Compare validated bit-pattern records; compression/formatting may differ."""
     return read(actual) == read(reference)
+
+
+def compare_handoffs(runs, reference):
+    """Validate transported native samples against the previously pinned corpus."""
+    _, baseline = read(reference)
+    expected_chunks = sum(((65 if r["total"] == UNKNOWN else r["total"]) + 6) // 7
+                          for r in baseline)
+    expected_retries = sum((r["id"] + start) % 5 == 0 for r in baseline
+                          for start in range(0, 65 if r["total"] == UNKNOWN else r["total"], 7))
+    if len(runs) < 2:
+        raise ValueError("Repeated handoff executions required")
+    evidence, mismatches = [], 0
+    for path in runs:
+        lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        if not lines:
+            raise ValueError("Empty handoff output")
+        header, rows = lines[0], lines[1:]
+        if (header.get("schema") != 2 or header.get("simd_width") != 8
+                or header.get("cases") != len(baseline) or len(rows) != len(baseline)):
+            raise ValueError("Incomplete handoff corpus")
+        work = header.get("work")
+        if (not isinstance(work, list) or not work
+                or any(type(n) is not int or n <= 0 for n in work)
+                or sum(work) != expected_chunks or header.get("waits") != expected_chunks
+                or header.get("retries") != expected_retries or header.get("guards") != 11):
+            raise ValueError("Missing handoff/wait/retry/guard coverage")
+        transfers = header.get("transfers")
+        if (type(transfers) is not int or not 0 <= transfers <= expected_chunks - len(baseline)
+                or (len(work) > 1 and transfers == 0) or (len(work) == 1 and transfers != 0)):
+            raise ValueError("Invalid native thread-transfer evidence")
+        for row, original in zip(rows, baseline):
+            words = row.get("values")
+            if (row.get("id") != original["id"] or not isinstance(words, list)
+                    or len(words) != len(original["baseline"])
+                    or any(type(v) is not int or not 0 <= v <= UNKNOWN for v in words)):
+                raise ValueError("Invalid handoff sample coverage")
+            mismatches += sum(a != b for a, b in zip(words, original["baseline"]))
+        evidence.append(header)
+    return {
+        "status": "passed" if mismatches == 0 else "failed",
+        "scope": "Serialized native AVX8 CPU-thread handoffs; resource waits/retries simulated; no CUDA",
+        "cases": len(baseline), "executions": len(runs),
+        "components_per_mode": sum(len(row["baseline"]) for row in baseline),
+        "all_execution_records_identical": mismatches == 0,
+        "different_components": {"transport_vs_pinned": mismatches},
+        "reference_match": mismatches == 0, "handoff_evidence": evidence,
+    }

@@ -11,6 +11,11 @@ MoonRay's final samples.
 
 ## Architecture contract
 
+XPU2 is an additional, separately selectable architecture once validated.
+It does not replace or remove XPU. Existing XPU remains available independently;
+the experimental work here changes neither its implementation nor the installed
+engine selector.
+
 - Preserve existing XPU as the reference. Begin with whole-render fallback.
   An unsupported scene or failed candidate attempt starts an empty XPU attempt;
   old frames may remain visible but their samples cannot enter the new image.
