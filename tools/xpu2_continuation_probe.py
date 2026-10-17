@@ -10,6 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT),str(ROOT/'tools')]
 from xpu2.reference import digest_file
 from xpu2 import native_integration
+from xpu2.surface_state import decode as decode_surface
 from xpu2_repeatability import gpu_identity
 from xpu2_baseline import environment
 
@@ -21,17 +22,26 @@ def main():
     p.add_argument('--source',required=True,type=Path)
     p.add_argument('--ptx',required=True,type=Path)
     p.add_argument('--output',required=True,type=Path)
+    p.add_argument('--surface-capture',type=Path,help='Optional XNS1 numeric native state; independent of the shader-packet fixture')
     a=p.parse_args();source=a.source.resolve();ptx=a.ptx.resolve();out=a.output.resolve()
     if out.is_relative_to(source):p.error('Isolated output required')
     out.mkdir(parents=True,exist_ok=False)
     files=[ROOT/'xpu2/continuation_probe.cc',ROOT/'xpu2/continuation_mailbox.h',ROOT/'xpu2/native_lambert_queue.cc',
-           ROOT/'xpu2/native_integration.py',Path(__file__).resolve(),ptx]
+           ROOT/'xpu2/native_integration.py',ROOT/'xpu2/surface_state.py',Path(__file__).resolve(),ptx]
+    if a.surface_capture:files.append(a.surface_capture.resolve())
     identities={str(f):digest_file(f) for f in files}
     report={'status':'incomplete','scope':'Real GPU shader queue with owned synthetic continuation metadata; not a native MoonRay path continuation or render','source_hashes':identities,'gpu':gpu_identity(),'runs':[]}
     try:
         raw=gzip.decompress((ROOT/'xpu2/reference/native-lambert-avx8-cuda-20261017.bin.gz').read_bytes())
         if hashlib.sha256(raw).hexdigest()!='39715df807458a8da5746fd8133f5a552ae5dd6116738f2d57010c66401b5ee3':raise ValueError('Native capture drift')
         capture=out/'reference.bin';capture.write_bytes(raw)
+        surface_args=[]
+        if a.surface_capture:
+            surface=a.surface_capture.resolve();rows=decode_surface(surface.read_bytes())
+            report['native_surface_fixture']={'path':str(surface),'sha256':digest_file(surface),'records':len(rows),
+                'pairing':'Native numeric state and shader captures are independent fixtures, not the same path event'}
+            report['scope']='Real GPU queue ownership test with native numeric surface payloads; no native path resumption'
+            surface_args=[str(surface)]
         compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe'
         headers=source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include'
         env=environment(compiler.parent,out)
@@ -49,7 +59,7 @@ def main():
                           XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),
                           XPU2_QUEUE_CAPACITY='0' if name=='admission_fallback' else '64',XPU2_QUEUE_POLICY='all',XPU2_QUEUE_LOG=str(folder/'queue.log'))
             print('Continuation '+name,flush=True)
-            done=subprocess.run([str(exe),name,str(capture)],env=runenv,capture_output=True,text=True,timeout=45,creationflags=subprocess.CREATE_NO_WINDOW)
+            done=subprocess.run([str(exe),name,str(capture),*surface_args],env=runenv,capture_output=True,text=True,timeout=45,creationflags=subprocess.CREATE_NO_WINDOW)
             (folder/'process.log').write_text(done.stdout+done.stderr,encoding='utf-8')
             if done.returncode:raise ValueError('Continuation process failed: '+name)
             checks=json.loads(done.stdout)

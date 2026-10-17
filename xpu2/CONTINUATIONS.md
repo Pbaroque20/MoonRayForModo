@@ -117,3 +117,9 @@ python tools/xpu2_continuation_probe.py --source <shared-source-read-only> --ptx
 The output must be new. No Modo launch, kit installation or user-scene change is
 required. The report records compiler, preprocessed-source, executable, input and
 log hashes, GPU identity, shader comparisons and complete queue accounting.
+
+## Native numeric capture follow-up
+
+[NATIVE_SURFACE_STATE.md](NATIVE_SURFACE_STATE.md) records the first real native
+numeric snapshots and their transport through this mailbox. Full native path
+capture and restoration remain incomplete; the paired shader fixture is independent.

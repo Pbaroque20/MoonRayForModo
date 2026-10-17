@@ -4,12 +4,14 @@
 #include <fstream>
 #include <iostream>
 
+static std::vector<std::array<uint32_t,88>> nativeSurfaces;
 struct OwnedState {
     std::array<uint64_t,8> paths{};
     std::array<uint32_t,8> pixels{};
     std::array<uint8_t,64> ownedBytes{};
+    std::array<uint32_t,88> nativeSurface{}; // Optional real capture, bit-preserved; not paired to this shader packet.
     bool operator==(const OwnedState& b) const {
-        return paths==b.paths && pixels==b.pixels && ownedBytes==b.ownedBytes;
+        return paths==b.paths && pixels==b.pixels && ownedBytes==b.ownedBytes && nativeSurface==b.nativeSurface;
     }
 };
 using Mailbox=xpu2::ContinuationMailbox<OwnedState,Queue>;
@@ -21,6 +23,7 @@ struct Packet {
 static void require(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
 static Packet packet(const std::vector<unsigned char>& data,size_t n,bool missing=false) {
     Packet p;
+    if(!nativeSurfaces.empty())p.state.nativeSurface=nativeSurfaces[n%nativeSurfaces.size()];
     for(size_t lane=0;lane<8;++lane) {
         const auto* src=data.data()+4+(n*8+lane)*164;
         std::memcpy(p.input.data()+lane*24,src,96);
@@ -48,7 +51,14 @@ static void check(const Mailbox::Lease& lease,const Packet& p,uint64_t attempt,u
 }
 int main(int argc,char** argv) {
     try {
-        require(argc==3,"scenario and capture required");std::string mode=argv[1];
+        require(argc==3 || argc==4,"scenario, shader capture and optional surface capture required");std::string mode=argv[1];
+        if(argc==4) {
+            std::ifstream input(argv[3],std::ios::binary);
+            std::vector<unsigned char> raw((std::istreambuf_iterator<char>(input)),{});
+            require(raw.size()>=356 && raw.size()<=4+1024*352 && (raw.size()-4)%352==0 && !std::memcmp(raw.data(),"XNS1",4),"Invalid native surface fixture");
+            nativeSurfaces.resize((raw.size()-4)/352);
+            for(size_t n=0;n<nativeSurfaces.size();++n)std::memcpy(nativeSurfaces[n].data(),raw.data()+4+n*352,352);
+        }
         bool missing=mode=="missing_ptx";
         std::ifstream f(argv[2],std::ios::binary);std::vector<unsigned char> data((std::istreambuf_iterator<char>(f)),{});
         require(data.size()>=4+66*8*164 && !std::memcmp(data.data(),"XNI1",4),"Invalid capture");
