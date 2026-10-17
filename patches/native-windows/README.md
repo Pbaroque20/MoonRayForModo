@@ -265,3 +265,31 @@ Vector renders of the fog Cryptomatte scene at 480 x 270 and one sample a pixel,
 over 1: 2 of 16 renders without this switch had one (one with fog in Cryptomatte on, one with it off); then 2 of 54
 off and none of 54 on. A rare race is not proven gone by this, but the exchange leaves no
 window for it.
+
+## `moonray.patch`: a stopped render finishing the tiles in hand (Stop finishes the tiles in hand)
+
+Applied by `tools/port_drain.py`. The plugin's preference "Stop finishes the tiles in hand" (on by default) decides
+whether the plugin asks for it; off, MoonRay is stopped as its own source stops it.
+
+### What MoonRay does
+
+A render can be stopped at once (cancelled), which leaves the samples then in flight unpaid: the tiles the workers
+were on stay dark or coarse in the picture. Or it can be stopped at the end of a pass, which may be most of the render
+away.
+
+### Why that fails for a preview
+
+When a preview is stopped by hand, or by Smart Render once its picture is clean enough, the picture is kept and
+denoised. Stopped at once, it has dark and coarse patches where the hard tiles were, which the denoiser smears.
+
+### The change
+
+`RenderDriver::requestDrain` (reached through `RenderContext::requestDrain`, which the plugin's persistent session
+calls when asked): the workers take no new tiles, the tiles in hand are rendered to the end, the queues are drained as
+at the end of any pass, and the frame ends there as a finished one, every buffer written. It does nothing unless asked.
+
+### How it was checked
+
+A preview stopped part way with the switch on and with it off: on, the session is asked to drain and the frame ends as
+a finished one; off, the plugin does not ask, and stops as MoonRay's own stop does
+(`tools/probe_drain_override.py`).

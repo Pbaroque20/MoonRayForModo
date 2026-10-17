@@ -278,10 +278,10 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 ### Where the plugin changes MoonRay (coming in 0.4.2)
 
 Besides the patches that build MoonRay on Windows, 0.4.2 changes MoonRay's source where it renders something wrongly
-for an artist: six MoonRay Source Overrides, each a checkbox in Preferences (MoonRay, MoonRay Source Overrides), on by
+for an artist: seven MoonRay Source Overrides, each a checkbox in Preferences (MoonRay, MoonRay Source Overrides), on by
 default; off renders as MoonRay's source does. Smooth toon edges on coarse meshes, toon materials that denoise cleanly,
-blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, and each Cryptomatte sample
-counted once. What each changes, why, and how it was checked is in the [engineers' notes](patches/native-windows/README.md).
+blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, each Cryptomatte sample
+counted once, and a stopped render finishing the tiles in hand. What each changes, why, and how it was checked is in the [engineers' notes](patches/native-windows/README.md).
 
 ![A coarse and a subdivided toon torus in MoonRay, each with the override off and on](docs/images/toon-edges-subdivided.png)
 

@@ -65,6 +65,24 @@ class ToonTerminator(unittest.TestCase):
                 lighting.emit({'lights': [light]}, [], 0.0, lines)
                 self.assertEqual(any('["mb"] = true' in line for line in lines), on)
 
+    def test_stop_finishing_the_tiles_in_hand_is_an_override_on_by_default(self):
+        with mock.patch.dict(sys.modules, {'PySide2': None}):
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('MOONRAY_MODO_DRAIN', None)
+                self.assertTrue(native.drain_tiles())
+            with mock.patch.dict(os.environ, {'MOONRAY_MODO_DRAIN': '0'}):
+                self.assertFalse(native.drain_tiles())
+        page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
+        section = page[page.index('<hash type="Sheet" key="MoonRaySourceOverrides:sheet">'):]
+        section = section[:section.index('</hash>')]
+        self.assertIn('cmd moonray.pref.drainTiles ?', section)
+        self.assertIn("lx.bless(switch('drain_tiles'),'moonray.pref.drainTiles')",
+                      (KIT / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8'))
+        # The stop asks MoonRay to drain only with the switch on.
+        stop = (KIT / 'python/moonray_modo/render.py').read_text(encoding='utf-8')
+        self.assertIn("if drain_tiles() and drains(self.active['runtime']) and self.session.drain():", stop)
+        self.assertIn("'drain_tiles': (True, bool)", (KIT / 'python/moonray_modo/preferences.py').read_text(encoding='utf-8'))
+
     def test_on_the_preferences_page(self):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.toonTerminator ?', page)

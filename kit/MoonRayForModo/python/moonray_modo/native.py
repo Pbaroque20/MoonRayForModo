@@ -200,6 +200,13 @@ def crypto_once():
     return _switch('crypto_once', 'MOONRAY_MODO_CRYPTO_ONCE')
 
 
+def drain_tiles():
+    """Whether a render stopped by hand, or by Smart Render, finishes the tiles MoonRay's workers are on and ends there
+    as a finished frame (the plugin's change to MoonRay, tools/port_drain.py). Off, it is stopped as MoonRay's own stop
+    does: at once, the picture kept as it stands, dark or coarse where tiles were being worked on."""
+    return _switch('drain_tiles', 'MOONRAY_MODO_DRAIN')
+
+
 def settings_name():
     """Where the preview's settings are kept. A test copy of Modo is given a name of its own, so that what a test
     sets (its runtime above all) is never what the user's own Modo reads while the test runs."""
