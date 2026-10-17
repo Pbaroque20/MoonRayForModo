@@ -501,6 +501,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             # The mesh's weight and colour maps, for its materials to read (vertex_maps).
             from . import vertex_maps
             painted = vertex_maps.read(mesh)
+            # Colour maps that hold vectors, as a MoonRay scene brought in had them: given back as vectors.
+            vertex_maps.as_vectors(painted, properties.read(item).get('vertex_map_kinds') or {})
 
             def polygon(face, tag, subdivision, uv_of, normals, ordinal):
                 """Put one polygon with its like. uv_of(name) is its corners' values in a UV map, or nothing."""

@@ -97,6 +97,22 @@ def read(mesh):
     return result
 
 
+def as_vectors(maps, kinds):
+    """Give back as vectors the colour maps that hold them (kinds: {name: 'vec2' or 'vec3'}, kept on the mesh where a
+    MoonRay scene's vectors came in as colour maps); a vec2 keeps the first two of each colour's three numbers."""
+    for name, kind in kinds.items():
+        held = maps.get(name)
+        if not held or held['kind'] != 'color' or kind not in ('vec2', 'vec3'):
+            continue
+        size = 2 if kind == 'vec2' else 3
+        held['kind'] = kind
+        if 'points' in held:
+            held['points'] = [list(v)[:size] for v in held['points']]
+        else:
+            held['corners'] = [[list(v)[:size] for v in face] for face in held['corners']]
+    return maps
+
+
 def for_faces(maps, ordinals):
     """What one shape made of some of the mesh's polygons carries: the point maps whole (the shape holds every point),
     and the corner maps for its own polygons, in its own order (ordinals, as the scene reader counts polygons)."""

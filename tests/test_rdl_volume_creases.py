@@ -57,3 +57,35 @@ class Creases(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Vectors(unittest.TestCase):
+    def test_a_vector_at_each_point_comes_in_as_a_colour_map_noted_as_a_vector(self):
+        value = document('/paint')
+        value['objects'][1]['attributes'].pop('volume_shaders')
+        value['objects'][2]['attributes']['primitive_attributes'] = ['/data']
+        value['objects'].append({'name': '/data', 'type': 'UserData', 'attributes': {
+            'vec3f_key': 'rest', 'vec3f_values_0': [[1, 2, 3], [4, 5, 6], [7, 8, 9]], 'rate': 4}})
+        data = rdl_import.plan(value, 'vectors.rdla')
+        maps = data['meshes'][0]['maps']
+        self.assertEqual([(name, word, rate) for name, word, rate, _ in maps], [('rest', 'vec3', 'points')])
+        self.assertEqual(maps[0][3][1], [4, 5, 6])
+
+    def test_a_colour_map_noted_as_a_vector_goes_out_as_one(self):
+        # vertex_maps names Modo's map kinds as it loads; outside Modo they are given stand-ins.
+        lx = sys.modules['lx']
+        if not hasattr(lx, 'symbol'):
+            lx.symbol = types.SimpleNamespace(i_VMAP_WEIGHT='WGHT', i_VMAP_RGB='RGB ', i_VMAP_RGBA='RGBA')
+        lxu = sys.modules['lxu']
+        if not hasattr(lxu, 'utils'):
+            lxu.utils = types.ModuleType('lxu.utils')
+            sys.modules['lxu.utils'] = lxu.utils
+        lxu.__path__ = getattr(lxu, '__path__', [])
+        from moonray_modo import vertex_maps
+        maps = vertex_maps.as_vectors({'rest': {'kind': 'color', 'points': [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}}, {'rest': 'vec2'})
+        self.assertEqual(maps['rest'], {'kind': 'vec2', 'points': [[1, 2], [4, 5], [7, 8]]})
+        mesh = {'identity': 'tri||', 'name': 'Tri', 'vertices': [[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'faces': [[0, 1, 2]], 'material': '',
+                'matrix': rdla.IDENTITY, 'point_attributes': {'rest': {'kind': 'vec3', 'values': [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}}}
+        text = rdla.scene_text({'camera': {'matrix': rdla.IDENTITY, 'film_mm': 36, 'focal_mm': 50}, 'lights': [], 'materials': {}, 'meshes': [mesh]}, 16, 16)
+        self.assertIn('["vec3f_key"] = "rest",', text)
+        self.assertIn('vec3f_values_0', text)

@@ -549,8 +549,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                 values = held['values']
                 if len(values) != count:
                     raise ValueError('Vertex map %s of %s does not match its %s' % (map_name, mesh['name'], 'points' if rate == 4 else 'polygon corners'))
-                word = 'color' if held['kind'] == 'color' else 'float'
-                written = vector_array(values, 'Rgb') if word == 'color' else array(number(v[0]) for v in values)
+                # A colour, a vector (a colour map holding one: vertex_maps.as_vectors), or a number.
+                word = {'color': 'color', 'vec2': 'vec2f', 'vec3': 'vec3f'}.get(held['kind'], 'float')
+                written = (vector_array(values, 'Rgb') if word == 'color' else vector_array(values, 'Vec2') if word == 'vec2f'
+                           else vector_array(values, 'Vec3') if word == 'vec3f' else array(number(v[0]) for v in values))
                 name = '/modo/mesh/%d/map/%s/%d' % (index, source, map_index)
                 lines += ['UserData(%s) {' % string(name), '  [%s] = %s,' % (string(word + '_key'), string(map_name)),
                           '  ["rate"] = %d,' % rate, '  [%s] = %s,' % (string(word + '_values_0'), written), '}']

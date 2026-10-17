@@ -378,9 +378,14 @@ def collect(scene, warnings):
             try:
                 if render_visible(item):
                     from . import primitive_attributes
-                    result.append({'identity': item.id, 'name': item.name, 'class': name, 'matrix': world_matrix(item),
-                                   'parameters': from_channels(name, lambda channel: item.channel(channel).get()),
-                                   'attributes': primitive_attributes.read(item)})
+                    held = {'identity': item.id, 'name': item.name, 'class': name, 'matrix': world_matrix(item),
+                            'parameters': from_channels(name, lambda channel: item.channel(channel).get()),
+                            'attributes': primitive_attributes.read(item)}
+                    # Maps wired into its values, as a MoonRay scene brought in had them (block binds them).
+                    bindings = properties.read(item).get('map_bindings')
+                    if bindings:
+                        held['bindings'] = bindings
+                    result.append(held)
             except (ValueError, LookupError, RuntimeError, AttributeError, TypeError) as exc:
                 warnings.append('MoonRay item %s: %s.' % (getattr(item, 'name', '?'), exc))
     # The first, generic item kept its class and values in a tag; plain locators may carry one too.
@@ -842,10 +847,23 @@ def block(entities, entity, extra=()):
             # MoonRay moves a light during the shutter only when the light says so.
             lines.append('  ["mb"] = true,')
     lines += ['  [%s] = %s,' % (string(key), text) for key, text in extra]
+    # Maps wired into its values: each map's nodes are written before the item, and the value is bound to the map,
+    # which MoonRay then scales by the value.
+    maps, bound = [], {}
+    for key, held in sorted((entity.get('bindings') or {}).items()):
+        if key not in catalog()[entity['class']]['attributes']:
+            continue
+        from .nodes import emit_map
+        bound[key] = emit_map(held, '/modo/entity/%s/map/%s' % (entity['identity'], key), maps)
     for key, authored in sorted(entity['parameters'].items()):
         if not key.startswith('modo_'):
-            lines.append('  [%s] = %s,' % (string(key), literal(entities, entity, key, authored)))
-    return name, lines + ['}']
+            text = literal(entities, entity, key, authored)
+            lines.append('  [%s] = %s,' % (string(key), 'bind(%s, %s)' % (bound[key], text) if key in bound else text))
+    for key in sorted(set(bound) - set(entity['parameters'])):
+        spec = catalog()[entity['class']]['attributes'][key]
+        unit = 'Rgb(1, 1, 1)' if spec['type'] == 'Rgb' else '1'
+        lines.append('  [%s] = bind(%s, %s),' % (string(key), bound[key], unit))
+    return name, maps + lines + ['}']
 
 
 def emit_lights(scene, lines, refs=None):
