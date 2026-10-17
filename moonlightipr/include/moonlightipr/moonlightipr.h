@@ -70,6 +70,13 @@ struct Material {
     // and what that leaves of the diffuse light on the lit side.
     float diffuseTransmission[3] = {0, 0, 0};
     float diffuseKept[3] = {1, 1, 1};
+    // MoonRay's fuzz, the sheen of velvet (DwaVelvetMaterial, and DwaBaseMaterial's fuzz): a lobe over all the others,
+    // brightest at grazing angles. How much of it, its colour, its roughness as the lobe takes it (0.05 to 1), and
+    // whether its fibres absorb the light they do not reflect (or pass it on in proportion to their colour).
+    float fuzz = 0.0f;
+    float fuzzColor[3] = {1, 1, 1};
+    float fuzzRoughness = 0.3f;
+    bool fuzzAbsorbs = false;
     // On curves, a hair fibre as MoonRay's HairMaterial, in place of all the above but baseColor (the hair's colour),
     // its layers, emission and ior. The four lobes are light reflected off the fibre, passed through it, reflected
     // once inside it, and the rest: each has a roughness along the fibre and an offset in degrees from the tilt of

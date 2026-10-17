@@ -16,5 +16,10 @@ MoonLightIPR is a GPU preview renderer created by Raphael Tobar for MoonRay for 
   a preview can be trusted; final frames come from MoonRay. MoonRay itself is distributed by
   DreamWorks Animation under the Apache License 2.0, and that licence and its notices continue to
   apply to MoonRay.
+- **MoonRay's velvet tables.** The two tables MoonLightIPR's fuzz (velvet) lobe reads, in
+  `src/device/velvet_tables.h`, are taken unchanged from OpenMoonRay (`BsdfFabricVelvet.ispc` and
+  `VelvetAlbedoTable.isph`), Copyright 2023-2024 DreamWorks Animation LLC. They are under the Apache License 2.0,
+  not the MIT License, and keep DreamWorks' copyright and licence notice in that file; the Apache License 2.0 is
+  installed with MoonRay's runtime in `licenses/`. They are used so that the preview's velvet matches MoonRay's.
 - **What it is built on.** MoonLightIPR runs on NVIDIA OptiX and CUDA, which remain under NVIDIA's
   own licences; their notices are installed beside MoonLightIPR in `licenses/`.

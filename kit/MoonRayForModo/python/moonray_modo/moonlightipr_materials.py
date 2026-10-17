@@ -189,7 +189,7 @@ def color_space(source, authored, srgb):
 
 
 # What each native shader's switched-on extras are called, for the lobes the uber-shader lacks.
-NATIVE_EXTRAS = (('show_fuzz', 'fuzz'), ('show_glitter', 'glitter'))
+NATIVE_EXTRAS = (('show_glitter', 'glitter'),)
 
 
 def native_surface(shader, parameters, note):
@@ -203,7 +203,7 @@ def native_surface(shader, parameters, note):
     if shader in ('HairMaterial_v3', 'HairDiffuseMaterial', 'HairToonMaterial'):
         return hair_surface(shader, parameters, note)
     if shader not in ('DwaBaseMaterial', 'DwaMetalMaterial', 'DwaSolidDielectricMaterial', 'DwaRefractiveMaterial', 'DwaEmissiveMaterial', 'DwaSkinMaterial',
-                      'DwaToonMaterial'):
+                      'DwaToonMaterial', 'DwaVelvetMaterial_v2'):
         return None
     attributes = shader_library.catalog()[shader]['attributes']
     parameters = node_defaults.started(shader, parameters)
@@ -224,13 +224,21 @@ def native_surface(shader, parameters, note):
                 'emission_amount': 1.0, 'presence': float(get('presence', 1.0)), 'ior': 1.5}
     metal = shader == 'DwaMetalMaterial'
     glass = shader == 'DwaRefractiveMaterial'
-    metallic = 1.0 if metal else 0.0 if glass or shader == 'DwaSolidDielectricMaterial' else min(1.0, max(0.0, float(get('metallic', 0.0))))
+    # Velvet is fuzz over a diffuse surface: it has no highlight, metal, glass or coat of its own.
+    velvet = shader == 'DwaVelvetMaterial_v2'
+    # MoonRay's fuzz, where the material has it switched on (velvet's is, DwaBaseMaterial's is not unless asked): how
+    # much, its colour, and its roughness (velvet's fuzz_coverage), which MoonRay raises by 0.05 for the lobe.
+    coverage = float(get('fuzz_coverage', get('fuzz_roughness', 0.25)))
+    fuzz = min(1.0, max(0.0, float(get('fuzz', 1.0)))) if get('show_fuzz', False) and coverage > 0 else 0.0
+    metallic = 1.0 if metal else 0.0 if glass or velvet or shader == 'DwaSolidDielectricMaterial' else min(1.0, max(0.0, float(get('metallic', 0.0))))
     albedo = get('albedo', white) if get('show_diffuse', True) and not glass else black
     # The uber-shader has one colour for the diffuse lobe and the metal's reflection.
     color = [a + (m - a) * metallic for a, m in zip(albedo, get('metallic_color', white))]
     roughness = float(get('roughness', .5))
     transmission = (1.0 if glass else float(get('transmission', 0.0))) if get('show_transmission', True) and shader in (
         'DwaBaseMaterial', 'DwaRefractiveMaterial') else 0.0
+    if velvet:
+        transmission = 0.0
     ior = float(get('refractive_index', 1.5))
     emission = get('emission', white) if get('show_emission', False) else black
     radius = float(get('scattering_radius', 0.0))
@@ -254,8 +262,10 @@ def native_surface(shader, parameters, note):
         '_back': passed, '_front_keep': kept,
         'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': color, 'raw_color': color, 'diffuse_amount': 1.0,
         'roughness': roughness, 'metallic': metallic, 'ior': ior,
-        'specular_amount': float(get('specular', 1.0)) if get('show_specular', True) else 0.0,
-        '_specular_weight': min(1.0, max(0.0, float(get('specular', 1.0)))) if get('show_specular', True) else 0.0,
+        'specular_amount': float(get('specular', 1.0)) if get('show_specular', True) and not velvet else 0.0,
+        '_specular_weight': min(1.0, max(0.0, float(get('specular', 1.0)))) if get('show_specular', True) and not velvet else 0.0,
+        'fuzz': fuzz, 'fuzz_color': get('fuzz_albedo', white), 'fuzz_roughness': min(1.0, max(0.0, 0.05 + coverage)),
+        'fuzz_absorbs': bool(get('use_absorbing_fuzz_fibers', False)),
         'transmission': transmission, 'transmission_color': get('transmission_color', white),
         'refraction_roughness': float(get('independent_transmission_roughness', .5)) if get('use_independent_transmission_roughness', False) else roughness,
         'transmission_ior': float(get('independent_transmission_refractive_index', 1.5)) if get('use_independent_transmission_refractive_index', False) else ior,
@@ -1096,14 +1106,16 @@ class Compiler:
                      math.cos(controls['anisotropy_angle']), math.sin(controls['anisotropy_angle'])]
                   + [min(1.0, max(0.0, float(defaults['subsAmt']))) if radius > 0 else 0.0] + triple(defaults['subsCol'])
                   + [radius, depth, max(0.0, float(source.get('dispersion_abbe', 0))) if dwa else 0.0, min(1.0, max(0.0, weight))]
-                  + triple(source.get('_back', [0.0, 0.0, 0.0])) + triple(source.get('_front_keep', [1.0, 1.0, 1.0])))
+                  + triple(source.get('_back', [0.0, 0.0, 0.0])) + triple(source.get('_front_keep', [1.0, 1.0, 1.0]))
+                  + [min(1.0, max(0.0, float(source.get('fuzz', 0.0))))] + triple(source.get('fuzz_color', [1.0, 1.0, 1.0]))
+                  + [min(1.0, max(0.05, float(source.get('fuzz_roughness', 0.3)))), 1.0 if source.get('fuzz_absorbs') else 0.0])
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Material %s contains a non-finite number' % name)
         fog = material.get('_volume')
         toon = source.get('_toon') if not source.get('_hair') and not fog else None
         if toon:
             flags |= (MATERIAL_TOON_DIFFUSE if toon['diffuse'] else 0) | (MATERIAL_TOON_SPECULAR if toon['specular'] else 0)
-        record = struct.pack('<39f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
+        record = struct.pack('<45f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
                              UV_SLOTS if tangent_slot is None else tangent_slot)
         if toon:
             # A toon material's two ramps, and the numbers that go with them.
