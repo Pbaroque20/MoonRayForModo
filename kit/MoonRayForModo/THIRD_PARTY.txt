@@ -21,6 +21,10 @@ redistributed. No provenance or official support claim is made for the community
 build. A checksum match verifies the downloaded release asset, not its correctness
 or compatibility. It failed the real render test on this computer.
 
+Thanks to scrubjay for publishing that community Windows build of MoonRay with YUpBlender; it helped the early
+testing of this plugin. None of its code or files are part of the plugin or of its runtime, which is built from
+the OpenMoonRay sources listed below.
+
 The source-port patches reference OpenMoonRay files bearing Apache-2.0 notices;
 those notices are retained. Upstream source checkouts and downloads are excluded
 from the plugin package.
