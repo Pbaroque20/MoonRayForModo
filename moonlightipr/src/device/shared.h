@@ -108,6 +108,10 @@ struct DeviceMaterial {
                                 // with either MATERIAL_TOON flag, in toons
     float back[3];              // diffuse light that passes through to the other side, as a thin ear lets it
     float frontKeep[3];         // what that leaves of the diffuse light on the lit side
+    float fuzz;                 // MoonRay's fuzz lobe over the others: how much of it
+    float fuzzColor[3];
+    float fuzzRoughness;        // 0.05 to 1
+    float fuzzDims;             // how much it takes from the lobes beneath: fuzz, by its colour unless its fibres absorb
 };
 
 // A fog: how much light it stops in a unit of distance, how much of what it stops is scattered on rather than

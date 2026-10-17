@@ -363,6 +363,11 @@ Added to what is translated since the table was written:
   with light passing through, 1.03 and 99% (October 13). Light beneath the surface is looked for
   across the surface and through the solid as MoonRay looks for it, which lights thin ears from
   behind by scattering.
+- **Velvet (fuzz)**: MoonRay's `DwaVelvetMaterial_v2`, and `DwaBaseMaterial` with Show Fuzz, as MoonRay's
+  FabricVelvetBsdfLobe: sin(N, H) to the power of one over the roughness (fuzz coverage + 0.05), normalized by
+  MoonRay's table, softened by one more cosine; the lobes beneath lose what the fuzz reflects (its albedo table, by
+  the fuzz colour unless its fibres absorb). Its samples are the diffuse lobe's. The tables are DreamWorks'
+  (`src/device/velvet_tables.h`, Apache-2.0; see NOTICE.md). Not drawn: a fuzz normal of its own.
 - **Volumes**: a `BaseVolume` with constant values, on a MoonRay box or sphere shape that has
   no material, is an even fog: it dims and tints what is behind it, scatters the lights' light
   once (MoonRay's default) with its anisotropy, glows with its emission, and thins shadows.

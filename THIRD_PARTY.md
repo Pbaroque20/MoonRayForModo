@@ -66,3 +66,7 @@ readiness or compatibility with a clean Windows installation.
 MoonLightIPR, the GPU preview engine, is not third-party software: it was created by Raphael Tobar and is
 released under this project's MIT License. It is not a DreamWorks Animation product and is not affiliated
 with or endorsed by DreamWorks Animation. It runs on NVIDIA OptiX and CUDA, whose notices are above.
+
+MoonLightIPR's velvet lobe reads two tables taken unchanged from OpenMoonRay (`moonlightipr/src/device/velvet_tables.h`),
+Copyright 2023-2024 DreamWorks Animation LLC, under the Apache License 2.0; they keep that notice and are not
+relicensed under MIT. See `moonlightipr/NOTICE.md`.

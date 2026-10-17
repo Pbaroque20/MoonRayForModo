@@ -5,6 +5,7 @@
 #include <optix.h>
 #include "shared.h"
 #include "vec.h"
+#include "velvet_tables.h"
 
 using namespace moonlightipr;
 
@@ -20,6 +21,8 @@ struct Hit {
     float3 subsurfaceRadius;    // mean distance light travels beneath the surface, per channel
     float3 absorption;          // what is left of light after absorptionDistance inside the solid
     float3 back, frontKeep;     // diffuse light passed through to the other side, and what that leaves on this one
+    float fuzz, fuzzRoughness, fuzzDims;    // MoonRay's fuzz lobe over the others (DeviceMaterial)
+    float3 fuzzColor;
     float anisotropy, subsurface, absorptionDistance, abbe;
     float specular;             // weight of the dielectric's reflection
     float t;
@@ -700,6 +703,9 @@ struct Surface {
     float diffuseScale;     // 0 while the diffuse light is being gathered beneath the surface instead
     float3 back, frontKeep; // diffuse light passed through to the other side, and what that leaves on this one
     bool passes;            // some does
+    // MoonRay's fuzz: how much, its colour, its roughness, the normalization of its lobe and what it takes from beneath.
+    float fuzz, fuzzRoughness, fuzzNormalization, fuzzDims;
+    float3 fuzzColor;
     float3 diffuseNormal;   // the normal diffuse light falls on, in the shading frame
     // MoonRay's toon material: its ramps, and which of the diffuse light and the highlight they band.
     const DeviceToon* toon;
@@ -743,6 +749,13 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.back = hit.back;
     s.frontKeep = hit.frontKeep;
     s.passes = maxComponent(hit.back) > 0.0f;
+    s.fuzz = hit.fuzz;
+    s.fuzzColor = hit.fuzzColor;
+    s.fuzzRoughness = hit.fuzzRoughness;
+    s.fuzzDims = hit.fuzzDims;
+    // As MoonRay's FabricVelvetBsdfLobe picks its row of the table.
+    s.fuzzNormalization = 1.0f / VELVET_NORMALIZATION[min(max(int(floorf(hit.fuzzRoughness * VELVET_NORMALIZATION_STEPS - 1.0f)), 0),
+                                                          int(VELVET_NORMALIZATION_STEPS) - 1)];
     // On a strand as on a surface: MoonRay's own strand is a ribbon facing the ray, which a toon look shades as a surface.
     const bool toon = (hit.flags & (MATERIAL_TOON_DIFFUSE | MATERIAL_TOON_SPECULAR)) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME));
     s.toon = toon ? reinterpret_cast<const DeviceToon*>(params.toons) + hit.hair : nullptr;
@@ -815,11 +828,36 @@ ML_INLINE float3 coatBounces(const Surface& s, float3 wo, float3 albedo) {
     return make_float3(1.0f / fmaxf(1.0f - reflected * albedo.x, 0.01f), 1.0f / fmaxf(1.0f - reflected * albedo.y, 0.01f),
                        1.0f / fmaxf(1.0f - reflected * albedo.z, 0.01f));
 }
+// How much MoonRay's fuzz reflects seen from an angle (VelvetAlbedo::at), read from its table as MoonRay reads it: the
+// two rows about the roughness blended by the roughness itself, and the angle's column truncated.
+ML_INLINE float velvetAlbedo(float cosine, float roughness) {
+    roughness = clamp(roughness, 0.0f, 1.0f);
+    const int below = int(floorf(roughness * VELVET_ALBEDO_ROUGHNESS_STEPS - 1.0f)), above = int(ceilf(roughness * VELVET_ALBEDO_ROUGHNESS_STEPS - 1.0f));
+    const int column = int(clamp(cosine, 0.0f, 1.0f) * VELVET_ALBEDO_COS_STEPS - 1.0f);
+    const int last = int(VELVET_ALBEDO_COS_STEPS * VELVET_ALBEDO_ROUGHNESS_STEPS) - 1;
+    const float a = VELVET_ALBEDO[min(max(below * int(VELVET_ALBEDO_COS_STEPS) + column, 0), last)];
+    const float b = VELVET_ALBEDO[min(max(above * int(VELVET_ALBEDO_COS_STEPS) + column, 0), last)];
+    const float blend = roughness - floorf(roughness);
+    return a * (1.0f - blend) + b * blend;
+}
+// What the fuzz, the topmost lobe, leaves of the light for the lobes beneath it (MoonRay's OneMinusVelvetFresnel).
+ML_INLINE float underFuzz(const Surface& s, float3 wo) {
+    return s.fuzz > 0.0f ? 1.0f - velvetAlbedo(wo.z, s.fuzzRoughness) * s.fuzzDims : 1.0f;
+}
+// bsdf * cosine of the fuzz (MoonRay's FabricVelvetBsdfLobe): sin(N, H) to the power of one over its roughness,
+// normalized, and softened by one more cosine of the light toward the shadow's edge, as MoonRay does.
+ML_INLINE float3 fuzzLobe(const Surface& s, float3 wo, float3 wi) {
+    if (s.fuzz <= 0.0f || wi.z <= 1e-6f || wo.z <= 1e-6f) return vec(0.0f);
+    const float3 h = normalize(wo + wi);
+    const float c = clamp(h.z, -0.99f, 0.99f);
+    const float velvet = s.fuzzNormalization * powf(sqrtf(1.0f - c * c), 1.0f / s.fuzzRoughness) * wi.z;
+    return s.fuzzColor * (s.fuzz * velvet * wi.z);
+}
 // What the dielectric lets through to whatever is beneath it. MoonRay evaluates this on the
 // view direction and blends towards normal incidence as the lobe above gets rougher.
 ML_INLINE float entering(const Surface& s, float3 wo) {
     const float grazing = 1.0f - s.specular * dielectricFresnel(wo.z, s.ior), facing = 1.0f - s.specular * dielectricFresnel(1.0f, s.ior);
-    return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo);
+    return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo) * underFuzz(s, wo);
 }
 // What a hair toon's highlight lets through to the layers under it: one less its glass-like reflection, blended towards
 // its value straight on as the highlight's roughness grows, as MoonRay's OneMinusRoughFresnel has it.
@@ -906,9 +944,11 @@ struct Lobes {
     float back;     // the share of the diffuse samples that go through to the far side
 };
 ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
-    const float coat = s.coat * dielectricFresnel(wo.z, s.ior);
-    const float specular = luminance(specularFresnel(s, wo.z)) * underCoat(s, wo);
-    const float front = luminance(diffuseColor(s, wo)), behind = s.passes ? luminance(backColor(s, wo)) : 0.0f;
+    const float fuzz = underFuzz(s, wo);
+    const float coat = s.coat * dielectricFresnel(wo.z, s.ior) * fuzz;
+    const float specular = luminance(specularFresnel(s, wo.z)) * underCoat(s, wo) * fuzz;
+    const float front = luminance(diffuseColor(s, wo)) + (s.fuzz > 0.0f ? luminance(s.fuzzColor) * s.fuzz * velvetAlbedo(wo.z, s.fuzzRoughness) : 0.0f);
+    const float behind = s.passes ? luminance(backColor(s, wo)) : 0.0f;
     const float diffuse = front + behind;
     Lobes lobes;
     lobes.back = behind > 0.0f ? behind / diffuse : 0.0f;
@@ -1035,6 +1075,14 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     } else
     e.diffuse = diffuseColor(s, wo) * (fmaxf(0.0f, dot(s.diffuseNormal, wi)) / ML_PI);
     e.diffuse = e.diffuse * passed;
+    if (s.fuzz > 0.0f) {
+        // The fuzz is over everything: the highlights and the coat lose what it reflects (the diffuse already has, in
+        // entering), and it is found by the diffuse lobe's samples, which are drawn by the cosine as its own are.
+        const float kept = underFuzz(s, wo);
+        e.specular = e.specular * kept;
+        e.toon = e.toon * kept;
+        e.diffuse += fuzzLobe(s, wo, wi);
+    }
     e.diffusePdf = (1.0f - lobes.back) * wi.z / ML_PI;
     return e;
 }
@@ -2766,6 +2814,10 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     hit->tangent = vec(0.0f);
     hit->back = working(vec(material.back));
     hit->frontKeep = vec(material.frontKeep);
+    hit->fuzz = material.fuzz;
+    hit->fuzzColor = working(vec(material.fuzzColor));
+    hit->fuzzRoughness = material.fuzzRoughness;
+    hit->fuzzDims = material.fuzzDims;
     return slots;
 }
 

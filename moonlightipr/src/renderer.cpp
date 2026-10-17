@@ -194,7 +194,12 @@ DeviceMaterial toDevice(const Material& m) {
     for (int c = 0; c < 3; ++c) {
         d.back[c] = std::clamp(m.diffuseTransmission[c], 0.0f, 1.0f);
         d.frontKeep[c] = std::clamp(m.diffuseKept[c], 0.0f, 1.0f);
+        d.fuzzColor[c] = std::max(m.fuzzColor[c], 0.0f);
     }
+    d.fuzz = std::clamp(m.fuzz, 0.0f, 1.0f);
+    d.fuzzRoughness = std::clamp(m.fuzzRoughness, 0.05f, 1.0f);
+    // MoonRay's VelvetAttenuator: fibres that do not absorb let through as much as their colour does not reflect.
+    d.fuzzDims = d.fuzz * (m.fuzzAbsorbs ? 1.0f : std::max(d.fuzzColor[0], std::max(d.fuzzColor[1], d.fuzzColor[2])));
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
             | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT)
             | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0) | (m.randomWalk ? MATERIAL_RANDOM_WALK : 0);

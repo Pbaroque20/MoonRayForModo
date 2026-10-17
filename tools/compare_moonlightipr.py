@@ -170,6 +170,10 @@ def textured(folder):
     skins = lobes(native('ball', 'DwaSkinMaterial', albedo=[.85, .6, .5], roughness=.45, scattering_radius=.35, scattering_color=[1, .45, .3]),
                   native('cube', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, scattering_radius=.15, scattering_color=[1, .5, .35],
                          show_moisture=True, moisture_roughness=.1))
+    # MoonRay's fuzz: velvet (fuzz over diffuse) on the ball, and DwaBaseMaterial with its fuzz switched on on the cube.
+    velvet = lobes(native('ball', 'DwaVelvetMaterial_v2', albedo=[.35, .03, .06], fuzz_albedo=[1.0, .55, .6]),
+                   native('cube', 'DwaBaseMaterial', albedo=[.1, .2, .5], roughness=.5, show_fuzz=True, fuzz_roughness=.4,
+                          fuzz_albedo=[.9, .9, .9]))
     # MoonRay's toon material: its diffuse light banded by its ramp alone, and with its toon highlight as well.
     toon_flat = lobes(native('ball', 'DwaToonMaterial', albedo=[.9, .5, .3], diffuse_model=1, show_specular=False),
                       native('cube', 'DwaToonMaterial', albedo=[.3, .6, .9], diffuse_model=1, show_specular=False))
@@ -256,7 +260,7 @@ def textured(folder):
     blinn = dict(stacked, materials=dict(layered, ball={'material_stack': [row('ball', [.8, .8, .8], .36, [layer('b3', 'rough', 'roughness', False)],
                                                                               shading_model='blinn', raw_roughness=.35, _beckmann=True, _specular_strength=.52)]}))
     return {'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
-            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
+            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
 

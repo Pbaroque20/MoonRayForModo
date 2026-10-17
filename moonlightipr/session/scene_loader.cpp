@@ -167,13 +167,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x48534c4d)
+    if (mark != 0x49534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'H'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'I'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -291,6 +291,10 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         material.specularWeight = in.value<float>();
         in.floats(material.diffuseTransmission, 3);
         in.floats(material.diffuseKept, 3);
+        material.fuzz = in.value<float>();
+        in.floats(material.fuzzColor, 3);
+        material.fuzzRoughness = in.value<float>();
+        material.fuzzAbsorbs = in.value<float>() > 0.5f;
         const uint32_t materialFlags = in.value<uint32_t>();
         material.thin = (materialFlags & 1) != 0;
         material.clearcoatDims = (materialFlags & 2) != 0;
