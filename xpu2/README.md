@@ -181,3 +181,7 @@ synchronous correctness diagnostic, not an asynchronous rendering backend.
 C++ Lambert RGB/PDF/albedo evaluation and geometric validity across 11,520
 cases. Diffuse direction sampling, vectorized ISPC parity and renderer integration
 remain separate steps.
+
+[LAMBERT_SAMPLE.md](LAMBERT_SAMPLE.md) measures original C++ and AVX8 direction
+sampling. CUDA matches the C++ corpus exactly; AVX8 differs in 96 grazing
+validity decisions, so the XPU vector compatibility gate remains blocked.

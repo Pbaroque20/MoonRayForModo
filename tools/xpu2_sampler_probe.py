@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import shlex
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -30,7 +31,10 @@ def main():
     parser.add_argument("--cmj", action="store_true", help="Broader known-count 2D native corpus")
     parser.add_argument("--window", action="store_true", help="Test native table/cache boundary continuation")
     parser.add_argument("--lambert", action="store_true", help="Native Lambert shading evaluation oracle")
+    parser.add_argument("--lambert-sample", action="store_true", help="Original C++ and ISPC Lambert direction sampling")
     args = parser.parse_args()
+    if args.lambert_sample and (args.lambert or args.window or args.handoff or args.tables or args.cmj):
+        parser.error("--lambert-sample is a separate experiment")
     if args.lambert and (args.window or args.handoff or args.tables or args.cmj):
         parser.error("--lambert is a separate experiment")
     if args.window and (args.handoff or args.tables or args.cmj):
@@ -61,7 +65,7 @@ def main():
     env = dict(os.environ)
     env["PATH"] = str(runtime) + os.pathsep + str(Path(compiler).parent) + os.pathsep + env.get("PATH", "")
     cpp = out / "sampler_probe.cc"
-    cpp.write_bytes((ROOT / "xpu2" / ("lambert_probe.cc" if args.lambert else "sampler_window_probe.cc" if args.window else "sampler_handoff.cc" if args.handoff else "sampler_probe.cc")).read_bytes())
+    cpp.write_bytes((ROOT / "xpu2" / ("lambert_sample_probe.cc" if args.lambert_sample else "lambert_probe.cc" if args.lambert else "sampler_window_probe.cc" if args.window else "sampler_handoff.cc" if args.handoff else "sampler_probe.cc")).read_bytes())
     if args.handoff or args.window:
         (out / "sampler_state.h").write_bytes((ROOT / "xpu2/sampler_state.h").read_bytes())
     if args.window:
@@ -77,7 +81,30 @@ def main():
                 done = subprocess.run(command, cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
                                       timeout=300, creationflags=subprocess.CREATE_NO_WINDOW)
         if done.returncode:
-            raise RuntimeError(name + " failed; see " + str(out / (name + ".log")))
+            raise RuntimeError(name + " failed (exit " + str(done.returncode) + "); see " + str(out / (name + ".log")))
+    extra_objects = []
+    ispc_meta = None
+    if args.lambert_sample:
+        # Compile only the diagnostic wrapper; link original retained BSDF bodies.
+        ninja = (source / "build/native-renderer-avx/build.ninja").read_text(encoding="utf-8")
+        stanzas = ninja.split("\n\n")
+        stanza = next(s for s in stanzas if s.startswith("build ") and "BsdfLambert" in s.splitlines()[0] and "ISPC_COMPILER" in s.splitlines()[0])
+        variables = dict(line.strip().split(" = ", 1) for line in stanza.splitlines()[1:] if " = " in line)
+        ispc_flags = shlex.split(" ".join(variables[k] for k in ("DEFINES", "INCLUDES", "FLAGS")))
+        # Flat packets have arbitrary field offsets, unlike native SoA arrays.
+        # Do not promise alignment for these diagnostic packet loads.
+        ispc_flags.remove("--opt=force-aligned-memory")
+        ispc_compiler = Path(compiler).parent / "ispc.exe"
+        ispc_source = out / "lambert_sample.ispc"
+        ispc_source.write_bytes((ROOT / "xpu2/lambert_sample.ispc").read_bytes())
+        ispc_pp = out / "lambert_sample.preprocessed.ispc"
+        run([str(ispc_compiler), *ispc_flags, "-E", str(ispc_source)], "ispc-preprocess", ispc_pp)
+        ispc_obj = out / "lambert_sample.obj"
+        run([str(ispc_compiler), *ispc_flags, str(ispc_source), "--emit-obj", "-o", str(ispc_obj),
+             "-h", str(out / "lambert_sample_ispc.h")], "ispc-compile")
+        extra_objects.append(str(ispc_obj))
+        ispc_meta = {"compiler_sha256": sha(ispc_compiler), "source_sha256": sha(ispc_source),
+                     "preprocessed_sha256": sha(ispc_pp), "object_sha256": sha(ispc_obj), "flags": ispc_flags}
     print("Freezing native sampler headers", flush=True)
     pp = out / "sampler.ii"
     run([compiler, *flags, "-E", str(cpp), "-o", str(pp)], "preprocess")
@@ -88,7 +115,7 @@ def main():
     rsp.write_bytes((build / "control.rsp").read_bytes())
     exe = out / "sampler.exe"
     print("Linking retained native inputs", flush=True)
-    run([compiler, "-O3", "-pthread", "-o", str(exe), str(obj), "@" + str(rsp)], "link")
+    run([compiler, "-O3", "-pthread", "-o", str(exe), str(obj), *extra_objects, "@" + str(rsp)], "link")
     if args.tables:
         run([str(exe), "1", "tables"], "tables", out / "tables.json")
     if args.window:
@@ -99,12 +126,14 @@ def main():
         output = out / ("samples-" + str(index) + ".jsonl")
         run([str(exe), str(workers)] + (["cmj"] if args.cmj else []), "run-" + str(index), output)
         outputs.append(output)
-    if args.lambert:
+    if args.lambert_sample:
+        from xpu2.lambert_sample import compare as compare_lambert, read as read_lambert
+    elif args.lambert:
         from xpu2.lambert import compare as compare_lambert, read as read_lambert
-    result = (compare_lambert(outputs) if args.lambert else compare_windows(outputs) if args.window else
+    result = (compare_lambert(outputs) if (args.lambert or args.lambert_sample) else compare_windows(outputs) if args.window else
               compare_handoffs(outputs, args.reference) if args.handoff else compare(outputs))
     if args.reference and not args.handoff:
-        result["reference_match"] = (read_lambert(outputs[0]) == read_lambert(args.reference) if args.lambert else read_windows(outputs[0]) == read_windows(args.reference) if args.window
+        result["reference_match"] = (read_lambert(outputs[0]) == read_lambert(args.reference) if (args.lambert or args.lambert_sample) else read_windows(outputs[0]) == read_windows(args.reference) if args.window
                                      else matches_reference(outputs[0], args.reference))
         result["reference_sha256"] = sha(args.reference)
         if not result["reference_match"]:
@@ -114,6 +143,12 @@ def main():
     run([compiler, *flags, "-E", str(cpp), "-o", str(second_pp)], "preprocess-verify")
     if sha(pp) != sha(second_pp):
         raise ValueError("Native headers changed during probe")
+    if ispc_meta:
+        verified_ispc_pp = out / "lambert_sample.verify.ispc"
+        run([str(ispc_compiler), *ispc_flags, "-E", str(ispc_source)], "ispc-preprocess-verify", verified_ispc_pp)
+        if sha(verified_ispc_pp) != ispc_meta["preprocessed_sha256"] or sha(ispc_compiler) != ispc_meta["compiler_sha256"]:
+            raise ValueError("ISPC compiler or headers changed during probe")
+        result["ispc_wrapper"] = ispc_meta
     for path, digest in frozen:
         if sha(path) != digest:
             raise ValueError("Retained build input changed")

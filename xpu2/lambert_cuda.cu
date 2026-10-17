@@ -2,7 +2,8 @@
 // BsdfSlice.h, Copyright 2023-2024 DreamWorks Animation LLC, Apache-2.0.
 // See CUDA_SAMPLER_LICENSES.md. Fresnel and terminator fixes are declined.
 __device__ float lambertDot(const float* a,const float* b) {
-    return __fadd_rn(__fadd_rn(__fmul_rn(a[0],b[0]),__fmul_rn(a[1],b[1])),__fmul_rn(a[2],b[2]));
+    // Native C++ Vec3 dot uses x + (y + z), with contraction disabled.
+    return __fadd_rn(__fmul_rn(a[0],b[0]),__fadd_rn(__fmul_rn(a[1],b[1]),__fmul_rn(a[2],b[2])));
 }
 extern "C" __global__ void lambert(const unsigned char* input,const U* lengths,
     unsigned char* output,U* results,const float*,const float*,U count) {

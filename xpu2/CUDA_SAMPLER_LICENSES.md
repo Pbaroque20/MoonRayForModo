@@ -1,6 +1,7 @@
 # Experimental CUDA sampler notices
 
-Hash/float-conversion routines derive from OpenMoonRay / scene_rdl2,
+Hash/float-conversion routines and experimental Lambert evaluation/sampling,
+hemisphere and reference-frame math derive from OpenMoonRay / scene_rdl2,
 Copyright 2023-2024 DreamWorks Animation LLC, licensed under Apache-2.0.
 https://www.apache.org/licenses/LICENSE-2.0
 

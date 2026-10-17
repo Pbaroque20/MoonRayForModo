@@ -1,0 +1,515 @@
+{
+  "status": "cpp_cuda_component_passed_vector_migration_blocked",
+  "python_checks": 173,
+  "renderer_migration_enabled": false,
+  "scope": "Original C++ and retained native AVX8 Lambert sampling compared with experimental CUDA; no image parity or performance claim",
+  "reference": {
+    "path": "xpu2\\reference\\lambert-sample-avx8-20261017.jsonl.gz",
+    "sha256": "13ee8748f9c838193487bce27a88e1a97e8de5a7ddd66cddead4fc9e6230093d",
+    "bytes": 151712
+  },
+  "native": {
+    "status": "passed",
+    "cases": 7680,
+    "components_per_mode": 53760,
+    "executions": 3,
+    "all_execution_records_identical": true,
+    "different_components": {
+      "execution_records": 0
+    },
+    "cpp_vs_vector": {
+      "direction": {
+        "components": 23040,
+        "different_bits": 5472,
+        "numerically_different": 5472,
+        "nonfinite_pairs": 0,
+        "max_absolute": 1.7484555314695172e-07,
+        "rms": 3.095668803690402e-08,
+        "max_ulp": 876330287
+      },
+      "rgb": {
+        "components": 23040,
+        "different_bits": 560,
+        "numerically_different": 560,
+        "nonfinite_pairs": 0,
+        "max_absolute": 4.76837158203125e-07,
+        "rms": 1.7335368421138714e-08,
+        "max_ulp": 2
+      },
+      "pdf": {
+        "components": 7680,
+        "different_bits": 576,
+        "numerically_different": 576,
+        "nonfinite_pairs": 0,
+        "max_absolute": 2.9802322387695312e-08,
+        "rms": 5.7711949142924205e-09,
+        "max_ulp": 2
+      }
+    },
+    "geometric_validity_differences": 96,
+    "cpp_vector_bitwise_parity": false,
+    "scope": "Repeatability of original C++ and AVX8 ISPC Lambert sampling; cross-backend parity is reported separately, not assumed",
+    "reference_match": true,
+    "reference_sha256": "13ee8748f9c838193487bce27a88e1a97e8de5a7ddd66cddead4fc9e6230093d",
+    "ispc_wrapper": {
+      "compiler_sha256": "23c5e333bfd22c241dee4aaaa09b9126c11762f598dd550ca0135b927ba5d9dc",
+      "source_sha256": "be367e14c445db372f063f8d5f735281fabb338761ccaaa07ddda05122ac1761",
+      "preprocessed_sha256": "ae05ab0a0375ec0e3f581c0d0ed937429f500f43503697fe471682f646ab4fa1",
+      "object_sha256": "0c6c05bf852b29b420ea85ed960c4d0f7759a9203c62430b339a07e7907e71de",
+      "flags": [
+        "-DGL_GLEXT_PROTOTYPES=1",
+        "-DMOONRAY_WINDOWS_DESKTOP",
+        "-DNOMINMAX",
+        "-DNO_16BYTE_ATOMIC_LOCK_FREE",
+        "-DPLATFORM_WINDOWS",
+        "-DTBB_SUPPRESS_DEPRECATED_MESSAGES",
+        "-DWIN32_LEAN_AND_MEAN",
+        "-D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR=1",
+        "-D_LIBCPP_ENABLE_CXX17_REMOVED_RANDOM_SHUFFLE=1",
+        "-D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION",
+        "-D__AVX__",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/lib/rendering/shading/ispc/bsdf",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/native-port/include",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/log4cplus/include",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/log4cplus/include",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/lib/rendering/shading/ispc",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/include",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/openmoonray/moonray/moonray/include",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/log4cplus/include/log4cplus/..",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/openmoonray/moonray/scene_rdl2/include",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/scene-rdl2/include",
+        "-IC:/Users/Raphael Tobar/MoonRayForModo/toolchain/msys64/ucrt64/include",
+        "-O3",
+        "-DNDEBUG",
+        "--target=avx1-i32x8",
+        "--pic",
+        "--wno-perf",
+        "--opt=disable-assertions"
+      ]
+    },
+    "build_manifest_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6",
+    "cpp_sha256": "1cb7a530d9a9bcce03ecd60dc83e75a56d3bd40ba1ff14d1081cd4c901ea4f46",
+    "preprocessed_sha256": "d6d45d40263687b18c29659c2f3ff8fefac451127a84f337103c6bd88eb5d3fe",
+    "executable_sha256": "b6ec4c7e9789633400e37ebea87930032c92d25d145a0a5fa92162abbcafe433",
+    "compile_flags": [
+      "-DBOOST_DISABLE_ASSERTS",
+      "-DFMT_SHARED",
+      "-DGL_GLEXT_PROTOTYPES=1",
+      "-DIMATH_DLL",
+      "-DMOONRAY_USE_OPTIX",
+      "-DMOONRAY_WINDOWS_DESKTOP",
+      "-DNOMINMAX",
+      "-DNO_16BYTE_ATOMIC_LOCK_FREE",
+      "-DOPENEXR_DLL",
+      "-DOPENSUBDIV_HAS_DX11SDK",
+      "-DOPENSUBDIV_HAS_GLSL_COMPUTE",
+      "-DOPENSUBDIV_HAS_GLSL_TRANSFORM_FEEDBACK",
+      "-DOPENSUBDIV_HAS_OPENCL",
+      "-DOPENSUBDIV_HAS_OPENCL_DX_INTEROP",
+      "-DOPENSUBDIV_HAS_OPENGL",
+      "-DOPENSUBDIV_HAS_OPENMP",
+      "-DOPENSUBDIV_HAS_PATCH_SHADER_SOURCE_GLSL",
+      "-DOPENSUBDIV_HAS_PATCH_SHADER_SOURCE_HLSL",
+      "-DOPENSUBDIV_HAS_PTEX",
+      "-DOPENSUBDIV_HAS_TBB",
+      "-DOPENVDB_USE_BLOSC",
+      "-DOPENVDB_USE_DEPRECATED_ABI_10",
+      "-DOPENVDB_USE_LOG4CPLUS",
+      "-DPLATFORM_WINDOWS",
+      "-DSTL_VERSION=6",
+      "-DTBB_ONEAPI",
+      "-DTBB_SUPPRESS_DEPRECATED_MESSAGES",
+      "-DWIN32_LEAN_AND_MEAN",
+      "-D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR=1",
+      "-D_LIBCPP_ENABLE_CXX17_REMOVED_RANDOM_SHUFFLE=1",
+      "-D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION",
+      "-D__AVX__",
+      "-D__TARGET_AVX__",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/native-port/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/log4cplus/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/log4cplus/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/lib/rendering/pbr",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/openmoonray/moonray/moonray/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/openmoonray/moonray/scene_rdl2/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/log4cplus/include/log4cplus/..",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/scene-rdl2/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/lib/rendering/shading/ispc",
+      "-isystem",
+      "C:/Users/Raphael Tobar/MoonRayForModo/toolchain/msys64/ucrt64/include/OpenEXR",
+      "-isystem",
+      "C:/Users/Raphael Tobar/MoonRayForModo/toolchain/msys64/ucrt64/include/Imath",
+      "-isystem",
+      "C:/Users/Raphael Tobar/MoonRayForModo/upstream/random123/include/Random123/..",
+      "-isystem",
+      "C:/Users/Raphael Tobar/MoonRayForModo/toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include",
+      "-isystem",
+      "C:/Users/Raphael Tobar/MoonRayForModo/toolchain/xpu/cuda_nvcc-windows-x86_64-12.8.93-archive/include",
+      "-isystem",
+      "C:/Users/Raphael Tobar/MoonRayForModo/toolchain/xpu/optix-dev/include",
+      "-O3",
+      "-DNDEBUG",
+      "-std=gnu++17",
+      "-march=ivybridge",
+      "-mno-avx2",
+      "-mno-fma",
+      "-ffp-contract=off",
+      "-fexceptions",
+      "-fno-omit-frame-pointer",
+      "-fno-strict-aliasing",
+      "-fno-var-tracking-assignments",
+      "-fpermissive",
+      "-mavx",
+      "-pipe",
+      "-pthread",
+      "-w",
+      "-Wall",
+      "-Wcast-align",
+      "-Wcast-qual",
+      "-Wdisabled-optimization",
+      "-Wextra",
+      "-Woverloaded-virtual",
+      "-Wno-conversion",
+      "-Wno-sign-compare",
+      "-Wno-switch",
+      "-Wno-system-headers",
+      "-Wno-unused-parameter"
+    ],
+    "workers": [
+      1,
+      1,
+      4
+    ],
+    "corpus_sha256": [
+      "5f6958e9309d21f51e6992d596e772dc4fe2a1fabac6badbf2faa0bfc83e50ee",
+      "5f6958e9309d21f51e6992d596e772dc4fe2a1fabac6badbf2faa0bfc83e50ee",
+      "5f6958e9309d21f51e6992d596e772dc4fe2a1fabac6badbf2faa0bfc83e50ee"
+    ],
+    "scope_build": "Current frozen headers with retained native objects; not a clean runtime build",
+    "raw_report_sha256": "8b8f9fbb3acd96b668054dee5b014e1ed916a0623b8fbb3d88ed8861db7e2446",
+    "runtime_inventory_sha256": "b4f259ad5672d7ad22885fc5eb13258a75929be7b4b169b2b11f16eacc3dc324"
+  },
+  "cuda": {
+    "status": "passed",
+    "scope": "CUDA Lambert sampling numerical diagnostic; strict C++ parity required for passed status; not rendered parity",
+    "lambert": false,
+    "lambert_sample": true,
+    "native_tables": false,
+    "cache_window": false,
+    "device": "NVIDIA GeForce RTX 3090",
+    "compute_capability": [
+      8,
+      6
+    ],
+    "cuda_driver_api": 13010,
+    "compile_flags": [
+      "--std=c++14",
+      "--gpu-architecture=compute_86",
+      "--fmad=false",
+      "--ftz=false",
+      "--prec-div=true",
+      "--prec-sqrt=true"
+    ],
+    "continuation": null,
+    "handoff": null,
+    "inputs_sha256": {
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+      "xpu2\\reference\\lambert-sample-avx8-20261017.jsonl.gz": "13ee8748f9c838193487bce27a88e1a97e8de5a7ddd66cddead4fc9e6230093d",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\xpu\\cuda_nvrtc-windows-x86_64-12.8.93-archive\\bin\\nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\xpu\\cuda_nvrtc-windows-x86_64-12.8.93-archive\\bin\\nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_cuda_sampler_probe.py": "e8245dfd3953b5084da265f7696711619636be08cbe7604f953f33cd784d0a3e",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\cuda_samples.py": "d6e0527a152f5b10d8f60cb7f80b2c4b80be542637a8780da3ef00d84f022cf4",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert_sample_cuda.cu": "9ca5973ced118a371634cb42674f06726df9f712785c07fb88e87d7aa65d07bc",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert_sample.py": "1c27e33e7fda416c7bc4dba66c74b3b9176b2dc84261bf1fc43d4b091f8779e8",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert_cuda.cu": "0b48936ea62593212e60282d76d09b600fa56bcc637d25cd8778c1b2ab0f4e57",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert.py": "5ffb06a3966ef7e8000f37caeb171debc07903085a4567400df6e339a847e9d2"
+    },
+    "ptx_sha256": "b68f1cce11c5628a7776d669c8b3088b9bcc68a3e661b1d5f4da16ba3e6d5c9c",
+    "runs": [
+      {
+        "passed": true,
+        "transport_guards_passed": true,
+        "finite_outputs": true,
+        "records": 7697,
+        "supported_records": 7680,
+        "unsupported_records": 4,
+        "invalid_records": 13,
+        "state_mismatch_records": 0,
+        "status_mismatch_records": 0,
+        "guard_mismatch_records": 0,
+        "cpp_bitwise_parity": true,
+        "vector_bitwise_parity": false,
+        "comparisons": {
+          "cpp": {
+            "direction": {
+              "components": 23040,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "rgb": {
+              "components": 23040,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "pdf": {
+              "components": 7680,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "geometric_validity_differences": 0
+          },
+          "vector": {
+            "direction": {
+              "components": 23040,
+              "different_bits": 5472,
+              "numerically_different": 5472,
+              "nonfinite_pairs": 0,
+              "max_absolute": 1.7484555314695172e-07,
+              "rms": 3.095668803690402e-08,
+              "max_ulp": 876330287
+            },
+            "rgb": {
+              "components": 23040,
+              "different_bits": 560,
+              "numerically_different": 560,
+              "nonfinite_pairs": 0,
+              "max_absolute": 4.76837158203125e-07,
+              "rms": 1.7335368421138714e-08,
+              "max_ulp": 2
+            },
+            "pdf": {
+              "components": 7680,
+              "different_bits": 576,
+              "numerically_different": 576,
+              "nonfinite_pairs": 0,
+              "max_absolute": 2.9802322387695312e-08,
+              "rms": 5.7711949142924205e-09,
+              "max_ulp": 2
+            },
+            "geometric_validity_differences": 96
+          }
+        },
+        "canonical_result_sha256": "5596b58a8e021916c6f5dff18a4a219d3ab0eae9401ea98c6aca4001d8a3bb69",
+        "block_size": 64,
+        "streams": 2,
+        "state_output_sha256": "95f8eacd1d940da96a1cfde82d13124113946693158fbbf92cf9f45fcd3230f7",
+        "result_output_sha256": "eeb3606d1d0aab5a42b504c2ac452f66b19d9d2c47024361eabf293ad563f24c"
+      },
+      {
+        "passed": true,
+        "transport_guards_passed": true,
+        "finite_outputs": true,
+        "records": 7697,
+        "supported_records": 7680,
+        "unsupported_records": 4,
+        "invalid_records": 13,
+        "state_mismatch_records": 0,
+        "status_mismatch_records": 0,
+        "guard_mismatch_records": 0,
+        "cpp_bitwise_parity": true,
+        "vector_bitwise_parity": false,
+        "comparisons": {
+          "cpp": {
+            "direction": {
+              "components": 23040,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "rgb": {
+              "components": 23040,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "pdf": {
+              "components": 7680,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "geometric_validity_differences": 0
+          },
+          "vector": {
+            "direction": {
+              "components": 23040,
+              "different_bits": 5472,
+              "numerically_different": 5472,
+              "nonfinite_pairs": 0,
+              "max_absolute": 1.7484555314695172e-07,
+              "rms": 3.095668803690402e-08,
+              "max_ulp": 876330287
+            },
+            "rgb": {
+              "components": 23040,
+              "different_bits": 560,
+              "numerically_different": 560,
+              "nonfinite_pairs": 0,
+              "max_absolute": 4.76837158203125e-07,
+              "rms": 1.7335368421138714e-08,
+              "max_ulp": 2
+            },
+            "pdf": {
+              "components": 7680,
+              "different_bits": 576,
+              "numerically_different": 576,
+              "nonfinite_pairs": 0,
+              "max_absolute": 2.9802322387695312e-08,
+              "rms": 5.7711949142924205e-09,
+              "max_ulp": 2
+            },
+            "geometric_validity_differences": 96
+          }
+        },
+        "canonical_result_sha256": "5596b58a8e021916c6f5dff18a4a219d3ab0eae9401ea98c6aca4001d8a3bb69",
+        "block_size": 128,
+        "streams": 2,
+        "state_output_sha256": "462268f644a9738fd242c94fd47ca8773e52d23a2a34e939d251acfa8baf26e4",
+        "result_output_sha256": "e9d8b0a8c6132055557d8047a3b4bade2dab69c1a43f28f90823c54bdc74b54c"
+      },
+      {
+        "passed": true,
+        "transport_guards_passed": true,
+        "finite_outputs": true,
+        "records": 7697,
+        "supported_records": 7680,
+        "unsupported_records": 4,
+        "invalid_records": 13,
+        "state_mismatch_records": 0,
+        "status_mismatch_records": 0,
+        "guard_mismatch_records": 0,
+        "cpp_bitwise_parity": true,
+        "vector_bitwise_parity": false,
+        "comparisons": {
+          "cpp": {
+            "direction": {
+              "components": 23040,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "rgb": {
+              "components": 23040,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "pdf": {
+              "components": 7680,
+              "different_bits": 0,
+              "numerically_different": 0,
+              "nonfinite_pairs": 0,
+              "max_absolute": 0.0,
+              "rms": 0.0,
+              "max_ulp": 0
+            },
+            "geometric_validity_differences": 0
+          },
+          "vector": {
+            "direction": {
+              "components": 23040,
+              "different_bits": 5472,
+              "numerically_different": 5472,
+              "nonfinite_pairs": 0,
+              "max_absolute": 1.7484555314695172e-07,
+              "rms": 3.095668803690402e-08,
+              "max_ulp": 876330287
+            },
+            "rgb": {
+              "components": 23040,
+              "different_bits": 560,
+              "numerically_different": 560,
+              "nonfinite_pairs": 0,
+              "max_absolute": 4.76837158203125e-07,
+              "rms": 1.7335368421138714e-08,
+              "max_ulp": 2
+            },
+            "pdf": {
+              "components": 7680,
+              "different_bits": 576,
+              "numerically_different": 576,
+              "nonfinite_pairs": 0,
+              "max_absolute": 2.9802322387695312e-08,
+              "rms": 5.7711949142924205e-09,
+              "max_ulp": 2
+            },
+            "geometric_validity_differences": 96
+          }
+        },
+        "canonical_result_sha256": "5596b58a8e021916c6f5dff18a4a219d3ab0eae9401ea98c6aca4001d8a3bb69",
+        "block_size": 256,
+        "streams": 2,
+        "state_output_sha256": "7130bbea970c5b6ad56c0c3fdb7f32164ddfb75e261aff664c917aaaf61ac229",
+        "result_output_sha256": "1c1f16dc04feb556f20bad9f9f67afbf6cf52beecdb7a0dbf94a656958f7255a"
+      }
+    ],
+    "renderer_migration_enabled": false,
+    "xpu_vector_compatibility_gate": "blocked",
+    "gpu_repeatable": true,
+    "raw_report_sha256": "7076305d62a73c04e24444f6d2513439fbdc073e3c0c8e367e481fc0d31f3adb"
+  },
+  "regressions": {
+    "lambert_eval": {
+      "status": "passed",
+      "raw_report_sha256": "a55bbdf616d82ebc11bcd810eb4f75fbfd0553b76ee1c0ebeb9720d8191332f3",
+      "runs": 3,
+      "components_per_run": 80640,
+      "continuation": null
+    },
+    "v1_sampler": {
+      "status": "passed",
+      "raw_report_sha256": "2382e5c468595f69ac9a174c543c49f5aa3214b88b98335396e599527d5dc9e5",
+      "runs": 3,
+      "components_per_run": 47304,
+      "continuation": null
+    },
+    "window_sampler": {
+      "status": "passed",
+      "raw_report_sha256": "fa72386aa08f686b5970ff48fd29d6c08abc7d8f2e7f62a080fa9745a652b385",
+      "runs": 4,
+      "components_per_run": 54216,
+      "continuation": {
+        "passed": true,
+        "steps": 48,
+        "cases": 324,
+        "samples": 13554,
+        "components": 27108,
+        "state_output_sha256": "cd5586e2dfcc32c53d4a3d8bfe525fad54b4ea4381450e15996d49d00fb8ff13",
+        "result_output_sha256": "5b77dd0fb7f9c6a1edcac8d34988713e29eda33e5e0b7df6f64443964631a5e5"
+      }
+    }
+  },
+  "initial_failures": {
+    "wrapper": "Invalid force-aligned-memory promise caused an isolated diagnostic access violation; removed only from the packet wrapper",
+    "cuda": "Left-associated dot caused 464 RGB and 480 PDF mismatches; corrected to source-derived x+(y+z)",
+    "unit": "Grazing-pair regression initially mislabeled pair 8; corrected to observed quarter/half-turn pairs 3 and 4"
+  },
+  "remaining": "AVX8 differs in 96 geometric-validity decisions despite small numeric differences; must resolve vector math or keep native CPU sampling before enabling migration"
+}

@@ -71,3 +71,7 @@ Use fresh output directories:
     python tools/xpu2_sampler_probe.py --build test-results/xpu2-origin-build --output test-results/lambert-native-new --lambert --reference xpu2/reference/lambert-eval-20261017.jsonl.gz
     python tools/xpu2_cuda_sampler_probe.py --source <shared-source-read-only> --reference xpu2/reference/lambert-eval-20261017.jsonl.gz --lambert --output test-results/lambert-cuda-new
     python -m unittest discover -s tests -p "test_xpu2*.py" -q
+
+Follow-up: [LAMBERT_SAMPLE.md](LAMBERT_SAMPLE.md) adds direction sampling and
+AVX8 comparison, corrects the CUDA dot-product association, and records the
+unresolved vector migration hazard. The original evaluation corpus still passes.
