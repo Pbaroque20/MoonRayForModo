@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [local coordination and larger GPU batches](LOCAL_BATCHES.md),
+See [fused GPU sampling and contribution validation](FUSED_CONTRIBUTION.md),
+[local coordination and larger GPU batches](LOCAL_BATCHES.md),
 [alternating CPU/GPU worker measurements](ALTERNATING_WORKERS.md),
 [owned native contribution replay](OWNED_CONTRIBUTION.md),
 [native lighting/GPU overlap](NATIVE_LIGHT_OVERLAP.md),
