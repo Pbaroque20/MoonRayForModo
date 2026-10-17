@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import terminal
 
-COLOURS = {'command': '#7cc4ff', 'note': '#8a8a8a', 'end': '#7fd67f', 'stop': '#e0b060', 'fail': '#ff7b72', 'out': '#d4d4d4'}
+COLOURS = {'command': '#7cc4ff', 'note': '#8a8a8a', 'status': '#9fd8d0', 'end': '#7fd67f', 'stop': '#e0b060', 'fail': '#ff7b72', 'out': '#d4d4d4'}
 ALL = 'All programs'
 
 
@@ -145,6 +145,8 @@ class TerminalWindow(QtWidgets.QDialog):
             self.text.appendHtml(self._html(entry))
         if self.follow.isChecked():
             self._to_end()
+            # Again once the new lines are laid out, which makes the view taller after this returns.
+            QtCore.QTimer.singleShot(0, self._to_end)
         else:
             bar.setValue(held)
         across.setValue(sideways)

@@ -22,6 +22,9 @@ _entries = collections.deque(maxlen=LIMIT)  # (serial, time, kind, source, text)
 _serial = itertools.count(1)
 _ids = itertools.count(1)
 _running = {}  # id -> (source, started)
+_resident = set()  # ids of programs kept running between renders, which do not make the Terminal busy
+# The plugin's modules whose subprocess is kept running for the next time it is needed: the preview's display helper.
+RESIDENT_MODULES = {'display_stream'}
 _partial = {}  # id -> text of a line not yet ended
 sources = set()
 
@@ -60,10 +63,39 @@ def command(program, arguments, source, directory=None, line=None):
         return ident
 
 
+_status = {'last': None, 'working': False}
+
+
+def follow_status(label, source='Preview'):
+    """Note in the Terminal each thing the preview window's status line says, as it says it: its setText is wrapped
+    to note the words first."""
+    set_text = label.setText
+
+    def said(words):
+        heard(source, words)
+        return set_text(words)
+    label.setText = said
+    heard(source, label.text())
+
+
+def working(on):
+    """The preview window has a render on its way (on) or not: while it has, the Terminal is not ready."""
+    _status['working'] = bool(on)
+
+
+def heard(source, words):
+    """A status the preview window shows: noted once, not again while it says the same."""
+    words = ' '.join(str(words).split())
+    if words and words != _status['last']:
+        _status['last'] = words
+        _add('status', source, words)
+
+
 def busy():
-    """Whether a program the plugin started is still running."""
+    """Whether the plugin is at work: a render on its way in the preview window, or a program it started still running
+    (one kept running between renders, a session, counts only while it renders)."""
     with _lock:
-        return bool(_running)
+        return _status['working'] or any(ident not in _resident for ident in _running)
 
 
 def output(ident, text):
@@ -91,6 +123,7 @@ def ended(ident, code, crashed=False, known=True, stopped=False):
         if ident not in _running:
             return
         source, began = _running.pop(ident)
+        _resident.discard(ident)
         if rest:
             _add('out', source, rest)
         seconds = time.time() - began
@@ -108,10 +141,12 @@ def note(source, text):
     _add('note', source, text)
 
 
-def watch(process, source):
+def watch(process, source, resident=False):
     """Follow a QProcess: its command as it starts, everything the plugin reads from it, and its end. Call before
     connecting its readers: the process's read functions are wrapped to copy what they return. source is the name
-    shown, or a function giving it as the process starts (one process can run different programs)."""
+    shown, or a function giving it as the process starts (one process can run different programs). A resident
+    program is kept running between renders, waiting for the next (MoonRay's session, MoonLightIPR's): it does not keep
+    the Terminal from saying it is ready."""
     from PySide2 import QtCore
     state = {'id': None, 'stopped': False}
 
@@ -119,6 +154,9 @@ def watch(process, source):
         state['stopped'] = False
         named = source() if callable(source) else source
         state['id'] = command(process.program(), process.arguments(), named, process.workingDirectory())
+        if resident:
+            with _lock:
+                _resident.add(state['id'])
 
     def tapped(read):
         def reader():
@@ -210,6 +248,8 @@ def _audit(event, arguments):
             program, rest, line = (listed[0] if listed else str(executable)), listed[1:], None
         with _lock:
             ident = command(program, rest, module, directory, line)
+            if module in RESIDENT_MODULES:
+                _resident.add(ident)
             if popen is not None:
                 _follow(ident, popen)
             else:

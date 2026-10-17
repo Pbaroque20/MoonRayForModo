@@ -363,6 +363,9 @@ class Panel(Tools, QtWidgets.QWidget):
             row.addWidget(cell,1);cells.append(inside)
         left,middle,right=cells
         self.status = QtWidgets.QLabel('Ready')
+        # Each thing it says is noted in the MoonRay Terminal too.
+        from . import terminal
+        terminal.follow_status(self.status)
         # A long message is cut short rather than widening the window.
         self.status.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
         # What is under the pointer: its place in the picture and its values, at the row's left end.
@@ -1141,6 +1144,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self._rendering=bool(rendering)
         # The crest breathes while a render is on its way and nothing is shown yet.
         if hasattr(self.preview,'set_waiting'):self.preview.set_waiting(self._rendering)
+        from . import terminal
+        terminal.working(self._rendering)
         if getattr(self,'_draft_quiet',False):return
         active=self._rendering or self._following
         again=not active and getattr(self,'_continuable',None) is not None
