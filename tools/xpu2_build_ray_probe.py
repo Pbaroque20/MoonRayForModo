@@ -23,6 +23,7 @@ def main():
     p.add_argument('--source',required=True,type=Path)
     p.add_argument('--runtime',required=True,type=Path)
     p.add_argument('--output',required=True,type=Path)
+    p.add_argument('--origins',action='store_true',help='Add copied-ray origin variants; diagnostic single-thread runs only')
     p.add_argument('--contributions',action='store_true',help='Also trace queued radiance and shadow contributions')
     a=p.parse_args()
     source,runtime,out=a.source.resolve(),a.runtime.resolve(),a.output.resolve()
@@ -43,6 +44,10 @@ def main():
         shadow_anchor='        BundledOcclRay &occlRay = rays[i];'
         if injected.count(shadow_anchor)!=1:raise ValueError('Unknown shadow source layout')
         injected=injected.replace(shadow_anchor,shadow_anchor+'\n'+(ROOT/'xpu2/shadow_compare.inc').read_text(encoding='utf-8'))
+    if a.origins:
+        anchor='    unsigned char *isOccluded = accel->getOutputOcclusionBuf(tls->mThreadIdx);'
+        if injected.count(anchor)!=1:raise ValueError('Unknown GPU shadow result layout')
+        injected=injected.replace(anchor,anchor+'\n'+(ROOT/'xpu2/origin_probe.inc').read_text(encoding='utf-8'))
     injected=(ROOT/'xpu2/trace_output.h').read_text(encoding='utf-8')+'\n'+injected.replace('std::fprintf(stderr,','std::fprintf(xpu2TraceOutput(),')
     (out/'XPURayHandlers.cc').write_text(injected,encoding='utf-8')
     compile_line=subprocess.run([str(ninja),'-t','commands',target],cwd=build,capture_output=True,text=True,check=True).stdout.splitlines()[-1]
@@ -97,7 +102,7 @@ def main():
         if done.returncode:raise RuntimeError(name+' failed: '+str(out/(name+'.log')))
     report={'source':str(source),'source_sha256':original_hash,'instrumented_sha256':sha(out/'XPURayHandlers.cc'),
             'scope':'Retained native objects; not a clean source rebuild','inputs':manifest,
-            'compile_command':compile_args,'extra_compiles':extra,'contributions':a.contributions}
+            'compile_command':compile_args,'extra_compiles':extra,'contributions':a.contributions,'origins':a.origins}
     (out/'build-inputs.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     print('Compiling diagnostic handler',flush=True)
     run(compile_args,'compile')

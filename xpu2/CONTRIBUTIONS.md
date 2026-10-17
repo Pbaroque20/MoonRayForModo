@@ -98,3 +98,7 @@ leaks and intentionally changes the reference image. Any accepted change to the
 reference's spawning/intersection policy must create a new reference version.
 Contribution-level comparisons and canonical reduction now provide the next
 step toward separating those changes from scheduling and accumulation noise.
+
+The copied-ray scale/contact experiment is now measured. See
+[ORIGINS.md](ORIGINS.md): larger offsets demonstrably skip the closest blocker;
+smaller candidates remain experimental.

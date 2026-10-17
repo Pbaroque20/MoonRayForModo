@@ -139,3 +139,7 @@ not an enabled XPU2 rendering backend.
 The shadow/contribution follow-up now isolates the larger discrepancy to a
 grazing visibility decision. See [CONTRIBUTIONS.md](CONTRIBUTIONS.md) for measured
 evidence, diagnostic controls and implications for the XPU2 reference contract.
+
+The copied-ray scale/contact experiment is now measured. See
+[ORIGINS.md](ORIGINS.md): larger offsets demonstrably skip the closest blocker;
+smaller candidates remain experimental.

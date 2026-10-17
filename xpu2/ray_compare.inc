@@ -8,6 +8,8 @@
     }();
     if (enabled && (rs->mSubpixel.mPixel == pixelLocationToUint32(96, 77) ||
                     rs->mSubpixel.mPixel == pixelLocationToUint32(132, 96))) {
+        xpu2RememberNormal(rs->mSubpixel.mPixel, rs->mSubpixel.mSubpixelIndex, rs->mRay.getDepth(),
+                           rs->mRay.Ng.x,rs->mRay.Ng.y,rs->mRay.Ng.z);
         const auto incoming = rsCPU.mRay;
         fs.mEmbreeAccel->intersect(rsCPU.mRay);
         const auto &cpu = rsCPU.mRay;
