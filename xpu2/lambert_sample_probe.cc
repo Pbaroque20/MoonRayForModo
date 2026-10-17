@@ -2,6 +2,7 @@
 #include <moonray/rendering/shading/bsdf/BsdfLambert.h>
 #include <moonray/rendering/pbr/sampler/IntegratorSample.h>
 #include "lambert_sample_ispc.h"
+#include "shading_exchange.h"
 #include <array>
 #include <cmath>
 #include <atomic>
@@ -18,6 +19,7 @@ static void col(std::vector<unsigned>& a,const Color& v){for(auto f:{v.r,v.g,v.b
 static void print(const char* n,const std::vector<unsigned>& a){std::printf(",\"%s\":[",n);for(size_t i=0;i<a.size();++i)std::printf("%s%u",i?",":"",a[i]);std::printf("]");}
 int main(int argc,char** argv){
     unsigned workers=argc>=2?unsigned(std::atoi(argv[1])):1;if(workers<1||workers>16)return 2;
+    if(argc==5 && std::strcmp(argv[2],"shade_exchange")==0)return xpu2::shadingExchange(argv[3],argv[4],workers);
     bool stress=argc==3 && std::strcmp(argv[2],"stress")==0;if(argc>3 || (argc==3 && !stress))return 2;
     const Vec3f normals[]={Vec3f(0,0,1),Vec3f(0,1,0),Vec3f(1,0,0),normalize(Vec3f(1,2,3)),Vec3f(0,0,-1),
         Vec3f(0,-1,0),Vec3f(-1,0,0),normalize(Vec3f(-1,-2,-3)),normalize(Vec3f(1e-4f,0,-1)),

@@ -87,3 +87,7 @@ Use fresh output folders:
     python tools/xpu2_sampler_probe.py --build test-results/xpu2-origin-build --output test-results/vector-native-new --lambert-sample --lambert-stress --reference xpu2/reference/lambert-stress-avx8-20261017.jsonl.gz
     python tools/xpu2_cuda_sampler_probe.py --source <shared-source-read-only> --reference xpu2/reference/lambert-stress-avx8-20261017.jsonl.gz --output test-results/vector-cuda-new --lambert-sample --vector-math
     python -m unittest discover -s tests -p "test_xpu2*.py" -q
+
+Follow-up: [SHADING_EXCHANGE.md](SHADING_EXCHANGE.md) now combines the sampler
+and this shading profile in actual native CPU/GPU state handoffs. It remains
+a synchronous component diagnostic without intersections or image output.

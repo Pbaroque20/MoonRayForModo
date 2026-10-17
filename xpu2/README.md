@@ -189,3 +189,8 @@ validity decisions, so the XPU vector compatibility gate remains blocked.
 [LAMBERT_VECTOR.md](LAMBERT_VECTOR.md) resolves the measured AVX8 sampling
 hazard in a separate GPU math profile, matching 67,584 expanded native cases.
 Math profiles must remain explicit during future handoffs; no renderer is enabled.
+
+[SHADING_EXCHANGE.md](SHADING_EXCHANGE.md) validates combined native AVX8/CUDA
+sampler and Lambert shading continuations: 108 sequences, atomic stage fallback,
+cross-device retries, and exact native-reference results across three schedules.
+Ray tracing, throughput and image accumulation remain outside this diagnostic.

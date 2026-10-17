@@ -69,11 +69,13 @@ def main():
     env["PATH"] = str(runtime) + os.pathsep + str(Path(compiler).parent) + os.pathsep + env.get("PATH", "")
     cpp = out / "sampler_probe.cc"
     cpp.write_bytes((ROOT / "xpu2" / ("lambert_sample_probe.cc" if args.lambert_sample else "lambert_probe.cc" if args.lambert else "sampler_window_probe.cc" if args.window else "sampler_handoff.cc" if args.handoff else "sampler_probe.cc")).read_bytes())
-    if args.handoff or args.window:
+    if args.handoff or args.window or args.lambert_sample:
         (out / "sampler_state.h").write_bytes((ROOT / "xpu2/sampler_state.h").read_bytes())
-    if args.window:
+    if args.window or args.lambert_sample:
         (out / "sampler_window.h").write_bytes((ROOT / "xpu2/sampler_window.h").read_bytes())
         (out / "sampler_exchange.h").write_bytes((ROOT / "xpu2/sampler_exchange.h").read_bytes())
+    if args.lambert_sample:
+        (out / "shading_exchange.h").write_bytes((ROOT / "xpu2/shading_exchange.h").read_bytes())
     def run(command, name, stdout=None):
         with (out / (name + ".log")).open("w", encoding="utf-8") as log:
             if stdout:
@@ -173,6 +175,9 @@ def main():
         result["exchange_protocol"] = "XWB2-XWO2"
     if args.handoff or args.window:
         result["state_header_sha256"] = sha(out / "sampler_state.h")
+    if args.lambert_sample:
+        result["shading_exchange_protocol"] = "XHB1-XHO1"
+        result["shading_headers"] = {name: sha(out / name) for name in ("shading_exchange.h", "sampler_exchange.h", "sampler_window.h", "sampler_state.h")}
     result.update({
         "build_manifest_sha256": sha(build / "build-inputs.json"),
         "cpp_sha256": sha(cpp), "preprocessed_sha256": sha(pp),
