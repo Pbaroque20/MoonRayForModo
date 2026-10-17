@@ -3,6 +3,7 @@ import json,re
 from pathlib import Path
 from PySide2 import QtCore,QtWidgets
 from . import native,rdl_import
+from . import terminal
 
 def bytes_read(pid):
  """How many bytes a running process has read from files so far, or None where that cannot be asked."""
@@ -50,7 +51,7 @@ class Dialog(QtWidgets.QDialog):
   self.new_button.setToolTip('Make a new Modo scene and bring the MoonRay scene into that; the scene that is open is left as it is')
   self.cancel=QtWidgets.QPushButton('Cancel loading');self.cancel.setEnabled(False);self.cancel.clicked.connect(self.abort);row.addWidget(self.cancel)
   self.close_button=QtWidgets.QPushButton('Close');self.close_button.clicked.connect(self.close);row.addWidget(self.close_button)
-  self.process=QtCore.QProcess(self);self.process.readyReadStandardOutput.connect(self.read);self.process.readyReadStandardError.connect(self.read_error)
+  self.process=QtCore.QProcess(self);terminal.watch(self.process,'RDL reader');self.process.readyReadStandardOutput.connect(self.read);self.process.readyReadStandardError.connect(self.read_error)
   self.process.finished.connect(self.finished);self.process.errorOccurred.connect(self.error)
  def ready(self,on):
   """Whether there is a scene read and waiting to be brought in: both ways of bringing it in are offered, or neither."""

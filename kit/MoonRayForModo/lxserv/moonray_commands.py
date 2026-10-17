@@ -10,6 +10,13 @@ package_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'python'
 if package_root not in sys.path:
     sys.path.insert(0, package_root)
 
+# The MoonRay Terminal records the programs the plugin runs from the start of the session, before its window opens.
+try:
+    from moonray_modo import terminal as _terminal
+    _terminal.install()
+except Exception:
+    pass
+
 
 def _same(kind, *args):
     """One popup description for each set of choices (moonray_modo.hint_cache); the kit is on the path only once commands run."""
@@ -512,6 +519,16 @@ class AboutMoonRay(lxu.command.BasicCommand):
         show()
 
 lx.bless(AboutMoonRay,'moonray.about')
+
+
+class MoonRayTerminal(lxu.command.BasicCommand):
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Execute(self,msg,flags):
+        from PySide2 import QtWidgets
+        from moonray_modo.terminal import show
+        show(QtWidgets.QApplication.activeWindow())
+
+lx.bless(MoonRayTerminal,'moonray.terminal')
 
 
 class CaptureMotion(lxu.command.BasicCommand):

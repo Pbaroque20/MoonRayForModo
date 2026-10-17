@@ -5,6 +5,7 @@ import mmap,os,uuid
 import tempfile
 from pathlib import Path
 from PySide2 import QtCore
+from . import terminal
 from . import native
 from .scene_delta import difference
 
@@ -60,6 +61,7 @@ class Session(QtCore.QObject):
     def __init__(self,parent=None):
         super().__init__(parent)
         self.process=QtCore.QProcess(self)
+        terminal.watch(self.process,'MoonRay session')
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.finished.connect(self._exit)

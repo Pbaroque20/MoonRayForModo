@@ -164,6 +164,17 @@ def playblast_entry(text):
             '<atom type="Hash">MoonRayMenu_playblast:control</atom></list>' + text[end:])
 
 
+def terminal_entry(text):
+    """Terminal in the MoonRay menu, after Render Log; unchanged if it is there."""
+    anchor = '<list type="Control" val="cmd moonray.page log">'
+    if 'cmd moonray.terminal' in text or text.count(anchor) != 1:
+        return text
+    end = text.index('</list>', text.index(anchor)) + len('</list>')
+    eol = '\r\n' if '\r\n' in text else '\n'
+    return (text[:end] + eol + '      <list type="Control" val="cmd moonray.terminal"><atom type="Label">Terminal</atom>'
+            '<atom type="Hash">MoonRayMenu_terminal:control</atom></list>' + text[end:])
+
+
 def round_control(text):
     """The mesh form's round-curves and curve-basis controls, after the curve UV control; each unchanged if it is there."""
     anchor = '<list type="Control" val="cmd moonray.object.curve_uv ?">'

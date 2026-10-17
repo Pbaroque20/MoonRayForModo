@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from PySide2 import QtCore
 from . import compositor, native, outputs
+from . import terminal
 
 
 class CachedComposite(QtCore.QObject):
@@ -15,6 +16,7 @@ class CachedComposite(QtCore.QObject):
         self.cache = cache; self.job = None; self.requested = None; self.directory = None; self.steps = []; self.log = ''
         self.expected = None; self.result = None
         self.process = QtCore.QProcess(self)
+        terminal.watch(self.process, 'Compositor')
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self.read)
         self.process.finished.connect(self.finished)
