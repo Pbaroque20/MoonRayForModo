@@ -246,7 +246,9 @@ class Renderer(QtCore.QObject):
         # earlier to hold it at, and the second may hold it at the first: so those two are let go by. The beauty is
         # asked for last, so as to be the newest.
         from .persistent import holds,drains
-        if drains(self.active['runtime']) and self.session.drain():
+        from .native import drain_tiles
+        # A MoonRay Source Override (Preferences): off, the render is stopped as MoonRay's own stop does, below.
+        if drain_tiles() and drains(self.active['runtime']) and self.session.drain():
             # A MoonRay that can finish with what it has in hand does so: the tiles its workers are on are rendered
             # to the end, with the light of their samples, and the frame ends as a finished one, every buffer of
             # it written. Nothing is left dark or coarse, and what follows is what follows any finished render.
