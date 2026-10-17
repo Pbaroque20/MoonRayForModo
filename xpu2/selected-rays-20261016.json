@@ -1,0 +1,1067 @@
+{
+  "status": "valid_diagnostic",
+  "scope": "Compare copied control/diagnostic runtimes without installing either.\n\nFull-frame XPU, one thread. Only selected GPU surface rays are cross-checked;\nshadow rays, CPU-routed tails, BSDF evaluation and film contributions are not traced.\n",
+  "runs": [
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.014,
+        "Initialize renderer": 0.351,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.351,
+        "Total render prep": 0.379,
+        "Mcrt time": 0.363,
+        "Total time": 0.832
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "control"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.014,
+        "Initialize renderer": 0.335,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.335,
+        "Total render prep": 0.363,
+        "Mcrt time": 0.351,
+        "Total time": 0.8
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "trace-off"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.014,
+        "Initialize renderer": 0.324,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.324,
+        "Total render prep": 0.353,
+        "Mcrt time": 0.395,
+        "Total time": 0.804
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "trace-on"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.014,
+        "Initialize renderer": 0.338,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.338,
+        "Total render prep": 0.366,
+        "Mcrt time": 0.397,
+        "Total time": 0.803
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "trace-repeat"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.014,
+        "Initialize renderer": 0.332,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.332,
+        "Total render prep": 0.359,
+        "Mcrt time": 0.391,
+        "Total time": 0.787
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "replay-primary"
+    }
+  ],
+  "build_manifest_sha256": "dfd299c942da289015c077d0aa0b1281b3303d7ab1d852a8886c71905d02b5eb",
+  "scene_sha256": "7670b3b4fb08f9298312d9bc926fc1a8197a4faf9bf04f9917d8217b198ba4ff",
+  "comparisons": {
+    "pinned_to_control": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "control_to_trace_off": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "trace_off_to_on": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "trace_repeat": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    }
+  },
+  "ray_records_identical": true,
+  "intersection_summary": {
+    "rays": 18,
+    "hit_miss_mismatches": 0,
+    "primitive_mismatches": 0,
+    "different_hit_attributes": 2,
+    "max_t_error": 4.76837158203125e-07,
+    "max_uv_error": 1.7881393432617188e-07,
+    "max_Ng_error": 0.0,
+    "depths": [
+      0,
+      1
+    ]
+  },
+  "replay": {
+    "selected_pixels": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "original_xpu": [
+          0.21118733286857605,
+          0.019490540027618408,
+          0.016629396006464958,
+          1.0
+        ],
+        "replayed_primary": [
+          0.21528182923793793,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "vectorized": [
+          0.21528181433677673,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "max_error_before": 0.004094481468200684,
+        "max_error_after": 1.4901161193847656e-08
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "original_xpu": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "replayed_primary": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "vectorized": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "max_error_before": 0.0,
+        "max_error_after": 0.0
+      }
+    ],
+    "changed_pixels_outside_selection": 0,
+    "replayed_primary_hits": 2,
+    "scope": "Two selected primary rays only; not a production correction"
+  },
+  "gpu_driver": "NVIDIA GeForce RTX 3090, 591.74",
+  "build": {
+    "source_sha256": "b26a1cbf53e0c26ead70b3860f3511c8fb16221c490bfbadb4a442f18f185638",
+    "instrumented_sha256": "b7eab9058ed309a6a003f89d76c8782936c2981a398001519ecd88ad12da7b97",
+    "control_dll_sha256": "b80123df24cae500cd271bb1ee8c31e3a26a987a474ed42158d1b86b1640b845",
+    "trace_dll_sha256": "676ff172e3bb6e638f8fb062ed28379aa0eb7c9d270003dbf270cfca8c82dfa1",
+    "scope": "Retained native objects; not a clean source rebuild"
+  },
+  "runtime_inventory_identities": {
+    "control": "8e30763e1430d85beb6e62fc12a59e570fbce638837122b47878f8d4dd7da90d",
+    "trace": "13401f65ff426aad44376991d40cf480d578ec07db4e7bdde2fa8ee40adf4e74"
+  },
+  "rays": [
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 0,
+      "depth": 0,
+      "batch": 16384,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "direction": [
+        -0.08733799308538437,
+        0.013884706422686577,
+        -0.9960819482803345
+      ],
+      "near": 0.0010039334883913398,
+      "far": 10039.3349609375,
+      "time": 0.05055695399641991,
+      "mask": 1,
+      "cpu": {
+        "geom": 0,
+        "prim": 978,
+        "inst": 4294967295,
+        "t": 3.0511958599090576,
+        "uv": [
+          0.7563385963439941,
+          0.567780077457428
+        ],
+        "Ng": [
+          -0.0023372145369648933,
+          0.00047197772073559463,
+          0.00933067686855793
+        ]
+      },
+      "gpu": {
+        "geom": 0,
+        "prim": 978,
+        "inst": 4294967295,
+        "t": 3.051196336746216,
+        "uv": [
+          0.7563387751579285,
+          0.567780077457428
+        ],
+        "Ng": [
+          -0.0023372145369648933,
+          0.00047197772073559463,
+          0.00933067686855793
+        ]
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 0,
+      "depth": 0,
+      "batch": 16384,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "direction": [
+        0.012064403854310513,
+        0.06991659849882126,
+        -0.9974797964096069
+      ],
+      "near": 0.0010025266092270613,
+      "far": 10025.265625,
+      "time": 0.6113778352737427,
+      "mask": 1,
+      "cpu": {
+        "geom": 0,
+        "prim": 847,
+        "inst": 4294967295,
+        "t": 3.0329043865203857,
+        "uv": [
+          0.6193827390670776,
+          0.8218381404876709
+        ],
+        "Ng": [
+          0.00044958703801967204,
+          0.0022923056967556477,
+          0.009151390753686428
+        ]
+      },
+      "gpu": {
+        "geom": 0,
+        "prim": 847,
+        "inst": 4294967295,
+        "t": 3.0329039096832275,
+        "uv": [
+          0.6193826794624329,
+          0.8218381404876709
+        ],
+        "Ng": [
+          0.00044958703801967204,
+          0.0022923056967556477,
+          0.009151390753686428
+        ]
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    },
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 1,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        -0.2664853632450104,
+        0.04236496612429619,
+        -3.0392415523529053
+      ],
+      "direction": [
+        -0.5437514185905457,
+        0.21387501060962677,
+        0.8115372657775879
+      ],
+      "near": 3.2853979064384475e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.05055695399641991,
+      "mask": 16,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 2,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        -0.2664853632450104,
+        0.04236496612429619,
+        -3.0392415523529053
+      ],
+      "direction": [
+        -0.9193795919418335,
+        -0.34527909755706787,
+        0.18847739696502686
+      ],
+      "near": 7.84751828177832e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.05055695399641991,
+      "mask": 16,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 3,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        -0.2664853632450104,
+        0.04236496612429619,
+        -3.0392415523529053
+      ],
+      "direction": [
+        -0.5024318695068359,
+        0.4597623348236084,
+        0.7322436571121216
+      ],
+      "near": 3.573196227080189e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.05055695399641991,
+      "mask": 16,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 4,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        -0.2664853632450104,
+        0.04236496612429619,
+        -3.0392415523529053
+      ],
+      "direction": [
+        -0.6531208157539368,
+        -0.07863951474428177,
+        0.753159761428833
+      ],
+      "near": 3.450168878771365e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.05055695399641991,
+      "mask": 16,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 5,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        -0.2664853632450104,
+        0.04236496612429619,
+        -3.0392415523529053
+      ],
+      "direction": [
+        -0.4651344418525696,
+        0.15334296226501465,
+        0.8718578219413757
+      ],
+      "near": 3.161498170811683e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.05055695399641991,
+      "mask": 4,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 6,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        -0.2664853632450104,
+        0.04236496612429619,
+        -3.0392415523529053
+      ],
+      "direction": [
+        0.04529619216918945,
+        -0.6145126223564148,
+        0.7876056432723999
+      ],
+      "near": 4.226181408739649e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.05055695399641991,
+      "mask": 4,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 7,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        -0.2664853632450104,
+        0.04236496612429619,
+        -3.0392415523529053
+      ],
+      "direction": [
+        -0.9154554605484009,
+        0.03919828683137894,
+        0.40050560235977173
+      ],
+      "near": 4.984575934940949e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.05055695399641991,
+      "mask": 4,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 5046368,
+      "sample": 0,
+      "sequence": 8,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        -0.2664853632450104,
+        0.04236496612429619,
+        -3.0392415523529053
+      ],
+      "direction": [
+        0.6015390753746033,
+        -0.561296284198761,
+        0.56841641664505
+      ],
+      "near": 8.088548202067614e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.05055695399641991,
+      "mask": 4,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 96,
+      "y_from_bottom": 77
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 1,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        0.036590177565813065,
+        0.21205031871795654,
+        -3.0252604484558105
+      ],
+      "direction": [
+        0.009047536179423332,
+        0.5598568916320801,
+        0.8285402059555054
+      ],
+      "near": 3.229553112760186e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.6113778352737427,
+      "mask": 16,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 2,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        0.036590177565813065,
+        0.21205031871795654,
+        -3.0252604484558105
+      ],
+      "direction": [
+        0.09512200206518173,
+        0.19405362010002136,
+        0.9763684272766113
+      ],
+      "near": 3.0400176910916343e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.6113778352737427,
+      "mask": 16,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 3,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        0.036590177565813065,
+        0.21205031871795654,
+        -3.0252604484558105
+      ],
+      "direction": [
+        -0.033277325332164764,
+        0.9252727627754211,
+        0.377840518951416
+      ],
+      "near": 5.148492709849961e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.6113778352737427,
+      "mask": 16,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 4,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        0.036590177565813065,
+        0.21205031871795654,
+        -3.0252604484558105
+      ],
+      "direction": [
+        0.12126371264457703,
+        0.47497543692588806,
+        0.8716039657592773
+      ],
+      "near": 3.141031265840866e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.6113778352737427,
+      "mask": 16,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 5,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        0.036590177565813065,
+        0.21205031871795654,
+        -3.0252604484558105
+      ],
+      "direction": [
+        0.6553454399108887,
+        0.24420443177223206,
+        0.7147632837295532
+      ],
+      "near": 3.873333116644062e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.6113778352737427,
+      "mask": 4,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 6,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        0.036590177565813065,
+        0.21205031871795654,
+        -3.0252604484558105
+      ],
+      "direction": [
+        -0.8851559162139893,
+        0.4016532003879547,
+        0.23489071428775787
+      ],
+      "near": 0.00010719188139773905,
+      "far": 3.4028234663852886e+38,
+      "time": 0.6113778352737427,
+      "mask": 4,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 7,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        0.036590177565813065,
+        0.21205031871795654,
+        -3.0252604484558105
+      ],
+      "direction": [
+        0.8841962814331055,
+        -0.02480354905128479,
+        0.46645665168762207
+      ],
+      "near": 6.214538734639063e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.6113778352737427,
+      "mask": 4,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    },
+    {
+      "pixel": 6291588,
+      "sample": 0,
+      "sequence": 8,
+      "depth": 1,
+      "batch": 16408,
+      "origin": [
+        0.036590177565813065,
+        0.21205031871795654,
+        -3.0252604484558105
+      ],
+      "direction": [
+        -0.2604947090148926,
+        -0.3336416780948639,
+        0.9059944152832031
+      ],
+      "near": 3.86618085030932e-05,
+      "far": 3.4028234663852886e+38,
+      "time": 0.6113778352737427,
+      "mask": 4,
+      "cpu": {
+        "geom": 4294967295,
+        "prim": 4294967295,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "gpu": {
+        "geom": 4294967295,
+        "prim": 0,
+        "inst": 4294967295,
+        "t": 3.4028234663852886e+38
+      },
+      "replayed_primary": false,
+      "x": 132,
+      "y_from_bottom": 96
+    }
+  ],
+  "evidence_scope": "9 successful native renders total: initial 4 controls, then 4 controls plus 1 primary-hit replay. This report contains the second experiment."
+}

@@ -1,0 +1,44 @@
+"""Check native handoff guards using the actual bridge and GPU queue."""
+import argparse,json,subprocess,sys
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1]
+sys.path[:0]=[str(ROOT),str(ROOT/'tools')]
+from xpu2.reference import digest_file
+from xpu2.correlated_state import decode
+from xpu2_baseline import environment
+from xpu2_repeatability import gpu_identity
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    for name in ('source','capture','ptx','output'):p.add_argument('--'+name,required=True,type=Path)
+    a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False);source=a.source.resolve()
+    report={'status':'incomplete','scope':'Standalone guard checks; native rendering is validated separately','runs':[]}
+    try:
+        decode(a.capture.read_bytes())
+        inputs=[ROOT/'xpu2/deferred_guard_probe.cc',ROOT/'xpu2/deferred_bridge.cc',ROOT/'xpu2/native_lambert_queue.cc',Path(__file__).resolve(),a.capture.resolve(),a.ptx.resolve()]
+        hashes={str(f):digest_file(f) for f in inputs}
+        report.update(source_hashes=hashes,gpu=gpu_identity())
+        compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';env=environment(compiler.parent,out)
+        flags=['-std=c++17','-O2','-mavx','-mno-avx2','-mno-fma','-ffp-contract=off','-I'+str(source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include')]
+        pp=out/'guards.ii';exe=out/'guards.exe'
+        for label,args in [('preprocess',['-E',str(inputs[0]),'-o',str(pp)]),('compile',[str(pp),'-o',str(exe)])]:
+            done=subprocess.run([str(compiler),*flags,*args],env=env,capture_output=True,text=True,timeout=120,creationflags=subprocess.CREATE_NO_WINDOW)
+            (out/(label+'.log')).write_text(done.stdout+done.stderr)
+            if done.returncode:raise ValueError(label+' failed')
+        report.update(preprocessed_sha256=digest_file(pp),executable_sha256=digest_file(exe),compiler_sha256=digest_file(compiler))
+        for case in ('positive','transformed','mask','multiple','nested'):
+            folder=out/case;folder.mkdir();runenv=environment(compiler.parent,folder)
+            runenv.update(XPU2_NATIVE_LAMBERT='sentinel',XPU2_NATIVE_LAMBERT_PTX=str(a.ptx.resolve()),
+                XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),
+                XPU2_DEFERRED_LOG=str(folder/'deferred.log'),XPU2_QUEUE_LOG=str(folder/'queue.log'))
+            done=subprocess.run([str(exe),case,str(a.capture.resolve())],env=runenv,cwd=folder,capture_output=True,text=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
+            (folder/'process.log').write_text(done.stdout+done.stderr)
+            if done.returncode:raise ValueError(case+' failed')
+            row=json.loads(done.stdout)
+            if row!={'case':case,'passed':True,'cleanup':True}:raise ValueError('Incomplete guard test')
+            row['log_hashes']={f.name:digest_file(f) for f in folder.iterdir() if f.is_file()};report['runs'].append(row)
+        if hashes!={str(f):digest_file(f) for f in inputs} or report['gpu']!=gpu_identity():raise ValueError('Source/device drift')
+        report['status']='passed'
+    except Exception as e:report['error']=str(e);raise
+    finally:(out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
+if __name__=='__main__':main()

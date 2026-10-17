@@ -1,0 +1,222 @@
+{
+  "status": "passed",
+  "python_checks": 126,
+  "scope": "CUDA integrator distribution subsets; no shading or rendered parity",
+  "gpu_tables": {
+    "status": "passed",
+    "scope": "Real CUDA integrator sampling subset; no shading/rendered parity",
+    "native_tables": true,
+    "device": "NVIDIA GeForce RTX 3090",
+    "compute_capability": [
+      8,
+      6
+    ],
+    "cuda_driver_api": 13010,
+    "compile_flags": [
+      "--std=c++14",
+      "--gpu-architecture=compute_86",
+      "--fmad=false",
+      "--ftz=false",
+      "--prec-div=true",
+      "--prec-sqrt=true"
+    ],
+    "inputs_sha256": {
+      "sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+      "sampler-avx8-20261016.jsonl.gz": "7769adf01ef3210591f5dd1628b9bf6d055b77a8a696d502c4000e90858d1a2a",
+      "nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+      "nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5",
+      "samples1d.bin": "95df27fdaf810bf54c84744f0b97214ae0366220154d387b94080d9192041acb",
+      "samples2d.bin": "fcfc81e6b0a6c55827572b58548be1f74cd22b0f1de7070e1e50d87c21da18de",
+      "report.json": "e32b6239bd2893a625c38e63f8f031c4dd699584fea5a6fd6325f06710296b4b"
+    },
+    "ptx_sha256": "9476682faa395ac535dce27f81682b063f0f00247e1fe0ce26f76098d0d5786e",
+    "runs": [
+      {
+        "passed": true,
+        "records": 23671,
+        "supported_records": 23652,
+        "unsupported_records": 8,
+        "invalid_records": 11,
+        "compared_sample_components": 47304,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0,
+        "block_size": 64,
+        "streams": 2,
+        "state_output_sha256": "753677dc8a54a615209aee6dd4061e8233e05320ccad31c40c99460cde97771b",
+        "result_output_sha256": "3b2171bd14aa543e6e46adb835b5b1c8b7975ef3a666b1d241ddadedd4f5c455"
+      },
+      {
+        "passed": true,
+        "records": 23671,
+        "supported_records": 23652,
+        "unsupported_records": 8,
+        "invalid_records": 11,
+        "compared_sample_components": 47304,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0,
+        "block_size": 128,
+        "streams": 2,
+        "state_output_sha256": "709bc599655005df7874f5cde0d97af9b18915614111a57aed0db3ea33bf5544",
+        "result_output_sha256": "a7921c4c05996e093bea5cb483d58984e6932c6ebe5f74dff5b91350df70be20"
+      },
+      {
+        "passed": true,
+        "records": 23671,
+        "supported_records": 23652,
+        "unsupported_records": 8,
+        "invalid_records": 11,
+        "compared_sample_components": 47304,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0,
+        "block_size": 256,
+        "streams": 2,
+        "state_output_sha256": "fb566f515aa66ce1443df7655c9dad60888a6dfee9c18c3ca5ca55e08af6ed22",
+        "result_output_sha256": "22c7ceb0aea0737cc27ac99d1dee3381d8b29b858b5173af60228524a00db143"
+      }
+    ]
+  },
+  "gpu_cmj": {
+    "status": "passed",
+    "scope": "Real CUDA integrator sampling subset; no shading/rendered parity",
+    "native_tables": false,
+    "device": "NVIDIA GeForce RTX 3090",
+    "compute_capability": [
+      8,
+      6
+    ],
+    "cuda_driver_api": 13010,
+    "compile_flags": [
+      "--std=c++14",
+      "--gpu-architecture=compute_86",
+      "--fmad=false",
+      "--ftz=false",
+      "--prec-div=true",
+      "--prec-sqrt=true"
+    ],
+    "inputs_sha256": {
+      "sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+      "sampler-cmj-avx8-20261017.jsonl.gz": "8abf13afef7793581d23c532c063204e39002bcaa548fb10130904be76c614ba",
+      "nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+      "nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5"
+    },
+    "ptx_sha256": "9476682faa395ac535dce27f81682b063f0f00247e1fe0ce26f76098d0d5786e",
+    "runs": [
+      {
+        "passed": true,
+        "records": 9415,
+        "supported_records": 9396,
+        "unsupported_records": 8,
+        "invalid_records": 11,
+        "compared_sample_components": 18792,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0,
+        "block_size": 64,
+        "streams": 2,
+        "state_output_sha256": "6c0d6d26cbcde345ed69a721e2d73d10c9e7fbfa19c650eef60a0bfc3a1fb8bc",
+        "result_output_sha256": "fa9f141a2573ae39162fcadf4fe69e63ecf4eacd5db573f528bc24c4e8646811"
+      },
+      {
+        "passed": true,
+        "records": 9415,
+        "supported_records": 9396,
+        "unsupported_records": 8,
+        "invalid_records": 11,
+        "compared_sample_components": 18792,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0,
+        "block_size": 128,
+        "streams": 2,
+        "state_output_sha256": "9394087377ea4a9298f4ebe759a03230d0f3ce981080ada73d9692a34634e5f0",
+        "result_output_sha256": "1c1669ce831fa6ea8a03f417f995875d9e097a84b36035dc025d0be9758b74e4"
+      },
+      {
+        "passed": true,
+        "records": 9415,
+        "supported_records": 9396,
+        "unsupported_records": 8,
+        "invalid_records": 11,
+        "compared_sample_components": 18792,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0,
+        "block_size": 256,
+        "streams": 2,
+        "state_output_sha256": "e5d203accab84a689595cb4c725e2d9cf0294dd1333adcb4a2deb05ef275f586",
+        "result_output_sha256": "4e15c5bd4c8b2e6e4812d57a3c602a6096577008ce75836eacae65361b09a1ff"
+      }
+    ]
+  },
+  "native_cmj": {
+    "status": "passed",
+    "scope": "Native AVX8 C++/ISPC integrator sampler; not CUDA or rendered image parity",
+    "scope_build": "Current frozen headers with retained native objects; not a clean runtime build",
+    "cases": 234,
+    "executions": 3,
+    "workers": [
+      1,
+      1,
+      4
+    ],
+    "components_per_mode": 18792,
+    "all_execution_records_identical": true,
+    "different_components": {
+      "chunked": 0,
+      "reordered": 0,
+      "naive_resume": 18792
+    },
+    "build_manifest_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6",
+    "cpp_sha256": "897db18c345a0d576df7c8754251fdeeae1b6d3f0abb142180ca9e879ce1dd3f",
+    "preprocessed_sha256": "b19d8470e710a2f37947a4894763e28763629e7b8f0c6f1f1525ce91a613c205",
+    "executable_sha256": "0cb0a689b41d4b16e8b4da25828c11cb405bb8f0a3c718b7cf173ff4eb28ef9f",
+    "corpus_sha256": [
+      "7aaf1828517b19df058e57270a04347ffbd3a4b16ff86ba66aa35cda07534b8e",
+      "7aaf1828517b19df058e57270a04347ffbd3a4b16ff86ba66aa35cda07534b8e",
+      "7aaf1828517b19df058e57270a04347ffbd3a4b16ff86ba66aa35cda07534b8e"
+    ],
+    "runtime_inventory_identity": "bba4bcff0d82e5011d04d168c5aa869ea7f44fa76b5e02981672de564e37e332"
+  },
+  "native_tables": {
+    "status": "passed",
+    "scope": "Native AVX8 C++/ISPC integrator sampler; not CUDA or rendered image parity",
+    "scope_build": "Current frozen headers with retained native objects; not a clean runtime build",
+    "cases": 648,
+    "executions": 3,
+    "workers": [
+      1,
+      1,
+      4
+    ],
+    "components_per_mode": 47304,
+    "all_execution_records_identical": true,
+    "different_components": {
+      "chunked": 0,
+      "reordered": 0,
+      "naive_resume": 2916
+    },
+    "build_manifest_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6",
+    "cpp_sha256": "0d1784472f872802fa972eb5c33e8c06d66e8c5825a26fea5080afc406d97efb",
+    "preprocessed_sha256": "8f77221b06a49ee605fb0547ded23a5a038f3331e0fb130a87afc1a7e0c28551",
+    "executable_sha256": "54a805671a5a46cdb185d6d881639e4a8080884a2d83284b706e82615459496b",
+    "corpus_sha256": [
+      "15ae36807c627e851026fd3a91cad610537617a254a3850f025d22c2acc6bad4",
+      "15ae36807c627e851026fd3a91cad610537617a254a3850f025d22c2acc6bad4",
+      "15ae36807c627e851026fd3a91cad610537617a254a3850f025d22c2acc6bad4"
+    ],
+    "runtime_inventory_identity": "bba4bcff0d82e5011d04d168c5aa869ea7f44fa76b5e02981672de564e37e332",
+    "tables": {
+      "samples1d.bin": {
+        "sha256": "95df27fdaf810bf54c84744f0b97214ae0366220154d387b94080d9192041acb",
+        "bytes": 16777216
+      },
+      "samples2d.bin": {
+        "sha256": "fcfc81e6b0a6c55827572b58548be1f74cd22b0f1de7070e1e50d87c21da18de",
+        "bytes": 33554432
+      }
+    },
+    "reference_match": true
+  },
+  "cmj_reference_sha256": "8abf13afef7793581d23c532c063204e39002bcaa548fb10130904be76c614ba",
+  "earlier_attempt": {
+    "status": "incomplete_report",
+    "reason": "GPU checks passed but report assembly shadowed the device-name variable; corrected and rerun in xpu2-cuda-tables-final"
+  }
+}

@@ -1,0 +1,2019 @@
+{
+  "status": "passed",
+  "scope": "Local chunk claiming with bulk native AVX8 / CUDA Lambert stage replay. Full audit retained. No whole paths, scene loading, film or render speed claim.",
+  "source_hashes": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\local_batches_probe.cc": "5ccb557f20a4d3c7cb7e01508f55da36667e95387b4424e04fedc9f5fe81ec3d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\local_batch_patch.py": "22ec2f9046504d90018f17b1c58647def0bf5ba3fe4ff0b7f72afce8227dfd62",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\alternating_workers_probe.cc": "375d1f8dce25fcb09c0437c91bea1c75b8115c2f6920cf70c3eaeca9befd5c1d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_queue.cc": "ecc7fddfb4e06b265daa0c05ac48053b627a82d2f6c0722128ae5535317939c6",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\batched_bridge.cc": "4e0b6c931ec59c22f7f586affc679e7727d9bf751e578714316d51ee86de8d8b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\profile_metrics.h": "84c08e310ce74cfe1d07038f5287b114d91328750fa2c87f263826085174c9f8",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\profile_patch.py": "5a2e8eeb3729cc848a68ae701fb0ed99e468df68cde0c4f5db00fd247ef0834a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\window_dispatch_patch.py": "99261f4066e57ca4c1e5be9ef437ad13acbe970bf2b752b2f53cb6893f183a09",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\async_transfer_patch.py": "281c4a18c62cc6afa4534c8b31a7855d79ed816b18425da561ce578fe37b242b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\packed_readback_patch.py": "648cc04759fbc54ba53817ee04fdcbb72452de215cf7bbde66e37e5644b2e13d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_local_batches_probe.py": "1a59c9ca1a1f87a070253b2f6816b22da438d47536d979edf154f8c7eb40fada",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-correlated-capture-final\\capture\\correlated.bin": "e1969334e40a7e6537f4074c7c4789f20c405cd4c5a910e48df307cf900cd5d0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-ray-image-final\\sampler.ptx": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-native-vector-original-regression\\lambert_sample.obj": "0c6c05bf852b29b420ea85ed960c4d0f7759a9203c62430b339a07e7907e71de",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-native-vector-original-regression\\link.rsp": "610de1e578c42cf280a308ed09dfa2d76cba6bde47e63e2673862ed1c7aa55fe",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\0-Aov.ispc.obj": "4dfcd9313c49ae0def7f37580c44267ee540f2475c69120c76949fc5be801943",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\1-Distribution.ispc.obj": "12fef3b68d5c8a16e5161abbd162a3e0668d7d1dd6690f68f325bfb0df600a38",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\2-ImageColorCorrect.ispc.obj": "04313a50679cd902b16819ac3fd9d220dfa879bfec96cb481d83f807644641a9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\3-PbrTLState.ispc.obj": "7ef245ae102840dd9fb5afbdf1457615449278843e681ad12d75b27ac65bb01e",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\4-RayState.ispc.obj": "58f6f4f613e2b8f1add9c5b54c938ec1d5ebf96a5365aead4cfd4fae10c3ce0e",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\5-Statistics.ispc.obj": "79fda3e1f5ada9e4daf60c06733683f0d331a0f8d8c7711310cb9039ea319d7d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\6-Util.ispc.obj": "0326fdb464090988c76307a048d112f64c54515008a31de38388d25ae5ec9e0d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\7-BsdfOneSampler.ispc.obj": "e10af3ab37ab09fceb0958dc4f96d4d51a44b23c2c636bfc6b143c3aae55bb39",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\8-BsdfSampler.ispc.obj": "a4cf19b78483f1c0c60341fd3639bc31cfb1cde47e17d39096049d5f83354cf1",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\9-LightSetSampler.ispc.obj": "e04af97f232de68ee7a4d3b5539f44746231720d20b1ee88d93727b1a8993e3c",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\10-PathIntegratorBundled.ispc.obj": "f6e487146380a76391cb16fd40843ad2232b893820d247c63b54b654c5d96e9a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\11-PathIntegratorMultiSampler.ispc.obj": "bab346eb656a02b25095d070fa4cbf0d6c05444c7b123c4c4a9ea371e366adf6",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\12-PathIntegratorUtil.ispc.obj": "805015e5fb00d70cfd3578e90286812b453dc91f4ef02d9da15bee42078083a5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\13-CylinderLight.ispc.obj": "79ad0df6093beb086158ac89f2292eeade023d3c0fd994ad5a51dec8e8574379",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\14-DiskLight.ispc.obj": "f1d23f644245bedd5654ee68ee96ab9f662adacf2c9158b97b5ea19a763990d4",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\15-DistantLight.ispc.obj": "c781af344fbcafd4c5c0bdb6ef1cc3d8a8a44628b918774f8a6e48158d207cd7",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\16-EnvLight.ispc.obj": "87787b39c6e9fce87f3a2e0f545504b463a3551da06312dca90a833bc25d8eeb",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\17-Light.ispc.obj": "68e13c1dfc3182ea6218ad1b6281e7e586b7e822c70fec1f75f56bab6512afc3",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\18-LightAccelerator.ispc.obj": "42bef2c310441cf8a319248dc6a14a8b26aabf6e14df167cdd65d2502a8dc555",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\19-LightSet.ispc.obj": "b9c0128f6566989fe40be1626956798ffbaf392c0f360102bef68ecc46471a9d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\20-LightTree.ispc.obj": "7cf53aa1aa15e66917a5ce4976fc9bf4f1b9f9553982581dd60a4986e99de087",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\21-LightTreeUtil.ispc.obj": "10ab40f6dd01a724d99125c67f5ac4e1dc402e1fdc68a8ec0ae9c0240097b126",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\22-LightUtil.ispc.obj": "9b0d67d338e098c9dcba947aba8419a5a5bb908e0bd21f51a57e4a2b169be626",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\23-MeshLight.ispc.obj": "ac7d5633c22727bae36d05e1d704883c9c7edeac2f072958634eef3d128d9be8",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\24-PortalLight.ispc.obj": "b48867ef2063ecffe59905d9223c7ba1e6a0ad7b1affc2bd4186f27cdfd2b04e",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\25-RectLight.ispc.obj": "522a96d09557341d6ae0eb7df5fc8c89329241a781f69ad13e1d7913a4e8c0ba",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\26-SphereLight.ispc.obj": "b03c4f5f5cc71019d2c3fbcacab7c4d4b8efb0beddb51faa45f95b1d3f6b1c7c",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\27-SpotLight.ispc.obj": "3c1caed4801d6f6c30921452bf1942af93bc407117505e32db6cfd5676849bae",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\28-BarnDoorLightFilter.ispc.obj": "a3b1f21265a216c49596cdde7b125679c749f5d86e0bc2ea0cc0d0ded4dcb797",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\29-ColorRampLightFilter.ispc.obj": "2d8e22f54bf27eb381c572b651a5baf9088e385fa3417ecf27f20059b56f91da",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\30-CombineLightFilter.ispc.obj": "9a4b20acdc5d0b60189e7c27cc31e82fe169a9f05993ef2a2442b6091e2e4192",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\31-CookieLightFilter.ispc.obj": "f5d0c971c05581ca68bb4a52f171de8ab786bfbd6caeb0de27083a9c9a6f10e8",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\32-CookieLightFilter_v2.ispc.obj": "f968fc98d9161b0ecb51fcc26d7529b67aa2f1d25c315ab499975caa05c03961",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\33-DecayLightFilter.ispc.obj": "8549e1da272c2ae4914aca14abc08bfff317afe8b263a31c98b09faecb52dbce",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\34-EllipticalFalloff.ispc.obj": "7444b2d88b99f1a268fa6949eac45c76dbb615754d6d7aaac5390dc788178460",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\35-IntensityLightFilter.ispc.obj": "2182bcc1785a440dfda664137ffc98e5fa63761197c410dd596925675d0548c0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\36-LightFilterList.ispc.obj": "2073c0d623ab4652f65382a178d025f93075d0c3570d3f8142d0fb32c9f50137",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\37-RodLightFilter.ispc.obj": "2e1f52fe59f1a3917f38dbf7a9ce22e5c32248c18c20ad428eae1ed8254c9b09",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\38-VdbLightFilter.ispc.obj": "c0743e67412837ef338f7fd6a3eff474d26f39d1204a71212ea2fa548fa6c332",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\39-Sampling.ispc.obj": "958d351114331e8069810cf666705c6eb59f0c367179ed133e58abf364c917aa",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\40-Types.ispc.obj": "4eb6e9357e42c31784115a6066540cee711aed148ef06cff2c8cb197f06655ab",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\41-pmj02_best_candidate_4096.o": "076cac4bffd9b81345713c7a09dfb6c0d46281a9137175b97e6b238345467c3c",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\42-ppd_2D_integrator_points_4096_sequences_of_1024.o": "0be5b35217843dcc935e67b0da97495f1f15ec95e6801ea3828f397853f0ce54",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\43-ppd_lens_points_961_sequences_of_1024.o": "26f2871410e2d4fe123347ce4ebfe0eaa83c83f1a9fd6e6c4aa0cc353a310f5d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\44-bc_1D_integrator_points_4096_sequences_of_1024.o": "9468e3ecda05e903578546558f30516645ddd509872be8733323f973312a94fb",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\45-bc_time_points_841_sequences_of_1024.o": "0798ac0f366904dd266dcd8bf27c72f55db7a8cb138f734b34f917dfe4d3966b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\46-Camera.cc.obj": "d639895a06b24221ad5de69e4c693cf1d8421b8a2787e916fccc6f90cdf31221",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\47-BakeCamera.cc.obj": "1300186c8ab74631f5959251b094948693d113d2de2e30ccc60f0f96e008bf53",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\48-DomeMaster3DCamera.cc.obj": "43ff8fb44f2a922012ac52a9c37ffa9cf3949a18cfa48d98275d5b9e9541438f",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\49-FisheyeCamera.cc.obj": "6f08b7450e9fb29b2fc2922f72e5276fcfaadc15eb371337b988f79ef1e0f799",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\50-OrthographicCamera.cc.obj": "022292ca8a0b88e114e3eadcee624ce8ef0d4e17ce78f07e8d38fef9db2f026d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\51-PerspectiveCamera.cc.obj": "1fae933e588ea5e2b9409bee2a37d59f5faeaba50a6daf35df41a03979883f27",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\52-ProjectiveCamera.cc.obj": "a8883a34d8fef3e3ec918f8a16a0f18c28884ba9d92bcc3a9ebcad65506cd47a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\53-SphericalCamera.cc.obj": "9624455d863df445110aab4f34a86a95fdb52e610aab95ba6a2de076954ecc9d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\54-LensDistribution.cc.obj": "622303a204e1456c0b05f8aab27bee1f9c0caa59258f2f92f0fcfe299b230fbd",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\55-Aov.cc.obj": "007f96db8617d5aa1e79564567885c73431dc92c4db319c4513196b8dfbabd5b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\56-Cryptomatte.cc.obj": "c875260385eafe40040e873cf5541f4b239c5a84008557f3659f9257152863ce",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\57-DeepBuffer.cc.obj": "1dbc31d468d162c2f394ee5caa84a2fa0a93167962d91568bef901ba792651cb",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\58-Distribution.cc.obj": "81e4caac619354eca7bc9d53e0b24d6a982c47eb87444bf8714ca365314b52ae",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\59-PathVisualizer.cc.obj": "53d234f873a86ae8e9314df347d3c28547a43d7b48ba372df3fae9952ba0797c",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\60-PbrTLState.cc.obj": "a256d64b46a1ca60bf8c6ae83374159c1b16b4fabf9ce064fbcbeedec171c3c5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\61-RayState.cc.obj": "481b9880aeb4ecf75d63bfb128cf98bc4401bca8a3aee1d982373a647a0c0d78",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\62-Scene.cc.obj": "d69d9a26c3751e7f989c0eabe97c8c70542b3d203c09682aa0859c1edc424162",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\63-Statistics.cc.obj": "4e6016fc1fe09fd74b7455286ea618768f06de47d0eb9a467192185977f6a287",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\64-RayHandlers.cc.obj": "346253ee17ed749e181991a14d982ae33488af7739064ae470da0dd9c0e98279",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\65-RayHandlerUtils.cc.obj": "e6a712af0ee278befa5d842f4a5255d61a872864f61e6f21b9f7821cb608e402",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\66-ShadeBundleHandler.cc.obj": "9d0c67ea767711e810b35f6eafaf653f981d7ee208bca0fe1832f91a776608f2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\67-XPURayHandlers.cc.obj": "830218c7957dbb2b677646d72329c371e8b02d73601338490e8efba9bed1b9e4",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\68-BsdfOneSampler.cc.obj": "a684653c8715ed950c1d53732c2677f910d6b4416ccb57e744d4ac24edc863f2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\69-BsdfSampler.cc.obj": "7bd8d01b1742c94e9c184765dc403a4f8e1cb6ca0b6310c38f206afa6c0e4d29",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\70-LightSetSampler.cc.obj": "156abd33fc968b3201bc54d7852026f144ac1ba75ee04b539b7e590bd2f3baa4",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\71-PathIntegrator.cc.obj": "693a9dbe3dabbfbd2bf9d45cba9d41760373a0d9e9361c2be09d03c9216e4f0e",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\72-PathIntegratorMultiSampler.cc.obj": "34e010d7e987d0692aad4da25dd21fb248b3e71833d331250abc73e70e235ea7",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\73-PathIntegratorSubsurface.cc.obj": "c932d95019926fade25212cdac92cd2ec7bdd642648b88eb6535c6391b512259",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\74-PathIntegratorUtil.cc.obj": "a5b2af0f400a294fc0822f294bd39da6f95a15fd426cbf6cd3a30cbd87a5431a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\75-PathIntegratorVolume.cc.obj": "dd72693976b2812fb1d38c4ddf9ed50a08a595b1c880f1f7b6d6c9c655750aa3",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\76-Picking.cc.obj": "7e6c87cfc4406689eb62e4439475627f9be1d1ad27429196d4b3320c245cb32b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\77-CylinderLight.cc.obj": "cacb55ad56d31f545baa8b7201aa30e80f0e9c8e0b3718f765e23539b2e53fa9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\78-DiskLight.cc.obj": "b3b994133f88d694f3cc654b0851f39239d06906976973677830cbe5f0a5b96a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\79-DistantLight.cc.obj": "c4ffadf46292ff286c4c94c8b1f9f95e91f316a8ea2c2710dbed78f925625473",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\80-EnvLight.cc.obj": "dc505876add09525968dfa8360f5a41b3433ab96e73fa365a920889405b5c0dd",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\81-Light.cc.obj": "ef40950ebf10b03d291d47fc65d26791cbcc0d6606fab0a05b7a8c493274eb0d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\82-LightAccelerator.cc.obj": "2799e64b55ab2d94643f1096bb91c2671b6c4da066c79f910bcac3fd92783dc4",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\83-LightSet.cc.obj": "deceeafcd093d06f0667311059b38063d6ee881c44d5ba67e5fc320b1d1bb1b1",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\84-LightTree.cc.obj": "26ed4ff8cd2634339d63ae1fff38484ea052796084f36ce29a5b9c81fbd3e894",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\85-LightTreeUtil.cc.obj": "3caabe89262b616e3f9bede13941c230e49fd7671cc9c3f3041c78713bc9d1ca",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\86-LightUtil.cc.obj": "f6383944c3fe244893dd80e5585f13222073e61214636d1a823b84e60306712b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\87-MeshLight.cc.obj": "85113400e8b7e0dad4e7d5635d1be8b35da2108a967e965704cb85ab41ab8449",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\88-PortalLight.cc.obj": "e1172c29e77309b5701fde2481484e5f6dcec451921ad4a64493c6ea6ee2027b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\89-RectLight.cc.obj": "411a8ff1301bfc131e88177ce5bf8738ae9e8b5c639918e80e636e1c5d69dbd5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\90-SphereLight.cc.obj": "d074824dfab7ce261600fc601c1b8efb3ddd401232bdae1ebe70fd10ba55eaad",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\91-SpotLight.cc.obj": "1c30ddefd0ab4b2d04b3287f1e58621f6385222918f5e1a525aa31d838ba6e66",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\92-BarnDoorLightFilter.cc.obj": "717f3e15c844be4f460ecc274c002c1a307bf59f5ccbca322327bcec50e43055",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\93-ColorRampLightFilter.cc.obj": "8b8f01b97fc351ac76ffaf38b4096a4b30c5734696be8fe8d785377c486250fe",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\94-CombineLightFilter.cc.obj": "baddd21cdf4b6e42e9e8e9d83ede3e708f93417a480b9e579e4d590064109a99",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\95-CookieLightFilter.cc.obj": "6cf9a575a261a8ceebb3a7b081754eb6771bd72490615e8cc0c90385ea092048",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\96-CookieLightFilter_v2.cc.obj": "91dda2051955ec0286ef8c13cd33e5e25287219eaee8267c441d7251874be82a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\97-DecayLightFilter.cc.obj": "1ce1dd5df84b1acf2c473c5357637d38d6a0a2dadbf7618d91e7c308324daa2f",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\98-EllipticalFalloff.cc.obj": "cc701ee78455b27721f2f55ead45b499c58815199a408652c6b2391c9cbbe7a8",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\99-IntensityLightFilter.cc.obj": "ed38bc466abf3f1d67b6dd32642cbe533fb1e2e48035c6bc49f2e7b3187c720e",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\100-RodLightFilter.cc.obj": "22940715d9a7dc3f34297927e02c6abce771e17749455f658139c2cfe2369486",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\101-VdbLightFilter.cc.obj": "37c932f4b60156401f35140aa3cefa1521130311e10b310fb5b37b109d3fa89d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\102-Moebius.cc.obj": "0dca62139f0b8fc2fd2cc1c14d035e617a696568e05b545703f7ed803cdc8202",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\103-PixelScramble.cc.obj": "65a0407c7c36328c633c34c40252dc4dab3ebe8cdd8b5d78462e4e43d41268a5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\104-Sampler.cc.obj": "984d1a7688035649f615670d554b2592e13789f7d22459efea3cc8a3ba65422b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\105-Types.cc.obj": "d9680784134d3d5f69e65b8348c3188e3d74682bde4d93429c4f021adaf863bd",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\106-AovMatLexer.cc.obj": "32a8fa237fb4e8e3a5cf9c26dbd8122812ffc50ca65cb244c2043c35a74f0b96",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\107-AovMatParser.cc.obj": "8fa90852af446d12596099b88723d85c96accffb15af4a7377f4e5d84f1a6ab9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\108-EmbreeAccelerator.cc.obj": "adb4740172b10fceb399a3b7d53f074e71d3a819bcf67a6648fbf52121de8b42",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\109-GeomContext.cc.obj": "c15bbf1eeeccd4d471f43e1280e55bafd25f31434536c1ee8fff53a94cd80a3d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\110-GeometryManager.cc.obj": "c22fe7fa42069fae17fc2a429d0a0eb021e690e401b9372a3fbb1c3cdf5be26a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\111-GeometryManagerExecTracker.cc.obj": "91f48c95419929594e2323e324afb6b5c5083846f0f0115085ba5b58b326a77e",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\112-IntersectionFilters.cc.obj": "ac2cf4713e14180c472a67954483aee0fa25d62f939d0bf60443d6e83e2bc25d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\113-GPUAccelerator.cc.obj": "fa73f348331becedc57bb0de17f5c1f56b55ac8344c5e302182ac9ab960ecb95",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\114-OptixGPUAccelerator.cc.obj": "f25325f3976f18027e55722ceb1af0b5432d725fd9b828581efee5dde4a50a96",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\115-OptixGPUInstance.cc.obj": "d4fe78c3577827fcf9e5650bdf2a3bc7b8b1169fff86b76cf105f2c8ce726cda",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\116-OptixGPUPrimitive.cc.obj": "d5afe92e3577ed9021d85a998e07e033c4748aa914c78822cda2f675a96343f9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\117-OptixGPUPrimitiveGroup.cc.obj": "feaa627c5b46b2730cadf5cdf236afd2f14488b1a0fbd9e93cf9b89a384dbd1f",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\118-OptixGPUUtils.cc.obj": "0b43f0562927be1632c1a1459b31af17c75e5fa5c0cb9f0c3f6940e2fd2addac",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\119-AdaptiveRegions.cc.obj": "8540e3cf58576b0444078c6601e502d5dab61eac23b6ff24994ae73949c7d8d5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\120-AdaptiveRegionTree.cc.obj": "8fd1dbfedac91cd087d60ec0b20321ae92eca83cc288ae9286077188a1f1d413",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\121-AdaptiveRenderTileInfo.cc.obj": "97c7b14c4cf0bf5e110a3de26f24594d8f48c22bb3c5fffdc173ede1635dd412",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\122-AdaptiveRenderTilesTable.cc.obj": "90ea55d6142d65de7233eb0e7701bef8f86425609cfdee3bda6ae067a3cdd8e9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\123-AttributeOverrides.cc.obj": "c877a29b62e6ba488778278b2b80a1044c537327bc2f5a308be79a0cca359a10",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\124-CheckpointController.cc.obj": "2a12f110e46f093ebecf66428a19a368b9f6ac6cb648a913d7ffe49410f88c7d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\125-CheckpointSigIntHandler.cc.obj": "750e225f1d6fa9cb0270876ceb74b606595b53ad65cda328593dc33c187d0e98",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\126-DebugSamplesRecArray.cc.obj": "1d9fa3e4726593ee621fe36c495a17f90644b62b9c0b12ec7aec5c5ca87a4a5b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\127-DisplayFilterDriver.cc.obj": "551789fc45f2622da27bc1007bb81d824273f2907b802660373cf0f61cef523a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\128-Error.cc.obj": "c9936ac41cb311396114cd1fee08c7196754db579bc65005a807548e728be3b6",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\129-ExrUtils.cc.obj": "1f99ab25f55a5133e19a6b2383a9a479222fd8b2cfc0464421af422f79091651",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\130-Film.cc.obj": "6d295d39752f6b8f642ac8b8bf58067abf84c166872128ce77bc738eaab07219",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\131-ImageWriteCache.cc.obj": "5f4e541502dbba58b949749555a162eb945314f061874116b4e5343422075703",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\132-ImageWriteDriver.cc.obj": "9e13be76a1dd9156b5921169b117e1c7a3460a206b5bd71d737eca1a19de0c3e",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\133-OiioReader.cc.obj": "d54d737e694e8e7da8ee1be95b56e43298d542cf3fa1807fa4fe8490390b90f2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\134-OiioUtils.cc.obj": "5d71f9aefea8a71bb9068d1b6e6d50475ce8e3b34d05d3da4692320f5ae251ca",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\135-PathVisualizerManager.cc.obj": "1e111106609c905a5fe14b878a18db00be211175cd2f0e20a91f68bf2619b034",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\136-PixelBufferUtils.cc.obj": "95dd562fc366e8973d0acd2c8081065d58953c13ae1c199f0896fdf511a070a2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\137-PixSampleRuntimeVerify.cc.obj": "4adf8811ece0b12f50456543eff417898a11b22e988fa0d61cf6a2e60257aae5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\138-ProcKeeper.cc.obj": "dbdb8196ca05393013c23b5d65034990deba5728968de4a726bfac3bc29b2ec0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\139-RenderContext.cc.obj": "8da684de16be2faf367d69307a113e12009a6acea3b496114e742cb381ef9cb6",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\140-RenderDriver.cc.obj": "cbe0233008c396e2115bb3e3cfc8d25372d5ab7be83e2761aaba65c0e58107b0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\141-RenderDriverCheckpointUtil.cc.obj": "ce4108c8d1bea2a7c62bf390ff0606878bd40175456c8dba6aae5ad9d3740aa1",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\142-RenderDriverSnapshotDelta.cc.obj": "989c17a4224df16fd1fc5e472a5e60bb7f463aa918e11ac62384f666f33d0ae2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\143-RenderFrame.cc.obj": "8f9ce195cf9fd6073184137fe351c80eb81adf51c7fd8aef873a68ad0a07c95b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\144-RenderFrameCheckpointResume.cc.obj": "67c2bd78eefee617ca83fc5ff62cdea4f24108424a5d35947d992cc4fa7a6001",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\145-RenderFramePasses.cc.obj": "a273356b27016ae22bc7a88dc5ccc2b9795bafd9b01685fab3664e68fbb62b1b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\146-RenderOptions.cc.obj": "17b6e886f76dc9df4fc5714636e8abdecc7915cf590c5d958557ff1a230790de",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\147-RenderOutputDriver.cc.obj": "93ce8c091aa69832d9bba46f8837dda96e203b7be45ccb3fda61854d094ce006",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\148-RenderOutputDriverImplParser.cc.obj": "df2940d464db0a4cad0c9175f9c153cf6898857c86506853f2ce34ab1a7bb1a1",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\149-RenderOutputDriverImplRead.cc.obj": "b5475cc5865ffc794a9b9c73fcf7599eb727f11b69d268bee725f587eccff39c",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\150-RenderOutputDriverImplWrite.cc.obj": "e147172c1eaa7b48996224adfb691a825dfd52a535aad7900a2778eb6d1e831f",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\151-RenderOutputWriter.cc.obj": "2da5c921a702301ef6c45b80a96d35616fa017fe0cc2a0b5f6eabb211d870b29",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\152-RenderPrepExecTracker.cc.obj": "5307b74ba663816cdf54df09bdf9b1f1a86bd970bf2aed743b63d14bcf2725a7",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\153-RenderProgressEstimation.cc.obj": "0f0e17cdf17f37aa236ec9f676a032b5583e697a47edafe502ebdee4bc3c80aa",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\154-RenderStatistics.cc.obj": "95706fb566a328de3f077db6b8eed2d50b4da08ace5c14c8b42006b5f6e75cce",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\155-RenderTimingRecord.cc.obj": "25b3ba3428cde7b4125751dff845c8b0db9b3ee531710758b670e986cf40209b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\156-ResumeHistoryMetaData.cc.obj": "3d751b95d58dfc36ae41155980b1b0e606dc2b8685037b38f8a6fbf31eca9b4b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\157-SampleIdBuff.cc.obj": "8f9356ab63af9eb1e5d6600cbe623ada86749418a2b1b0a2c2c71bc1c3e606a5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\158-TileSampleSpecialEvent.cc.obj": "8341d560681b7aa1fd500dc904057f928461f30b15877aad72cd41266e7766d0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\159-TileScheduler.cc.obj": "2e7706e5227ef8f06a43ceec55a3c2d1f91d70c8e530193310c1ff489b987178",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\160-TileWorkQueue.cc.obj": "3c6346bec03b1f144acdebd2b872c1d434851df8557f47b4aa246c76bc583430",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\161-TileWorkQueueRuntimeVerify.cc.obj": "685dd487b415e9b14f99489c79c86adfdff7ff0a986209296ed9152c9cb30d19",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\162-modo_bucket_tracker.cpp.obj": "755ca37bfc92fa378b6ca378b8be46ab5d4b104f4ff02b7c3112f5d1499c8f21",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\163-librendering_displayfilter.dll.a": "0040228a4dd6c2a57e4740289e0f5d6fb8278ec10f6c6dc05b73590f6c698c35",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\164-libopenvdb.dll.a": "a62a3b5733a1d333dac832013f0770876608ffcf6b03a992d527c76aebc9c9fc",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\166-libispc_runtime.a": "81c95d918e3ce9e0ad9a346304e84672bd68fa9f02fb1393bc772e2d8c52cf8f",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\167-librendering_geom.dll.a": "25a84a41f2bfeb9ec5d3c01db64902318b94577ddfb52616227a31428782dbfc",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\168-libosdCPU.dll.a": "f49f1a71ee6bb22d3ae5b14c971c1dbea473bd7d651269e5c75821cafbc7910a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\169-libgomp.dll.a": "c961b7b81226b1d3c27f17d4ff6c11957587cdb5970a9de57168a9c7998a1f61",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\170-libmingwthrd.a": "1a410a263cf9a4623821f9d222fc4e5ea9c139fde592174fd8a0bbddf9ced0f3",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\173-librendering_lpe.dll.a": "a3808687705c528a94545be691e053d4b8e8768825c6c846bcf86fbbcc1c72cc",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\174-librendering_shading.dll.a": "3e73544a382601e18af4912aa047c7d2614ebe48136baf436084e2074ef8575f",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\175-libtexturing_sampler.dll.a": "2c6f3e768a6e2623a54d779710ef22b07ffc96bcca8281a070315f7afa7b7e80",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\176-librendering_mcrt_common.dll.a": "a3a27b9169691ed005af54c0a5b59ac73636c4bcdf2db3ecbad55dbfe7bd5c76",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\177-libcommon_grid_util.dll.a": "f5a27bb589ed03a67805d758ca61ed7c4aa59f778894792f992a0ebf5edf79b8",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\178-libcommon_rec_time.dll.a": "387f83b7864ce0812a625150eb20a114985d167d0eb7f63a8915cb89061d25d6",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\179-libssl.dll.a": "3319d2d52c1287913bc4793c7caf5559163c7407eaf5a83a425edfc042bb5a14",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\180-libcrypto.dll.a": "73eb73b0d5049ea82eda53c8b6871e71bfb14ae7027fdd481671242e398dbe4d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\181-libscene_rdl2.dll.a": "164ab85cf885e449552308ef5c595391a99a6326d740c79829f13eebd2cdb485",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\182-libcommon_fb_util.dll.a": "89fee30916476ff13c609f82218ba80453d3643742d0878933da89be25d7a29e",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\183-librender_cache.dll.a": "8c36ba263f9c6e746d9636b79f328fd3477faa38d34f969d19fd3f321d7c38a2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\184-libfb_util_ispc.dll.a": "0fd39989f537c5a58bf9925af1c16adf1fbf58b3e6d8459b6b464a65f74f5454",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\185-libcommon_mcrt_util.dll.a": "7813f01ae8cc2a8b7c8e672f76ea826f547f8b032a1660aae792ce053a613b1a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\187-libembree4.dll.a": "246f183805cbf42e802159bfe40c5f7c11523355a7901a5c45376744752903db",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\188-libdeepfile.dll.a": "55feb8292ea62eb518da52f018ba568f6e34f5c39fedce55f857c61f6aaaf616",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\189-libOpenEXRUtil.dll.a": "2279c1487345bfdcd88dee08c38aae1b456d86cfdf5a26a4da9c230c5500e2d0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\190-libstatistics.dll.a": "47008c1ccf136a64e374e9132be0df07c2d9d7cc841fd9db33b447456f5dc8aa",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\191-libopenvdb.dll.a": "a62a3b5733a1d333dac832013f0770876608ffcf6b03a992d527c76aebc9c9fc",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\192-libjpeg.dll.a": "52419cdd7aab35260990da0fd72f2a667a8211714a4d0f86ad8be86b5701350d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\193-libcommon_file_resource.dll.a": "12613c78581778f34194d4230c9f9fef2851879c7051e1c689f9c00861b8f589",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\194-librender_util.dll.a": "09f4506bdbe0a87f86e0b93cf86b50972e845e9519d9de40fb45cf453c9aaa3c",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\195-libcommon_math.dll.a": "5b27a78473888fbd3b81da724f053cb55cb67d7a9ff2e8d3823c9c6569a8baff",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\196-libmath_ispc.dll.a": "7c0afdb5d8a885ca7b8a82025603c898f06df5a124aae2288839e4747adfc4cd",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\197-libcommon_platform.dll.a": "2a2bfeebc19110fdbd89e1c596254e287346271121e1bbebf2550037d86d321f",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\198-libtbb12.dll.a": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\199-libjsoncpp.a": "4fdb57167763eb5a596021db17b765d6c19802757b19f112025682160554be5a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\200-liblua.dll.a": "d9923aa6d352cfc91c9af6337f3f8c0a4246b0bba7c8bb5649a8ce9fabd75803",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\201-libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\202-libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\203-libtbb12.dll.a": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\204-libfmt.dll.a": "7f9a2186dd64afae8de45d63e0a94131530b55b47f9747263d21d5bf6fb82dd6",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\205-libOpenEXR.dll.a": "86fa23c53e9e8f6b66861fb65261b65bf5535a6a6b8eb99ecb0c58460d9b7a76",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\206-libIlmThread.dll.a": "17f0efecb9f0eb77088159747a5626b05cfe448efc0bede6244fe247586677fc",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\207-libIex.dll.a": "c32bdacc0b977d1a7bb2d4060614909fd962126c4c8e2db2c01d3161f74bc512",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\208-libOpenEXRCore.dll.a": "ebed9f117825597a80444c61965fcd1ab1363f4edc20aa3f208c783a907f20e8",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\209-libImath.dll.a": "7a4ad4df6c8f2cad0432bbc5867e76c844236e3781bfc5e921e844f9af39b4b0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\211-librender_logging.dll.a": "9c45c6afdb5b6403445ecf2bd625db4736d7bfdf445bff8beeb2b041f3bab453",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\inputs\\212-liblog4cplus.dll.a": "2fa657408c53a14b503aacf9c846d20db7cfcde097b6142eb08c7f06c755fe4f"
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+  "executable_sha256": "bc39875d206b80946c43ccd70562c2ff18ee4ce8683b14952fb1505bf27ed475",
+  "preprocessed_sha256": "94859509dc549e7c5124fb85b9182383c53cd2b72460e1189c2f400ca46be67a",
+  "results": {
+    "runs": [
+      {
+        "policy": "cpu",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 5946400,
+        "claims": 32768,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 8053200,
+        "claims": 32183,
+        "cpu_samples": 257152,
+        "gpu_samples": 4992,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 512,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 7017400,
+        "claims": 30878,
+        "cpu_samples": 246784,
+        "gpu_samples": 15360,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 2048,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 5905700,
+        "claims": 28688,
+        "cpu_samples": 229376,
+        "gpu_samples": 32768,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 8192,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 6012700,
+        "claims": 26785,
+        "cpu_samples": 214232,
+        "gpu_samples": 47912,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 16384,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 6465000,
+        "claims": 26627,
+        "cpu_samples": 212992,
+        "gpu_samples": 49152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 5544300,
+        "claims": 512,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 7287600,
+        "claims": 538,
+        "cpu_samples": 257792,
+        "gpu_samples": 4352,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 7076600,
+        "claims": 512,
+        "cpu_samples": 247808,
+        "gpu_samples": 14336,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 5924300,
+        "claims": 464,
+        "cpu_samples": 229376,
+        "gpu_samples": 32768,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 5246400,
+        "claims": 437,
+        "cpu_samples": 221184,
+        "gpu_samples": 40960,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 6077200,
+        "claims": 419,
+        "cpu_samples": 212992,
+        "gpu_samples": 49152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 16384,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 6215000,
+        "claims": 26627,
+        "cpu_samples": 212992,
+        "gpu_samples": 49152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 5584700,
+        "claims": 512,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 5888000,
+        "claims": 535,
+        "cpu_samples": 258304,
+        "gpu_samples": 3840,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 6704900,
+        "claims": 512,
+        "cpu_samples": 248320,
+        "gpu_samples": 13824,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 5514300,
+        "claims": 470,
+        "cpu_samples": 233472,
+        "gpu_samples": 28672,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 5269300,
+        "claims": 437,
+        "cpu_samples": 221184,
+        "gpu_samples": 40960,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 6208100,
+        "claims": 419,
+        "cpu_samples": 212992,
+        "gpu_samples": 49152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 5974900,
+        "claims": 32768,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 7545600,
+        "claims": 32198,
+        "cpu_samples": 257280,
+        "gpu_samples": 4864,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 512,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 7255100,
+        "claims": 30878,
+        "cpu_samples": 246784,
+        "gpu_samples": 15360,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 2048,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 6481900,
+        "claims": 28688,
+        "cpu_samples": 229376,
+        "gpu_samples": 32768,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 8192,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 5847200,
+        "claims": 26630,
+        "cpu_samples": 212992,
+        "gpu_samples": 49152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 5196400,
+        "claims": 437,
+        "cpu_samples": 221184,
+        "gpu_samples": 40960,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 6443100,
+        "claims": 419,
+        "cpu_samples": 212992,
+        "gpu_samples": 49152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 5960100,
+        "claims": 32768,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 7695300,
+        "claims": 32213,
+        "cpu_samples": 257408,
+        "gpu_samples": 4736,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 512,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 9521200,
+        "claims": 30689,
+        "cpu_samples": 245248,
+        "gpu_samples": 16896,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 2048,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 6299400,
+        "claims": 28526,
+        "cpu_samples": 228072,
+        "gpu_samples": 34072,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 8192,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 5049300,
+        "claims": 27653,
+        "cpu_samples": 221184,
+        "gpu_samples": 40960,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 8,
+        "gpu_chunk": 16384,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 6280900,
+        "claims": 26627,
+        "cpu_samples": 212992,
+        "gpu_samples": 49152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 5898400,
+        "claims": 512,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 5627100,
+        "claims": 533,
+        "cpu_samples": 258560,
+        "gpu_samples": 3584,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 6639000,
+        "claims": 512,
+        "cpu_samples": 247808,
+        "gpu_samples": 14336,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 1,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 5848300,
+        "claims": 467,
+        "cpu_samples": 231424,
+        "gpu_samples": 30720,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 2419300,
+        "claims": 32768,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 2292100,
+        "claims": 32633,
+        "cpu_samples": 260992,
+        "gpu_samples": 1152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 512,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 2207800,
+        "claims": 32327,
+        "cpu_samples": 258560,
+        "gpu_samples": 3584,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 2048,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 2516000,
+        "claims": 31493,
+        "cpu_samples": 251904,
+        "gpu_samples": 10240,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 8192,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 2800500,
+        "claims": 30722,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 16384,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 2910500,
+        "claims": 30721,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 1037700,
+        "claims": 512,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 1396800,
+        "claims": 515,
+        "cpu_samples": 261632,
+        "gpu_samples": 512,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 1408700,
+        "claims": 512,
+        "cpu_samples": 260096,
+        "gpu_samples": 2048,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 1465300,
+        "claims": 506,
+        "cpu_samples": 258048,
+        "gpu_samples": 4096,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 1766100,
+        "claims": 497,
+        "cpu_samples": 253952,
+        "gpu_samples": 8192,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 2888400,
+        "claims": 481,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 383026300,
+        "claims": 2048,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 113414700,
+        "claims": 512,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 48958700,
+        "claims": 128,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 30921900,
+        "claims": 32,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 0,
+        "samples": 262144,
+        "wall_ns": 33480800,
+        "claims": 16,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 16384,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 2803500,
+        "claims": 30721,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 1544000,
+        "claims": 512,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 1600200,
+        "claims": 516,
+        "cpu_samples": 261504,
+        "gpu_samples": 640,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 1457000,
+        "claims": 512,
+        "cpu_samples": 260096,
+        "gpu_samples": 2048,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 1245700,
+        "claims": 506,
+        "cpu_samples": 258048,
+        "gpu_samples": 4096,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 1574100,
+        "claims": 497,
+        "cpu_samples": 253952,
+        "gpu_samples": 8192,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 2753100,
+        "claims": 481,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 386638100,
+        "claims": 2048,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 108850600,
+        "claims": 512,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 44361900,
+        "claims": 128,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 34227600,
+        "claims": 32,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 28926000,
+        "claims": 16,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 2237500,
+        "claims": 32768,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 2263400,
+        "claims": 32633,
+        "cpu_samples": 260992,
+        "gpu_samples": 1152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 512,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 2495100,
+        "claims": 32327,
+        "cpu_samples": 258560,
+        "gpu_samples": 3584,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 2048,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 2238300,
+        "claims": 31493,
+        "cpu_samples": 251904,
+        "gpu_samples": 10240,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 8192,
+        "repeat": 1,
+        "samples": 262144,
+        "wall_ns": 2480100,
+        "claims": 30722,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 1508500,
+        "claims": 497,
+        "cpu_samples": 253952,
+        "gpu_samples": 8192,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 2746100,
+        "claims": 481,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 377646100,
+        "claims": 2048,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 110053500,
+        "claims": 512,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 44617700,
+        "claims": 128,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 8192,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 30543500,
+        "claims": 32,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "gpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 16384,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 27945600,
+        "claims": 16,
+        "cpu_samples": 0,
+        "gpu_samples": 262144,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 2088700,
+        "claims": 32768,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 2295600,
+        "claims": 32633,
+        "cpu_samples": 260992,
+        "gpu_samples": 1152,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 512,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 2255200,
+        "claims": 32264,
+        "cpu_samples": 258048,
+        "gpu_samples": 4096,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 2048,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 2509900,
+        "claims": 31493,
+        "cpu_samples": 251904,
+        "gpu_samples": 10240,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 8192,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 2434400,
+        "claims": 30722,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 8,
+        "gpu_chunk": 16384,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 3091000,
+        "claims": 30721,
+        "cpu_samples": 245760,
+        "gpu_samples": 16384,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "cpu",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 1188000,
+        "claims": 512,
+        "cpu_samples": 262144,
+        "gpu_samples": 0,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 128,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 1393400,
+        "claims": 515,
+        "cpu_samples": 261632,
+        "gpu_samples": 512,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 512,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 1518200,
+        "claims": 512,
+        "cpu_samples": 259584,
+        "gpu_samples": 2560,
+        "digest": "2332055617295549315"
+      },
+      {
+        "policy": "shared",
+        "workers": 6,
+        "cpu_chunk": 512,
+        "gpu_chunk": 2048,
+        "repeat": 2,
+        "samples": 262144,
+        "wall_ns": 1491000,
+        "claims": 503,
+        "cpu_samples": 256000,
+        "gpu_samples": 6144,
+        "digest": "2332055617295549315"
+      }
+    ],
+    "passed": true,
+    "gpu_samples": 5069120,
+    "gpu_batches": 8848
+  },
+  "summary": [
+    {
+      "workers": 1,
+      "cpu_chunk": 8,
+      "gpu_chunk": 128,
+      "policy": "cpu",
+      "median_ms": 5.9601,
+      "range_ms": [
+        5.9464,
+        5.9749
+      ],
+      "claims": [
+        32768,
+        32768,
+        32768
+      ],
+      "gpu_samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 8,
+      "gpu_chunk": 128,
+      "policy": "shared",
+      "median_ms": 7.6953,
+      "range_ms": [
+        7.5456,
+        8.0532
+      ],
+      "claims": [
+        32183,
+        32198,
+        32213
+      ],
+      "gpu_samples": [
+        4992,
+        4864,
+        4736
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 8,
+      "gpu_chunk": 512,
+      "policy": "shared",
+      "median_ms": 7.2551,
+      "range_ms": [
+        7.0174,
+        9.5212
+      ],
+      "claims": [
+        30878,
+        30878,
+        30689
+      ],
+      "gpu_samples": [
+        15360,
+        15360,
+        16896
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 8,
+      "gpu_chunk": 2048,
+      "policy": "shared",
+      "median_ms": 6.2994,
+      "range_ms": [
+        5.9057,
+        6.4819
+      ],
+      "claims": [
+        28688,
+        28688,
+        28526
+      ],
+      "gpu_samples": [
+        32768,
+        32768,
+        34072
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 8,
+      "gpu_chunk": 8192,
+      "policy": "shared",
+      "median_ms": 5.8472,
+      "range_ms": [
+        5.0493,
+        6.0127
+      ],
+      "claims": [
+        26785,
+        26630,
+        27653
+      ],
+      "gpu_samples": [
+        47912,
+        49152,
+        40960
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 8,
+      "gpu_chunk": 16384,
+      "policy": "shared",
+      "median_ms": 6.2809,
+      "range_ms": [
+        6.215,
+        6.465
+      ],
+      "claims": [
+        26627,
+        26627,
+        26627
+      ],
+      "gpu_samples": [
+        49152,
+        49152,
+        49152
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 512,
+      "gpu_chunk": 128,
+      "policy": "cpu",
+      "median_ms": 5.5847,
+      "range_ms": [
+        5.5443,
+        5.8984
+      ],
+      "claims": [
+        512,
+        512,
+        512
+      ],
+      "gpu_samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 512,
+      "gpu_chunk": 128,
+      "policy": "shared",
+      "median_ms": 5.888,
+      "range_ms": [
+        5.6271,
+        7.2876
+      ],
+      "claims": [
+        538,
+        535,
+        533
+      ],
+      "gpu_samples": [
+        4352,
+        3840,
+        3584
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 512,
+      "gpu_chunk": 512,
+      "policy": "shared",
+      "median_ms": 6.7049,
+      "range_ms": [
+        6.639,
+        7.0766
+      ],
+      "claims": [
+        512,
+        512,
+        512
+      ],
+      "gpu_samples": [
+        14336,
+        13824,
+        14336
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 512,
+      "gpu_chunk": 2048,
+      "policy": "shared",
+      "median_ms": 5.8483,
+      "range_ms": [
+        5.5143,
+        5.9243
+      ],
+      "claims": [
+        464,
+        470,
+        467
+      ],
+      "gpu_samples": [
+        32768,
+        28672,
+        30720
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 512,
+      "gpu_chunk": 8192,
+      "policy": "shared",
+      "median_ms": 5.2464,
+      "range_ms": [
+        5.1964,
+        5.2693
+      ],
+      "claims": [
+        437,
+        437,
+        437
+      ],
+      "gpu_samples": [
+        40960,
+        40960,
+        40960
+      ]
+    },
+    {
+      "workers": 1,
+      "cpu_chunk": 512,
+      "gpu_chunk": 16384,
+      "policy": "shared",
+      "median_ms": 6.2081,
+      "range_ms": [
+        6.0772,
+        6.4431
+      ],
+      "claims": [
+        419,
+        419,
+        419
+      ],
+      "gpu_samples": [
+        49152,
+        49152,
+        49152
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 8,
+      "gpu_chunk": 128,
+      "policy": "cpu",
+      "median_ms": 2.2375,
+      "range_ms": [
+        2.0887,
+        2.4193
+      ],
+      "claims": [
+        32768,
+        32768,
+        32768
+      ],
+      "gpu_samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 8,
+      "gpu_chunk": 128,
+      "policy": "shared",
+      "median_ms": 2.2921,
+      "range_ms": [
+        2.2634,
+        2.2956
+      ],
+      "claims": [
+        32633,
+        32633,
+        32633
+      ],
+      "gpu_samples": [
+        1152,
+        1152,
+        1152
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 8,
+      "gpu_chunk": 512,
+      "policy": "shared",
+      "median_ms": 2.2552,
+      "range_ms": [
+        2.2078,
+        2.4951
+      ],
+      "claims": [
+        32327,
+        32327,
+        32264
+      ],
+      "gpu_samples": [
+        3584,
+        3584,
+        4096
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 8,
+      "gpu_chunk": 2048,
+      "policy": "shared",
+      "median_ms": 2.5099,
+      "range_ms": [
+        2.2383,
+        2.516
+      ],
+      "claims": [
+        31493,
+        31493,
+        31493
+      ],
+      "gpu_samples": [
+        10240,
+        10240,
+        10240
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 8,
+      "gpu_chunk": 8192,
+      "policy": "shared",
+      "median_ms": 2.4801,
+      "range_ms": [
+        2.4344,
+        2.8005
+      ],
+      "claims": [
+        30722,
+        30722,
+        30722
+      ],
+      "gpu_samples": [
+        16384,
+        16384,
+        16384
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 8,
+      "gpu_chunk": 16384,
+      "policy": "shared",
+      "median_ms": 2.9105,
+      "range_ms": [
+        2.8035,
+        3.091
+      ],
+      "claims": [
+        30721,
+        30721,
+        30721
+      ],
+      "gpu_samples": [
+        16384,
+        16384,
+        16384
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 128,
+      "policy": "cpu",
+      "median_ms": 1.188,
+      "range_ms": [
+        1.0377,
+        1.544
+      ],
+      "claims": [
+        512,
+        512,
+        512
+      ],
+      "gpu_samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 128,
+      "policy": "gpu",
+      "median_ms": 383.0263,
+      "range_ms": [
+        377.6461,
+        386.6381
+      ],
+      "claims": [
+        2048,
+        2048,
+        2048
+      ],
+      "gpu_samples": [
+        262144,
+        262144,
+        262144
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 128,
+      "policy": "shared",
+      "median_ms": 1.3968,
+      "range_ms": [
+        1.3934,
+        1.6002
+      ],
+      "claims": [
+        515,
+        516,
+        515
+      ],
+      "gpu_samples": [
+        512,
+        640,
+        512
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 512,
+      "policy": "gpu",
+      "median_ms": 110.0535,
+      "range_ms": [
+        108.8506,
+        113.4147
+      ],
+      "claims": [
+        512,
+        512,
+        512
+      ],
+      "gpu_samples": [
+        262144,
+        262144,
+        262144
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 512,
+      "policy": "shared",
+      "median_ms": 1.457,
+      "range_ms": [
+        1.4087,
+        1.5182
+      ],
+      "claims": [
+        512,
+        512,
+        512
+      ],
+      "gpu_samples": [
+        2048,
+        2048,
+        2560
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 2048,
+      "policy": "gpu",
+      "median_ms": 44.6177,
+      "range_ms": [
+        44.3619,
+        48.9587
+      ],
+      "claims": [
+        128,
+        128,
+        128
+      ],
+      "gpu_samples": [
+        262144,
+        262144,
+        262144
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 2048,
+      "policy": "shared",
+      "median_ms": 1.4653,
+      "range_ms": [
+        1.2457,
+        1.491
+      ],
+      "claims": [
+        506,
+        506,
+        503
+      ],
+      "gpu_samples": [
+        4096,
+        4096,
+        6144
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 8192,
+      "policy": "gpu",
+      "median_ms": 30.9219,
+      "range_ms": [
+        30.5435,
+        34.2276
+      ],
+      "claims": [
+        32,
+        32,
+        32
+      ],
+      "gpu_samples": [
+        262144,
+        262144,
+        262144
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 8192,
+      "policy": "shared",
+      "median_ms": 1.5741,
+      "range_ms": [
+        1.5085,
+        1.7661
+      ],
+      "claims": [
+        497,
+        497,
+        497
+      ],
+      "gpu_samples": [
+        8192,
+        8192,
+        8192
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 16384,
+      "policy": "gpu",
+      "median_ms": 28.926,
+      "range_ms": [
+        27.9456,
+        33.4808
+      ],
+      "claims": [
+        16,
+        16,
+        16
+      ],
+      "gpu_samples": [
+        262144,
+        262144,
+        262144
+      ]
+    },
+    {
+      "workers": 6,
+      "cpu_chunk": 512,
+      "gpu_chunk": 16384,
+      "policy": "shared",
+      "median_ms": 2.7531,
+      "range_ms": [
+        2.7461,
+        2.8884
+      ],
+      "claims": [
+        481,
+        481,
+        481
+      ],
+      "gpu_samples": [
+        16384,
+        16384,
+        16384
+      ]
+    }
+  ],
+  "profile": {
+    "quiet": true,
+    "device_total_ns": 2337531600,
+    "initialization_ns": 329097200,
+    "htod_ns": 78047300,
+    "launch_ns": 95358800,
+    "device_wait_ns": 941171200,
+    "dtoh_ns": 554345300,
+    "validation_ns": 224360100,
+    "diagnostic_io_ns": 3300,
+    "worker_pack_ns": 0,
+    "queue_residence_ns": 0,
+    "collect_ns": 0,
+    "collect_wait_ns": 0,
+    "cpu_light_ns": 0,
+    "kernel_gpu_ns": 517291438,
+    "submitted": 0,
+    "collected": 0,
+    "batches": 8848,
+    "samples": 5069120,
+    "accepted": 5069120,
+    "replaced": 5069120,
+    "unsupported": 0,
+    "invalid": 0,
+    "mismatch": 0,
+    "errors": 0,
+    "async_batches": 8848,
+    "async_completions": 8848,
+    "staging_ns": 81386000,
+    "readback_calls": 8848,
+    "readback_bytes": 669123840,
+    "echo_checks": 5069120,
+    "audit_samples": 5069120,
+    "performance_samples": 0,
+    "routing_checks": 0
+  },
+  "evidence_note": "Aggregate measurements only; no new captured scene binary is published."
+}

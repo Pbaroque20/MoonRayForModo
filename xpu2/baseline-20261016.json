@@ -1,0 +1,295 @@
+{
+  "source_commit": "1f8e54b",
+  "date": "2026-10-16",
+  "scope": "XPU reference and protocol foundation; no XPU2 rendered results",
+  "unit_checks": 29,
+  "small": {
+    "status": "passed",
+    "scope": "XPU reference only; no XPU2 backend",
+    "cache_state": "uncontrolled/warmed by inventory; not a cold-load measurement",
+    "first_correct_pixel_seconds": null,
+    "runs": [
+      {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.015,
+          "Initialize renderer": 0.39,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.002,
+          "Building BVH": 0.007,
+          "Building GPU BVH": 0.39,
+          "Total render prep": 0.421,
+          "Mcrt time": 1.107,
+          "Total time": 1.54
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 98.04,
+        "gpu_error": false,
+        "wall_seconds": 2.6644342000363395,
+        "exit_code": 0,
+        "timed_out": false,
+        "image_created": true,
+        "passed": true
+      },
+      {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.013,
+          "Initialize renderer": 0.349,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.005,
+          "Building GPU BVH": 0.349,
+          "Total render prep": 0.376,
+          "Mcrt time": 1.024,
+          "Total time": 1.512
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 99.04,
+        "gpu_error": false,
+        "wall_seconds": 2.4231635000323877,
+        "exit_code": 0,
+        "timed_out": false,
+        "image_created": true,
+        "passed": true
+      }
+    ],
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.14.8 (tags/v3.14.8:8e6e75d, Sep 30 2026, 18:19:33) [MSC v.1944 64 bit (AMD64)]",
+    "host_scene_capture_seconds": null,
+    "limits": [
+      "Generated fixture, not a Modo capture",
+      "No external textures",
+      "No GPU shading or demand paging exercised",
+      "Runtime hash does not establish binary-to-source provenance"
+    ],
+    "fixture_creation_seconds": 0.006451199995353818,
+    "scene_serialization_seconds": 0.2871130999410525,
+    "geometry": {
+      "vertices": 2112,
+      "faces": 2048
+    },
+    "reference_identity": "1c1d08be170ddb1e3edced935a476e74e403bf875e646c01529394a178e6dcf9"
+  },
+  "dense": {
+    "status": "passed",
+    "scope": "XPU reference only; no XPU2 backend",
+    "cache_state": "uncontrolled/warmed by inventory; not a cold-load measurement",
+    "first_correct_pixel_seconds": null,
+    "runs": [
+      {
+        "renderer_timings_seconds": {
+          "Loading scene": 4.024,
+          "Initialize renderer": 6.498,
+          "Generating procedurals": 0.005,
+          "Tessellation": 0.958,
+          "Building BVH": 0.547,
+          "Building GPU BVH": 6.485,
+          "Total render prep": 11.686,
+          "Mcrt time": 2.882,
+          "Total time": 14.75
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 97.64,
+        "gpu_error": false,
+        "wall_seconds": 26.548488599946722,
+        "exit_code": 0,
+        "timed_out": false,
+        "image_created": true,
+        "passed": true
+      },
+      {
+        "renderer_timings_seconds": {
+          "Loading scene": 3.976,
+          "Initialize renderer": 0.553,
+          "Generating procedurals": 0.116,
+          "Tessellation": 0.422,
+          "Building BVH": 0.409,
+          "Building GPU BVH": 0.552,
+          "Total render prep": 5.282,
+          "Mcrt time": 1.136,
+          "Total time": 6.515
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 99.48,
+        "gpu_error": false,
+        "wall_seconds": 10.71511129999999,
+        "exit_code": 0,
+        "timed_out": false,
+        "image_created": true,
+        "passed": true
+      }
+    ],
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.14.8 (tags/v3.14.8:8e6e75d, Sep 30 2026, 18:19:33) [MSC v.1944 64 bit (AMD64)]",
+    "host_scene_capture_seconds": null,
+    "limits": [
+      "Generated fixture, not a Modo capture",
+      "No external textures",
+      "No GPU shading or demand paging exercised",
+      "Runtime hash does not establish binary-to-source provenance"
+    ],
+    "fixture_creation_seconds": 1.0282574000302702,
+    "scene_serialization_seconds": 3.7956397000234574,
+    "geometry": {
+      "vertices": 131584,
+      "faces": 131072
+    },
+    "reference_identity": "11e7879066c8af8e4481512d0c8484ee07ba57076e4a7bfdcd315b44c4a3d4b5"
+  },
+  "same_image": {
+    "status": "passed",
+    "scope": "Full-frame linear RGBA only",
+    "absolute_tolerance": 0.0,
+    "relative_tolerance": 0.0,
+    "image_tool_sha256": "366b2a3cca8b1029baf7f2107d897bf3d612676ffc65c5b08cb56138f1c3974a",
+    "channels": {
+      "R": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 36864
+      },
+      "G": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 36864
+      },
+      "B": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 36864
+      },
+      "A": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 36864
+      }
+    },
+    "sources": {
+      "reference": {
+        "sha256": "9b4cb73761ffb56f22b3ec03704d42467a1f4c7cda0a94e89d2c3f8c46cc5605"
+      },
+      "actual": {
+        "sha256": "9b4cb73761ffb56f22b3ec03704d42467a1f4c7cda0a94e89d2c3f8c46cc5605"
+      }
+    },
+    "dimensions": [
+      256,
+      144
+    ],
+    "metadata": {
+      "colorInteropID": "\"lin_rec709_scene\"",
+      "oiio:ColorSpace": "\"lin_rec709_scene\"",
+      "PixelAspectRatio": "1"
+    }
+  },
+  "repeated_xpu": {
+    "status": "failed",
+    "scope": "Full-frame linear RGBA only",
+    "absolute_tolerance": 0.0,
+    "relative_tolerance": 0.0,
+    "image_tool_sha256": "366b2a3cca8b1029baf7f2107d897bf3d612676ffc65c5b08cb56138f1c3974a",
+    "channels": {
+      "R": {
+        "passed": false,
+        "failed_values": 10382,
+        "maximum_absolute_error": 0.0003910660743713379,
+        "rms_error": 3.4591450603509855e-06,
+        "values": 36864
+      },
+      "G": {
+        "passed": false,
+        "failed_values": 10099,
+        "maximum_absolute_error": 1.9863247871398926e-05,
+        "rms_error": 2.019667405927818e-07,
+        "values": 36864
+      },
+      "B": {
+        "passed": false,
+        "failed_values": 9849,
+        "maximum_absolute_error": 1.4321878552436829e-05,
+        "rms_error": 1.5629227627212048e-07,
+        "values": 36864
+      },
+      "A": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 36864
+      }
+    },
+    "sources": {
+      "reference": {
+        "sha256": "9b4cb73761ffb56f22b3ec03704d42467a1f4c7cda0a94e89d2c3f8c46cc5605"
+      },
+      "actual": {
+        "sha256": "857e81c94f6f747160f9f26e3a65f561e6fd0c614754a6bc50d56d9659e5cc56"
+      }
+    },
+    "dimensions": [
+      256,
+      144
+    ],
+    "metadata": {
+      "colorInteropID": "\"lin_rec709_scene\"",
+      "oiio:ColorSpace": "\"lin_rec709_scene\"",
+      "PixelAspectRatio": "1"
+    }
+  },
+  "pinned_replay": {
+    "status": "passed",
+    "scope": "XPU reference only; no XPU2 backend",
+    "cache_state": "uncontrolled/warmed by inventory; not a cold-load measurement",
+    "first_correct_pixel_seconds": null,
+    "runs": [
+      {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.04,
+          "Initialize renderer": 5.033,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.002,
+          "Building BVH": 0.007,
+          "Building GPU BVH": 5.033,
+          "Total render prep": 5.153,
+          "Mcrt time": 3.762,
+          "Total time": 8.955
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 97.61,
+        "gpu_error": false,
+        "wall_seconds": 21.899028500076383,
+        "exit_code": 0,
+        "timed_out": false,
+        "image_created": true,
+        "passed": true
+      }
+    ],
+    "platform": "Windows-10-10.0.19045-SP0",
+    "python": "3.14.8 (tags/v3.14.8:8e6e75d, Sep 30 2026, 18:19:33) [MSC v.1944 64 bit (AMD64)]",
+    "host_scene_capture_seconds": null,
+    "limits": [
+      "Generated fixture, not a Modo capture",
+      "No external textures",
+      "No GPU shading or demand paging exercised",
+      "Runtime hash does not establish binary-to-source provenance"
+    ],
+    "reference_identity": "1c1d08be170ddb1e3edced935a476e74e403bf875e646c01529394a178e6dcf9"
+  }
+}

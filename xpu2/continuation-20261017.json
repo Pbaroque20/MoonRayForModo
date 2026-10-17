@@ -1,0 +1,594 @@
+{
+  "status": "passed",
+  "scope": "Real GPU shader queue with owned synthetic continuation metadata; not a native MoonRay path continuation or render",
+  "source_hashes": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\continuation_probe.cc": "f96757643bee19f8eb15a65c80bd0731519cad76732280de4fdebc9b96f5be75",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\continuation_mailbox.h": "1476194e07c22ea8dc75e720afbbab60d1f868c946887a7606f294b3cf9faacf",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_queue.cc": "ecc7fddfb4e06b265daa0c05ac48053b627a82d2f6c0722128ae5535317939c6",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_integration.py": "9c4f27ae581de9ccee61ebfcf63fa4c02e78f027717a7d19771b3c2f45d36de2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_continuation_probe.py": "2f79e17ea915d2c460a128d612cfdafd601e7c7f331712ec425dd446361f88f5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-ray-image-final\\sampler.ptx": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2"
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "runs": [
+    {
+      "case": "pressure",
+      "checks": {
+        "case": "pressure",
+        "accepted_cpu_resumes": 65,
+        "revoked_cpu_resumes": 0,
+        "outstanding": 0,
+        "passed": true
+      },
+      "queue": {
+        "calls": 65,
+        "submitted": 64,
+        "delivered": 64,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 1,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 1,
+        "max_batch_samples": 512,
+        "max_queue": 64,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 13
+      },
+      "delivery_ids": [
+        63,
+        62,
+        61,
+        60,
+        59,
+        58,
+        57,
+        56,
+        55,
+        54,
+        53,
+        52,
+        51,
+        50,
+        49,
+        48,
+        47,
+        46,
+        45,
+        44,
+        43,
+        42,
+        41,
+        40,
+        39,
+        38,
+        37,
+        36,
+        35,
+        34,
+        33,
+        32,
+        31,
+        30,
+        29,
+        28,
+        27,
+        26,
+        25,
+        24,
+        23,
+        22,
+        21,
+        20,
+        19,
+        18,
+        17,
+        16,
+        15,
+        14,
+        13,
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0
+      ],
+      "shading": {
+        "batches": 1,
+        "samples": 512,
+        "accepted": 512,
+        "replaced": 512,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 512,
+        "accepted": 512,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "222a22277b50c20838f53760e9bcb57958889936654b52612bbd4c3fc18e2928"
+      },
+      "log_hashes": {
+        "process.log": "1fadbe5aa93fd944d5d440d3b34888ef38c32234f5a803bf7ea8ebdccddefb4c",
+        "queue.log": "a70f1cfa743c8911d869a2c0b4ef7bb4f2cb6ce3adb65bd3fa40ae29b010bca9",
+        "shading.bin": "222a22277b50c20838f53760e9bcb57958889936654b52612bbd4c3fc18e2928",
+        "shading.log": "8cc312474800022f7804b7e0b8057a1c14e59fa464193df717e737faef78e5de"
+      }
+    },
+    {
+      "case": "missing_ptx",
+      "checks": {
+        "case": "missing_ptx",
+        "accepted_cpu_resumes": 65,
+        "revoked_cpu_resumes": 0,
+        "outstanding": 0,
+        "passed": true
+      },
+      "queue": {
+        "calls": 65,
+        "submitted": 64,
+        "delivered": 64,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 1,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 1,
+        "max_batch_samples": 512,
+        "max_queue": 64,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0
+      },
+      "delivery_ids": [
+        63,
+        62,
+        61,
+        60,
+        59,
+        58,
+        57,
+        56,
+        55,
+        54,
+        53,
+        52,
+        51,
+        50,
+        49,
+        48,
+        47,
+        46,
+        45,
+        44,
+        43,
+        42,
+        41,
+        40,
+        39,
+        38,
+        37,
+        36,
+        35,
+        34,
+        33,
+        32,
+        31,
+        30,
+        29,
+        28,
+        27,
+        26,
+        25,
+        24,
+        23,
+        22,
+        21,
+        20,
+        19,
+        18,
+        17,
+        16,
+        15,
+        14,
+        13,
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0
+      ],
+      "shading": {
+        "batches": 1,
+        "samples": 512,
+        "accepted": 0,
+        "replaced": 0,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 1
+      },
+      "observations": {
+        "records": 0,
+        "accepted": 0,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "e2051e4efa2906f26ded96cc4b5e469204d7c4ae138df85523941f2bf81f6e1f"
+      },
+      "log_hashes": {
+        "process.log": "2c1e0b7eaad264bc6543db2e0536be470dc373b18371f6f7bcbb264bbd895b59",
+        "queue.log": "66a1eabfa91754d0d13156f4766dc04b69d8ef49277971ef3630cd17652a4652",
+        "shading.bin": "e2051e4efa2906f26ded96cc4b5e469204d7c4ae138df85523941f2bf81f6e1f",
+        "shading.log": "682fd2d79390dd85824c3d5a48229104188cbaffd03e0606bf9fc0026822ee60"
+      }
+    },
+    {
+      "case": "restart",
+      "checks": {
+        "case": "restart",
+        "accepted_cpu_resumes": 1,
+        "revoked_cpu_resumes": 0,
+        "outstanding": 0,
+        "passed": true
+      },
+      "queue": {
+        "calls": 5,
+        "submitted": 5,
+        "delivered": 1,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 1,
+        "cancelled_before_dispatch": 3,
+        "closed_fallback": 0,
+        "cancelled_requests": 4,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 3,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "delivery_ids": [
+        4
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 16,
+        "accepted": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a"
+      },
+      "log_hashes": {
+        "process.log": "d1fbc456c3e9e548c77aac16de5bc0266cebb1c14901133b8a58bba59f114c0d",
+        "queue.log": "cc6a5e850a9d4b098532fc3842ccaac58b84c61e42506b7cc18afbc163926ce0",
+        "shading.bin": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a",
+        "shading.log": "bb7c79cab99ead1050b68cbee416be85cb4d396b877d48fc25512e1a08468c3c"
+      }
+    },
+    {
+      "case": "leased_restart",
+      "checks": {
+        "case": "leased_restart",
+        "accepted_cpu_resumes": 1,
+        "revoked_cpu_resumes": 1,
+        "outstanding": 0,
+        "passed": true
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 2,
+        "delivered": 2,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "delivery_ids": [
+        0,
+        1
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 16,
+        "accepted": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a"
+      },
+      "log_hashes": {
+        "process.log": "a7e9622fba905024087dae739e039e45acb665100966a3e64928c8ca0b2ae855",
+        "queue.log": "0b8a477b5fe994585198685b9a6d8c8bbdcc2fa430e73facf3d28291c942e921",
+        "shading.bin": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a",
+        "shading.log": "bb7c79cab99ead1050b68cbee416be85cb4d396b877d48fc25512e1a08468c3c"
+      }
+    },
+    {
+      "case": "ready_restart",
+      "checks": {
+        "case": "ready_restart",
+        "accepted_cpu_resumes": 1,
+        "revoked_cpu_resumes": 0,
+        "outstanding": 0,
+        "passed": true
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 2,
+        "delivered": 1,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 1,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 1,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 16
+      },
+      "delivery_ids": [
+        1
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 16,
+        "accepted": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a"
+      },
+      "log_hashes": {
+        "process.log": "b924b35853e5c6bf51d67fe44bb06f84ac4814ae43c18bcabc9065a8904e7613",
+        "queue.log": "8ebca43051499b18dfe17c9333047c897f3505ec1256a82f971dc22b8f0db6d8",
+        "shading.bin": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a",
+        "shading.log": "bb7c79cab99ead1050b68cbee416be85cb4d396b877d48fc25512e1a08468c3c"
+      }
+    },
+    {
+      "case": "admission_fallback",
+      "checks": {
+        "case": "admission_fallback",
+        "accepted_cpu_resumes": 1,
+        "revoked_cpu_resumes": 1,
+        "outstanding": 0,
+        "passed": true
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 0,
+        "delivered": 0,
+        "cpu_batches": 0,
+        "queue_full": 2,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 0,
+        "max_batch_samples": 0,
+        "max_queue": 0,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0
+      },
+      "delivery_ids": [],
+      "shading": {
+        "gpu_not_initialized": true
+      },
+      "observations": {
+        "records": 0,
+        "accepted": 0,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "e2051e4efa2906f26ded96cc4b5e469204d7c4ae138df85523941f2bf81f6e1f"
+      },
+      "log_hashes": {
+        "process.log": "34f28b9b7bd669e460344c83aee5787366df6e98cd98268ea22e218a6bc9d36f",
+        "queue.log": "babaff970b0b9be03bf6d7c492231f143f943aeeb6f26c407785513805dfd429"
+      }
+    }
+  ],
+  "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+  "preprocessed_sha256": "1bc856e86e111511bcea8d379b4da57fa4018bf6323fb75a2e6389a9b3defbe7",
+  "executable_sha256": "bcdd55a6a78532a3d0058e9123a4f7929022c9fa2e22b1747e189077357aab7b",
+  "raw_report_path": "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-continuation-final\\report.json",
+  "raw_report_sha256": "c1ee11a2b37493e59442276accffc604638c409a8d209bc6e90f44430b21a061",
+  "native_boundary_inspection": [
+    {
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\handlers\\ShadeBundleHandler.cc",
+      "sha256": "faf0214384a2f556d07f7a0145cb4a415a62403be4aa3e8fa47e9b20bf10a47e",
+      "findings": [
+        {
+          "anchor": "SCOPED_MEM(arena);",
+          "lines": [
+            115
+          ]
+        },
+        {
+          "anchor": "fs.mIntegrator->integrateBundledv",
+          "lines": [
+            680
+          ]
+        },
+        {
+          "anchor": "pbrTls->freeRayStates(workLoadSize, rayStates);",
+          "lines": [
+            686
+          ]
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\integrator\\PathIntegratorMultiSampler.ispc",
+      "sha256": "3fcdb5d467a8771d9734335a4d7837e2ad1d90bcf0e8379290b60ff581025527",
+      "findings": [
+        {
+          "anchor": "BsdfSampler_init(&bSampler",
+          "lines": [
+            864
+          ]
+        },
+        {
+          "anchor": "Arena_setPtr(arena, memoryBookmark);",
+          "lines": [
+            1001
+          ]
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\core\\RayState.hh",
+      "sha256": "884e2859d3a045a198579f9547acb744f9f04e3f443ba7f76a19c3c7be33b945",
+      "findings": [
+        {
+          "anchor": "HVD_PTR(void *, mCryptomatteBuffer);",
+          "lines": [
+            23
+          ]
+        },
+        {
+          "anchor": "HVD_PTR(DeferredNode *, mDeferredNodesHead);",
+          "lines": [
+            25
+          ]
+        },
+        {
+          "anchor": "HVD_PTR(HVD_NAMESPACE(shading, Intersection) *, mAOSIsect);",
+          "lines": [
+            142
+          ]
+        },
+        {
+          "anchor": "HVD_MEMBER(uint32_t, mDeepDataHandle);",
+          "lines": [
+            143
+          ]
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "The continuation payload in these checks is synthetic owned metadata, not a native RayState capture. Shader packets and native reference values are real captured data.",
+    "No integrator/film continuation is enabled and no render speedup is established.",
+    "CPU consumers read snapshots on four threads; mailbox operations are coordinator-thread only.",
+    "The existing queue and native rendering hook are unchanged. Prior unit/native image results are not represented as reruns."
+  ]
+}

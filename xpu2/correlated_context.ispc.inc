@@ -1,0 +1,35 @@
+            uniform int xpu2Context[8*28];
+            uniform int xpu2Mask=0;
+            foreach_active (lane) {
+                uniform int b=lane*28;
+                xpu2Mask |= 1 << lane;
+                xpu2Context[b]=extract(sp.mPixel,lane);
+                xpu2Context[b+1]=extract(sp.mSubpixelIndex,lane);
+                xpu2Context[b+2]=extract(sequenceID,lane);
+                xpu2Context[b+3]=extract(pv.nonMirrorDepth,lane);
+                xpu2Context[b+4]=extract(lobeSeed,lane);
+                xpu2Context[b+5]=(uniform int)SequenceTypeBsdf;
+                xpu2Context[b+6]=extract(spIndex,lane);
+                xpu2Context[b+7]=extract(xpu2Before,lane);
+                xpu2Context[b+8]=extract(bsdfSamples.mSampleNumber,lane);
+                xpu2Context[b+9]=extract(bsdfSamples.mTotalSamples,lane);
+                xpu2Context[b+10]=lobeIndex;
+                xpu2Context[b+11]=extract(i,lane);
+                xpu2Context[b+12]=s;
+                xpu2Context[b+13]=lane;
+                xpu2Context[b+14]=extract(lightFilterNeedsSamples,lane);
+                xpu2Context[b+15]=extract(bsdfSid.mHash,lane);
+                xpu2Context[b+16]=intbits(extract(P.x,lane));
+                xpu2Context[b+17]=intbits(extract(P.y,lane));
+                xpu2Context[b+18]=intbits(extract(P.z,lane));
+                xpu2Context[b+19]=intbits(extract(pv.pathThroughput.r,lane));
+                xpu2Context[b+20]=intbits(extract(pv.pathThroughput.g,lane));
+                xpu2Context[b+21]=intbits(extract(pv.pathThroughput.b,lane));
+                xpu2Context[b+22]=intbits(extract(time,lane));
+                xpu2Context[b+23]=intbits(extract(rayDirFootprint,lane));
+                xpu2Context[b+24]=intbits(extract(bsdfSample[0],lane));
+                xpu2Context[b+25]=intbits(extract(bsdfSample[1],lane));
+                xpu2Context[b+26]=extract(lobeSampleCount,lane);
+                xpu2Context[b+27]=0;
+            }
+            xpu2SetContext(xpu2Context,xpu2Mask);
