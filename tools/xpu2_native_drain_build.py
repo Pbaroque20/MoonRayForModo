@@ -11,16 +11,21 @@ def patch(name,text):
         if text.count(old)!=1:raise ValueError('Native hook anchor drift: '+old[:90])
         text=text.replace(old,new)
     if name=='XPURayHandlers':
+        call='        accel->occluded(tls->mThreadIdx, numRays, gpuRays, rays, sizeof(rays[0]));'
+        edit(call,'        const bool xpu2Overlap=xpu2drain::nativeBegin(accel,tls->mThreadIdx);\n'+call+'\n        xpu2drain::nativeEnd(xpu2Overlap);')
         anchor='    unsigned char *isOccluded = accel->getOutputOcclusionBuf(tls->mThreadIdx);'
         edit(anchor,anchor+'\n    xpu2drain::capture(accel,tls->mThreadIdx,numRays,gpuRays,isOccluded);')
     elif name=='RenderContext':
         for signature,label in [('RenderContext::startFrame(const bool simulationMode)','start_frame'),('RenderContext::updateScene(const std::string& filename)','update_scene'),('RenderContext::updateScene(const std::string& manifest, const std::string& payload)','update_scene_binary'),('RenderContext::updateGeometry(const std::vector<moonray::ObjectData>& updateData)','update_geometry')]:
             edit(signature+'\n{',signature+'\n{\n    xpu2drain::drain("'+label+'");')
         edit('    mDriver->startFrame(frameState);','    xpu2drain::openFrame();\n    mDriver->startFrame(frameState);')
-        edit('    mDriver->stopFrame();','    mDriver->stopFrame();\n    xpu2drain::drain("post_frame");')
+        edit('    mDriver->stopFrame();','    xpu2drain::markStop();\n    mDriver->stopFrame();\n    xpu2drain::drain("post_frame");')
         edit('    // There is an issue NOVAVP-12','    xpu2drain::drain("context_teardown");\n    // There is an issue NOVAVP-12')
     elif name=='GeometryManager':
-        edit('{\n    mGPUAccelerator.reset();','{\n    xpu2drain::drain("accelerator_rebuild");\n    mGPUAccelerator.reset();')
+        edit('{\n    mGPUAccelerator.reset();','{\n    xpu2drain::drain("accelerator_rebuild");\n    xpu2drain::forgetAccelerator();\n    mGPUAccelerator.reset();')
+        edit('                           numCPUThreads,','                           xpu2drain::queueSlots(numCPUThreads),')
+        anchor='    mOptions.stats.logString("GPU setup finished.  Using GPU: " +'
+        edit(anchor,'    xpu2drain::registerAccelerator(mGPUAccelerator.get(),numCPUThreads);\n'+anchor)
     else:raise ValueError('Unknown native source')
     return '#include <cstring>\n#include "native_scene_drain.h"\n'+text
 

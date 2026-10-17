@@ -4,6 +4,10 @@ Status: **tested inside the native renderer's persistent lifecycle**. This is an
 isolated diagnostic build. It does not enable an installed XPU2 renderer or add
 worker-produced contributions to the image.
 
+The follow-up [dedicated queue validation](DEDICATED_QUEUE.md) adds an optional
+independent slot for active-render work. The delayed-slot results below remain
+the evidence for the preceding milestone.
+
 ## What is now connected
 
 The build helper instruments copies of XPURayHandlers, RenderContext and
