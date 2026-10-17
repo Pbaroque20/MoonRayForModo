@@ -185,6 +185,9 @@ struct Request {
     bool done=false,cancelled=false,consumed=false,credit=false;
     std::shared_ptr<const int> owner;
     uint64_t revision=0;
+    // Batch resources survive cancellation until the worker acknowledges completion.
+    // Their scene registry must defer native destruction to its owning thread.
+    std::shared_ptr<const void> retainedResources;
     std::condition_variable completed;
 };
 enum class Collect { Pending, Ready, Cancelled, Duplicate, WrongOwner, Stale };
@@ -233,7 +236,8 @@ struct Queue {
     }
     // Nonblocking with respect to GPU completion. These operations can acquire
     // the queue mutex and allocate; they are not lock-free or real-time APIs.
-    Ticket submit(const float* input,const float* native,int count,uint64_t revision) {
+    Ticket submit(const float* input,const float* native,int count,uint64_t revision,
+                  std::shared_ptr<const void> resources={}) {
         if(count<1 || count>8)return {};
         std::lock_guard<std::mutex> lock(mutex);
         const auto id=next++;
@@ -242,6 +246,7 @@ struct Queue {
         if(retainedAsync>=capacity || pending.size()>=capacity){++full;snapshot();return {};}
         auto request=std::make_shared<Request>();request->id=id;request->count=count;
         request->owner=ownerToken;request->revision=revision;request->credit=true;
+        request->retainedResources=std::move(resources);
         std::memcpy(request->input,input,count*96);std::memcpy(request->output,native,count*32);
         pending.push_back(request);++submitted;++retainedAsync;
         maxQueue=std::max(maxQueue,(unsigned long long)pending.size());available.notify_one();
@@ -249,6 +254,7 @@ struct Queue {
     }
     void releaseCredit(const Ticket& request) {
         if(request->credit){request->credit=false;--retainedAsync;}
+        request->retainedResources.reset();
     }
     bool cancelLocked(const Ticket& request) {
         if(!request || request->owner!=ownerToken || request->cancelled || request->consumed)return false;

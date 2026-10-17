@@ -22,8 +22,8 @@ def apply(code):
             }else ++it;
         }
         available.notify_all();''')
-    edit('Ticket submit(const float* input,const float* native,int count,uint64_t revision) {',
-         'Ticket submit(const float* input,const float* native,int count,uint64_t revision,bool held=false) {')
+    edit('Ticket submit(const float* input,const float* native,int count,uint64_t revision,\n                  std::shared_ptr<const void> resources={}) {',
+         'Ticket submit(const float* input,const float* native,int count,uint64_t revision,bool held=false,\n                  std::shared_ptr<const void> resources={}) {')
     edit('request->owner=ownerToken;request->revision=revision;request->credit=true;',
          'request->owner=ownerToken;request->revision=revision;request->credit=true;request->dispatchable=!held;')
     edit('void releaseCredit(const Ticket& request) {',r'''// Validate the entire window before publishing any request. All fields and
