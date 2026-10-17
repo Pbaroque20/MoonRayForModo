@@ -158,6 +158,13 @@ class NativeSamplerReportTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 compare_handoffs([self.save(data)] * 2, reference)
 
+    def test_extended_native_cmj_reference(self):
+        reference = Path(__file__).resolve().parents[1] / "xpu2/reference/sampler-cmj-avx8-20261017.jsonl.gz"
+        result = compare([reference, reference])
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["cases"], 234)
+        self.assertEqual(result["components_per_mode"], 18792)
+
     def test_single_execution_cannot_certify_repeat(self):
         with self.assertRaises(ValueError):
             compare([self.save(corpus())])

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <fstream>
 #include <numeric>
 #include <random>
 #include <thread>
@@ -60,7 +61,18 @@ static void values(const char* name,const std::vector<unsigned>& data) {
     std::printf("]");
 }
 int main(int argc,char** argv) {
-    const unsigned workers=argc==2 ? unsigned(std::atoi(argv[1])) : 1;
+    const unsigned workers=argc>=2 ? unsigned(std::atoi(argv[1])) : 1;
+    const bool cmj=argc==3 && std::strcmp(argv[2],"cmj")==0;
+    if(argc==3 && std::strcmp(argv[2],"tables")==0) {
+        static_assert(sizeof(Sample2D)==8,"Unexpected sample table layout");
+        std::ofstream one("samples1d.bin",std::ios::binary),two("samples2d.bin",std::ios::binary);
+        one.write(reinterpret_cast<const char*>(k1DSampleTable.data()),k1DSampleTable.size()*sizeof(float));
+        two.write(reinterpret_cast<const char*>(k2DSampleTable.data()),k2DSampleTable.size()*sizeof(Sample2D));
+        one.close();two.close();
+        if(!one || !two) return 3;
+        std::printf("{\"one_count\":%zu,\"two_count\":%zu}\n",k1DSampleTable.size(),k2DSampleTable.size());
+        return 0;
+    }
     if(workers<1 || workers>16) return 2;
     std::vector<Case> cases;
     for(unsigned dims:{1u,2u,3u}) for(unsigned depth:{0u,2u,3u})
@@ -68,6 +80,13 @@ int main(int argc,char** argv) {
     for(unsigned seed:{0u,19u,0xffffffffu})
     for(auto purpose:{SequenceType::Bsdf,SequenceType::Light,SequenceType::RussianRouletteBsdf})
         cases.push_back({dims,depth,total,seed,unsigned(purpose),bool(pseudo)});
+    if(cmj) {
+        cases.clear();
+        for(unsigned depth:{0u,2u}) for(unsigned total:{1u,2u,3u,4u,7u,8u,15u,16u,17u,63u,64u,65u,257u})
+        for(unsigned seed:{0u,19u,0xffffffffu})
+        for(auto purpose:{SequenceType::Bsdf,SequenceType::Light,SequenceType::RussianRouletteBsdf})
+            cases.push_back({2,depth,total,seed,unsigned(purpose),false});
+    }
     std::vector<Row> rows(cases.size());
     std::atomic<size_t> next{0};
     std::vector<std::thread> threads;
@@ -78,7 +97,7 @@ int main(int argc,char** argv) {
         }
     });
     for(auto& thread:threads) thread.join();
-    std::printf("{\"schema\":1,\"simd_width\":%u,\"cases\":%zu}\n",unsigned(kSIMDSize),rows.size());
+    std::printf("{\"schema\":%u,\"simd_width\":%u,\"cases\":%zu}\n",cmj?3u:1u,unsigned(kSIMDSize),rows.size());
     for(size_t i=0;i<rows.size();++i) {
         const auto& row=rows[i]; const auto c=row.c;
         std::printf("{\"id\":%zu,\"dims\":%u,\"depth\":%u,\"total\":%u,\"seed\":%u,\"purpose\":%u,\"pseudo\":%s,\"sequence_hash\":%u",

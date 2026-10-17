@@ -162,3 +162,7 @@ The first real CUDA sampler subset now matches the native reference on the
 RTX 3090. [CUDA_SAMPLER.md](CUDA_SAMPLER.md) distinguishes the supported random
 path from the explicitly declined distribution paths. No rendering backend is
 enabled.
+
+The distribution follow-up now covers the original corpus with native tables and
+an expanded known-count 2D corpus. See [DISTRIBUTIONS.md](DISTRIBUTIONS.md) for
+exact GPU matches and the deliberately disabled table/cache boundary.

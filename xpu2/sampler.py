@@ -5,6 +5,7 @@ import json
 import struct
 
 UNKNOWN = 0xffffffff
+CMJ_TOTALS = (1, 2, 3, 4, 7, 8, 15, 16, 17, 63, 64, 65, 257)
 FIELDS = ("dims", "depth", "pseudo", "total", "seed", "purpose")
 MODES = ("baseline", "chunked", "reordered", "naive_resume")
 
@@ -16,11 +17,14 @@ def read(path):
     else:
         text = path.read_text(encoding="utf-8")
     rows = [json.loads(line) for line in text.splitlines()]
-    if not rows or rows[0].get("schema") != 1 or rows[0].get("simd_width") != 8:
+    if not rows or rows[0].get("schema") not in (1, 3) or rows[0].get("simd_width") != 8:
         raise ValueError("Expected versioned AVX8 sampler corpus")
     header, records = rows[0], rows[1:]
     expected = set(itertools.product((1, 2, 3), (0, 2, 3), (False, True),
                                     (UNKNOWN, 1, 16, 64), (0, 19, UNKNOWN), (0, 1, 2)))
+    if header["schema"] == 3:
+        expected = set(itertools.product((2,), (0, 2), (False,), CMJ_TOTALS,
+                                        (0, 19, UNKNOWN), (0, 1, 2)))
     if header.get("cases") != len(expected) or len(records) != len(expected):
         raise ValueError("Incomplete native corpus")
     seen = set()

@@ -35,6 +35,7 @@ def main():
     p.add_argument("--source", required=True, type=Path)
     p.add_argument("--reference", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
+    p.add_argument("--tables", type=Path, help="Validated native table-export folder")
     a = p.parse_args()
     out, source = a.output.resolve(), a.source.resolve()
     if out.is_relative_to(source):
@@ -70,6 +71,18 @@ def main():
     code = kernel.read_bytes()
     (out / "sampler_cuda.cu").write_bytes(code)
     dependencies = [kernel, a.reference, toolkit / "nvrtc64_120_0.dll", toolkit / "nvrtc-builtins64_128.dll"]
+    table_paths = []
+    if a.tables:
+        table_report = json.loads((a.tables / "report.json").read_text(encoding="utf-8"))
+        if table_report.get("status") != "passed" or not table_report.get("reference_match"):
+            raise ValueError("Validated native table-export report required")
+        for table_name, length in (("samples1d.bin", 4194304*4), ("samples2d.bin", 4194304*8)):
+            path = a.tables / table_name
+            if path.stat().st_size != length or sha(path) != table_report["tables"][table_name]["sha256"]:
+                raise ValueError("Native table size/hash mismatch")
+            table_paths.append(path)
+        dependencies.extend(table_paths)
+        dependencies.append(a.tables / "report.json")
     before = {str(path): sha(path) for path in dependencies}
     program = ptr()
     compile_flags = ["--std=c++14", "--gpu-architecture=compute_" + str(major.value) + str(minor.value),
@@ -94,7 +107,7 @@ def main():
         (out / "sampler.ptx").write_bytes(ptx.value)
     finally:
         bind(nvrtc, "nvrtcDestroyProgram", [C.POINTER(ptr)])(C.byref(program))
-    expected = records(a.reference)
+    expected = records(a.reference, tables=bool(a.tables))
     count = len(expected)
     context = ptr()
     create(C.byref(context), 0, device)
@@ -108,6 +121,11 @@ def main():
         buffers = [u64() for _ in range(4)]
         for buffer, length in zip(buffers, (count*60, count*4, count*60, count*20)):
             alloc(C.byref(buffer), length)
+        table_buffers = [u64(), u64()]
+        for buffer, path in zip(table_buffers, table_paths):
+            data = path.read_bytes()
+            host = C.create_string_buffer(data)
+            alloc(C.byref(buffer), len(data)); h2d(buffer, host, len(data))
         for run, block in enumerate((64, 128, 256)):
             shuffled = list(expected); random.Random(8123+run).shuffle(shuffled)
             raw = b"".join(r["input"] for r in shuffled)
@@ -118,6 +136,7 @@ def main():
             split = count // 2
             for start, n, stream in ((0, split, streams[0]), (split, count-split, streams[1])):
                 args = [u64(buffers[i].value + start*stride) for i, stride in enumerate((60, 4, 60, 20))]
+                args.extend([u64(buffer.value) for buffer in table_buffers])
                 args.append(C.c_uint(n))
                 parameters = (ptr*len(args))(*(C.cast(C.byref(v), ptr) for v in args))
                 launch(function, (n+block-1)//block, 1, 1, block, 1, 1, 0, stream, parameters, None)
@@ -138,7 +157,8 @@ def main():
     if before != {str(path): sha(path) for path in dependencies}:
         raise ValueError("CUDA source/reference/compiler drift")
     report = {"status": "passed" if all(r["passed"] for r in reports) else "failed",
-              "scope": "Real CUDA transport and pseudo-random sampling subset; no shading/rendered parity",
+              "scope": "Real CUDA integrator sampling subset; no shading/rendered parity",
+              "native_tables": bool(a.tables),
               "device": name.value.decode(), "compute_capability": [major.value, minor.value],
               "cuda_driver_api": version.value, "compile_flags": compile_flags,
               "inputs_sha256": before, "ptx_sha256": sha(out / "sampler.ptx"), "runs": reports}

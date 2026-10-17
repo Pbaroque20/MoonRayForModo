@@ -25,7 +25,11 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--reference", type=Path, help="Pinned .jsonl or .jsonl.gz native corpus")
     parser.add_argument("--handoff", action="store_true", help="Test serialized native sampler handoffs")
+    parser.add_argument("--tables", action="store_true", help="Export native integrator sample tables")
+    parser.add_argument("--cmj", action="store_true", help="Broader known-count 2D native corpus")
     args = parser.parse_args()
+    if (args.cmj or args.tables) and args.handoff:
+        parser.error("--cmj and --handoff are separate experiments")
     if args.handoff and not args.reference:
         parser.error("--handoff requires the pinned --reference corpus")
     build, out = args.build.resolve(), args.output.resolve()
@@ -75,11 +79,13 @@ def main():
     exe = out / "sampler.exe"
     print("Linking retained native inputs", flush=True)
     run([compiler, "-O3", "-pthread", "-o", str(exe), str(obj), "@" + str(rsp)], "link")
+    if args.tables:
+        run([str(exe), "1", "tables"], "tables", out / "tables.json")
     outputs = []
     for index, workers in enumerate((1, 1, 4)):
         print("Sampling with " + str(workers) + " CPU workers", flush=True)
         output = out / ("samples-" + str(index) + ".jsonl")
-        run([str(exe), str(workers)], "run-" + str(index), output)
+        run([str(exe), str(workers)] + (["cmj"] if args.cmj else []), "run-" + str(index), output)
         outputs.append(output)
     result = compare_handoffs(outputs, args.reference) if args.handoff else compare(outputs)
     if args.reference and not args.handoff:
@@ -96,6 +102,12 @@ def main():
         if sha(path) != digest:
             raise ValueError("Retained build input changed")
     verify(runtime, runtime_lock)
+    if args.tables:
+        table_meta = json.loads((out / "tables.json").read_text(encoding="utf-8"))
+        if table_meta != {"one_count": 4194304, "two_count": 4194304}:
+            raise ValueError("Unexpected native table dimensions")
+        result["tables"] = {name: {"sha256": sha(out / name), "bytes": (out / name).stat().st_size}
+                            for name in ("samples1d.bin", "samples2d.bin")}
     if args.reference:
         result["reference_sha256"] = sha(args.reference)
     if args.handoff:

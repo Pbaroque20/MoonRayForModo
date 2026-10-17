@@ -82,3 +82,9 @@ The tiny sampler kernel is not a performance benchmark.
 
 The successful GPU subset is a prerequisite, not evidence of complete sampling
 coverage, rendered parity or a faster XPU2 renderer.
+
+## Distribution follow-up
+
+The first milestone above is preserved as historical evidence. CUDA distribution
+support has since expanded; see [DISTRIBUTIONS.md](DISTRIBUTIONS.md) for the current
+validated scope and explicit remaining gates.

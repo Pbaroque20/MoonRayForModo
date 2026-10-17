@@ -16,10 +16,10 @@ class CudaSamplerChecks(unittest.TestCase):
     def test_reference_coverage_is_explicit(self):
         result = validate(self.records, self.returned, self.words)
         self.assertTrue(result["passed"])
-        self.assertEqual(result["supported_records"], 15768)
-        self.assertEqual(result["unsupported_records"], 7884)
+        self.assertEqual(result["supported_records"], 17226)
+        self.assertEqual(result["unsupported_records"], 6434)
         self.assertEqual(result["invalid_records"], 11)
-        self.assertEqual(result["compared_sample_components"], 31536)
+        self.assertEqual(result["compared_sample_components"], 34452)
 
     def test_unsupported_state_and_output_are_preserved(self):
         for row in self.records:
@@ -55,6 +55,30 @@ class CudaSamplerChecks(unittest.TestCase):
         for data, words in ((self.returned[:-1], self.words), (self.returned, self.words[:-1])):
             with self.assertRaises(ValueError):
                 validate(self.records, data, words)
+
+    def test_native_tables_enable_full_original_corpus_only(self):
+        data = records(REFERENCE, tables=True)
+        result = validate(data, b"".join(r["output"] for r in data),
+                          [v for r in data for v in r["result"]])
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["supported_records"], 23652)
+        self.assertEqual(result["compared_sample_components"], 47304)
+        self.assertEqual(result["unsupported_records"], 8)
+
+    def test_late_indices_and_unvalidated_counts_stay_declined(self):
+        for data in (records(REFERENCE, tables=True), records(REFERENCE)):
+            guards = [r for r in data if r["case"] == "unsupported"]
+            self.assertEqual(len(guards), 8)
+            self.assertTrue(all(r["result"][0] == 1 and r["input"] == r["output"] for r in guards))
+
+    def test_extended_cmj_corpus(self):
+        reference = REFERENCE.with_name("sampler-cmj-avx8-20261017.jsonl.gz")
+        data = records(reference)
+        result = validate(data, b"".join(r["output"] for r in data),
+                          [v for r in data for v in r["result"]])
+        self.assertEqual(result["compared_sample_components"], 18792)
+        self.assertEqual(result["supported_records"], 9396)
+        self.assertEqual(result["unsupported_records"], 8)
 
     def test_unknown_distribution_cannot_silently_approximate(self):
         words = self.words[:]
