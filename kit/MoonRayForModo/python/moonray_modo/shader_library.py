@@ -192,3 +192,96 @@ def emit(material, name, index, lines, library, trail=(), authored_bindings=None
     lines.extend('  [%s] = %s,'%(string(key),value) for key,value in authored.items())
     lines.append('}')
     return '%s(%s)'%(shader,string(name))
+
+
+# Materials made of others, and the inputs they take them through. MoonRay crashes on some of them left without
+# inputs: a layer without its B, a two-sided or hair layer material without either, and any of them with nothing
+# plugged in at all where it is itself another's input. Measured with tools/soak_materials.py's runtime.
+_CHOSEN=tuple('material%d'%i for i in range(64))
+INPUTS={'DwaAdjustMaterial':('input_material',),'DwaColorCorrectMaterial':('input_material',),
+        'HairColorCorrectMaterial':('input_hair_material',),'DwaLayerMaterial':('material_A','material_B'),
+        'DwaTwoSidedMaterial':('front_material','back_material'),'HairLayerMaterial':('hair_material_A','hair_material_B'),
+        'DwaMixMaterial':_CHOSEN,'DwaSwitchMaterial':_CHOSEN,'SwitchMaterial':_CHOSEN,
+        'RaySwitchMaterial':('camera_ray_material','default_material','indirect_diffuse_ray_material',
+                             'indirect_glossy_ray_material','indirect_mirror_ray_material')}
+# The inputs MoonRay cannot do without, each with the one whose material it is given in its place.
+NEEDED={'DwaLayerMaterial':{'material_B':'material_A'},
+        'DwaTwoSidedMaterial':{'front_material':'back_material','back_material':'front_material'},
+        'HairLayerMaterial':{'hair_material_A':'hair_material_B','hair_material_B':'hair_material_A'}}
+
+
+def mend(materials, library, warnings, names=None):
+    """Copies of a scene's materials and its library of native ones, with what would crash MoonRay mended and each
+    change named in warnings: an input given a material with nothing plugged in is left empty, an input MoonRay
+    cannot do without is given the material of its pair, and a material assigned with nothing plugged in is plain grey.
+    names maps a library identity to the name shown for it."""
+    names=names or {}
+    held={}
+
+    def label(identity):
+        return names.get(identity) or str(identity)
+
+    def hollow(identity, trail):
+        material=library.get(identity)
+        # A missing or cyclic reference is reported when the scene is written.
+        if identity in trail or not material or not material.get('native_shader') or material.get('node_graph'):
+            return False
+        if identity not in held:
+            held[identity]=empty(material['native_shader'],material.get('native_parameters',{}),(),trail+(identity,))
+        return held[identity]
+
+    def filled(value, trail):
+        return isinstance(value,dict) and isinstance(value.get('material'),str) and not hollow(value['material'],trail)
+
+    def empty(shader, parameters, wired, trail):
+        slots=INPUTS.get(shader,())
+        if shader not in catalog(): return False
+        parameters=numbered(catalog()[shader]['attributes'],parameters)
+        return bool(slots) and not any(slot in wired or filled(parameters.get(slot),trail) for slot in slots)
+
+    def mended(shader, parameters, wired, owner):
+        if shader not in INPUTS or shader not in catalog(): return parameters
+        result=numbered(catalog()[shader]['attributes'],parameters)
+        for slot in INPUTS[shader]:
+            value=result.get(slot)
+            if isinstance(value,dict) and isinstance(value.get('material'),str) and hollow(value['material'],()):
+                result[slot]=None
+                warnings.append('%s: %s has nothing plugged in, and MoonRay cannot render it as an input; %s is left empty.'
+                                %(owner,label(value['material']),slot))
+        for slot,other in NEEDED.get(shader,{}).items():
+            if slot not in wired and result.get(slot) is None and result.get(other) is not None:
+                result[slot]=result[other]
+                warnings.append('%s: MoonRay cannot render a %s without %s; the material in %s is used for it.'%(owner,shader,slot,other))
+        return result
+
+    def surface(material, owner, assigned):
+        if not material.get('native_shader'): return material
+        material=dict(material)
+        if material.get('node_graph'):
+            graph=dict(material['node_graph']);graph['nodes']={k:dict(v) for k,v in graph.get('nodes',{}).items()}
+            for node in graph['nodes'].values():
+                if node.get('type') in INPUTS:
+                    node['parameters']=mended(node['type'],node.get('parameters',{}),set(node.get('inputs',{})),owner)
+                    node['inputs']=inputs=dict(node.get('inputs',{}))
+                    for slot,other in NEEDED.get(node['type'],{}).items():
+                        if slot not in inputs and node['parameters'].get(slot) is None and other in inputs:
+                            inputs[slot]=inputs[other]
+                            warnings.append('%s: MoonRay cannot render a %s without %s; the node wired to %s is used for it.'%(owner,node['type'],slot,other))
+            material['node_graph']=graph
+            return material
+        shader=material['native_shader']
+        material['native_parameters']=mended(shader,material.get('native_parameters',{}),(),owner)
+        if assigned and empty(shader,material['native_parameters'],(),()):
+            warnings.append('%s: its %s has nothing plugged in, which MoonRay cannot render; plain grey is used.'%(owner,shader))
+            material.update(native_shader='DwaBaseMaterial',native_parameters={})
+        return material
+
+    mended_library={identity:surface(material,label(identity),False) for identity,material in library.items()}
+    mended_materials={}
+    for tag,material in materials.items():
+        owner=tag or 'The base material'
+        material=surface(material,owner,True)
+        if material.get('material_stack'):
+            material=dict(material,material_stack=[surface(child,owner,True) for child in material['material_stack']])
+        mended_materials[tag]=material
+    return mended_materials,mended_library
