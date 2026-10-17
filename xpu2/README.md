@@ -143,3 +143,8 @@ evidence, diagnostic controls and implications for the XPU2 reference contract.
 The copied-ray scale/contact experiment is now measured. See
 [ORIGINS.md](ORIGINS.md): larger offsets demonstrably skip the closest blocker;
 smaller candidates remain experimental.
+
+The deterministic work-assignment and accumulation model is documented in
+[SCHEDULING.md](SCHEDULING.md). It preserves work identities under reordered
+completion/retries and bounds the publication backlog. Native sampler/shader
+integration and numerical RGB acceptance limits remain unimplemented.
