@@ -1,5 +1,7 @@
 """Generate the inspector schema from the vendored upstream material declarations."""
 import json
+import re
+import sys
 from pathlib import Path
 
 root=Path(__file__).resolve().parents[1]
@@ -28,8 +30,14 @@ for package in ('moonshine','moonray'):
                     one={k:v for k,v in a.items() if k!='multi'};one['name']=a['name']+str(i);one['label']='#%d %s'%(i,a.get('label',a['name']))
                     attrs[one['name']]=one
             else:attrs[a['name']]=a
-        catalog[data['name']]={'attributes':attrs,'interface':data.get('interface_flags','INTERFACE_MATERIAL'),
+        # The interfaces a material offers: its declaration's, and those its C++ code adds as it is made (mType |= ...),
+        # as every Dwa material adds INTERFACE_DWABASE, which DwaTwoSidedMaterial and DwaColorCorrectMaterial take.
+        interfaces=[v.strip() for v in data.get('interface_flags','INTERFACE_MATERIAL').split('|') if v.strip()]
+        for source in sorted(path.parent.glob('*.cc')):
+            for added in re.findall(r'mType\s*\|=\s*(?:scene_rdl2::rdl2::)?(INTERFACE_\w+)',source.read_text(encoding='utf-8',errors='replace')):
+                if added not in interfaces:interfaces.append(added)
+        catalog[data['name']]={'attributes':attrs,'interface':' | '.join(interfaces),
             'source':path.relative_to(root).as_posix(), 'package':package}
-target=root/'kit/MoonRayForModo/python/moonray_modo/material_catalog.json'
+target=Path(sys.argv[1]) if len(sys.argv)>1 else root/'kit/MoonRayForModo/python/moonray_modo/material_catalog.json'
 target.write_text(json.dumps(catalog,sort_keys=True,indent=2)+'\n',encoding='utf-8')
 print('Generated',len(catalog),'material schemas')

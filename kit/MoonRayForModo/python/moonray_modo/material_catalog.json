@@ -137,7 +137,7 @@
         "type": "Int"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaAdjustMaterial/DwaAdjustMaterial.json"
   },
@@ -1483,7 +1483,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaBase/DwaBaseMaterial.json"
   },
@@ -1582,7 +1582,7 @@
         "type": "Float"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaColorCorrect/DwaColorCorrectMaterial.json"
   },
@@ -1623,7 +1623,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaEmissive/DwaEmissiveMaterial.json"
   },
@@ -2403,7 +2403,7 @@
         "type": "Float"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaFabric/DwaFabricMaterial.json"
   },
@@ -2634,7 +2634,7 @@
         "type": "SceneObject*"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaLayer/DwaLayerMaterial.json"
   },
@@ -3640,7 +3640,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaMetal/DwaMetalMaterial.json"
   },
@@ -4320,7 +4320,7 @@
         "type": "SceneObject*"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaMix/DwaMixMaterial.json"
   },
@@ -5079,7 +5079,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaRefractive/DwaRefractiveMaterial.json"
   },
@@ -6225,7 +6225,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaSkin/DwaSkinMaterial.json"
   },
@@ -7399,7 +7399,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaSolidDielectric/DwaSolidDielectricMaterial.json"
   },
@@ -7886,7 +7886,7 @@
         "type": "SceneObject*"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaSwitch/DwaSwitchMaterial.json"
   },
@@ -10051,7 +10051,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/npr/DwaToonMaterial/DwaToonMaterial.json"
   },
@@ -10142,7 +10142,7 @@
         "type": "SceneObject*"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaTwoSided/DwaTwoSidedMaterial.json"
   },
@@ -10751,7 +10751,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASELAYERABLE",
+    "interface": "INTERFACE_DWABASELAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/DwaVelvet/v2/DwaVelvetMaterial_v2.json"
   },
@@ -13143,7 +13143,7 @@
         "type": "Bool"
       }
     },
-    "interface": "INTERFACE_DWABASEHAIRLAYERABLE",
+    "interface": "INTERFACE_DWABASEHAIRLAYERABLE | INTERFACE_DWABASE",
     "package": "moonshine",
     "source": "upstream/openmoonray/moonray/moonshine/dso/material/npr/HairToon/HairToonMaterial.json"
   },
