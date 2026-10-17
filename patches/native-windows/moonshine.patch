@@ -1,28 +1,68 @@
 diff --git a/lib/material/dwabase/DwaBaseLayerable.cc b/lib/material/dwabase/DwaBaseLayerable.cc
-index 9787e02..c0181d7 100644
+index 9787e02..99dbda4 100644
 --- a/lib/material/dwabase/DwaBaseLayerable.cc
 +++ b/lib/material/dwabase/DwaBaseLayerable.cc
-@@ -449,7 +449,8 @@ DwaBaseLayerable::createLobes(const DwaBaseLayerable * const dwaBaseLayerable,
+@@ -17,6 +17,19 @@
+ 
+ namespace {
+ 
++// Modo: DwaBase's independent transmission roughness kept under a mirror smooth surface (tools/port_source_switches.py). True when MoonRay was started with MOONRAY_MODO_TRANSMISSION_ROUGHNESS=1; read once.
++inline bool modoTransmissionRoughness()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_TRANSMISSION_ROUGHNESS");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++
++// The vector code is told once, as the library loads.
++const bool sModoTransmissionRoughnessSet = (ispc::DwaBaseLayerable_setModoTransmissionRoughness(modoTransmissionRoughness()), true);
++
+ // This is a construct to access the ISPC Data Struct from Inside the Scalar Material object.
+ // Note we are not using MATERIAL_GET_ISPC_CPTR to retrieve the ispc structure from the Material
+ // class as in other materials since that macro assumes a certain data layout we do not adhere to in
+@@ -449,7 +462,11 @@ DwaBaseLayerable::createLobes(const DwaBaseLayerable * const dwaBaseLayerable,
              transmissionRoughnessClamped = scene_rdl2::math::max(transmissionRoughness, minRoughness);
          }
  
 -        if (roughnessClamped < scene_rdl2::math::sEpsilon) {
++        // Modo: with MOONRAY_MODO_TRANSMISSION_ROUGHNESS, a rough transmission keeps its roughness under a mirror smooth
++        // surface. Off, as MoonRay's source: the surface's roughness alone decides, and the transmission is mirror sharp.
 +        if (roughnessClamped < scene_rdl2::math::sEpsilon &&
-+            (scene_rdl2::math::isZero(transmissionWeight) || transmissionRoughnessClamped < scene_rdl2::math::sEpsilon)) {
++            (!modoTransmissionRoughness() ||
++             scene_rdl2::math::isZero(transmissionWeight) || transmissionRoughnessClamped < scene_rdl2::math::sEpsilon)) {
              const moonray::shading::MirrorBSDF dielectricBSDF(
                      N,
                      reflIor,
 diff --git a/lib/material/dwabase/ispc/DwaBaseLayerable.ispc b/lib/material/dwabase/ispc/DwaBaseLayerable.ispc
-index 253aaf4..76cd001 100644
+index 253aaf4..6858ed0 100644
 --- a/lib/material/dwabase/ispc/DwaBaseLayerable.ispc
 +++ b/lib/material/dwabase/ispc/DwaBaseLayerable.ispc
-@@ -1007,7 +1007,8 @@ DWABASE_createLobes(const uniform Material * uniform me,
+@@ -4,6 +4,16 @@
+ /// @file DwaBaseLayerable.ispc
+ 
+ #include "DwaBaseLayerable.isph"
++
++// Modo: DwaBase's transmission roughness kept under a mirror smooth surface (MOONRAY_MODO_TRANSMISSION_ROUGHNESS,
++// tools/port_source_switches.py).
++uniform bool gModoTransmissionRoughness = false;
++
++export void
++DwaBaseLayerable_setModoTransmissionRoughness(uniform bool on)
++{
++    gModoTransmissionRoughness = on;
++}
+ #include <moonray/rendering/shading/ispc/ColorCorrect.isph>
+ #include <moonray/rendering/shading/ispc/Shading.isph>
+ 
+@@ -1007,7 +1017,8 @@ DWABASE_createLobes(const uniform Material * uniform me,
          }
  
          
 -        if (roughnessClamped < sEpsilon) {
 +        if (roughnessClamped < sEpsilon &&
-+            (isZero(transmissionWeight) || transmissionRoughnessClamped < sEpsilon)) {
++            (!gModoTransmissionRoughness || isZero(transmissionWeight) || transmissionRoughnessClamped < sEpsilon)) {
              MirrorBSDF dielectricBSDF;
              MirrorBSDF_init(dielectricBSDF,
                              N,

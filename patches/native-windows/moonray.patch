@@ -226,15 +226,43 @@ index c3c63b7..5b1c9cc 100644
  RDL2_DSO_ATTR_END
  
 diff --git a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc b/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
-index 598a705..224e4ab 100644
+index 598a705..6026e8b 100644
 --- a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
 +++ b/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
-@@ -208,8 +208,14 @@ UsdPreviewSurface::shade(const scene_rdl2::rdl2::Material* self,
+@@ -9,9 +9,24 @@
+ 
+ #include <moonray/rendering/shading/MaterialApi.h>
+ 
++#include <cstdlib>
++
+ using namespace moonray::shading;
+ 
+ namespace {
++
++// Modo: UsdPreviewSurface's specular workflow reflects its specularColor (tools/port_source_switches.py). True when MoonRay was started with MOONRAY_MODO_USD_SPECULAR=1; read once.
++inline bool modoUsdSpecular()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_USD_SPECULAR");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++
++// The vector code is told once, as the material's library loads.
++const bool sModoUsdSpecularSet = (ispc::UsdPreviewSurface_setModoSpecular(modoUsdSpecular()), true);
+ void
+ addMirrorDielectricLobe(BsdfBuilder& bsdfBuilder,
+                         const scene_rdl2::math::Vec3f& N,
+@@ -208,8 +223,18 @@ UsdPreviewSurface::shade(const scene_rdl2::rdl2::Material* self,
      const ispc::SpecularWorkflow specularWorkflow =
          static_cast<ispc::SpecularWorkflow>(me->get(attrUseSpecularWorkflow));
      if (specularWorkflow == ispc::SPECULAR_WORKFLOW_SPECULAR) {
 -        // We can't support this until we implement Schlick fresnel so do nothing for now.
 -        // Phase 2: implement Schlick which takes specular color directly
++        // Modo: with MOONRAY_MODO_USD_SPECULAR the specular colour is reflected by Schlick's Fresnel. Off, as
++        // MoonRay's source: we can't support this until we implement Schlick fresnel so do nothing for now.
++        if (modoUsdSpecular()) {
 +        const auto value = evalColor(me, attrSpecularColor, tls, state);
 +        const scene_rdl2::math::Color specular(
 +                scene_rdl2::math::saturate(value.r), scene_rdl2::math::saturate(value.g),
@@ -243,19 +271,38 @@ index 598a705..224e4ab 100644
 +            bsdfBuilder.addSchlickReflection(N, specular, roughness,
 +                                            scene_rdl2::math::isZero(roughness), aovSpecular);
 +        }
++        }
      } else { // SPECULAR_WORKFLOW_METALNESS
          const float metallic = evalFloat(me, attrMetallic, tls, state);
          if (scene_rdl2::math::isZero(metallic)) {
 diff --git a/dso/material/UsdPreviewSurface/UsdPreviewSurface.ispc b/dso/material/UsdPreviewSurface/UsdPreviewSurface.ispc
-index dc8c4c1..2b079bd 100644
+index dc8c4c1..25771c0 100644
 --- a/dso/material/UsdPreviewSurface/UsdPreviewSurface.ispc
 +++ b/dso/material/UsdPreviewSurface/UsdPreviewSurface.ispc
-@@ -182,8 +182,15 @@ shade(const uniform Material * uniform  me,
+@@ -10,6 +10,15 @@
+ 
+ #include <moonray/rendering/shading/ispc/MaterialApi.isph>
+ 
++// Modo: the specular workflow reflects its specularColor (MOONRAY_MODO_USD_SPECULAR, tools/port_source_switches.py).
++uniform bool gModoUsdSpecular = false;
++
++export void
++UsdPreviewSurface_setModoSpecular(uniform bool on)
++{
++    gModoUsdSpecular = on;
++}
++
+ void
+ addMirrorDielectricLobe(varying BsdfBuilder& bsdfBuilder,
+                         const varying Vec3f& N,
+@@ -182,8 +191,18 @@ shade(const uniform Material * uniform  me,
      // Specular
      const uniform SpecularWorkflow specularWorkflow = (SpecularWorkflow)getAttrUseSpecularWorkflow(me);
      if (specularWorkflow == SPECULAR_WORKFLOW_SPECULAR) {
 -        // We can't support this until we implement Schlick fresnel so do nothing for now.
 -        // Phase 2: implement Schlick which takes specular color directly
++        // Modo: off, as MoonRay's source: we can't support this until we implement Schlick fresnel so do nothing.
++        if (gModoUsdSpecular) {
 +        const Color value = evalAttrSpecularColor(me, tls, state);
 +        const Color specular = Color_ctor(saturate(value.r), saturate(value.g), saturate(value.b));
 +        if (!isBlack(specular)) {
@@ -264,6 +311,7 @@ index dc8c4c1..2b079bd 100644
 +            } else {
 +                BsdfBuilder_addSchlickReflection(bsdfBuilder, N, specular, roughness, false, aovSpecular);
 +            }
++        }
 +        }
      } else { // SPECULAR_WORKFLOW_METALNESS
          const float metallic = evalAttrMetallic(me, tls, state);
@@ -2821,7 +2869,7 @@ index f88d871..6d33635 100644
  
      // Non-copyable
 diff --git a/lib/rendering/rndr/RenderContext.cc b/lib/rendering/rndr/RenderContext.cc
-index 0a864ad..7142b0e 100644
+index 0a864ad..7153b98 100644
 --- a/lib/rendering/rndr/RenderContext.cc
 +++ b/lib/rendering/rndr/RenderContext.cc
 @@ -1,3 +1,4 @@
@@ -2920,7 +2968,7 @@ index 0a864ad..7142b0e 100644
      // Determine if to render this frame in scalar, vectorized, or xpu mode.
      mExecutionMode = ExecutionMode::XPU;
      ExecutionMode desiredExecutionMode = mOptions.getDesiredExecutionMode();
-@@ -875,16 +902,10 @@ RenderContext::startFrame(const bool simulationMode)
+@@ -875,16 +902,28 @@ RenderContext::startFrame(const bool simulationMode)
              executionModeString += ".";
              mExecutionMode = ExecutionMode::SCALAR;
          } else {
@@ -2934,14 +2982,32 @@ index 0a864ad..7142b0e 100644
 -            // AUTO mode starts with vector mode
 -            executionModeString = "Executing a vectorized render since execution mode was set to auto.";
 -            mExecutionMode = ExecutionMode::VECTORIZED;
-+            // MoonRayForModo: Auto prioritizes feature support, then XPU > Vector > Scalar.
-+            executionModeString = "Executing an XPU render since execution mode was set to auto.";
-+            allowUnsupportedXPUFeatures = false;
-+            mExecutionMode = ExecutionMode::XPU;
++            // Modo: with MOONRAY_MODO_AUTO_XPU, Auto starts with XPU (upstream's own commented branch), falling back
++            // where the scene has what XPU does not support: XPU > Vector > Scalar. Off, as MoonRay's source.
++            static const bool modoAutoXpu = [] {
++                const char *value = std::getenv("MOONRAY_MODO_AUTO_XPU");
++                return value && value[0] == '1';
++            }();
++            if (modoAutoXpu) {
++                executionModeString = "Executing an XPU render since execution mode was set to auto.";
++                allowUnsupportedXPUFeatures = false; // want to fall back if unsupported
++                mExecutionMode = ExecutionMode::XPU;
++            } else {
++                // Uncomment the following to have AUTO mode start with XPU:
++                //   executionModeString = "Executing an XPU render since execution mode was set to auto.";
++                //   allowUnsupportedXPUFeatures = false; // want to fall back if unsupported
++                //   mExecutionMode = ExecutionMode::XPU;
++                // If there is an error setting up the GPU, we will fall back to vector mode
++                // in GeometryManager::updateGPUAccelerator().
++
++                // AUTO mode starts with vector mode
++                executionModeString = "Executing a vectorized render since execution mode was set to auto.";
++                mExecutionMode = ExecutionMode::VECTORIZED;
++            }
          }    
      }
  
-@@ -1227,6 +1248,14 @@ RenderContext::requestStopRenderAtPassBoundary()
+@@ -1227,6 +1266,14 @@ RenderContext::requestStopRenderAtPassBoundary()
      }
  }
  
@@ -2956,7 +3022,7 @@ index 0a864ad..7142b0e 100644
  int
  RenderContext::getCurrentFrame() const
  {
-@@ -2104,6 +2133,7 @@ RenderContext::loadScene(std::stringstream &initMessages)
+@@ -2104,6 +2151,7 @@ RenderContext::loadScene(std::stringstream &initMessages)
      // Load each scene file in order.
      const auto& sceneFiles = mOptions.getSceneFiles();
      for (const auto& sceneFile : sceneFiles) {
@@ -2964,7 +3030,7 @@ index 0a864ad..7142b0e 100644
          if (!sceneFile.empty()) {
              mRenderStats->logLoadingScene(initMessages, sceneFile);
              // Grab the file extension and convert it to lower case.
-@@ -2534,7 +2564,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
+@@ -2534,7 +2582,7 @@ RenderContext::loadGeometries(const rt::ChangeFlag flag)
  
      timer.stop();
  
@@ -2973,7 +3039,7 @@ index 0a864ad..7142b0e 100644
      // return unused memory from malloc() arena to OS so process memory usage
      // stats are accurate
      malloc_trim(0);
-@@ -3006,7 +3036,7 @@ RenderContext::buildFrameState(FrameState *fs, double frameStartTime, const bool
+@@ -3006,7 +3054,7 @@ RenderContext::buildFrameState(FrameState *fs, double frameStartTime, const bool
      switch (getRenderMode())
      {
      case RenderMode::BATCH:
@@ -3681,16 +3747,40 @@ index 01d5ef8..ee71322 100644
  
      int numDevices = 0;
 diff --git a/lib/rendering/shading/BasicTexture.cc b/lib/rendering/shading/BasicTexture.cc
-index 31c070c..ace62fc 100644
+index 31c070c..7d53286 100644
 --- a/lib/rendering/shading/BasicTexture.cc
 +++ b/lib/rendering/shading/BasicTexture.cc
-@@ -185,6 +185,9 @@ public:
+@@ -23,6 +23,20 @@
+ 
+ #include <OpenImageIO/texture.h>
+ 
++#include <cstdlib>
++
++namespace {
++// Modo: an image with no alpha channel reads as opaque (tools/port_source_switches.py). True when MoonRay was started with MOONRAY_MODO_OPAQUE_ALPHA=1; read once.
++inline bool modoOpaqueAlpha()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_OPAQUE_ALPHA");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++}
++
+ #include <memory>
+ #include <mutex>
+ 
+@@ -185,6 +199,12 @@ public:
              mTextureOpt[i].swrap = getOIIOWrap(wrapS);
              mTextureOpt[i].twrap = getOIIOWrap(wrapT);
              mTextureOpt[i].subimagename.clear();
-+            // TextureSampler expands grayscale to RGB; a missing fourth channel
-+            // must be opaque, matching ImageMap's documented alpha-only behavior.
-+            mTextureOpt[i].fill = 1.0f;
++            // Modo: with MOONRAY_MODO_OPAQUE_ALPHA, a missing fourth channel is opaque, matching ImageMap's
++            // documented alpha-only behaviour (TextureSampler expands grayscale to RGB). Off, as MoonRay's source:
++            // OpenImageIO's fill, 0.
++            if (modoOpaqueAlpha()) {
++                mTextureOpt[i].fill = 1.0f;
++            }
          }
  
          MNRY_ASSERT(mTextureHandles[0]);

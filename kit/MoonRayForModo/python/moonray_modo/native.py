@@ -36,6 +36,11 @@ def environment(directory):
     # (crypto_once).
     env['MOONRAY_MODO_FOG_ALPHA'] = '1' if fog_alpha() else '0'
     env['MOONRAY_MODO_CRYPTO_ONCE'] = '1' if crypto_once() else '0'
+    # The four overrides of tools/port_source_switches.py, each read by MoonRay as it starts.
+    env['MOONRAY_MODO_USD_SPECULAR'] = '1' if usd_specular() else '0'
+    env['MOONRAY_MODO_OPAQUE_ALPHA'] = '1' if opaque_alpha() else '0'
+    env['MOONRAY_MODO_TRANSMISSION_ROUGHNESS'] = '1' if transmission_roughness() else '0'
+    env['MOONRAY_MODO_AUTO_XPU'] = '1' if auto_xpu() else '0'
     # A child process must not load Modo's Python/Qt libraries into MoonRay.
     for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'MOONRAY_MODO_SESSION', 'MOONRAY_MODO_GENERATION', 'MOONRAY_MODO_COMMAND'):
         env.pop(key, None)
@@ -198,6 +203,35 @@ def crypto_once():
     """Whether each Cryptomatte sample is counted once in MoonRay's vector and XPU modes, where MoonRay's own now
     and then counts a pixel's surface twice."""
     return _switch('crypto_once', 'MOONRAY_MODO_CRYPTO_ONCE')
+
+
+def usd_specular():
+    """Whether a UsdPreviewSurface material in the specular workflow reflects its specular colour; MoonRay's own gives
+    that workflow no highlight at all."""
+    return _switch('usd_specular', 'MOONRAY_MODO_USD_SPECULAR')
+
+
+def opaque_alpha():
+    """Whether an image with no alpha channel reads as opaque in a texture's alpha; MoonRay's own reads it as 0."""
+    return _switch('opaque_alpha', 'MOONRAY_MODO_OPAQUE_ALPHA')
+
+
+def transmission_roughness():
+    """Whether a Dwa material's independent transmission roughness is kept when its surface is mirror smooth;
+    MoonRay's own then makes the transmission mirror sharp as well."""
+    return _switch('transmission_roughness', 'MOONRAY_MODO_TRANSMISSION_ROUGHNESS')
+
+
+def auto_xpu():
+    """Whether MoonRay's Auto execution mode starts with XPU, falling back where the scene needs what XPU lacks;
+    MoonRay's own starts Auto in vector mode."""
+    return _switch('auto_xpu', 'MOONRAY_MODO_AUTO_XPU')
+
+
+def source_switches():
+    """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once()) + tuple(
+        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu'))
 
 
 def drain_tiles():

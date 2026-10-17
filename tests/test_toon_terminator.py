@@ -83,6 +83,33 @@ class ToonTerminator(unittest.TestCase):
         self.assertIn("if drain_tiles() and drains(self.active['runtime']) and self.session.drain():", stop)
         self.assertIn("'drain_tiles': (True, bool)", (KIT / 'python/moonray_modo/preferences.py').read_text(encoding='utf-8'))
 
+    def test_the_four_source_switches_reach_moonray(self):
+        page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
+        section = page[page.index('<hash type="Sheet" key="MoonRaySourceOverrides:sheet">'):]
+        section = section[:section.index('</hash>')]
+        commands = (KIT / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8')
+        defaults = (KIT / 'python/moonray_modo/preferences.py').read_text(encoding='utf-8')
+        for key, command, variable in (('usd_specular', 'usdSpecular', 'MOONRAY_MODO_USD_SPECULAR'),
+                                       ('opaque_alpha', 'opaqueAlpha', 'MOONRAY_MODO_OPAQUE_ALPHA'),
+                                       ('transmission_roughness', 'transmissionRoughness', 'MOONRAY_MODO_TRANSMISSION_ROUGHNESS'),
+                                       ('auto_xpu', 'autoXpu', 'MOONRAY_MODO_AUTO_XPU')):
+            self.assertIn('cmd moonray.pref.%s ?' % command, section)
+            self.assertIn("lx.bless(switch('%s'),'moonray.pref.%s')" % (key, command), commands)
+            self.assertIn("'%s': (True, bool)" % key, defaults)
+            with mock.patch.dict(sys.modules, {'PySide2': None}):
+                for value in ('1', '0'):
+                    with mock.patch.dict(os.environ, {variable: value}):
+                        self.assertEqual(native.environment(KIT)[variable], value)
+        # MoonLightIPR follows the rough glass switch as MoonRay does.
+        from moonray_modo import moonlightipr_materials
+        glass = {'roughness': 0.0, 'transmission': 1.0, 'use_independent_transmission_roughness': True, 'independent_transmission_roughness': 0.6}
+        for on, expected in ((True, 0.6), (False, 0.0)):
+            with mock.patch.object(native, 'transmission_roughness', return_value=on):
+                made = moonlightipr_materials.native_surface('DwaBaseMaterial', dict(glass), lambda what: None)
+                self.assertAlmostEqual(made['refraction_roughness'], expected)
+        # A session started with other switches is started again.
+        self.assertEqual(len(native.source_switches()), 9)
+
     def test_on_the_preferences_page(self):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.toonTerminator ?', page)

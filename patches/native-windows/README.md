@@ -293,3 +293,105 @@ at the end of any pass, and the frame ends there as a finished one, every buffer
 A preview stopped part way with the switch on and with it off: on, the session is asked to drain and the frame ends as
 a finished one; off, the plugin does not ask, and stops as MoonRay's own stop does
 (`tools/probe_drain_override.py`).
+
+## `moonray.patch`: UsdPreviewSurface's specular colour (`MOONRAY_MODO_USD_SPECULAR`)
+
+Applied by `tools/port_source_switches.py`, behind a switch of its own (the plugin's preference "UsdPreviewSurface
+specular colour", on by default).
+
+### What MoonRay does
+
+With `useSpecularWorkflow` set, UsdPreviewSurface adds no highlight at all: its source says "We can't support this until
+we implement Schlick fresnel so do nothing for now."
+
+### Why that fails
+
+A material made in the specular workflow, as USD and MaterialX assets often are, renders as if it had no reflection.
+
+### The change
+
+`BsdfBuilder::addSchlickReflection` (a GGX lobe, or a mirror when the roughness is 0, with Schlick's Fresnel from the
+`specularColor` at normal incidence) is added in that workflow, in the scalar and vector code. Off, nothing is added.
+
+### How it was checked
+
+A ball in the specular workflow under a rectangle light, rendered with the switch on and off: on, it has its highlight;
+off, none (mean difference 47 across the picture).
+
+## `moonray.patch`: an image without alpha reads as opaque (`MOONRAY_MODO_OPAQUE_ALPHA`)
+
+Applied by `tools/port_source_switches.py`, behind the preference "Images without alpha are opaque", on by default.
+
+### What MoonRay does
+
+`BasicTexture` samples through OpenImageIO, whose fill value for a channel the image does not have is 0. An image with
+three channels has an alpha of 0 wherever a material reads it.
+
+### Why that fails
+
+An `ImageMap` with `alpha_only`, or anything taking a texture's alpha as a mask or presence, reads an ordinary RGB image as
+fully transparent.
+
+### The change
+
+The fill is 1 for every quality level of the texture: a missing alpha channel is opaque, as `ImageMap`'s alpha-only mode
+documents. Off, OpenImageIO's 0.
+
+### How it was checked
+
+An `ImageMap` with `alpha_only` on a three-channel texture as a ball's albedo: white with the switch on, black with it off.
+
+## `moonshine.patch`: rough glass under a mirror smooth surface (`MOONRAY_MODO_TRANSMISSION_ROUGHNESS`)
+
+Applied by `tools/port_source_switches.py`, behind the preference "Rough glass under a smooth surface", on by default.
+
+### What MoonRay does
+
+`DwaBaseLayerable::createLobes` builds a mirror reflection and mirror refraction pair whenever the surface roughness is 0,
+even when `use_independent_transmission_roughness` gives the transmission a roughness of its own.
+
+### Why that fails
+
+Frosted glass under a polished surface (roughness 0, transmission roughness above 0) refracts as clear glass.
+
+### The change
+
+The mirror pair is used only when the transmission is also mirror smooth, or there is none; otherwise the microfacet
+lobes, which take the transmission roughness. Off, MoonRay's test on the surface roughness alone.
+
+### How it was checked
+
+A smooth glass ball with a transmission roughness of 0.6 in front of a small bright light: with the switch on the light
+seen through the ball is blurred, off it is sharp (mean difference 22).
+
+## `moonray.patch`: Auto renders on the graphics card first (`MOONRAY_MODO_AUTO_XPU`)
+
+Applied by `tools/port_source_switches.py`, behind the preference "Auto renders on the graphics card first", on by
+default.
+
+### What MoonRay does
+
+`RenderContext::startFrame` starts the Auto execution mode in vector mode. The XPU branch is in the source, commented out
+("Uncomment the following to have AUTO mode start with XPU").
+
+### Why the plugin changes it
+
+On a machine with a supported graphics card, Auto then renders on it, which is much quicker; a scene with something XPU
+does not support still falls back (`allowUnsupportedXPUFeatures` is false).
+
+### The change
+
+Upstream's own branch, taken with the switch on. Off, Auto starts in vector mode as MoonRay's source does.
+
+### How it was checked
+
+The same scene in Auto: MoonRay's log says "Executing an XPU render since execution mode was set to auto." with the switch
+on, and "Executing a vectorized render since execution mode was set to auto." with it off.
+
+## `cl1-pool-scale.patch`: a larger store for rays in flight (no switch)
+
+`ThreadLocalState.cc` gives each thread four times MoonRay's store of CacheLine1 items, about 4 GB of address space at 16
+threads, touched only as it is used. In XPU mode, with many render outputs and adaptive sampling, MoonRay's own size runs
+out and the render stops with "timed out whilst trying to allocate a CacheLine1". It changes no picture, so it is not a
+MoonRay Source Override; `MOONRAY_MODO_CL1_POOL_SCALE` sets another multiple, from 1 (MoonRay's own) to 8.
+
