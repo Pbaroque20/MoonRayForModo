@@ -15,7 +15,9 @@ def main():
     p.add_argument('--window-dispatch',action='store_true')
     p.add_argument('--async-transfers',action='store_true',help='Include optional pinned asynchronous transfers (requires --window-dispatch)')
     p.add_argument('--packed-readback',action='store_true')
+    p.add_argument('--native-overlap',action='store_true')
     a=p.parse_args()
+    if a.native_overlap and not a.packed_readback:p.error('--native-overlap requires --packed-readback')
     if a.packed_readback and not a.async_transfers:p.error('--packed-readback requires --async-transfers')
     if a.async_transfers and not a.window_dispatch:p.error('--async-transfers requires --window-dispatch')
     if a.window_dispatch and not a.profile:p.error('--window-dispatch requires --profile')
@@ -28,6 +30,7 @@ def main():
         if a.window_dispatch:inputs += [ROOT/'xpu2/window_dispatch_patch.py']
         if a.async_transfers:inputs += [ROOT/'xpu2/async_transfer_patch.py']
         if a.packed_readback:inputs += [ROOT/'xpu2/packed_readback_patch.py']
+        if a.native_overlap:inputs += [ROOT/'xpu2/native_overlap_patch.py']
         hashes={str(f):digest_file(f) for f in inputs}
         report.update(source_hashes=hashes,gpu=gpu_identity())
         compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';env=environment(compiler.parent,out)
@@ -45,6 +48,9 @@ def main():
             if a.packed_readback:
                 from xpu2 import packed_readback_patch
                 bridge=packed_readback_patch.apply(bridge)
+            if a.native_overlap:
+                from xpu2 import native_overlap_patch
+                bridge=native_overlap_patch.bridge(bridge)
             code=out/'guards.cc';code.write_text(inputs[0].read_text().replace('#include "batched_bridge.cc"',bridge),encoding='utf-8')
         for label,args in [('preprocess',['-E',str(code),'-o',str(pp)]),('compile',[str(pp),'-o',str(exe)])]:
             done=subprocess.run([str(compiler),*flags,*args],env=env,capture_output=True,text=True,timeout=120,creationflags=subprocess.CREATE_NO_WINDOW)
@@ -55,6 +61,7 @@ def main():
         if a.window_dispatch:cases += ['publication']
         if a.async_transfers:cases += ['async_reuse','async_pinned_2','async_uploaded','async_launched','async_readback']
         if a.packed_readback:cases += ['packed_reuse_perf','packed_nan','packed_rgb_audit','packed_rgb_perf','packed_unsupported','packed_pdf']
+        if a.native_overlap:cases += ['native_early_publish']
         for case in cases:
             folder=out/case;folder.mkdir();runenv=environment(compiler.parent,folder)
             runenv.update(XPU2_NATIVE_LAMBERT='sentinel',XPU2_NATIVE_LAMBERT_PTX=str(a.ptx.resolve()),
@@ -66,6 +73,7 @@ def main():
             if case.startswith('async_') and case!='async_reuse':runenv['XPU2_ASYNC_FAIL_STAGE']=case[6:]
             if a.packed_readback:runenv.update(XPU2_PACKED_READBACK='1',XPU2_SHADER_AUDIT='0' if case in ('packed_reuse_perf','packed_nan','packed_rgb_perf','packed_unsupported','packed_pdf') else '1')
             if case.startswith('packed_'):runenv['XPU2_NATIVE_LAMBERT']='replace'
+            if case=='native_early_publish':runenv['XPU2_NATIVE_LIGHT_OVERLAP']='1'
             if case=='packed_pdf':runenv['XPU2_TEST_CORRUPT_RESULT']='pdf'
             if case=='packed_nan':runenv['XPU2_TEST_CORRUPT_RESULT']='nan'
             if case in ('packed_rgb_audit','packed_rgb_perf'):runenv['XPU2_TEST_CORRUPT_RESULT']='rgb'

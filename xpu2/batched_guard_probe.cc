@@ -98,6 +98,37 @@ int main(int argc,char** argv){
             std::cout<<"{\"case\":\"publication\",\"passed\":true,\"cleanup\":true}\n";return 0;
         }
 #endif
+#ifdef XPU2_NATIVE_OVERLAP_BUILT
+        if(mode=="native_early_publish") {
+            std::array<float,24> input;std::array<float,8> native;
+            std::memcpy(input.data(),raw.data()+4+112,96);std::memcpy(native.data(),raw.data()+4+208,32);
+            std::array<std::array<float,64>,2> post{},expected{};int lane=0;
+            auto& q=deferredQueue();std::unique_lock<std::mutex> held(q.device.mutex);
+            for(int n=0;n<2;++n) {
+                std::copy(native.begin(),native.end(),post[n].begin());expected[n]=post[n];
+                for(int c=3;c<6;++c)expected[n][c]*=.5f;
+                xpu2BatchedBegin(n);xpu2BatchedLambert(input.data(),native.data(),&lane,1);
+                bool rejected=false;try{xpu2BatchedPublish();}catch(const std::runtime_error&){rejected=true;}
+                require(rejected,"Incomplete native window published");xpu2BatchedSampleEnd();
+            }
+            xpu2BatchedPublish();xpu2BatchedPublish();
+            require(xpu2profile::metrics().native_overlap_windows==1,"Window published twice");
+            for(int n=0;n<2;++n) {
+                xpu2BatchedSelect(n);xpu2BatchedLightBegin();
+                require(current().light && activeCpu==1,"CPU light did not enter while GPU held");
+                bool rejected=false;try{xpu2BatchedSelect(1-n);}catch(const std::runtime_error&){rejected=true;}
+                require(rejected,"Active CPU state was abandoned");xpu2BatchedLightEnd();
+            }
+            require(xpu2profile::metrics().native_light_pending_observations==2,"CPU work waited for GPU");
+            held.unlock();
+            for(int n=1;n>=0;--n){xpu2BatchedCollect(post[n].data(),1,n);require(post[n]==expected[n],"Early result misrouted");}
+            bool rejected=false;try{xpu2BatchedSelect(0);}catch(const std::runtime_error&){rejected=true;}
+            require(rejected,"Retired native scope selected");
+            require(q.stop(std::chrono::milliseconds(5000)) && q.device.asyncReleased() && !q.device.cleanupErrors &&
+                    !q.retainedAsync && !metrics().open && activeCpu==0,"Overlap cleanup failed");
+            std::cout<<"{\"case\":\"native_early_publish\",\"passed\":true,\"cleanup\":true}\n";return 0;
+        }
+#endif
         if(mode=="window"){
             std::array<std::array<float,64>,16> output{},expected{};
             const size_t records=(raw.size()-4)/240;
