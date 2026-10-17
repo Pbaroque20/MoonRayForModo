@@ -45,9 +45,81 @@ class _PreviewBody:
         # The size the picture is spoken of at, where it is drawn finer than it is rendered: a draft's. None for its own.
         self.nominal = None
         self._drawing = None
+        # The crest's motion (crest.py): its clock, when it came in, when a render began waiting with nothing to show
+        # and when it stopped, and a fade of the whole crest (when it began, from, to). A timer repaints while it moves.
+        self._crest_clock = QtCore.QElapsedTimer()
+        self._crest_clock.start()
+        self._crest_entered = None
+        self._crest_waiting = None
+        self._crest_settling = None
+        self._crest_fade = None
+        self._crest_timer = QtCore.QTimer(self)
+        self._crest_timer.setInterval(16)
+        self._crest_timer.timeout.connect(self._crest_step)
         self.setMouseTracking(True)
         self.setMinimumSize(256, 192)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._crest_entered is None:
+            # The crest comes in the first time the preview is seen.
+            self._crest_entered = self._crest_now()
+            self._crest_timer.start()
+
+    def _crest_now(self):
+        return self._crest_clock.elapsed() / 1000.0
+
+    def set_waiting(self, waiting):
+        """A render is on its way (True) or not: with nothing yet to show, the crest breathes meanwhile."""
+        now = self._crest_now()
+        if waiting and self._crest_waiting is None:
+            self._crest_waiting, self._crest_settling = now, None
+        elif not waiting and self._crest_waiting is not None:
+            self._crest_settling = (now, self._crest_depth(now))
+            self._crest_waiting = None
+        self._crest_timer.start()
+
+    def _crest_depth(self, now):
+        """How deep the crest breathes: eased in over half a second of waiting, and out again once the wait is over."""
+        if self._crest_waiting is not None:
+            return min(1.0, (now - self._crest_waiting) / 0.5)
+        if self._crest_settling is not None:
+            began, depth = self._crest_settling
+            return max(0.0, depth * (1.0 - (now - began) / 0.4))
+        return 0.0
+
+    def _crest_pose(self, now):
+        from . import crest
+        if self._crest_entered is not None and not crest.entered(now - self._crest_entered):
+            return crest.entrance(now - self._crest_entered)
+        depth = self._crest_depth(now)
+        if depth > 0.0:
+            # The breath runs on one clock, so that easing it in and out does not jump the wave along.
+            return crest.breathing(now, depth)
+        return crest.still
+
+    def _crest_shown(self, now):
+        """How much of the crest shows as a whole: all of it, but while it fades over a picture or back in."""
+        from . import crest
+        if self._crest_fade is None:
+            return 1.0
+        began, start, end = self._crest_fade
+        x = min(1.0, (now - began) / crest.FADE)
+        return start + (end - start) * (1.0 - (1.0 - x) ** 2)
+
+    def _crest_step(self):
+        from . import crest
+        now = self._crest_now()
+        if self._crest_fade is not None and now - self._crest_fade[0] >= crest.FADE:
+            self._crest_fade = None
+        moving = (self._crest_entered is not None and not crest.entered(now - self._crest_entered)) or self._crest_depth(now) > 0.0
+        fading = self._crest_fade is not None and now - self._crest_fade[0] < crest.FADE
+        if not (fading or (moving and self.image.isNull())):
+            self._crest_timer.stop()
+            if self._crest_settling is not None and self._crest_depth(now) <= 0.0:
+                self._crest_settling = None
+        self.update()
 
     @QtCore.Slot(str)
     def load(self, path):
@@ -65,6 +137,10 @@ class _PreviewBody:
         if not sized or abs(image.width() * sized[1] - image.height() * sized[0]) > 2 * max(sized):
             self.fit()
         self._sized = (image.width(), image.height())
+        if self.image.isNull():
+            # The first picture: the crest fades out over it.
+            self._crest_fade = (self._crest_now(), self._crest_shown(self._crest_now()), 0.0)
+            self._crest_timer.start()
         # Beauty includes camera-visible environment RGB even where coverage
         # alpha is zero. Display RGB without compositing over the widget; keep
         # the renderer output and its alpha channel untouched on disk.
@@ -75,6 +151,10 @@ class _PreviewBody:
 
     def clear(self):
         """Show no picture, as before the first render."""
+        if not self.image.isNull():
+            # The crest fades back in.
+            self._crest_fade = (self._crest_now(), 0.0, 1.0)
+            self._crest_timer.start()
         self.image = QtGui.QImage()
         self._single = None
         self._curved = None
@@ -252,12 +332,20 @@ class _PreviewBody:
                 # stays while a first render is on its way: how that is going is for the status line below to say.
                 # Words take its place only where the crest cannot be drawn.
                 from . import crest
-                if not crest.draw(painter, QtCore.QRectF(self.rect())):
+                now = self._crest_now()
+                if not crest.draw(painter, QtCore.QRectF(self.rect()), opacity=.5 * self._crest_shown(now), pose=self._crest_pose(now)):
                     painter.setPen(QtGui.QColor('#b9bec9'))
                     painter.drawText(self.rect(), QtCore.Qt.AlignCenter, 'Click here to render the scene.')
             else:
                 painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
                 painter.drawImage(self.image_rect(), self.shown())
+                if self._crest_fade is not None and self._crest_fade[2] <= 0.0:
+                    # The crest fading out over the first picture.
+                    from . import crest
+                    now = self._crest_now()
+                    shown = self._crest_shown(now)
+                    if shown > 0.0:
+                        crest.draw(painter, QtCore.QRectF(self.rect()), opacity=.5 * shown, pose=self._crest_pose(now))
                 area = self.image_rect()
                 box = None
                 if self._drawing is not None:
