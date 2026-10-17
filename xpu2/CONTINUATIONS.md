@@ -123,3 +123,7 @@ log hashes, GPU identity, shader comparisons and complete queue accounting.
 [NATIVE_SURFACE_STATE.md](NATIVE_SURFACE_STATE.md) records the first real native
 numeric snapshots and their transport through this mailbox. Full native path
 capture and restoration remain incomplete; the paired shader fixture is independent.
+
+[CORRELATED_STATE.md](CORRELATED_STATE.md) adds a same-call sampler/shader
+fixture for the mailbox. This supersedes the independent pairing for that new
+validation only; it does not turn these payloads into resumable native paths.

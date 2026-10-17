@@ -80,3 +80,9 @@ Use new output directories and the existing pinned fixture/runtime:
     python tools/xpu2_surface_capture_probe.py --build test-results/surface-build-new --scene-reference test-results/xpu2-primary-state --output test-results/surface-new
     python tools/xpu2_continuation_probe.py --source <shared-source-read-only> --ptx test-results/xpu2-ray-image-final/sampler.ptx --surface-capture test-results/surface-new/capture/surface.bin --output test-results/native-payload-new
     python -m unittest discover -s tests -p test_xpu2_surface_state.py -v
+
+## Correlated sampler follow-up
+
+[CORRELATED_STATE.md](CORRELATED_STATE.md) records the next validation: eight
+same-call ISPC sampler/Lambert events matched to this surface fixture, then
+transported through the GPU mailbox. Native path restoration remains incomplete.

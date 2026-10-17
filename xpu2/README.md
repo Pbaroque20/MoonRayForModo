@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [native numeric state capture](NATIVE_SURFACE_STATE.md),
+See [correlated native sampler/shader capture](CORRELATED_STATE.md),
+[native numeric state capture](NATIVE_SURFACE_STATE.md),
 [owned CPU-resume leases](CONTINUATIONS.md) and
 [nonblocking queue tickets](ASYNC_QUEUE.md) for the latest integration steps.
 Started from MoonLightIPR commit `1f8e54b`. This directory is outside the
