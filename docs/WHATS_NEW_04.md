@@ -44,6 +44,7 @@ Not released yet: on the MoonLightIPR branch.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
 - **The preview shows MoonRay's wordmark** before anything is rendered.
+- **The MoonRay mark moves**: it comes in as the preview opens, breathes while a render is on its way, and fades out over the first picture.
 
 ![The MoonRay Terminal after a MoonRay render and a stereo composite](images/terminal.png)
 
