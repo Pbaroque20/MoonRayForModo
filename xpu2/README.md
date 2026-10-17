@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [coalesced native-worker jobs and upload ordering](COALESCED_FILM.md),
+See [native indexed scene resources and Morton convergence checkpoints](INDEXED_SCENE.md),
+[coalesced native-worker jobs and upload ordering](COALESCED_FILM.md),
 [live transfer and graph replay measurements](FILM_TRANSFERS.md),
 [live fused shading and contribution dispatch](LIVE_FUSED_FILM.md),
 [live contribution-window batching](FILM_WINDOWS.md),
