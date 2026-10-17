@@ -25,11 +25,16 @@ class Entrance(unittest.TestCase):
         self.assertTrue(crest.entered(crest.ENTRANCE))
         self.assertFalse(crest.entered(crest.ENTRANCE / 2))
 
+    def test_it_waits_a_second_before_it_begins(self):
+        waiting = crest.entrance(crest.DELAY - 0.01)
+        self.assertEqual({waiting(kind, number)[0] for kind, number in [('arc', 0), ('arc', 1)] + [('letter', n) for n in range(7)]}, {0.0})
+        self.assertGreater(crest.entrance(crest.DELAY + 0.2)('arc', 0)[0], 0.0)
+
     def test_the_arcs_come_from_above_and_below_and_the_letters_one_after_another(self):
-        early = crest.entrance(crest.ENTRANCE * 0.15)
+        early = crest.entrance(crest.DELAY + (crest.ENTRANCE - crest.DELAY) * 0.15)
         self.assertLess(early('arc', 0)[2], 0.0)
         self.assertGreater(early('arc', 1)[2], 0.0)
-        middle = crest.entrance(crest.ENTRANCE * 0.43)
+        middle = crest.entrance(crest.DELAY + (crest.ENTRANCE - crest.DELAY) * 0.43)
         shown = [middle('letter', n)[0] for n in range(7)]
         self.assertEqual(shown, sorted(shown, reverse=True))
         self.assertGreater(shown[0], shown[-1])
