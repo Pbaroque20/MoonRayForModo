@@ -135,16 +135,19 @@ class TerminalWindow(QtWidgets.QDialog):
     def _append(self, chosen):
         if not chosen:
             return
-        cursor = QtGui.QTextCursor(self.text.document())
-        cursor.movePosition(QtGui.QTextCursor.End)
         bar = self.text.verticalScrollBar()
         held = bar.value()
+        # Long lines run on to the right; the view goes across only as far as the viewer scrolls it, never to follow a
+        # new line's end.
+        across = self.text.horizontalScrollBar()
+        sideways = across.value()
         for entry in chosen:
             self.text.appendHtml(self._html(entry))
         if self.follow.isChecked():
             self._to_end()
         else:
             bar.setValue(held)
+        across.setValue(sideways)
 
     def refresh(self):
         fresh = terminal.entries(self.last)
