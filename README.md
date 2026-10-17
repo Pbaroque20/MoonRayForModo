@@ -43,6 +43,11 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 - **Velvet in MoonLightIPR**: MoonRay's velvet material and DwaBaseMaterial's fuzz show in MoonLightIPR with their grazing-angle sheen, dimming what is beneath them as MoonRay does; before, velvet showed as a plain stand-in.
 - **MoonLightIPR draws a mesh filled with even fog**, and follows MoonRay's scene scale for lights and depth of field. A box of fog standing on the floor no longer shows stripes where it meets it.
 - **Terminal** in the MoonRay menu: every program the plugin runs (MoonRay, MoonLightIPR, the denoiser, the scene reader and the rest), with its command line, what it prints and how it ended, as it happens. It shows "ready" while nothing runs.
+
+![The MoonRay Terminal after a MoonRay render and a stereo composite](docs/images/terminal.png)
+
+*The Terminal after a MoonRay render and a red/cyan stereo composite: each program's command, what it printed, and how it ended (green for success); "ready" while nothing runs.*
+
 - **Assign MoonRay Material** in the Item List's right-click menu on a mesh.
 - **A whole mesh's MoonRay material covers what is made in it later**: Assign MoonRay Material on one mesh binds its material to the mesh, as Modo's item masks do, so new polygons take it too. Picked polygons, or several meshes sharing one material, are still tagged.
 - **Compositor: Build from passes or light groups.** Build > From Light Passes adds MoonRay's light passes to the scene (emission, lights and sky seen, direct and indirect diffuse and glossy, mirror reflection, refraction, glossy transmission, translucency) and lays out a graph that puts them back together, each through a Grade of its own; From Light Groups does the same for the environment's light and each light-group label, to relight after the render. A Remainder pass holds whatever the passes leave out, so with every Grade left alone the Composite is the beauty. A new **Sum** node adds any number of pictures.
@@ -55,10 +60,6 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 ![The MoonRay mark coming in as the preview opens](docs/images/crest-entrance.gif)
 
 *The MoonRay mark as the preview opens: after a second the letters rise in from the left, then the crescent fades in from the right.*
-
-![The MoonRay Terminal after a MoonRay render and a stereo composite](docs/images/terminal.png)
-
-*The Terminal after a MoonRay render and a red/cyan stereo composite: each program's command, what it printed, and how it ended (green for success); "ready" while nothing runs.*
 
 ## New in 0.4.1
 
