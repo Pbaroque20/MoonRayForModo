@@ -33,6 +33,11 @@ KEYS = {
     'crypto_once': (True, bool),
     # A render stopped by hand or by Smart Render finishes the tiles in hand (native.drain_tiles).
     'drain_tiles': (True, bool),
+    # The four of tools/port_source_switches.py (native.usd_specular and the rest).
+    'usd_specular': (True, bool),
+    'opaque_alpha': (True, bool),
+    'transmission_roughness': (True, bool),
+    'auto_xpu': (True, bool),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
     'ipr/width': (640, int), 'ipr/samples': (16, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.

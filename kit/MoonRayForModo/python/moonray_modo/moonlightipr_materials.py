@@ -199,7 +199,7 @@ def native_surface(shader, parameters, note):
     The Dwa surface shaders share one set of attribute names; each is read with MoonRay's own
     default where the user has not set it. note(what) records a lobe that is left out.
     """
-    from . import node_defaults, shader_library
+    from . import native, node_defaults, shader_library
     if shader in ('HairMaterial_v3', 'HairDiffuseMaterial', 'HairToonMaterial'):
         return hair_surface(shader, parameters, note)
     if shader not in ('DwaBaseMaterial', 'DwaMetalMaterial', 'DwaSolidDielectricMaterial', 'DwaRefractiveMaterial', 'DwaEmissiveMaterial', 'DwaSkinMaterial',
@@ -267,7 +267,11 @@ def native_surface(shader, parameters, note):
         'fuzz': fuzz, 'fuzz_color': get('fuzz_albedo', white), 'fuzz_roughness': min(1.0, max(0.0, 0.05 + coverage)),
         'fuzz_absorbs': bool(get('use_absorbing_fuzz_fibers', False)),
         'transmission': transmission, 'transmission_color': get('transmission_color', white),
-        'refraction_roughness': float(get('independent_transmission_roughness', .5)) if get('use_independent_transmission_roughness', False) else roughness,
+        # Under a mirror smooth surface MoonRay keeps the transmission's own roughness only with the MoonRay Source Override
+        # "Rough glass under a smooth surface" (native.transmission_roughness); off, the glass is mirror sharp too.
+        'refraction_roughness': (float(get('independent_transmission_roughness', .5))
+                                 if get('use_independent_transmission_roughness', False) and (roughness > 0 or native.transmission_roughness())
+                                 else roughness),
         'transmission_ior': float(get('independent_transmission_refractive_index', 1.5)) if get('use_independent_transmission_refractive_index', False) else ior,
         'clearcoat': coat, 'clearcoat_roughness': coat_roughness,
         'emission': emission, 'raw_emission': emission, 'emission_amount': 1.0, 'presence': float(get('presence', 1.0)),

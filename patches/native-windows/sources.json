@@ -19,7 +19,7 @@
       "commit": "eef67ae992b5037943a7716cca96ed443c36dcec",
       "origin": "https://github.com/OpenMoonRay/moonray",
       "patch": "patches/native-windows/moonray.patch",
-      "patch_sha256": "1ca86b6a4cc9fdfbd5124f50f4b0b0d4b3ce10ba29a7d66af9473265c652389d"
+      "patch_sha256": "0065ad6058a74a733798322132919bd5ed9ce4b2760923788beb63554c0149fd"
     },
     "mcrt_denoise": {
       "path": "upstream/openmoonray/moonray/mcrt_denoise",
@@ -33,7 +33,7 @@
       "commit": "a3c8667298a23df7d6efed128cb475484de66c8e",
       "origin": "https://github.com/OpenMoonRay/moonshine",
       "patch": "patches/native-windows/moonshine.patch",
-      "patch_sha256": "728d762736bd77acd79f335aba1db8fa7f5fd37f59777ed07f89f5f822d7af35"
+      "patch_sha256": "75e502fc6cea51b01a9cbdb679d9c4f236c1f057cf9e88824698af960d4d2bc0"
     },
     "log4cplus": {
       "path": "upstream/log4cplus",
