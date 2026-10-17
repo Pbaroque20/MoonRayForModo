@@ -48,6 +48,10 @@ Not released yet: on the MoonLightIPR branch.
 - **The preview shows MoonRay's wordmark** before anything is rendered.
 - **The MoonRay mark moves**: it comes in as the preview opens, breathes while a render is on its way, and fades out over the first picture.
 
+![The MoonRay mark coming in as the preview opens](images/crest-entrance.gif)
+
+*The MoonRay mark as the preview opens: after a second the letters rise in from the left, then the crescent fades in from the right.*
+
 ![The compositor built from light passes](images/compositor-passes.png)
 
 *Build > From Light Passes: each pass through a Grade into a Sum, the Remainder below them; after the render the Composite matches the beauty until a Grade is changed.*
