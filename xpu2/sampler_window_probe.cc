@@ -1,5 +1,6 @@
 // Native boundary test: compare unchanged sampler with serialized continuation.
 #include "sampler_window.h"
+#include "sampler_exchange.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -68,6 +69,7 @@ static void values(const char* label,const std::vector<unsigned>& v) {
 int main(int argc,char** argv) {
     const unsigned workers=argc>=2 ? unsigned(std::atoi(argv[1])) : 1;
     if(workers<1 || workers>16)return 2;
+    if(argc==5 && std::strcmp(argv[2],"exchange")==0)return xpu2::exchange(argv[3],argv[4],workers);
     if(argc==3 && std::strcmp(argv[2],"moebius")==0) {
         std::ofstream file("moebius.bin",std::ios::binary);
         file.write(reinterpret_cast<const char*>(moebiusTransformationValues),

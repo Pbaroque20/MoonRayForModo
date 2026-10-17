@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import random
 import struct
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,10 @@ def main():
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--tables", type=Path, help="Validated native table-export folder")
     p.add_argument("--window", type=Path, help="Validated native cache-window/Moebius export folder")
+    p.add_argument("--handoff-runtime", type=Path, help="Isolated native runtime for CPU/CUDA exchange")
     a = p.parse_args()
+    if a.handoff_runtime and not a.window:
+        p.error("--handoff-runtime requires --window")
     if a.window and not a.tables:
         p.error("--window requires --tables")
     stride = 64 if a.window else 60
@@ -101,6 +105,14 @@ def main():
         table_paths.append(path)
         dependencies.extend([window_kernel, path, a.window / "report.json",
                              ROOT / "xpu2/cuda_window_samples.py", ROOT / "xpu2/window_samples.py"])
+    if a.handoff_runtime:
+        from xpu2.reference import verify
+        from xpu2.exchange import encode_batch, decode_batch, run_handoffs
+        if (meta.get("exchange_protocol") != "XWB2-XWO2"
+                or sha(a.window / "sampler.exe") != meta["executable_sha256"]):
+            raise ValueError("Verified native exchange executable required")
+        verify(a.handoff_runtime, meta["runtime_inventory"])
+        dependencies.extend([a.window / "sampler.exe", ROOT / "xpu2/exchange.py"])
     before = {str(path): sha(path) for path in dependencies}
     program = ptr()
     compile_flags = ["--std=c++14", "--gpu-architecture=compute_" + str(major.value) + str(minor.value),
@@ -216,17 +228,47 @@ def main():
                             "result_output_sha256": value_digest.hexdigest(),
                             "rounds": steps}
             print(json.dumps({k:v for k,v in continuation.items() if k!="rounds"}), flush=True)
+        handoff = None
+        if a.handoff_runtime:
+            exchange_dir = out / "exchange"
+            exchange_dir.mkdir()
+            native_env = dict(os.environ)
+            native_env["PATH"] = str(a.handoff_runtime.resolve()) + os.pathsep + str(source / "toolchain/msys64/ucrt64/bin") + os.pathsep + native_env.get("PATH", "")
+            exchange_id = 0
+            def cpu_dispatch(batch, workers):
+                nonlocal exchange_id
+                exchange_id += 1
+                stem = str(exchange_id).zfill(4)
+                input_path, output_path = exchange_dir / (stem+".in"), exchange_dir / (stem+".out")
+                input_path.write_bytes(encode_batch(batch))
+                done = subprocess.run([str((a.window / "sampler.exe").resolve()), str(workers), "exchange", str(input_path), str(output_path)],
+                                      cwd=exchange_dir, env=native_env, capture_output=True, timeout=30,
+                                      creationflags=subprocess.CREATE_NO_WINDOW)
+                if done.returncode:
+                    raise RuntimeError("Native exchange failed: " + done.stderr.decode(errors="replace")[:1000])
+                return decode_batch(output_path.read_bytes(), len(batch))
+            invalid = [r for r in expected if r["result"][0]==2]
+            guard_states, guard_words = cpu_dispatch(invalid, 1)
+            guards = validate(invalid, guard_states, guard_words, stride=64)
+            if not guards["passed"]:
+                raise ValueError("Native exchange invalid-packet guards failed")
+            handoff = run_handoffs(expected, cpu_dispatch, dispatch)
+            handoff["native_invalid_guards"] = guards
+            handoff["native_batches"] = exchange_id
+            print(json.dumps(handoff), flush=True)
+            verify(a.handoff_runtime, meta["runtime_inventory"])
     finally:
         destroy(context)  # Releases all test streams, modules and allocations.
     if before != {str(path): sha(path) for path in dependencies}:
         raise ValueError("CUDA source/reference/compiler drift")
     report = {"status": "passed" if all(r["passed"] for r in reports) and
-                         (continuation is None or continuation["passed"]) else "failed",
+                         (continuation is None or continuation["passed"]) and
+                         (handoff is None or handoff["passed"]) else "failed",
               "scope": "Real CUDA integrator sampling subset; no shading/rendered parity",
               "native_tables": bool(a.tables), "cache_window": bool(a.window),
               "device": name.value.decode(), "compute_capability": [major.value, minor.value],
               "cuda_driver_api": version.value, "compile_flags": compile_flags,
-              "continuation": continuation, "inputs_sha256": before, "ptx_sha256": sha(out / "sampler.ptx"), "runs": reports}
+              "continuation": continuation, "handoff": handoff, "inputs_sha256": before, "ptx_sha256": sha(out / "sampler.ptx"), "runs": reports}
     (out / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     if report["status"] != "passed":
         raise SystemExit(1)

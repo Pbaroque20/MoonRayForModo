@@ -172,3 +172,7 @@ shows why index-only restoration can change samples and validates a separate
 cache-aware state envelope. [CUDA_WINDOW.md](CUDA_WINDOW.md) now validates
 a separate version-2 boundary kernel, including returned-state continuation.
 No rendering backend or installed engine is enabled.
+
+[EXCHANGE.md](EXCHANGE.md) validates actual native CPU/CUDA sampler handoffs,
+forced fallback and cross-device retry across three schedules. This remains a
+synchronous correctness diagnostic, not an asynchronous rendering backend.

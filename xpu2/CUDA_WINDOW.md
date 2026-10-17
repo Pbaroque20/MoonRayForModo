@@ -57,8 +57,9 @@ silently enable the untested interval 65-999 or all later indices.
 The checks cover this device/toolchain and finite corpus. They do not establish
 universal CPU/GPU bitwise equivalence, GPU shading, rendered RGB/AOV parity,
 real texture/geometry paging or speedup. Uploads/downloads are synchronous and
-GPU work completes between continuation rounds. An interleaved native CPU/GPU
-path-handoff test is still needed, followed by a narrow shading implementation.
+GPU work completes between continuation rounds. Interleaved native CPU/GPU sampler handoffs now pass in the separate
+[EXCHANGE.md](EXCHANGE.md) experiment. Complete path-state migration and a narrow
+shading implementation remain future work.
 The native export uses frozen headers and retained objects, not a clean runtime
 rebuild.
 

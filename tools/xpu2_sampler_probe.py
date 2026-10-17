@@ -63,6 +63,7 @@ def main():
         (out / "sampler_state.h").write_bytes((ROOT / "xpu2/sampler_state.h").read_bytes())
     if args.window:
         (out / "sampler_window.h").write_bytes((ROOT / "xpu2/sampler_window.h").read_bytes())
+        (out / "sampler_exchange.h").write_bytes((ROOT / "xpu2/sampler_exchange.h").read_bytes())
     def run(command, name, stdout=None):
         with (out / (name + ".log")).open("w", encoding="utf-8") as log:
             if stdout:
@@ -125,6 +126,8 @@ def main():
             raise ValueError("Unexpected native Moebius table size")
         result["moebius"] = {"sha256": sha(out / "moebius.bin"), "bytes": (out / "moebius.bin").stat().st_size}
         result["window_header_sha256"] = sha(out / "sampler_window.h")
+        result["exchange_header_sha256"] = sha(out / "sampler_exchange.h")
+        result["exchange_protocol"] = "XWB2-XWO2"
     if args.handoff or args.window:
         result["state_header_sha256"] = sha(out / "sampler_state.h")
     result.update({
