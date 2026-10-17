@@ -29,7 +29,10 @@ def main():
     parser.add_argument("--tables", action="store_true", help="Export native integrator sample tables")
     parser.add_argument("--cmj", action="store_true", help="Broader known-count 2D native corpus")
     parser.add_argument("--window", action="store_true", help="Test native table/cache boundary continuation")
+    parser.add_argument("--lambert", action="store_true", help="Native Lambert shading evaluation oracle")
     args = parser.parse_args()
+    if args.lambert and (args.window or args.handoff or args.tables or args.cmj):
+        parser.error("--lambert is a separate experiment")
     if args.window and (args.handoff or args.tables or args.cmj):
         parser.error("--window is a separate experiment")
     if (args.cmj or args.tables) and args.handoff:
@@ -58,7 +61,7 @@ def main():
     env = dict(os.environ)
     env["PATH"] = str(runtime) + os.pathsep + str(Path(compiler).parent) + os.pathsep + env.get("PATH", "")
     cpp = out / "sampler_probe.cc"
-    cpp.write_bytes((ROOT / "xpu2" / ("sampler_window_probe.cc" if args.window else "sampler_handoff.cc" if args.handoff else "sampler_probe.cc")).read_bytes())
+    cpp.write_bytes((ROOT / "xpu2" / ("lambert_probe.cc" if args.lambert else "sampler_window_probe.cc" if args.window else "sampler_handoff.cc" if args.handoff else "sampler_probe.cc")).read_bytes())
     if args.handoff or args.window:
         (out / "sampler_state.h").write_bytes((ROOT / "xpu2/sampler_state.h").read_bytes())
     if args.window:
@@ -96,10 +99,12 @@ def main():
         output = out / ("samples-" + str(index) + ".jsonl")
         run([str(exe), str(workers)] + (["cmj"] if args.cmj else []), "run-" + str(index), output)
         outputs.append(output)
-    result = (compare_windows(outputs) if args.window else
+    if args.lambert:
+        from xpu2.lambert import compare as compare_lambert, read as read_lambert
+    result = (compare_lambert(outputs) if args.lambert else compare_windows(outputs) if args.window else
               compare_handoffs(outputs, args.reference) if args.handoff else compare(outputs))
     if args.reference and not args.handoff:
-        result["reference_match"] = (read_windows(outputs[0]) == read_windows(args.reference) if args.window
+        result["reference_match"] = (read_lambert(outputs[0]) == read_lambert(args.reference) if args.lambert else read_windows(outputs[0]) == read_windows(args.reference) if args.window
                                      else matches_reference(outputs[0], args.reference))
         result["reference_sha256"] = sha(args.reference)
         if not result["reference_match"]:

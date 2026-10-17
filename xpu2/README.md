@@ -176,3 +176,8 @@ No rendering backend or installed engine is enabled.
 [EXCHANGE.md](EXCHANGE.md) validates actual native CPU/CUDA sampler handoffs,
 forced fallback and cross-device retry across three schedules. This remains a
 synchronous correctness diagnostic, not an asynchronous rendering backend.
+
+[LAMBERT.md](LAMBERT.md) validates the first CUDA shading component: original
+C++ Lambert RGB/PDF/albedo evaluation and geometric validity across 11,520
+cases. Diffuse direction sampling, vectorized ISPC parity and renderer integration
+remain separate steps.

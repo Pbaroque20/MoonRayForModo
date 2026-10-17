@@ -39,12 +39,19 @@ def main():
     p.add_argument("--tables", type=Path, help="Validated native table-export folder")
     p.add_argument("--window", type=Path, help="Validated native cache-window/Moebius export folder")
     p.add_argument("--handoff-runtime", type=Path, help="Isolated native runtime for CPU/CUDA exchange")
+    p.add_argument("--lambert", action="store_true", help="Validate native Lambert evaluation subset")
     a = p.parse_args()
+    if a.lambert and (a.window or a.tables or a.handoff_runtime):
+        p.error("--lambert is a separate experiment")
     if a.handoff_runtime and not a.window:
         p.error("--handoff-runtime requires --window")
     if a.window and not a.tables:
         p.error("--window requires --tables")
-    stride = 64 if a.window else 60
+    stride = 96 if a.lambert else 64 if a.window else 60
+    result_width = 9 if a.lambert else 5
+    validate_output = validate
+    if a.lambert:
+        from xpu2.lambert import validate as validate_output
     out, source = a.output.resolve(), a.source.resolve()
     if out.is_relative_to(source):
         p.error("Output must be isolated from shared source/runtime")
@@ -80,9 +87,14 @@ def main():
     window_kernel = ROOT / "xpu2/sampler_window_cuda.cu"
     if a.window:
         code += b"\n" + window_kernel.read_bytes().removeprefix(b"\xef\xbb\xbf")
+    lambert_kernel = ROOT / "xpu2/lambert_cuda.cu"
+    if a.lambert:
+        code += b"\n" + lambert_kernel.read_bytes().removeprefix(b"\xef\xbb\xbf")
     (out / "sampler_cuda.cu").write_bytes(code)
     dependencies = [kernel, a.reference, toolkit / "nvrtc64_120_0.dll", toolkit / "nvrtc-builtins64_128.dll"]
     dependencies.extend([Path(__file__).resolve(), ROOT / "xpu2/cuda_samples.py"])
+    if a.lambert:
+        dependencies.extend([lambert_kernel, ROOT / "xpu2/lambert.py"])
     table_paths = []
     if a.tables:
         table_report = json.loads((a.tables / "report.json").read_text(encoding="utf-8"))
@@ -140,6 +152,8 @@ def main():
     make_records = records
     if a.window:
         from xpu2.cuda_window_samples import records as make_records
+    if a.lambert:
+        from xpu2.lambert import records as make_records
     expected = make_records(a.reference, tables=bool(a.tables))
     count = len(expected)
     context = ptr()
@@ -147,12 +161,12 @@ def main():
     reports = []
     try:
         module, function = ptr(), ptr()
-        load(C.byref(module), ptx); get_function(C.byref(function), module, b"sampler_window" if a.window else b"sampler")
+        load(C.byref(module), ptx); get_function(C.byref(function), module, b"lambert" if a.lambert else b"sampler_window" if a.window else b"sampler")
         streams = [ptr(), ptr()]
         for stream in streams:
             stream_create(C.byref(stream), 1)
         buffers = [u64() for _ in range(4)]
-        for buffer, length in zip(buffers, (count*stride, count*4, count*stride, count*20)):
+        for buffer, length in zip(buffers, (count*stride, count*4, count*stride, count*result_width*4)):
             alloc(C.byref(buffer), length)
         table_buffers = [u64() for _ in range(3 if a.window else 2)]
         for buffer, path in zip(table_buffers, table_paths):
@@ -170,21 +184,21 @@ def main():
             for start, n, stream in ((0, split, streams[0]), (split, size_now-split, streams[1])):
                 if not n:
                     continue
-                args = [u64(buffers[i].value + start*step) for i, step in enumerate((stride, 4, stride, 20))]
+                args = [u64(buffers[i].value + start*step) for i, step in enumerate((stride, 4, stride, result_width*4))]
                 args.extend([u64(buffer.value if tables_available else 0) for buffer in table_buffers])
                 args.append(C.c_uint(n))
                 parameters = (ptr*len(args))(*(C.cast(C.byref(v), ptr) for v in args))
                 launch(function, (n+block-1)//block, 1, 1, block, 1, 1, 0, stream, parameters, None)
             sync()
             returned = C.create_string_buffer(size_now*stride)
-            words = (C.c_uint*(size_now*5))()
-            d2h(returned, buffers[2], size_now*stride); d2h(words, buffers[3], size_now*20)
+            words = (C.c_uint*(size_now*result_width))()
+            d2h(returned, buffers[2], size_now*stride); d2h(words, buffers[3], size_now*result_width*4)
             return returned.raw, words
 
         for run, block in enumerate((64, 128, 256)):
             shuffled = list(expected); random.Random(8123+run).shuffle(shuffled)
             returned, words = dispatch(shuffled, block)
-            summary = validate(shuffled, returned, words, stride=stride)
+            summary = validate_output(shuffled, returned, words, stride=stride)
             summary.update(block_size=block, streams=2,
                            state_output_sha256=hashlib.sha256(returned).hexdigest(),
                            result_output_sha256=hashlib.sha256(bytes(words)).hexdigest())
@@ -264,7 +278,9 @@ def main():
     report = {"status": "passed" if all(r["passed"] for r in reports) and
                          (continuation is None or continuation["passed"]) and
                          (handoff is None or handoff["passed"]) else "failed",
-              "scope": "Real CUDA integrator sampling subset; no shading/rendered parity",
+              "scope": ("CUDA Lambert eval/albedo/PDF/geometry subset; not sampling or rendered parity" if a.lambert
+                        else "Real CUDA integrator sampling subset; no shading/rendered parity"),
+              "lambert": a.lambert,
               "native_tables": bool(a.tables), "cache_window": bool(a.window),
               "device": name.value.decode(), "compute_capability": [major.value, minor.value],
               "cuda_driver_api": version.value, "compile_flags": compile_flags,

@@ -223,3 +223,7 @@ The version-2 boundary kernel also adapts MoonRay RSequence.h and hash.h
 (R1/R2 sampling, integer hashes and rotations), Copyright 2023-2024 DreamWorks
 Animation LLC, Apache-2.0. Native Moebius constants are exported for local
 diagnostics; they are not embedded in the CUDA source or distributed kit.
+
+The Lambert evaluation kernel adapts MoonRay BsdfLambert.h and BsdfSlice.h,
+Copyright 2023-2024 DreamWorks Animation LLC, Apache-2.0. Its supported subset
+excludes Fresnel and shadow-terminator corrections.
