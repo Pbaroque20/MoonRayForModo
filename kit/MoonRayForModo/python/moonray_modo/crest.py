@@ -106,7 +106,8 @@ def parts():
 
 # How the crest moves: each pose gives, for a part, how much of it shows (0 to 1) and how far it is moved, across and
 # down, in the file's units.
-ENTRANCE = 1.4          # seconds the crest takes to come in
+PACE = 2.0              # how much slower than its first cut the crest comes in
+ENTRANCE = 1.4 * PACE   # seconds the crest takes to come in
 FADE = 0.45             # seconds to fade out over the first picture, or back in
 BREATH = 1.8            # seconds of one breath while a render is on its way
 
@@ -124,6 +125,8 @@ def still(kind, number):
 def entrance(seconds):
     """The crest coming in, seconds after the preview opened: the arcs slide in from above and below as they show, then
     the letters rise into place one after another from the left."""
+    seconds = seconds / PACE
+
     def pose(kind, number):
         if kind == 'arc':
             x = _eased(seconds / 0.8)

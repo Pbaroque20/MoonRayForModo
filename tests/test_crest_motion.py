@@ -26,10 +26,10 @@ class Entrance(unittest.TestCase):
         self.assertFalse(crest.entered(crest.ENTRANCE / 2))
 
     def test_the_arcs_come_from_above_and_below_and_the_letters_one_after_another(self):
-        early = crest.entrance(0.2)
+        early = crest.entrance(crest.ENTRANCE * 0.15)
         self.assertLess(early('arc', 0)[2], 0.0)
         self.assertGreater(early('arc', 1)[2], 0.0)
-        middle = crest.entrance(0.6)
+        middle = crest.entrance(crest.ENTRANCE * 0.43)
         shown = [middle('letter', n)[0] for n in range(7)]
         self.assertEqual(shown, sorted(shown, reverse=True))
         self.assertGreater(shown[0], shown[-1])
