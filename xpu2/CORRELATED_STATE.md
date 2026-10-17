@@ -73,3 +73,9 @@ Use new output directories and the retained fixture/build inputs:
     python tools/xpu2_correlated_capture_probe.py --build test-results/correlated-build-new --scene-reference test-results/xpu2-primary-state --surface-reference test-results/xpu2-surface-capture --output test-results/correlated-new
     python tools/xpu2_continuation_probe.py --source <shared-source-read-only> --ptx test-results/xpu2-ray-image-final/sampler.ptx --correlated-capture test-results/correlated-new/capture/correlated.bin --output test-results/correlated-queue-new
     python -m unittest discover -s tests -p test_xpu2_correlated_state.py -v
+
+## Native handoff follow-up
+
+[DEFERRED_SHADING.md](DEFERRED_SHADING.md) moves GPU result collection out of
+the Lambert call and past native CPU light evaluation. That adapter retains the
+native stack until collection; whole-path suspension remains a separate step.
