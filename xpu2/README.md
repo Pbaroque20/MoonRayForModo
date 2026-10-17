@@ -157,3 +157,8 @@ integration and numerical RGB acceptance limits remain unimplemented.
 Native AVX sampler splitting/resumption now has a pinned bit-pattern corpus.
 See [SAMPLER.md](SAMPLER.md) for the 648-case results and the known-total-count
 resume hazard. This does not enable a CUDA sampler or GPU shading.
+
+The first real CUDA sampler subset now matches the native reference on the
+RTX 3090. [CUDA_SAMPLER.md](CUDA_SAMPLER.md) distinguishes the supported random
+path from the explicitly declined distribution paths. No rendering backend is
+enabled.
