@@ -56,13 +56,12 @@ widths, arbitrary native resume calls and other SequenceID signatures are not
 validated by this corpus. The checksum detects accidental corruption, not a
 semantically incorrect but structurally valid sender state.
 
-## Next boundary
+## CUDA follow-up
 
-Port the boundary distribution to CUDA with the versioned window contract, then
-compare it with this native reference under reordered dispatch and CPU/GPU
-handoffs. Until that passes, the existing CUDA table gate stays at indices 0-64.
-This native result does not validate GPU R-sequences, shading, rendered RGB/AOV
-parity or acceleration. Native builds use frozen headers and retained objects;
+The separate version-2 kernel now passes the finite boundary corpus and
+returned-state GPU continuation; see [CUDA_WINDOW.md](CUDA_WINDOW.md). The
+version-1 table gate remains at indices 0-64. Interleaved native CPU/GPU path
+handoffs, shading, rendered RGB/AOV parity and acceleration remain unvalidated. Native builds use frozen headers and retained objects;
 they are not clean source/runtime rebuilds.
 
 ## Reproduce

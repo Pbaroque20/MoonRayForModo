@@ -87,6 +87,8 @@ def main():
     run([compiler, "-O3", "-pthread", "-o", str(exe), str(obj), "@" + str(rsp)], "link")
     if args.tables:
         run([str(exe), "1", "tables"], "tables", out / "tables.json")
+    if args.window:
+        run([str(exe), "1", "moebius"], "moebius", out / "moebius.json")
     outputs = []
     for index, workers in enumerate((1, 1, 4)):
         print("Sampling with " + str(workers) + " CPU workers", flush=True)
@@ -119,6 +121,9 @@ def main():
     if args.reference:
         result["reference_sha256"] = sha(args.reference)
     if args.window:
+        if json.loads((out / "moebius.json").read_text(encoding="utf-8")) != {"count": 16384}:
+            raise ValueError("Unexpected native Moebius table size")
+        result["moebius"] = {"sha256": sha(out / "moebius.bin"), "bytes": (out / "moebius.bin").stat().st_size}
         result["window_header_sha256"] = sha(out / "sampler_window.h")
     if args.handoff or args.window:
         result["state_header_sha256"] = sha(out / "sampler_state.h")

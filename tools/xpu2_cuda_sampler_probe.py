@@ -36,7 +36,11 @@ def main():
     p.add_argument("--reference", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--tables", type=Path, help="Validated native table-export folder")
+    p.add_argument("--window", type=Path, help="Validated native cache-window/Moebius export folder")
     a = p.parse_args()
+    if a.window and not a.tables:
+        p.error("--window requires --tables")
+    stride = 64 if a.window else 60
     out, source = a.output.resolve(), a.source.resolve()
     if out.is_relative_to(source):
         p.error("Output must be isolated from shared source/runtime")
@@ -69,8 +73,12 @@ def main():
     print("CUDA device: " + name.value.decode(), flush=True)
     kernel = ROOT / "xpu2/sampler_cuda.cu"
     code = kernel.read_bytes()
+    window_kernel = ROOT / "xpu2/sampler_window_cuda.cu"
+    if a.window:
+        code += b"\n" + window_kernel.read_bytes().removeprefix(b"\xef\xbb\xbf")
     (out / "sampler_cuda.cu").write_bytes(code)
     dependencies = [kernel, a.reference, toolkit / "nvrtc64_120_0.dll", toolkit / "nvrtc-builtins64_128.dll"]
+    dependencies.extend([Path(__file__).resolve(), ROOT / "xpu2/cuda_samples.py"])
     table_paths = []
     if a.tables:
         table_report = json.loads((a.tables / "report.json").read_text(encoding="utf-8"))
@@ -83,6 +91,16 @@ def main():
             table_paths.append(path)
         dependencies.extend(table_paths)
         dependencies.append(a.tables / "report.json")
+    if a.window:
+        meta = json.loads((a.window / "report.json").read_text(encoding="utf-8"))
+        path = a.window / "moebius.bin"
+        if (meta.get("status") != "passed" or not meta.get("reference_match")
+                or meta.get("reference_sha256") != sha(a.reference)
+                or path.stat().st_size != 16384*4 or sha(path) != meta["moebius"]["sha256"]):
+            raise ValueError("Validated native window/Moebius export required")
+        table_paths.append(path)
+        dependencies.extend([window_kernel, path, a.window / "report.json",
+                             ROOT / "xpu2/cuda_window_samples.py", ROOT / "xpu2/window_samples.py"])
     before = {str(path): sha(path) for path in dependencies}
     program = ptr()
     compile_flags = ["--std=c++14", "--gpu-architecture=compute_" + str(major.value) + str(minor.value),
@@ -107,61 +125,108 @@ def main():
         (out / "sampler.ptx").write_bytes(ptx.value)
     finally:
         bind(nvrtc, "nvrtcDestroyProgram", [C.POINTER(ptr)])(C.byref(program))
-    expected = records(a.reference, tables=bool(a.tables))
+    make_records = records
+    if a.window:
+        from xpu2.cuda_window_samples import records as make_records
+    expected = make_records(a.reference, tables=bool(a.tables))
     count = len(expected)
     context = ptr()
     create(C.byref(context), 0, device)
     reports = []
     try:
         module, function = ptr(), ptr()
-        load(C.byref(module), ptx); get_function(C.byref(function), module, b"sampler")
+        load(C.byref(module), ptx); get_function(C.byref(function), module, b"sampler_window" if a.window else b"sampler")
         streams = [ptr(), ptr()]
         for stream in streams:
             stream_create(C.byref(stream), 1)
         buffers = [u64() for _ in range(4)]
-        for buffer, length in zip(buffers, (count*60, count*4, count*60, count*20)):
+        for buffer, length in zip(buffers, (count*stride, count*4, count*stride, count*20)):
             alloc(C.byref(buffer), length)
-        table_buffers = [u64(), u64()]
+        table_buffers = [u64() for _ in range(3 if a.window else 2)]
         for buffer, path in zip(table_buffers, table_paths):
             data = path.read_bytes()
             host = C.create_string_buffer(data)
             alloc(C.byref(buffer), len(data)); h2d(buffer, host, len(data))
-        for run, block in enumerate((64, 128, 256)):
-            shuffled = list(expected); random.Random(8123+run).shuffle(shuffled)
-            raw = b"".join(r["input"] for r in shuffled)
-            lengths = struct.pack("<" + str(count) + "I", *(r["length"] for r in shuffled))
+        def dispatch(batch, block, tables_available=True):
+            size_now = len(batch)
+            raw = b"".join(r["input"] for r in batch)
+            lengths = struct.pack("<" + str(size_now) + "I", *(r["length"] for r in batch))
             src, lens = C.create_string_buffer(raw), C.create_string_buffer(lengths)
             h2d(buffers[0], src, len(raw)); h2d(buffers[1], lens, len(lengths))
-            # Two CUDA streams; uploads/downloads remain synchronous in this check.
-            split = count // 2
-            for start, n, stream in ((0, split, streams[0]), (split, count-split, streams[1])):
-                args = [u64(buffers[i].value + start*stride) for i, stride in enumerate((60, 4, 60, 20))]
-                args.extend([u64(buffer.value) for buffer in table_buffers])
+            # Two CUDA streams; transfers remain synchronous in this diagnostic.
+            split = size_now // 2
+            for start, n, stream in ((0, split, streams[0]), (split, size_now-split, streams[1])):
+                if not n:
+                    continue
+                args = [u64(buffers[i].value + start*step) for i, step in enumerate((stride, 4, stride, 20))]
+                args.extend([u64(buffer.value if tables_available else 0) for buffer in table_buffers])
                 args.append(C.c_uint(n))
                 parameters = (ptr*len(args))(*(C.cast(C.byref(v), ptr) for v in args))
                 launch(function, (n+block-1)//block, 1, 1, block, 1, 1, 0, stream, parameters, None)
             sync()
-            returned = C.create_string_buffer(count*60)
-            words = (C.c_uint*(count*5))()
-            d2h(returned, buffers[2], count*60); d2h(words, buffers[3], count*20)
-            summary = validate(shuffled, returned.raw, words)
+            returned = C.create_string_buffer(size_now*stride)
+            words = (C.c_uint*(size_now*5))()
+            d2h(returned, buffers[2], size_now*stride); d2h(words, buffers[3], size_now*20)
+            return returned.raw, words
+
+        for run, block in enumerate((64, 128, 256)):
+            shuffled = list(expected); random.Random(8123+run).shuffle(shuffled)
+            returned, words = dispatch(shuffled, block)
+            summary = validate(shuffled, returned, words, stride=stride)
             summary.update(block_size=block, streams=2,
-                           state_output_sha256=hashlib.sha256(returned.raw).hexdigest(),
+                           state_output_sha256=hashlib.sha256(returned).hexdigest(),
                            result_output_sha256=hashlib.sha256(bytes(words)).hexdigest())
             reports.append(summary)
-            (out / ("states-" + str(run) + ".bin")).write_bytes(returned.raw)
+            (out / ("states-" + str(run) + ".bin")).write_bytes(returned)
             (out / ("results-" + str(run) + ".bin")).write_bytes(bytes(words))
             print(json.dumps(summary), flush=True)
+        if a.window:
+            missing = make_records(a.reference, tables=False)
+            returned, words = dispatch(missing, 128, tables_available=False)
+            summary = validate(missing, returned, words, stride=stride)
+            summary.update(kind="missing_table_fallback", block_size=128, streams=2,
+                           state_output_sha256=hashlib.sha256(returned).hexdigest(),
+                           result_output_sha256=hashlib.sha256(bytes(words)).hexdigest())
+            reports.append(summary)
+            print(json.dumps(summary), flush=True)
+        continuation = None
+        if a.window:
+            from xpu2.cuda_window_samples import continuation_cases
+            cases = continuation_cases(expected)
+            states = {key: samples[0]["input"] for key, samples in cases.items()}
+            steps = []
+            state_digest, value_digest = hashlib.sha256(), hashlib.sha256()
+            for step in range(max(len(samples) for samples in cases.values())):
+                batch = [dict(samples[step], input=states[key]) for key, samples in cases.items()
+                         if step < len(samples)]
+                random.Random(7719+step).shuffle(batch)
+                returned, words = dispatch(batch, (64,128,256)[step%3])
+                summary = validate(batch, returned, words, stride=stride)
+                steps.append(summary)
+                state_digest.update(returned); value_digest.update(bytes(words))
+                for i, record in enumerate(batch):
+                    states[record["case"]] = returned[i*stride:(i+1)*stride]
+                if not summary["passed"]:
+                    break
+            continuation = {"passed": len(steps)==48 and all(r["passed"] for r in steps),
+                            "steps": len(steps), "cases": len(cases),
+                            "samples": sum(r["supported_records"] for r in steps),
+                            "components": sum(r["compared_sample_components"] for r in steps),
+                            "state_output_sha256": state_digest.hexdigest(),
+                            "result_output_sha256": value_digest.hexdigest(),
+                            "rounds": steps}
+            print(json.dumps({k:v for k,v in continuation.items() if k!="rounds"}), flush=True)
     finally:
         destroy(context)  # Releases all test streams, modules and allocations.
     if before != {str(path): sha(path) for path in dependencies}:
         raise ValueError("CUDA source/reference/compiler drift")
-    report = {"status": "passed" if all(r["passed"] for r in reports) else "failed",
+    report = {"status": "passed" if all(r["passed"] for r in reports) and
+                         (continuation is None or continuation["passed"]) else "failed",
               "scope": "Real CUDA integrator sampling subset; no shading/rendered parity",
-              "native_tables": bool(a.tables),
+              "native_tables": bool(a.tables), "cache_window": bool(a.window),
               "device": name.value.decode(), "compute_capability": [major.value, minor.value],
               "cuda_driver_api": version.value, "compile_flags": compile_flags,
-              "inputs_sha256": before, "ptx_sha256": sha(out / "sampler.ptx"), "runs": reports}
+              "continuation": continuation, "inputs_sha256": before, "ptx_sha256": sha(out / "sampler.ptx"), "runs": reports}
     (out / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     if report["status"] != "passed":
         raise SystemExit(1)

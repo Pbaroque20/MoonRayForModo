@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <thread>
 #include <vector>
 using namespace moonray::pbr;
@@ -65,8 +66,15 @@ static void values(const char* label,const std::vector<unsigned>& v) {
     std::printf("]");
 }
 int main(int argc,char** argv) {
-    const unsigned workers=argc==2 ? unsigned(std::atoi(argv[1])) : 1;
+    const unsigned workers=argc>=2 ? unsigned(std::atoi(argv[1])) : 1;
     if(workers<1 || workers>16)return 2;
+    if(argc==3 && std::strcmp(argv[2],"moebius")==0) {
+        std::ofstream file("moebius.bin",std::ios::binary);
+        file.write(reinterpret_cast<const char*>(moebiusTransformationValues),
+                   kMoebiusTransformationSize*sizeof(float));
+        file.close();if(!file)return 3;
+        std::printf("{\"count\":%u}\n",unsigned(kMoebiusTransformationSize));return 0;
+    }
     const auto guardCount=guards();
     std::vector<Case> cases;
     for(unsigned dims:{1u,2u,3u})for(unsigned depth:{0u,2u})

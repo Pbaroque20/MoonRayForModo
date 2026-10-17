@@ -165,8 +165,10 @@ enabled.
 
 The distribution follow-up now covers the original corpus with native tables and
 an expanded known-count 2D corpus. See [DISTRIBUTIONS.md](DISTRIBUTIONS.md) for
-exact GPU matches and the deliberately disabled table/cache boundary.
+exact GPU matches and the original version-1 capability limits.
 
 The native table/cache transition is now measured. [WINDOW.md](WINDOW.md)
 shows why index-only restoration can change samples and validates a separate
-cache-aware state envelope. The GPU boundary remains disabled.
+cache-aware state envelope. [CUDA_WINDOW.md](CUDA_WINDOW.md) now validates
+a separate version-2 boundary kernel, including returned-state continuation.
+No rendering backend or installed engine is enabled.

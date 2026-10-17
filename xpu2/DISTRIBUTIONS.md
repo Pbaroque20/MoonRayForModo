@@ -53,7 +53,8 @@ start plus SIMD window size. Restoring just the next sample number may select a
 different fallback than a previously filled window. This is now confirmed by
 the native boundary experiment in
 [WINDOW.md](WINDOW.md); cache-aware restoration matches all measured values.
-The GPU boundary remains unvalidated. The current tests explicitly decline
+A separate version-2 GPU boundary diagnostic now passes (CUDA_WINDOW.md).
+The version-1 tests still explicitly decline
 indices 65 and 1016 for each dimension; they do not approximate that region.
 
 The 2D known-count path accepts only the thirteen tested totals above. The tests
@@ -65,8 +66,8 @@ No GPU shading, pixel/camera/lens/shutter sampling, production path-state transf
 resource paging, rendered RGB/AOV parity or speed gain is certified. Six-word
 SequenceID envelopes remain specialized to this test corpus. The native cache
 window state is now measured and preserved in a separate
-diagnostic envelope (WINDOW.md). The next step is to validate that boundary
-on CUDA before expanding the GPU capability gate.
+diagnostic envelope (WINDOW.md) and validated in the separate CUDA boundary
+kernel (CUDA_WINDOW.md). The existing version-1 gate remains unchanged.
 
 ## Reproduce
 

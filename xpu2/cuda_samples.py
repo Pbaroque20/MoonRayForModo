@@ -61,13 +61,13 @@ def records(reference, tables=False):
     return output
 
 
-def validate(records, returned, result_words):
-    if len(returned) != len(records)*60 or len(result_words) != len(records)*5:
+def validate(records, returned, result_words, stride=60):
+    if len(returned) != len(records)*stride or len(result_words) != len(records)*5:
         raise ValueError("Truncated GPU output")
     bad_states = bad_results = components = 0
     supported = unsupported = invalid = 0
     for i, record in enumerate(records):
-        bad_states += returned[i*60:(i+1)*60] != record["output"]
+        bad_states += returned[i*stride:(i+1)*stride] != record["output"]
         bad_results += list(result_words[i*5:(i+1)*5]) != record["result"]
         status = record["result"][0]
         supported += status == 0

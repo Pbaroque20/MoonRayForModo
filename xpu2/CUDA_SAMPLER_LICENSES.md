@@ -218,3 +218,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
       of your accepting any such warranty or additional liability.
 
    END OF TERMS AND CONDITIONS
+
+The version-2 boundary kernel also adapts MoonRay RSequence.h and hash.h
+(R1/R2 sampling, integer hashes and rotations), Copyright 2023-2024 DreamWorks
+Animation LLC, Apache-2.0. Native Moebius constants are exported for local
+diagnostics; they are not embedded in the CUDA source or distributed kit.
