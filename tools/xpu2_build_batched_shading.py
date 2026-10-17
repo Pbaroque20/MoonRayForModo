@@ -13,7 +13,9 @@ def main():
     p.add_argument('--async-transfers',action='store_true',help='Include optional pinned asynchronous transfers (requires --window-dispatch)')
     p.add_argument('--packed-readback',action='store_true')
     p.add_argument('--native-overlap',action='store_true')
+    p.add_argument('--contribution-capture',action='store_true')
     a=p.parse_args()
+    if a.contribution_capture and not a.native_overlap:p.error('--contribution-capture requires --native-overlap')
     if a.native_overlap and not a.packed_readback:p.error('--native-overlap requires --packed-readback')
     if a.packed_readback and not a.async_transfers:p.error('--packed-readback requires --async-transfers')
     if a.async_transfers and not a.window_dispatch:p.error('--async-transfers requires --window-dispatch')
@@ -35,6 +37,7 @@ def main():
     if a.async_transfers:fragments += [ROOT/'xpu2/async_transfer_patch.py']
     if a.packed_readback:fragments += [ROOT/'xpu2/packed_readback_patch.py']
     if a.native_overlap:fragments += [ROOT/'xpu2/native_overlap_patch.py']
+    if a.contribution_capture:fragments += [ROOT/'xpu2/contribution_capture.py',ROOT/'xpu2/contribution_capture.h']
     identities={str(f):sha(f) for f in fragments}
     bridge=out/'bridge.cc'
     if a.profile:
@@ -52,6 +55,7 @@ def main():
         if a.native_overlap:
             from xpu2 import native_overlap_patch
             code=native_overlap_patch.bridge(code)
+        if a.contribution_capture:code+='\n'+(ROOT/'xpu2/contribution_capture.h').read_text()
         bridge.write_text(code,encoding='utf-8')
     else:bridge.write_bytes(fragments[1].read_bytes())
     flags=['-std=c++17','-O2','-mavx','-mno-avx2','-mno-fma','-ffp-contract=off','-I'+str(ROOT/'xpu2'),'-I'+str(source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include')]
@@ -66,6 +70,9 @@ def main():
         if name=='sampler':text=batched_patch.sampler(text,fragments[0].read_text())
         else:text=batched_patch.lambert(text,fragments[2].read_text())
         if a.native_overlap and name=='sampler':text=native_overlap_patch.sampler(text)
+        if a.contribution_capture and name=='sampler':
+            from xpu2 import contribution_capture
+            text=contribution_capture.sampler(text)
         code=out/(name+'.ispc');code.write_text(text,encoding='utf-8')
         stanza=next(s for s in ninja.split('\n\n') if s.startswith('build ') and original.stem+'.ispc.obj' in s.splitlines()[0] and 'ISPC_COMPILER' in s.splitlines()[0])
         variables=dict(line.strip().split(' = ',1) for line in stanza.splitlines()[1:] if ' = ' in line)
@@ -77,7 +84,7 @@ def main():
         run([str(ispc),*ff,str(code),'--emit-obj','-o',str(out/(name+'.obj'))],name+'-compile')
         run([str(ispc),*ff,'-E',str(code)],name+'-recheck',out/(name+'-recheck.pp'))
         if sha(out/(name+'.pp'))!=sha(out/(name+'-recheck.pp')):raise ValueError('Header drift')
-    manifest={'native_overlap':a.native_overlap,'packed_readback':a.packed_readback,'async_transfers':a.async_transfers,'window_dispatch':a.window_dispatch,'profile':a.profile,'status':'incomplete','scope':'Retained-object native bounded batch handoff; native stack stays resident','runtime':str(runtime),'source_hashes':identities,'original_hashes':originals,'inputs':{},'compiler_sha256':sha(compiler),'ispc_sha256':sha(ispc),'bridge_sha256':sha(dll)}
+    manifest={'contribution_capture':a.contribution_capture,'native_overlap':a.native_overlap,'packed_readback':a.packed_readback,'async_transfers':a.async_transfers,'window_dispatch':a.window_dispatch,'profile':a.profile,'status':'incomplete','scope':'Retained-object native bounded batch handoff; native stack stays resident','runtime':str(runtime),'source_hashes':identities,'original_hashes':originals,'inputs':{},'compiler_sha256':sha(compiler),'ispc_sha256':sha(ispc),'bridge_sha256':sha(dll)}
     for label in ('control','trace'):
         shutil.copytree(runtime,out/label);shutil.copy2(dll,out/label/dll.name)
     for module,prior,replacement,replname in [('librendering_rndr.dll',a.pbr_build.resolve(),'PathIntegratorUtil.ispc.obj','sampler'),('librendering_shading.dll',a.shading_build.resolve(),'BsdfLambert.ispc.obj','lambert')]:
