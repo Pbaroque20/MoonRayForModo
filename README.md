@@ -49,6 +49,10 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
 - **The preview shows MoonRay's wordmark** before anything is rendered.
 
+![The MoonRay Terminal after a MoonRay render and a stereo composite](docs/images/terminal.png)
+
+*The Terminal after a MoonRay render and a red/cyan stereo composite: each program's command, what it printed, and how it ended (green for success); "ready" while nothing runs.*
+
 ## New in 0.4.1
 
 - **MoonRay's toon material** starts as a toon material, and MoonLightIPR draws it.
