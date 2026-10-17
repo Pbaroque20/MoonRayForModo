@@ -48,6 +48,8 @@ try:
     window.grab().save(str(out / 'terminal_doc.png'))
     result['ends'] = [(source, text) for _, _, kind, source, text in terminal.entries() if kind in ('end', 'fail')]
     result['busy'] = terminal.busy()
+    across = window.text.horizontalScrollBar()
+    result['sideways'] = {'value': across.value(), 'maximum': across.maximum()}
 except Exception:
     result['error'] = traceback.format_exc()
 (out / 'report_doc.json').write_text(json.dumps(result, indent=1, default=str))
