@@ -185,3 +185,7 @@ remain separate steps.
 [LAMBERT_SAMPLE.md](LAMBERT_SAMPLE.md) measures original C++ and AVX8 direction
 sampling. CUDA matches the C++ corpus exactly; AVX8 differs in 96 grazing
 validity decisions, so the XPU vector compatibility gate remains blocked.
+
+[LAMBERT_VECTOR.md](LAMBERT_VECTOR.md) resolves the measured AVX8 sampling
+hazard in a separate GPU math profile, matching 67,584 expanded native cases.
+Math profiles must remain explicit during future handoffs; no renderer is enabled.

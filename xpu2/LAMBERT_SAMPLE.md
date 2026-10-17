@@ -1,5 +1,9 @@
 # Lambert direction sampling: C++ agreement, AVX8 parity blocked
 
+Follow-up: [LAMBERT_VECTOR.md](LAMBERT_VECTOR.md) resolves the measured AVX8
+mismatch in a separate GPU math profile and broadens validation. This document
+retains the original scalar-profile investigation and its limits.
+
 The experimental CUDA sampler now matches the original C++ Lambert sample
 operation exactly for the pinned 7,680-case corpus: direction, RGB, PDF and
 geometric-validity flag. This is a component result, not rendered image parity.

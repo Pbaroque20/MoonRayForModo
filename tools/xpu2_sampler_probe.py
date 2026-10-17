@@ -32,7 +32,10 @@ def main():
     parser.add_argument("--window", action="store_true", help="Test native table/cache boundary continuation")
     parser.add_argument("--lambert", action="store_true", help="Native Lambert shading evaluation oracle")
     parser.add_argument("--lambert-sample", action="store_true", help="Original C++ and ISPC Lambert direction sampling")
+    parser.add_argument("--lambert-stress", action="store_true", help="Expanded sampling normals and boundary pairs")
     args = parser.parse_args()
+    if args.lambert_stress and not args.lambert_sample:
+        parser.error("--lambert-stress requires --lambert-sample")
     if args.lambert_sample and (args.lambert or args.window or args.handoff or args.tables or args.cmj):
         parser.error("--lambert-sample is a separate experiment")
     if args.lambert and (args.window or args.handoff or args.tables or args.cmj):
@@ -124,7 +127,7 @@ def main():
     for index, workers in enumerate((1, 1, 4)):
         print("Sampling with " + str(workers) + " CPU workers", flush=True)
         output = out / ("samples-" + str(index) + ".jsonl")
-        run([str(exe), str(workers)] + (["cmj"] if args.cmj else []), "run-" + str(index), output)
+        run([str(exe), str(workers)] + (["stress"] if args.lambert_stress else ["cmj"] if args.cmj else []), "run-" + str(index), output)
         outputs.append(output)
     if args.lambert_sample:
         from xpu2.lambert_sample import compare as compare_lambert, read as read_lambert

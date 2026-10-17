@@ -4,7 +4,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
-from xpu2.lambert_sample import read,compare,records,validate,metrics,floats
+from xpu2.lambert_sample import read,compare,records,validate,validate_vector,metrics,floats
 
 REFERENCE=Path(__file__).resolve().parents[1]/'xpu2/reference/lambert-sample-avx8-20261017.jsonl.gz'
 
@@ -106,6 +106,24 @@ class LambertSamplingTests(unittest.TestCase):
         changed=copy.deepcopy(self.records[:5]);changed[0]['result'][1]^=1
         self.assertNotEqual(original['canonical_result_sha256'],check(changed)['canonical_result_sha256'])
 
+    def test_vector_profile_compares_original_vector_outputs(self):
+        # Use a known native disagreement: a scalar result must not pass vector validation.
+        row=next(r for r in self.records if r.get('vector') and r['result'][8]!=r['vector'][8])
+        self.assertTrue(validate([row],row['output'],row['result'])['passed'])
+        self.assertFalse(validate_vector([row],row['output'],row['result'])['passed'])
+        report=validate_vector([row],row['output'],row['vector'])
+        self.assertTrue(report['passed']);self.assertFalse(report['cpp_bitwise_parity'])
+        self.assertFalse(validate([row],row['output'],row['vector'])['passed'])
+
+    def test_vector_profile_preserves_packet_guards_and_strict_zero_bits(self):
+        rows=self.records[-1:];words=rows[0]['result'][:]
+        self.assertTrue(validate_vector(rows,rows[0]['output'],words)['passed'])
+        words[0]=0
+        self.assertFalse(validate_vector(rows,rows[0]['output'],words)['passed'])
+        row=next(r for r in self.records if r.get('vector') and r['vector'][3]==0)
+        words=row['vector'][:];words[3]=0x80000000
+        self.assertFalse(validate_vector([row],row['output'],words)['passed'])
+
     def test_truncated_gpu_data_rejected(self):
         rows=self.records[:1];state=rows[0]['output'];words=rows[0]['result']
         for data,result,stride in ((state[:-1],words,96),(state,words[:-1],96),(state,words,64)):
@@ -115,5 +133,33 @@ class LambertSamplingTests(unittest.TestCase):
         r=metrics([(0,0x80000000)])
         self.assertEqual(r['different_bits'],1);self.assertEqual(r['numerically_different'],0)
         self.assertEqual(r['max_absolute'],0)
+
+class LambertStressCorpusTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.path=REFERENCE.with_name('lambert-stress-avx8-20261017.jsonl.gz')
+        cls.rows=read(cls.path)
+
+    def test_expanded_case_coverage_and_quadrant_boundaries(self):
+        self.assertEqual(len(self.rows)-1,67584)
+        rows=self.rows[1:]
+        self.assertEqual({r['key'][1] for r in rows},set(range(11)))
+        self.assertEqual({r['key'][7] for r in rows},set(range(64)))
+        first={r['key'][7]:r for r in rows if r['key'][:7]==[0]*7}
+        for low,high,bits in ((16,17,0x3e800000),(18,19,0x3f000000),(20,21,0x3f400000)):
+            self.assertEqual(first[low]['input'][12],bits-1)
+            self.assertEqual(first[high]['input'][12],bits+1)
+        self.assertEqual(first[22]['input'][11],1) # Smallest positive float32.
+        self.assertEqual(sum(r['cpp'][7]!=r['vector'][7] for r in rows),336)
+
+    def test_original_rows_remain_identical_in_expanded_corpus(self):
+        original={tuple(r['key']):r for r in read(REFERENCE)[1:]}
+        matched=0
+        for row in self.rows[1:]:
+            prior=original.get(tuple(row['key']))
+            if prior:
+                for name in ('input','cpp','vector'):self.assertEqual(row[name],prior[name])
+                matched+=1
+        self.assertEqual(matched,7680)
 
 if __name__=='__main__':unittest.main()

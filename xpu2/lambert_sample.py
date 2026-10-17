@@ -13,8 +13,12 @@ def floats(words):
 def read(path):
     text = gzip.decompress(path.read_bytes()).decode('utf-8') if path.suffix == '.gz' else path.read_text(encoding='utf-8')
     rows = [json.loads(line) for line in text.splitlines()]
-    keys = list(itertools.product(range(2), range(5), range(2), range(2), range(3), range(2), range(2), range(16)))
-    if not rows or rows[0] != {'schema': 1, 'kind': 'lambert_sample', 'simd_width': 8, 'cases': len(keys)} or len(rows) != len(keys)+1:
+    kind=rows[0].get('kind') if rows else None
+    if kind not in ('lambert_sample','lambert_sample_stress'):
+        raise ValueError('Unknown sampling corpus')
+    normals,pairs=(11,64) if kind=='lambert_sample_stress' else (5,16)
+    keys = list(itertools.product(range(2), range(normals), range(2), range(2), range(3), range(2), range(2), range(pairs)))
+    if not rows or rows[0] != {'schema': 1, 'kind': kind, 'simd_width': 8, 'cases': len(keys)} or len(rows) != len(keys)+1:
         raise ValueError('Incomplete Lambert sampling corpus')
     for i, (row, key) in enumerate(zip(rows[1:], keys)):
         if type(row.get('id')) is not int or row['id'] != i or row.get('key') != list(key) or any(type(k) is not int for k in row['key']):
@@ -126,3 +130,9 @@ def validate(records,returned,result_words,stride=96):
             'vector_bitwise_parity':all(w==r['vector'] for r,w in supported),
             'comparisons':comparisons,
             'canonical_result_sha256':digest.hexdigest()}
+
+
+def validate_vector(records,returned,result_words,stride=96):
+    result=validate(records,returned,result_words,stride=stride)
+    result['passed']=(result['transport_guards_passed'] and result['finite_outputs'] and result['vector_bitwise_parity'])
+    return result

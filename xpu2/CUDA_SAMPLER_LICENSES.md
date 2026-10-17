@@ -228,3 +228,7 @@ diagnostics; they are not embedded in the CUDA source or distributed kit.
 The Lambert evaluation kernel adapts MoonRay BsdfLambert.h and BsdfSlice.h,
 Copyright 2023-2024 DreamWorks Animation LLC, Apache-2.0. Its supported subset
 excludes Fresnel and shadow-terminator corrections.
+
+The AVX8-compatible sincos helper in ispc_math_cuda.cuh derives from ISPC
+v1.31.0 stdlib.ispc, Copyright (c) 2010-2026 Intel Corporation, BSD-3-Clause.
+The full required notice is retained in ISPC_MATH_LICENSE.txt.

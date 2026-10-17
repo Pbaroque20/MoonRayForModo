@@ -41,7 +41,10 @@ def main():
     p.add_argument("--handoff-runtime", type=Path, help="Isolated native runtime for CPU/CUDA exchange")
     p.add_argument("--lambert", action="store_true", help="Validate native Lambert evaluation subset")
     p.add_argument("--lambert-sample", action="store_true", help="Measure Lambert direction sampling against native C++/ISPC")
+    p.add_argument("--vector-math", action="store_true", help="Compare the separate AVX8-compatible Lambert math profile")
     a = p.parse_args()
+    if a.vector_math and not a.lambert_sample:
+        p.error("--vector-math requires --lambert-sample")
     if a.lambert_sample and (a.lambert or a.window or a.tables or a.handoff_runtime):
         p.error("--lambert-sample is a separate experiment")
     if a.lambert and (a.window or a.tables or a.handoff_runtime):
@@ -54,7 +57,9 @@ def main():
     result_width = 9 if (a.lambert or a.lambert_sample) else 5
     validate_output = validate
     if a.lambert_sample:
-        from xpu2.lambert_sample import validate as validate_output
+        from xpu2.lambert_sample import validate as validate_output, validate_vector
+        if a.vector_math:
+            validate_output = validate_vector
     elif a.lambert:
         from xpu2.lambert import validate as validate_output
     out, source = a.output.resolve(), a.source.resolve()
@@ -96,13 +101,15 @@ def main():
     if a.lambert or a.lambert_sample:
         code += b"\n" + lambert_kernel.read_bytes().removeprefix(b"\xef\xbb\xbf")
     sample_kernel = ROOT / "xpu2/lambert_sample_cuda.cu"
+    ispc_math = ROOT / "xpu2/ispc_math_cuda.cuh"
     if a.lambert_sample:
+        code += b"\n" + ispc_math.read_bytes().removeprefix(b"\xef\xbb\xbf")
         code += b"\n" + sample_kernel.read_bytes().removeprefix(b"\xef\xbb\xbf")
     (out / "sampler_cuda.cu").write_bytes(code)
     dependencies = [kernel, a.reference, toolkit / "nvrtc64_120_0.dll", toolkit / "nvrtc-builtins64_128.dll"]
     dependencies.extend([Path(__file__).resolve(), ROOT / "xpu2/cuda_samples.py"])
     if a.lambert_sample:
-        dependencies.extend([sample_kernel, ROOT / "xpu2/lambert_sample.py"])
+        dependencies.extend([sample_kernel, ispc_math, ROOT / "xpu2/lambert_sample.py"])
     if a.lambert or a.lambert_sample:
         dependencies.extend([lambert_kernel, ROOT / "xpu2/lambert.py"])
     table_paths = []
@@ -173,7 +180,7 @@ def main():
     reports = []
     try:
         module, function = ptr(), ptr()
-        load(C.byref(module), ptx); get_function(C.byref(function), module, b"lambert_sample" if a.lambert_sample else b"lambert" if a.lambert else b"sampler_window" if a.window else b"sampler")
+        load(C.byref(module), ptx); get_function(C.byref(function), module, b"lambert_sample_vector" if a.vector_math else b"lambert_sample" if a.lambert_sample else b"lambert" if a.lambert else b"sampler_window" if a.window else b"sampler")
         streams = [ptr(), ptr()]
         for stream in streams:
             stream_create(C.byref(stream), 1)
@@ -290,7 +297,7 @@ def main():
     report = {"status": "passed" if all(r["passed"] for r in reports) and
                          (continuation is None or continuation["passed"]) and
                          (handoff is None or handoff["passed"]) else "failed",
-              "scope": ("CUDA Lambert sampling numerical diagnostic; strict C++ parity required for passed status; not rendered parity" if a.lambert_sample else "CUDA Lambert eval/albedo/PDF/geometry subset; not sampling or rendered parity" if a.lambert
+              "scope": ("CUDA Lambert sampling numerical diagnostic; strict selected native math-profile parity required for passed status; not rendered parity" if a.lambert_sample else "CUDA Lambert eval/albedo/PDF/geometry subset; not sampling or rendered parity" if a.lambert
                         else "Real CUDA integrator sampling subset; no shading/rendered parity"),
               "lambert": a.lambert, "lambert_sample": a.lambert_sample,
               "native_tables": bool(a.tables), "cache_window": bool(a.window),
@@ -298,9 +305,11 @@ def main():
               "cuda_driver_api": version.value, "compile_flags": compile_flags,
               "continuation": continuation, "handoff": handoff, "inputs_sha256": before, "ptx_sha256": sha(out / "sampler.ptx"), "runs": reports}
     if a.lambert_sample:
+        report["native_math_profile"] = "avx8" if a.vector_math else "cpp"
         report["renderer_migration_enabled"] = False
-        report["xpu_vector_compatibility_gate"] = "passed" if all(r["vector_bitwise_parity"] for r in reports) else "blocked"
         report["gpu_repeatable"] = len({r["canonical_result_sha256"] for r in reports}) == 1
+        vector_pass = report["gpu_repeatable"] and all(r["vector_bitwise_parity"] and r["transport_guards_passed"] and r["finite_outputs"] for r in reports)
+        report["xpu_vector_compatibility_gate"] = "passed" if vector_pass else "blocked"
         if not report["gpu_repeatable"]:
             report["status"] = "failed"
     (out / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
