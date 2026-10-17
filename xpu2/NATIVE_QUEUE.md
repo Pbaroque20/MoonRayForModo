@@ -236,3 +236,59 @@ control in 5 and 3 pixels, and from each other in 4. Maximum channel difference
 is again 1.4901161193847656e-08; the bitwise image gate remains false. No tolerance
 was relaxed. The native source hash matches the final stress candidate. No
 installed kit, shared checkout source, or original XPU architecture was changed.
+
+## Explicit worker join and CUDA cleanup
+
+The standalone owner can now stop, join and delete a queue. The worker retains
+its `std::thread` handle. After its final batch, it releases CUDA buffers, events,
+module and context on the worker thread, restores the previous current context,
+and releases its driver-library reference. Every driver release result is
+checked; cleanup failure makes `stop()` fail. Resource/log handles are cleared
+when released. Initialization failures are covered by the same cleanup path.
+
+Only after the worker signals completion does `stop()` join it. A lifecycle
+mutex serializes competing stop/join operations. A timed-out stop retains the
+thread and resources for a later attempt. Owners must stop admission, quiesce
+all callers, and successfully stop/join before deleting; deleting a still-joinable
+queue is rejected by termination rather than implicitly blocking inside a
+potential loader callback. This remains an experimental owner contract.
+
+[Cleanup evidence](queue-cleanup-20261017.json) records eight successful standalone
+processes using the final queue source. There were eight successful GPU
+create/render/stop/join/delete cycles and four missing-PTX cycles. Each successful
+cycle returned exact native-reference shader results. Each missing-PTX cycle
+retained its CPU answer and released its partially initialized context. All
+cycles reported zero cleanup errors, no joinable worker, and no remaining owned
+CUDA/library handles. Repeated stop calls remained successful. Capacity,
+in-flight timeout, pending cancellation, held-worker drain and forced empty-batch
+checks also completed with explicit cleanup and deletion.
+
+The first six-process matrix and the subsequent partial-initialization/control
+matrix have different harness hashes, but identical queue source hashes. The
+existing unit-tested Python verifier did not change; its prior 208-check result
+is not represented as a new run here.
+
+The earlier detached-thread/process-owned-only limitation is superseded **for
+explicit standalone owners**. The native renderer hook still keeps a process-owned
+singleton and does not invoke this owner lifecycle during Modo shutdown. DLL
+unloading, renderer integration, device loss and long-running memory behavior
+remain separate validation work. Release-call success is not a memory benchmark.
+
+    python tools/xpu2_queue_stress.py --source <shared-source-read-only> --ptx test-results/xpu2-ray-image-final/sampler.ptx --output test-results/queue-cleanup-new --cases lifecycle,lifecycle_missing_ptx,shutdown,capacity,timeout,pending_timeout,coalesce_timeout
+
+### Native regression after cleanup support
+
+[Native cleanup evidence](native-cleanup-20261017.json) records the matching
+retained-object build and full 15-case rendering matrix. Normal single-worker
+GPU replacement, alternating CPU/GPU repeats and fallback controls retain exact
+RGBA and selected-path results. The sentinel changes the image as intended.
+All GPU/native shader comparisons match; native renders do not invoke shutdown.
+The four-worker bitwise image gate remains false, including differences between
+native control repeats. No tolerance or benchmark claim has changed. Installed
+XPU and the shared checkout remain untouched.
+
+In this matrix the native control repeats differ in 16 pixels, with maximum
+channel difference 2.9802322387695312e-08. Mixed candidates differ from the first
+control in 25 and 16 pixels (maximum 1.4901161193847656e-08), and from each other
+in 17. These observations do not establish a tolerance or the cause of each
+candidate difference; exact multithread parity remains an open gate.

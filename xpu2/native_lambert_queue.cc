@@ -31,6 +31,7 @@ struct Bridge {
     FILE* log=nullptr; FILE* records=nullptr;
     unsigned long long batches=0, samples=0, accepted=0, replaced=0, unsupported=0, invalid=0, mismatch=0, errors=0;
     bool ready=false, attempted=false;
+    unsigned cleanupErrors=0;
     HMODULE lib=nullptr;
     CUcontext context=nullptr;
     CUmodule module=nullptr; CUfunction kernel=nullptr;
@@ -41,6 +42,7 @@ struct Bridge {
     DRIVER(cuCtxSetCurrent) DRIVER(cuCtxPushCurrent_v2) DRIVER(cuCtxPopCurrent_v2)
     DRIVER(cuModuleLoad) DRIVER(cuModuleGetFunction) DRIVER(cuMemAlloc_v2)
     DRIVER(cuEventCreate) DRIVER(cuEventRecord) DRIVER(cuEventQuery) DRIVER(cuEventSynchronize) DRIVER(cuEventElapsedTime)
+    DRIVER(cuMemFree_v2) DRIVER(cuEventDestroy_v2) DRIVER(cuModuleUnload) DRIVER(cuCtxDestroy_v2)
     DRIVER(cuMemcpyHtoD_v2) DRIVER(cuMemcpyDtoH_v2) DRIVER(cuLaunchKernel) DRIVER(cuCtxSynchronize)
 #undef DRIVER
     static void check(CUresult r) {if(r!=CUDA_SUCCESS)throw std::runtime_error("CUDA status "+std::to_string(int(r)));}
@@ -51,6 +53,36 @@ struct Bridge {
         std::fflush(log);
     }
     ~Bridge() { summary(); if(log)std::fclose(log); if(records)std::fclose(records); }
+    // Called by the owning worker after its final batch, including partial initialization.
+    bool close() {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto checked=[&](CUresult result){if(result!=CUDA_SUCCESS){++cleanupErrors;return false;}return true;};
+        if(context) {
+            CUcontext previous=nullptr;
+            bool havePrevious=checked(fn_cuCtxGetCurrent(&previous));
+            if(checked(fn_cuCtxPushCurrent_v2(context))) {
+                checked(fn_cuCtxSynchronize());
+                for(auto& buffer:buffers)if(buffer && checked(fn_cuMemFree_v2(buffer)))buffer=0;
+                if(beginEvent && checked(fn_cuEventDestroy_v2(beginEvent)))beginEvent=nullptr;
+                if(endEvent && checked(fn_cuEventDestroy_v2(endEvent)))endEvent=nullptr;
+                if(module && checked(fn_cuModuleUnload(module))){module=nullptr;kernel=nullptr;}
+                CUcontext popped=nullptr;
+                if(checked(fn_cuCtxPopCurrent_v2(&popped)) && popped!=context)++cleanupErrors;
+                CUcontext restored=nullptr;
+                if(havePrevious && checked(fn_cuCtxGetCurrent(&restored)) && restored!=previous)++cleanupErrors;
+            }
+            if(checked(fn_cuCtxDestroy_v2(context))) {
+                context=nullptr;module=nullptr;kernel=nullptr;beginEvent=nullptr;endEvent=nullptr;
+                for(auto& buffer:buffers)buffer=0;
+            }
+        }
+        ready=false;
+        if(lib && !context){if(FreeLibrary(lib))lib=nullptr;else ++cleanupErrors;}
+        summary();
+        if(log){std::fclose(log);log=nullptr;}
+        if(records){std::fclose(records);records=nullptr;}
+        return !cleanupErrors && !context && !lib;
+    }
     void initialize() {
         attempted=true;
         const char* path=std::getenv("XPU2_NATIVE_LAMBERT_LOG");
@@ -64,6 +96,7 @@ struct Bridge {
         LOAD(cuCtxSetCurrent) LOAD(cuCtxPushCurrent_v2) LOAD(cuCtxPopCurrent_v2)
         LOAD(cuModuleLoad) LOAD(cuModuleGetFunction) LOAD(cuMemAlloc_v2)
         LOAD(cuEventCreate) LOAD(cuEventRecord) LOAD(cuEventQuery) LOAD(cuEventSynchronize) LOAD(cuEventElapsedTime)
+        LOAD(cuMemFree_v2) LOAD(cuEventDestroy_v2) LOAD(cuModuleUnload) LOAD(cuCtxDestroy_v2)
         LOAD(cuMemcpyHtoD_v2) LOAD(cuMemcpyDtoH_v2) LOAD(cuLaunchKernel) LOAD(cuCtxSynchronize)
 #undef LOAD
         check(fn_cuInit(0)); CUdevice device; check(fn_cuDeviceGet(&device,0));
@@ -155,6 +188,9 @@ struct Request {
 struct Queue {
     std::mutex mutex;
     std::condition_variable available,stopped;
+    std::mutex lifecycleMutex;
+    std::thread worker;
+    bool cleanupOk=false;
     bool stopping=false,workerExited=false;
     std::deque<std::shared_ptr<Request>> pending;
     Bridge device;
@@ -169,20 +205,25 @@ struct Queue {
         p=std::getenv("XPU2_QUEUE_COALESCE_US");if(p)coalesceUs=std::min(1000,std::max(0,std::atoi(p)));
         p=std::getenv("XPU2_QUEUE_CAPACITY");if(p)capacity=std::min(64,std::max(0,std::atoi(p)));
         p=std::getenv("XPU2_QUEUE_LOG");if(p)log=std::fopen(p,"wb");
-        std::thread([this]{work();}).detach();
+        worker=std::thread([this]{work();});
     }
+    ~Queue(){if(worker.joinable())std::terminate();if(log)std::fclose(log);}
     void snapshot() {
         if(!log)return;
         std::fprintf(log,"{\"calls\":%llu,\"submitted\":%llu,\"delivered\":%llu,\"cpu_batches\":%llu,\"queue_full\":%llu,\"timeouts\":%llu,\"late_discarded\":%llu,\"cancelled_before_dispatch\":%llu,\"closed_fallback\":%llu,\"worker_failures\":%llu,\"worker_batches\":%llu,\"max_batch_samples\":%llu,\"max_queue\":%llu,\"cpu_completed_while_gpu_pending\":%llu,\"kernel_window_cpu_observations\":%llu,\"kernel_microseconds\":%llu}\n",
           next,submitted,delivered,cpu,full,timeouts,late,pruned,closed,failed,merged,maxBatch,maxQueue,cpuPending,kernelOverlap.load(),kernelMicroseconds.load());
         std::fflush(log);
     }
-    // Diagnostic drain only: retain this object if the deadline expires.
-    // Callers must also be joined before any future reusable-owner destruction.
+    // Explicit owner operation, never called from DLL detach. A timed-out stop
+    // retains the worker and all resources; callers must quiesce before deletion.
     bool stop(std::chrono::milliseconds deadline) {
+        std::lock_guard<std::mutex> lifecycle(lifecycleMutex);
         std::unique_lock<std::mutex> lock(mutex);
         stopping=true;available.notify_all();
-        return stopped.wait_for(lock,deadline,[&]{return workerExited;});
+        if(!stopped.wait_for(lock,deadline,[&]{return workerExited;}))return false;
+        lock.unlock();
+        if(worker.joinable())worker.join();
+        return cleanupOk;
     }
     void run(float* input,float* output,int count) {
         if(count<1 || count>8)return;
@@ -215,7 +256,8 @@ struct Queue {
                 std::unique_lock<std::mutex> lock(mutex);
                 available.wait(lock,[&]{return stopping || !pending.empty();});
                 if(stopping && pending.empty()){
-                    workerExited=true;snapshot();stopped.notify_all();return;
+                    lock.unlock();bool cleaned=device.close();lock.lock();
+                    cleanupOk=cleaned;workerExited=true;snapshot();stopped.notify_all();return;
                 }
                 // Bounded coalescing opportunity; a single producer cannot deadlock waiting for a full batch.
                 if(coalesceUs) {

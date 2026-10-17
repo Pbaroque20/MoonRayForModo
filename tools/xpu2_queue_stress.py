@@ -22,7 +22,7 @@ def main():
     p.add_argument('--cases',default='capacity,timeout,pending_timeout,shutdown,shutdown,coalesce_timeout',help='Comma-separated cases; repetitions allowed')
     a=p.parse_args();source=a.source.resolve();out=a.output.resolve();ptx=a.ptx.resolve()
     cases=a.cases.split(',')
-    if not cases or any(c not in ('capacity','timeout','pending_timeout','shutdown','coalesce_timeout') for c in cases):p.error('Unknown stress case')
+    if not cases or any(c not in ('capacity','timeout','pending_timeout','shutdown','coalesce_timeout','lifecycle','lifecycle_missing_ptx') for c in cases):p.error('Unknown stress case')
     if out.is_relative_to(source):p.error('Isolated output required')
     out.mkdir(parents=True,exist_ok=False)
     files=[ROOT/'xpu2/native_queue_stress.cc',ROOT/'xpu2/native_lambert_queue.cc',Path(__file__).resolve(),ptx]
@@ -46,13 +46,28 @@ def main():
         for name in cases:
             folder=out/(name+'-'+str(len(report['runs'])));folder.mkdir()
             runenv=environment(compiler.parent,folder)
-            runenv.update(XPU2_NATIVE_LAMBERT='sentinel',XPU2_NATIVE_LAMBERT_PTX=str(ptx),XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),XPU2_QUEUE_CAPACITY='64',XPU2_QUEUE_POLICY='all',XPU2_QUEUE_LOG=str(folder/'queue.log'))
+            runenv.update(XPU2_NATIVE_LAMBERT='sentinel',XPU2_NATIVE_LAMBERT_PTX=str(folder/'missing.ptx' if name=='lifecycle_missing_ptx' else ptx),XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),XPU2_QUEUE_CAPACITY='64',XPU2_QUEUE_POLICY='all',XPU2_QUEUE_LOG=str(folder/'queue.log'))
             print('Queue stress '+folder.name,flush=True)
             done=subprocess.run([str(exe),name,str(capture)],env=runenv,capture_output=True,text=True,timeout=40,creationflags=subprocess.CREATE_NO_WINDOW)
             (folder/'process.log').write_text(done.stdout+done.stderr,encoding='utf-8')
             if done.returncode:raise ValueError('Stress process failed: '+folder.name)
             result=json.loads(done.stdout)
             if result.get('passed') is not True:raise ValueError('Missing stress success')
+            if name in ('lifecycle','lifecycle_missing_ptx'):
+                cycles=[]
+                for index in range(4):
+                    counts=native_integration.summary((folder/('shading.log.'+str(index))).read_text())
+                    observations=native_integration.records((folder/('shading.bin.'+str(index))).read_bytes())
+                    if name=='lifecycle_missing_ptx':
+                        if counts['errors']!=1 or counts['samples']!=8 or counts['accepted'] or counts['replaced'] or observations['records']:raise ValueError('Missing PTX did not preserve native fallback')
+                    else:native_integration.verify_counts(counts,observations,'replace')
+                    rows=[json.loads(x) for x in (folder/('queue.log.'+str(index))).read_text().splitlines() if x.startswith('{')]
+                    counters=[r for r in rows if 'calls' in r][-1]
+                    ids=[r['delivered_id'] for r in rows if 'delivered_id' in r]
+                    if observations['records']!=(0 if name=='lifecycle_missing_ptx' else 8) or ids!=[0] or counters['submitted']!=1 or counters['delivered']!=1:raise ValueError('Lifecycle cycle accounting mismatch')
+                    cycles.append({'queue':counters,'shading':counts,'observations':observations})
+                report['runs'].append({'case':folder.name,'checks':result,'cycles':cycles,'log_hashes':{f.name:digest_file(f) for f in folder.iterdir() if f.is_file()}})
+                continue
             if name=='coalesce_timeout':
                 if (folder/'shading.log').exists() or (folder/'shading.bin').exists():raise ValueError('Empty batch initialized GPU bridge')
                 counts={'gpu_not_initialized':True}

@@ -38,7 +38,31 @@ int main(int argc,char** argv) {
         std::ifstream f(argv[2],std::ios::binary);
         std::vector<unsigned char> data((std::istreambuf_iterator<char>(f)),{});
         require(data.size()>=4+66*8*164 && !std::memcmp(data.data(),"XNI1",4),"Missing reference packets");
-        auto* q=new Queue; // Same process-owned lifecycle as the native diagnostic.
+        if(!std::strcmp(argv[1],"lifecycle") || !std::strcmp(argv[1],"lifecycle_missing_ptx")) {
+            const bool missing=!std::strcmp(argv[1],"lifecycle_missing_ptx");
+            const std::string queuePath=std::getenv("XPU2_QUEUE_LOG");
+            const std::string logPath=std::getenv("XPU2_NATIVE_LAMBERT_LOG");
+            const std::string recordPath=std::getenv("XPU2_NATIVE_LAMBERT_RECORDS");
+            for(int cycle=0;cycle<4;++cycle) {
+                const auto suffix="."+std::to_string(cycle);
+                require(!_putenv_s("XPU2_QUEUE_LOG",(queuePath+suffix).c_str()),"Set queue log failed");
+                require(!_putenv_s("XPU2_NATIVE_LAMBERT_LOG",(logPath+suffix).c_str()),"Set shader log failed");
+                require(!_putenv_s("XPU2_NATIVE_LAMBERT_RECORDS",(recordPath+suffix).c_str()),"Set shader capture failed");
+                auto owner=std::make_unique<Queue>();auto p=packet(data,cycle*8);
+                if(missing)p.expected=p.output;
+                owner->run(p.input.data(),p.output.data(),8);
+                require(!std::memcmp(p.output.data(),p.expected.data(),sizeof(p.output)),"Recreated queue changed output");
+                require(owner->stop(std::chrono::milliseconds(5000)),"Lifecycle cleanup failed");
+                require(!owner->worker.joinable() && owner->cleanupOk && !owner->device.cleanupErrors && !owner->device.context && !owner->device.lib && !owner->device.module && !owner->device.beginEvent && !owner->device.endEvent,"Lifecycle resources still owned");
+                for(auto buffer:owner->device.buffers)require(!buffer,"GPU buffer still owned");
+                require(owner->stop(std::chrono::milliseconds(0)),"Repeated joined stop failed");
+                require(owner->device.errors==(missing ? 1u : 0u),"Unexpected initialization error count");
+                // Destroy only after the synchronous caller returned and worker joined.
+                owner.reset();
+            }
+            std::cout<<"{\"case\":\""<<argv[1]<<"\",\"cycles\":4,\"worker_joins\":4,\"cleanup_errors\":0,\"passed\":true}\n";return 0;
+        }
+        auto* q=new Queue; // Explicitly stopped and deleted by this standalone owner.
         std::unique_lock<std::mutex> hold(q->device.mutex);
         if(!std::strcmp(argv[1],"coalesce_timeout")) {
             // Test-only direct field override exceeds the production 1000-us clamp.
@@ -155,6 +179,8 @@ int main(int argc,char** argv) {
             std::cout<<"{\"case\":\"timeout\",\"waited_ms\":"<<waited<<",\"caller_buffers_preserved\":true,\"recovery_delivered\":true,\"passed\":true}\n";
         }
         require(q->stop(std::chrono::milliseconds(5000)),"Idle worker failed to stop");
+        require(!q->worker.joinable() && q->cleanupOk && !q->device.cleanupErrors && !q->device.context && !q->device.lib,"Worker resources not released");
+        delete q;
         std::cout.flush();return 0;
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

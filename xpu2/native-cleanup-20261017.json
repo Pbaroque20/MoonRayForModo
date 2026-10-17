@@ -1,0 +1,4510 @@
+{
+  "status": "passed",
+  "scope": "Bounded native GPU-worker queue; synchronous callers, concurrent CPU producers; not path continuations or a speed benchmark",
+  "runs": [
+    {
+      "label": "original",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.025,
+          "Initialize renderer": 0.368,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.005,
+          "Building GPU BVH": 0.368,
+          "Total render prep": 0.407,
+          "Mcrt time": 0.244,
+          "Total time": 0.722
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.2293397132307291,
+            0.009828843845753,
+            0.006552562932483852
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ]
+    },
+    {
+      "label": "control",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.024,
+          "Initialize renderer": 0.33,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.329,
+          "Total render prep": 0.368,
+          "Mcrt time": 0.241,
+          "Total time": 0.692
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.2293397132307291,
+            0.009828843845753,
+            0.006552562932483852
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "image_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": true,
+      "rgba_bits_sha256": "e7e22ff0727e386d5715aa399c18148d1448214f1cc9601972b43a089ee516a3",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10
+    },
+    {
+      "label": "disabled",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.023,
+          "Initialize renderer": 0.341,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.005,
+          "Building GPU BVH": 0.341,
+          "Total render prep": 0.379,
+          "Mcrt time": 0.303,
+          "Total time": 0.707
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.2293397132307291,
+            0.009828843845753,
+            0.006552562932483852
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "image_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": true,
+      "rgba_bits_sha256": "e7e22ff0727e386d5715aa399c18148d1448214f1cc9601972b43a089ee516a3",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10
+    },
+    {
+      "label": "all",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.022,
+          "Initialize renderer": 0.329,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.329,
+          "Total render prep": 0.364,
+          "Mcrt time": 4.558,
+          "Total time": 4.945
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.2293397132307291,
+            0.009828843845753,
+            0.006552562932483852
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "shading": {
+        "batches": 11680,
+        "samples": 93384,
+        "accepted": 93384,
+        "replaced": 93384,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 93384,
+        "accepted": 93384,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "39715df807458a8da5746fd8133f5a552ae5dd6116738f2d57010c66401b5ee3"
+      },
+      "queue": {
+        "calls": 11680,
+        "submitted": 11680,
+        "delivered": 11680,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 11680,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 95961,
+        "unique_deliveries": 11680,
+        "delivered_samples": 93384,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": true,
+      "rgba_bits_sha256": "e7e22ff0727e386d5715aa399c18148d1448214f1cc9601972b43a089ee516a3",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10
+    },
+    {
+      "label": "mixed",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.024,
+          "Initialize renderer": 0.328,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.328,
+          "Total render prep": 0.366,
+          "Mcrt time": 2.482,
+          "Total time": 2.97
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.2293397132307291,
+            0.009828843845753,
+            0.006552562932483852
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "shading": {
+        "batches": 5840,
+        "samples": 46692,
+        "accepted": 46692,
+        "replaced": 46692,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 46692,
+        "accepted": 46692,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "456b39ca77cf072e7dd84f5a620b69a8b474c561e3439c98c7b217e8967b9c4f"
+      },
+      "queue": {
+        "calls": 11680,
+        "submitted": 5840,
+        "delivered": 5840,
+        "cpu_batches": 5840,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 5840,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 48160,
+        "unique_deliveries": 5840,
+        "delivered_samples": 46692,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": true,
+      "rgba_bits_sha256": "e7e22ff0727e386d5715aa399c18148d1448214f1cc9601972b43a089ee516a3",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10
+    },
+    {
+      "label": "mixed_repeat",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.022,
+          "Initialize renderer": 0.33,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.33,
+          "Total render prep": 0.365,
+          "Mcrt time": 2.459,
+          "Total time": 2.903
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.2293397132307291,
+            0.009828843845753,
+            0.006552562932483852
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "shading": {
+        "batches": 5840,
+        "samples": 46692,
+        "accepted": 46692,
+        "replaced": 46692,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 46692,
+        "accepted": 46692,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "456b39ca77cf072e7dd84f5a620b69a8b474c561e3439c98c7b217e8967b9c4f"
+      },
+      "queue": {
+        "calls": 11680,
+        "submitted": 5840,
+        "delivered": 5840,
+        "cpu_batches": 5840,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 5840,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 47594,
+        "unique_deliveries": 5840,
+        "delivered_samples": 46692,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": true,
+      "rgba_bits_sha256": "e7e22ff0727e386d5715aa399c18148d1448214f1cc9601972b43a089ee516a3",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10
+    },
+    {
+      "label": "sentinel",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.023,
+          "Initialize renderer": 0.334,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.333,
+          "Total render prep": 0.396,
+          "Mcrt time": 4.396,
+          "Total time": 4.885
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.12671494390815496,
+            0.005430639896076173,
+            0.003620426810812205,
+            1.0
+          ],
+          "image_rgba": [
+            0.12671494483947754,
+            0.00543063972145319,
+            0.0036204266361892223,
+            1.0
+          ],
+          "fsum_image_max_error": 9.313225746154785e-10,
+          "queue_order_float32_rgba": [
+            0.12671494483947754,
+            0.00543063972145319,
+            0.0036204266361892223,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.12671494483947754,
+            0.00543063972145319,
+            0.0036204271018505096,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.13422644510865211,
+            0.005752561351982877,
+            0.0038350411341525614
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.11509864032268524,
+            0.004932798532536253,
+            0.003288532403530553,
+            1.0
+          ],
+          "image_rgba": [
+            0.11509864032268524,
+            0.004932798910886049,
+            0.0032885323744267225,
+            1.0
+          ],
+          "fsum_image_max_error": 3.7834979593753815e-10,
+          "queue_order_float32_rgba": [
+            0.11509864032268524,
+            0.004932798910886049,
+            0.0032885323744267225,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.11509863287210464,
+            0.004932798445224762,
+            0.0032885323744267225,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.11509864032268524,
+            0.004932798532536253,
+            0.003288532403530553
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "shading": {
+        "batches": 11680,
+        "samples": 93384,
+        "accepted": 93384,
+        "replaced": 93384,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 93384,
+        "accepted": 93384,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "39715df807458a8da5746fd8133f5a552ae5dd6116738f2d57010c66401b5ee3"
+      },
+      "queue": {
+        "calls": 11680,
+        "submitted": 11680,
+        "delivered": 11680,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 11680,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 95168,
+        "unique_deliveries": 11680,
+        "delivered_samples": 93384,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "failed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": false,
+            "failed_values": 23346,
+            "maximum_absolute_error": 0.09643995761871338,
+            "rms_error": 0.06899777881811366,
+            "values": 36864
+          },
+          "G": {
+            "passed": false,
+            "failed_values": 23346,
+            "maximum_absolute_error": 0.004133141133934259,
+            "rms_error": 0.002957047405927572,
+            "values": 36864
+          },
+          "B": {
+            "passed": false,
+            "failed_values": 23346,
+            "maximum_absolute_error": 0.0027554272674024105,
+            "rms_error": 0.001971365045057351,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 23346,
+        "first_difference": {
+          "x": 71,
+          "y_from_bottom": 0,
+          "reference": [
+            0.22018608450889587,
+            0.009436545893549919,
+            0.006291030906140804,
+            1.0
+          ],
+          "actual": [
+            0.13298921287059784,
+            0.005699537228792906,
+            0.0037996915634721518,
+            1.0
+          ],
+          "max_absolute_error": 0.08719687163829803
+        },
+        "largest_differences": [
+          {
+            "x": 179,
+            "y_from_bottom": 19,
+            "reference": [
+              0.25050488114356995,
+              0.010735921561717987,
+              0.007157281972467899,
+              1.0
+            ],
+            "actual": [
+              0.15406492352485657,
+              0.00660278182476759,
+              0.004401854705065489,
+              1.0
+            ],
+            "max_absolute_error": 0.09643995761871338
+          },
+          {
+            "x": 70,
+            "y_from_bottom": 89,
+            "reference": [
+              0.2577005624771118,
+              0.01104431040585041,
+              0.007362872827798128,
+              1.0
+            ],
+            "actual": [
+              0.16126061975955963,
+              0.006911169271916151,
+              0.004607446026057005,
+              1.0
+            ],
+            "max_absolute_error": 0.09643994271755219
+          },
+          {
+            "x": 68,
+            "y_from_bottom": 82,
+            "reference": [
+              0.2358449250459671,
+              0.01010764017701149,
+              0.00673842616379261,
+              1.0
+            ],
+            "actual": [
+              0.13940498232841492,
+              0.0059744990430772305,
+              0.003982999362051487,
+              1.0
+            ],
+            "max_absolute_error": 0.09643994271755219
+          },
+          {
+            "x": 181,
+            "y_from_bottom": 17,
+            "reference": [
+              0.24096255004405975,
+              0.010326966643333435,
+              0.00688464380800724,
+              1.0
+            ],
+            "actual": [
+              0.14452260732650757,
+              0.006193825509399176,
+              0.004129217006266117,
+              1.0
+            ],
+            "max_absolute_error": 0.09643994271755219
+          },
+          {
+            "x": 180,
+            "y_from_bottom": 27,
+            "reference": [
+              0.2485133707523346,
+              0.010650571435689926,
+              0.007100381888449192,
+              1.0
+            ],
+            "actual": [
+              0.15222421288490295,
+              0.0065238941460847855,
+              0.00434926338493824,
+              1.0
+            ],
+            "max_absolute_error": 0.09628915786743164
+          },
+          {
+            "x": 145,
+            "y_from_bottom": 20,
+            "reference": [
+              0.23673893511295319,
+              0.010145951993763447,
+              0.006763968616724014,
+              1.0
+            ],
+            "actual": [
+              0.14044977724552155,
+              0.006019275169819593,
+              0.004012850113213062,
+              1.0
+            ],
+            "max_absolute_error": 0.09628915786743164
+          },
+          {
+            "x": 96,
+            "y_from_bottom": 16,
+            "reference": [
+              0.21651777625083923,
+              0.00927933119237423,
+              0.006186221726238728,
+              1.0
+            ],
+            "actual": [
+              0.12022861838340759,
+              0.005152654368430376,
+              0.0034351032227277756,
+              1.0
+            ],
+            "max_absolute_error": 0.09628915786743164
+          },
+          {
+            "x": 53,
+            "y_from_bottom": 57,
+            "reference": [
+              0.20669841766357422,
+              0.00885850191116333,
+              0.005905668716877699,
+              1.0
+            ],
+            "actual": [
+              0.11040926724672318,
+              0.004731825087219477,
+              0.0031545504461973906,
+              1.0
+            ],
+            "max_absolute_error": 0.09628915041685104
+          }
+        ],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": false,
+          "removed_count": 4,
+          "added_count": 4,
+          "removed": [
+            [
+              0,
+              0,
+              0.04481959342956543,
+              0.0019208395387977362,
+              0.0012805596925318241,
+              0
+            ],
+            [
+              0,
+              0,
+              0.04722777381539345,
+              0.002024047076702118,
+              0.001349364873021841,
+              0
+            ],
+            [
+              0,
+              0,
+              0.04887308180332184,
+              0.0020945605356246233,
+              0.0013963737292215228,
+              0
+            ],
+            [
+              0,
+              0,
+              0.04930608719587326,
+              0.0021131178364157677,
+              0.001408745301887393,
+              0
+            ]
+          ],
+          "added": [
+            [
+              0,
+              0,
+              0.022409796714782715,
+              0.0009604197693988681,
+              0.0006402798462659121,
+              0
+            ],
+            [
+              0,
+              0,
+              0.023613886907696724,
+              0.001012023538351059,
+              0.0006746824365109205,
+              0
+            ],
+            [
+              0,
+              0,
+              0.02443654090166092,
+              0.0010472802678123116,
+              0.0006981868646107614,
+              0
+            ],
+            [
+              0,
+              0,
+              0.02465304359793663,
+              0.0010565589182078838,
+              0.0007043726509436965,
+              0
+            ]
+          ]
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": false,
+          "removed_count": 4,
+          "added_count": 4,
+          "removed": [
+            [
+              0,
+              0,
+              0.022902900353074074,
+              0.0009815528756007552,
+              0.0006543686031363904,
+              0
+            ],
+            [
+              0,
+              0,
+              0.043892327696084976,
+              0.0018810995388776064,
+              0.0012540663592517376,
+              0
+            ],
+            [
+              0,
+              0,
+              0.04840526729822159,
+              0.002074511256068945,
+              0.0013830075040459633,
+              0
+            ],
+            [
+              0,
+              0,
+              0.04923279955983162,
+              0.002109976951032877,
+              0.001406651339493692,
+              0
+            ]
+          ],
+          "added": [
+            [
+              0,
+              0,
+              0.011451450176537037,
+              0.0004907764378003776,
+              0.0003271843015681952,
+              0
+            ],
+            [
+              0,
+              0,
+              0.021946163848042488,
+              0.0009405497694388032,
+              0.0006270331796258688,
+              0
+            ],
+            [
+              0,
+              0,
+              0.024202633649110794,
+              0.0010372556280344725,
+              0.0006915037520229816,
+              0
+            ],
+            [
+              0,
+              0,
+              0.02461639977991581,
+              0.0010549884755164385,
+              0.000703325669746846,
+              0
+            ]
+          ]
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": false,
+      "rgba_bits_sha256": "0d1d908d06341c540550ccbffb73d4222918adea3eb4d856053019cf64626902",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10,
+      "expected_negative_control": true
+    },
+    {
+      "label": "queue_full",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.022,
+          "Initialize renderer": 0.342,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.341,
+          "Total render prep": 0.377,
+          "Mcrt time": 0.425,
+          "Total time": 0.914
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.2293397132307291,
+            0.009828843845753,
+            0.006552562932483852
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "queue": {
+        "calls": 11680,
+        "submitted": 0,
+        "delivered": 0,
+        "cpu_batches": 0,
+        "queue_full": 11680,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 0,
+        "max_batch_samples": 0,
+        "max_queue": 0,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0,
+        "unique_deliveries": 0,
+        "delivered_samples": 0,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": true,
+      "rgba_bits_sha256": "e7e22ff0727e386d5715aa399c18148d1448214f1cc9601972b43a089ee516a3",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10
+    },
+    {
+      "label": "missing_ptx",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.025,
+          "Initialize renderer": 0.331,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.005,
+          "Building GPU BVH": 0.331,
+          "Total render prep": 0.371,
+          "Mcrt time": 1.09,
+          "Total time": 1.556
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.2293397132307291,
+            0.009828843845753,
+            0.006552562932483852
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "shading": {
+        "batches": 11680,
+        "samples": 93384,
+        "accepted": 0,
+        "replaced": 0,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 11680
+      },
+      "observations": {
+        "records": 0,
+        "accepted": 0,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "e2051e4efa2906f26ded96cc4b5e469204d7c4ae138df85523941f2bf81f6e1f"
+      },
+      "queue": {
+        "calls": 11680,
+        "submitted": 11680,
+        "delivered": 11680,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 11680,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0,
+        "unique_deliveries": 11680,
+        "delivered_samples": 93384,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": true,
+      "rgba_bits_sha256": "e7e22ff0727e386d5715aa399c18148d1448214f1cc9601972b43a089ee516a3",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10
+    },
+    {
+      "label": "unsupported_control",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.022,
+          "Initialize renderer": 0.345,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.345,
+          "Total render prep": 0.38,
+          "Mcrt time": 0.283,
+          "Total time": 0.719
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "680738db8af427b9292199e5ef88b9df4331252900e33e473df7e3d26e662ecd",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.22599236154928803,
+            0.009685385943157598,
+            0.006456924325902946
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ]
+    },
+    {
+      "label": "unsupported",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.024,
+          "Initialize renderer": 0.326,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.325,
+          "Total render prep": 0.377,
+          "Mcrt time": 4.52,
+          "Total time": 4.992
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 1,
+        "passed": true
+      },
+      "scene_sha256": "680738db8af427b9292199e5ef88b9df4331252900e33e473df7e3d26e662ecd",
+      "contributions": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.22182821203023195,
+            0.009506922389846295,
+            0.0063379486091434956,
+            1.0
+          ],
+          "image_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "fsum_image_max_error": 4.6566128730773926e-09,
+          "queue_order_float32_rgba": [
+            0.22182820737361908,
+            0.009506923146545887,
+            0.0063379486091434956,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.22182822227478027,
+            0.009506922215223312,
+            0.006337949074804783,
+            1.0
+          ],
+          "queued_shadow_count": 7,
+          "pre_shadow_fsum_rgb": [
+            0.22599236154928803,
+            0.009685385943157598,
+            0.006456924325902946
+          ],
+          "gpu_shadow_count": 7,
+          "cpu_shadow_checks": 7,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 1,
+          "disabled_shadowing": false
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "radiance_count": 11,
+          "weight": 1.0,
+          "normalized_fsum_rgba": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445,
+            1.0
+          ],
+          "image_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "fsum_image_max_error": 2.7939677238464355e-09,
+          "queue_order_float32_rgba": [
+            0.1973152905702591,
+            0.008456369861960411,
+            0.005637579597532749,
+            1.0
+          ],
+          "canonical_float32_rgba": [
+            0.1973152905702591,
+            0.008456368930637836,
+            0.005637579131871462,
+            1.0
+          ],
+          "queued_shadow_count": 6,
+          "pre_shadow_fsum_rgb": [
+            0.19731528777629137,
+            0.008456368843326345,
+            0.005637579306494445
+          ],
+          "gpu_shadow_count": 6,
+          "cpu_shadow_checks": 6,
+          "shadow_disagreements": 0,
+          "gpu_occluded": 0,
+          "disabled_shadowing": false
+        }
+      ],
+      "shading": {
+        "batches": 11680,
+        "samples": 93384,
+        "accepted": 0,
+        "replaced": 0,
+        "unsupported": 93384,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 93384,
+        "accepted": 0,
+        "unsupported": 93384,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "9592fb6b78d92feb5cafec4e500f20349e2ac8e32a9ab8b3857f5f8a938e8984"
+      },
+      "queue": {
+        "calls": 11680,
+        "submitted": 11680,
+        "delivered": 11680,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 11680,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 90342,
+        "unique_deliveries": 11680,
+        "delivered_samples": 93384,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "radiance_comparison": [
+        {
+          "x": 96,
+          "y_from_bottom": 77,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        },
+        {
+          "x": 132,
+          "y_from_bottom": 96,
+          "identical_radiance_multiset": true,
+          "removed_count": 0,
+          "added_count": 0,
+          "removed": [],
+          "added": []
+        }
+      ],
+      "shadow_comparison": {
+        "unique_identical_direction_matches": 13,
+        "visibility_changes": [],
+        "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+      },
+      "rgba_bitwise_identical": true,
+      "rgba_bits_sha256": "f2ac5e0a422d328b7761c45a0bbd53b27965130b1178bc0b10dc6b5efee1854d",
+      "selected_surface_rays_identical": true,
+      "selected_surface_ray_count": 10
+    },
+    {
+      "label": "multi_control",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.023,
+          "Initialize renderer": 0.352,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.005,
+          "Building GPU BVH": 0.352,
+          "Total render prep": 0.388,
+          "Mcrt time": 0.09,
+          "Total time": 0.499
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 4,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "selected_path_tracing": "not measured: existing trace writer is single-thread-only"
+    },
+    {
+      "label": "multi_control_repeat",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.023,
+          "Initialize renderer": 0.335,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.005,
+          "Building GPU BVH": 0.335,
+          "Total render prep": 0.373,
+          "Mcrt time": 0.087,
+          "Total time": 0.482
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 4,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "selected_path_tracing": "not measured: existing trace writer is single-thread-only",
+      "image_comparison": {
+        "status": "failed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": false,
+            "failed_values": 6,
+            "maximum_absolute_error": 2.9802322387695312e-08,
+            "rms_error": 2.3283064365386963e-10,
+            "values": 36864
+          },
+          "G": {
+            "passed": false,
+            "failed_values": 9,
+            "maximum_absolute_error": 9.313225746154785e-10,
+            "rms_error": 1.4551915228366852e-11,
+            "values": 36864
+          },
+          "B": {
+            "passed": false,
+            "failed_values": 7,
+            "maximum_absolute_error": 4.656612873077393e-10,
+            "rms_error": 6.41679146565873e-12,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 16,
+        "first_difference": {
+          "x": 189,
+          "y_from_bottom": 34,
+          "reference": [
+            0.22915500402450562,
+            0.009820926934480667,
+            0.006547285709530115,
+            1.0
+          ],
+          "actual": [
+            0.22915498912334442,
+            0.009820927865803242,
+            0.006547285243868828,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        "largest_differences": [
+          {
+            "x": 78,
+            "y_from_bottom": 86,
+            "reference": [
+              0.25145938992500305,
+              0.010776829905807972,
+              0.007184553891420364,
+              1.0
+            ],
+            "actual": [
+              0.25145941972732544,
+              0.010776829905807972,
+              0.007184553891420364,
+              1.0
+            ],
+            "max_absolute_error": 2.9802322387695312e-08
+          },
+          {
+            "x": 112,
+            "y_from_bottom": 106,
+            "reference": [
+              0.22827158868312836,
+              0.009783066809177399,
+              0.006522045005112886,
+              1.0
+            ],
+            "actual": [
+              0.22827157378196716,
+              0.009783067740499973,
+              0.006522045005112886,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 183,
+            "y_from_bottom": 98,
+            "reference": [
+              0.17719677090644836,
+              0.007594147231429815,
+              0.005062764976173639,
+              1.0
+            ],
+            "actual": [
+              0.17719678580760956,
+              0.007594147231429815,
+              0.005062764976173639,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 129,
+            "y_from_bottom": 95,
+            "reference": [
+              0.21718469262123108,
+              0.009307914413511753,
+              0.00620527658611536,
+              1.0
+            ],
+            "actual": [
+              0.21718470752239227,
+              0.009307914413511753,
+              0.00620527658611536,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 133,
+            "y_from_bottom": 42,
+            "reference": [
+              0.21441614627838135,
+              0.009189262054860592,
+              0.006126174703240395,
+              1.0
+            ],
+            "actual": [
+              0.21441613137722015,
+              0.009189261123538017,
+              0.006126174703240395,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 189,
+            "y_from_bottom": 34,
+            "reference": [
+              0.22915500402450562,
+              0.009820926934480667,
+              0.006547285709530115,
+              1.0
+            ],
+            "actual": [
+              0.22915498912334442,
+              0.009820927865803242,
+              0.006547285243868828,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 148,
+            "y_from_bottom": 135,
+            "reference": [
+              0.20940972864627838,
+              0.008974702097475529,
+              0.0059831347316503525,
+              1.0
+            ],
+            "actual": [
+              0.20940972864627838,
+              0.008974703028798103,
+              0.0059831347316503525,
+              1.0
+            ],
+            "max_absolute_error": 9.313225746154785e-10
+          },
+          {
+            "x": 81,
+            "y_from_bottom": 95,
+            "reference": [
+              0.25063881278038025,
+              0.010741661302745342,
+              0.007161108776926994,
+              1.0
+            ],
+            "actual": [
+              0.25063881278038025,
+              0.010741662234067917,
+              0.007161108311265707,
+              1.0
+            ],
+            "max_absolute_error": 9.313225746154785e-10
+          }
+        ],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "rgba_bitwise_identical": false,
+      "rgba_bits_sha256": "f764b97304719edb8ea9eba2586e831dfdfb6eb03293242db3466702b916f92c",
+      "image_gate": "different_multithread_image"
+    },
+    {
+      "label": "multi_mixed",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.023,
+          "Initialize renderer": 0.325,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.324,
+          "Total render prep": 0.361,
+          "Mcrt time": 1.548,
+          "Total time": 1.99
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 4,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "selected_path_tracing": "not measured: existing trace writer is single-thread-only",
+      "shading": {
+        "batches": 3184,
+        "samples": 48352,
+        "accepted": 48352,
+        "replaced": 48352,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 48352,
+        "accepted": 48352,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "6e1477f0cc3bddeec62723506f4e495723de4c5582548392568538aadcbfc8a4"
+      },
+      "queue": {
+        "calls": 11676,
+        "submitted": 6044,
+        "delivered": 6044,
+        "cpu_batches": 5632,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 3184,
+        "max_batch_samples": 16,
+        "max_queue": 2,
+        "cpu_completed_while_gpu_pending": 89,
+        "kernel_window_cpu_observations": 9,
+        "kernel_microseconds": 29429,
+        "unique_deliveries": 6044,
+        "delivered_samples": 48352,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "failed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": false,
+            "failed_values": 12,
+            "maximum_absolute_error": 1.4901161193847656e-08,
+            "rms_error": 2.688496695783109e-10,
+            "values": 36864
+          },
+          "G": {
+            "passed": false,
+            "failed_values": 10,
+            "maximum_absolute_error": 9.313225746154785e-10,
+            "rms_error": 1.533906547977618e-11,
+            "values": 36864
+          },
+          "B": {
+            "passed": false,
+            "failed_values": 11,
+            "maximum_absolute_error": 4.656612873077393e-10,
+            "rms_error": 8.043873798925294e-12,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 25,
+        "first_difference": {
+          "x": 92,
+          "y_from_bottom": 14,
+          "reference": [
+            0.21270868182182312,
+            0.009116086177527905,
+            0.006077390629798174,
+            1.0
+          ],
+          "actual": [
+            0.21270868182182312,
+            0.00911608524620533,
+            0.006077390629798174,
+            1.0
+          ],
+          "max_absolute_error": 9.313225746154785e-10
+        },
+        "largest_differences": [
+          {
+            "x": 149,
+            "y_from_bottom": 120,
+            "reference": [
+              0.2293231040239334,
+              0.009828133508563042,
+              0.0065520890057086945,
+              1.0
+            ],
+            "actual": [
+              0.2293231189250946,
+              0.009828133508563042,
+              0.0065520890057086945,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 139,
+            "y_from_bottom": 120,
+            "reference": [
+              0.23405097424983978,
+              0.010030755773186684,
+              0.006687169894576073,
+              1.0
+            ],
+            "actual": [
+              0.2340509593486786,
+              0.010030755773186684,
+              0.006687169894576073,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 47,
+            "y_from_bottom": 112,
+            "reference": [
+              0.24851207435131073,
+              0.010650516487658024,
+              0.007100343704223633,
+              1.0
+            ],
+            "actual": [
+              0.24851205945014954,
+              0.010650516487658024,
+              0.007100343704223633,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 112,
+            "y_from_bottom": 106,
+            "reference": [
+              0.22827158868312836,
+              0.009783066809177399,
+              0.006522045005112886,
+              1.0
+            ],
+            "actual": [
+              0.22827157378196716,
+              0.009783067740499973,
+              0.006522045005112886,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 183,
+            "y_from_bottom": 98,
+            "reference": [
+              0.17719677090644836,
+              0.007594147231429815,
+              0.005062764976173639,
+              1.0
+            ],
+            "actual": [
+              0.17719678580760956,
+              0.007594147231429815,
+              0.005062764976173639,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 151,
+            "y_from_bottom": 95,
+            "reference": [
+              0.2370654195547104,
+              0.010159946046769619,
+              0.0067732976749539375,
+              1.0
+            ],
+            "actual": [
+              0.2370654046535492,
+              0.010159946978092194,
+              0.0067732976749539375,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 129,
+            "y_from_bottom": 95,
+            "reference": [
+              0.21718469262123108,
+              0.009307914413511753,
+              0.00620527658611536,
+              1.0
+            ],
+            "actual": [
+              0.21718470752239227,
+              0.009307914413511753,
+              0.00620527658611536,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 61,
+            "y_from_bottom": 95,
+            "reference": [
+              0.21397574245929718,
+              0.00917038880288601,
+              0.006113593000918627,
+              1.0
+            ],
+            "actual": [
+              0.21397575736045837,
+              0.00917038880288601,
+              0.006113593000918627,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          }
+        ],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "rgba_bitwise_identical": false,
+      "rgba_bits_sha256": "a4d6c41c1bf59c18984e6d0d88d90c05523300f2894fa048e142db0c5ea7c70a",
+      "image_gate": "different_multithread_image"
+    },
+    {
+      "label": "multi_mixed_repeat",
+      "render": {
+        "renderer_timings_seconds": {
+          "Loading scene": 0.023,
+          "Initialize renderer": 0.37,
+          "Generating procedurals": 0.0,
+          "Tessellation": 0.001,
+          "Building BVH": 0.004,
+          "Building GPU BVH": 0.37,
+          "Total render prep": 0.443,
+          "Mcrt time": 1.5,
+          "Total time": 1.962
+        },
+        "xpu_selected": true,
+        "gpu_setup_complete": true,
+        "cpu_fallback": false,
+        "gpu_intersection_percent": 100.0,
+        "gpu_error": false,
+        "actual_threads": 4,
+        "passed": true
+      },
+      "scene_sha256": "8b324483a877e922df817e2730f16bae480eb9fcb67d4614db69ddc99e0eb77a",
+      "selected_path_tracing": "not measured: existing trace writer is single-thread-only",
+      "shading": {
+        "batches": 3166,
+        "samples": 49824,
+        "accepted": 49824,
+        "replaced": 49824,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 49824,
+        "accepted": 49824,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "2971104c41d5552d8584c370b32551a8d280afe1a9abe2233824cf145d1f71d8"
+      },
+      "queue": {
+        "calls": 11676,
+        "submitted": 6228,
+        "delivered": 6228,
+        "cpu_batches": 5448,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "worker_failures": 0,
+        "worker_batches": 3166,
+        "max_batch_samples": 16,
+        "max_queue": 2,
+        "cpu_completed_while_gpu_pending": 101,
+        "kernel_window_cpu_observations": 4,
+        "kernel_microseconds": 29069,
+        "unique_deliveries": 6228,
+        "delivered_samples": 49824,
+        "passed": true
+      },
+      "image_comparison": {
+        "status": "failed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": false,
+            "failed_values": 8,
+            "maximum_absolute_error": 1.4901161193847656e-08,
+            "rms_error": 2.1951483599423975e-10,
+            "values": 36864
+          },
+          "G": {
+            "passed": false,
+            "failed_values": 8,
+            "maximum_absolute_error": 9.313225746154785e-10,
+            "rms_error": 1.3719677249639984e-11,
+            "values": 36864
+          },
+          "B": {
+            "passed": false,
+            "failed_values": 9,
+            "maximum_absolute_error": 4.656612873077393e-10,
+            "rms_error": 7.275957614183426e-12,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 16,
+        "first_difference": {
+          "x": 74,
+          "y_from_bottom": 21,
+          "reference": [
+            0.2284768968820572,
+            0.009791865944862366,
+            0.006527911406010389,
+            1.0
+          ],
+          "actual": [
+            0.22847691178321838,
+            0.009791865944862366,
+            0.006527911406010389,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        "largest_differences": [
+          {
+            "x": 112,
+            "y_from_bottom": 106,
+            "reference": [
+              0.22827158868312836,
+              0.009783066809177399,
+              0.006522045005112886,
+              1.0
+            ],
+            "actual": [
+              0.22827157378196716,
+              0.009783067740499973,
+              0.006522045005112886,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 183,
+            "y_from_bottom": 98,
+            "reference": [
+              0.17719677090644836,
+              0.007594147231429815,
+              0.005062764976173639,
+              1.0
+            ],
+            "actual": [
+              0.17719678580760956,
+              0.007594147231429815,
+              0.005062764976173639,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 129,
+            "y_from_bottom": 95,
+            "reference": [
+              0.21718469262123108,
+              0.009307914413511753,
+              0.00620527658611536,
+              1.0
+            ],
+            "actual": [
+              0.21718470752239227,
+              0.009307914413511753,
+              0.00620527658611536,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 140,
+            "y_from_bottom": 61,
+            "reference": [
+              0.2062089592218399,
+              0.00883752666413784,
+              0.00589168444275856,
+              1.0
+            ],
+            "actual": [
+              0.2062089443206787,
+              0.008837525732815266,
+              0.00589168444275856,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 128,
+            "y_from_bottom": 59,
+            "reference": [
+              0.19517390429973602,
+              0.008364594541490078,
+              0.005576396360993385,
+              1.0
+            ],
+            "actual": [
+              0.19517388939857483,
+              0.008364594541490078,
+              0.005576396826654673,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 133,
+            "y_from_bottom": 42,
+            "reference": [
+              0.21441614627838135,
+              0.009189262054860592,
+              0.006126174703240395,
+              1.0
+            ],
+            "actual": [
+              0.21441613137722015,
+              0.009189261123538017,
+              0.006126174703240395,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 189,
+            "y_from_bottom": 34,
+            "reference": [
+              0.22915500402450562,
+              0.009820926934480667,
+              0.006547285709530115,
+              1.0
+            ],
+            "actual": [
+              0.22915498912334442,
+              0.009820927865803242,
+              0.006547285243868828,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          },
+          {
+            "x": 74,
+            "y_from_bottom": 21,
+            "reference": [
+              0.2284768968820572,
+              0.009791865944862366,
+              0.006527911406010389,
+              1.0
+            ],
+            "actual": [
+              0.22847691178321838,
+              0.009791865944862366,
+              0.006527911406010389,
+              1.0
+            ],
+            "max_absolute_error": 1.4901161193847656e-08
+          }
+        ],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "rgba_bitwise_identical": false,
+      "rgba_bits_sha256": "0f8a7857f3c35cb020210b0dabaead9056df7c4102feb790dc12141393c00a8e",
+      "image_gate": "different_multithread_image"
+    }
+  ],
+  "build_manifest_sha256": "969a63e4226ff853560978204d680d0ada7e60833c514ac777724d1382cccd87",
+  "ptx_sha256": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2",
+  "gpu_driver_identity": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "source_hashes": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_native_shading_probe.py": "742cb308d9ee647c31d2772f9ce258c11a3803a0d38bd06f393ca79e0109ac95",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_integration.py": "9c4f27ae581de9ccee61ebfcf63fa4c02e78f027717a7d19771b3c2f45d36de2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\images.py": "85cddd6352847ba050f315863b278121f73e7a0af7e7688da23988dd9a57de81",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\contributions.py": "f8bab2e361b2879c69fa55b15688d7fbca56973819330080b6194775147c8392",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_queue.cc": "080a60a13c78a6aa5d4e4fccfc0aedeea9519eae128e10f963856960a9652179",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\queue_integration.py": "8c78628d675e029051ce47f930375ab43dd9e6ace8171b270d504100a4efd34d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_hook.ispc.inc": "35cbcbd29dd0017f05d3cd6fdcb55f400aca2b97438f1fe6ee20db4fe32c7bc4"
+  },
+  "queue_gates": {
+    "single_worker_image_parity": "passed",
+    "unique_delivery_and_fallback": "passed",
+    "native_four_worker_repeat": {
+      "status": "failed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": false,
+          "failed_values": 6,
+          "maximum_absolute_error": 2.9802322387695312e-08,
+          "rms_error": 2.3283064365386963e-10,
+          "values": 36864
+        },
+        "G": {
+          "passed": false,
+          "failed_values": 9,
+          "maximum_absolute_error": 9.313225746154785e-10,
+          "rms_error": 1.4551915228366852e-11,
+          "values": 36864
+        },
+        "B": {
+          "passed": false,
+          "failed_values": 7,
+          "maximum_absolute_error": 4.656612873077393e-10,
+          "rms_error": 6.41679146565873e-12,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 16,
+      "first_difference": {
+        "x": 189,
+        "y_from_bottom": 34,
+        "reference": [
+          0.22915500402450562,
+          0.009820926934480667,
+          0.006547285709530115,
+          1.0
+        ],
+        "actual": [
+          0.22915498912334442,
+          0.009820927865803242,
+          0.006547285243868828,
+          1.0
+        ],
+        "max_absolute_error": 1.4901161193847656e-08
+      },
+      "largest_differences": [
+        {
+          "x": 78,
+          "y_from_bottom": 86,
+          "reference": [
+            0.25145938992500305,
+            0.010776829905807972,
+            0.007184553891420364,
+            1.0
+          ],
+          "actual": [
+            0.25145941972732544,
+            0.010776829905807972,
+            0.007184553891420364,
+            1.0
+          ],
+          "max_absolute_error": 2.9802322387695312e-08
+        },
+        {
+          "x": 112,
+          "y_from_bottom": 106,
+          "reference": [
+            0.22827158868312836,
+            0.009783066809177399,
+            0.006522045005112886,
+            1.0
+          ],
+          "actual": [
+            0.22827157378196716,
+            0.009783067740499973,
+            0.006522045005112886,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 183,
+          "y_from_bottom": 98,
+          "reference": [
+            0.17719677090644836,
+            0.007594147231429815,
+            0.005062764976173639,
+            1.0
+          ],
+          "actual": [
+            0.17719678580760956,
+            0.007594147231429815,
+            0.005062764976173639,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 129,
+          "y_from_bottom": 95,
+          "reference": [
+            0.21718469262123108,
+            0.009307914413511753,
+            0.00620527658611536,
+            1.0
+          ],
+          "actual": [
+            0.21718470752239227,
+            0.009307914413511753,
+            0.00620527658611536,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 133,
+          "y_from_bottom": 42,
+          "reference": [
+            0.21441614627838135,
+            0.009189262054860592,
+            0.006126174703240395,
+            1.0
+          ],
+          "actual": [
+            0.21441613137722015,
+            0.009189261123538017,
+            0.006126174703240395,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 189,
+          "y_from_bottom": 34,
+          "reference": [
+            0.22915500402450562,
+            0.009820926934480667,
+            0.006547285709530115,
+            1.0
+          ],
+          "actual": [
+            0.22915498912334442,
+            0.009820927865803242,
+            0.006547285243868828,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 148,
+          "y_from_bottom": 135,
+          "reference": [
+            0.20940972864627838,
+            0.008974702097475529,
+            0.0059831347316503525,
+            1.0
+          ],
+          "actual": [
+            0.20940972864627838,
+            0.008974703028798103,
+            0.0059831347316503525,
+            1.0
+          ],
+          "max_absolute_error": 9.313225746154785e-10
+        },
+        {
+          "x": 81,
+          "y_from_bottom": 95,
+          "reference": [
+            0.25063881278038025,
+            0.010741661302745342,
+            0.007161108776926994,
+            1.0
+          ],
+          "actual": [
+            0.25063881278038025,
+            0.010741662234067917,
+            0.007161108311265707,
+            1.0
+          ],
+          "max_absolute_error": 9.313225746154785e-10
+        }
+      ],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "candidate_four_worker_repeat": {
+      "status": "failed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": false,
+          "failed_values": 10,
+          "maximum_absolute_error": 1.4901161193847656e-08,
+          "rms_error": 2.4542504767641887e-10,
+          "values": 36864
+        },
+        "G": {
+          "passed": false,
+          "failed_values": 6,
+          "maximum_absolute_error": 9.313225746154785e-10,
+          "rms_error": 1.1881589029911644e-11,
+          "values": 36864
+        },
+        "B": {
+          "passed": false,
+          "failed_values": 6,
+          "maximum_absolute_error": 4.656612873077393e-10,
+          "rms_error": 5.940794514955822e-12,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 17,
+      "first_difference": {
+        "x": 92,
+        "y_from_bottom": 14,
+        "reference": [
+          0.21270868182182312,
+          0.00911608524620533,
+          0.006077390629798174,
+          1.0
+        ],
+        "actual": [
+          0.21270868182182312,
+          0.009116086177527905,
+          0.006077390629798174,
+          1.0
+        ],
+        "max_absolute_error": 9.313225746154785e-10
+      },
+      "largest_differences": [
+        {
+          "x": 149,
+          "y_from_bottom": 120,
+          "reference": [
+            0.2293231189250946,
+            0.009828133508563042,
+            0.0065520890057086945,
+            1.0
+          ],
+          "actual": [
+            0.2293231040239334,
+            0.009828133508563042,
+            0.0065520890057086945,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 139,
+          "y_from_bottom": 120,
+          "reference": [
+            0.2340509593486786,
+            0.010030755773186684,
+            0.006687169894576073,
+            1.0
+          ],
+          "actual": [
+            0.23405097424983978,
+            0.010030755773186684,
+            0.006687169894576073,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 47,
+          "y_from_bottom": 112,
+          "reference": [
+            0.24851205945014954,
+            0.010650516487658024,
+            0.007100343704223633,
+            1.0
+          ],
+          "actual": [
+            0.24851207435131073,
+            0.010650516487658024,
+            0.007100343704223633,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 151,
+          "y_from_bottom": 95,
+          "reference": [
+            0.2370654046535492,
+            0.010159946978092194,
+            0.0067732976749539375,
+            1.0
+          ],
+          "actual": [
+            0.2370654195547104,
+            0.010159946046769619,
+            0.0067732976749539375,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 61,
+          "y_from_bottom": 95,
+          "reference": [
+            0.21397575736045837,
+            0.00917038880288601,
+            0.006113593000918627,
+            1.0
+          ],
+          "actual": [
+            0.21397574245929718,
+            0.00917038880288601,
+            0.006113593000918627,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 140,
+          "y_from_bottom": 61,
+          "reference": [
+            0.2062089592218399,
+            0.00883752666413784,
+            0.00589168444275856,
+            1.0
+          ],
+          "actual": [
+            0.2062089443206787,
+            0.008837525732815266,
+            0.00589168444275856,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 128,
+          "y_from_bottom": 59,
+          "reference": [
+            0.19517390429973602,
+            0.008364594541490078,
+            0.005576396360993385,
+            1.0
+          ],
+          "actual": [
+            0.19517388939857483,
+            0.008364594541490078,
+            0.005576396826654673,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        },
+        {
+          "x": 172,
+          "y_from_bottom": 50,
+          "reference": [
+            0.2308817356824875,
+            0.009894930757582188,
+            0.006596621125936508,
+            1.0
+          ],
+          "actual": [
+            0.23088175058364868,
+            0.009894930757582188,
+            0.006596621125936508,
+            1.0
+          ],
+          "max_absolute_error": 1.4901161193847656e-08
+        }
+      ],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "four_worker_bitwise_parity": false,
+    "cpu_gpu_overlap_observations": [
+      {
+        "cpu_completed_while_gpu_pending": 89,
+        "kernel_window_cpu_observations": 9,
+        "max_batch_samples": 16
+      },
+      {
+        "cpu_completed_while_gpu_pending": 101,
+        "kernel_window_cpu_observations": 4,
+        "max_batch_samples": 16
+      }
+    ],
+    "asynchronous_path_continuations": false,
+    "speedup_established": false
+  },
+  "runtime_inventory_sha256": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\trace": "8ed473f523c16e0c74cc4cf105185f756dc271f1a8c14b00400c408f503c296b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-native-cleanup-build\\control": "6cf910839aa3c0ac7d0b17b1961a391030e0dd5a7b505d574d64fe9a460653af",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-native-cleanup-build\\probe": "88f1233a554ddfe6a32e25c282dec513184a5938b51aa8a0b81f3ba288df0d92"
+  },
+  "raw_report_sha256": "2d9fa74f0267c6efc0d2c904f8d69788acdc4ea0ee3210e45e11e2a6bf0276b5",
+  "raw_report_path": "test-results\\xpu2-native-cleanup\\report.json",
+  "build_manifest": {
+    "status": "built",
+    "queued": true,
+    "scope": "Retained shading objects plus isolated Lambert hook; no clean source/runtime rebuild",
+    "source": "C:\\Users\\Raphael Tobar\\MoonRayForModo",
+    "runtime": "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-origin-build\\trace",
+    "source_sha256": "8730b71e144d820a1d6c1b6efd21244569e28ce9e8ac70e861e966e078e1ecd7",
+    "inputs": [
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_00.dir\\BsdfBuilder.ispc.obj",
+        "copy": "inputs\\0-BsdfBuilder.ispc.obj",
+        "sha256": "b95a4854df7e950dcd37c631ce4b454aba09fac4643eddb468a9ea4dfd735e51"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_00.dir\\BsdfComponent.ispc.obj",
+        "copy": "inputs\\1-BsdfComponent.ispc.obj",
+        "sha256": "3c080772ea312f2ce93c4843078d17fd1a6319231ba289fa4279ea51ee99e6cc"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_00.dir\\EvalShader.ispc.obj",
+        "copy": "inputs\\2-EvalShader.ispc.obj",
+        "sha256": "c8f83a1b4a83ad271ba10b6123b2f530a6c16c92e540057c8b6a01ba5283ef25"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_00.dir\\LobeAttenuator.ispc.obj",
+        "copy": "inputs\\3-LobeAttenuator.ispc.obj",
+        "sha256": "4cf36a86a2e34a29f92cf06f31e905e95bee597facf4c6663e87ee6832dfb8fc"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_00.dir\\PbrValidity.ispc.obj",
+        "copy": "inputs\\4-PbrValidity.ispc.obj",
+        "sha256": "159bce85499f509c1d8f5592efd25f3657146b026ca4990fe854d1d1b1174ee1"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_00.dir\\RampControl.ispc.obj",
+        "copy": "inputs\\5-RampControl.ispc.obj",
+        "sha256": "478ada71ef6e88419dfd212941fa0a7b0bfac12a16073539cf9a7181d6de296d"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_00.dir\\ShaderDataAux.ispc.obj",
+        "copy": "inputs\\6-ShaderDataAux.ispc.obj",
+        "sha256": "d77507e600f7575a292e39e88be95209fe03cb41ee27787cd9add6c09227e6c0"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_00.dir\\Util.ispc.obj",
+        "copy": "inputs\\7-Util.ispc.obj",
+        "sha256": "26f039ca1b2f1c1901af63823a3c67057f2dfbff94da1333e847b6f13912c026"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\Bsdf.ispc.obj",
+        "copy": "inputs\\8-Bsdf.ispc.obj",
+        "sha256": "564a45bddef56b306b253e97a220a361b0a36061245a7e588e6fe98852d81283"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfEyeCaustic.ispc.obj",
+        "copy": "inputs\\9-BsdfEyeCaustic.ispc.obj",
+        "sha256": "1413cf9808fe3d0bdfd44af01337cbb9470581210fb7741dcb3e5de955f50e11"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfIridescence.ispc.obj",
+        "copy": "inputs\\10-BsdfIridescence.ispc.obj",
+        "sha256": "b79b4310bf086a8d28a367ebfef2545b550903efa4171124a89e682c857d7851"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfLambert.ispc.obj",
+        "copy": "inputs\\11-BsdfLambert.ispc.obj",
+        "sha256": "247e7afc1f7a90e923dc178561fd65bb57ad01121fc25e490edb2276d7d3b9b5"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfMirror.ispc.obj",
+        "copy": "inputs\\12-BsdfMirror.ispc.obj",
+        "sha256": "4896ea88db4fbc9fcd389b97bc5101acd66ddfed67b6fc9913e82ff33988115f"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfOrenNayar.ispc.obj",
+        "copy": "inputs\\13-BsdfOrenNayar.ispc.obj",
+        "sha256": "e718874b836ce0f9d2b67edac6370b390af9d504a07c10da3cbbf171229959f8"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfRetroreflection.ispc.obj",
+        "copy": "inputs\\14-BsdfRetroreflection.ispc.obj",
+        "sha256": "5985a802c3fedf9d7437604023b8fb956a553ede8137b6d0c36635cf3d6a9850"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfSlice.ispc.obj",
+        "copy": "inputs\\15-BsdfSlice.ispc.obj",
+        "sha256": "d26f092810f37f0ab736f56196dc2013bad96e65584e5a93b047d4b87d5ff1ce"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfStochasticFlakes.ispc.obj",
+        "copy": "inputs\\16-BsdfStochasticFlakes.ispc.obj",
+        "sha256": "0f41506f0fdd56278487945d1b36a0aaaf5b3ac40fbb50232cb86a263ec55abc"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\BsdfUtil.ispc.obj",
+        "copy": "inputs\\17-BsdfUtil.ispc.obj",
+        "sha256": "24b2c6ab06c1abdcf78d26ca17bb05d3c41e465b715168c28007145c3f11b573"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\Bsdfv.ispc.obj",
+        "copy": "inputs\\18-Bsdfv.ispc.obj",
+        "sha256": "aa5a26420e19a241fe951c53a2b360d5ba48008febbb158de1035980d117512b"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_01.dir\\bsdf\\Fresnel.ispc.obj",
+        "copy": "inputs\\19-Fresnel.ispc.obj",
+        "sha256": "51cd101ea90796ae08faaea505d51a2f802a2516a20d3ebe0a1f7fa1d4ca9dd0"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_02.dir\\bsdf\\ashikhmin_shirley\\BsdfAshikhminShirley.ispc.obj",
+        "copy": "inputs\\20-BsdfAshikhminShirley.ispc.obj",
+        "sha256": "633692fe7d07fad73a55d66a6d7e3c7442ba72be4ce7047ea01a049347831098"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_03.dir\\bsdf\\cook_torrance\\BsdfCookTorrance.ispc.obj",
+        "copy": "inputs\\21-BsdfCookTorrance.ispc.obj",
+        "sha256": "47367ee80fd420d879cfb09c2dcf992b54f93d6f6be023e65136652f57104e64"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_03.dir\\bsdf\\cook_torrance\\BsdfTransmissionCookTorrance.ispc.obj",
+        "copy": "inputs\\22-BsdfTransmissionCookTorrance.ispc.obj",
+        "sha256": "b106e217f7fd0eed9137525766588b6ba33a30b5b7f02a0570a5f01d91366bc9"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_04.dir\\bsdf\\cook_torrance\\energy_conservation\\CookTorranceEnergyCompensation.ispc.obj",
+        "copy": "inputs\\23-CookTorranceEnergyCompensation.ispc.obj",
+        "sha256": "63a7cb509a8a230f2e6f964f32906e92d059d3b378daf166cb5b92d0bf17068e"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_04.dir\\bsdf\\cook_torrance\\energy_conservation\\TransmissionCookTorranceEnergyCompensation.ispc.obj",
+        "copy": "inputs\\24-TransmissionCookTorranceEnergyCompensation.ispc.obj",
+        "sha256": "ee16ce14afeba1de1efc2f3672ba86a81a6fdff0cece5131cf9a247c8eb268c0"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_05.dir\\bsdf\\fabric\\BsdfFabric.ispc.obj",
+        "copy": "inputs\\25-BsdfFabric.ispc.obj",
+        "sha256": "e904c1fbae4cbd21c9d55ac195174848108ae5dca468a061531d02e18a4c7f02"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_05.dir\\bsdf\\fabric\\BsdfFabricVelvet.ispc.obj",
+        "copy": "inputs\\26-BsdfFabricVelvet.ispc.obj",
+        "sha256": "ef1a2d3cf79bacd313f9cff139a4c4362b8cdd46323142a7c8963790b2d74683"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_05.dir\\bsdf\\fabric\\VelvetAlbedo.ispc.obj",
+        "copy": "inputs\\27-VelvetAlbedo.ispc.obj",
+        "sha256": "8e72b69fb2bfac389dcbc0e329df2ca1da52cd41ece70cad0e0464797eec703b"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_06.dir\\bsdf\\hair\\BsdfHair.ispc.obj",
+        "copy": "inputs\\28-BsdfHair.ispc.obj",
+        "sha256": "d835989b895acf760871e5b7cd56bb23c80e3fd4dd59451c5696a3f2ec947a0b"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_06.dir\\bsdf\\hair\\BsdfHairDiffuse.ispc.obj",
+        "copy": "inputs\\29-BsdfHairDiffuse.ispc.obj",
+        "sha256": "9d676218aac369b9b6607adcf6cf55348dc631519fb73560a83086ee6849ffb1"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_06.dir\\bsdf\\hair\\BsdfHairLobes.ispc.obj",
+        "copy": "inputs\\30-BsdfHairLobes.ispc.obj",
+        "sha256": "9d1822d4ca61f2d4aa07143497d8258a8e7dc9e399b60699854f6d68ec9e87dd"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_06.dir\\bsdf\\hair\\BsdfHairOneSampler.ispc.obj",
+        "copy": "inputs\\31-BsdfHairOneSampler.ispc.obj",
+        "sha256": "deac51ed266b5802e88bea62f2691041c30416fe59b0f7d6293883f16f3a109d"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_06.dir\\bsdf\\hair\\HairState.ispc.obj",
+        "copy": "inputs\\32-HairState.ispc.obj",
+        "sha256": "f0250170c675a3cd191a4712a91130fce737136458bc2402b2bd5ff9ca4bf364"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_07.dir\\bsdf\\npr\\BsdfFlatDiffuse.ispc.obj",
+        "copy": "inputs\\33-BsdfFlatDiffuse.ispc.obj",
+        "sha256": "3af39b0bd5adbfa86d19be798d780bbbc73ff576bb8aae92f7a0ab99459f55f3"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_07.dir\\bsdf\\npr\\BsdfToon.ispc.obj",
+        "copy": "inputs\\34-BsdfToon.ispc.obj",
+        "sha256": "ae37d90a88812122fc10874856f2063e2b8ccfb2eb5b2fa1f8394550c2378c1b"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_08.dir\\bsdf\\under\\BsdfUnder.ispc.obj",
+        "copy": "inputs\\35-BsdfUnder.ispc.obj",
+        "sha256": "caea31235afed1cab4a9bc5ca79d8b5f4ad180bf295ff5d8c839ffe6e20130a1"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_08.dir\\bsdf\\under\\BsdfUnderClearcoat.ispc.obj",
+        "copy": "inputs\\36-BsdfUnderClearcoat.ispc.obj",
+        "sha256": "e875448e338bdd3553eceea60223d0092e0a7a7a082a0e527b17a784f37bccea"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_08.dir\\bsdf\\under\\BsdfUnderClearcoatTransmission.ispc.obj",
+        "copy": "inputs\\37-BsdfUnderClearcoatTransmission.ispc.obj",
+        "sha256": "2d64033d444fb826fa4a1f5e53e33955247efcb1887c740c6cc9aef85a9b0ae0"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_09.dir\\bsdf\\ward\\BsdfWard.ispc.obj",
+        "copy": "inputs\\38-BsdfWard.ispc.obj",
+        "sha256": "587ef92f3f1b3da99088bc36948d6a1e62abf10f10612791dc4238d3191a21d8"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_10.dir\\bssrdf\\Bssrdf.ispc.obj",
+        "copy": "inputs\\39-Bssrdf.ispc.obj",
+        "sha256": "fda87355482bb44e66eb4346ec6df5ce455874cd209163b9f48ce5c6f39339c9"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_10.dir\\bssrdf\\Dipole.ispc.obj",
+        "copy": "inputs\\40-Dipole.ispc.obj",
+        "sha256": "6715037c99f36ff4997149e54a45f07d9e51c7e5df0f333c0b3885542783c25d"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_10.dir\\bssrdf\\NormalizedDiffusion.ispc.obj",
+        "copy": "inputs\\41-NormalizedDiffusion.ispc.obj",
+        "sha256": "32f3941555eec96197476dd2056efa3ba9898c8798fb42e496e23e5d36cf5ef2"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_ispc_10.dir\\bssrdf\\VolumeSubsurface.ispc.obj",
+        "copy": "inputs\\42-VolumeSubsurface.ispc.obj",
+        "sha256": "63fe85c1965f144dfd46c178bbecdd0778812f94efc7d6f32252b7c01102deec"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\eval_attribute_debug_hack_ispc.dir\\EvalAttributeDebugHack.ispc.obj",
+        "copy": "inputs\\43-EvalAttributeDebugHack.ispc.obj",
+        "sha256": "11f8700d0729cf1802b93b553aac1625f02eea3df4baaef203ad94d33edb6030"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\AttributeTable.ispc.obj",
+        "copy": "inputs\\44-AttributeTable.ispc.obj",
+        "sha256": "1e4e9b0a81f7179411df53cf1d65c8aa521637e0f5e4f1515751dc6110eb2bee"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\BasicTexture.ispc.obj",
+        "copy": "inputs\\45-BasicTexture.ispc.obj",
+        "sha256": "8f2984f6e0cc12cffcbb7bb73d9921477af4bddcfad99c1db0c0bcf7bedb404a"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\EvalAttribute.ispc.obj",
+        "copy": "inputs\\46-EvalAttribute.ispc.obj",
+        "sha256": "7ed352c4d25c0448fe8988a7851628f2d20aba80a08513fba1da3841928fc9ec"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\Intersection.ispc.obj",
+        "copy": "inputs\\47-Intersection.ispc.obj",
+        "sha256": "ad2bf12e5d42a18202026ef78005b93f577a6fb78bd675e9fe645a23102f40cb"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\MipSelector.ispc.obj",
+        "copy": "inputs\\48-MipSelector.ispc.obj",
+        "sha256": "884a55fdedf124dbf2511f7dec90a8fde2994e2a6be25ab35bfdafdbd36e719c"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\OpenVdbUtil.ispc.obj",
+        "copy": "inputs\\49-OpenVdbUtil.ispc.obj",
+        "sha256": "937e7e3b7a9ea7d07eeb2876cb117b9f4892956795d021c13f2b04ae328dbee7"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\Shading.ispc.obj",
+        "copy": "inputs\\50-Shading.ispc.obj",
+        "sha256": "6b1f905afd86706aa7970451f2d42478603f4dbfd5ea5b1728069862ef9af59c"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\ShadingTLState.ispc.obj",
+        "copy": "inputs\\51-ShadingTLState.ispc.obj",
+        "sha256": "a8e137b66506267b139e1eebea5271d6e221b335fb4fbe6433d9c2403de509c3"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\UdimTexture.ispc.obj",
+        "copy": "inputs\\52-UdimTexture.ispc.obj",
+        "sha256": "90384f38c60963dacc147d2a67e5a0e82acfd9d5635158be78568a9ee75b6d87"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_eval_objects.dir\\Xform.ispc.obj",
+        "copy": "inputs\\53-Xform.ispc.obj",
+        "sha256": "ec9939e5f1fe2cbb496c2daca947234cf8bf3de6ce02593a399326f3fc84787d"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_bsdf_objects.dir\\BsdfLabels.cc.obj",
+        "copy": "inputs\\54-BsdfLabels.cc.obj",
+        "sha256": "01506f812f675fd3dcd38313f6d56740866212cdfee7bc01a097f70469e6de87"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_bsdf_objects.dir\\bsdf\\BsdfUtil.cc.obj",
+        "copy": "inputs\\55-BsdfUtil.cc.obj",
+        "sha256": "366fe73747987cf502a4f1cb93e2de39b30c3b96347b9c6a500f389dd6b1a708"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\ispc\\CMakeFiles\\shading_bsdf_objects.dir\\Shadingv.cc.obj",
+        "copy": "inputs\\56-Shadingv.cc.obj",
+        "sha256": "bf15f4bf50abfdb27ef081c9aa3dd6c963db76e5a26211e31b6dc072e75e2c4e"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\AttributeKey.cc.obj",
+        "copy": "inputs\\57-AttributeKey.cc.obj",
+        "sha256": "fb34803b09bab798504f8c237db87e7608b19d03d3d1a4bc09b23ff3af9b1d4c"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Attributes.cc.obj",
+        "copy": "inputs\\58-Attributes.cc.obj",
+        "sha256": "24543f96a5d0852a2016b1e93e9d491c3e6732d7b087ebdd0292fbea1a3425ed"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\AttributeTable.cc.obj",
+        "copy": "inputs\\59-AttributeTable.cc.obj",
+        "sha256": "c8e224bb0bed3703ab6b2187db5ca2895a39953a9bacc9f1c8abf01084cc61fa"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\BasicTexture.cc.obj",
+        "copy": "inputs\\60-BasicTexture.cc.obj",
+        "sha256": "71410c4ec7c70616b170e2c2854def04f64fb1685c0f30749887ccba9bedf85b"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\BsdfBuilder.cc.obj",
+        "copy": "inputs\\61-BsdfBuilder.cc.obj",
+        "sha256": "92921b1c37d7f20f33aa6dc7562b7c9b66710011c1f650ecedae7fe32aa63ea5"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\BsdfComponent.cc.obj",
+        "copy": "inputs\\62-BsdfComponent.cc.obj",
+        "sha256": "623058b047241984846291fb97ee8f46dcfa6adeb515b5dc70eef968d9a6928f"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Displacement.cc.obj",
+        "copy": "inputs\\63-Displacement.cc.obj",
+        "sha256": "a58a841166009bf21ea60a5e11ffaa405c0264634257c88e1f729b22531ff63a"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\EvalAttribute.cc.obj",
+        "copy": "inputs\\64-EvalAttribute.cc.obj",
+        "sha256": "035a987da61c305c6bae8321a0e38a4fc9e1b382e161ce719a13b677e238c5af"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\EvalShader.cc.obj",
+        "copy": "inputs\\65-EvalShader.cc.obj",
+        "sha256": "524588c8bb2705a6fb323f171b1b436ddc399c269e6e0da2ef3fe5d5a6b31223"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Geometry.cc.obj",
+        "copy": "inputs\\66-Geometry.cc.obj",
+        "sha256": "a23d31004965a44a36e6762a9847daf555a5a8d5311049c4ff397a3d67ebd7da"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\InstanceAttributes.cc.obj",
+        "copy": "inputs\\67-InstanceAttributes.cc.obj",
+        "sha256": "e8741912b5aed47dcb89b8a60c1dbb171fb0bf8b216c2607a1be65b0cca374be"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Interpolator.cc.obj",
+        "copy": "inputs\\68-Interpolator.cc.obj",
+        "sha256": "143dc5d86f5673e554aacd9129b68fa8ee9291d4422a4ebe378f381544822ccd"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Intersection.cc.obj",
+        "copy": "inputs\\69-Intersection.cc.obj",
+        "sha256": "f5ad435a4f6b339daf6afc04ba18820df71acab1a5f928d3f92d753b79281128"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Log.cc.obj",
+        "copy": "inputs\\70-Log.cc.obj",
+        "sha256": "86dfbeb8047bcac35996099bc5d71a0b5263a257612face5a5bd39abec39983a"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Material.cc.obj",
+        "copy": "inputs\\71-Material.cc.obj",
+        "sha256": "d52f959bad6bc2b747b429d8ff5aae08821ab8a1cec5aa0f056871e1f6cce3ab"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\MipSelector.cc.obj",
+        "copy": "inputs\\72-MipSelector.cc.obj",
+        "sha256": "fc47e102161d92aeb19007e1754ec804e391b61e74d0cad4e53f2442b6150274"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\OpenVdbSampler.cc.obj",
+        "copy": "inputs\\73-OpenVdbSampler.cc.obj",
+        "sha256": "b4567acc27a0cf94d6339b08c77c6d36c95bd64eef15fb6b108a380ab90f49b0"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\OpenVdbUtil.cc.obj",
+        "copy": "inputs\\74-OpenVdbUtil.cc.obj",
+        "sha256": "2b2889b1d56bc9312405c6a8af5198a9e8d0d73233807ed659f8400783c082c2"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\PbrValidity.cc.obj",
+        "copy": "inputs\\75-PbrValidity.cc.obj",
+        "sha256": "f32fb9fb295f05efa6d128e09468326055959c9be54ad0b9a3c1ccaeff304ca6"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\PrimitiveAttribute.cc.obj",
+        "copy": "inputs\\76-PrimitiveAttribute.cc.obj",
+        "sha256": "02fe80ab3aff7a14fcd778ba20e313d510d59bac4eb7b4963526bd1e748c3499"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\RampControl.cc.obj",
+        "copy": "inputs\\77-RampControl.cc.obj",
+        "sha256": "ff793c54302927b05eea0f030edebca2b549296b448d921dd60ced8d03197a9f"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\ShadingTLState.cc.obj",
+        "copy": "inputs\\78-ShadingTLState.cc.obj",
+        "sha256": "7915694e21697fc53a3723bf4e8bc24c46c575d34256b531ca5d445cf816eecc"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\ShadingUtil.cc.obj",
+        "copy": "inputs\\79-ShadingUtil.cc.obj",
+        "sha256": "a96c1ec2f4df46a7e031f13c030cdf87ca136a4f257ea200c64b5f2c2fc2a44e"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\State.cc.obj",
+        "copy": "inputs\\80-State.cc.obj",
+        "sha256": "15f6352e6cddf5aa5d2f918df56bae6d186448e43c112666fe77eba7a15050e8"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Texture.cc.obj",
+        "copy": "inputs\\81-Texture.cc.obj",
+        "sha256": "e171e070588529e39134924885e3197f38c4441243bd8e4373ba2a838f8572b9"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\UdimTexture.cc.obj",
+        "copy": "inputs\\82-UdimTexture.cc.obj",
+        "sha256": "d3df9d6f782172838282a2008580f06fc5788999b840f61d2cdc43b46bc2525c"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\Xform.cc.obj",
+        "copy": "inputs\\83-Xform.cc.obj",
+        "sha256": "e0413cbd4e663b748667ab0e3c4e0278ecdff14dcfa8a0234ae8a1d5b3cb8624"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\Bsdf.cc.obj",
+        "copy": "inputs\\84-Bsdf.cc.obj",
+        "sha256": "40a11a81ff139404ee8af7a762e11510e7a690120f42845ed2ea9b45b55d3a41"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\BsdfSlice.cc.obj",
+        "copy": "inputs\\85-BsdfSlice.cc.obj",
+        "sha256": "52f9bd6d38eecde2e4c2044ea58814f98c1228740017b9a564d027b322d61332"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\BsdfTable.cc.obj",
+        "copy": "inputs\\86-BsdfTable.cc.obj",
+        "sha256": "170521ea0c8cc061f58803120ebbfced66f8a9d1608ec991349dde67023405af"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\BsdfTableAniso.cc.obj",
+        "copy": "inputs\\87-BsdfTableAniso.cc.obj",
+        "sha256": "57e544edc71b14e7db914241d288800b0562014a91894e50c250d2f6f45e592b"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\Bsdfv.cc.obj",
+        "copy": "inputs\\88-Bsdfv.cc.obj",
+        "sha256": "62b57f926586f1adef8a02fcd641e83c6f01ba1f7f5d135c79556d07eb541482"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\Fresnel.cc.obj",
+        "copy": "inputs\\89-Fresnel.cc.obj",
+        "sha256": "f1cdbf6253f5ca3ee1fb3a7c89903fab425ad85986152981fee8853a757b10a5"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\LightStage.cc.obj",
+        "copy": "inputs\\90-LightStage.cc.obj",
+        "sha256": "f10f6761f9a8080a1aef23456d5684804f9faed041f4f0ea2a8f4cf8d50321c5"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\ashikhmin_shirley\\BsdfAshikhminShirley.cc.obj",
+        "copy": "inputs\\91-BsdfAshikhminShirley.cc.obj",
+        "sha256": "689ed4c89f269fb6acfb689bbfbd1441374ebb46249684c8138f55f037a7a4f4"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\cook_torrance\\BsdfCookTorrance.cc.obj",
+        "copy": "inputs\\92-BsdfCookTorrance.cc.obj",
+        "sha256": "e8a299ec57e239a895d530b03fd85f04106102fea8d2ba45ccd750c01ff877fd"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\cook_torrance\\BsdfTransmissionCookTorrance.cc.obj",
+        "copy": "inputs\\93-BsdfTransmissionCookTorrance.cc.obj",
+        "sha256": "0f3a051e0666ce38ff8730a0a3f1608603a54ceb1dccae1be0c6ad3a9ebb940c"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\cook_torrance\\energy_compensation\\CookTorranceEnergyCompensation.cc.obj",
+        "copy": "inputs\\94-CookTorranceEnergyCompensation.cc.obj",
+        "sha256": "1675d6bf1e52e0c03770b9e88ffdde45ca6fe18adc57f0430b9920dcdbd3b9b7"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\cook_torrance\\energy_compensation\\TransmissionCookTorranceEnergyCompensation.cc.obj",
+        "copy": "inputs\\95-TransmissionCookTorranceEnergyCompensation.cc.obj",
+        "sha256": "1a65740c39cec3dd5ba427d89b0b36b60f0c6002da912bd7cb7caee8fc4cbd93"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\fabric\\BsdfDwaFabric.cc.obj",
+        "copy": "inputs\\96-BsdfDwaFabric.cc.obj",
+        "sha256": "6b13f9a00e94f77af0069c6bee8c54f1ae950c50989f14938d73dee8bc8430cf"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\fabric\\BsdfFabric.cc.obj",
+        "copy": "inputs\\97-BsdfFabric.cc.obj",
+        "sha256": "3ce6eec6f202eb3c972fe90aafcd835a21a13e4b10f4a07cf6a57c8480d0e68c"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\fabric\\BsdfFabricVelvet.cc.obj",
+        "copy": "inputs\\98-BsdfFabricVelvet.cc.obj",
+        "sha256": "26a0753ce9a4b2a7fd084b34e5018c692c2ef8e5365eaed3f3c674753f4a712a"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\fabric\\BsdfKajiyaKayFabric.cc.obj",
+        "copy": "inputs\\99-BsdfKajiyaKayFabric.cc.obj",
+        "sha256": "338ba4a1296d6606e5296fab30691328d2b096fe0541c9070a6784892c0cbc48"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\fabric\\VelvetAlbedo.cc.obj",
+        "copy": "inputs\\100-VelvetAlbedo.cc.obj",
+        "sha256": "dfe339932db81127bb411d57f31157fc03495e8af00575ba6ff2a19d013bc237"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\hair\\BsdfHair.cc.obj",
+        "copy": "inputs\\101-BsdfHair.cc.obj",
+        "sha256": "45adb28116f7751ce498f2d1f8cc9ad1832dd2866e124650ac8db0569d9628c4"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\hair\\BsdfHairDiffuse.cc.obj",
+        "copy": "inputs\\102-BsdfHairDiffuse.cc.obj",
+        "sha256": "04e930ac4dcc67582bab966944864534f46be6c25efe547e499db15534ffa15b"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\hair\\BsdfHairLobes.cc.obj",
+        "copy": "inputs\\103-BsdfHairLobes.cc.obj",
+        "sha256": "e2ea5b47470e836431f5da3ede274776dadcc9f4ed2b1891a4764db4cabf4862"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\hair\\BsdfHairOneSampler.cc.obj",
+        "copy": "inputs\\104-BsdfHairOneSampler.cc.obj",
+        "sha256": "62c3f0f890ff4d7b435ebd5a81ae3d247942a697094137e21c9823682fadbe02"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\hair\\HairState.cc.obj",
+        "copy": "inputs\\105-HairState.cc.obj",
+        "sha256": "c48fa7e82a6f3f37b578b3bb8c8663e44b6bd2552d98600c763cf046bdb714df"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\npr\\BsdfToon.cc.obj",
+        "copy": "inputs\\106-BsdfToon.cc.obj",
+        "sha256": "87d756e48507d21d1bfc435edf6ce69edf286ad70e24d0fa5de0d842bf858300"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\under\\BsdfUnderClearcoat.cc.obj",
+        "copy": "inputs\\107-BsdfUnderClearcoat.cc.obj",
+        "sha256": "d54d778d25e7cb013e9f72f3f4aa6e3f8ce1eff0fa467162663d618fe7c4069f"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\under\\BsdfUnderClearcoatTransmission.cc.obj",
+        "copy": "inputs\\108-BsdfUnderClearcoatTransmission.cc.obj",
+        "sha256": "97a967e1aa0e20e95ef07b694edef218e8403efbe7c9213de2119e6820a2a2a0"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bsdf\\ward\\BsdfWard.cc.obj",
+        "copy": "inputs\\109-BsdfWard.cc.obj",
+        "sha256": "425d6125261500efefd8326b19bd049107c101f241c88fe490530350246d80b8"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bssrdf\\Bssrdf.cc.obj",
+        "copy": "inputs\\110-Bssrdf.cc.obj",
+        "sha256": "fa7f1b8c30599209abacbbafd35349e417034c41843eab34d1408774687551db"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bssrdf\\Dipole.cc.obj",
+        "copy": "inputs\\111-Dipole.cc.obj",
+        "sha256": "83b66f897e8945685c8b9ca2859f38e2ee9c35c67cc12949224d1cb169e44fce"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bssrdf\\MultiLayer.cc.obj",
+        "copy": "inputs\\112-MultiLayer.cc.obj",
+        "sha256": "a7f3c72a02c6396af88aa89bb2d5e23c41a8cd6b04e9b4c36b1e9b527430ab2a"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bssrdf\\NormalizedDiffusion.cc.obj",
+        "copy": "inputs\\113-NormalizedDiffusion.cc.obj",
+        "sha256": "67386634925d6abbcef3207a2d4f81232a90389311ed38f57dc03e367a17da03"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\shading\\CMakeFiles\\rendering_shading.dir\\bssrdf\\VolumeSubsurface.cc.obj",
+        "copy": "inputs\\114-VolumeSubsurface.cc.obj",
+        "sha256": "023656c17f8155adad100e2a816b1cc0d026412123423adb56f944fa2b665135"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\common\\file_resource\\libcommon_file_resource.dll.a",
+        "copy": "inputs\\115-libcommon_file_resource.dll.a",
+        "sha256": "12613c78581778f34194d4230c9f9fef2851879c7051e1c689f9c00861b8f589"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\libispc_runtime.a",
+        "copy": "inputs\\116-libispc_runtime.a",
+        "sha256": "81c95d918e3ce9e0ad9a346304e84672bd68fa9f02fb1393bc772e2d8c52cf8f"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\texturing\\sampler\\libtexturing_sampler.dll.a",
+        "copy": "inputs\\117-libtexturing_sampler.dll.a",
+        "sha256": "2c6f3e768a6e2623a54d779710ef22b07ffc96bcca8281a070315f7afa7b7e80"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\rendering\\mcrt_common\\librendering_mcrt_common.dll.a",
+        "copy": "inputs\\118-librendering_mcrt_common.dll.a",
+        "sha256": "a3a27b9169691ed005af54c0a5b59ac73636c4bcdf2db3ecbad55dbfe7bd5c76"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\common\\grid_util\\libcommon_grid_util.dll.a",
+        "copy": "inputs\\119-libcommon_grid_util.dll.a",
+        "sha256": "f5a27bb589ed03a67805d758ca61ed7c4aa59f778894792f992a0ebf5edf79b8"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\common\\rec_time\\libcommon_rec_time.dll.a",
+        "copy": "inputs\\120-libcommon_rec_time.dll.a",
+        "sha256": "387f83b7864ce0812a625150eb20a114985d167d0eb7f63a8915cb89061d25d6"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libssl.dll.a",
+        "copy": "inputs\\121-libssl.dll.a",
+        "sha256": "3319d2d52c1287913bc4793c7caf5559163c7407eaf5a83a425edfc042bb5a14"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libcrypto.dll.a",
+        "copy": "inputs\\122-libcrypto.dll.a",
+        "sha256": "73eb73b0d5049ea82eda53c8b6871e71bfb14ae7027fdd481671242e398dbe4d"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libembree4.dll.a",
+        "copy": "inputs\\123-libembree4.dll.a",
+        "sha256": "246f183805cbf42e802159bfe40c5f7c11523355a7901a5c45376744752903db"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\common\\mcrt_util\\libcommon_mcrt_util.dll.a",
+        "copy": "inputs\\124-libcommon_mcrt_util.dll.a",
+        "sha256": "7813f01ae8cc2a8b7c8e672f76ea826f547f8b032a1660aae792ce053a613b1a"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\deepfile\\libdeepfile.dll.a",
+        "copy": "inputs\\126-libdeepfile.dll.a",
+        "sha256": "55feb8292ea62eb518da52f018ba568f6e34f5c39fedce55f857c61f6aaaf616"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libOpenEXRUtil.dll.a",
+        "copy": "inputs\\127-libOpenEXRUtil.dll.a",
+        "sha256": "2279c1487345bfdcd88dee08c38aae1b456d86cfdf5a26a4da9c230c5500e2d0"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\moonray\\lib\\statistics\\libstatistics.dll.a",
+        "copy": "inputs\\128-libstatistics.dll.a",
+        "sha256": "47008c1ccf136a64e374e9132be0df07c2d9d7cc841fd9db33b447456f5dc8aa"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libjpeg.dll.a",
+        "copy": "inputs\\129-libjpeg.dll.a",
+        "sha256": "52419cdd7aab35260990da0fd72f2a667a8211714a4d0f86ad8be86b5701350d"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libopenvdb.dll.a",
+        "copy": "inputs\\130-libopenvdb.dll.a",
+        "sha256": "a62a3b5733a1d333dac832013f0770876608ffcf6b03a992d527c76aebc9c9fc"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\scene\\rdl2\\libscene_rdl2.dll.a",
+        "copy": "inputs\\131-libscene_rdl2.dll.a",
+        "sha256": "164ab85cf885e449552308ef5c595391a99a6326d740c79829f13eebd2cdb485"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\common\\fb_util\\libcommon_fb_util.dll.a",
+        "copy": "inputs\\132-libcommon_fb_util.dll.a",
+        "sha256": "89fee30916476ff13c609f82218ba80453d3643742d0878933da89be25d7a29e"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\render\\cache\\librender_cache.dll.a",
+        "copy": "inputs\\133-librender_cache.dll.a",
+        "sha256": "8c36ba263f9c6e746d9636b79f328fd3477faa38d34f969d19fd3f321d7c38a2"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\render\\util\\librender_util.dll.a",
+        "copy": "inputs\\134-librender_util.dll.a",
+        "sha256": "09f4506bdbe0a87f86e0b93cf86b50972e845e9519d9de40fb45cf453c9aaa3c"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libjsoncpp.a",
+        "copy": "inputs\\135-libjsoncpp.a",
+        "sha256": "4fdb57167763eb5a596021db17b765d6c19802757b19f112025682160554be5a"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\liblua.dll.a",
+        "copy": "inputs\\136-liblua.dll.a",
+        "sha256": "d9923aa6d352cfc91c9af6337f3f8c0a4246b0bba7c8bb5649a8ce9fabd75803"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\common\\math\\libcommon_math.dll.a",
+        "copy": "inputs\\137-libcommon_math.dll.a",
+        "sha256": "5b27a78473888fbd3b81da724f053cb55cb67d7a9ff2e8d3823c9c6569a8baff"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libtbb12.dll.a",
+        "copy": "inputs\\138-libtbb12.dll.a",
+        "sha256": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\common\\fb_util\\ispc\\libfb_util_ispc.dll.a",
+        "copy": "inputs\\139-libfb_util_ispc.dll.a",
+        "sha256": "0fd39989f537c5a58bf9925af1c16adf1fbf58b3e6d8459b6b464a65f74f5454"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\common\\math\\ispc\\libmath_ispc.dll.a",
+        "copy": "inputs\\140-libmath_ispc.dll.a",
+        "sha256": "7c0afdb5d8a885ca7b8a82025603c898f06df5a124aae2288839e4747adfc4cd"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO.dll.a",
+        "copy": "inputs\\141-libOpenImageIO.dll.a",
+        "sha256": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO_Util.dll.a",
+        "copy": "inputs\\142-libOpenImageIO_Util.dll.a",
+        "sha256": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libtbb12.dll.a",
+        "copy": "inputs\\143-libtbb12.dll.a",
+        "sha256": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libfmt.dll.a",
+        "copy": "inputs\\144-libfmt.dll.a",
+        "sha256": "7f9a2186dd64afae8de45d63e0a94131530b55b47f9747263d21d5bf6fb82dd6"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libOpenEXR.dll.a",
+        "copy": "inputs\\145-libOpenEXR.dll.a",
+        "sha256": "86fa23c53e9e8f6b66861fb65261b65bf5535a6a6b8eb99ecb0c58460d9b7a76"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libIlmThread.dll.a",
+        "copy": "inputs\\146-libIlmThread.dll.a",
+        "sha256": "17f0efecb9f0eb77088159747a5626b05cfe448efc0bede6244fe247586677fc"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libIex.dll.a",
+        "copy": "inputs\\147-libIex.dll.a",
+        "sha256": "c32bdacc0b977d1a7bb2d4060614909fd962126c4c8e2db2c01d3161f74bc512"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libOpenEXRCore.dll.a",
+        "copy": "inputs\\148-libOpenEXRCore.dll.a",
+        "sha256": "ebed9f117825597a80444c61965fcd1ab1363f4edc20aa3f208c783a907f20e8"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\msys64\\ucrt64\\lib\\libImath.dll.a",
+        "copy": "inputs\\149-libImath.dll.a",
+        "sha256": "7a4ad4df6c8f2cad0432bbc5867e76c844236e3781bfc5e921e844f9af39b4b0"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\common\\platform\\libcommon_platform.dll.a",
+        "copy": "inputs\\151-libcommon_platform.dll.a",
+        "sha256": "2a2bfeebc19110fdbd89e1c596254e287346271121e1bbebf2550037d86d321f"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\scene-rdl2\\lib\\render\\logging\\librender_logging.dll.a",
+        "copy": "inputs\\152-librender_logging.dll.a",
+        "sha256": "9c45c6afdb5b6403445ecf2bd625db4736d7bfdf445bff8beeb2b041f3bab453"
+      },
+      {
+        "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo\\build\\native-renderer-avx\\log4cplus\\src\\liblog4cplus.dll.a",
+        "copy": "inputs\\153-liblog4cplus.dll.a",
+        "sha256": "2fa657408c53a14b503aacf9c846d20db7cfcde097b6142eb08c7f06c755fe4f"
+      }
+    ],
+    "ispc_flags": [
+      "-DGL_GLEXT_PROTOTYPES=1",
+      "-DMOONRAY_WINDOWS_DESKTOP",
+      "-DNOMINMAX",
+      "-DNO_16BYTE_ATOMIC_LOCK_FREE",
+      "-DPLATFORM_WINDOWS",
+      "-DTBB_SUPPRESS_DEPRECATED_MESSAGES",
+      "-DWIN32_LEAN_AND_MEAN",
+      "-D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR=1",
+      "-D_LIBCPP_ENABLE_CXX17_REMOVED_RANDOM_SHUFFLE=1",
+      "-D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION",
+      "-D__AVX__",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/lib/rendering/shading/ispc/bsdf",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/native-port/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/log4cplus/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/log4cplus/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/lib/rendering/shading/ispc",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/moonray/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/openmoonray/moonray/moonray/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/log4cplus/include/log4cplus/..",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/upstream/openmoonray/moonray/scene_rdl2/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/build/native-renderer-avx/scene-rdl2/include",
+      "-IC:/Users/Raphael Tobar/MoonRayForModo/toolchain/msys64/ucrt64/include",
+      "-O3",
+      "-DNDEBUG",
+      "--target=avx1-i32x8",
+      "--pic",
+      "--wno-perf",
+      "--opt=disable-assertions",
+      "-IC:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\shading\\ispc\\bsdf"
+    ],
+    "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "ispc_compiler_sha256": "23c5e333bfd22c241dee4aaaa09b9126c11762f598dd550ca0135b927ba5d9dc",
+    "hook_sha256": "5a710dd6a020bc39597b8dbe29f66a7cfc1e6c3a2f2e124837b4704f4f9843c1",
+    "bridge_sha256": "080a60a13c78a6aa5d4e4fccfc0aedeea9519eae128e10f963856960a9652179",
+    "ispc_preprocessed_sha256": "2c103cb925b62004d9e46c96edc7b2f2613dee0f02f9f6ef63ce44c83454a86a",
+    "cpp_preprocessed_sha256": "470e6800998765cce1164afb7aa221e36a6cee3e0aaf90989e97b63f1e553620",
+    "control_dll_sha256": "82ecbebd21caaf0ff554a86f7e30273a6182f91c402b432877a661322a4b7dce",
+    "probe_dll_sha256": "2289ecb68cad38aaa705a276367cfa3b163d1384ae706a51ceff9e54664f09d0"
+  },
+  "scope_note": "Native normal rendering regressions. Cleanup/join is invoked only by explicit standalone owners, not native Modo shutdown. Separate four-worker bitwise image gate remains unresolved."
+}
