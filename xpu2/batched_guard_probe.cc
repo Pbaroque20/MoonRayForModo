@@ -10,6 +10,41 @@ int main(int argc,char** argv){
         std::ifstream file(argv[2],std::ios::binary);
         std::vector<char> raw((std::istreambuf_iterator<char>(file)),{});
         require(raw.size()>=244 && !std::memcmp(raw.data(),"XCL1",4),"Missing native event");
+#ifdef XPU2_WINDOW_DISPATCH_BUILT
+        if(mode=="publication") {
+            std::array<float,24> in{};std::array<float,8> native{},out{},expected{};
+            std::memcpy(in.data(),raw.data()+4+112,96);std::memcpy(native.data(),raw.data()+4+208,32);
+            expected=native;for(int c=3;c<6;++c)expected[c]*=.5f;
+            Queue q,other;q.capacity=2;
+            auto a=q.submit(in.data(),native.data(),1,7,true);
+            auto b=q.submit(in.data(),native.data(),1,7,true);
+            auto foreign=other.submit(in.data(),native.data(),1,7,true);
+            require(a && b && foreign && !q.submit(in.data(),native.data(),1,7,true),"Held requests escaped capacity");
+            require(!q.publish({a,a},7) && !q.publish({a,foreign},7) && !q.publish({a},8) && !q.publish({},7),"Invalid publication accepted");
+            require(!q.publish(std::vector<Queue::Ticket>(17,a),7),"Oversized publication accepted");
+            {std::lock_guard<std::mutex> lock(q.mutex);require(!q.hasDispatchable() && !a->done && !b->done && q.merged==0,"Held work dispatched");}
+            require(q.cancel(b) && !q.publish({a,b},7),"Cancelled publication accepted");
+            auto c=q.submit(in.data(),native.data(),1,7,true);
+            require(c && q.publish({c},7),"Independent ready producer blocked");
+            auto collect=[&](const Queue::Ticket& ticket){
+                {std::unique_lock<std::mutex> lock(q.mutex);
+                 require(ticket->completed.wait_for(lock,std::chrono::seconds(5),[&]{return ticket->done;}),"Published request stalled");}
+                require(q.tryCollect(ticket,7,out.data())==Collect::Ready && out==expected,"Published result differs");
+            };
+            collect(c);
+            {std::lock_guard<std::mutex> lock(q.mutex);require(!a->dispatchable && !a->done,"Foreign window prematurely released");}
+            require(q.publish({a},7) && !q.publish({a},7),"Duplicate publication accepted");collect(a);
+            auto held=q.submit(in.data(),native.data(),1,7,true);
+            auto ready=q.submit(in.data(),native.data(),1,7,true);
+            require(held && ready && q.publish({ready},7),"Shutdown setup failed");
+            require(q.stop(std::chrono::milliseconds(5000)),"Window shutdown failed");
+            require(q.tryCollect(held,7,out.data())==Collect::Cancelled,"Shutdown published incomplete work");
+            collect(ready);
+            require(!q.publish({held},7) && !q.retainedAsync && !q.worker.joinable(),"Shutdown retained credits");
+            require(other.stop(std::chrono::milliseconds(5000)) && !other.retainedAsync && !other.worker.joinable(),"Other held queue failed cleanup");
+            std::cout<<"{\"case\":\"publication\",\"passed\":true,\"cleanup\":true}\n";return 0;
+        }
+#endif
         if(mode=="window"){
             std::array<std::array<float,64>,16> output{},expected{};
             const size_t records=(raw.size()-4)/240;

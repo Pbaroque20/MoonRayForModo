@@ -34,6 +34,14 @@ class ProfileEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):probe.validate_profile(p,"missing_ptx")
         p.update(errors=1,accepted=0,replaced=0)
         probe.validate_profile(p,"missing_ptx")
+    def test_window_patch_composes_and_rejects_anchor_drift(self):
+        from xpu2 import profile_patch,window_dispatch_patch
+        code=profile_patch.apply((ROOT/"xpu2/native_lambert_queue.cc").read_text(),(ROOT/"xpu2/batched_bridge.cc").read_text(),(ROOT/"xpu2/profile_metrics.h").read_text())
+        window_dispatch_patch.apply(code)
+        with self.assertRaises(ValueError):window_dispatch_patch.apply(code.replace("bool mixed=false,split=false;","bool mixed=false;"))
+    def test_window_patch_requires_unmodified_queue_signature(self):
+        from xpu2 import window_dispatch_patch
+        with self.assertRaises(ValueError):window_dispatch_patch.apply("")
     def test_patch_rejects_changed_native_anchors(self):
         from xpu2 import profile_patch
         q=(ROOT/"xpu2/native_lambert_queue.cc").read_text()

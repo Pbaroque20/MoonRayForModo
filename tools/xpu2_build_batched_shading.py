@@ -9,7 +9,10 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('source','runtime','pbr-build','shading-build','trace-build','output'):p.add_argument('--'+name,required=True,type=Path)
     p.add_argument('--profile',action='store_true',help='Build optional aggregate timing and quiet diagnostics mode')
-    a=p.parse_args();source=a.source.resolve();runtime=a.runtime.resolve();out=a.output.resolve()
+    p.add_argument('--window-dispatch',action='store_true',help='Include optional explicit window publication (requires --profile)')
+    a=p.parse_args()
+    if a.window_dispatch and not a.profile:p.error('--window-dispatch requires --profile')
+    source=a.source.resolve();runtime=a.runtime.resolve();out=a.output.resolve()
     if out.is_relative_to(source) or out.is_relative_to(runtime):p.error('Isolated output required')
     out.mkdir(parents=True,exist_ok=False)
     compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';ispc=compiler.with_name('ispc.exe')
@@ -22,11 +25,16 @@ def main():
         if done.returncode:raise RuntimeError(label+' failed')
     fragments=[ROOT/'xpu2/batched_collect.ispc.inc',ROOT/'xpu2/batched_bridge.cc',ROOT/'xpu2/native_lambert_hook.ispc.inc',ROOT/'xpu2/native_lambert_queue.cc',ROOT/'xpu2/batched_patch.py',ROOT/'xpu2/deferred_patch.py',Path(__file__).resolve()]
     if a.profile:fragments += [ROOT/'xpu2/profile_patch.py',ROOT/'xpu2/profile_metrics.h']
+    if a.window_dispatch:fragments += [ROOT/'xpu2/window_dispatch_patch.py']
     identities={str(f):sha(f) for f in fragments}
     bridge=out/'bridge.cc'
     if a.profile:
         from xpu2 import profile_patch
-        bridge.write_text(profile_patch.apply((ROOT/'xpu2/native_lambert_queue.cc').read_text(),fragments[1].read_text(),(ROOT/'xpu2/profile_metrics.h').read_text()),encoding='utf-8')
+        code=profile_patch.apply((ROOT/'xpu2/native_lambert_queue.cc').read_text(),fragments[1].read_text(),(ROOT/'xpu2/profile_metrics.h').read_text())
+        if a.window_dispatch:
+            from xpu2 import window_dispatch_patch
+            code=window_dispatch_patch.apply(code)
+        bridge.write_text(code,encoding='utf-8')
     else:bridge.write_bytes(fragments[1].read_bytes())
     flags=['-std=c++17','-O2','-mavx','-mno-avx2','-mno-fma','-ffp-contract=off','-I'+str(ROOT/'xpu2'),'-I'+str(source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include')]
     run([str(compiler),*flags,'-E',str(bridge),'-o',str(out/'bridge.ii')],'bridge-preprocess')
@@ -50,7 +58,7 @@ def main():
         run([str(ispc),*ff,str(code),'--emit-obj','-o',str(out/(name+'.obj'))],name+'-compile')
         run([str(ispc),*ff,'-E',str(code)],name+'-recheck',out/(name+'-recheck.pp'))
         if sha(out/(name+'.pp'))!=sha(out/(name+'-recheck.pp')):raise ValueError('Header drift')
-    manifest={'profile':a.profile,'status':'incomplete','scope':'Retained-object native bounded batch handoff; native stack stays resident','runtime':str(runtime),'source_hashes':identities,'original_hashes':originals,'inputs':{},'compiler_sha256':sha(compiler),'ispc_sha256':sha(ispc),'bridge_sha256':sha(dll)}
+    manifest={'window_dispatch':a.window_dispatch,'profile':a.profile,'status':'incomplete','scope':'Retained-object native bounded batch handoff; native stack stays resident','runtime':str(runtime),'source_hashes':identities,'original_hashes':originals,'inputs':{},'compiler_sha256':sha(compiler),'ispc_sha256':sha(ispc),'bridge_sha256':sha(dll)}
     for label in ('control','trace'):
         shutil.copytree(runtime,out/label);shutil.copy2(dll,out/label/dll.name)
     for module,prior,replacement,replname in [('librendering_rndr.dll',a.pbr_build.resolve(),'PathIntegratorUtil.ispc.obj','sampler'),('librendering_shading.dll',a.shading_build.resolve(),'BsdfLambert.ispc.obj','lambert')]:

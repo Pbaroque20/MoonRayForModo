@@ -84,3 +84,6 @@ validation artifacts, not downloadable production dependencies.
 Build inputs, preprocessed source, DLLs, PTX, device identity and output evidence
 are hashed. This milestone does not certify multithread image parity, arbitrary
 materials, texture streaming, scene loading or Modo lifecycle behavior.
+
+The next experiment now validates [explicit native window dispatch](WINDOW_DISPATCH.md).
+It keeps the original coalescing path available for an A/B comparison.

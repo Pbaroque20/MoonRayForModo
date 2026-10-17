@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [native overhead profiling](PROFILING.md),
+See [explicit native window dispatch](WINDOW_DISPATCH.md),
+[native overhead profiling](PROFILING.md),
 [bounded native shading batches](BATCHED_SHADING.md),
 [native deferred shading](DEFERRED_SHADING.md),
 [correlated native sampler/shader capture](CORRELATED_STATE.md),
