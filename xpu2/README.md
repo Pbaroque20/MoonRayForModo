@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [pinned asynchronous transfers](ASYNC_TRANSFERS.md),
+See [combined readback and audit controls](PACKED_READBACK.md),
+[pinned asynchronous transfers](ASYNC_TRANSFERS.md),
 [explicit native window dispatch](WINDOW_DISPATCH.md),
 [native overhead profiling](PROFILING.md),
 [bounded native shading batches](BATCHED_SHADING.md),

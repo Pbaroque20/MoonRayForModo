@@ -34,6 +34,20 @@ class ProfileEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):probe.validate_profile(p,"missing_ptx")
         p.update(errors=1,accepted=0,replaced=0)
         probe.validate_profile(p,"missing_ptx")
+    def test_readback_modes_require_expected_copies_and_guards(self):
+        p=dict(batches=2,samples=16,readback_calls=2,readback_bytes=16*36,echo_checks=0,audit_samples=0,performance_samples=16,routing_checks=16)
+        probe.validate_readback_profile(p,True,True)
+        for key,value in (("routing_checks",0),("audit_samples",16),("readback_calls",4),("readback_bytes",16*132)):
+            q=dict(p);q[key]=value
+            with self.assertRaises(ValueError):probe.validate_readback_profile(q,True,True)
+        p.update(readback_bytes=16*132,echo_checks=16,audit_samples=16,performance_samples=0,routing_checks=0)
+        probe.validate_readback_profile(p,True,False)
+        p['readback_calls']=4;probe.validate_readback_profile(p,False,False)
+    def test_packed_patch_composes_with_retained_inputs(self):
+        from xpu2 import profile_patch,window_dispatch_patch,async_transfer_patch,packed_readback_patch
+        code=profile_patch.apply((ROOT/"xpu2/native_lambert_queue.cc").read_text(),(ROOT/"xpu2/batched_bridge.cc").read_text(),(ROOT/"xpu2/profile_metrics.h").read_text())
+        code=async_transfer_patch.apply(window_dispatch_patch.apply(code));packed_readback_patch.apply(code)
+        with self.assertRaises(ValueError):packed_readback_patch.apply(code.replace("bool asyncTransfers=false;",""))
     def test_async_evidence_requires_actual_completion(self):
         p=dict(batches=2,async_batches=2,async_completions=2,staging_ns=1)
         probe.validate_transfer_profile(p,"async_1",True)

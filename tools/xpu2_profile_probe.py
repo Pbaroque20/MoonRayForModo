@@ -1,4 +1,4 @@
-"""A/B native timing probe; exact validation stays enabled in quiet mode."""
+"""A/B native timing probe with quiet logging and explicit shader-audit controls."""
 import argparse,hashlib,json,struct,subprocess,sys,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -24,7 +24,7 @@ def validate_profile(p,case):
     elif case=='missing_ptx':
         if not p['errors'] or not p['submitted'] or p['accepted'] or p['replaced']:raise ValueError('PTX fallback failed')
     else:
-        if not p['samples'] or not p['submitted'] or p['accepted']!=p['samples'] or p['replaced']!=p['samples']:raise ValueError('Missing GPU validation/replacement')
+        if not p['samples'] or not p['submitted'] or p['accepted']!=p['samples'] or p['replaced']!=p['samples']:raise ValueError('Missing GPU acceptance/replacement')
         if any(p[k] for k in ('errors','mismatch','invalid','unsupported')):raise ValueError('GPU comparison failed')
         if not p['kernel_gpu_ns'] or not p['htod_ns'] or not p['dtoh_ns']:raise ValueError('Missing device timing')
 
@@ -36,12 +36,23 @@ def validate_transfer_profile(profile,label,asynchronous):
     elif not asynchronous and (profile['async_batches'] or profile['async_completions']):raise ValueError('Sync control used async transfers')
     if label.startswith('fail_') and (profile['async_batches']!=1 or profile['async_completions']):raise ValueError('Injected async failure not contained')
 
+def validate_readback_profile(p,packed,performance):
+    keys=('readback_calls','readback_bytes','echo_checks','audit_samples','performance_samples','routing_checks')
+    if any(type(p.get(k)) is not int or p[k]<0 for k in keys):raise ValueError('Invalid readback evidence')
+    if p['readback_calls']!=p['batches']*(1 if packed else 2):raise ValueError('Unexpected readback call count')
+    if p['readback_bytes']!=p['samples']*(36 if performance else 132):raise ValueError('Unexpected readback size')
+    if performance:
+        if p['echo_checks'] or p['audit_samples'] or p['performance_samples']!=p['samples'] or p['routing_checks']!=p['samples']:raise ValueError('Performance mode did not preserve required routing checks')
+    elif p['echo_checks']!=p['samples'] or p['audit_samples']!=p['samples'] or p['performance_samples'] or p['routing_checks']:raise ValueError('Audit mode not exercised')
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for key in ('build','ptx-reference','scene-reference','output'):p.add_argument('--'+key,required=True,type=Path)
     p.add_argument('--window-dispatch',action='store_true',help='Compare timed coalescing with explicit native windows')
     p.add_argument('--async-transfers',action='store_true')
+    p.add_argument('--packed-readback',action='store_true')
     a=p.parse_args()
+    if a.packed_readback and not a.async_transfers:p.error('--packed-readback requires --async-transfers')
     if a.async_transfers and not a.window_dispatch:p.error('--async-transfers requires --window-dispatch')
     build=a.build.resolve();prior=a.scene_reference.resolve();out=a.output.resolve()
     out.mkdir(parents=True,exist_ok=False)
@@ -53,6 +64,8 @@ def main():
         if a.window_dispatch and not manifest.get('window_dispatch'):raise ValueError('Window-dispatch build required')
         report['explicit_window_matrix']=a.window_dispatch
         report['async_transfer_matrix']=a.async_transfers
+        report['packed_readback_matrix']=a.packed_readback
+        if a.packed_readback and not manifest.get('packed_readback'):raise ValueError('Packed readback build required')
         if a.async_transfers:report['transfer_timing_notes']='Async htod/dtoh spans measure host enqueue cost, not completed transfers. Completion wait includes transfers and kernel. Staging is CPU memcpy. GPU kernel event timing excludes copies. One stream and one in-flight batch; no cross-batch overlap claim.'
         if a.async_transfers and not manifest.get('async_transfers'):raise ValueError('Async transfer build required')
         hashes={**manifest['source_hashes'],str(Path(__file__).resolve()):digest_file(Path(__file__).resolve())}
@@ -75,6 +88,7 @@ def main():
         cases=['original','control','disabled','audit_1','quiet_1','quiet_no_trace_1','quiet_no_trace_2','quiet_2','audit_2','queue_full','missing_ptx','sentinel']
         if a.window_dispatch:cases=['original','control','disabled','quiet_1','window_1','window_repeat','quiet_2','tail','serial_window','queue_full','missing_ptx','sentinel','audit_window','control_repeat','original_repeat']
         if a.async_transfers:cases=['original','control','disabled','sync_1','async_1','async_repeat','sync_2','tail','queue_full','missing_ptx','fail_uploaded','fail_launched','fail_readback','sentinel','audit_async','control_repeat','original_repeat']
+        if a.packed_readback:cases=['original','control','disabled','async_1','packed_1','performance_1','performance_repeat','packed_repeat','async_repeat','tail','queue_full','missing_ptx','fail_readback','sentinel','audit_packed','control_repeat','original_repeat']
         reference_image=None;reference_trace=None;reference_rays=None
         for label in cases:
             folder=out/label;folder.mkdir();runtime=reference_runtime if label.startswith('original') else build/('control' if label.startswith('control') else 'trace')
@@ -88,6 +102,8 @@ def main():
             active=not label.startswith(('original','control','disabled'));quiet=not label.startswith('audit')
             window=a.window_dispatch and active and not label.startswith('quiet_')
             asynchronous=a.async_transfers and active and not label.startswith('sync_')
+            packed=a.packed_readback and active and not label.startswith('async_')
+            performance=packed and (label.startswith('performance_') or label in ('tail','queue_full','missing_ptx','fail_readback','sentinel'))
             if active:
                 env.update(XPU2_NATIVE_LAMBERT='sentinel' if label=='sentinel' else 'replace',XPU2_NATIVE_LAMBERT_PTX=str(folder/'missing.ptx' if label=='missing_ptx' else ptx),
                     XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),
@@ -96,6 +112,7 @@ def main():
                     XPU2_PROFILE_FILE=str(folder/'profile.json'),XPU2_PROFILE_QUIET='1' if quiet else '0')
                 if window:env.update(XPU2_WINDOW_DISPATCH='1',XPU2_QUEUE_COALESCE_US='0',XPU2_NATIVE_BATCH_WIDTH='4' if label=='tail' else '1' if label=='serial_window' else '16')
                 if asynchronous:env['XPU2_ASYNC_TRANSFERS']='1'
+                if packed:env.update(XPU2_PACKED_READBACK='1',XPU2_SHADER_AUDIT='0' if performance else '1')
                 if label.startswith('fail_'):env['XPU2_ASYNC_FAIL_STAGE']=label[5:]
             print('Profile '+label,flush=True);start=time.perf_counter()
             with (folder/'render.log').open('w',encoding='utf-8') as log:
@@ -103,7 +120,7 @@ def main():
                     cwd=folder,env=env,stdout=log,stderr=subprocess.STDOUT,timeout=240,creationflags=subprocess.CREATE_NO_WINDOW)
             wall=time.perf_counter()-start
             check=successful('xpu',1,done.returncode,(folder/'render.log').read_text(errors='replace'),(folder/'stats.csv').read_text() if (folder/'stats.csv').exists() else '',(folder/'beauty.exr').exists())
-            row={'label':label,'render':check,'process_wall_seconds':wall,'scene_sha256':digest_file(scene),'traced':traced,'window_dispatch':window,'async_transfers':asynchronous};report['runs'].append(row)
+            row={'label':label,'render':check,'process_wall_seconds':wall,'scene_sha256':digest_file(scene),'traced':traced,'window_dispatch':window,'async_transfers':asynchronous,'packed_readback':packed,'shader_audit':not performance};report['runs'].append(row)
             if not check['passed']:raise ValueError('Render failed '+label)
             image=read_rgba(runtime,folder/'beauty.exr',folder,'raw',env)
             if reference_image is None:reference_image=image
@@ -122,6 +139,7 @@ def main():
             if active:
                 profile=json.loads((folder/'profile.json').read_text());validate_profile(profile,'missing_ptx' if label.startswith('fail_') else label);row['profile']=profile
                 if a.async_transfers:validate_transfer_profile(profile,label,asynchronous)
+                if a.packed_readback and label not in ('queue_full','missing_ptx') and not label.startswith('fail_'):validate_readback_profile(profile,packed,performance)
                 if profile['quiet']!=quiet:raise ValueError('Incorrect profile mode')
                 if not quiet:
                     counts=native_integration.summary((folder/'shading.log').read_text());observed=native_integration.records((folder/'shading.bin').read_bytes())
@@ -132,7 +150,7 @@ def main():
                 elif (folder/'shading.bin').exists():raise ValueError('Quiet binary trace unexpectedly written')
             row['artifact_hashes']={f.name:digest_file(f) for f in folder.iterdir() if f.is_file() and f.suffix in ('.log','.json','.jsonl','.bin')}
             (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-        normals=[r for r in report['runs'] if r['label'].startswith(('audit_','quiet_','window_','tail','serial_window','sync_','async_'))]
+        normals=[r for r in report['runs'] if r['label'].startswith(('audit_','quiet_','window_','tail','serial_window','sync_','async_','packed_','performance_'))]
         if len({r['profile']['samples'] for r in normals})!=1:raise ValueError('Profile sample count drift')
         if a.window_dispatch and not a.async_transfers:
             rows={r['label']:r for r in report['runs']}

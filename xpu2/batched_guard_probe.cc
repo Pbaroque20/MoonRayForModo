@@ -10,6 +10,31 @@ int main(int argc,char** argv){
         std::ifstream file(argv[2],std::ios::binary);
         std::vector<char> raw((std::istreambuf_iterator<char>(file)),{});
         require(raw.size()>=244 && !std::memcmp(raw.data(),"XCL1",4),"Missing native event");
+#ifdef XPU2_PACKED_READBACK_BUILT
+        if(mode.rfind("packed_",0)==0) {
+            Bridge bridge;const size_t records=(raw.size()-4)/240;
+            for(int count: mode=="packed_reuse_perf"?std::vector<int>{1,8,72,512,3}:std::vector<int>{1}) {
+                std::vector<float> input(count*24),output(count*8),expected(count*8);
+                for(int i=0;i<count;++i) {
+                    const char* record=raw.data()+4+(i%records)*240;
+                    std::memcpy(input.data()+i*24,record+112,96);std::memcpy(output.data()+i*8,record+208,32);
+                }
+                expected=output;
+                if(mode=="packed_unsupported"){uint32_t flag=1;std::memcpy(input.data()+22,&flag,4);}
+                if(mode=="packed_rgb_perf")expected[3]*=.5f;
+                bridge.run(input.data(),output.data(),count);
+                require(output==expected,"Packed result or fallback differs");
+                if(mode=="packed_nan")require(bridge.invalid==1 && !bridge.replaced,"Nonfinite output accepted");
+                else if(mode=="packed_pdf")require(bridge.mismatch==1 && !bridge.replaced,"Performance accepted altered PDF");
+                else if(mode=="packed_rgb_audit")require(bridge.mismatch==1 && !bridge.replaced,"Audit missed RGB corruption");
+                else if(mode=="packed_unsupported")require(bridge.unsupported==1 && !bridge.replaced,"Unsupported input accepted");
+                else require(bridge.replaced && !bridge.mismatch && !bridge.errors && !bridge.invalid,"Performance result rejected");
+                std::fill(input.begin(),input.end(),-999);std::fill(output.begin(),output.end(),-777);
+            }
+            require(bridge.close() && bridge.asyncReleased(),"Packed resources leaked");
+            std::cout<<"{\"case\":\""<<mode<<"\",\"passed\":true,\"cleanup\":true}\n";return 0;
+        }
+#endif
 #ifdef XPU2_ASYNC_TRANSFERS_BUILT
         if(mode.rfind("async_",0)==0) {
             std::array<float,24> in{};std::array<float,8> native{};

@@ -87,3 +87,6 @@ Use fresh output directories and retained native link inputs:
 
 The native diagnostic remains a single-worker Lambert fixture. It does not
 certify arbitrary materials, textures, multithread film parity or scene-load speed.
+
+The follow-up [combined-readback experiment](PACKED_READBACK.md) reduces readback
+calls and audit traffic but finds no clear additional render-time gain on this fixture.

@@ -11,7 +11,9 @@ def main():
     p.add_argument('--profile',action='store_true',help='Build optional aggregate timing and quiet diagnostics mode')
     p.add_argument('--window-dispatch',action='store_true',help='Include optional explicit window publication (requires --profile)')
     p.add_argument('--async-transfers',action='store_true',help='Include optional pinned asynchronous transfers (requires --window-dispatch)')
+    p.add_argument('--packed-readback',action='store_true')
     a=p.parse_args()
+    if a.packed_readback and not a.async_transfers:p.error('--packed-readback requires --async-transfers')
     if a.async_transfers and not a.window_dispatch:p.error('--async-transfers requires --window-dispatch')
     if a.window_dispatch and not a.profile:p.error('--window-dispatch requires --profile')
     source=a.source.resolve();runtime=a.runtime.resolve();out=a.output.resolve()
@@ -29,6 +31,7 @@ def main():
     if a.profile:fragments += [ROOT/'xpu2/profile_patch.py',ROOT/'xpu2/profile_metrics.h']
     if a.window_dispatch:fragments += [ROOT/'xpu2/window_dispatch_patch.py']
     if a.async_transfers:fragments += [ROOT/'xpu2/async_transfer_patch.py']
+    if a.packed_readback:fragments += [ROOT/'xpu2/packed_readback_patch.py']
     identities={str(f):sha(f) for f in fragments}
     bridge=out/'bridge.cc'
     if a.profile:
@@ -40,6 +43,9 @@ def main():
         if a.async_transfers:
             from xpu2 import async_transfer_patch
             code=async_transfer_patch.apply(code)
+        if a.packed_readback:
+            from xpu2 import packed_readback_patch
+            code=packed_readback_patch.apply(code)
         bridge.write_text(code,encoding='utf-8')
     else:bridge.write_bytes(fragments[1].read_bytes())
     flags=['-std=c++17','-O2','-mavx','-mno-avx2','-mno-fma','-ffp-contract=off','-I'+str(ROOT/'xpu2'),'-I'+str(source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include')]
@@ -64,7 +70,7 @@ def main():
         run([str(ispc),*ff,str(code),'--emit-obj','-o',str(out/(name+'.obj'))],name+'-compile')
         run([str(ispc),*ff,'-E',str(code)],name+'-recheck',out/(name+'-recheck.pp'))
         if sha(out/(name+'.pp'))!=sha(out/(name+'-recheck.pp')):raise ValueError('Header drift')
-    manifest={'async_transfers':a.async_transfers,'window_dispatch':a.window_dispatch,'profile':a.profile,'status':'incomplete','scope':'Retained-object native bounded batch handoff; native stack stays resident','runtime':str(runtime),'source_hashes':identities,'original_hashes':originals,'inputs':{},'compiler_sha256':sha(compiler),'ispc_sha256':sha(ispc),'bridge_sha256':sha(dll)}
+    manifest={'packed_readback':a.packed_readback,'async_transfers':a.async_transfers,'window_dispatch':a.window_dispatch,'profile':a.profile,'status':'incomplete','scope':'Retained-object native bounded batch handoff; native stack stays resident','runtime':str(runtime),'source_hashes':identities,'original_hashes':originals,'inputs':{},'compiler_sha256':sha(compiler),'ispc_sha256':sha(ispc),'bridge_sha256':sha(dll)}
     for label in ('control','trace'):
         shutil.copytree(runtime,out/label);shutil.copy2(dll,out/label/dll.name)
     for module,prior,replacement,replname in [('librendering_rndr.dll',a.pbr_build.resolve(),'PathIntegratorUtil.ispc.obj','sampler'),('librendering_shading.dll',a.shading_build.resolve(),'BsdfLambert.ispc.obj','lambert')]:
