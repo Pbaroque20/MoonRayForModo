@@ -40,12 +40,16 @@ ML_INLINE Hit* hitPayload() {
 }
 
 // seen: the kind of ray this is, which finds only what is visible to its kind.
-ML_INLINE void traceRadiance(float3 origin, float3 direction, Hit& hit, float distance = 1e16f, unsigned seen = SEEN_ALL) {
+// With surfaces, the edges of fog are passed through: only what is there to see is found (HIT_SURFACES_ONLY).
+const int HIT_SURFACES_ONLY = -2;
+ML_INLINE void traceRadiance(float3 origin, float3 direction, Hit& hit, float distance = 1e16f, unsigned seen = SEEN_ALL,
+                             bool surfaces = false) {
     const unsigned long long address = reinterpret_cast<unsigned long long>(&hit);
     unsigned p0 = unsigned(address >> 32), p1 = unsigned(address);
-    hit.valid = 0;
+    hit.valid = surfaces ? HIT_SURFACES_ONLY : 0;
     optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(seen),
                params.presence ? OPTIX_RAY_FLAG_NONE : OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0, p0, p1);
+    if (hit.valid == HIT_SURFACES_ONLY) hit.valid = 0;
 }
 
 // The second payload word gives the any-hit test of a partly absent surface its own random stream.
@@ -1853,13 +1857,24 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
         if (!hit.valid) break;
         if ((hit.flags & MATERIAL_VOLUME) && !emerged) {
-            // The edge of a fog: nothing is there to see. The ray goes on, into the fog through a face that looks
-            // outwards and out of it through one that looks inwards.
-            if (++crossings > 64) break;
-            medium = dot(hit.ng, direction) < 0.0f ? int(hit.hair) : -1;
-            origin = offsetOrigin(hit.p, hit.ng, direction);
-            --depth;    // crossing an edge is not a bounce
-            continue;
+            // A surface in the plane of the fog's edge, as the floor under a box of fog standing on it, is met as far
+            // off as the edge, and which of the two the trace returns is chance; going on past the edge would miss the
+            // surface, in stripes. So a surface there, or a hair beyond, is the hit, met before the edge is crossed,
+            // as when the trace returns it first.
+            Hit surface;
+            const float slack = 2e-4f * (1.0f + fmaxf(fabsf(hit.p.x), fmaxf(fabsf(hit.p.y), fabsf(hit.p.z))));
+            traceRadiance(origin, direction, surface, hit.t + slack, seen, true);
+            if (surface.valid) {
+                hit = surface;
+            } else {
+                // The edge of a fog: nothing is there to see. The ray goes on, into the fog through a face that looks
+                // outwards and out of it through one that looks inwards.
+                if (++crossings > 64) break;
+                medium = dot(hit.ng, direction) < 0.0f ? int(hit.hair) : -1;
+                origin = offsetOrigin(hit.p, hit.ng, direction);
+                --depth;    // crossing an edge is not a bounce
+                continue;
+            }
         }
         // A mesh light is the surface just hit; it emits from both faces.
         if (camera && !emerged && hit.light >= 0 && lights[hit.light].pad) {
@@ -2625,8 +2640,12 @@ extern "C" __global__ void __anyhit__presence() {
             return;
         }
         // The edge of a fog stops no light itself. A ray looking for a light notes the fog it crosses and goes on; a ray
-        // looking for what is there to see takes the edge as its hit, to know it is in fog from there.
-        if (!(optixGetRayFlags() & OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT)) return;
+        // looking for what is there to see takes the edge as its hit, to know it is in fog from there, unless it looks
+        // for surfaces only.
+        if (!(optixGetRayFlags() & OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT)) {
+            if (hitPayload()->valid == HIT_SURFACES_ONLY) optixIgnoreIntersection();
+            return;
+        }
         const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[material.hair];
         const float sign = optixIsBackFaceHit() ? 1.0f : -1.0f, crossed = sign * optixGetRayTmax();
         optixSetPayload_2(__float_as_uint(__uint_as_float(optixGetPayload_2()) + crossed * fog.extinction[0]));
