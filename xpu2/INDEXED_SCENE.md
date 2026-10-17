@@ -1,5 +1,9 @@
 # Indexed scene resources and Morton convergence checkpoints
 
+**Follow-up:** [native RDL adapter and retained metadata](NATIVE_SCENE_INDEX.md)
+adds actual SceneContext conversion and removes the whole-metadata-map copy
+described below. This page records the earlier b01f841 milestone.
+
 The native scene index is implemented in `indexed_scene.h`. The diagnostic CUDA
 queue can retain its immutable snapshots and shade copied packets prepared from
 indexed material buffers. This is an isolated integration, **not a native MoonRay

@@ -31,7 +31,7 @@ def main():
     report = dict(status='incomplete', scope='Native owned scene index; optional real CUDA with synthetic indexed resources', runs=[])
     compiler = source / 'toolchain/msys64/ucrt64/bin/g++.exe'
     include = source / 'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include'
-    files = [ROOT / 'xpu2' / name for name in ('indexed_scene.h', 'indexed_scene_test.cc')]
+    files = [ROOT / 'xpu2' / name for name in ('indexed_scene.h', 'indexed_scene_test.cc', 'persistent_map.h')]
     files += [Path(__file__).resolve()]
     try:
         cases = [('index', files[1])]

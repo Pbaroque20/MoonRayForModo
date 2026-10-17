@@ -1,6 +1,7 @@
 // Owned incremental scene resources for the isolated XPU2 coordinator.
 // No Modo/native SceneContext pointers or device handles are stored here.
 #pragma once
+#include "persistent_map.h"
 #include <algorithm>
 #include <cstdint>
 #include <deque>
@@ -18,9 +19,9 @@
 
 namespace xpu2::indexed {
 using Bytes = std::vector<uint8_t>;
-enum class Kind { Geometry, Instance, Material, Texture, Light, Environment, Camera, Volume };
+enum class Kind { Geometry, Instance, Material, Texture, Light, Environment, Camera, Volume, Attribute, Auxiliary };
 enum class Field { Topology, Positions, Transform, Shading, Visibility, Pixels, Parameters };
-inline bool valid(Kind k) { return k >= Kind::Geometry && k <= Kind::Volume; }
+inline bool valid(Kind k) { return k >= Kind::Geometry && k <= Kind::Auxiliary; }
 inline bool valid(Field f) { return f >= Field::Topology && f <= Field::Parameters; }
 struct Buffer {
     uint64_t revision;
@@ -45,10 +46,10 @@ struct Changes {
 };
 struct Snapshot {
     uint64_t revision;
-    std::map<std::string, std::shared_ptr<const Entity>> entities;
+    PersistentMap<std::string, std::shared_ptr<const Entity>> entities;
     // Cached reverse edges: dependency -> consumers.
-    std::map<std::string, std::set<std::string>> consumers;
-    std::map<Kind, std::set<std::string>> kinds;
+    PersistentMap<std::string, std::set<std::string>> consumers;
+    PersistentMap<Kind, std::set<std::string>> kinds;
     Changes changes;
     size_t residentBytes, edgeCount;
 };
@@ -68,6 +69,7 @@ public:
             : owner(std::move(o)), base(std::move(b)), next(std::move(n)) {}
     public:
         View view() const { return next; }
+        View baseView() const { return base; }
     };
     explicit SceneIndex(Limits limits = {}) : limits_(limits) {
         if (!limits.entities || !limits.edges || !limits.bytes)
@@ -89,9 +91,9 @@ public:
         if (!encode) throw std::invalid_argument("Missing resource preparer");
         if (base->revision == std::numeric_limits<uint64_t>::max())
             throw std::overflow_error("Scene revision exhausted");
-        auto next = std::make_shared<Snapshot>(*base);
-        next->revision = base->revision + 1;
-        next->changes = {};
+        // Do not copy the previous transaction's potentially scene-sized change sets.
+        auto next = std::make_shared<Snapshot>(Snapshot{base->revision + 1,
+            base->entities, base->consumers, base->kinds, {}, base->residentBytes, base->edgeCount});
         next->changes.removed = removed;
         std::set<std::string> seen;
         // Validate all patches before expensive encoding.
@@ -111,10 +113,15 @@ public:
         }
         if (base->entities.size() - removed.size() > limits_.entities)
             throw std::length_error("Entity budget exceeded");
+        std::map<Kind, std::set<std::string>> changedKinds;
+        auto members = [&](Kind kind) -> std::set<std::string>& {
+            auto found = changedKinds.find(kind);
+            if (found == changedKinds.end())
+                found = changedKinds.emplace(kind, base->kinds.count(kind) ? base->kinds.at(kind) : std::set<std::string>{}).first;
+            return found->second;
+        };
         for (const auto& id : removed) {
-            auto kind = next->entities.at(id)->kind;
-            next->kinds.at(kind).erase(id);
-            if (next->kinds.at(kind).empty()) next->kinds.erase(kind);
+            members(next->entities.at(id)->kind).erase(id);
             next->entities.erase(id);
         }
         // Build metadata and raw changes first. Encoding happens after graph validation.
@@ -140,32 +147,47 @@ public:
             }
             if (different) {
                 entity->revision = next->revision;
-                next->entities[edit.id] = entity;
-                next->kinds[edit.kind].insert(edit.id);
+                next->entities.set(edit.id, entity);
+                if (created) members(edit.kind).insert(edit.id);
                 changed[edit.id] = entity;
                 next->changes.direct.insert(edit.id);
             }
         }
         if (next->entities.size() > limits_.entities) throw std::length_error("Entity budget exceeded");
         if (next->changes.direct.empty() && removed.empty()) return Candidate(owner_, base, base);
-        // Patch only reverse edges belonging to edited/removed entities.
+        for (const auto& [kind, ids] : changedKinds) {
+            if (ids.empty()) next->kinds.erase(kind);
+            else next->kinds.set(kind, ids);
+        }
+        // Accumulate each reverse-set edit once, including bulk scene creation.
+        std::map<std::string, std::set<std::string>> changedConsumers;
+        auto consumersFor = [&](const std::string& id) -> std::set<std::string>& {
+            auto found = changedConsumers.find(id);
+            if (found == changedConsumers.end())
+                found = changedConsumers.emplace(id, base->consumers.count(id) ? base->consumers.at(id) : std::set<std::string>{}).first;
+            return found->second;
+        };
         auto unlink = [&](const std::string& id) {
             auto old = base->entities.find(id);
             if (old == base->entities.end()) return;
             for (const auto& dependency : old->second->dependencies) {
-                auto& consumers = next->consumers.at(dependency);
-                next->edgeCount -= consumers.erase(id);
-                if (consumers.empty()) next->consumers.erase(dependency);
+                next->edgeCount -= consumersFor(dependency).erase(id);
             }
         };
         for (const auto& id : removed) unlink(id);
         for (const auto& id : next->changes.direct) {
+            auto previous = base->entities.find(id);
+            if (previous != base->entities.end() && previous->second->dependencies == next->entities.at(id)->dependencies) continue;
             unlink(id);
             for (const auto& dependency : next->entities.at(id)->dependencies) {
                 if (dependency.empty() || !next->entities.count(dependency))
                     throw std::invalid_argument("Missing dependency for " + id);
-                next->edgeCount += next->consumers[dependency].insert(id).second;
+                next->edgeCount += consumersFor(dependency).insert(id).second;
             }
+        }
+        for (const auto& [id, consumers] : changedConsumers) {
+            if (consumers.empty()) next->consumers.erase(id);
+            else next->consumers.set(id, consumers);
         }
         for (const auto& id : removed)
             if (next->consumers.count(id)) throw std::invalid_argument("Removed resource still referenced");
@@ -184,7 +206,7 @@ public:
             if (changed.count(id)) continue;
             auto entity = std::make_shared<Entity>(*next->entities.at(id));
             entity->revision = next->revision;
-            next->entities[id] = entity; // Reuse ALL unedited resource buffers.
+            next->entities.set(id, entity); // Reuse ALL unedited resource buffers.
         }
         // Check raw/pre-existing prepared footprint before invoking the backend.
         size_t bytes = base->residentBytes;

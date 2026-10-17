@@ -1,0 +1,1590 @@
+{
+  "scope": "Isolated native scene adapter and metadata optimization; not installed runtime or scene-loading benchmark",
+  "native_renders": 26,
+  "exact_rgba_comparisons": 14,
+  "threads": 1,
+  "source_hashes": {
+    "xpu2/rdl_replica.h": "53a2c6814b80ab18567f19c5411420d43ad5be30147198987b9b85d4fd8037d5",
+    "xpu2/rdl_scene_index.h": "9d55d339a757c1adbf3e37d27071e95691c0eb5c4ac7f1f7b3c456d9f0ad1756",
+    "xpu2/rdl_scene_index_probe.cc": "a974fb6c04bdbed53f6fe2e85d187f255e59b72ee3a6286e08c1a34db53e5706",
+    "xpu2/indexed_scene.h": "6c5a83c3e3bae7489b56d10957ff323f1b0b02bf62aec5609982aeb1e87110d0",
+    "xpu2/persistent_map.h": "563ac27f115b6dd93385a2f0f30a757508f85b047ad5499a09405b518086ad57",
+    "tools/xpu2_rdl_index_probe.py": "6325e03744064b981010db5ba8ff7b124cae9bc834593a2e56f1f4f22b2cd8b4",
+    "tools/xpu2_rdl_index_replay.py": "49074d5f768d88a620549357ef12bff131305e258aa03ea9bebee1945dd01347"
+  },
+  "checks": {
+    "small": {
+      "report_sha256": "1398703c2315488183ef4260cbd90ebadf8bbda67215bcd10eeea5be7825236d",
+      "status": "passed",
+      "native": {
+        "geometry_reused_for_transform_and_material": true,
+        "idle_attributes_encoded": 0,
+        "replica_base_guard_and_recovery": true,
+        "stages": [
+          {
+            "affected_entities": 495,
+            "apply_us": 1944,
+            "attributes_encoded": 481,
+            "capture_us": 1048,
+            "direct_changes": 495,
+            "exact_native_attributes": true,
+            "name": "initial",
+            "objects": 14,
+            "prepare_us": 4301,
+            "prepared_buffers": 495,
+            "source_bytes": 96589
+          },
+          {
+            "affected_entities": 8,
+            "apply_us": 4,
+            "attributes_encoded": 1,
+            "capture_us": 65,
+            "direct_changes": 1,
+            "exact_native_attributes": true,
+            "name": "transform",
+            "objects": 14,
+            "prepare_us": 83,
+            "prepared_buffers": 1,
+            "source_bytes": 304
+          },
+          {
+            "affected_entities": 6,
+            "apply_us": 4,
+            "attributes_encoded": 1,
+            "capture_us": 40,
+            "direct_changes": 1,
+            "exact_native_attributes": true,
+            "name": "material",
+            "objects": 14,
+            "prepare_us": 63,
+            "prepared_buffers": 1,
+            "source_bytes": 67
+          },
+          {
+            "affected_entities": 8,
+            "apply_us": 128,
+            "attributes_encoded": 1,
+            "capture_us": 298,
+            "direct_changes": 1,
+            "exact_native_attributes": true,
+            "name": "deformation",
+            "objects": 14,
+            "prepare_us": 225,
+            "prepared_buffers": 1,
+            "source_bytes": 25403
+          },
+          {
+            "affected_entities": 8,
+            "apply_us": 128,
+            "attributes_encoded": 2,
+            "capture_us": 64,
+            "direct_changes": 3,
+            "exact_native_attributes": true,
+            "name": "binding",
+            "objects": 15,
+            "prepare_us": 450,
+            "prepared_buffers": 3,
+            "source_bytes": 164
+          },
+          {
+            "affected_entities": 6,
+            "apply_us": 5,
+            "attributes_encoded": 1,
+            "capture_us": 56,
+            "direct_changes": 1,
+            "exact_native_attributes": true,
+            "name": "unbinding",
+            "objects": 15,
+            "prepare_us": 85,
+            "prepared_buffers": 1,
+            "source_bytes": 67
+          }
+        ],
+        "status": "passed",
+        "truncated_payload_rejected": true
+      },
+      "executable_sha256": "ee2b938b942f799cbe0380410952bc3153029b0235c7edf88ce875e49d92d566",
+      "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+      "renders": [
+        {
+          "label": "initial-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.372,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.372,
+              "Total render prep": 0.389,
+              "Mcrt time": 0.354,
+              "Total time": 0.822
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          }
+        },
+        {
+          "label": "initial-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.005,
+              "Initialize renderer": 0.341,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.341,
+              "Total render prep": 0.359,
+              "Mcrt time": 0.364,
+              "Total time": 0.807
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "transform-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.359,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.358,
+              "Total render prep": 0.376,
+              "Mcrt time": 0.393,
+              "Total time": 0.801
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          }
+        },
+        {
+          "label": "transform-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.005,
+              "Initialize renderer": 0.332,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.332,
+              "Total render prep": 0.35,
+              "Mcrt time": 0.355,
+              "Total time": 0.777
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "material-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.349,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.349,
+              "Total render prep": 0.366,
+              "Mcrt time": 0.36,
+              "Total time": 0.834
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          }
+        },
+        {
+          "label": "material-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.333,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.333,
+              "Total render prep": 0.351,
+              "Mcrt time": 0.364,
+              "Total time": 0.784
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "deformation-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.333,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.333,
+              "Total render prep": 0.35,
+              "Mcrt time": 0.317,
+              "Total time": 0.693
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          }
+        },
+        {
+          "label": "deformation-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.325,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.325,
+              "Total render prep": 0.342,
+              "Mcrt time": 0.329,
+              "Total time": 0.752
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "binding-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.005,
+              "Initialize renderer": 0.337,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.337,
+              "Total render prep": 0.354,
+              "Mcrt time": 0.332,
+              "Total time": 0.772
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          }
+        },
+        {
+          "label": "binding-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.005,
+              "Initialize renderer": 0.342,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.005,
+              "Building GPU BVH": 0.342,
+              "Total render prep": 0.361,
+              "Mcrt time": 0.317,
+              "Total time": 0.802
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "unbinding-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.005,
+              "Initialize renderer": 0.359,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.359,
+              "Total render prep": 0.377,
+              "Mcrt time": 0.338,
+              "Total time": 0.794
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          }
+        },
+        {
+          "label": "unbinding-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.005,
+              "Initialize renderer": 0.36,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.36,
+              "Total render prep": 0.377,
+              "Mcrt time": 0.332,
+              "Total time": 0.835
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        }
+      ]
+    },
+    "original_small": {
+      "report_sha256": "453cb147339eee410a5ccea8ba40711a8fa9591dfb1c32bbf2fb61400636f63a",
+      "status": "passed",
+      "original_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "renders": [
+        {
+          "label": "original",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.358,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.358,
+              "Total render prep": 0.384,
+              "Mcrt time": 0.384,
+              "Total time": 0.808
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "9eb79c2746f037076ad883333e26ee47d4e2490513681bcd9168dbf5679cb478"
+        }
+      ]
+    },
+    "dense": {
+      "report_sha256": "a8944475efaf5ec59b7ece9bb19fb69f763107c077aee493f3e6728828fe3724",
+      "status": "passed",
+      "native": {
+        "geometry_reused_for_transform_and_material": true,
+        "idle_attributes_encoded": 0,
+        "replica_base_guard_and_recovery": true,
+        "stages": [
+          {
+            "affected_entities": 300,
+            "apply_us": 14127,
+            "attributes_encoded": 291,
+            "capture_us": 18591,
+            "direct_changes": 300,
+            "exact_native_attributes": true,
+            "name": "initial",
+            "objects": 9,
+            "prepare_us": 5928,
+            "prepared_buffers": 300,
+            "source_bytes": 4219707
+          },
+          {
+            "affected_entities": 8,
+            "apply_us": 6,
+            "attributes_encoded": 1,
+            "capture_us": 76,
+            "direct_changes": 1,
+            "exact_native_attributes": true,
+            "name": "transform",
+            "objects": 9,
+            "prepare_us": 95,
+            "prepared_buffers": 1,
+            "source_bytes": 304
+          },
+          {
+            "affected_entities": 6,
+            "apply_us": 6,
+            "attributes_encoded": 1,
+            "capture_us": 54,
+            "direct_changes": 1,
+            "exact_native_attributes": true,
+            "name": "material",
+            "objects": 9,
+            "prepare_us": 82,
+            "prepared_buffers": 1,
+            "source_bytes": 67
+          },
+          {
+            "affected_entities": 8,
+            "apply_us": 7079,
+            "attributes_encoded": 1,
+            "capture_us": 9143,
+            "direct_changes": 1,
+            "exact_native_attributes": true,
+            "name": "deformation",
+            "objects": 9,
+            "prepare_us": 1182,
+            "prepared_buffers": 1,
+            "source_bytes": 1579067
+          },
+          {
+            "affected_entities": 8,
+            "apply_us": 122,
+            "attributes_encoded": 2,
+            "capture_us": 53,
+            "direct_changes": 3,
+            "exact_native_attributes": true,
+            "name": "binding",
+            "objects": 10,
+            "prepare_us": 288,
+            "prepared_buffers": 3,
+            "source_bytes": 164
+          },
+          {
+            "affected_entities": 6,
+            "apply_us": 12,
+            "attributes_encoded": 1,
+            "capture_us": 84,
+            "direct_changes": 1,
+            "exact_native_attributes": true,
+            "name": "unbinding",
+            "objects": 10,
+            "prepare_us": 142,
+            "prepared_buffers": 1,
+            "source_bytes": 67
+          }
+        ],
+        "status": "passed",
+        "truncated_payload_rejected": true
+      },
+      "original_comparison": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "renders": [
+        {
+          "label": "original",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.663,
+              "Initialize renderer": 0.378,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.097,
+              "Building BVH": 0.282,
+              "Building GPU BVH": 0.378,
+              "Total render prep": 1.382,
+              "Mcrt time": 4.411,
+              "Total time": 5.911
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "32c46eb1ec9f3e50fd1fa1dee48325e5ecc0fe6b1eba153dbc8d4e29fd841380"
+        },
+        {
+          "label": "initial-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.011,
+              "Initialize renderer": 0.372,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.09,
+              "Building BVH": 0.249,
+              "Building GPU BVH": 0.372,
+              "Total render prep": 0.689,
+              "Mcrt time": 4.441,
+              "Total time": 5.227
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "2c19b23912cd7ec7497c4c3bd1a0d90aa9e8198990bf73a8599ded25ebde24de"
+        },
+        {
+          "label": "initial-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.362,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.089,
+              "Building BVH": 0.259,
+              "Building GPU BVH": 0.361,
+              "Total render prep": 0.686,
+              "Mcrt time": 4.493,
+              "Total time": 5.201
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "33855e8772af6507cad81f1cd266de55a59c0a7f91d424f62ee1c4885ee725a2",
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "transform-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.011,
+              "Initialize renderer": 0.365,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.086,
+              "Building BVH": 0.261,
+              "Building GPU BVH": 0.365,
+              "Total render prep": 0.708,
+              "Mcrt time": 4.46,
+              "Total time": 5.229
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "c14dc8d774298555035e96beba13a574b553640b0b9c46f76dc043763aa6ced5"
+        },
+        {
+          "label": "transform-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.352,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.087,
+              "Building BVH": 0.265,
+              "Building GPU BVH": 0.351,
+              "Total render prep": 0.681,
+              "Mcrt time": 4.494,
+              "Total time": 5.237
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "73f9c2809b09e2872c3e07628dfe048928cc35a34919279b871fbb9efb080075",
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "edited_pixels": 27097
+        },
+        {
+          "label": "material-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.39,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.089,
+              "Building BVH": 0.25,
+              "Building GPU BVH": 0.39,
+              "Total render prep": 0.706,
+              "Mcrt time": 4.689,
+              "Total time": 5.48
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "7c74966c7dc826ca93ce2339c180369b9b5e5dc0f8e50e138b2689cda1b16aa5"
+        },
+        {
+          "label": "material-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.385,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.111,
+              "Building BVH": 0.26,
+              "Building GPU BVH": 0.385,
+              "Total render prep": 0.723,
+              "Mcrt time": 4.555,
+              "Total time": 5.319
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "026974903e24f58d8974ff6c445da82471d6cb9e5e65d8f2e44516256491ed69",
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "edited_pixels": 23722
+        },
+        {
+          "label": "deformation-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.366,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.112,
+              "Building BVH": 0.252,
+              "Building GPU BVH": 0.366,
+              "Total render prep": 0.696,
+              "Mcrt time": 4.211,
+              "Total time": 4.941
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "b50bb6d6e218f9264b88a7121d0c065f1bf9c34b050a275ee8dd641fa320079b"
+        },
+        {
+          "label": "deformation-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.369,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.11,
+              "Building BVH": 0.282,
+              "Building GPU BVH": 0.369,
+              "Total render prep": 0.728,
+              "Mcrt time": 4.065,
+              "Total time": 4.83
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "29455ef76e489f2c489ef81e17692f2bf7181cd0f97312c1fa724ad93e5bc06a",
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "edited_pixels": 23722
+        },
+        {
+          "label": "binding-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.012,
+              "Initialize renderer": 0.368,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.086,
+              "Building BVH": 0.249,
+              "Building GPU BVH": 0.367,
+              "Total render prep": 0.683,
+              "Mcrt time": 4.147,
+              "Total time": 4.88
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "db523c5de72a5b66ca8037adfbcc22d59c494edd42dc207ab2d870dfe9bad660"
+        },
+        {
+          "label": "binding-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.011,
+              "Initialize renderer": 0.369,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.091,
+              "Building BVH": 0.25,
+              "Building GPU BVH": 0.369,
+              "Total render prep": 0.686,
+              "Mcrt time": 4.128,
+              "Total time": 4.826
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "6fd3056cfc728b2a6107695d45ecb129db5935eb83319a869cf2ef66e9b7d313",
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "edited_pixels": 21514
+        },
+        {
+          "label": "unbinding-source",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.011,
+              "Initialize renderer": 0.369,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.089,
+              "Building BVH": 0.257,
+              "Building GPU BVH": 0.369,
+              "Total render prep": 0.691,
+              "Mcrt time": 4.238,
+              "Total time": 4.941
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "e6fbb04a116b3f13918a61508f5667b4a8094950f40af33a8781811df22066d3"
+        },
+        {
+          "label": "unbinding-indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.011,
+              "Initialize renderer": 0.373,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.088,
+              "Building BVH": 0.249,
+              "Building GPU BVH": 0.373,
+              "Total render prep": 0.688,
+              "Mcrt time": 4.238,
+              "Total time": 4.952
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "image_sha256": "e235ae24b7881c17ed783c40338463a7a27aa3bb6485e07bce4fe8591407d894",
+          "image_comparison": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "edited_pixels": 21514
+        }
+      ]
+    },
+    "core_cuda": {
+      "report_sha256": "e8b644fbfc1de38f80e425d3fb81c8a51648c49cfa43e94433759cc71bce47a9",
+      "status": "passed",
+      "runs": [
+        {
+          "case": "index",
+          "checks": {
+            "transform_prepare_microseconds": 25,
+            "passed": true,
+            "checks": 49,
+            "reader_accesses": 80000,
+            "large_entities": 10001,
+            "transform_prepared_buffers": 1,
+            "transform_prepared_bytes": 1
+          },
+          "executable_sha256": "1cbdaa2f05f8ee5657d24f48f3c48a30c50b165a25dda5f2ff4e9f4cd5779e4e",
+          "preprocessed_sha256": "0ac75747f2668759183d764001983b6053360f223677a1c72485f8f53216dde2"
+        },
+        {
+          "case": "gpu",
+          "checks": {
+            "passed": true,
+            "gpu_jobs": 2,
+            "samples": 16,
+            "prepared_buffers": 4,
+            "material_update_buffers": 1,
+            "geometry_reused": true,
+            "stale_rejected": true
+          },
+          "executable_sha256": "ad085750a4339dbe76a33c34e10f193ef6ca64c0f4cbc83858561f995875f5ff",
+          "preprocessed_sha256": "f7b896cab91b2f1e2b24ef19cded37f497be23057648496c557712809e40732c",
+          "shading": {
+            "batches": 2,
+            "samples": 16,
+            "accepted": 16,
+            "replaced": 16,
+            "unsupported": 0,
+            "invalid": 0,
+            "mismatch": 0,
+            "errors": 0
+          }
+        }
+      ],
+      "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5"
+    },
+    "benchmark": {
+      "report_sha256": "8c26bf30f6bab9106cbf6e38019a0012a08b268b3b11160ab6d0f9f48e7baf8a",
+      "status": "passed",
+      "runs": [
+        {
+          "pair": 0,
+          "label": "baseline",
+          "passed": true,
+          "entities": 10001,
+          "updates": 100,
+          "median_ns": 1889300,
+          "p95_ns": 2466500,
+          "prepared_bytes_per_edit": 128,
+          "geometry_reused": true
+        },
+        {
+          "pair": 0,
+          "label": "shared",
+          "passed": true,
+          "entities": 10001,
+          "updates": 100,
+          "median_ns": 7400,
+          "p95_ns": 9800,
+          "prepared_bytes_per_edit": 128,
+          "geometry_reused": true
+        },
+        {
+          "pair": 1,
+          "label": "shared",
+          "passed": true,
+          "entities": 10001,
+          "updates": 100,
+          "median_ns": 7200,
+          "p95_ns": 13700,
+          "prepared_bytes_per_edit": 128,
+          "geometry_reused": true
+        },
+        {
+          "pair": 1,
+          "label": "baseline",
+          "passed": true,
+          "entities": 10001,
+          "updates": 100,
+          "median_ns": 1857100,
+          "p95_ns": 2353700,
+          "prepared_bytes_per_edit": 128,
+          "geometry_reused": true
+        },
+        {
+          "pair": 2,
+          "label": "baseline",
+          "passed": true,
+          "entities": 10001,
+          "updates": 100,
+          "median_ns": 1894100,
+          "p95_ns": 2533900,
+          "prepared_bytes_per_edit": 128,
+          "geometry_reused": true
+        },
+        {
+          "pair": 2,
+          "label": "shared",
+          "passed": true,
+          "entities": 10001,
+          "updates": 100,
+          "median_ns": 7300,
+          "p95_ns": 9500,
+          "prepared_bytes_per_edit": 128,
+          "geometry_reused": true
+        }
+      ],
+      "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5"
+    }
+  }
+}
