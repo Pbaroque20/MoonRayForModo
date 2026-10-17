@@ -1,0 +1,111 @@
+"""Build/run an isolated native AVX sampler corpus from retained reference inputs."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from xpu2.reference import inventory, verify
+from xpu2.sampler import compare, matches_reference
+
+
+def sha(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--build", required=True, type=Path,
+                        help="Existing isolated ray-probe build with retained inputs")
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--reference", type=Path, help="Pinned .jsonl or .jsonl.gz native corpus")
+    args = parser.parse_args()
+    build, out = args.build.resolve(), args.output.resolve()
+    manifest = json.loads((build / "build-inputs.json").read_text(encoding="utf-8"))
+    if manifest.get("status") != "built":
+        raise ValueError("Completed isolated reference build required")
+    source = Path(manifest["source"])
+    if out.is_relative_to(source) or out.is_relative_to(build):
+        raise ValueError("Use an isolated fresh output folder")
+    out.mkdir(parents=True, exist_ok=False)
+    runtime = build / "control"
+    runtime_lock = inventory(runtime)
+    frozen = [(build / item["copy"], item["sha256"]) for item in manifest["inputs"]]
+    for path, digest in frozen:
+        if sha(path) != digest:
+            raise ValueError("Retained build input drift: " + str(path))
+    # Preprocess the current headers once into a frozen translation unit. The
+    # existing sampler table/ISPC objects are retained, not rebuilt from source.
+    original_command = manifest["compile_command"]
+    compiler = original_command[0]
+    flags = original_command[1:original_command.index("-iquote")]
+    env = dict(os.environ)
+    env["PATH"] = str(runtime) + os.pathsep + str(Path(compiler).parent) + os.pathsep + env.get("PATH", "")
+    cpp = out / "sampler_probe.cc"
+    cpp.write_bytes((ROOT / "xpu2/sampler_probe.cc").read_bytes())
+    def run(command, name, stdout=None):
+        with (out / (name + ".log")).open("w", encoding="utf-8") as log:
+            if stdout:
+                with stdout.open("w", encoding="utf-8") as data:
+                    done = subprocess.run(command, cwd=out, env=env, stdout=data, stderr=log,
+                                          timeout=300, creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                done = subprocess.run(command, cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                      timeout=300, creationflags=subprocess.CREATE_NO_WINDOW)
+        if done.returncode:
+            raise RuntimeError(name + " failed; see " + str(out / (name + ".log")))
+    print("Freezing native sampler headers", flush=True)
+    pp = out / "sampler.ii"
+    run([compiler, *flags, "-E", str(cpp), "-o", str(pp)], "preprocess")
+    print("Compiling native AVX sampler", flush=True)
+    obj = out / "sampler.obj"
+    run([compiler, *flags, "-c", str(pp), "-o", str(obj)], "compile")
+    rsp = out / "link.rsp"
+    rsp.write_bytes((build / "control.rsp").read_bytes())
+    exe = out / "sampler.exe"
+    print("Linking retained native inputs", flush=True)
+    run([compiler, "-O3", "-pthread", "-o", str(exe), str(obj), "@" + str(rsp)], "link")
+    outputs = []
+    for index, workers in enumerate((1, 1, 4)):
+        print("Sampling with " + str(workers) + " CPU workers", flush=True)
+        output = out / ("samples-" + str(index) + ".jsonl")
+        run([str(exe), str(workers)], "run-" + str(index), output)
+        outputs.append(output)
+    result = compare(outputs)
+    if args.reference:
+        result["reference_match"] = matches_reference(outputs[0], args.reference)
+        result["reference_sha256"] = sha(args.reference)
+        if not result["reference_match"]:
+            result["status"] = "failed"
+    # Detect header drift during this build, not just retained-object drift.
+    second_pp = out / "sampler-verify.ii"
+    run([compiler, *flags, "-E", str(cpp), "-o", str(second_pp)], "preprocess-verify")
+    if sha(pp) != sha(second_pp):
+        raise ValueError("Native headers changed during probe")
+    for path, digest in frozen:
+        if sha(path) != digest:
+            raise ValueError("Retained build input changed")
+    verify(runtime, runtime_lock)
+    result.update({
+        "build_manifest_sha256": sha(build / "build-inputs.json"),
+        "cpp_sha256": sha(cpp), "preprocessed_sha256": sha(pp),
+        "executable_sha256": sha(exe), "compile_flags": flags,
+        "runtime_inventory": runtime_lock,
+        "workers": [1, 1, 4],
+        "corpus_sha256": [sha(p) for p in outputs],
+        "scope_build": "Current frozen headers with retained native objects; not a clean runtime build",
+    })
+    (out / "report.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(json.dumps({k: result[k] for k in ("status", "cases", "components_per_mode",
+                                          "all_execution_records_identical", "different_components")}))
+    if result["status"] != "passed":
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

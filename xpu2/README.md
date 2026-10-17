@@ -148,3 +148,7 @@ The deterministic work-assignment and accumulation model is documented in
 [SCHEDULING.md](SCHEDULING.md). It preserves work identities under reordered
 completion/retries and bounds the publication backlog. Native sampler/shader
 integration and numerical RGB acceptance limits remain unimplemented.
+
+Native AVX sampler splitting/resumption now has a pinned bit-pattern corpus.
+See [SAMPLER.md](SAMPLER.md) for the 648-case results and the known-total-count
+resume hazard. This does not enable a CUDA sampler or GPU shading.
