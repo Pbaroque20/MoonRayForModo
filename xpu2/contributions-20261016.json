@@ -1,0 +1,1380 @@
+{
+  "status": "valid_diagnostic",
+  "scope": "Selected surface rays, pre-shadow lighting, GPU shadow decisions and queued radiance; no complete BSDF/texture or branch-identity trace",
+  "runs": [
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.014,
+        "Initialize renderer": 0.337,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.336,
+        "Total render prep": 0.367,
+        "Mcrt time": 0.375,
+        "Total time": 0.817
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "control"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.015,
+        "Initialize renderer": 0.316,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.316,
+        "Total render prep": 0.346,
+        "Mcrt time": 0.375,
+        "Total time": 0.784
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "trace-off"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.013,
+        "Initialize renderer": 0.305,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.305,
+        "Total render prep": 0.332,
+        "Mcrt time": 0.372,
+        "Total time": 0.738
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "trace-on"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.013,
+        "Initialize renderer": 0.322,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.322,
+        "Total render prep": 0.348,
+        "Mcrt time": 0.345,
+        "Total time": 0.805
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "trace-repeat"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.014,
+        "Initialize renderer": 0.318,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.317,
+        "Total render prep": 0.344,
+        "Mcrt time": 0.352,
+        "Total time": 0.781
+      },
+      "xpu_selected": true,
+      "gpu_setup_complete": true,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 100.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "replay-primary"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.014,
+        "Initialize renderer": 0.0,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.0,
+        "Total render prep": 0.026,
+        "Mcrt time": 0.32,
+        "Total time": 0.453
+      },
+      "xpu_selected": false,
+      "gpu_setup_complete": false,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 0.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "vector-off"
+    },
+    {
+      "renderer_timings_seconds": {
+        "Loading scene": 0.015,
+        "Initialize renderer": 0.0,
+        "Generating procedurals": 0.0,
+        "Tessellation": 0.001,
+        "Building BVH": 0.004,
+        "Building GPU BVH": 0.0,
+        "Total render prep": 0.028,
+        "Mcrt time": 0.348,
+        "Total time": 0.466
+      },
+      "xpu_selected": false,
+      "gpu_setup_complete": false,
+      "cpu_fallback": false,
+      "gpu_intersection_percent": 0.0,
+      "gpu_error": false,
+      "actual_threads": 1,
+      "passed": true,
+      "name": "vector-on"
+    }
+  ],
+  "build_manifest_sha256": "246f090aa792d68f7820b87ecb1d72f367d48f0b076b37299e4de110912c25f5",
+  "scene_sha256": "7670b3b4fb08f9298312d9bc926fc1a8197a4faf9bf04f9917d8217b198ba4ff",
+  "comparisons": {
+    "pinned_to_control": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "control_to_trace_off": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "trace_off_to_on": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "trace_repeat": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "vector_trace_off_to_on": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    },
+    "pinned_vector_to_control": {
+      "status": "passed",
+      "dimensions": [
+        256,
+        144
+      ],
+      "channels": {
+        "R": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "G": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "B": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        },
+        "A": {
+          "passed": true,
+          "failed_values": 0,
+          "maximum_absolute_error": 0.0,
+          "rms_error": 0.0,
+          "values": 36864
+        }
+      },
+      "exactly_different_pixels": 0,
+      "first_difference": null,
+      "largest_differences": [],
+      "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+      "metadata": {
+        "colorInteropID": null,
+        "oiio:ColorSpace": null,
+        "PixelAspectRatio": "1"
+      }
+    }
+  },
+  "ray_records_identical": true,
+  "intersection_summary": {
+    "rays": 18,
+    "hit_miss_mismatches": 0,
+    "primitive_mismatches": 0,
+    "different_hit_attributes": 2,
+    "max_t_error": 4.76837158203125e-07,
+    "max_uv_error": 1.7881393432617188e-07,
+    "max_Ng_error": 0.0,
+    "depths": [
+      0,
+      1
+    ]
+  },
+  "replay": {
+    "selected_pixels": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "original_xpu": [
+          0.21118733286857605,
+          0.019490540027618408,
+          0.016629396006464958,
+          1.0
+        ],
+        "replayed_primary": [
+          0.21528182923793793,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "vectorized": [
+          0.21528181433677673,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "max_error_before": 0.004094481468200684,
+        "max_error_after": 1.4901161193847656e-08
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "original_xpu": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "replayed_primary": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "vectorized": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "max_error_before": 0.0,
+        "max_error_after": 0.0
+      }
+    ],
+    "changed_pixels_outside_selection": 0,
+    "replayed_primary_hits": 2,
+    "scope": "Two selected primary rays only; not a production correction"
+  },
+  "contributions": {
+    "trace-on": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "radiance_count": 19,
+        "weight": 1.0,
+        "normalized_fsum_rgba": [
+          0.2111873341636965,
+          0.019490542486892082,
+          0.016629396777716465,
+          1.0
+        ],
+        "image_rgba": [
+          0.21118733286857605,
+          0.019490540027618408,
+          0.016629396006464958,
+          1.0
+        ],
+        "fsum_image_max_error": 2.459273673593998e-09,
+        "queue_order_float32_rgba": [
+          0.21118733286857605,
+          0.019490540027618408,
+          0.016629396006464958,
+          1.0
+        ],
+        "canonical_float32_rgba": [
+          0.21118734776973724,
+          0.019490543752908707,
+          0.016629396006464958,
+          1.0
+        ],
+        "queued_shadow_count": 11,
+        "pre_shadow_fsum_rgb": [
+          0.2152818449685583,
+          0.019759729548241012,
+          0.016841489472426474
+        ],
+        "gpu_shadow_count": 11,
+        "cpu_shadow_checks": 11,
+        "shadow_disagreements": 0,
+        "gpu_occluded": 1,
+        "disabled_shadowing": false
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "radiance_count": 19,
+        "weight": 1.0,
+        "normalized_fsum_rgba": [
+          0.20136806648224592,
+          0.018445053952746093,
+          0.015714859910076484,
+          1.0
+        ],
+        "image_rgba": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "fsum_image_max_error": 2.7939677238464355e-09,
+        "queue_order_float32_rgba": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "canonical_float32_rgba": [
+          0.2013680636882782,
+          0.018445054069161415,
+          0.01571485958993435,
+          1.0
+        ],
+        "queued_shadow_count": 10,
+        "pre_shadow_fsum_rgb": [
+          0.20136806648224592,
+          0.018445053952746093,
+          0.015714859910076484
+        ],
+        "gpu_shadow_count": 10,
+        "cpu_shadow_checks": 10,
+        "shadow_disagreements": 0,
+        "gpu_occluded": 0,
+        "disabled_shadowing": false
+      }
+    ],
+    "trace-repeat": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "radiance_count": 19,
+        "weight": 1.0,
+        "normalized_fsum_rgba": [
+          0.2111873341636965,
+          0.019490542486892082,
+          0.016629396777716465,
+          1.0
+        ],
+        "image_rgba": [
+          0.21118733286857605,
+          0.019490540027618408,
+          0.016629396006464958,
+          1.0
+        ],
+        "fsum_image_max_error": 2.459273673593998e-09,
+        "queue_order_float32_rgba": [
+          0.21118733286857605,
+          0.019490540027618408,
+          0.016629396006464958,
+          1.0
+        ],
+        "canonical_float32_rgba": [
+          0.21118734776973724,
+          0.019490543752908707,
+          0.016629396006464958,
+          1.0
+        ],
+        "queued_shadow_count": 11,
+        "pre_shadow_fsum_rgb": [
+          0.2152818449685583,
+          0.019759729548241012,
+          0.016841489472426474
+        ],
+        "gpu_shadow_count": 11,
+        "cpu_shadow_checks": 11,
+        "shadow_disagreements": 0,
+        "gpu_occluded": 1,
+        "disabled_shadowing": false
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "radiance_count": 19,
+        "weight": 1.0,
+        "normalized_fsum_rgba": [
+          0.20136806648224592,
+          0.018445053952746093,
+          0.015714859910076484,
+          1.0
+        ],
+        "image_rgba": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "fsum_image_max_error": 2.7939677238464355e-09,
+        "queue_order_float32_rgba": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "canonical_float32_rgba": [
+          0.2013680636882782,
+          0.018445054069161415,
+          0.01571485958993435,
+          1.0
+        ],
+        "queued_shadow_count": 10,
+        "pre_shadow_fsum_rgb": [
+          0.20136806648224592,
+          0.018445053952746093,
+          0.015714859910076484
+        ],
+        "gpu_shadow_count": 10,
+        "cpu_shadow_checks": 10,
+        "shadow_disagreements": 0,
+        "gpu_occluded": 0,
+        "disabled_shadowing": false
+      }
+    ],
+    "replay-primary": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "radiance_count": 20,
+        "weight": 1.0,
+        "normalized_fsum_rgba": [
+          0.21528182779729832,
+          0.01975972116633784,
+          0.01684148155618459,
+          1.0
+        ],
+        "image_rgba": [
+          0.21528182923793793,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "fsum_image_max_error": 1.4406396076083183e-09,
+        "queue_order_float32_rgba": [
+          0.21528182923793793,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "canonical_float32_rgba": [
+          0.21528182923793793,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "queued_shadow_count": 11,
+        "pre_shadow_fsum_rgb": [
+          0.21528182779729832,
+          0.01975972116633784,
+          0.01684148155618459
+        ],
+        "gpu_shadow_count": 11,
+        "cpu_shadow_checks": 11,
+        "shadow_disagreements": 0,
+        "gpu_occluded": 0,
+        "disabled_shadowing": false
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "radiance_count": 19,
+        "weight": 1.0,
+        "normalized_fsum_rgba": [
+          0.20136806648224592,
+          0.018445053952746093,
+          0.015714859910076484,
+          1.0
+        ],
+        "image_rgba": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "fsum_image_max_error": 2.7939677238464355e-09,
+        "queue_order_float32_rgba": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "canonical_float32_rgba": [
+          0.2013680636882782,
+          0.018445054069161415,
+          0.01571485958993435,
+          1.0
+        ],
+        "queued_shadow_count": 10,
+        "pre_shadow_fsum_rgb": [
+          0.20136806648224592,
+          0.018445053952746093,
+          0.015714859910076484
+        ],
+        "gpu_shadow_count": 10,
+        "cpu_shadow_checks": 10,
+        "shadow_disagreements": 0,
+        "gpu_occluded": 0,
+        "disabled_shadowing": false
+      }
+    ],
+    "vector-on": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "radiance_count": 20,
+        "weight": 1.0,
+        "normalized_fsum_rgba": [
+          0.21528182779729832,
+          0.01975972116633784,
+          0.01684148155618459,
+          1.0
+        ],
+        "image_rgba": [
+          0.21528181433677673,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "fsum_image_max_error": 1.3460521586239338e-08,
+        "queue_order_float32_rgba": [
+          0.21528182923793793,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "canonical_float32_rgba": [
+          0.21528182923793793,
+          0.01975972205400467,
+          0.016841482371091843,
+          1.0
+        ],
+        "queued_shadow_count": 11,
+        "pre_shadow_fsum_rgb": [
+          0.21528182779729832,
+          0.01975972116633784,
+          0.01684148155618459
+        ],
+        "gpu_shadow_count": 0,
+        "cpu_shadow_checks": 0,
+        "shadow_disagreements": 0,
+        "gpu_occluded": 0,
+        "disabled_shadowing": false
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "radiance_count": 19,
+        "weight": 1.0,
+        "normalized_fsum_rgba": [
+          0.20136806648224592,
+          0.018445053952746093,
+          0.015714859910076484,
+          1.0
+        ],
+        "image_rgba": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "fsum_image_max_error": 2.7939677238464355e-09,
+        "queue_order_float32_rgba": [
+          0.2013680636882782,
+          0.018445055931806564,
+          0.0157148614525795,
+          1.0
+        ],
+        "canonical_float32_rgba": [
+          0.2013680636882782,
+          0.018445054069161415,
+          0.01571485958993435,
+          1.0
+        ],
+        "queued_shadow_count": 10,
+        "pre_shadow_fsum_rgb": [
+          0.20136806648224592,
+          0.018445053952746093,
+          0.015714859910076484
+        ],
+        "gpu_shadow_count": 0,
+        "cpu_shadow_checks": 0,
+        "shadow_disagreements": 0,
+        "gpu_occluded": 0,
+        "disabled_shadowing": false
+      }
+    ]
+  },
+  "contribution_records_identical": true,
+  "contribution_comparisons": {
+    "vector-on__trace-on": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "identical_radiance_multiset": false,
+        "removed_count": 10,
+        "added_count": 9,
+        "removed": [
+          [
+            0,
+            0,
+            0.00021270378783810884,
+            0.00021270378783810884,
+            0.00021270378783810884,
+            0
+          ],
+          [
+            0,
+            0,
+            0.0027896317187696695,
+            0.0027896317187696695,
+            0.0027896317187696695,
+            0
+          ],
+          [
+            0,
+            0,
+            0.002992416964843869,
+            0.002992416964843869,
+            0.002992416964843869,
+            0
+          ],
+          [
+            0,
+            0,
+            0.003044422250241041,
+            0.003044422250241041,
+            0.003044422250241041,
+            0
+          ],
+          [
+            0,
+            0,
+            0.004094509873539209,
+            0.00026918688672594726,
+            0.00021209252008702606,
+            0
+          ],
+          [
+            0,
+            0,
+            0.014888102188706398,
+            0.002142056357115507,
+            0.0019518169574439526,
+            0
+          ],
+          [
+            0,
+            0,
+            0.017310017719864845,
+            0.0010257313260808587,
+            0.000782682269345969,
+            0
+          ],
+          [
+            0,
+            0,
+            0.03416730463504791,
+            0.001464313012547791,
+            0.0009762088302522898,
+            0
+          ],
+          [
+            0,
+            0,
+            0.04496840760111809,
+            0.001927217235788703,
+            0.0012848115293309093,
+            0
+          ],
+          [
+            0,
+            0,
+            0.04724965617060661,
+            0.0020249849185347557,
+            0.0013499902561306953,
+            0
+          ]
+        ],
+        "added": [
+          [
+            0,
+            0,
+            0.00021270372963044792,
+            0.00021270372963044792,
+            0.00021270372963044792,
+            0
+          ],
+          [
+            0,
+            0,
+            0.0027896363753825426,
+            0.0027896363753825426,
+            0.0027896363753825426,
+            0
+          ],
+          [
+            0,
+            0,
+            0.002992418594658375,
+            0.002992418594658375,
+            0.002992418594658375,
+            0
+          ],
+          [
+            0,
+            0,
+            0.0030444238800555468,
+            0.0030444238800555468,
+            0.0030444238800555468,
+            0
+          ],
+          [
+            0,
+            0,
+            0.014888099394738674,
+            0.00214205589145422,
+            0.0019518164917826653,
+            0
+          ],
+          [
+            0,
+            0,
+            0.017310013994574547,
+            0.0010257313260808587,
+            0.000782682269345969,
+            0
+          ],
+          [
+            0,
+            0,
+            0.03416731581091881,
+            0.0014643133617937565,
+            0.0009762090630829334,
+            0
+          ],
+          [
+            0,
+            0,
+            0.044968411326408386,
+            0.0019272174686193466,
+            0.001284811645746231,
+            0
+          ],
+          [
+            0,
+            0,
+            0.04724965617060661,
+            0.0020249851513653994,
+            0.0013499902561306953,
+            0
+          ]
+        ]
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "identical_radiance_multiset": true,
+        "removed_count": 0,
+        "added_count": 0,
+        "removed": [],
+        "added": []
+      }
+    ],
+    "trace-on__trace-repeat": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "identical_radiance_multiset": true,
+        "removed_count": 0,
+        "added_count": 0,
+        "removed": [],
+        "added": []
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "identical_radiance_multiset": true,
+        "removed_count": 0,
+        "added_count": 0,
+        "removed": [],
+        "added": []
+      }
+    ],
+    "vector-on__replay-primary": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "identical_radiance_multiset": true,
+        "removed_count": 0,
+        "added_count": 0,
+        "removed": [],
+        "added": []
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "identical_radiance_multiset": true,
+        "removed_count": 0,
+        "added_count": 0,
+        "removed": [],
+        "added": []
+      }
+    ],
+    "trace-on__replay-primary": [
+      {
+        "x": 96,
+        "y_from_bottom": 77,
+        "identical_radiance_multiset": false,
+        "removed_count": 9,
+        "added_count": 10,
+        "removed": [
+          [
+            0,
+            0,
+            0.00021270372963044792,
+            0.00021270372963044792,
+            0.00021270372963044792,
+            0
+          ],
+          [
+            0,
+            0,
+            0.0027896363753825426,
+            0.0027896363753825426,
+            0.0027896363753825426,
+            0
+          ],
+          [
+            0,
+            0,
+            0.002992418594658375,
+            0.002992418594658375,
+            0.002992418594658375,
+            0
+          ],
+          [
+            0,
+            0,
+            0.0030444238800555468,
+            0.0030444238800555468,
+            0.0030444238800555468,
+            0
+          ],
+          [
+            0,
+            0,
+            0.014888099394738674,
+            0.00214205589145422,
+            0.0019518164917826653,
+            0
+          ],
+          [
+            0,
+            0,
+            0.017310013994574547,
+            0.0010257313260808587,
+            0.000782682269345969,
+            0
+          ],
+          [
+            0,
+            0,
+            0.03416731581091881,
+            0.0014643133617937565,
+            0.0009762090630829334,
+            0
+          ],
+          [
+            0,
+            0,
+            0.044968411326408386,
+            0.0019272174686193466,
+            0.001284811645746231,
+            0
+          ],
+          [
+            0,
+            0,
+            0.04724965617060661,
+            0.0020249851513653994,
+            0.0013499902561306953,
+            0
+          ]
+        ],
+        "added": [
+          [
+            0,
+            0,
+            0.00021270378783810884,
+            0.00021270378783810884,
+            0.00021270378783810884,
+            0
+          ],
+          [
+            0,
+            0,
+            0.0027896317187696695,
+            0.0027896317187696695,
+            0.0027896317187696695,
+            0
+          ],
+          [
+            0,
+            0,
+            0.002992416964843869,
+            0.002992416964843869,
+            0.002992416964843869,
+            0
+          ],
+          [
+            0,
+            0,
+            0.003044422250241041,
+            0.003044422250241041,
+            0.003044422250241041,
+            0
+          ],
+          [
+            0,
+            0,
+            0.004094509873539209,
+            0.00026918688672594726,
+            0.00021209252008702606,
+            0
+          ],
+          [
+            0,
+            0,
+            0.014888102188706398,
+            0.002142056357115507,
+            0.0019518169574439526,
+            0
+          ],
+          [
+            0,
+            0,
+            0.017310017719864845,
+            0.0010257313260808587,
+            0.000782682269345969,
+            0
+          ],
+          [
+            0,
+            0,
+            0.03416730463504791,
+            0.001464313012547791,
+            0.0009762088302522898,
+            0
+          ],
+          [
+            0,
+            0,
+            0.04496840760111809,
+            0.001927217235788703,
+            0.0012848115293309093,
+            0
+          ],
+          [
+            0,
+            0,
+            0.04724965617060661,
+            0.0020249849185347557,
+            0.0013499902561306953,
+            0
+          ]
+        ]
+      },
+      {
+        "x": 132,
+        "y_from_bottom": 96,
+        "identical_radiance_multiset": true,
+        "removed_count": 0,
+        "added_count": 0,
+        "removed": [],
+        "added": []
+      }
+    ]
+  },
+  "matched_shadow_changes": {
+    "unique_identical_direction_matches": 10,
+    "visibility_changes": [
+      {
+        "before": {
+          "pixel": 5046368,
+          "sample": 0,
+          "sequence": 0,
+          "depth": 1,
+          "type": 0,
+          "cpu": 1,
+          "gpu": 1,
+          "disabled": 0,
+          "direction": [
+            -0.9091821312904358,
+            -0.3662445545196533,
+            -0.19812297821044922
+          ],
+          "rgb": [
+            0.004094510804861784,
+            0.00026918706134893,
+            0.0002120926947100088
+          ]
+        },
+        "after": {
+          "pixel": 5046368,
+          "sample": 0,
+          "sequence": 0,
+          "depth": 1,
+          "type": 0,
+          "cpu": 0,
+          "gpu": 0,
+          "disabled": 0,
+          "direction": [
+            -0.9091821312904358,
+            -0.3662445545196533,
+            -0.19812297821044922
+          ],
+          "rgb": [
+            0.004094509873539209,
+            0.00026918688672594726,
+            0.00021209252008702606
+          ]
+        },
+        "queued_before": {
+          "pixel": 5046368,
+          "sample": 0,
+          "sequence": 0,
+          "depth": 1,
+          "type": 0,
+          "origin": [
+            -0.2664853632450104,
+            0.04236496612429619,
+            -3.0392415523529053
+          ],
+          "direction": [
+            -0.9091821312904358,
+            -0.3662445545196533,
+            -0.19812297821044922
+          ],
+          "near": 3.0511962904711254e-05,
+          "far": 3.0594777660122722e+38,
+          "rgb": [
+            0.004094510804861784,
+            0.00026918706134893,
+            0.0002120926947100088
+          ]
+        },
+        "queued_after": {
+          "pixel": 5046368,
+          "sample": 0,
+          "sequence": 0,
+          "depth": 1,
+          "type": 0,
+          "origin": [
+            -0.266485333442688,
+            0.04236495867371559,
+            -3.039241075515747
+          ],
+          "direction": [
+            -0.9091821312904358,
+            -0.3662445545196533,
+            -0.19812297821044922
+          ],
+          "near": 3.0511957447743043e-05,
+          "far": 3.0594777660122722e+38,
+          "rgb": [
+            0.004094509873539209,
+            0.00026918688672594726,
+            0.00021209252008702606
+          ]
+        }
+      }
+    ],
+    "scope": "Exact direction and path labels only; unmatched/ambiguous rays are not silently paired"
+  },
+  "gpu_driver": "NVIDIA GeForce RTX 3090, 591.74",
+  "runtime_inventory_identities": {
+    "control": "b6ea6bb588470ab94a52d11cb7acdbd5ccff1bf669b98e7ee235d7eca614176b",
+    "trace": "509e87ae5f5ad461bbfb90a05400e2e9513ac05042a696faecebd03527b14de2"
+  },
+  "trace_file_sha256": {
+    "trace-on": "a1b048f0015e9cc8e998609978655c5674cf5ca8763524f3cdf862be0a86686f",
+    "trace-repeat": "a1b048f0015e9cc8e998609978655c5674cf5ca8763524f3cdf862be0a86686f",
+    "replay-primary": "46d541ba0b70d22abdd05b6c21e53bb50681b1f6a2588744370f8a54fda80789",
+    "vector-on": "b21ca4a4bccc5a9f9c20257853e4628ec14c17a0311ee19b4a1f3768f7b8ef4f"
+  },
+  "build": {
+    "source_sha256": "b26a1cbf53e0c26ead70b3860f3511c8fb16221c490bfbadb4a442f18f185638",
+    "instrumented_sha256": "4af232ae0aaf52bb42d6549d6beb7cdff0e6a2f1e8ba9c452a4ace13167f8e4f",
+    "control_dll_sha256": "3f8506ec51a3226661f62cc04a0ab03566330b5d92f54b609917baa84156f312",
+    "trace_dll_sha256": "a0eabb9a11d0092acc9da2afaaca7b4da96deed29ba2299225fe0cdc3f6e7573",
+    "scope": "Retained native objects; not a clean source rebuild",
+    "extra_source_hashes": [
+      {
+        "target": "moonray/lib/rendering/pbr/CMakeFiles/rendering_pbr_objects.dir/core/PbrTLState.cc.obj",
+        "source_sha256": "41f76f9fae0286c7851082438bc2c2e96d038b150f3c568079a0323ed86b985d",
+        "instrumented_sha256": "a4269235d0059050bc5d2be3fc6a92be0926879456f0bee74149fadef9e35734"
+      }
+    ]
+  },
+  "diagnostic_attempts": [
+    {
+      "path": "test-results/xpu2-contributions",
+      "native_renders": 7,
+      "status": "incomplete",
+      "reason": "report assembly lookup failure"
+    },
+    {
+      "path": "test-results/xpu2-contributions-verified",
+      "native_renders": 4,
+      "status": "incomplete",
+      "reason": "progress output interrupted a diagnostic record"
+    },
+    {
+      "path": "test-results\\xpu2-contributions-file",
+      "native_renders": 7,
+      "status": "valid_diagnostic",
+      "reason": "dedicated native trace file"
+    }
+  ]
+}

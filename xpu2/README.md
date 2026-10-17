@@ -135,3 +135,7 @@ Nothing from this milestone is installed or exposed as an XPU2 engine option.
 Selected-ray diagnostics and the controlled CPU-hit replay are documented in
 [SELECTED_RAYS.md](SELECTED_RAYS.md). These remain isolated native experiments,
 not an enabled XPU2 rendering backend.
+
+The shadow/contribution follow-up now isolates the larger discrepancy to a
+grazing visibility decision. See [CONTRIBUTIONS.md](CONTRIBUTIONS.md) for measured
+evidence, diagnostic controls and implications for the XPU2 reference contract.

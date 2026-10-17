@@ -86,3 +86,7 @@ Next: capture shadow decisions and shading contributions for these paths, then
 establish a canonical contribution reduction and broaden the fixtures. Keep
 zero tolerance while investigating; do not hide the discrepancy with an arbitrary
 acceptance threshold.
+
+The shadow/contribution follow-up now isolates the larger discrepancy to a
+grazing visibility decision. See [CONTRIBUTIONS.md](CONTRIBUTIONS.md) for measured
+evidence, diagnostic controls and implications for the XPU2 reference contract.
