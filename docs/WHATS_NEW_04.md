@@ -9,80 +9,19 @@ Not released yet: on the MoonLightIPR branch.
 - **Large MoonRay pictures the right way up**: a preview at 3840 x 2160 came out upside down in MoonRay, and now does not.
 - **MoonRay lights, cameras, light filters, shapes and volumes have a Transform section** in their Properties, laid out as Modo's: Position, Rotation with its order, and Scale as X, Y and Z, with the Reset, Freeze, Zero and Add menus.
 - **MoonLightIPR looks through MoonRay's own cameras** from their own place: perspective, orthographic and dome as well as fisheye and spherical. Modo's orthographic camera previews too.
-- **Less memory kept over a long session**: small leaks after each render and selection are gone.
-- **Gaussian, Triangle and Blackman-Harris pixel filters** in Render Settings. They are not in MoonRay's source: the plugin adds them to MoonRay, built the way its own are. They never go negative, as MoonRay's sampling needs. Box and the two B-splines are MoonRay's own.
-- **MoonRay's display filters**: all 18 from MoonRay's source (colour correct, toon, halftone, blur, depth of field and the rest) as MoonRay items. Each takes in the beauty, an AOV or another filter, and is a buffer of the preview and a channel of the final EXR.
-- **Switch displacement in the node editor.** The switch colour, float and normal maps, the switch and mix materials, and the toon materials' per-point ramp multipliers and offsets now reach MoonRay: they were never passed on before. Scenes saved with them are carried over.
-- **MoonLightIPR draws MoonRay's hair toon material**: its hair colour under up to three toon highlights. A toon ramp that ends lit is now drawn right past its end.
-- **Time per pixel** as an output: where the render spends its time, shown with the average pixel at a quarter of white. Its timings are now fine-grained on Windows.
-- **EXR compression** for Render EXR and animations: zip, as before, or any of MoonRay's others, lossy ones included.
-- **Modo's weight and colour vertex maps reach MoonRay** for its materials to read by name (AttributeMap): a value at each point, or set apart on a face's corners so that each face keeps its own. MoonRay scenes with such values import as vertex maps.
-- **Primitive attribute outputs** in the Outputs window: a vertex map or other value the shapes carry, by its name, as a picture of the render, a number or a colour. MoonRay scenes with such outputs import with them.
-- **Global Switches** in Render Settings: displacement, subsurface scattering and shadows on or off, lights seen by the camera, a limit to geometry resolution, and a dicing camera for adaptive tessellation.
-- **Visibility outputs** in the Outputs window: how much of the light reaches each point, from every light or from one light group, 0 in shadow to 1. MoonRay scenes with such outputs import with them.
-- **The graph editor's properties fold by group**: a MoonShine material's settings sit under its own groups (Diffuse, Specular, Clearcoat and the rest), each folded or unfolded with a click and kept that way for that kind of material.
-- **The graph editor's MoonRay Widget is quicker**: it renders under MoonRay LS with more samples to a pixel, starts as the editor opens, and shows a material it has already rendered at once. It has one Refresh/Stop button, no bucket outlines, and the object sits higher in the picture.
-- **A MoonRay preview is always one render**, as MoonRay's own command makes it: it no longer starts over twice at 1 and 4 samples before the full render.
-- **Toon materials have smooth edges on coarse meshes**: the lit band no longer comes out in steps along the faces of a low-poly or subdivided mesh, in MoonRay and in MoonLightIPR. "Smooth toon edges on coarse meshes" under MoonRay Source Overrides in Preferences, on by default; off renders as MoonRay itself does.
-- **Toon materials denoise cleanly**: MoonRay's albedo output, the denoiser's guide, was full of bright specks on toon surfaces, and a denoised toon stayed as noisy as it was rendered. "Denoise toon materials cleanly" under MoonRay Source Overrides, on by default.
-- **A new toon material is brightest facing the light**: its diffuse ramp starts bright where the surface faces the light and darkens towards the shadow side, as Modo's toon does. MoonRay's own default runs the other way; a toon material whose ramp was never set takes the new start, and a MoonRay scene's own materials keep MoonRay's.
-- **Motion blur in MoonLightIPR, on by default**: while the scene is followed too (an edit is shown blurred once it is let go; a drag is followed sharp), and moving lights blur, in MoonLightIPR and in MoonRay, which held them still before. MoonRay's own items (its lights and shapes) blur when they move, as Modo's do.
-- **MoonRay Source Overrides**: the MoonRay page of Modo's Preferences, now named with the MoonRay release it renders with (MoonRay (2026.29.1)), gathers in a section that folds where the plugin changes how MoonRay itself renders: smooth toon edges, toon materials that denoise cleanly, blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, and each Cryptomatte sample counted once. Each is a checkbox of its own, on by default; off renders as MoonRay's source does. What each changes in MoonRay's source, why, and how it was checked is in the [engineers' notes](../patches/native-windows/README.md).
-- **Volume attenuation, contribution and phase attenuation factors** in Render Settings, Volumes: with Volume bounces above 1, how much less each further bounce of light in fog is stopped, adds and keeps its direction (MoonRay's defaults 0.65, 0.65 and 0.5). MoonLightIPR follows them.
-- **Presence quality, Cryptomatte multi-presence and Sample hair lobes separately** in Render Settings: how finely partly see-through surfaces are sampled (MoonRay's 0.75), Cryptomatte mattes that count each layer seen through a partly see-through surface, and hair that samples its lobes one by one in place of MoonRay's faster way.
-- **Fog in Cryptomatte**: fog, smoke and clouds, from a VDB or in a MoonRay box or sphere, have mattes of their own, as strong as the fog is thick, and what lies behind fog is covered only as much as shows through. Fog also no longer stops a render with Object, Material and Asset Cryptomatte together. A MoonRay Source Override in Preferences, on by default.
-- **Two more MoonRay Source Overrides**, on by default: fog in front of a partly see-through surface counts in the picture's alpha (MoonRay leaves it out there, so the picture composites thinner than it renders), and Cryptomatte counts each sample once in vector and XPU modes (MoonRay now and then counts a pixel twice).
-- **Convert a Modo camera to a MoonRay camera**: in the MoonRay menu, and in the Item List's right-click menu on a camera. A popup asks which kind (perspective, orthographic, fisheye, spherical or dome); the new camera stands where the Modo camera does, with its lens, film offset and depth of field where the kind has them.
-- **Stereo cameras and overscan from Modo's camera**: a stereo render camera renders its eye in MoonRay and in MoonLightIPR; set to both eyes, Render EXR writes `_left` and `_right` files beside the one chosen, and Modo's anaglyph composite in it when one is chosen. The camera's Overscan renders that much past the frame in a render to a file, the frame kept as the EXR's display window; the preview shows the frame. MoonLightIPR now also follows a perspective camera's film offset.
-- **Subdivision creases render**: a subdivided mesh's edge and point weights (Modo's Subdivision weight map) are MoonRay's creases, in MoonRay and MoonLightIPR; before, MoonRay rendered every subdivided mesh soft whatever its weights.
-- **More of a MoonRay scene comes in on import**: what moves over the shutter is keyed as Modo animation at the shutter's two ends, the camera's shutter and Motion Blur set to match, copies an instancer makes included; a shape that changes over the shutter comes in as a morph keyed the same way; semi-sharp creases come in as subdivision weights; a mesh MoonRay fills with fog comes in with its volume, as a MoonRay volume item its material holds; maps wired into a MoonRay item's values (a noise in a fog's colour) come in wired; instanced curves come in, a curve set for each copy; a vector at each point comes in as a vertex map that goes back out to MoonRay as a vector; words by point or by face are kept on the mesh and go back out; a mesh given no normals comes in shaded as MoonRay shades it, smooth unless it says otherwise, where Modo would have faceted it; and an instancer of more than 20,000 copies comes in whole, the first 20,000 as Modo instances and the rest merged into meshes.
-- **Velvet in MoonLightIPR**: MoonRay's velvet material and DwaBaseMaterial's fuzz show in MoonLightIPR with their grazing-angle sheen, dimming what is beneath them as MoonRay does; before, velvet showed as a plain stand-in.
-- **MoonLightIPR draws a mesh filled with even fog**, and follows MoonRay's scene scale for lights and depth of field. A box of fog standing on the floor no longer shows stripes where it meets it.
-- **Terminal** in the MoonRay menu: every program the plugin runs (MoonRay, MoonLightIPR, the denoiser, the scene reader and the rest), with its command line, what it prints and how it ended, as it happens. It shows "ready" while nothing runs.
-- **Assign MoonRay Material** in the Item List's right-click menu on a mesh.
-- **A whole mesh's MoonRay material covers what is made in it later**: Assign MoonRay Material on one mesh binds its material to the mesh, as Modo's item masks do, so new polygons take it too. Picked polygons, or several meshes sharing one material, are still tagged.
-- **Compositor: Build from passes or light groups.** Build > From Light Passes adds MoonRay's light passes to the scene (emission, lights and sky seen, direct and indirect diffuse and glossy, mirror reflection, refraction, glossy transmission, translucency) and lays out a graph that puts them back together, each through a Grade of its own; From Light Groups does the same for the environment's light and each light-group label, to relight after the render. A Remainder pass holds whatever the passes leave out, so with every Grade left alone the Composite is the beauty. A new **Sum** node adds any number of pictures.
-- **The compositor runs on the graphics card**, or on the processor where there is none, giving the same picture either way; wide blurs and glows are now true full-size blurs.
-- **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
-- **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
-- **The preview shows MoonRay's wordmark** before anything is rendered.
-- **The MoonRay mark moves**: it comes in as the preview opens, breathes while a render is on its way, and fades out over the first picture.
-
-![The MoonRay mark coming in as the preview opens](images/crest-entrance.gif)
-
-*The MoonRay mark as the preview opens: after a second the letters rise in from the left, then the crescent fades in from the right.*
-
-![The compositor built from light passes](images/compositor-passes.png)
-
-*Build > From Light Passes: each pass through a Grade into a Sum, the Remainder below them; after the render the Composite matches the beauty until a Grade is changed.*
-
-![The MoonRay Terminal after a MoonRay render and a stereo composite](images/terminal.png)
-
-*The Terminal after a MoonRay render and a red/cyan stereo composite: each program's command, what it printed, and how it ended (green for success); "ready" while nothing runs.*
-
-![A stereo camera's left eye, right eye and red/cyan picture](images/stereo-eyes.png)
-
-*A stereo render camera set to both eyes: the left eye, the right eye, and Modo's red/cyan composite of the two, all from one Render EXR.*
-
-![The frame alone, and the same render with overscan](images/overscan.png)
-
-*Overscan 1.3: the frame as the preview shows it (left), and the render to a file, which goes past the frame on every side (right; the frame is outlined in yellow).*
-
-![A subdivided cube without and with creases](images/subdivision-creases.png)
-
-*A subdivided cube: without weights it renders as a ball (left); with four edges and one corner weighted in Modo's Subdivision map, MoonRay keeps them sharp (right).*
-
-![A box of fog on a floor in MoonRay and in MoonLightIPR](images/moonlightipr-fog-mesh.png)
-
-*A mesh filled with fog, imported from a MoonRay scene: MoonRay (left), MoonLightIPR (right).*
 
 ![An orthographic camera item, MoonRay left and MoonLightIPR right](images/moonlightipr-camera_ortho.png)
 
 *A MoonRay orthographic camera: MoonRay (left), MoonLightIPR (right).*
 
+- **Less memory kept over a long session**: small leaks after each render and selection are gone.
+- **Gaussian, Triangle and Blackman-Harris pixel filters** in Render Settings. They are not in MoonRay's source: the plugin adds them to MoonRay, built the way its own are. They never go negative, as MoonRay's sampling needs. Box and the two B-splines are MoonRay's own.
+
 ![The six pixel filters on one spot of a render](images/pixel-filters.png)
 
 *Pixel filters at width 3. Top, from MoonRay's source: Box, Cubic B-spline, Quadratic B-spline. Bottom, added and MoonRay-compatible: Gaussian, Triangle, Blackman-Harris.*
+
+- **MoonRay's display filters**: all 18 from MoonRay's source (colour correct, toon, halftone, blur, depth of field and the rest) as MoonRay items. Each takes in the beauty, an AOV or another filter, and is a buffer of the preview and a channel of the final EXR.
 
 ![The beauty and two display filters in the preview](images/display-filters.png)
 
@@ -92,13 +31,28 @@ Not released yet: on the MoonLightIPR branch.
 
 *A display filter's Properties: MoonRay's own settings, and its input picked from the render's outputs and the other filters.*
 
+- **Switch displacement in the node editor.** The switch colour, float and normal maps, the switch and mix materials, and the toon materials' per-point ramp multipliers and offsets now reach MoonRay: they were never passed on before. Scenes saved with them are carried over.
+- **MoonLightIPR draws MoonRay's hair toon material**: its hair colour under up to three toon highlights. A toon ramp that ends lit is now drawn right past its end.
+
 ![Hair toon, MoonRay left and MoonLightIPR right](images/moonlightipr-hair_toon.jpg)
 
 *MoonRay's hair toon material with three highlights, tinted red, green and blue: MoonRay (left), MoonLightIPR (right).*
 
+- **Time per pixel** as an output: where the render spends its time, shown with the average pixel at a quarter of white. Its timings are now fine-grained on Windows.
+- **EXR compression** for Render EXR and animations: zip, as before, or any of MoonRay's others, lossy ones included.
+- **Modo's weight and colour vertex maps reach MoonRay** for its materials to read by name (AttributeMap): a value at each point, or set apart on a face's corners so that each face keeps its own. MoonRay scenes with such values import as vertex maps.
+- **Primitive attribute outputs** in the Outputs window: a vertex map or other value the shapes carry, by its name, as a picture of the render, a number or a colour. MoonRay scenes with such outputs import with them.
+- **Global Switches** in Render Settings: displacement, subsurface scattering and shadows on or off, lights seen by the camera, a limit to geometry resolution, and a dicing camera for adaptive tessellation.
+- **Visibility outputs** in the Outputs window: how much of the light reaches each point, from every light or from one light group, 0 in shadow to 1. MoonRay scenes with such outputs import with them.
+- **The graph editor's properties fold by group**: a MoonShine material's settings sit under its own groups (Diffuse, Specular, Clearcoat and the rest), each folded or unfolded with a click and kept that way for that kind of material.
+- **The graph editor's MoonRay Widget is quicker**: it renders under MoonRay LS with more samples to a pixel, starts as the editor opens, and shows a material it has already rendered at once. It has one Refresh/Stop button, no bucket outlines, and the object sits higher in the picture.
+
 ![The graph editor's properties in their groups, above the MoonRay Widget](images/graph-editor-widget.png)
 
 *The graph editor's right side: a material's Diffuse group open, the others folded, and the MoonRay Widget's picture of it under MoonRay LS.*
+
+- **A MoonRay preview is always one render**, as MoonRay's own command makes it: it no longer starts over twice at 1 and 4 samples before the full render.
+- **Toon materials have smooth edges on coarse meshes**: the lit band no longer comes out in steps along the faces of a low-poly or subdivided mesh, in MoonRay and in MoonLightIPR. "Smooth toon edges on coarse meshes" under MoonRay Source Overrides in Preferences, on by default; off renders as MoonRay itself does.
 
 ![A coarse toon torus, stepped with the override off and smooth with it on](images/toon-smooth-edges.png)
 
@@ -116,25 +70,37 @@ Not released yet: on the MoonLightIPR branch.
 
 *Why it steps: a toon is lit to the very edge of its ramp, and MoonRay starts its shadow rays on the flat faces under the smooth shading, so near the edge they hit the next face. Turning off MoonRay's light culling and fade leaves the steps (2); turning off shadows (3), or starting shadow rays further out (4), removes them. The override starts a toon's shadow rays from the smooth surface instead, and lights it by its shading normal, so shadows stay on. The [engineers' notes](../patches/native-windows/README.md) give the changes file by file.*
 
-![A toon torus with MoonRay's own ramp and with the plugin's starting ramp](images/toon-ramp-start.png)
-
-*A new toon material is brightest facing the light: MoonRay's own ramp, dark facing the light with its brightest band near the shadow side (left), and the plugin's starting ramp, brightest facing the light and darkening towards the shadow side (right). A toon material from a MoonRay scene keeps MoonRay's ramp.*
+- **Toon materials denoise cleanly**: MoonRay's albedo output, the denoiser's guide, was full of bright specks on toon surfaces, and a denoised toon stayed as noisy as it was rendered. "Denoise toon materials cleanly" under MoonRay Source Overrides, on by default.
 
 ![A toon render, denoised with the override off and on](images/toon-denoise.png)
 
 *"Denoise toon materials cleanly" in MoonRay Source Overrides: the render, then denoised with it off (as noisy as rendered) and on.*
 
+- **A new toon material is brightest facing the light**: its diffuse ramp starts bright where the surface faces the light and darkens towards the shadow side, as Modo's toon does. MoonRay's own default runs the other way; a toon material whose ramp was never set takes the new start, and a MoonRay scene's own materials keep MoonRay's.
+
+![A toon torus with MoonRay's own ramp and with the plugin's starting ramp](images/toon-ramp-start.png)
+
+*A new toon material is brightest facing the light: MoonRay's own ramp, dark facing the light with its brightest band near the shadow side (left), and the plugin's starting ramp, brightest facing the light and darkening towards the shadow side (right). A toon material from a MoonRay scene keeps MoonRay's ramp.*
+
+- **Motion blur in MoonLightIPR, on by default**: while the scene is followed too (an edit is shown blurred once it is let go; a drag is followed sharp), and moving lights blur, in MoonLightIPR and in MoonRay, which held them still before. MoonRay's own items (its lights and shapes) blur when they move, as Modo's do.
+
 ![A moving cube and a moving spot light, in MoonRay and MoonLightIPR](images/moonlightipr-motion.png)
 
 *Motion blur: a cube moving during the shutter, then a spot light moving, in MoonRay (left) and MoonLightIPR (right). A moving light blurs its highlights and the edges of its shadows.*
+
+- **MoonRay Source Overrides**: the MoonRay page of Modo's Preferences, now named with the MoonRay release it renders with (MoonRay (2026.29.1)), gathers in a section that folds where the plugin changes how MoonRay itself renders: smooth toon edges, toon materials that denoise cleanly, blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, and each Cryptomatte sample counted once. Each is a checkbox of its own, on by default; off renders as MoonRay's source does. What each changes in MoonRay's source, why, and how it was checked is in the [engineers' notes](../patches/native-windows/README.md).
 
 ![The MoonRay page of Modo's Preferences, with its MoonRay Source Overrides section](images/preferences-source-overrides.png)
 
 *The MoonRay page of Modo's Preferences, named with the MoonRay release it renders with, and its MoonRay Source Overrides section: the six places where the plugin changes how MoonRay itself renders, each on by default. The [engineers' notes](../patches/native-windows/README.md) say what each changes.*
 
+- **Volume attenuation, contribution and phase attenuation factors** in Render Settings, Volumes: with Volume bounces above 1, how much less each further bounce of light in fog is stopped, adds and keeps its direction (MoonRay's defaults 0.65, 0.65 and 0.5). MoonLightIPR follows them.
+
 ![A cloud at four volume bounces, with MoonRay's default volume factors and with all three at 0.2](images/volume-factors.png)
 
 *Volume factors on a cloud at four volume bounces, MoonRay (left) and MoonLightIPR (right): MoonRay's defaults above; all three at 0.2 below, where each further bounce counts for much less and the cloud is darker.*
+
+- **Presence quality, Cryptomatte multi-presence and Sample hair lobes separately** in Render Settings: how finely partly see-through surfaces are sampled (MoonRay's 0.75), Cryptomatte mattes that count each layer seen through a partly see-through surface, and hair that samples its lobes one by one in place of MoonRay's faster way.
 
 ![Four partly see-through panes in front of two boxes, at Presence Quality 0 and 1](images/presence-quality.png)
 
@@ -144,21 +110,76 @@ Not released yet: on the MoonLightIPR branch.
 
 *Sample Hair Lobes Separately sits under the Hair bounces. Presence Quality and Cryptomatte Multi-Presence are further down, after Presence Shadows.*
 
+- **Fog in Cryptomatte**: fog, smoke and clouds, from a VDB or in a MoonRay box or sphere, have mattes of their own, as strong as the fog is thick, and what lies behind fog is covered only as much as shows through. Fog also no longer stops a render with Object, Material and Asset Cryptomatte together. A MoonRay Source Override in Preferences, on by default.
+
 ![A ball of fog in front of two boxes, the fog's matte, and the boxes' matte without and with fog in Cryptomatte](images/crypto-volumes.png)
 
 *Fog in Cryptomatte: a ball of fog with a hole in it, in front of the left box (top left). The fog's own matte (top right). The boxes' matte as MoonRay makes it, solid behind the fog (bottom left), and with fog in Cryptomatte, faded where the fog hides the box (bottom right).*
+
+- **Two more MoonRay Source Overrides**, on by default: fog in front of a partly see-through surface counts in the picture's alpha (MoonRay leaves it out there, so the picture composites thinner than it renders), and Cryptomatte counts each sample once in vector and XPU modes (MoonRay now and then counts a pixel twice).
 
 ![A pane behind fog against the sky, with its alpha as MoonRay makes it and with the fog counted](images/fog-alpha.png)
 
 *Fog in front of see-through surfaces in alpha: a pane of presence 0.4 (the tall strip) with fog in front of it and the sky behind (left). Its alpha as MoonRay makes it: the pane alone, as if the fog were not there (middle). With the override: the fog counts in front of the pane as it does against the open sky (right).*
 
+- **Convert a Modo camera to a MoonRay camera**: in the MoonRay menu, and in the Item List's right-click menu on a camera. A popup asks which kind (perspective, orthographic, fisheye, spherical or dome); the new camera stands where the Modo camera does, with its lens, film offset and depth of field where the kind has them.
+
 ![The same scene through a Modo camera and through the MoonRay camera converted from it](images/convert-camera.png)
 
 *A Modo camera converted to a MoonRay camera renders the same view in MoonRay. Both boxes are one mesh given an orange MoonRay material whole: the right one was made in it afterwards and takes the material too.*
 
+- **Stereo cameras and overscan from Modo's camera**: a stereo render camera renders its eye in MoonRay and in MoonLightIPR; set to both eyes, Render EXR writes `_left` and `_right` files beside the one chosen, and Modo's anaglyph composite in it when one is chosen. The camera's Overscan renders that much past the frame in a render to a file, the frame kept as the EXR's display window; the preview shows the frame. MoonLightIPR now also follows a perspective camera's film offset.
+
+![A stereo camera's left eye, right eye and red/cyan picture](images/stereo-eyes.png)
+
+*A stereo render camera set to both eyes: the left eye, the right eye, and Modo's red/cyan composite of the two, all from one Render EXR.*
+
+![The frame alone, and the same render with overscan](images/overscan.png)
+
+*Overscan 1.3: the frame as the preview shows it (left), and the render to a file, which goes past the frame on every side (right; the frame is outlined in yellow).*
+
+- **Subdivision creases render**: a subdivided mesh's edge and point weights (Modo's Subdivision weight map) are MoonRay's creases, in MoonRay and MoonLightIPR; before, MoonRay rendered every subdivided mesh soft whatever its weights.
+
+![A subdivided cube without and with creases](images/subdivision-creases.png)
+
+*A subdivided cube: without weights it renders as a ball (left); with four edges and one corner weighted in Modo's Subdivision map, MoonRay keeps them sharp (right).*
+
+- **More of a MoonRay scene comes in on import**: what moves over the shutter is keyed as Modo animation at the shutter's two ends, the camera's shutter and Motion Blur set to match, copies an instancer makes included; a shape that changes over the shutter comes in as a morph keyed the same way; semi-sharp creases come in as subdivision weights; a mesh MoonRay fills with fog comes in with its volume, as a MoonRay volume item its material holds; maps wired into a MoonRay item's values (a noise in a fog's colour) come in wired; instanced curves come in, a curve set for each copy; a vector at each point comes in as a vertex map that goes back out to MoonRay as a vector; words by point or by face are kept on the mesh and go back out; a mesh given no normals comes in shaded as MoonRay shades it, smooth unless it says otherwise, where Modo would have faceted it; and an instancer of more than 20,000 copies comes in whole, the first 20,000 as Modo instances and the rest merged into meshes.
+- **Velvet in MoonLightIPR**: MoonRay's velvet material and DwaBaseMaterial's fuzz show in MoonLightIPR with their grazing-angle sheen, dimming what is beneath them as MoonRay does; before, velvet showed as a plain stand-in.
+- **MoonLightIPR draws a mesh filled with even fog**, and follows MoonRay's scene scale for lights and depth of field. A box of fog standing on the floor no longer shows stripes where it meets it.
+
+![A box of fog on a floor in MoonRay and in MoonLightIPR](images/moonlightipr-fog-mesh.png)
+
+*A mesh filled with fog, imported from a MoonRay scene: MoonRay (left), MoonLightIPR (right).*
+
+- **Terminal** in the MoonRay menu: every program the plugin runs (MoonRay, MoonLightIPR, the denoiser, the scene reader and the rest), with its command line, what it prints and how it ended, as it happens. It shows "ready" while nothing runs.
+
+![The MoonRay Terminal after a MoonRay render and a stereo composite](images/terminal.png)
+
+*The Terminal after a MoonRay render and a red/cyan stereo composite: each program's command, what it printed, and how it ended (green for success); "ready" while nothing runs.*
+
+- **Assign MoonRay Material** in the Item List's right-click menu on a mesh.
+- **A whole mesh's MoonRay material covers what is made in it later**: Assign MoonRay Material on one mesh binds its material to the mesh, as Modo's item masks do, so new polygons take it too. Picked polygons, or several meshes sharing one material, are still tagged.
+- **Compositor: Build from passes or light groups.** Build > From Light Passes adds MoonRay's light passes to the scene (emission, lights and sky seen, direct and indirect diffuse and glossy, mirror reflection, refraction, glossy transmission, translucency) and lays out a graph that puts them back together, each through a Grade of its own; From Light Groups does the same for the environment's light and each light-group label, to relight after the render. A Remainder pass holds whatever the passes leave out, so with every Grade left alone the Composite is the beauty. A new **Sum** node adds any number of pictures.
+
+![The compositor built from light passes](images/compositor-passes.png)
+
+*Build > From Light Passes: each pass through a Grade into a Sum, the Remainder below them; after the render the Composite matches the beauty until a Grade is changed.*
+
+- **The compositor runs on the graphics card**, or on the processor where there is none, giving the same picture either way; wide blurs and glows are now true full-size blurs.
+- **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
+- **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
+- **The preview shows MoonRay's wordmark** before anything is rendered.
+
 ![The preview before a render](images/preview-wordmark.png)
 
 *The preview before anything is rendered.*
+
+- **The MoonRay mark moves**: it comes in as the preview opens, breathes while a render is on its way, and fades out over the first picture.
+
+![The MoonRay mark coming in as the preview opens](images/crest-entrance.gif)
+
+*The MoonRay mark as the preview opens: after a second the letters rise in from the left, then the crescent fades in from the right.*
 
 ## New in 0.4.1
 
