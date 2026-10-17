@@ -942,16 +942,19 @@ struct Lobes {
     float specular;
     float coat;
     float back;     // the share of the diffuse samples that go through to the far side
+    float sheen;    // the share of the others that lean towards the side the view comes from, for the fuzz
 };
 ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
     const float fuzz = underFuzz(s, wo);
     const float coat = s.coat * dielectricFresnel(wo.z, s.ior) * fuzz;
     const float specular = luminance(specularFresnel(s, wo.z)) * underCoat(s, wo) * fuzz;
-    const float front = luminance(diffuseColor(s, wo)) + (s.fuzz > 0.0f ? luminance(s.fuzzColor) * s.fuzz * velvetAlbedo(wo.z, s.fuzzRoughness) : 0.0f);
+    const float sheen = s.fuzz > 0.0f ? luminance(s.fuzzColor) * s.fuzz * velvetAlbedo(wo.z, s.fuzzRoughness) : 0.0f;
+    const float front = luminance(diffuseColor(s, wo)) + sheen;
     const float behind = s.passes ? luminance(backColor(s, wo)) : 0.0f;
     const float diffuse = front + behind;
     Lobes lobes;
     lobes.back = behind > 0.0f ? behind / diffuse : 0.0f;
+    lobes.sheen = front > 0.0f ? sheen / front : 0.0f;
     lobes.coat = coat + specular > 0.0f ? coat / (coat + specular) : 0.0f;
     lobes.specular = s.matte ? 0.0f : diffuse <= 0.0f ? 1.0f : clamp((coat + specular) / (coat + specular + diffuse), 0.1f, 0.9f);
     if (s.toonSpecular) {
@@ -983,6 +986,14 @@ ML_INLINE float3 litBy(const BsdfEval& e, float surfacePdf, float lightPdf) {
     // A highlight no sample of the surface could have found (a hair toon's where its fibre reflects nothing): the light's.
     else found += e.toon * (1.0f / lightPdf);
     return found;
+}
+// How far the fuzz's samples lean (sampleSheen): not at all seen face on, where the fuzz is even all round, and
+// more the more the view is from the side.
+ML_INLINE float sheenLean(float3 wo) { return 0.9f * sqrtf(fmaxf(0.0f, 1.0f - wo.z * wo.z)); }
+ML_INLINE float sheenPdf(float3 wo, float3 wi) {
+    const float across = sqrtf((wo.x * wo.x + wo.y * wo.y) * (wi.x * wi.x + wi.y * wi.y));
+    const float cosine = across > 1e-12f ? (wo.x * wi.x + wo.y * wi.y) / across : 0.0f;
+    return wi.z / ML_PI * (1.0f + sheenLean(wo) * cosine);
 }
 ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, float3 wi) {
     BsdfEval e;
@@ -1083,13 +1094,23 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
         e.toon = e.toon * kept;
         e.diffuse += fuzzLobe(s, wo, wi);
     }
-    e.diffusePdf = (1.0f - lobes.back) * wi.z / ML_PI;
+    e.diffusePdf = (1.0f - lobes.back) * ((1.0f - lobes.sheen) * wi.z / ML_PI + lobes.sheen * sheenPdf(wo, wi));
     return e;
 }
 
 ML_INLINE float3 sampleDiffuse(float u1, float u2) {
     const float r = sqrtf(u1), phi = 2.0f * ML_PI * u2;
     return make_float3(r * cosf(phi), r * sinf(phi), sqrtf(fmaxf(0.0f, 1.0f - u1)));
+}
+// The fuzz's own samples: by the cosine as the diffuse's, but round the normal they lean towards the side the view
+// comes from, where MoonRay's fuzz is brightest, by (1 + lean cos(azimuth from the view's)) / 2 pi.
+ML_INLINE float3 sampleSheen(float3 wo, float u1, float u2) {
+    const float lean = sheenLean(wo), target = 2.0f * ML_PI * u2 - ML_PI;
+    // The azimuth's distribution, d + lean sin d, turned round by Newton's method from the even guess.
+    float d = target;
+    for (int i = 0; i < 8; ++i) d = clamp(d - (d + lean * sinf(d) - target) / (1.0f + lean * cosf(d)), -ML_PI, ML_PI);
+    const float azimuth = atan2f(wo.y, wo.x) + d, r = sqrtf(u1);
+    return make_float3(r * cosf(azimuth), r * sinf(azimuth), sqrtf(fmaxf(0.0f, 1.0f - u1)));
 }
 
 // A microfacet normal seen from wo: visible normal sampling (Heitz 2018).
@@ -2349,8 +2370,11 @@ extern "C" __global__ void __raygen__moonlightipr() {
         const bool glossy = rnd(seed) < lobes.specular;
         float3 wi;
         if (!glossy) {
-            wi = sampleDiffuse(u1, u2);
-            if (lobes.back > 0.0f && rnd(seed) < lobes.back) wi.z = -wi.z;
+            if (lobes.back > 0.0f && rnd(seed) < lobes.back) {
+                wi = sampleDiffuse(u1, u2);
+                wi.z = -wi.z;
+            }
+            else wi = lobes.sheen > 0.0f && rnd(seed) < lobes.sheen ? sampleSheen(wo, u1, u2) : sampleDiffuse(u1, u2);
         }
         else if (rnd(seed) < lobes.coat) wi = reflectAbout(wo, sampleFacet(surface.coatAlpha, wo, u1, u2));
         else if (rnd(seed) < broadShare(surface)) wi = sampleDiffuse(u1, u2);
