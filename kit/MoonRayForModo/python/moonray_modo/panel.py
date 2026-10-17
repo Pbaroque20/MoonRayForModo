@@ -1139,6 +1139,8 @@ class Panel(Tools, QtWidgets.QWidget):
     def _set_rendering(self,rendering):
         """Keep the Render button saying what pressing it will do."""
         self._rendering=bool(rendering)
+        # The crest breathes while a render is on its way and nothing is shown yet.
+        if hasattr(self.preview,'set_waiting'):self.preview.set_waiting(self._rendering)
         if getattr(self,'_draft_quiet',False):return
         active=self._rendering or self._following
         again=not active and getattr(self,'_continuable',None) is not None
