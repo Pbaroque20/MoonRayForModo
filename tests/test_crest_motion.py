@@ -39,10 +39,12 @@ class Entrance(unittest.TestCase):
         self.assertEqual({waiting(kind, number)[0] for kind, number in [('arc', 0), ('arc', 1)] + [('letter', n) for n in range(7)]}, {0.0})
         self.assertGreater(crest.entrance(crest.DELAY + 0.2)('letter', 0)[0], 0.0)
 
-    def test_the_arcs_come_from_above_and_below_and_the_letters_one_after_another(self):
-        early = crest.entrance(crest.DELAY + (crest.ENTRANCE - crest.DELAY) * 0.15)
-        self.assertLess(early('arc', 0)[2], 0.0)
-        self.assertGreater(early('arc', 1)[2], 0.0)
+    def test_the_arcs_come_in_together_from_the_right_and_the_letters_one_after_another(self):
+        arriving = crest.entrance(crest.DELAY + (crest.LETTERS + crest.SLIDE / 3) * crest.PACE)
+        top, bottom = arriving('arc', 0), arriving('arc', 1)
+        self.assertEqual(top, bottom)
+        self.assertGreater(top[1], 0.0)
+        self.assertEqual(top[2], 0.0)
         middle = crest.entrance(crest.DELAY + (crest.ENTRANCE - crest.DELAY) * 0.43)
         shown = [middle('letter', n)[0] for n in range(7)]
         self.assertEqual(shown, sorted(shown, reverse=True))

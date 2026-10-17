@@ -108,8 +108,8 @@ def parts():
 # down, in the file's units.
 PACE = 2.0              # how much slower than its first cut the crest comes in
 DELAY = 1.0             # seconds the preview stays empty before the crest begins to come in
-# At PACE 1: each letter rises in RISE seconds, the next STAGGER after it; once the last is in place, the arcs
-# slide together in SLIDE.
+# At PACE 1: each letter rises in RISE seconds, the next STAGGER after it; once the last is in place, the arcs, as
+# one, fade in over SLIDE as they shift from right to left into place (arc_shift).
 RISE, STAGGER, SLIDE = 0.55, 0.08, 0.8
 LETTERS = 6 * STAGGER + RISE
 ENTRANCE = DELAY + (LETTERS + SLIDE) * PACE   # seconds from the preview opening until the crest is in
@@ -129,16 +129,34 @@ def still(kind, number):
 
 def entrance(seconds):
     """The crest coming in, seconds after the preview opened: the letters rise into place one after another from the
-    left, then the arcs slide in from above and below as they show."""
+    left, then the arcs, together, shift in from the right as they show."""
     seconds = (seconds - DELAY) / PACE
+    shift = arc_shift()
 
     def pose(kind, number):
         if kind == 'arc':
             x = _eased((seconds - LETTERS) / SLIDE)
-            return x, 0.0, (1.0 - x) * (-60.0 if number == 0 else 60.0)
+            return x, (1.0 - x) * shift, 0.0
         x = _eased((seconds - STAGGER * number) / RISE)
         return x, 0.0, (1.0 - x) * 40.0
     return pose
+
+
+def arc_shift(beyond=12.0):
+    """How far right of their place the arcs set out from: their left edge a little (beyond) past the right side of
+    the letter it lies over, the O, in the file's units."""
+    if 'shift' not in _held:
+        _held['shift'] = 80.0
+        pieces = parts() if 'QPainterPath' in dir(QtGui) else None
+        if pieces:
+            arcs = [piece.boundingRect() for piece, kind, number in pieces if kind == 'arc']
+            letters = [piece.boundingRect() for piece, kind, number in pieces if kind == 'letter']
+            if arcs and letters:
+                left = min(box.left() for box in arcs)
+                under = [box for box in letters if box.left() <= left <= box.right()]
+                if under:
+                    _held['shift'] = under[0].right() - left + beyond
+    return _held['shift']
 
 
 def entered(seconds):
