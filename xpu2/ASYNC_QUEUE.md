@@ -98,3 +98,9 @@ The separate four-worker bitwise gate remains false. Native repeats differ in
 8 and 6 pixels. Maximum channel difference is 1.4901161193847656e-08 in each
 comparison. These observations do not establish a production tolerance or the
 cause of every difference. No tolerance was relaxed and no speedup was measured.
+
+## CPU-resume ownership follow-up
+
+[CONTINUATIONS.md](CONTINUATIONS.md) describes the new owned resume mailbox and
+its real-GPU queue checks. It extends the capacity budget through CPU lease return
+and revokes work across attempts. Native path capture/resumption remains pending.
