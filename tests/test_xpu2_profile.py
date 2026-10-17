@@ -34,6 +34,23 @@ class ProfileEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):probe.validate_profile(p,"missing_ptx")
         p.update(errors=1,accepted=0,replaced=0)
         probe.validate_profile(p,"missing_ptx")
+    def test_async_evidence_requires_actual_completion(self):
+        p=dict(batches=2,async_batches=2,async_completions=2,staging_ns=1)
+        probe.validate_transfer_profile(p,"async_1",True)
+        for key,value in (("async_completions",1),("async_batches",0),("staging_ns",None)):
+            q=dict(p);q[key]=value
+            with self.assertRaises(ValueError):probe.validate_transfer_profile(q,"async_1",True)
+    def test_async_failure_and_sync_control_evidence(self):
+        p=dict(batches=2,async_batches=1,async_completions=0,staging_ns=1)
+        probe.validate_transfer_profile(p,"fail_uploaded",True)
+        with self.assertRaises(ValueError):probe.validate_transfer_profile(p,"sync_1",False)
+        p['async_completions']=1
+        with self.assertRaises(ValueError):probe.validate_transfer_profile(p,"fail_uploaded",True)
+    def test_async_patch_composition_and_guarded_input(self):
+        from xpu2 import profile_patch,window_dispatch_patch,async_transfer_patch
+        code=profile_patch.apply((ROOT/"xpu2/native_lambert_queue.cc").read_text(),(ROOT/"xpu2/batched_bridge.cc").read_text(),(ROOT/"xpu2/profile_metrics.h").read_text())
+        code=window_dispatch_patch.apply(code);async_transfer_patch.apply(code)
+        with self.assertRaises(ValueError):async_transfer_patch.apply(code.replace("CUdeviceptr buffers[4]={};",""))
     def test_window_patch_composes_and_rejects_anchor_drift(self):
         from xpu2 import profile_patch,window_dispatch_patch
         code=profile_patch.apply((ROOT/"xpu2/native_lambert_queue.cc").read_text(),(ROOT/"xpu2/batched_bridge.cc").read_text(),(ROOT/"xpu2/profile_metrics.h").read_text())

@@ -79,3 +79,6 @@ Use fresh output directories and the retained native inputs:
     python tools/xpu2_batched_guard_probe.py --profile --window-dispatch --source <shared-source-read-only> --capture test-results/xpu2-correlated-capture-final/capture/correlated.bin --ptx test-results/xpu2-ray-image-final/sampler.ptx --output test-results/window-guards-new
 
 Timing interpretation and overlap limitations follow [profiling](PROFILING.md).
+
+The next optional experiment adds [pinned asynchronous transfers](ASYNC_TRANSFERS.md)
+while retaining these explicit window boundaries and synchronous A/B controls.

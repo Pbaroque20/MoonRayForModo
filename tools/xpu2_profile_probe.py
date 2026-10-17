@@ -28,11 +28,22 @@ def validate_profile(p,case):
         if any(p[k] for k in ('errors','mismatch','invalid','unsupported')):raise ValueError('GPU comparison failed')
         if not p['kernel_gpu_ns'] or not p['htod_ns'] or not p['dtoh_ns']:raise ValueError('Missing device timing')
 
+def validate_transfer_profile(profile,label,asynchronous):
+    for key in ('async_batches','async_completions','staging_ns'):
+        if type(profile.get(key)) is not int or profile[key]<0:raise ValueError('Invalid async evidence')
+    if asynchronous and label not in ('queue_full','missing_ptx') and not label.startswith('fail_'):
+        if profile['async_completions']!=profile['batches'] or profile['async_batches']!=profile['batches']:raise ValueError('Async path not exercised')
+    elif not asynchronous and (profile['async_batches'] or profile['async_completions']):raise ValueError('Sync control used async transfers')
+    if label.startswith('fail_') and (profile['async_batches']!=1 or profile['async_completions']):raise ValueError('Injected async failure not contained')
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for key in ('build','ptx-reference','scene-reference','output'):p.add_argument('--'+key,required=True,type=Path)
     p.add_argument('--window-dispatch',action='store_true',help='Compare timed coalescing with explicit native windows')
-    a=p.parse_args();build=a.build.resolve();prior=a.scene_reference.resolve();out=a.output.resolve()
+    p.add_argument('--async-transfers',action='store_true')
+    a=p.parse_args()
+    if a.async_transfers and not a.window_dispatch:p.error('--async-transfers requires --window-dispatch')
+    build=a.build.resolve();prior=a.scene_reference.resolve();out=a.output.resolve()
     out.mkdir(parents=True,exist_ok=False)
     report={'status':'incomplete','runs':[], 'scope':'Single-worker Lambert diagnostic; warm/uncontrolled caches, CPU reference retained; no production speedup claim',
             'timing_notes':'Wall spans may overlap across threads. Device total includes initialization and validation. Collect includes its wait. Validation includes binary-record I/O. Diagnostic I/O aggregates logging on both threads. Queue residence is summed per request, not critical-path time. GPU event interval overlaps host wait/launch. Do not sum all fields.'}
@@ -41,6 +52,9 @@ def main():
         if manifest['status']!='built' or not manifest.get('profile'):raise ValueError('Profiling build required')
         if a.window_dispatch and not manifest.get('window_dispatch'):raise ValueError('Window-dispatch build required')
         report['explicit_window_matrix']=a.window_dispatch
+        report['async_transfer_matrix']=a.async_transfers
+        if a.async_transfers:report['transfer_timing_notes']='Async htod/dtoh spans measure host enqueue cost, not completed transfers. Completion wait includes transfers and kernel. Staging is CPU memcpy. GPU kernel event timing excludes copies. One stream and one in-flight batch; no cross-batch overlap claim.'
+        if a.async_transfers and not manifest.get('async_transfers'):raise ValueError('Async transfer build required')
         hashes={**manifest['source_hashes'],str(Path(__file__).resolve()):digest_file(Path(__file__).resolve())}
         for name in ('images.py','native_integration.py','contributions.py'):
             path=ROOT/'xpu2'/name;hashes[str(path)]=digest_file(path)
@@ -60,6 +74,7 @@ def main():
         report.update(source_hashes=hashes,ptx_sha256=digest_file(ptx),build_manifest_sha256=digest_file(build/'build-inputs.json'),gpu=gpu_identity())
         cases=['original','control','disabled','audit_1','quiet_1','quiet_no_trace_1','quiet_no_trace_2','quiet_2','audit_2','queue_full','missing_ptx','sentinel']
         if a.window_dispatch:cases=['original','control','disabled','quiet_1','window_1','window_repeat','quiet_2','tail','serial_window','queue_full','missing_ptx','sentinel','audit_window','control_repeat','original_repeat']
+        if a.async_transfers:cases=['original','control','disabled','sync_1','async_1','async_repeat','sync_2','tail','queue_full','missing_ptx','fail_uploaded','fail_launched','fail_readback','sentinel','audit_async','control_repeat','original_repeat']
         reference_image=None;reference_trace=None;reference_rays=None
         for label in cases:
             folder=out/label;folder.mkdir();runtime=reference_runtime if label.startswith('original') else build/('control' if label.startswith('control') else 'trace')
@@ -72,6 +87,7 @@ def main():
             if traced:env.update(XPU2_TRACE_RAYS='1',XPU2_TRACE_CONTRIBUTIONS='1',XPU2_TRACE_FILE=str(folder/'trace.jsonl'))
             active=not label.startswith(('original','control','disabled'));quiet=not label.startswith('audit')
             window=a.window_dispatch and active and not label.startswith('quiet_')
+            asynchronous=a.async_transfers and active and not label.startswith('sync_')
             if active:
                 env.update(XPU2_NATIVE_LAMBERT='sentinel' if label=='sentinel' else 'replace',XPU2_NATIVE_LAMBERT_PTX=str(folder/'missing.ptx' if label=='missing_ptx' else ptx),
                     XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),
@@ -79,13 +95,15 @@ def main():
                     XPU2_QUEUE_LOG=str(folder/'queue.log'),XPU2_DEFERRED_LOG=str(folder/'deferred.log'),
                     XPU2_PROFILE_FILE=str(folder/'profile.json'),XPU2_PROFILE_QUIET='1' if quiet else '0')
                 if window:env.update(XPU2_WINDOW_DISPATCH='1',XPU2_QUEUE_COALESCE_US='0',XPU2_NATIVE_BATCH_WIDTH='4' if label=='tail' else '1' if label=='serial_window' else '16')
+                if asynchronous:env['XPU2_ASYNC_TRANSFERS']='1'
+                if label.startswith('fail_'):env['XPU2_ASYNC_FAIL_STAGE']=label[5:]
             print('Profile '+label,flush=True);start=time.perf_counter()
             with (folder/'render.log').open('w',encoding='utf-8') as log:
                 done=subprocess.run([str(runtime/'moonray.exe'),'-in',str(scene),'-out',str(folder/'beauty.exr'),'-exec_mode','xpu','-threads','1','-info','-stats',str(folder/'stats.csv')],
                     cwd=folder,env=env,stdout=log,stderr=subprocess.STDOUT,timeout=240,creationflags=subprocess.CREATE_NO_WINDOW)
             wall=time.perf_counter()-start
             check=successful('xpu',1,done.returncode,(folder/'render.log').read_text(errors='replace'),(folder/'stats.csv').read_text() if (folder/'stats.csv').exists() else '',(folder/'beauty.exr').exists())
-            row={'label':label,'render':check,'process_wall_seconds':wall,'scene_sha256':digest_file(scene),'traced':traced,'window_dispatch':window};report['runs'].append(row)
+            row={'label':label,'render':check,'process_wall_seconds':wall,'scene_sha256':digest_file(scene),'traced':traced,'window_dispatch':window,'async_transfers':asynchronous};report['runs'].append(row)
             if not check['passed']:raise ValueError('Render failed '+label)
             image=read_rgba(runtime,folder/'beauty.exr',folder,'raw',env)
             if reference_image is None:reference_image=image
@@ -102,7 +120,8 @@ def main():
                 row.update(radiance_comparison=comparison,shadow_comparison=shadow,selected_rays_identical=rays==reference_rays)
                 if label!='sentinel' and (rays!=reference_rays or shadow['visibility_changes'] or not all(r['identical_radiance_multiset'] for r in comparison)):raise ValueError('Contribution mismatch '+label)
             if active:
-                profile=json.loads((folder/'profile.json').read_text());validate_profile(profile,label);row['profile']=profile
+                profile=json.loads((folder/'profile.json').read_text());validate_profile(profile,'missing_ptx' if label.startswith('fail_') else label);row['profile']=profile
+                if a.async_transfers:validate_transfer_profile(profile,label,asynchronous)
                 if profile['quiet']!=quiet:raise ValueError('Incorrect profile mode')
                 if not quiet:
                     counts=native_integration.summary((folder/'shading.log').read_text());observed=native_integration.records((folder/'shading.bin').read_bytes())
@@ -113,9 +132,9 @@ def main():
                 elif (folder/'shading.bin').exists():raise ValueError('Quiet binary trace unexpectedly written')
             row['artifact_hashes']={f.name:digest_file(f) for f in folder.iterdir() if f.is_file() and f.suffix in ('.log','.json','.jsonl','.bin')}
             (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-        normals=[r for r in report['runs'] if r['label'].startswith(('audit_','quiet_','window_','tail','serial_window'))]
+        normals=[r for r in report['runs'] if r['label'].startswith(('audit_','quiet_','window_','tail','serial_window','sync_','async_'))]
         if len({r['profile']['samples'] for r in normals})!=1:raise ValueError('Profile sample count drift')
-        if a.window_dispatch:
+        if a.window_dispatch and not a.async_transfers:
             rows={r['label']:r for r in report['runs']}
             baseline=rows['quiet_1']['profile']
             for label in ('window_1','window_repeat','audit_window'):
@@ -123,6 +142,10 @@ def main():
                 if profile['batches']*9!=profile['submitted'] or profile['batches']>=baseline['batches']:raise ValueError('Incomplete nine-packet dispatch')
             if rows['serial_window']['profile']['batches']!=baseline['submitted']:raise ValueError('Serial window dispatch mismatch')
             if rows['tail']['profile']['batches']*3!=baseline['submitted']:raise ValueError('Four/four/one tail dispatch mismatch')
+        if a.async_transfers:
+            for row in normals:
+                profile=row['profile'];factor=3 if row['label']=='tail' else 9
+                if profile['batches']*factor!=profile['submitted']:raise ValueError('Async batch grouping changed')
         for path,lock in locks.items():verify(Path(path),lock)
         if hashes!={p:digest_file(Path(p)) for p in hashes} or report['gpu']!=gpu_identity():raise ValueError('Source/device drift')
         report.update(status='passed',runtime_inventory_sha256={k:hashlib.sha256(json.dumps(v,sort_keys=True,separators=(',',':')).encode()).hexdigest() for k,v in locks.items()},speedup_established=False)

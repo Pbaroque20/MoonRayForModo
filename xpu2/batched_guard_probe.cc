@@ -10,6 +10,34 @@ int main(int argc,char** argv){
         std::ifstream file(argv[2],std::ios::binary);
         std::vector<char> raw((std::istreambuf_iterator<char>(file)),{});
         require(raw.size()>=244 && !std::memcmp(raw.data(),"XCL1",4),"Missing native event");
+#ifdef XPU2_ASYNC_TRANSFERS_BUILT
+        if(mode.rfind("async_",0)==0) {
+            std::array<float,24> in{};std::array<float,8> native{};
+            std::memcpy(in.data(),raw.data()+4+112,96);std::memcpy(native.data(),raw.data()+4+208,32);
+            Bridge bridge;
+            if(mode=="async_reuse") {
+                for(int count: {1,8,72,512,3}) {
+                    std::vector<float> input(count*24),output(count*8),expected(count*8);
+                    for(int i=0;i<count;++i) {
+                        std::copy(in.begin(),in.end(),input.begin()+i*24);
+                        std::copy(native.begin(),native.end(),output.begin()+i*8);
+                    }
+                    expected=output;for(int i=0;i<count;++i)for(int c=3;c<6;++c)expected[i*8+c]*=.5f;
+                    bridge.run(input.data(),output.data(),count);
+                    require(output==expected && !bridge.errors && !bridge.mismatch,"Async staging result corrupted");
+                    std::fill(input.begin(),input.end(),-999);std::fill(output.begin(),output.end(),-777);
+                }
+                require(bridge.batches==5 && bridge.replaced==596,"Async varying-size batches missing");
+            }else {
+                auto output=native;bridge.run(in.data(),output.data(),1);
+                require(output==native && bridge.errors && !bridge.replaced && !bridge.ready,"Async failure published output");
+                bridge.run(in.data(),output.data(),1);
+                require(output==native && !bridge.replaced,"Failed staging reused");
+            }
+            require(bridge.close() && bridge.asyncReleased() && !bridge.context && !bridge.lib,"Async resources leaked");
+            std::cout<<"{\"case\":\""<<mode<<"\",\"passed\":true,\"cleanup\":true}\n";return 0;
+        }
+#endif
 #ifdef XPU2_WINDOW_DISPATCH_BUILT
         if(mode=="publication") {
             std::array<float,24> in{};std::array<float,8> native{},out{},expected{};
