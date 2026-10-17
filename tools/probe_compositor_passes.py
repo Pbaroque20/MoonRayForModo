@@ -36,6 +36,12 @@ def compare():
     files = (panel_widget().renderer.buffers.frame or {}).get('files', {})
     if 'composite' not in files or 'beauty' not in files:
         return 'no composite: %s' % sorted(files)
+    import shutil
+    kept = out / ('buffers_%d' % len(result['steps']))
+    kept.mkdir(exist_ok=True)
+    for key, path in files.items():
+        if pathlib.Path(path).is_file():
+            shutil.copyfile(str(path), str(kept / (key + pathlib.Path(path).suffix)))
     done = subprocess.run([str(runtime / 'oiiotool.exe'), str(files['beauty']), '--ch', '0,1,2', str(files['composite']), '--ch', '0,1,2', '--diff'],
                           env=native.environment(runtime), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return [l.strip() for l in done.stdout.decode(errors='replace').splitlines() if 'Mean' in l or l.strip() in ('PASS', 'FAILURE', 'WARNING')]

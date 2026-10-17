@@ -163,30 +163,35 @@ def pass_graph(passes, remainder=True, beauty='beauty'):
     """A graph that puts render passes back together: each pass, [(buffer, what it is called)], through a Grade of its
     own into a Sum, and the Sum to the Composite. With remainder, what the passes leave out of the beauty (the beauty
     less all the passes) is a pass too, so that with every Grade left alone the Composite is the beauty itself."""
-    nodes, column, row = {}, 0.0, 120.0
-    total = {'type': 'sum', 'parameters': {}, 'inputs': {}, 'position': [620.0, 0.0]}
+    # Laid out in columns: the passes, the remainder worked out beside them, a Grade for each, the Sum, the Composite.
+    # The remainder is a row of its own below the passes, its beauty above the Sum of the passes it is taken from.
+    nodes, row = {}, 80.0
+    grades, adding, out = 720.0, 980.0, 1220.0
+    total = {'type': 'sum', 'parameters': {}, 'inputs': {}}
     rows = list(passes) + ([(None, 'Remainder')] if remainder else [])
-    top = -row * (len(rows) - 1) / 2.0
     for index, (buffer, words) in enumerate(rows):
-        y = top + index * row
+        y = index * row
         grade = 'grade_%d' % (index + 1)
         if buffer is None:
             # The beauty less the sum of the passes as they were rendered.
-            nodes['remainder_beauty'] = {'type': 'input', 'parameters': {'buffer': beauty}, 'inputs': {}, 'position': [column - 260.0, y - 60.0]}
+            y += row / 2
+            nodes['remainder_beauty'] = {'type': 'input', 'parameters': {'buffer': beauty}, 'inputs': {}, 'position': [0.0, y]}
             nodes['remainder_passes'] = {'type': 'sum', 'parameters': {}, 'inputs': {SUM_INPUTS[n]: 'pass_%d' % (n + 1) for n in range(len(passes))},
-                                         'position': [column - 260.0, y + 40.0]}
+                                         'position': [0.0, y + row]}
             nodes['remainder_negative'] = {'type': 'math', 'parameters': {'operation': 'multiply', 'value': -1.0},
-                                           'inputs': {'image': 'remainder_passes'}, 'position': [column, y + 40.0]}
+                                           'inputs': {'image': 'remainder_passes'}, 'position': [240.0, y + row]}
             nodes['remainder'] = {'type': 'sum', 'parameters': {}, 'inputs': {'in1': 'remainder_beauty', 'in2': 'remainder_negative'},
-                                  'position': [column + 130.0, y]}
+                                  'position': [480.0, y]}
             source = 'remainder'
         else:
             source = 'pass_%d' % (index + 1)
-            nodes[source] = {'type': 'input', 'parameters': {'buffer': buffer}, 'inputs': {}, 'position': [column, y]}
-        nodes[grade] = {'type': 'grade', 'parameters': {}, 'inputs': {'image': source}, 'position': [column + 300.0, y]}
+            nodes[source] = {'type': 'input', 'parameters': {'buffer': buffer}, 'inputs': {}, 'position': [0.0, y]}
+        nodes[grade] = {'type': 'grade', 'parameters': {}, 'inputs': {'image': source}, 'position': [grades, y]}
         total['inputs'][SUM_INPUTS[index]] = grade
+    middle = (len(rows) - 1) * row / 2
+    total['position'] = [adding, middle]
     nodes['sum'] = total
-    nodes['out'] = {'type': 'output', 'parameters': {}, 'inputs': {'image': 'sum'}, 'position': [880.0, 0.0]}
+    nodes['out'] = {'type': 'output', 'parameters': {}, 'inputs': {'image': 'sum'}, 'position': [out, middle]}
     return validate({'nodes': nodes, 'root': 'out'})
 
 
