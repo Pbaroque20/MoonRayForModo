@@ -166,7 +166,7 @@ class CoreTests(unittest.TestCase):
     def test_native_discovery_and_spaces_in_arguments(self):
         with tempfile.TemporaryDirectory(prefix='MoonRay test ') as name:
             base = pathlib.Path(name)
-            runtime = base / 'blender.shared'
+            runtime = base / 'bin'
             runtime.mkdir()
             (runtime / 'moonray.exe').touch()
             self.assertEqual(native.find_runtime(base), runtime.resolve())

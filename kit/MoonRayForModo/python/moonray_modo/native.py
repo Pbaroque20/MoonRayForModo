@@ -7,13 +7,13 @@ from pathlib import Path
 
 def find_runtime(root):
     root = Path(root).expanduser()
-    candidates = [root, root / 'blender.shared', root / 'bin']
+    candidates = [root, root / 'bin']
     if root.name.lower() == 'moonray.exe':
         candidates.insert(0, root.parent)
     for directory in candidates:
         if (directory / 'moonray.exe').is_file():
             return directory.resolve()
-    raise ValueError('Select the Windows MoonRay folder containing moonray.exe or blender.shared.')
+    raise ValueError('Select the Windows MoonRay folder containing moonray.exe.')
 
 
 def environment(directory):
