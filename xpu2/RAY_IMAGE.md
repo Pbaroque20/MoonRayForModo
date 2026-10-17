@@ -91,3 +91,7 @@ from [SHADING_EXCHANGE.md](SHADING_EXCHANGE.md). Do not install either candidate
 
     python tools/xpu2_cuda_sampler_probe.py --source <shared-source-read-only> --reference xpu2/reference/sampler-window-avx8-20261017.jsonl.gz --tables test-results/xpu2-native-tables --window test-results/xpu2-native-window-tables --shading-native test-results/xpu2-native-shading-exchange-fixed --shading-runtime test-results/xpu2-origin-build/control --shading-materials xpu2/reference/lambert-stress-avx8-20261017.jsonl.gz --shading-image --output test-results/ray-image-new
     python -m unittest discover -s tests -p "test_xpu2*.py" -q
+
+The follow-up [NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md) connects the operation
+to native MoonRay sampling/shading calls and validates real XPU images and selected
+contribution queues. Asynchronous queueing remains a separate next step.

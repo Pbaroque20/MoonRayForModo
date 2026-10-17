@@ -199,3 +199,9 @@ Ray tracing, throughput and image accumulation remain outside this diagnostic.
 image: native AVX8, CUDA-only shading and mixed/fallback schedules match every
 path event and RGB bit. Traversal and film remain shared host reference code;
 this is not native MoonRay image parity, asynchronous execution or a speed claim.
+
+[NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md) now connects the CUDA Lambert
+operation to the native XPU integrator in an isolated diagnostic DLL. Two live
+replacement renders match every float32 RGBA pixel and all measured shader
+outputs; an intentional color perturbation proves the bridge reaches the film.
+Calls are still synchronous and retain CPU validation, so no acceleration is claimed.
