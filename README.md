@@ -249,7 +249,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews. Coming in 0.4.2: on by default in MoonLightIPR, also while it follows edits, and moving lights |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | |
-| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | |
+| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: Two Sided and Color Correct take the other DWA materials as their inputs |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon brightest facing the light: coming in 0.4.2 |
 | Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor |
 | Switch displacement | ![yes](docs/images/feature-yes.svg) | In the node editor. Coming in 0.4.2, with its runtime |
@@ -260,7 +260,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches. Coming in 0.4.2 |
 | Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: in Render Settings |
-| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. Coming in 0.4.2: the compositor adds the light passes or light groups and puts them back together, each with its own Grade |
+| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. Coming in 0.4.2: the compositor adds the light passes or light groups and puts them back together, each with its own Grade; a probe shows each node's value at a pixel and keeps it as a note |
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
 | Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window. Coming in 0.4.2 |
 | Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window. Coming in 0.4.2 |

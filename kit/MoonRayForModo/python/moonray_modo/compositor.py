@@ -40,6 +40,9 @@ NODES = {
              'parameters': {'threshold': ('number', 1.0, 0.0, 100.0), 'radius': ('number', 12.0, 0.0, 200.0),
                             'strength': ('number', 0.5, 0.0, 10.0)}},
     'output': {'label': 'Composite', 'inputs': ('image',), 'tip': 'The picture the Composite buffer shows.', 'parameters': {}},
+    'note': {'label': 'Note', 'inputs': (), 'family': 'note',
+             'tip': 'Words kept on the canvas, such as values the probe found. Not part of the picture.',
+             'parameters': {'text': ('text', '')}},
     'sum': {'label': 'Sum', 'inputs': SUM_INPUTS, 'tip': 'Every picture wired in, added up: render passes back into one picture.',
             'parameters': {}},
     # Colour.
@@ -138,6 +141,13 @@ def light_group_expression(label):
     return "C.*<L.'%s'>" % label
 
 
+def scene_passes(custom_aovs, wanted):
+    """The light path outputs a scene has besides the wanted passes, as passes to offer too: (name, name, expression)."""
+    known = {expression for words, name, expression in wanted}
+    return [(entry['name'], entry['name'], entry['expression'].strip()) for entry in custom_aovs or []
+            if entry.get('kind') == 'lpe' and entry.get('expression', '').strip() and entry['expression'].strip() not in known]
+
+
 def pass_outputs(custom_aovs, wanted):
     """The scene's outputs with each wanted pass ((what it is called, name, expression)) that it lacks added, and the
     name each pass has in it: an output with the same expression is taken as it is, whatever it is called."""
@@ -209,6 +219,119 @@ def light_labels(production, entities=()):
     return sorted(label for label in found if label and all(c.isalnum() or c == '_' for c in label) and label[0].isalpha())
 
 
+# The nodes whose value at a pixel needs the pixels around it (or another pixel): the probe does not work them out.
+NEIGHBOURS = ('blur', 'glow', 'sharpen', 'median', 'grow', 'edges', 'grain', 'flip')
+
+
+def _luma(v):
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]
+
+
+def sample(graph, read, x, y, width, height):
+    """What each node of the graph makes at one pixel (x across, y down from the top, of a render width by height), as
+    the compositor program works it out: {node: (r, g, b)}, or None for a node that needs the pixels around it, or is
+    fed by one, or whose buffer cannot be read. read(buffer) gives a buffer's (r, g, b) there, or None."""
+    graph = validate(graph)
+    nodes, made = graph['nodes'], {}
+    u = x / (width - 1) if width > 1 else 0.0
+    v = y / (height - 1) if height > 1 else 0.0
+
+    def value(identity):
+        if identity in made:
+            return made[identity]
+        made[identity] = None
+        node = nodes[identity]
+        kind, held = node['type'], parameters(node)
+        taken = {key: value(source) for key, source in node['inputs'].items()}
+        if any(picture is None for picture in taken.values()) or kind in NEIGHBOURS or kind == 'note':
+            return None
+        black = (0.0, 0.0, 0.0)
+        image = taken.get('image')
+        result = None
+        if kind == 'input':
+            result = read(held['buffer'])
+        elif kind == 'output':
+            result = image or black
+        elif kind == 'sum':
+            wired = [taken[key] for key in SUM_INPUTS if key in taken]
+            result = tuple(sum(p[c] for p in wired) for c in range(3)) if wired else black
+        elif kind == 'merge':
+            a, b = taken.get('a') or black, taken.get('b')
+            if b is None:
+                result = a
+            else:
+                mask = taken['mask'][0] if 'mask' in taken else 1.0
+                ops = {'normal': lambda p, q: q, 'add': lambda p, q: p + q, 'multiply': lambda p, q: p * q,
+                       'screen': lambda p, q: 1 - (1 - p) * (1 - q), 'lighten': max, 'darken': min, 'difference': lambda p, q: abs(p - q)}
+                op = ops[held['mode']]
+                result = tuple((op(a[c], b[c]) - a[c]) * mask * float(held['mix']) + a[c] for c in range(3))
+        elif kind == 'constant':
+            result = tuple(float(c) for c in held['color'])
+        elif kind == 'ramp':
+            t = u if held['direction'] == 'left to right' else v
+            result = tuple(float(s) + (float(e) - float(s)) * t for s, e in zip(held['start'], held['end']))
+        elif image is None:
+            result = black
+        elif kind == 'grade':
+            gain = 2.0 ** float(held['exposure'])
+            out = [image[c] * gain * float(held['tint'][c]) for c in range(3)]
+            if abs(float(held['gamma']) - 1.0) > 1e-6:
+                out = [max(o, 0.0) ** (1.0 / float(held['gamma'])) for o in out]
+            if abs(float(held['saturation']) - 1.0) > 1e-6:
+                y0 = _luma(out)
+                out = [y0 + float(held['saturation']) * (o - y0) for o in out]
+            result = tuple(out)
+        elif kind == 'levels':
+            span = float(held['white']) - float(held['black'])
+            span = span if abs(span) > 1e-6 else 1e-6
+            result = tuple(max((image[c] - float(held['black'])) / span, 0.0) ** (1.0 / float(held['gamma']))
+                           * (float(held['out_white']) - float(held['out_black'])) + float(held['out_black']) for c in range(3))
+        elif kind == 'contrast':
+            result = tuple((image[c] - float(held['pivot'])) * float(held['contrast']) + float(held['pivot']) for c in range(3))
+        elif kind == 'invert':
+            result = tuple(1.0 - image[c] for c in range(3))
+        elif kind == 'clamp':
+            result = tuple(min(max(image[c], float(held['least'])), float(held['most'])) for c in range(3))
+        elif kind == 'tonemap':
+            gain = 2.0 ** float(held['exposure'])
+            result = tuple(max(image[c] * gain, 0.0) / (max(image[c] * gain, 0.0) + 1.0) for c in range(3))
+        elif kind == 'math':
+            number, operation = float(held['value']), held['operation']
+            if operation == 'divide':
+                number = 1.0 / number if abs(number) > 1e-9 else 0.0
+            ops = {'add': lambda p: p + number, 'subtract': lambda p: p - number, 'multiply': lambda p: p * number,
+                   'divide': lambda p: p * number, 'power': lambda p: max(p, 0.0) ** number, 'least of': lambda p: min(p, number),
+                   'most of': lambda p: max(p, number)}
+            result = tuple(ops[operation](image[c]) for c in range(3))
+        elif kind == 'vignette':
+            hump = max((4.0 * u * (1.0 - u)) * (4.0 * v * (1.0 - v)), 0.0)
+            scale = hump ** float(held['falloff']) * float(held['amount']) + (1.0 - float(held['amount']))
+            result = tuple(image[c] * scale for c in range(3))
+        elif kind == 'luma_matte':
+            span = float(held['high']) - float(held['low'])
+            span = span if abs(span) > 1e-6 else 1e-6
+            m = min(max((_luma(image) - float(held['low'])) / span, 0.0), 1.0)
+            m = 1.0 - m if held['take'] == 'the dark' else m
+            result = (m, m, m)
+        elif kind == 'channel':
+            index = CHANNELS.index(held['channel'])
+            m = _luma(image) if index == 0 else image[index - 1]
+            result = (m, m, m)
+        made[identity] = result
+        return result
+    for identity in nodes:
+        value(identity)
+    return made
+
+
+def probe_note(rows, x, y):
+    """The words of a note holding probed values: rows of (what a node is called, its value or None)."""
+    lines = ['Probe at %d, %d' % (x, y)]
+    for words, picked in rows:
+        lines.append('%s: %s' % (words, 'needs the pixels around it' if picked is None else 'R %.4f  G %.4f  B %.4f' % tuple(picked)))
+    return '\n'.join(lines)
+
+
 def new():
     """The graph a scene starts with: the beauty, as it is, to the output."""
     return {'nodes': {'beauty': {'type': 'input', 'parameters': {'buffer': 'beauty'}, 'inputs': {}, 'position': [0, 0]},
@@ -246,6 +369,10 @@ def validate(graph):
                 value = [float(v) for v in value]
                 if len(value) != 3 or not all(0.0 <= v <= 100.0 for v in value):
                     raise ValueError('%s of %s is not a colour' % (key, schema['label']))
+            elif spec[0] == 'text':
+                value = str(value)
+                if len(value) > 4000:
+                    raise ValueError('A note holds at most 4000 characters')
             elif spec[0] == 'buffer':
                 value = str(value)
                 if not value or not all(c.isalnum() or c == '_' for c in value):
@@ -260,6 +387,8 @@ def validate(graph):
                 raise ValueError('%s is wired to a node that is not there' % NODES[node['type']]['label'])
             if nodes[source]['type'] == 'output':
                 raise ValueError('The Composite node is where the graph ends: nothing is wired from it')
+            if nodes[source]['type'] == 'note':
+                raise ValueError('A note is words on the canvas: nothing is wired from it')
     root = graph.get('root')
     if root not in nodes or nodes[root]['type'] != 'output':
         raise ValueError('The compositor graph has no Composite node')

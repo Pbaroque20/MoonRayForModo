@@ -100,6 +100,34 @@ class Outputs(unittest.TestCase):
         self.assertEqual(len(outputs.values(entries)), len(compositor.PASSES))
 
 
+class Choices(unittest.TestCase):
+    def test_the_scenes_own_light_paths_are_offered_too(self):
+        held = [{'name': 'my_diffuse', 'kind': 'lpe', 'expression': 'C<RD>[<L.>O]'},
+                {'name': 'rim_only', 'kind': 'lpe', 'expression': "C.*<L.'rim'>"}, {'name': 'depth', 'kind': 'depth', 'expression': ''}]
+        self.assertEqual(compositor.scene_passes(held, compositor.PASSES), [('rim_only', 'rim_only', "C.*<L.'rim'>")])
+
+    def test_passes_not_chosen_stay_in_the_remainder(self):
+        values = {'beauty': 10.0, 'p1': 3.0}
+        graph = compositor.pass_graph([('p1', 'one')])
+
+        def value(identity):
+            node = graph['nodes'][identity]
+            if node['type'] == 'input':
+                return values[node['parameters']['buffer']]
+            if node['type'] in ('sum', 'output'):
+                return sum(value(source) for source in node['inputs'].values())
+            if node['type'] == 'math':
+                return value(node['inputs']['image']) * node['parameters']['value']
+            return value(node['inputs']['image'])
+        self.assertAlmostEqual(value(graph['nodes']['remainder']['inputs']['in1']) + value('remainder_negative'), 7.0)
+        self.assertAlmostEqual(value(graph['root']), 10.0)
+
+    def test_without_the_remainder_the_composite_is_the_passes_alone(self):
+        graph = compositor.pass_graph([('p1', 'one'), ('p2', 'two')], remainder=False)
+        self.assertNotIn('remainder', graph['nodes'])
+        self.assertEqual(sorted(compositor.buffers(graph)), ['p1', 'p2'])
+
+
 class LightGroups(unittest.TestCase):
     def test_labels_from_modo_lights_mesh_lights_and_moonray_lights(self):
         production = {'lights': {'light1': {'label': 'key'}, 'light2': {'label': ''}, 'light3': {'label': 'rim'}},
