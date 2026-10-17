@@ -114,6 +114,10 @@ See `baseline-20261016.json` for compact measurements and the pinned small-scene
 
 A fifth XPU run replayed the pinned reference successfully. Timing variability persisted; no speedup is claimed.
 
+## Repeatability follow-up
+
+The fixed-thread matrix and primary-hit probe now identify a repeatable single-thread XPU reference for this fixture. Both single-thread modes repeat, while multithread modes vary; vector and XPU still differ from one another. See [the investigation](REPEATABILITY.md) for measured results, limitations and reproduction. This does not enable XPU2 or certify general parity.
+
 ## Next implementation boundary
 
 1. Measure and explain XPU reference repeatability, then establish a documented
