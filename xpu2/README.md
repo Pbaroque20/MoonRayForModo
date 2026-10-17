@@ -131,3 +131,7 @@ The fixed-thread matrix and primary-hit probe now identify a repeatable single-t
 5. Experiment with whole-mesh demand loading before dense-mesh chunking.
 
 Nothing from this milestone is installed or exposed as an XPU2 engine option.
+
+Selected-ray diagnostics and the controlled CPU-hit replay are documented in
+[SELECTED_RAYS.md](SELECTED_RAYS.md). These remain isolated native experiments,
+not an enabled XPU2 rendering backend.

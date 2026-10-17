@@ -124,3 +124,9 @@ as a passing parity check.
 reported row-zero coordinates start at the bottom. Compact measured evidence is
 in `repeatability-20261016.json`; EXRs, converted buffers and full logs are local
 under test-results. No images were regenerated to change an unfavorable result.
+
+## Follow-up: selected native rays
+
+The same-input intersection comparison and controlled primary-hit replay are now
+implemented and measured. See [SELECTED_RAYS.md](SELECTED_RAYS.md) for results,
+non-invasive controls and remaining trace limitations.
