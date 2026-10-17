@@ -304,6 +304,9 @@ struct Camera {
     // so. The lines are where one surface ends against another or turns a corner, as the camera sees them: white
     // on black, for whoever shows the picture to ink as it likes.
     uint32_t draft = 0;
+    // A perspective camera's film offset: how far the middle of the picture moves, right and up, in halves of the
+    // film's width, as MoonRay's window moves it. A stereo eye's convergence is one.
+    float filmShift[2] = {0, 0};
 };
 
 // Every setter restarts accumulation. Errors are reported as std::runtime_error.

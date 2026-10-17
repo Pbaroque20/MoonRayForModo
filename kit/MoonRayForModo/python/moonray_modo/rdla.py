@@ -226,6 +226,26 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     with WRITING,working_configuration(scene.get('asset_settings',{})),reference_configuration(scene),textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
         return _scene_text(scene,width,height,samples,environment,output_file)
 
+def overscan_margin(scene, width, height, output_file):
+    """How many pixels a render to a file goes past the frame on each side, across and up: Modo's camera overscan
+    (1 for none) makes the picture that many times larger, the frame in its middle. A preview shows the frame alone."""
+    scale = float((scene.get('camera') or {}).get('overscan', 1.0) or 1.0)
+    if not output_file or scale <= 1.0 or not math.isfinite(scale):
+        return 0, 0
+    return int(round(int(width) * (scale - 1.0) / 2.0)), int(round(int(height) * (scale - 1.0) / 2.0))
+
+
+def overscan_lines(scene, width, height, output_file):
+    """MoonRay's windows for overscan: the frame stays the picture's display window, and the region rendered reaches
+    past it on every side; the EXR keeps the frame as its display window and the rest as its data."""
+    across, up = overscan_margin(scene, width, height, output_file)
+    if not (across or up):
+        return []
+    width, height = int(width), int(height)
+    return ['  ["aperture_window"] = {0, 0, %d, %d},' % (width, height),
+            '  ["region_window"] = {%d, %d, %d, %d},' % (-across, -up, width + across, height + up)]
+
+
 def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     """Serialize a snapshot to an RDLA scene. samples is MoonRay's grid side."""
     if not 16 <= int(width) <= 16384 or not 16 <= int(height) <= 16384:
@@ -251,6 +271,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         raise ValueError('Orthographic width must be positive')
     if camera.get('pixel_aspect',1)<=0:
         raise ValueError('Camera pixel aspect must be positive')
+    from . import stereo
     film_offset=camera.get('film_offset',[0,0])
     if len(film_offset)!=2:
         raise ValueError('Camera film offset must have two components')
@@ -273,7 +294,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
              '  ["bokeh_angle"] = %s,' % number(math.degrees(camera.get('iris_rotation', 0))),
              '  ["mb_shutter_open"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[0]),
              '  ["mb_shutter_close"] = %s,' % number(scene.get('motion_steps',[-.25,.25])[-1]),
-             '  ["near"] = 0.001,', '}',
+             '  ["near"] = 0.001,',
+             # A stereo camera's eye (stereo.lines): none for one that renders from the middle.
+             *stereo.lines(camera, scene), '}',
              'local lights = {}', 'local geometries = {}', 'local assignments = {}']
     entity_camera=entities.render_camera(scene)
     if entity_camera:
@@ -610,6 +633,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               '  ["fps"] = %s,'%number(scene.get('fps',24)),
               '  ["texture_cache_size"] = %d,'%max(64,min(131072,int(scene.get('asset_settings',{}).get('texture_cache_mb',4000)))),
               '  ["image_width"] = %d,' % int(width), '  ["image_height"] = %d,' % int(height),
+              *overscan_lines(scene, width, height, output_file),
               '  ["pixel_samples"] = %d,' % int(samples),
               '  ["enable_motion_blur"] = %s,' % ('true' if scene.get('motion_steps') else 'false'),
               '  ["motion_steps"] = %s,' % array(number(v) for v in scene.get('motion_steps',[-.25,.25])),
@@ -672,6 +696,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         # UI bounds use top-left coordinates, native sub_viewport uses bottom-left.
         bounds = [math.floor(left*width), math.floor((1-bottom)*height),
                   math.ceil(right*width), math.ceil((1-top)*height)]
+        # With overscan, MoonRay counts the region from the corner of the larger picture.
+        across, up = overscan_margin(scene, width, height, output_file)
+        bounds = [bounds[0]+across, bounds[1]+up, bounds[2]+across, bounds[3]+up]
         lines.append('  ["sub_viewport"] = %s,' % array(str(v) for v in bounds))
     # Scene variables the scene holds beyond the plugin's own settings, as a scene brought in from MoonRay does: each
     # has the last word over what the plugin would have written for it.

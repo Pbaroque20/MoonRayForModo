@@ -1094,8 +1094,11 @@ def camera_view(camera, entity, matrix, note):
                         iris_rotation=math.radians(float(value(entity, 'bokeh_angle'))))
             if value(entity, 'bokeh') and entity['parameters'].get('bokeh_image'):
                 note('a bokeh image')
-        if int(value(entity, 'stereo_view') or 0):
-            note('a stereo eye, shown from the middle')
+        eye = int(value(entity, 'stereo_view') or 0)
+        if eye in (1, 2):
+            # The eye it renders, moved to as MoonRay moves it (stereo.placed).
+            view['stereo'] = {'eye': 'left' if eye == 1 else 'right', 'interocular': float(value(entity, 'stereo_interocular_distance')),
+                              'convergence': float(value(entity, 'stereo_convergence_distance'))}
         return view
     if name == 'DomeMaster3DCamera':
         # Its rays are a spherical camera's (DomeMaster3DCamera.cc): across and up the picture by its two fields of

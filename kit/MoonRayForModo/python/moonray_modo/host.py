@@ -309,6 +309,16 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                          'iris_blades': int(channel(camera, 'irisBlades', 0)),
                          'iris_rotation': float(channel(camera, 'irisRot', 0))},
               'width': width, 'height': height, 'materials': {}, 'meshes': [], 'lights': []}
+    # Modo's stereo: which eye or eyes, how far apart, where they converge, and the composite of the two.
+    if channel(camera, 'stereo', 0):
+        result['camera']['stereo'] = {'eye': str(channel(camera, 'stereoEye', 'both')),
+                                      'interocular': float(channel(camera, 'ioDist', .065)),
+                                      'convergence': float(channel(camera, 'convDist', 2.0)),
+                                      'composite': str(channel(camera, 'stereoComp', 'stereoNone'))}
+    # Modo's overscan: how much more than the frame is rendered, 1 for none.
+    overscan = float(channel(camera, 'overscan', 1.0))
+    if overscan > 1.0:
+        result['camera']['overscan'] = overscan
     # Another camera for MoonRay's adaptive tessellation, where one is chosen.
     chosen = properties.scene_settings().get('dicing_camera') or ''
     if chosen:

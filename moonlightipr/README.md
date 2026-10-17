@@ -320,7 +320,7 @@ Everything else is reported in the packer's warnings rather than dropped silentl
 the alpha of baked procedural layers, layers on channels the shader lacks (specular
 colour, coat normals, diffuse roughness), native shaders other than the Dwa surface ones, a third environment image (shown as uniform grey), combine light filters,
 moving lights during the shutter
-and film offset. A render region is rendered alone, with the rest left black.
+and the film offset of a camera other than a perspective one. A render region is rendered alone, with the rest left black.
 
 Added to what is translated since the table was written:
 
@@ -410,9 +410,14 @@ Added to what is translated since the table was written:
 - **Lights that are not normalized**, as described above.
 - **Cameras**: Modo's orthographic camera, and MoonRay's own camera items set to render, each from the item's own
   place: a perspective camera with its focal length, film width, depth of field and bokeh; an orthographic one;
-  a dome (a spherical camera by MoonRay's own formula, flips included); fisheye and spherical as before. Film offset,
-  pixel aspect, stereo eyes and a dome's zenith mode are not drawn. Against MoonRay: 1.00 to 1.01, 95 to 99% of tiles
+  a dome (a spherical camera by MoonRay's own formula, flips included); fisheye and spherical as before. Pixel aspect,
+  a dome's stereo eyes and its zenith mode are not drawn. Against MoonRay: 1.00 to 1.01, 95 to 99% of tiles
   within a tenth (October 14).
+- **Film offset and stereo eyes** (October 16): a perspective camera's film offset moves the middle of the picture as
+  MoonRay's window does (scene form `H`). A stereo eye, of Modo's camera or a MoonRay perspective camera item, is drawn
+  as MoonRay places it: the camera moved sideways by half the interocular distance and its film the other way, by that
+  half times the focal length over the convergence distance; a camera set to both eyes shows the left. Each eye against
+  MoonRay's: 0.0047 mean difference in tiles, against 0.018 for the other eye.
   ![An orthographic camera item, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-camera_ortho.png)
 
 ## Build

@@ -594,6 +594,9 @@ struct Renderer::Impl {
         // Rows count upward from the picture's foot; the region's top and bottom are measured from its head.
         const auto edge = [](float fraction, unsigned size) { return unsigned(std::lround(std::clamp(fraction, 0.0f, 1.0f) * float(size))); };
         params.draft = camera.draft <= 2 ? camera.draft : 0;
+        // The film offset is in halves of the film's width; up the picture, a half of its height is less by its shape.
+        params.cameraShift[0] = camera.filmShift[0];
+        params.cameraShift[1] = camera.filmShift[1] * float(params.width) / float(params.height);
         params.region[0] = edge(camera.region[0], params.width);
         params.region[2] = edge(camera.region[2], params.width);
         params.region[1] = edge(1.0f - camera.region[3], params.height);

@@ -145,8 +145,22 @@ class Tools:
         if not path:
             return
         self.stop()
+        self._stereo_after = {}
         try:
-            self._submit(self._capture_output(), path)
+            scene = self._capture_output()
+            from . import stereo
+            if stereo.both(scene['camera']):
+                # Both eyes: the left, then the right, each a render of its own beside the file chosen, named for the
+                # eye; then, where the camera asks for one, their composite in the file chosen. Each step follows the
+                # one before it finishing (panel._finished).
+                left, right = str(stereo.eye_path(path, 'left')), str(stereo.eye_path(path, 'right'))
+                kind = scene['camera']['stereo'].get('composite')
+                self._stereo_after = {left: ('render', dict(scene, _stereo_eye='right'), right)}
+                if kind in stereo.COMPOSITES:
+                    self._stereo_after[right] = ('composite', kind, (left, right), path)
+                self._submit(dict(scene, _stereo_eye='left'), left)
+            else:
+                self._submit(scene, path)
         except Exception as exc:
             self._failed(str(exc))
 

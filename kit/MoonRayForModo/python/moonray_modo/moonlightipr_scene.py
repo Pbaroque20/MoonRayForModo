@@ -594,7 +594,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if replaces_environment(scene):
         environment = 0.0   # the preview environment light goes too
     scene = preview_entities(scene, warnings)
-    camera = scene['camera']
+    # A stereo camera's eye: moved sideways, its film the other way (stereo.placed); the left for both eyes.
+    from . import stereo
+    camera = stereo.placed(scene['camera'], scene)
     projection = camera.get('projection', 'persp')
     if projection not in PROJECTIONS:
         raise ValueError('MoonLightIPR previews perspective, orthographic, fisheye and spherical cameras only')
@@ -618,8 +620,16 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             raise ValueError('Depth of field requires positive f-stop and focus distance')
         blades = int(camera.get('iris_blades', 0))
         lens = [camera['focal_mm'] / stop / 2000, focus, blades if blades >= 3 else 0, float(camera.get('iris_rotation', 0))]
-    if any(camera.get('film_offset', [0, 0])) or camera.get('pixel_aspect', 1) != 1:
-        warnings.append('MoonLightIPR ignores film offset and pixel aspect.')
+    # A perspective camera's film offset moves the middle of the picture, in halves of the film's width, as MoonRay's
+    # window does; other cameras keep theirs at the middle.
+    film_shift = [0.0, 0.0]
+    if projection == 'persp':
+        half = float(camera['film_mm']) / 2.0
+        film_shift = [float(v) / half for v in camera.get('film_offset', [0, 0])]
+    elif any(camera.get('film_offset', [0, 0])):
+        warnings.append('MoonLightIPR ignores the film offset of a camera other than a perspective one.')
+    if camera.get('pixel_aspect', 1) != 1:
+        warnings.append('MoonLightIPR ignores pixel aspect.')
     def placed(matrix, focal):
         """Eye, target, up and vertical field of view. The camera looks down its local -Z axis;
         MoonRay's field of view is horizontal."""
@@ -638,7 +648,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSG', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSH', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
@@ -651,7 +661,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
              struct.pack('<10f', *pose), struct.pack('<2fIf', *lens),
              struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])]),
              # Draft: 1 draws what is outside the region as lines, 2 the whole picture.
-             struct.pack('<4fI', *region, int(scene.get('_draft') or 0))]
+             struct.pack('<4fI', *region, int(scene.get('_draft') or 0)),
+             # The film offset (form 'H').
+             struct.pack('<2f', *film_shift)]
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))
