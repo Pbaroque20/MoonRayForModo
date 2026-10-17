@@ -111,6 +111,7 @@ DELAY = 1.0             # seconds the preview stays empty before the crest begin
 # At PACE 1: each letter rises in RISE seconds, the next STAGGER after it; once the last is in place, the arcs, as
 # one, fade in over SLIDE as they shift from right to left into place (arc_shift).
 RISE, STAGGER, SLIDE = 0.55, 0.08, 0.8
+ARC_SHIFT = 40.0        # how far right of their place the arcs set out from
 LETTERS = 6 * STAGGER + RISE
 ENTRANCE = DELAY + (LETTERS + SLIDE) * PACE   # seconds from the preview opening until the crest is in
 FADE = 0.45             # seconds to fade out over the first picture, or back in
@@ -142,21 +143,9 @@ def entrance(seconds):
     return pose
 
 
-def arc_shift(beyond=12.0):
-    """How far right of their place the arcs set out from: their left edge a little (beyond) past the right side of
-    the letter it lies over, the O, in the file's units."""
-    if 'shift' not in _held:
-        _held['shift'] = 80.0
-        pieces = parts() if 'QPainterPath' in dir(QtGui) else None
-        if pieces:
-            arcs = [piece.boundingRect() for piece, kind, number in pieces if kind == 'arc']
-            letters = [piece.boundingRect() for piece, kind, number in pieces if kind == 'letter']
-            if arcs and letters:
-                left = min(box.left() for box in arcs)
-                under = [box for box in letters if box.left() <= left <= box.right()]
-                if under:
-                    _held['shift'] = under[0].right() - left + beyond
-    return _held['shift']
+def arc_shift():
+    """How far right of their place the arcs set out from, in the file's units (the letters are about 135 tall)."""
+    return ARC_SHIFT
 
 
 def entered(seconds):
