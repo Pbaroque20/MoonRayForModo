@@ -25,10 +25,19 @@ class Entrance(unittest.TestCase):
         self.assertTrue(crest.entered(crest.ENTRANCE))
         self.assertFalse(crest.entered(crest.ENTRANCE / 2))
 
+    def test_the_arcs_come_in_once_the_letters_are_in_place(self):
+        letters_done = crest.DELAY + crest.LETTERS * crest.PACE
+        before = crest.entrance(letters_done - 0.05)
+        self.assertEqual(before('arc', 0)[0], 0.0)
+        self.assertLess(before('letter', 6)[0], 1.0)
+        after = crest.entrance(letters_done + 0.3)
+        self.assertEqual(after('letter', 6)[0], 1.0)
+        self.assertGreater(after('arc', 1)[0], 0.0)
+
     def test_it_waits_a_second_before_it_begins(self):
         waiting = crest.entrance(crest.DELAY - 0.01)
         self.assertEqual({waiting(kind, number)[0] for kind, number in [('arc', 0), ('arc', 1)] + [('letter', n) for n in range(7)]}, {0.0})
-        self.assertGreater(crest.entrance(crest.DELAY + 0.2)('arc', 0)[0], 0.0)
+        self.assertGreater(crest.entrance(crest.DELAY + 0.2)('letter', 0)[0], 0.0)
 
     def test_the_arcs_come_from_above_and_below_and_the_letters_one_after_another(self):
         early = crest.entrance(crest.DELAY + (crest.ENTRANCE - crest.DELAY) * 0.15)

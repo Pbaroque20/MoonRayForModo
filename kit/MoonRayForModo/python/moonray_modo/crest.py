@@ -108,7 +108,11 @@ def parts():
 # down, in the file's units.
 PACE = 2.0              # how much slower than its first cut the crest comes in
 DELAY = 1.0             # seconds the preview stays empty before the crest begins to come in
-ENTRANCE = DELAY + 1.4 * PACE   # seconds from the preview opening until the crest is in
+# At PACE 1: each letter rises in RISE seconds, the next STAGGER after it; once the last is in place, the arcs
+# slide together in SLIDE.
+RISE, STAGGER, SLIDE = 0.55, 0.08, 0.8
+LETTERS = 6 * STAGGER + RISE
+ENTRANCE = DELAY + (LETTERS + SLIDE) * PACE   # seconds from the preview opening until the crest is in
 FADE = 0.45             # seconds to fade out over the first picture, or back in
 BREATH = 1.8            # seconds of one breath while a render is on its way
 
@@ -124,15 +128,15 @@ def still(kind, number):
 
 
 def entrance(seconds):
-    """The crest coming in, seconds after the preview opened: the arcs slide in from above and below as they show, then
-    the letters rise into place one after another from the left."""
+    """The crest coming in, seconds after the preview opened: the letters rise into place one after another from the
+    left, then the arcs slide in from above and below as they show."""
     seconds = (seconds - DELAY) / PACE
 
     def pose(kind, number):
         if kind == 'arc':
-            x = _eased(seconds / 0.8)
+            x = _eased((seconds - LETTERS) / SLIDE)
             return x, 0.0, (1.0 - x) * (-60.0 if number == 0 else 60.0)
-        x = _eased((seconds - 0.3 - 0.08 * number) / 0.55)
+        x = _eased((seconds - STAGGER * number) / RISE)
         return x, 0.0, (1.0 - x) * 40.0
     return pose
 
