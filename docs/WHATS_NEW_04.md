@@ -40,11 +40,16 @@ Not released yet: on the MoonLightIPR branch.
 - **Terminal** in the MoonRay menu: every program the plugin runs (MoonRay, MoonLightIPR, the denoiser, the scene reader and the rest), with its command line, what it prints and how it ended, as it happens. It shows "ready" while nothing runs.
 - **Assign MoonRay Material** in the Item List's right-click menu on a mesh.
 - **A whole mesh's MoonRay material covers what is made in it later**: Assign MoonRay Material on one mesh binds its material to the mesh, as Modo's item masks do, so new polygons take it too. Picked polygons, or several meshes sharing one material, are still tagged.
+- **Compositor: Build from passes or light groups.** Build > From Light Passes adds MoonRay's light passes to the scene (emission, lights and sky seen, direct and indirect diffuse and glossy, mirror reflection, refraction, glossy transmission, translucency) and lays out a graph that puts them back together, each through a Grade of its own; From Light Groups does the same for the environment's light and each light-group label, to relight after the render. A Remainder pass holds whatever the passes leave out, so with every Grade left alone the Composite is the beauty. A new **Sum** node adds any number of pictures.
 - **The compositor runs on the graphics card**, or on the processor where there is none, giving the same picture either way; wide blurs and glows are now true full-size blurs.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
 - **The preview shows MoonRay's wordmark** before anything is rendered.
 - **The MoonRay mark moves**: it comes in as the preview opens, breathes while a render is on its way, and fades out over the first picture.
+
+![The compositor built from light passes](images/compositor-passes.png)
+
+*Build > From Light Passes: each pass through a Grade into a Sum, the Remainder below them; after the render the Composite matches the beauty until a Grade is changed.*
 
 ![The MoonRay Terminal after a MoonRay render and a stereo composite](images/terminal.png)
 

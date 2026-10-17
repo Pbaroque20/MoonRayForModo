@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import terminal
 
-COLOURS = {'command': '#7cc4ff', 'note': '#8a8a8a', 'end': '#7fd67f', 'fail': '#ff7b72', 'out': '#d4d4d4'}
+COLOURS = {'command': '#7cc4ff', 'note': '#8a8a8a', 'status': '#9fd8d0', 'end': '#7fd67f', 'stop': '#e0b060', 'fail': '#ff7b72', 'out': '#d4d4d4'}
 ALL = 'All programs'
 
 
@@ -112,14 +112,14 @@ class TerminalWindow(QtWidgets.QDialog):
         serial, moment, kind, source, line = entry
         stamp = '<span style="color:#6a6a6a">%s </span>' % time.strftime('%H:%M:%S', time.localtime(moment)) if self.times.isChecked() else ''
         tag = '<span style="color:#b48ead">[%s] </span>' % html.escape(source)
-        mark = {'command': '&gt; ', 'end': '&#9632; ', 'fail': '&#9632; '}.get(kind, '')
+        mark = {'command': '&gt; ', 'end': '&#9632; ', 'stop': '&#9632; ', 'fail': '&#9632; '}.get(kind, '')
         weight = 'font-weight:bold;' if kind == 'command' else ''
         return '%s%s<span style="color:%s;%s">%s%s</span>' % (stamp, tag, COLOURS.get(kind, COLOURS['out']), weight, mark,
                                                                html.escape(line).replace(' ', '&nbsp;'))
 
     def _plain(self, entry):
         serial, moment, kind, source, line = entry
-        mark = {'command': '> ', 'end': '# ', 'fail': '# '}.get(kind, '')
+        mark = {'command': '> ', 'end': '# ', 'stop': '# ', 'fail': '# '}.get(kind, '')
         stamp = time.strftime('%H:%M:%S ', time.localtime(moment)) if self.times.isChecked() else ''
         return '%s[%s] %s%s' % (stamp, source, mark, line)
 
@@ -145,6 +145,8 @@ class TerminalWindow(QtWidgets.QDialog):
             self.text.appendHtml(self._html(entry))
         if self.follow.isChecked():
             self._to_end()
+            # Again once the new lines are laid out, which makes the view taller after this returns.
+            QtCore.QTimer.singleShot(0, self._to_end)
         else:
             bar.setValue(held)
         across.setValue(sideways)

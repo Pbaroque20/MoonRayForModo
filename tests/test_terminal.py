@@ -41,6 +41,45 @@ class Record(unittest.TestCase):
         ends = [(k, t.split(' after')[0]) for k, s, t in kinds(start) if k in ('end', 'fail')]
         self.assertEqual(ends, [('fail', 'exited 3'), ('fail', 'crashed (0xC0000005)')])
 
+    def test_a_program_the_plugin_stops_is_stopped_not_crashed(self):
+        start = last()
+        terminal.ended(terminal.command('moonray.exe', [], 'MoonRay session'), terminal.KILLED, crashed=True, stopped=True)
+        got = kinds(start)[-1]
+        self.assertEqual(got[0], 'stop')
+        self.assertTrue(got[2].startswith('stopped after'))
+
+    def test_each_status_the_preview_window_shows_is_noted_once(self):
+        class Label:
+            def __init__(self):
+                self.words = 'Ready'
+
+            def text(self):
+                return self.words
+
+            def setText(self, words):
+                self.words = words
+        label = Label()
+        start = last()
+        terminal.follow_status(label)
+        for words in ('Rendering \n· CPU', 'Rendering · CPU', 'Done'):
+            label.setText(words)
+        self.assertEqual(label.text(), 'Done')
+        self.assertEqual(kinds(start), [('status', 'Preview', 'Ready'), ('status', 'Preview', 'Rendering · CPU'), ('status', 'Preview', 'Done')])
+
+    def test_a_session_kept_running_does_not_make_it_busy(self):
+        session = terminal.command('moonray.exe', ['-session'], 'MoonRay session')
+        terminal._resident.add(session)
+        self.assertFalse(terminal.busy())
+        render = terminal.command('denoise.exe', [], 'Denoiser')
+        self.assertTrue(terminal.busy())
+        terminal.ended(render, 0)
+        terminal.ended(session, 0)
+        self.assertFalse(terminal.busy())
+        terminal.working(True)
+        self.assertTrue(terminal.busy())
+        terminal.working(False)
+        self.assertFalse(terminal.busy())
+
     def test_the_record_is_kept_to_its_limit(self):
         self.assertEqual(terminal._entries.maxlen, terminal.LIMIT)
 

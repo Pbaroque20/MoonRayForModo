@@ -61,7 +61,7 @@ class Session(QtCore.QObject):
     def __init__(self,parent=None):
         super().__init__(parent)
         self.process=QtCore.QProcess(self)
-        terminal.watch(self.process,'MoonRay session')
+        terminal.watch(self.process,'MoonRay session',resident=True)
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.finished.connect(self._exit)
