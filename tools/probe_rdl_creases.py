@@ -9,7 +9,7 @@ out=Path(os.environ.get('MOONRAY_TEST_RESULTS',str(Path(tempfile.gettempdir())/'
 result={'ok':False}
 try:
  lx.eval('scene.new')
- record=dict(name='Creased RDL',vertices=[[0,0,0],[1,0,0],[1,1,0],[0,1,0]],faces=[[0,1,2,3]],uv=[],normals=[],tags=[None],subd=True,matrix=None,render=True,attributes=[],hard_edges=[[0,1]],hard_corners=[2])
+ record=dict(name='Creased RDL',vertices=[[0,0,0],[1,0,0],[1,1,0],[0,1,0]],faces=[[0,1,2,3]],uv=[],normals=[],tags=[None],subd=True,matrix=None,render=True,attributes=[],hard_edges=[[0,1,1.0]],hard_corners=[[2,1.0]])
  data=dict(meshes=[record],curves=[],instances=[],entities=[],materials={},cameras=[],settings={},links=[],warnings=[],source='test.rdla')
  result['import']=rdl_import.apply(data)
  item=next(i for i in modo.Scene().items('mesh') if i.name=='Creased RDL');geo=item.geometry;mesh=geo.internalMesh

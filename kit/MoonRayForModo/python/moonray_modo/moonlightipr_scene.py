@@ -698,8 +698,15 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     objects = scene.get('production', {}).get('objects', {})
 
     used, meshes, instances, order = set(), [], [], {}
+    from .rdla import material_volume
     for mesh in list(geometry.render_meshes(scene.get('meshes', []))) + [fog for fog, _, _ in fogs]:
         if not mesh['faces']:
+            continue
+        held = {tag: material_volume((scene.get('materials') or {}).get(tag)) for tag in set(mesh.get('face_materials') or [mesh.get('material', '')])}
+        if held and all(only for _, only in held.values()):
+            # A mesh that is a MoonRay volume alone, with no surface: MoonLightIPR draws such fog in MoonRay's own
+            # boxes and spheres only.
+            warnings.append('MoonLightIPR leaves out %s, which is a MoonRay volume alone; MoonRay renders it.' % mesh['name'])
             continue
         if mesh.get('subdivision'):
             if mesh.get('vertices_close') is not None and mesh['vertices_close'] != mesh['vertices']:

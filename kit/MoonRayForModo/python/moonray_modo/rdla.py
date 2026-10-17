@@ -152,6 +152,8 @@ def _pieces(mesh, inside):
                                             for name, held in mesh['corner_attributes'].items() if len(held['values']) == total}
         if mesh.get('creases'):
             changed['creases'] = [(order[a], order[b], sharpness) for a, b, sharpness in mesh['creases'] if a in order and b in order]
+        if mesh.get('corners'):
+            changed['corners'] = [(order[a], sharpness) for a, sharpness in mesh['corners'] if a in order]
         if own is None:
             changed['face_materials'] = [tags[index] for index in chosen]
         else:
@@ -225,6 +227,15 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     from .serialization import WRITING
     with WRITING,working_configuration(scene.get('asset_settings',{})),reference_configuration(scene),textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
         return _scene_text(scene,width,height,samples,environment,output_file)
+
+def material_volume(material):
+    """The MoonRay volume item a material is filled with, and whether it is that volume alone: (name, only), the
+    topmost layer of a stack that names one having the last word. ('', False) for none."""
+    for layer in reversed((material or {}).get('material_stack') or [material or {}]):
+        if layer.get('moonray_volume'):
+            return str(layer['moonray_volume']), bool(layer.get('volume_only'))
+    return '', False
+
 
 def overscan_margin(scene, width, height, output_file):
     """How many pixels a render to a file goes past the frame on each side, across and up: Modo's camera overscan
@@ -431,9 +442,21 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                       '  ["attenuation_color"] = %s,' % attenuation,
                       '  ["attenuation_intensity"] = 1,', '  ["attenuation_factor"] = 1,',
                       '  ["match_diffuse"] = false,', '  ["invert_attenuation_color"] = false,', '}']
+    # A material filled with a MoonRay volume item: that item's shader, over any absorption of Modo's; a material that is
+    # the volume alone has no surface, as MoonRay renders a mesh given a volume and no material.
+    entity_list = entities.checked(scene)
+    for tag, material in sorted(materials.items()):
+        name, only = material_volume(material)
+        if name:
+            lines.append('volumes[%s] = %s' % (string(tag), entities.reference(entity_list, name, 'VOLUME', material.get('name') or tag)))
+            if only:
+                lines.append('materials[%s] = nil' % string(tag))
     lines += ['local objectShadowReceiverSets = {}', 'local materialShadowReceiverSets = {}',
               'local function assign(g, part, tag, owner)',
-              '  local a = {g, part, materials[tag], objectLightSets[owner] or materialLightSets[tag] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet}',
+              '  local a = {g, part}',
+              # A material that is a volume alone has no surface, and so none here.
+              '  if materials[tag] then table.insert(a, materials[tag]) end',
+              '  table.insert(a, objectLightSets[owner] or materialLightSets[tag] or (nativeLightSets[owner] and nativeLightSets[owner][tag]) or lightSet)',
               '  if objectLightFilterSets[owner] or materialLightFilterSets[tag] then table.insert(a, objectLightFilterSets[owner] or materialLightFilterSets[tag]) end',
               '  if objectShadowSets[owner] or materialShadowSets[tag] then table.insert(a, objectShadowSets[owner] or materialShadowSets[tag]) end',
               '  if objectShadowReceiverSets[owner] or materialShadowReceiverSets[tag] then table.insert(a, objectShadowReceiverSets[owner] or materialShadowReceiverSets[tag]) end',
@@ -563,6 +586,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     raise ValueError('Invalid subdivision crease')
             lines += ['    ["subd_crease_indices"] = %s,' % array(str(v) for edge in creases for v in edge[:2]),
                       '    ["subd_crease_sharpnesses"] = %s,' % array(number(edge[2]) for edge in creases)]
+        corners = mesh.get('corners', []) if subdivision else []
+        if corners:
+            # Points made sharp: Modo's subdivision weight on a point, as MoonRay's corner sharpness.
+            if any(type(a) is not int or not 0 <= a < len(vertices) or sharpness < 0 for a, sharpness in corners):
+                raise ValueError('Invalid subdivision corner')
+            lines += ['    ["subd_corner_indices"] = %s,' % array(str(a) for a, _ in corners),
+                      '    ["subd_corner_sharpnesses"] = %s,' % array(number(sharpness) for _, sharpness in corners)]
         emitting = scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{})
         if emitting.get('mesh_light') and lighting.mesh_camera(emitting)[0]:
             # A mesh light that is seen is the light itself, which lies exactly on the mesh: were the mesh seen too, each

@@ -66,7 +66,9 @@ def transformed_normals(normals, matrix):
 
 
 def hard_creases(attributes, faces, vertex_count):
-    """Validate RDL creases and return the fully sharp subset Modo represents exactly."""
+    """Validate RDL creases and return them as Modo's subdivision weights: ([a, b, weight] edges, [point, weight]
+    corners, whether any is less than fully sharp). A sharpness of 10 or more is a weight of 1 (100%), and less is a
+    tenth of it, as the plugin writes Modo's weights out (host.subdivision_creases)."""
     indices=attributes.get('subd_crease_indices') or []
     weights=attributes.get('subd_crease_sharpnesses') or []
     corners=attributes.get('subd_corner_indices') or []
@@ -81,7 +83,9 @@ def hard_creases(attributes, faces, vertex_count):
     pairs=list(zip(indices[::2],indices[1::2]))
     if any(a==b or tuple(sorted((a,b))) not in edges for a,b in pairs):
         raise ValueError('Subdivision crease does not refer to a mesh edge')
-    return [list(pair) for pair,w in zip(pairs,weights) if w>=10], [i for i,w in zip(corners,corner_weights) if w>=10], any(0<w<10 for w in list(weights)+list(corner_weights))
+    weight=lambda w:min(1.0,float(w)/10.0)
+    return ([[a,b,weight(w)] for (a,b),w in zip(pairs,weights) if w>0], [[i,weight(w)] for i,w in zip(corners,corner_weights) if w>0],
+            any(0<w<10 for w in list(weights)+list(corner_weights)))
 
 
 def product(a, b):
@@ -316,10 +320,17 @@ def plan(document, path, recover_instancer_materials=False):
         row = assigned.get((geometry, ''))
         return row['volume'] if row and row['volume'] in objects else None
 
+    def closing(record, name):
+        """Where a thing placed on its own is at shutter close, when the scene blurs motion and it moves: keyed as Modo
+        animation on import. None for one that stays."""
+        steps = scene.get('motion_steps') or []
+        held = record.get('close', {}).get('node_xform')
+        if held is None or len(steps) < 2:
+            return None
+        return checked_matrix(held, name)
+
     def note_motion(record):
         moving = [key for key in record.get('close', {}) if key != 'node_xform']
-        if 'node_xform' in record.get('close', {}):
-            warnings.append('%s moves over the shutter; its place at shutter open is imported.' % short(record['name']))
         if moving or record.get('attributes', {}).get('vertex_list_1'):
             warnings.append('%s changes shape over the shutter; its shape at shutter open is imported.' % short(record['name']))
 
@@ -374,6 +385,24 @@ def plan(document, path, recover_instancer_materials=False):
                     raise ValueError('Invalid material part face index: ' + record['name'])
                 tags[face] = chosen if chosen is not None or (record['name'], part) in assigned else tags[face]
             offset += count
+        volume = volume_of(record['name'])
+        if volume and objects[volume]['type'] in catalog:
+            # A mesh MoonRay fills with a volume: its faces wear a material that holds the volume's item, and where the
+            # scene gave them no surface, the volume alone (rdla.material_volume).
+            fog = label(volume)
+
+            def filled(tag):
+                if tag is None:
+                    held = 'volume:' + volume
+                    materials.setdefault(held, {'name': short(volume) + ' fog', 'graph': None, 'volume': fog, 'volume_only': True})
+                    return held
+                held = tag + '|volume:' + volume
+                if held not in materials and materials.get(tag):
+                    materials[held] = dict(materials[tag], volume=fog)
+                return held if materials.get(held) else tag
+            tags = [filled(tag) for tag in tags]
+        elif volume:
+            warnings.append('%s: its volume %s is of a class the plugin has no item for' % (short(record['name']), short(volume)))
         cache_key = (key, tuple(tags))
         if cache_key in mesh.cache:
             mesh.scopes[scope] = mesh.cache[cache_key]
@@ -392,10 +421,6 @@ def plan(document, path, recover_instancer_materials=False):
             faces.append(indices[offset:offset + count])
             offset += count
         hard_edges,hard_corners,semi_sharp=hard_creases(a,faces,len(vertices))
-        if semi_sharp:
-            warnings.append(short(record['name']) + ': semi-sharp subdivision weights are not imported; fully sharp creases are retained')
-        if volume_of(record['name']):
-            warnings.append(short(record['name']) + ': the volume inside it is not imported; MoonRay volumes go in a MoonRay shape')
         # Values that differ point by point, corner by corner or face by face become the mesh's vertex maps: numbers a
         # weight map, colours an RGB map, as MoonRay's auto rate tells them apart, by how many there are.
         painted = []
@@ -459,7 +484,7 @@ def plan(document, path, recover_instancer_materials=False):
                            'material': material(record['name'], ''), 'attributes': merged(picked(values, index, len(lines)), outer),
                            'root_mm': (mean(roots) if index is None else roots[index]) * 2000.0, 'tip_mm': (mean(tips) if index is None else tips[index]) * 2000.0})
 
-    def entity(record, matrix, name=None, owner=None, outer=()):
+    def entity(record, matrix, name=None, owner=None, outer=(), close=None):
         """A MoonRay item of the object's class, holding the attributes the scene set."""
         kind, spec = record['type'], catalog[record['type']]['attributes']
         a, parameters = record.get('attributes', {}), {}
@@ -509,14 +534,15 @@ def plan(document, path, recover_instancer_materials=False):
         if kind == 'EnvLight':
             # It is the scene's environment; Modo's own would be added to it.
             parameters['modo_replace_environment'] = True
-        if 'node_xform' in record.get('close', {}):
-            warnings.append('%s moves over the shutter; its place at shutter open is imported.' % made['name'])
+        if close is not None:
+            # Its place at shutter close, keyed as Modo animation (apply). One an instancer repeats is said by place.
+            made['matrix_close'] = close
         items.append(made)
         return made
 
     emitter_geometries={v.get('attributes',{}).get('geometry') for v in objects.values() if v['type']=='MeshLight'}
 
-    def place(name, matrix, title, owner=None, depth=0, outer=()):
+    def place(name, matrix, title, owner=None, depth=0, outer=(), close=None):
         """Put one object into the scene at a matrix: a mesh, a MoonRay shape, curves, or everything an instancer repeats."""
         record = objects.get(name)
         if record is None:
@@ -525,6 +551,9 @@ def plan(document, path, recover_instancer_materials=False):
         if depth > 8:
             warnings.append(short(name) + ': instancers nested more than eight deep are not followed')
             return
+        if close is None and 'node_xform' in record.get('close', {}):
+            # Repeated by an instancer, it is placed where it is at shutter open.
+            warnings.append('%s moves over the shutter; its place at shutter open is imported.' % short(name))
         if kind != 'RdlInstancerGeometry' and name not in emitter_geometries and not any((row['surface'] and (geometry == name or recover_instancer_materials)) or row['volume']
                 for (geometry, part), row in assigned.items() if geometry in (name,) + owners(owner)):
             # MoonRay leaves out a shape the layer gives no material; brought in, it would be in the picture where it was not.
@@ -533,13 +562,14 @@ def plan(document, path, recover_instancer_materials=False):
         if kind == 'RdlMeshGeometry':
             source = mesh(record, owner)
             if source:
-                instances.append({'name': title, 'source': source, 'matrix': matrix, 'attributes': merged(picked(carried(record)), outer)})
+                instances.append({'name': title, 'source': source, 'matrix': matrix, 'attributes': merged(picked(carried(record)), outer),
+                                  **({'matrix_close': close} if close is not None else {})})
         elif kind == 'RdlCurveGeometry':
             strands(dict(record, name=name), matrix, outer) if title == label(name) else warnings.append(short(name) + ': instanced curves are not imported')
         elif kind == 'RdlInstancerGeometry':
             repeated(record, matrix, title, depth, outer, owner)
         elif kind in catalog and catalog[kind]['category'] == 'geometry':
-            entity(record, matrix, title, owner, outer)
+            entity(record, matrix, title, owner, outer, close)
         else:
             warnings.append('%s: %s has no counterpart in Modo and is not imported' % (short(name), kind))
 
@@ -603,15 +633,14 @@ def plan(document, path, recover_instancer_materials=False):
                 if kind == 'RdlInstancerGeometry':
                     repeated(record, list(IDENTITY), label(name), 0)
                 else:
-                    place(name, matrix, label(name))
+                    place(name, matrix, label(name), close=closing(record, name))
             elif kind == 'PerspectiveCamera':
                 cameras.append({'name': label(name), 'matrix': checked_matrix(a.get('node_xform', IDENTITY), name), 'focal': float(a.get('focal', 30)),
                                 'film': float(a.get('film_width_aperture', 24)), 'dof': bool(a.get('dof', False)), 'focus': float(a.get('dof_focus_distance', 0)),
-                                'aperture': float(a.get('dof_aperture', 0)), 'render': scene.get('camera') == name or scene.get('camera') is None})
-                if 'node_xform' in record.get('close', {}):
-                    warnings.append('%s moves over the shutter; its place at shutter open is imported.' % short(name))
+                                'aperture': float(a.get('dof_aperture', 0)), 'render': scene.get('camera') == name or scene.get('camera') is None,
+                                **({'matrix_close': closing(record, name)} if closing(record, name) is not None else {})})
             elif kind in catalog:
-                made = entity(record, checked_matrix(a.get('node_xform', IDENTITY), name))
+                made = entity(record, checked_matrix(a.get('node_xform', IDENTITY), name), close=closing(record, name))
                 if catalog[kind]['category'] == 'camera' and scene.get('camera') == name:
                     made['parameters']['modo_render_camera'] = True
             elif kind.endswith('Geometry') or kind.endswith('Light') or kind.endswith('LightFilter') or kind.endswith('Camera') or kind.endswith('Volume'):
@@ -644,6 +673,8 @@ def plan(document, path, recover_instancer_materials=False):
         entry = first.get(record['name'])
         if entry:
             record['matrix'], record['render'], record['attributes'] = entry['matrix'], True, entry['attributes']
+            if 'matrix_close' in entry:
+                record['matrix_close'] = entry['matrix_close']
             # The mesh takes the place and the name of its first instance.
             entry['source'] = None
     instances = [entry for entry in instances if entry['source']]
@@ -719,7 +750,8 @@ def plan(document, path, recover_instancer_materials=False):
     if custom:
         settings['custom_aovs'] = custom
     if scene.get('motion_steps') and len(scene['motion_steps']) > 1 and any('close' in v for v in objects.values()):
-        warnings.append('The scene is imported as it stands at shutter open; Modo holds its motion as animation, which RDL does not carry.')
+        # What moves is keyed at the shutter's two ends around the current frame, and the camera's shutter set to them.
+        settings['motion_steps'] = [float(scene['motion_steps'][0]), float(scene['motion_steps'][-1])]
     links = []
     native_geometries = {e['name'] for e in items if catalog[e['class']]['category'] == 'geometry'}
     available_filters = {e['name'] for e in items if catalog[e['class']]['category'] == 'lightfilter'}
@@ -814,17 +846,24 @@ def apply(data, alone=True, progress=None):
     brought_in, material_items = {}, {}
     previous_camera, previous_selection = scene.renderCamera, list(scene.selected)
 
-    def pose(item, raw):
-        parts = decomposed(raw)
-        if parts is None:
-            raise ValueError('a transform that shears or mirrors')
-        position, turn, sizes = parts
-        rotation = modo.Matrix4([row + [0.0] for row in turn] + [[0.0, 0.0, 0.0, 1.0]])
+    # A scene that blurs motion: what moves is keyed at the shutter's two ends, in frames about the current one.
+    steps = data['settings'].get('motion_steps')
+    now, fps = lx.service.Selection().GetTime(), float(scene.fps)
+
+    def pose(item, raw, close=None):
         # An item of one of the plugin's own types, or an instance, comes back without its transform at hand.
         locator = item if hasattr(item, 'position') else modo.LocatorSuperType(item)
-        locator.position.set(position)
-        locator.rotation.set(rotation.asEuler())
-        locator.scale.set(sizes)
+        keyed = close is not None and steps
+        for matrix, step in ((raw, steps[0]), (close, steps[-1])) if keyed else ((raw, None),):
+            parts = decomposed(matrix)
+            if parts is None:
+                raise ValueError('a transform that shears or mirrors')
+            position, turn, sizes = parts
+            rotation = modo.Matrix4([row + [0.0] for row in turn] + [[0.0, 0.0, 0.0, 1.0]]).asEuler()
+            when = dict(time=now + step / fps, key=True) if keyed else {}
+            locator.position.set(position, **when)
+            locator.rotation.set(rotation, **when)
+            locator.scale.set(sizes, **when)
 
     try:
         for key, record in data['materials'].items():
@@ -835,6 +874,14 @@ def apply(data, alone=True, progress=None):
             mask.setParent(scene.renderItem, materials.above_base(scene, mask))
             mask.channel('ptyp').set('Material')
             mask.channel('ptag').set(tag)
+            if record.get('graph') is None:
+                # A volume alone: a material layer that names the MoonRay volume item filling the mesh, with no surface.
+                layer = scene.addItem('advancedMaterial', name=record['name'])
+                created.append(layer)
+                layer.setParent(mask, 0)
+                material_items[key] = layer
+                properties.write(layer, {'moonray_volume': record['volume'], 'volume_only': True})
+                continue
             shader = record['graph']['nodes'][record['graph']['root']]['type']
             # The material's own kind of layer where the plugin has one, so that it says what it is in the Shader Tree.
             try:
@@ -850,7 +897,8 @@ def apply(data, alone=True, progress=None):
             keep_moonray_defaults(record['graph'])
             properties.write(layer, {'shader': 'DwaBaseMaterial', 'moonshine_override': True, 'native_shader': shader,
                                      'native_parameters': record['graph']['nodes'][record['graph']['root']].get('parameters', {}),
-                                     'node_graph': record['graph'], 'node_override': True})
+                                     'node_graph': record['graph'], 'node_override': True,
+                                     **({'moonray_volume': record['volume']} if record.get('volume') else {})})
         built, total = 0, sum(len(record['faces']) for record in data['meshes'])
         for record in data['meshes']:
             item = scene.addItem('mesh', name=record['name'])
@@ -952,16 +1000,17 @@ def apply(data, alone=True, progress=None):
                     mesh=geo.internalMesh
                     vertices=[v._id for v in geo.vertices]
                     weight_map=lx.object.MeshMap(mesh.MeshMapAccessor()).New(lx.symbol.i_VMAP_SUBDIV,'Subdivision')
-                    weight=lx.object.storage('f',1);weight.set((1.0,))
+                    weight=lx.object.storage('f',1)
+                    # Each crease at its own weight (hard_creases): 1 for fully sharp, a tenth of the sharpness below.
                     edge=lx.object.Edge(mesh.EdgeAccessor())
-                    for a,b in record.get('hard_edges',[]):
-                        edge.SelectEndpoints(vertices[a],vertices[b]);edge.SetMapValue(weight_map,weight)
+                    for a,b,value in record.get('hard_edges',[]):
+                        weight.set((float(value),));edge.SelectEndpoints(vertices[a],vertices[b]);edge.SetMapValue(weight_map,weight)
                     point=lx.object.Point(mesh.PointAccessor())
-                    for index in record.get('hard_corners',[]):
-                        point.Select(vertices[index]);point.SetMapValue(weight_map,weight)
+                    for index,value in record.get('hard_corners',[]):
+                        weight.set((float(value),));point.Select(vertices[index]);point.SetMapValue(weight_map,weight)
             built += len(record['faces'])
             if keep:
-                pose(item, record['matrix'])
+                pose(item, record['matrix'], record.get('matrix_close'))
             if record['attributes']:
                 primitive_attributes.write(item, record['attributes'])
             if not record['render']:
@@ -976,7 +1025,7 @@ def apply(data, alone=True, progress=None):
                 item.name = record['name']
                 created.append(item)
                 item.channel('render').set('default')
-                pose(item, record['matrix'])
+                pose(item, record['matrix'], record.get('matrix_close'))
                 if record['attributes']:
                     primitive_attributes.write(item, record['attributes'])
             except (ValueError, LookupError, RuntimeError) as exc:
@@ -1055,14 +1104,26 @@ def apply(data, alone=True, progress=None):
                 except (TypeError, ValueError, AttributeError, LookupError, RuntimeError) as exc:
                     warnings.append('%s / %s could not be set: %s' % (record['name'], key, exc))
             try:
-                pose(item, record['matrix'])
+                pose(item, record['matrix'], record.get('matrix_close'))
             except ValueError as exc:
                 warnings.append('%s: %s is not held by a Modo item; it stands unturned at its position' % (record['name'], exc))
                 (item if hasattr(item, 'position') else modo.LocatorSuperType(item)).position.set(record['matrix'][12:15])
+        # A material filled with a MoonRay volume names its item by identity, which stays the item's whatever name Modo
+        # gives it among the rest.
+        for key, record in data['materials'].items():
+            held = brought_in.get(record.get('volume'))
+            if held is not None and key in material_items:
+                stored = dict(properties.read(material_items[key]))
+                stored['moonray_volume'] = held.id
+                properties.write(material_items[key], stored)
         for record in data['cameras']:
             item = scene.addItem('camera', name=record['name'])
             created.append(item)
-            pose(item, record['matrix'])
+            pose(item, record['matrix'], record.get('matrix_close'))
+            if steps:
+                # The shutter as the scene's: open to close, in frames about the frame (motion.capture's endpoints).
+                item.channel('blurLen').set(float(steps[-1]) - float(steps[0]))
+                item.channel('blurOff').set((float(steps[-1]) + float(steps[0])) / 2.0)
             item.channel('focalLen').set(record['focal'] * .001)
             item.channel('apertureX').set(record['film'] * .001)
             # The film's height follows the picture's shape, so that however Modo fits film to picture the width is the one given.
@@ -1117,6 +1178,9 @@ def apply(data, alone=True, progress=None):
                 scene.renderItem.channel('resY').set(settings['resolution'][1])
             if 'samples' in settings:
                 stored['samples'] = settings['samples']
+            if settings.get('motion_steps'):
+                # The scene blurs what moves, so renders of it do too (Render Settings, Motion Blur).
+                stored['final_motion'] = True
             if 'render' in settings:
                 stored['render'] = dict(stored.get('render') or {}, **settings['render'])
             if 'scene_variables' in settings:
