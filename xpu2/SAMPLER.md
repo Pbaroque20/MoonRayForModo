@@ -131,3 +131,7 @@ This is an actual native CPU handoff test; resource waits/retries are simulated.
 It does not exercise CUDA, PCIe, real texture/geometry I/O, shading or rendered
 images. The resume hazard is avoidable in the tested paths with full-state
 restoration; it is neither a fatal test failure nor a reason to change XPU.
+
+The later [cache-window boundary test](WINDOW.md) extends this evidence beyond
+the original early-index corpus. Its version-2 diagnostic envelope retains the
+cache start; version 1 is not sufficient for all native table-boundary resumes.

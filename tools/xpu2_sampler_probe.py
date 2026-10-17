@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from xpu2.reference import inventory, verify
 from xpu2.sampler import compare, matches_reference, compare_handoffs
+from xpu2.window_samples import compare as compare_windows, read as read_windows
 
 
 def sha(path):
@@ -27,7 +28,10 @@ def main():
     parser.add_argument("--handoff", action="store_true", help="Test serialized native sampler handoffs")
     parser.add_argument("--tables", action="store_true", help="Export native integrator sample tables")
     parser.add_argument("--cmj", action="store_true", help="Broader known-count 2D native corpus")
+    parser.add_argument("--window", action="store_true", help="Test native table/cache boundary continuation")
     args = parser.parse_args()
+    if args.window and (args.handoff or args.tables or args.cmj):
+        parser.error("--window is a separate experiment")
     if (args.cmj or args.tables) and args.handoff:
         parser.error("--cmj and --handoff are separate experiments")
     if args.handoff and not args.reference:
@@ -54,9 +58,11 @@ def main():
     env = dict(os.environ)
     env["PATH"] = str(runtime) + os.pathsep + str(Path(compiler).parent) + os.pathsep + env.get("PATH", "")
     cpp = out / "sampler_probe.cc"
-    cpp.write_bytes((ROOT / "xpu2" / ("sampler_handoff.cc" if args.handoff else "sampler_probe.cc")).read_bytes())
-    if args.handoff:
+    cpp.write_bytes((ROOT / "xpu2" / ("sampler_window_probe.cc" if args.window else "sampler_handoff.cc" if args.handoff else "sampler_probe.cc")).read_bytes())
+    if args.handoff or args.window:
         (out / "sampler_state.h").write_bytes((ROOT / "xpu2/sampler_state.h").read_bytes())
+    if args.window:
+        (out / "sampler_window.h").write_bytes((ROOT / "xpu2/sampler_window.h").read_bytes())
     def run(command, name, stdout=None):
         with (out / (name + ".log")).open("w", encoding="utf-8") as log:
             if stdout:
@@ -87,9 +93,11 @@ def main():
         output = out / ("samples-" + str(index) + ".jsonl")
         run([str(exe), str(workers)] + (["cmj"] if args.cmj else []), "run-" + str(index), output)
         outputs.append(output)
-    result = compare_handoffs(outputs, args.reference) if args.handoff else compare(outputs)
+    result = (compare_windows(outputs) if args.window else
+              compare_handoffs(outputs, args.reference) if args.handoff else compare(outputs))
     if args.reference and not args.handoff:
-        result["reference_match"] = matches_reference(outputs[0], args.reference)
+        result["reference_match"] = (read_windows(outputs[0]) == read_windows(args.reference) if args.window
+                                     else matches_reference(outputs[0], args.reference))
         result["reference_sha256"] = sha(args.reference)
         if not result["reference_match"]:
             result["status"] = "failed"
@@ -110,7 +118,9 @@ def main():
                             for name in ("samples1d.bin", "samples2d.bin")}
     if args.reference:
         result["reference_sha256"] = sha(args.reference)
-    if args.handoff:
+    if args.window:
+        result["window_header_sha256"] = sha(out / "sampler_window.h")
+    if args.handoff or args.window:
         result["state_header_sha256"] = sha(out / "sampler_state.h")
     result.update({
         "build_manifest_sha256": sha(build / "build-inputs.json"),

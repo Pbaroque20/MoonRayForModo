@@ -166,3 +166,7 @@ enabled.
 The distribution follow-up now covers the original corpus with native tables and
 an expanded known-count 2D corpus. See [DISTRIBUTIONS.md](DISTRIBUTIONS.md) for
 exact GPU matches and the deliberately disabled table/cache boundary.
+
+The native table/cache transition is now measured. [WINDOW.md](WINDOW.md)
+shows why index-only restoration can change samples and validates a separate
+cache-aware state envelope. The GPU boundary remains disabled.

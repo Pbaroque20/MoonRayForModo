@@ -50,8 +50,10 @@ only the final guarded reports are used here.
 Table support is limited to indices 0 through 64. Near the native table's end,
 partitioned1D/2D choose table versus R-sequence fallback based on cache-fill
 start plus SIMD window size. Restoring just the next sample number may select a
-different fallback than a previously filled window. This is a source-inspection
-finding, not yet a measured boundary result. The current tests explicitly decline
+different fallback than a previously filled window. This is now confirmed by
+the native boundary experiment in
+[WINDOW.md](WINDOW.md); cache-aware restoration matches all measured values.
+The GPU boundary remains unvalidated. The current tests explicitly decline
 indices 65 and 1016 for each dimension; they do not approximate that region.
 
 The 2D known-count path accepts only the thirteen tested totals above. The tests
@@ -61,9 +63,10 @@ These gates are diagnostic capability boundaries, not changes to XPU.
 
 No GPU shading, pixel/camera/lens/shutter sampling, production path-state transfer,
 resource paging, rendered RGB/AOV parity or speed gain is certified. Six-word
-SequenceID envelopes remain specialized to this test corpus. The next step is to
-measure the table/cache fallback boundary and preserve all state that affects it
-before expanding the GPU capability gate.
+SequenceID envelopes remain specialized to this test corpus. The native cache
+window state is now measured and preserved in a separate
+diagnostic envelope (WINDOW.md). The next step is to validate that boundary
+on CUDA before expanding the GPU capability gate.
 
 ## Reproduce
 
