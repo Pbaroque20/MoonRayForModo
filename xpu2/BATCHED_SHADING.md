@@ -94,3 +94,7 @@ Use new output directories and the retained source/build fixtures:
     python tools/xpu2_batched_shading_probe.py --build test-results/batched-build-new --ptx-reference test-results/xpu2-ray-image-final --scene-reference test-results/xpu2-primary-state --output test-results/batched-native-new
     python tools/xpu2_batched_window_probe.py --build test-results/batched-build-new --ptx-reference test-results/xpu2-ray-image-final --scene-reference test-results/xpu2-primary-state --output test-results/batched-wide-new
     python tools/xpu2_batched_guard_probe.py --source <shared-source-read-only> --capture test-results/xpu2-correlated-capture-final/capture/correlated.bin --ptx test-results/xpu2-ray-image-final/sampler.ptx --output test-results/batched-guards-new
+
+Optional aggregate timing and quiet diagnostics are described in
+[Native shading overhead measurements](PROFILING.md). The audited shader
+comparisons remain enabled in that mode.

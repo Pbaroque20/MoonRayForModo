@@ -11,17 +11,23 @@ from xpu2_repeatability import gpu_identity
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('source','capture','ptx','output'):p.add_argument('--'+name,required=True,type=Path)
+    p.add_argument('--profile',action='store_true',help='Check the aggregate profiling candidate with quiet diagnostics')
     a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False);source=a.source.resolve()
     report={'status':'incomplete','scope':'Standalone guard checks; native rendering is validated separately','runs':[]}
     try:
         decode(a.capture.read_bytes())
         inputs=[ROOT/'xpu2/batched_guard_probe.cc',ROOT/'xpu2/batched_bridge.cc',ROOT/'xpu2/native_lambert_queue.cc',Path(__file__).resolve(),a.capture.resolve(),a.ptx.resolve()]
+        if a.profile:inputs += [ROOT/'xpu2/profile_patch.py',ROOT/'xpu2/profile_metrics.h']
         hashes={str(f):digest_file(f) for f in inputs}
         report.update(source_hashes=hashes,gpu=gpu_identity())
         compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';env=environment(compiler.parent,out)
         flags=['-std=c++17','-O2','-mavx','-mno-avx2','-mno-fma','-ffp-contract=off','-I'+str(source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include')]
-        pp=out/'guards.ii';exe=out/'guards.exe'
-        for label,args in [('preprocess',['-E',str(inputs[0]),'-o',str(pp)]),('compile',[str(pp),'-o',str(exe)])]:
+        pp=out/'guards.ii';exe=out/'guards.exe';code=inputs[0]
+        if a.profile:
+            from xpu2 import profile_patch
+            bridge=profile_patch.apply(inputs[2].read_text(),inputs[1].read_text(),(ROOT/'xpu2/profile_metrics.h').read_text())
+            code=out/'guards.cc';code.write_text(inputs[0].read_text().replace('#include "batched_bridge.cc"',bridge),encoding='utf-8')
+        for label,args in [('preprocess',['-E',str(code),'-o',str(pp)]),('compile',[str(pp),'-o',str(exe)])]:
             done=subprocess.run([str(compiler),*flags,*args],env=env,capture_output=True,text=True,timeout=120,creationflags=subprocess.CREATE_NO_WINDOW)
             (out/(label+'.log')).write_text(done.stdout+done.stderr)
             if done.returncode:raise ValueError(label+' failed')
@@ -31,6 +37,7 @@ def main():
             runenv.update(XPU2_NATIVE_LAMBERT='sentinel',XPU2_NATIVE_LAMBERT_PTX=str(a.ptx.resolve()),
                 XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),
                 XPU2_DEFERRED_LOG=str(folder/'deferred.log'),XPU2_QUEUE_LOG=str(folder/'queue.log'))
+            if a.profile:runenv.update(XPU2_PROFILE_FILE=str(folder/'profile.json'),XPU2_PROFILE_QUIET='1')
             done=subprocess.run([str(exe),case,str(a.capture.resolve())],env=runenv,cwd=folder,capture_output=True,text=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
             (folder/'process.log').write_text(done.stdout+done.stderr)
             if done.returncode:raise ValueError(case+' failed')
