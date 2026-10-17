@@ -1,6 +1,6 @@
 // One live kernel: AVX-compatible Lambert sampling, exact audit, contribution.
 extern "C" __global__ void film_fused(const float* input,float* output,unsigned count){
- unsigned id=threadIdx.x;if(id>=count)return;
+ unsigned id=blockIdx.x*blockDim.x+threadIdx.x;if(id>=count)return;
  const float* a=input+id*64;float* dst=output+id*8;
  for(unsigned j=0;j<8;++j)dst[j]=0;
  if(a[23]!=1.f)return;

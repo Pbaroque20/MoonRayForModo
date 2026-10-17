@@ -1,0 +1,3084 @@
+{
+  "status": "passed_with_scope_limits",
+  "scope": "One-worker exact rendered parity; four-worker small fixture bounded agreement; larger multithread fixture blocked by native-repeat disagreement",
+  "opt_in": "XPU2_FILM_COALESCE=1",
+  "build_manifest_sha256": "f238ef72df9b96388066968faea45bb653b94f53b337c36651b12195c523c2fc",
+  "source_hashes": {
+    "xpu2\\film_window.ispc.inc": "7bc5463a833296d6fb0809a999a72493f36bdc248f174b08128fb3d7ca6cb769",
+    "xpu2\\batched_collect.ispc.inc": "0e96e6acf8b138cdd35ae9bd0b9d9b43cb465cc568845e674573061d8b8938cc",
+    "xpu2\\film_contribution.py": "430bbf0409475ac593b6de40f259e41ca55760ae5f41a7fb75c38d3cc787bc89",
+    "xpu2\\film_contribution_bridge.cc": "67ba7b2e8be8d0bfe3b7bdd2aea05826e1de41ecf0cdf336067f5b38121e0f36",
+    "xpu2\\film_batch_queue.h": "9c507a553b37558f09a2e88758ade388af6f81a500b38ea921194044de4e665a",
+    "xpu2\\film_contribution_cuda.cu": "a27c59c6206a2d14cd0845fff4fceac5500c83d382929c78cfef7ddcc0dafee0",
+    "tools\\xpu2_film_build.py": "3757033030f248c2303b4a109ace98d57ed42b4d07c0ca7a22c591b8c571a7c3",
+    "xpu2\\fused_capture.h": "1b917d3928b0d0fc7fbd1cb00322078facd3e2ee8fe1e88ea1ca3dfc2302b7fd",
+    "xpu2\\fused_film_patch.py": "1c27f552191f46812ba37eaed32af903d5b2df87eef8e4d1d063f2da3a442843",
+    "xpu2\\fused_film_cuda.cu": "000fc7cb588023ae8f02fbe71fb6c2d99a50ae13156d0798b5523005849d1955",
+    "xpu2\\sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+    "xpu2\\lambert_cuda.cu": "0b48936ea62593212e60282d76d09b600fa56bcc637d25cd8778c1b2ab0f4e57",
+    "xpu2\\ispc_math_cuda.cuh": "d0235c32c6459830419e6bd099997876984fe6435dd1be85ee38695ccdb4e306",
+    "xpu2\\lambert_sample_cuda.cu": "acc3f3d2540a42879dfb5cdc66f71b8f0480dc9b51d6ad5b391e1751760f560d"
+  },
+  "build_outputs": {
+    "film.ptx": "a3ef5091e5458ce7c5e3e61be96f37da4dd856f38c8dbb656a8844c885992080",
+    "xpu2_film.dll": "528d575142cfd47fb36d23ad9e325b4da12e6f4dae3e56d0abf18149889c4aab",
+    "bridge.ii": "03b988a938c51a08570c9bbc9778c64f8350046be7aa36e217170e1bd00a9f63",
+    "sampler.pp": "2913e5265620e9769b8a4fc17b879e3d631839491a447b44024d694132b67c28",
+    "sampler.obj": "94a4438c66185af9a9bb188c2d45b86feb3a3d306cdf284f7b27d0587a8806b0",
+    "RenderContext.obj": "6f89eb3422acc0b9ca4329cf6ec48072ef7ed4816c01438a7ffd9c252e5c2bac",
+    "RenderContext.ii": "90d5d6e1287420af5916b27cb54f8910c939ef2f69433ee233bbbe30656c1133",
+    "runtime/librendering_rndr.dll": "dd2bb74e74085a1da48b1eb0967dbd954036645c9f3a30c425185284c484a491",
+    "capture.ii": "753a7cab5523dadd3d9625a97b9c511b85009c0484114b8b328d113c48d8d115",
+    "xpu2_batched.dll": "edc93329b0a45d83a243d1a5aaf5ff1ba3dc417057cb4f9f8fc00ddf9af81f2e",
+    "runtime/xpu2_batched.dll": "edc93329b0a45d83a243d1a5aaf5ff1ba3dc417057cb4f9f8fc00ddf9af81f2e",
+    "film.cu": "409c557dcc1fe417fc7d9d3734ca31a051f3ece1d04db8dddb8ac6ad7064ac93"
+  },
+  "renders": [
+    {
+      "status": "passed",
+      "threads": 1,
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+      "runs": [
+        {
+          "label": "reference",
+          "wall_seconds": 1.7677672000136226,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.401,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.003,
+              "Building BVH": 0.006,
+              "Building GPU BVH": 0.401,
+              "Total render prep": 0.432,
+              "Mcrt time": 0.356,
+              "Total time": 0.849
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "025589d95c7145b45f6320910d5f23b794cdc169ac56566d3558c47bf5f8b1e9",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "reference_repeat",
+          "wall_seconds": 1.7755908999824896,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.373,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.372,
+              "Total render prep": 0.4,
+              "Mcrt time": 0.386,
+              "Total time": 0.835
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "51ee0d95792c58b5e33fd107468d61a653a84d7f3276685a47cf36fbe79f635c",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "blocking",
+          "wall_seconds": 2.5071800000732765,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.015,
+              "Initialize renderer": 0.372,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.372,
+              "Total render prep": 0.403,
+              "Mcrt time": 0.946,
+              "Total time": 1.398
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "af26bca4e90cbc4a2111289006fbf27d4b634660633f498b1278d64fca53cf6b",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 497986400,
+            "initialization_ns": 114614200,
+            "upload_ns": 120407100,
+            "launch_ns": 22524900,
+            "wait_ns": 118011500,
+            "download_ns": 98224500,
+            "compare_ns": 4500100
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast"
+          }
+        },
+        {
+          "label": "fast",
+          "wall_seconds": 2.5912337999325246,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.372,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.372,
+              "Total render prep": 0.399,
+              "Mcrt time": 1.224,
+              "Total time": 1.719
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "ba84bb3537d84ea9f8d4963f9d12dfb955a5ee05a67de1856fa2fe3ea426e484",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 708426700,
+            "initialization_ns": 107973200,
+            "upload_ns": 131331200,
+            "launch_ns": 99529000,
+            "wait_ns": 173159300,
+            "download_ns": 160898900,
+            "compare_ns": 6730100
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast"
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 2919,
+            "combined": 0,
+            "max_jobs": 1,
+            "max_slots": 9,
+            "max_outstanding": 1,
+            "during_service": 0,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast",
+            "submitted": 2919,
+            "batches": 2919,
+            "combined": 0,
+            "during_service": 0
+          }
+        },
+        {
+          "label": "blocking_repeat",
+          "wall_seconds": 2.277023100061342,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.013,
+              "Initialize renderer": 0.354,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.354,
+              "Total render prep": 0.38,
+              "Mcrt time": 0.937,
+              "Total time": 1.36
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "d4eb95619875ee8ffbd7a6370f44dd2563d028b6f22e38d37d3c89217e3ed6a0",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 496384300,
+            "initialization_ns": 98502600,
+            "upload_ns": 118475000,
+            "launch_ns": 29131500,
+            "wait_ns": 123612000,
+            "download_ns": 100154000,
+            "compare_ns": 4520200
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast"
+          }
+        },
+        {
+          "label": "repeat",
+          "wall_seconds": 2.563129000016488,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.013,
+              "Initialize renderer": 0.37,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.37,
+              "Total render prep": 0.396,
+              "Mcrt time": 1.223,
+              "Total time": 1.692
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "83653b698b2cc52ecdd7ed59288d177ec33f15a5b3cd9cb740a29248c7186610",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 713039400,
+            "initialization_ns": 104305600,
+            "upload_ns": 137480900,
+            "launch_ns": 96425700,
+            "wait_ns": 176620100,
+            "download_ns": 158798800,
+            "compare_ns": 9549900
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast"
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 2919,
+            "combined": 0,
+            "max_jobs": 1,
+            "max_slots": 9,
+            "max_outstanding": 1,
+            "during_service": 0,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast",
+            "submitted": 2919,
+            "batches": 2919,
+            "combined": 0,
+            "during_service": 0
+          }
+        },
+        {
+          "label": "audit",
+          "wall_seconds": 2.6037530000321567,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.013,
+              "Initialize renderer": 0.363,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.363,
+              "Total render prep": 0.389,
+              "Mcrt time": 1.237,
+              "Total time": 1.733
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "441ebe95d7d87aa22327f37aa867ed680dfbd08253783276edc48cb20ea2b730",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 0,
+            "cpu_skipped": 0,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 726493100,
+            "initialization_ns": 100440700,
+            "upload_ns": 136758100,
+            "launch_ns": 105206500,
+            "wait_ns": 181013900,
+            "download_ns": 162074700,
+            "compare_ns": 6210000
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 0,
+            "mode": "audit"
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 2919,
+            "combined": 0,
+            "max_jobs": 1,
+            "max_slots": 9,
+            "max_outstanding": 1,
+            "during_service": 0,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 0,
+            "mode": "audit",
+            "submitted": 2919,
+            "batches": 2919,
+            "combined": 0,
+            "during_service": 0
+          }
+        },
+        {
+          "label": "missing",
+          "wall_seconds": 1.9435083999997005,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.013,
+              "Initialize renderer": 0.389,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.388,
+              "Total render prep": 0.415,
+              "Mcrt time": 0.628,
+              "Total time": 1.091
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "5c1839cf09842fc196d7ec15d6a6716738440a4cc101be9d39008d56df58bc52",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 0,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 0,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 0,
+            "replaced": 0,
+            "cpu_skipped": 0,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 2919,
+            "cleanup_errors": 0,
+            "total_ns": 138277000,
+            "initialization_ns": 100520000,
+            "upload_ns": 0,
+            "launch_ns": 0,
+            "wait_ns": 0,
+            "download_ns": 0,
+            "compare_ns": 0
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 0,
+            "mode": "missing"
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 2919,
+            "combined": 0,
+            "max_jobs": 1,
+            "max_slots": 9,
+            "max_outstanding": 1,
+            "during_service": 0,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 0,
+            "mode": "missing",
+            "submitted": 2919,
+            "batches": 2919,
+            "combined": 0,
+            "during_service": 0
+          }
+        },
+        {
+          "label": "bad_shader",
+          "wall_seconds": 2.5863939999835566,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.351,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.351,
+              "Total render prep": 0.378,
+              "Mcrt time": 1.232,
+              "Total time": 1.708
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "e9aa76915a5895fd6a457f33e030b1be5e3857c4e57ca7b178cbe0e0f0216633",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 0,
+            "shader_unsupported": 0,
+            "shader_mismatch": 210001,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 0,
+            "replaced": 0,
+            "cpu_skipped": 0,
+            "unsupported": 0,
+            "mismatch": 210001,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 723967500,
+            "initialization_ns": 113012600,
+            "upload_ns": 131447400,
+            "launch_ns": 104658800,
+            "wait_ns": 176033900,
+            "download_ns": 167905300,
+            "compare_ns": 3055300
+          },
+          "validation": {
+            "status": "passed",
+            "mode": "bad_shader",
+            "rejected": 210001
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 2919,
+            "combined": 0,
+            "max_jobs": 1,
+            "max_slots": 9,
+            "max_outstanding": 1,
+            "during_service": 0,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "mode": "bad_shader",
+            "rejected": 210001,
+            "submitted": 2919,
+            "batches": 2919,
+            "combined": 0,
+            "during_service": 0
+          }
+        },
+        {
+          "label": "sentinel",
+          "wall_seconds": 2.5440288999816403,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.013,
+              "Initialize renderer": 0.343,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.343,
+              "Total render prep": 0.382,
+              "Mcrt time": 1.215,
+              "Total time": 1.667
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "log_sha256": "6c2b587d3bdf7e7da38d0521949127b20a30152e1d0bf6999c571179357a38ba",
+          "exact_image": {
+            "status": "failed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 23346,
+                "maximum_absolute_error": 0.10292521119117737,
+                "rms_error": 0.07878555254670382,
+                "values": 36864
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 23346,
+                "maximum_absolute_error": 0.0044110799208283424,
+                "rms_error": 0.003376523430968034,
+                "values": 36864
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 23346,
+                "maximum_absolute_error": 0.0029407204128801823,
+                "rms_error": 0.002251015776310847,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 23346,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "failed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 23346,
+                "maximum_absolute_error": 0.10292521119117737,
+                "rms_error": 0.07878555254670382,
+                "values": 36864
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 23346,
+                "maximum_absolute_error": 0.0044110799208283424,
+                "rms_error": 0.003376523430968034,
+                "values": 36864
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 23346,
+                "maximum_absolute_error": 0.0029407204128801823,
+                "rms_error": 0.002251015776310847,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 23346,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 706692900,
+            "initialization_ns": 94793100,
+            "upload_ns": 131699700,
+            "launch_ns": 103057000,
+            "wait_ns": 176977500,
+            "download_ns": 163317700,
+            "compare_ns": 7096400
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "sentinel"
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 2919,
+            "combined": 0,
+            "max_jobs": 1,
+            "max_slots": 9,
+            "max_outstanding": 1,
+            "during_service": 0,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "sentinel",
+            "submitted": 2919,
+            "batches": 2919,
+            "combined": 0,
+            "during_service": 0
+          }
+        }
+      ],
+      "tolerance": {
+        "absolute": 0,
+        "relative": 0
+      },
+      "scope": "Resident native workers; copied fused numeric jobs; one GPU worker; no path migration",
+      "build_manifest_sha256": "f238ef72df9b96388066968faea45bb653b94f53b337c36651b12195c523c2fc",
+      "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+      "bitwise_parity": true,
+      "speedup_established": false,
+      "label": "one-v2",
+      "report_sha256": "899f9c0abec0e853c3e427e52dfdc1daf020533e7cd731b60660b1ad51c848c8"
+    },
+    {
+      "status": "passed",
+      "threads": 4,
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+      "runs": [
+        {
+          "label": "reference",
+          "wall_seconds": 1.5303663000231609,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.401,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.401,
+              "Total render prep": 0.428,
+              "Mcrt time": 0.182,
+              "Total time": 0.646
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.65,
+            "gpu_error": false,
+            "actual_threads": 4,
+            "passed": true
+          },
+          "log_sha256": "58e229f9d942b6633cd2891249f5ab703d05ea5a9ba58ef6812dc64d381a7b18",
+          "exact_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 0,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "reference_repeat",
+          "wall_seconds": 1.5934673000592738,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.362,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.362,
+              "Total render prep": 0.389,
+              "Mcrt time": 0.129,
+              "Total time": 0.615
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 4,
+            "passed": true
+          },
+          "log_sha256": "5fe2bc0ea4d944c176bc47fc97f88623eac592dfc9410c7219ba3d9f494461e5",
+          "exact_image": {
+            "status": "failed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 5,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.735417154850275e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 2,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 6.859838624819992e-12,
+                "values": 36864
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 5,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 5.4231786089071094e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 10,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.735417154850275e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 6.859838624819992e-12,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 5.4231786089071094e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 10,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "blocking",
+          "wall_seconds": 1.9542522000847384,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.376,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.002,
+              "Building BVH": 0.006,
+              "Building GPU BVH": 0.376,
+              "Total render prep": 0.408,
+              "Mcrt time": 0.634,
+              "Total time": 1.075
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.75,
+            "gpu_error": false,
+            "actual_threads": 4,
+            "passed": true
+          },
+          "log_sha256": "b562298d64070eb222a42bda30f3845d11c55f3547c2f5e47564ff20c8197199",
+          "exact_image": {
+            "status": "failed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 6,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.901054244785863e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 4,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 9.701276818911234e-12,
+                "values": 36864
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 8,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 6.859838624819992e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 14,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.901054244785863e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 9.701276818911234e-12,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 6.859838624819992e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 14,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 537442700,
+            "initialization_ns": 110474600,
+            "upload_ns": 132437600,
+            "launch_ns": 30079300,
+            "wait_ns": 132257200,
+            "download_ns": 103055100,
+            "compare_ns": 5748100
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast"
+          }
+        },
+        {
+          "label": "fast",
+          "wall_seconds": 1.9075195000041276,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.034,
+              "Initialize renderer": 0.358,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.357,
+              "Total render prep": 0.405,
+              "Mcrt time": 0.467,
+              "Total time": 0.973
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.93,
+            "gpu_error": false,
+            "actual_threads": 4,
+            "passed": true
+          },
+          "log_sha256": "84c8f5d821318b6ccd5f0e46cc1da4704cb7bb83c354f6e129814259c4f29a63",
+          "exact_image": {
+            "status": "failed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 7,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 2.0533732690107936e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 6,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 1.1881589029911644e-11,
+                "values": 36864
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 7,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 6.41679146565873e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 17,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 2.0533732690107936e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 1.1881589029911644e-11,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 6.41679146565873e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 17,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 1572,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 1572,
+            "max_slots": 27,
+            "calls": 1572,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 364521500,
+            "initialization_ns": 103829700,
+            "upload_ns": 78919800,
+            "launch_ns": 13251400,
+            "wait_ns": 81676100,
+            "download_ns": 60285100,
+            "compare_ns": 5652500
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast"
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 1572,
+            "combined": 1108,
+            "max_jobs": 3,
+            "max_slots": 27,
+            "max_outstanding": 4,
+            "during_service": 2797,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast",
+            "submitted": 2919,
+            "batches": 1572,
+            "combined": 1108,
+            "during_service": 2797
+          }
+        },
+        {
+          "label": "blocking_repeat",
+          "wall_seconds": 2.046051300014369,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.014,
+              "Initialize renderer": 0.37,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.002,
+              "Building BVH": 0.005,
+              "Building GPU BVH": 0.37,
+              "Total render prep": 0.399,
+              "Mcrt time": 0.681,
+              "Total time": 1.176
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.84,
+            "gpu_error": false,
+            "actual_threads": 4,
+            "passed": true
+          },
+          "log_sha256": "299650845259b908dada3f7a95061be9dfadea94d579aa88490aaf392ab2e3d1",
+          "exact_image": {
+            "status": "failed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 5,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.735417154850275e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 2,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 6.859838624819992e-12,
+                "values": 36864
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 5,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 5.4231786089071094e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 10,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.735417154850275e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 6.859838624819992e-12,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 5.4231786089071094e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 10,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 2919,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 2919,
+            "max_slots": 9,
+            "calls": 2919,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 581483700,
+            "initialization_ns": 103212300,
+            "upload_ns": 143966100,
+            "launch_ns": 35302500,
+            "wait_ns": 146189100,
+            "download_ns": 120594600,
+            "compare_ns": 5641700
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast"
+          }
+        },
+        {
+          "label": "repeat",
+          "wall_seconds": 1.8592411000281572,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.013,
+              "Initialize renderer": 0.362,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.362,
+              "Total render prep": 0.389,
+              "Mcrt time": 0.481,
+              "Total time": 0.958
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.82,
+            "gpu_error": false,
+            "actual_threads": 4,
+            "passed": true
+          },
+          "log_sha256": "259192c15de1cdaf056c217f4de60f114a02c35d82d26d34eb603a3018cc07d4",
+          "exact_image": {
+            "status": "failed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 8,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 2.1951483599423975e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 6,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 1.1881589029911644e-11,
+                "values": 36864
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 9,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 7.275957614183426e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 16,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 2.1951483599423975e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 1.1881589029911644e-11,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 7.275957614183426e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 16,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 1668,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 1668,
+            "max_slots": 27,
+            "calls": 1668,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 210001,
+            "cpu_skipped": 210001,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 392415100,
+            "initialization_ns": 102646500,
+            "upload_ns": 84614900,
+            "launch_ns": 19350700,
+            "wait_ns": 89945600,
+            "download_ns": 68287800,
+            "compare_ns": 5822700
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast"
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 1668,
+            "combined": 997,
+            "max_jobs": 3,
+            "max_slots": 27,
+            "max_outstanding": 4,
+            "during_service": 2802,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 210001,
+            "mode": "fast",
+            "submitted": 2919,
+            "batches": 1668,
+            "combined": 997,
+            "during_service": 2802
+          }
+        },
+        {
+          "label": "audit",
+          "wall_seconds": 1.8356909001013264,
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.013,
+              "Initialize renderer": 0.369,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.369,
+              "Total render prep": 0.395,
+              "Mcrt time": 0.514,
+              "Total time": 0.965
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 100.0,
+            "gpu_error": false,
+            "actual_threads": 4,
+            "passed": true
+          },
+          "log_sha256": "ac45b67308f523ec9afc5e08af110303b2a187dd266dcf6ec5dbfdac192bbae8",
+          "exact_image": {
+            "status": "failed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 5,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.735417154850275e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 3,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 8.401552174322216e-12,
+                "values": 36864
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 5,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 5.4231786089071094e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 11,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "bounded_image": {
+            "status": "passed",
+            "dimensions": [
+              256,
+              144
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.735417154850275e-10,
+                "values": 36864
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 9.313225746154785e-10,
+                "rms_error": 8.401552174322216e-12,
+                "values": 36864
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 4.656612873077393e-10,
+                "rms_error": 5.4231786089071094e-12,
+                "values": 36864
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 36864
+              }
+            },
+            "exactly_different_pixels": 11,
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": null,
+              "oiio:ColorSpace": null,
+              "PixelAspectRatio": "1"
+            }
+          },
+          "film": {
+            "graph_enabled": 0,
+            "graph_captures": 0,
+            "graph_sources_freed": 0,
+            "graph_builds": 0,
+            "graph_frees": 0,
+            "graph_launches": 0,
+            "graph_build_ns": 0,
+            "async_enabled": 0,
+            "pinned_allocations": 0,
+            "pinned_frees": 0,
+            "async_batches": 0,
+            "async_completed": 0,
+            "completion_waits": 0,
+            "error_drains": 0,
+            "staging_ns": 0,
+            "fused_calls": 1808,
+            "shader_checked": 210001,
+            "shader_unsupported": 0,
+            "shader_mismatch": 0,
+            "packets": 26271,
+            "dispatches": 1808,
+            "max_slots": 27,
+            "calls": 1808,
+            "eligible": 210001,
+            "accepted": 210001,
+            "replaced": 0,
+            "cpu_skipped": 0,
+            "unsupported": 0,
+            "mismatch": 0,
+            "errors": 0,
+            "cleanup_errors": 0,
+            "total_ns": 406868300,
+            "initialization_ns": 103228000,
+            "upload_ns": 89689300,
+            "launch_ns": 17160200,
+            "wait_ns": 96181600,
+            "download_ns": 72725500,
+            "compare_ns": 5601900
+          },
+          "validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 0,
+            "mode": "audit"
+          },
+          "queue": {
+            "submitted": 2919,
+            "returned": 2919,
+            "declined": 0,
+            "batches": 1808,
+            "combined": 837,
+            "max_jobs": 3,
+            "max_slots": 27,
+            "max_outstanding": 4,
+            "during_service": 2541,
+            "exceptions": 0
+          },
+          "queue_validation": {
+            "status": "passed",
+            "cpu_contribution_skipped": 0,
+            "mode": "audit",
+            "submitted": 2919,
+            "batches": 1808,
+            "combined": 837,
+            "during_service": 2541
+          }
+        }
+      ],
+      "tolerance": {
+        "absolute": 1e-06,
+        "relative": 1e-06
+      },
+      "scope": "Resident native workers; copied fused numeric jobs; one GPU worker; no path migration",
+      "build_manifest_sha256": "f238ef72df9b96388066968faea45bb653b94f53b337c36651b12195c523c2fc",
+      "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+      "bitwise_parity": false,
+      "speedup_established": false,
+      "label": "four-small-v2",
+      "report_sha256": "d3e3167d384383528a894dcbbbc4dd792d17bc8fdbd40003d084b9c2541a1e2d"
+    }
+  ],
+  "guards": [
+    {
+      "status": "passed",
+      "scope": "Synthetic concurrent numeric CUDA guard; not a rendered scene",
+      "completed": 128,
+      "queue": {
+        "submitted": 128,
+        "returned": 128,
+        "declined": 0,
+        "batches": 26,
+        "combined": 18,
+        "max_jobs": 8,
+        "max_slots": 128,
+        "max_outstanding": 16,
+        "during_service": 99,
+        "exceptions": 0
+      },
+      "film": {
+        "graph_enabled": 0,
+        "graph_captures": 0,
+        "graph_sources_freed": 0,
+        "graph_builds": 0,
+        "graph_frees": 0,
+        "graph_launches": 0,
+        "graph_build_ns": 0,
+        "async_enabled": 0,
+        "pinned_allocations": 0,
+        "pinned_frees": 0,
+        "async_batches": 0,
+        "async_completed": 0,
+        "completion_waits": 0,
+        "error_drains": 0,
+        "staging_ns": 0,
+        "fused_calls": 26,
+        "shader_checked": 4096,
+        "shader_unsupported": 4096,
+        "shader_mismatch": 2048,
+        "packets": 2304,
+        "dispatches": 42,
+        "max_slots": 128,
+        "calls": 42,
+        "eligible": 6656,
+        "accepted": 4608,
+        "replaced": 4608,
+        "cpu_skipped": 4608,
+        "unsupported": 8192,
+        "mismatch": 2048,
+        "errors": 0,
+        "cleanup_errors": 0,
+        "total_ns": 203999200,
+        "initialization_ns": 193928100,
+        "upload_ns": 3545600,
+        "launch_ns": 908500,
+        "wait_ns": 2025300,
+        "download_ns": 2080100,
+        "compare_ns": 148100
+      },
+      "build_manifest_sha256": "f238ef72df9b96388066968faea45bb653b94f53b337c36651b12195c523c2fc",
+      "label": "guards-v2",
+      "report_sha256": "02a08e907bd336d54083b35af6862f0f6b6795de58c8e5a19223e0a01bacb548"
+    },
+    {
+      "status": "passed",
+      "scope": "Synthetic capture ownership and fused CUDA lane rejection; not scene validation",
+      "capture": [
+        {
+          "case": "owned_copy",
+          "status": "passed",
+          "mask": 130
+        },
+        {
+          "case": "changed_wrapper",
+          "status": "passed",
+          "mask": 0
+        },
+        {
+          "case": "missing_lane",
+          "status": "passed",
+          "mask": 0
+        },
+        {
+          "case": "multiple_lobes",
+          "status": "passed",
+          "mask": 0
+        },
+        {
+          "case": "reuse",
+          "status": "passed",
+          "mask": 130
+        }
+      ],
+      "windows": [
+        {
+          "slots": 1,
+          "accepted": 2,
+          "intentional_shader_mismatches": 1,
+          "status": "passed"
+        },
+        {
+          "slots": 9,
+          "accepted": 18,
+          "intentional_shader_mismatches": 9,
+          "status": "passed"
+        },
+        {
+          "slots": 16,
+          "accepted": 32,
+          "intentional_shader_mismatches": 16,
+          "status": "passed"
+        }
+      ],
+      "profile": {
+        "graph_enabled": 0,
+        "graph_captures": 0,
+        "graph_sources_freed": 0,
+        "graph_builds": 0,
+        "graph_frees": 0,
+        "graph_launches": 0,
+        "graph_build_ns": 0,
+        "async_enabled": 1,
+        "pinned_allocations": 2,
+        "pinned_frees": 2,
+        "async_batches": 6,
+        "async_completed": 6,
+        "completion_waits": 6,
+        "error_drains": 0,
+        "staging_ns": 8200,
+        "fused_calls": 3,
+        "shader_checked": 52,
+        "shader_unsupported": 52,
+        "shader_mismatch": 26,
+        "packets": 52,
+        "dispatches": 6,
+        "max_slots": 16,
+        "calls": 6,
+        "eligible": 130,
+        "accepted": 104,
+        "replaced": 104,
+        "cpu_skipped": 104,
+        "unsupported": 104,
+        "mismatch": 26,
+        "errors": 0,
+        "cleanup_errors": 0,
+        "total_ns": 203909500,
+        "initialization_ns": 202101400,
+        "upload_ns": 92300,
+        "launch_ns": 127500,
+        "wait_ns": 1419100,
+        "download_ns": 33800,
+        "compare_ns": 11300
+      },
+      "graphs": false,
+      "streamed": true,
+      "build_manifest_sha256": "f238ef72df9b96388066968faea45bb653b94f53b337c36651b12195c523c2fc",
+      "label": "stream-guards",
+      "report_sha256": "e8e14fbd5447f0ce009c38cb1a74df1d32a6a0a328b63160645866da68ded5a7"
+    },
+    {
+      "status": "passed",
+      "scope": "Synthetic capture ownership and fused CUDA lane rejection; not scene validation",
+      "capture": [
+        {
+          "case": "owned_copy",
+          "status": "passed",
+          "mask": 130
+        },
+        {
+          "case": "changed_wrapper",
+          "status": "passed",
+          "mask": 0
+        },
+        {
+          "case": "missing_lane",
+          "status": "passed",
+          "mask": 0
+        },
+        {
+          "case": "multiple_lobes",
+          "status": "passed",
+          "mask": 0
+        },
+        {
+          "case": "reuse",
+          "status": "passed",
+          "mask": 130
+        }
+      ],
+      "windows": [
+        {
+          "slots": 1,
+          "accepted": 2,
+          "intentional_shader_mismatches": 1,
+          "status": "passed"
+        },
+        {
+          "slots": 9,
+          "accepted": 18,
+          "intentional_shader_mismatches": 9,
+          "status": "passed"
+        },
+        {
+          "slots": 16,
+          "accepted": 32,
+          "intentional_shader_mismatches": 16,
+          "status": "passed"
+        }
+      ],
+      "profile": {
+        "graph_enabled": 1,
+        "graph_captures": 6,
+        "graph_sources_freed": 6,
+        "graph_builds": 6,
+        "graph_frees": 6,
+        "graph_launches": 6,
+        "graph_build_ns": 463000,
+        "async_enabled": 1,
+        "pinned_allocations": 2,
+        "pinned_frees": 2,
+        "async_batches": 6,
+        "async_completed": 6,
+        "completion_waits": 6,
+        "error_drains": 0,
+        "staging_ns": 8100,
+        "fused_calls": 3,
+        "shader_checked": 52,
+        "shader_unsupported": 52,
+        "shader_mismatch": 26,
+        "packets": 52,
+        "dispatches": 6,
+        "max_slots": 16,
+        "calls": 6,
+        "eligible": 130,
+        "accepted": 104,
+        "replaced": 104,
+        "cpu_skipped": 104,
+        "unsupported": 104,
+        "mismatch": 26,
+        "errors": 0,
+        "cleanup_errors": 0,
+        "total_ns": 176468300,
+        "initialization_ns": 174841900,
+        "upload_ns": 0,
+        "launch_ns": 147900,
+        "wait_ns": 877700,
+        "download_ns": 0,
+        "compare_ns": 14000
+      },
+      "graphs": true,
+      "streamed": true,
+      "build_manifest_sha256": "f238ef72df9b96388066968faea45bb653b94f53b337c36651b12195c523c2fc",
+      "label": "graph-guards",
+      "report_sha256": "fba8be69899f34dbc7cb77282e616b9bd48964cff334eb1e950abba8a84eb1a5"
+    }
+  ],
+  "larger_reference_blocker": {
+    "status": "failed_reference_repeat",
+    "report_sha256": "a3855dc360e52d766dff7b5cb8d1afe8708d9ffd11bb63f61dec3b86f68b5999",
+    "scene_sha256": "b757e238fec37a946d097f2c30bead5f4671205212959b6a3c1c2208512be71a",
+    "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+    "threads": 4,
+    "tolerance": {
+      "absolute": 1e-06,
+      "relative": 1e-06
+    },
+    "exactly_different_pixels": 22269,
+    "channels": {
+      "R": {
+        "passed": false,
+        "failed_values": 271,
+        "maximum_absolute_error": 0.062443673610687256,
+        "rms_error": 0.0016896823400009142,
+        "values": 82944
+      },
+      "G": {
+        "passed": false,
+        "failed_values": 271,
+        "maximum_absolute_error": 0.0027906596660614014,
+        "rms_error": 7.045802498584116e-05,
+        "values": 82944
+      },
+      "B": {
+        "passed": false,
+        "failed_values": 271,
+        "maximum_absolute_error": 0.002318263053894043,
+        "rms_error": 5.613871724194555e-05,
+        "values": 82944
+      },
+      "A": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 82944
+      }
+    },
+    "note": "Untouched native reference failed before candidate execution; no larger-scene candidate timing or parity accepted"
+  },
+  "initial_race_failure": {
+    "report_sha256": "523d6498ee0fde2b922d9fe5c9e3fc4054ddbb25139f88617d8a480ee8cc9a17",
+    "status": "incomplete",
+    "error": "Cross-job numeric routing failure worker=0 slot=0 lane=0 actual=[4.0, 0.7210010886192322, 0.28840044140815735, 1.1536017656326294, 1.25, 0.25, 0.5] expected=[4.0, 0.07210011035203934, 0.28840044140815735, 1.1536017656326294, 0.125, 0.25, 0.5]",
+    "superseded_by": "guards-v2",
+    "note": "Larger copies exposed missing ordering between pageable upload and nonblocking kernel stream; corrected build waits for upload completion"
+  },
+  "regressions": {
+    "status": "passed",
+    "tests": 343,
+    "log_sha256": "33611d2ceec41716e2ec9488ada41206efbe955e363d8bbcbace785da952d331"
+  },
+  "queue_contract": {
+    "status": "passed",
+    "source_sha256": "ef80e8b5aadb895f3d8bad26f748cfa34b5718c6e3a96f6b25eb4e76643665cc",
+    "binary_sha256": "5a2b5ac7b58c747b9fadf287a8551ecf3b020d36f8837c0e65cef26e84d92352",
+    "log_sha256": "aa3f2f1a48962a12f3ca224f10ee35189decee576162f4f95d04488c9acdfe84"
+  }
+}

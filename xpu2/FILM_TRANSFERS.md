@@ -2,6 +2,10 @@
 
 Status: **image and fallback checks passed; neither candidate improves the larger fixture. Blocking transfers remain the default.**
 
+Follow-up: [larger concurrent batches](COALESCED_FILM.md) exposed a pageable-upload
+ordering race in the experimental blocking path. It now waits explicitly before
+kernel launch. The historical timings below predate that correction.
+
 This follows [live fused Lambert/contribution dispatch](LIVE_FUSED_FILM.md).
 Two opt-in paths now use pinned host staging: upload, fused kernel and readback
 on one stream, followed by one completion wait; or a cached CUDA graph replaying

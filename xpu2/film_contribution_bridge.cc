@@ -9,6 +9,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include "film_batch_queue.h"
 namespace xpu2film {
 using Clock=std::chrono::steady_clock;
 using U=unsigned long long;
@@ -18,10 +19,13 @@ int mode(){static int m=[] {const char* s=std::getenv("XPU2_FILM_CONTRIBUTION");
  if(!std::strcmp(s,"fast"))return 3;if(!std::strcmp(s,"sentinel"))return 4;return 0;}();return m;}
 bool asyncTransfers(){static bool enabled=[] {const char* s=std::getenv("XPU2_FILM_ASYNC_TRANSFERS");return s&&!std::strcmp(s,"1");}();return enabled;}
 bool graphReplay(){static bool enabled=[] {const char* s=std::getenv("XPU2_FILM_GRAPH");return asyncTransfers()&&s&&!std::strcmp(s,"1");}();return enabled;}
+bool coalesced(){static bool enabled=[] {const char* s=std::getenv("XPU2_FILM_COALESCE");return s&&!std::strcmp(s,"1");}();return enabled;}
+unsigned capacity(){return coalesced()?filmqueue::BatchSlots:16;}
 struct State {
  std::mutex mutex;bool attempted=false,ready=false,closed=false;HMODULE driver=nullptr;
  CUcontext context=nullptr;CUmodule module=nullptr;CUfunction kernel=nullptr,fusedKernel=nullptr;CUdeviceptr input=0,output=0;CUstream stream=nullptr;
- CUgraphExec graphs[32]={};
+ CUgraphExec graphs[256]={};
+ std::vector<float> stagingBuffer;
  U graphCaptures=0,graphSourcesFreed=0,graphBuilds=0,graphFrees=0,graphLaunches=0,graphBuildTime=0;
  float* hostInput=nullptr;float* hostOutput=nullptr;
  U pinnedAllocs=0,pinnedFrees=0,asyncBatches=0,asyncCompleted=0,completionWaits=0,errorDrains=0,staging=0;
@@ -50,24 +54,24 @@ struct State {
   try {check(cuCtxCreate_v2_p(&context,0,device));
    const char* path=std::getenv("XPU2_FILM_PTX");if(!path)throw std::runtime_error("Missing film PTX");
    check(cuModuleLoad_p(&module,path));check(cuModuleGetFunction_p(&kernel,module,"film_contribution"));
-   check(cuMemAlloc_v2_p(&input,128*64*sizeof(float)));check(cuMemAlloc_v2_p(&output,128*8*sizeof(float)));
+   check(cuMemAlloc_v2_p(&input,capacity()*8*64*sizeof(float)));check(cuMemAlloc_v2_p(&output,capacity()*8*8*sizeof(float)));
    check(cuStreamCreate_p(&stream,CU_STREAM_NON_BLOCKING));
    if(asyncTransfers()){
-    check(cuMemHostAlloc_p(reinterpret_cast<void**>(&hostInput),128*64*sizeof(float),0));++pinnedAllocs;
+    check(cuMemHostAlloc_p(reinterpret_cast<void**>(&hostInput),capacity()*8*64*sizeof(float),0));++pinnedAllocs;
     if(std::getenv("XPU2_FILM_FAIL_PINNED"))throw std::runtime_error("Injected partial pinned allocation failure");
-    check(cuMemHostAlloc_p(reinterpret_cast<void**>(&hostOutput),128*8*sizeof(float),0));++pinnedAllocs;
+    check(cuMemHostAlloc_p(reinterpret_cast<void**>(&hostOutput),capacity()*8*8*sizeof(float),0));++pinnedAllocs;
    }
    check(cuCtxSetCurrent_p(previous));ready=true;
   }catch(...){cuCtxSetCurrent_p(previous);throw;}
  }
  CUgraphExec graphFor(unsigned count,bool fused,unsigned stride){
-  auto& cached=graphs[(fused?16:0)+count-1];if(cached)return cached;
+  auto& cached=graphs[(fused?capacity():0)+count-1];if(cached)return cached;
   U start=now();CUgraph graph=nullptr;CUgraphExec executable=nullptr;bool capturing=false;
   try {
    check(cuStreamBeginCapture_v2_p(stream,CU_STREAM_CAPTURE_MODE_THREAD_LOCAL));capturing=true;
    check(cuMemcpyHtoDAsync_v2_p(input,hostInput,count*8*stride*sizeof(float),stream));
    unsigned samples=count*8;void* args[]={&input,&output,&samples};
-   check(cuLaunchKernel_p(fused?fusedKernel:kernel,1,1,1,128,1,1,0,stream,args,nullptr));
+   check(cuLaunchKernel_p(fused?fusedKernel:kernel,(samples+127)/128,1,1,128,1,1,0,stream,args,nullptr));
    check(cuMemcpyDtoHAsync_v2_p(hostOutput,output,count*8*8*sizeof(float),stream));
    CUresult ended=cuStreamEndCapture_p(stream,&graph);capturing=false;check(ended);++graphCaptures;
    if(std::getenv("XPU2_FILM_FAIL_GRAPH_BUILD"))throw std::runtime_error("Injected captured graph failure");
@@ -87,11 +91,11 @@ struct State {
  }
  void run(const float* src,const float* reference,float* dst,const int* masks,int* result,unsigned count,const float* lambert=nullptr,const float* native=nullptr,const int* shaderMasks=nullptr){
   std::lock_guard<std::mutex> guard(mutex);U start=now();closed=false;++calls;
-  if(!count||count>16){++errors;total+=now()-start;return;}
+  if(!count||count>capacity()){++errors;total+=now()-start;return;}
   for(unsigned slot=0;slot<count;++slot)result[slot]=0;
   if(count>maxSlots)maxSlots=count;
   const bool fused=lambert!=nullptr;const unsigned stride=fused?64:24;if(fused)++fusedCalls;
-  float staged[128*64]={};unsigned selected[16]={};bool any=false;
+  stagingBuffer.assign(count*8*stride,0.f);float* staged=stagingBuffer.data();unsigned selected[128]={};bool any=false;
   const bool corrupt=fused&&std::getenv("XPU2_FUSED_BAD_REFERENCE");
   for(unsigned i=0;i<count*8;++i){std::memcpy(staged+i*stride,src+i*24,24*sizeof(float));
    if(fused){std::memcpy(staged+i*stride+24,lambert+i*24,24*sizeof(float));std::memcpy(staged+i*stride+48,native+i*8,8*sizeof(float));
@@ -125,8 +129,14 @@ struct State {
     if(asynchronous){
      t=now();check(cuMemcpyHtoDAsync_v2_p(input,hostInput,inputBytes,stream));upload+=now()-t;queued=true;++asyncBatches;
      if(std::getenv("XPU2_FILM_FAIL_AFTER_UPLOAD"))throw std::runtime_error("Injected queued upload failure");
-    }else{t=now();check(cuMemcpyHtoD_v2_p(input,staged,inputBytes));upload+=now()-t;}
-    unsigned samples=count*8;void* args[]={&input,&output,&samples};t=now();check(cuLaunchKernel_p(fused?fusedKernel:kernel,1,1,1,128,1,1,0,stream,args,nullptr));launch+=now()-t;++dispatches;queued=true;
+    }else{
+     t=now();check(cuMemcpyHtoD_v2_p(input,staged,inputBytes));
+     // Pageable HtoD may return after host staging but before device DMA.
+     // The kernel stream is nonblocking, so explicitly order the default-stream
+     // upload before launching work that reads it. Small copies hid this race.
+     check(cuStreamSynchronize_p(nullptr));upload+=now()-t;
+    }
+    unsigned samples=count*8;void* args[]={&input,&output,&samples};t=now();check(cuLaunchKernel_p(fused?fusedKernel:kernel,(samples+127)/128,1,1,128,1,1,0,stream,args,nullptr));launch+=now()-t;++dispatches;queued=true;
     if(asynchronous){t=now();check(cuMemcpyDtoHAsync_v2_p(hostOutput,output,outputBytes,stream));download+=now()-t;}
    }
    if(asynchronous){
@@ -185,8 +195,59 @@ struct State {
  }
 };
 State*& storage(){static State* s=nullptr;return s;}
-void finish(){if(storage())storage()->finish();}
+void finishQueue();
+void finish(){finishQueue();}
 State& state(){static State* s=[] {auto* p=new State;storage()=p;std::atexit(finish);return p;}();return *s;}
+
+std::mutex queueMutex;
+std::shared_ptr<filmqueue::Queue> queue;
+bool finishingQueue=false;
+void executeBatch(const filmqueue::Queue::Batch& jobs){
+ // Persistent worker scratch: no input/return pointers alias a native arena.
+ static thread_local std::array<float,128*8*24> in,lambert;
+ static thread_local std::array<float,128*8*8> ref,native,out;
+ static thread_local std::array<int,128> masks,shaderMasks,accepted;
+ unsigned slots=0;
+ for(auto& job:jobs){unsigned n=job->count;
+  std::copy_n(job->input.data(),n*8*24,in.data()+slots*8*24);
+  std::copy_n(job->lambert.data(),n*8*24,lambert.data()+slots*8*24);
+  std::copy_n(job->reference.data(),n*8*8,ref.data()+slots*8*8);
+  std::copy_n(job->native.data(),n*8*8,native.data()+slots*8*8);
+  std::copy_n(job->masks.data(),n,masks.data()+slots);
+  std::copy_n(job->shaderMasks.data(),n,shaderMasks.data()+slots);slots+=n;
+ }
+ state().run(in.data(),ref.data(),out.data(),masks.data(),accepted.data(),slots,lambert.data(),native.data(),shaderMasks.data());
+ slots=0;for(auto& job:jobs){
+  std::copy_n(out.data()+slots*8*8,job->count*8*8,job->output.data());
+  std::copy_n(accepted.data()+slots,job->count,job->accepted.data());slots+=job->count;
+ }
+}
+std::shared_ptr<filmqueue::Queue> getQueue(){
+ std::lock_guard<std::mutex> lock(queueMutex);if(finishingQueue)return {};
+ if(!queue)queue=std::make_shared<filmqueue::Queue>(executeBatch);return queue;
+}
+void finishQueue(){
+ std::shared_ptr<filmqueue::Queue> held;
+ {std::lock_guard<std::mutex> lock(queueMutex);finishingQueue=true;held=queue;queue.reset();}
+ if(held){held->close();auto p=held->stats();const char* path=std::getenv("XPU2_FILM_QUEUE_PROFILE");FILE* f=path?std::fopen(path,"wb"):nullptr;
+  if(f){std::fprintf(f,"{\"submitted\":%llu,\"returned\":%llu,\"declined\":%llu,\"batches\":%llu,\"combined\":%llu,\"max_jobs\":%llu,\"max_slots\":%llu,\"max_outstanding\":%llu,\"during_service\":%llu,\"exceptions\":%llu}\n",p.submitted,p.returned,p.declined,p.batches,p.combined,p.maxJobs,p.maxSlots,p.maxOutstanding,p.duringService,p.exceptions);std::fclose(f);}
+ }
+ if(storage())storage()->finish();
+ // RenderContext invokes this after native workers stop. No next frame starts
+ // until state().finish() returns; late queue admission during close is declined.
+ {std::lock_guard<std::mutex> lock(queueMutex);finishingQueue=false;}
+}
+void enqueue(const float* src,const float* ref,float* dst,const int* masks,int* accepted,int count,const float* lambert,const float* native,const int* shaderMasks){
+ std::fill_n(accepted,count,0);
+ try {
+  auto job=std::make_shared<filmqueue::Job>();job->count=count;
+  std::copy_n(src,count*8*24,job->input.data());std::copy_n(ref,count*8*8,job->reference.data());
+  std::copy_n(lambert,count*8*24,job->lambert.data());std::copy_n(native,count*8*8,job->native.data());
+  std::copy_n(masks,count,job->masks.data());std::copy_n(shaderMasks,count,job->shaderMasks.data());
+  auto held=getQueue();if(!held||!held->submit(job))return;
+  std::copy_n(job->output.data(),count*8*8,dst);std::copy_n(job->accepted.data(),count,accepted);
+ }catch(...){std::fill_n(accepted,count,0);}
+}
 }
 extern "C" __declspec(dllexport) int xpu2FilmMode(){return xpu2film::mode();}
 extern "C" __declspec(dllexport) void xpu2FilmWindow(const float* src,const float* ref,float* dst,const int* masks,int* accepted,int count){
@@ -202,5 +263,6 @@ extern "C" __declspec(dllexport) void xpu2FilmFinish(){xpu2film::finish();}
 
 extern "C" __declspec(dllexport) void xpu2FilmFusedWindow(const float* src,const float* ref,float* dst,const int* masks,int* accepted,int count,const float* lambert,const float* native,const int* shaderMasks){
  if(count<1||count>16)return;
- xpu2film::state().run(src,ref,dst,masks,accepted,unsigned(count),lambert,native,shaderMasks);
+ if(xpu2film::coalesced())xpu2film::enqueue(src,ref,dst,masks,accepted,count,lambert,native,shaderMasks);
+ else xpu2film::state().run(src,ref,dst,masks,accepted,unsigned(count),lambert,native,shaderMasks);
 }
