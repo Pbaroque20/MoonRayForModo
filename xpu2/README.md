@@ -194,3 +194,8 @@ Math profiles must remain explicit during future handoffs; no renderer is enable
 sampler and Lambert shading continuations: 108 sequences, atomic stage fallback,
 cross-device retries, and exact native-reference results across three schedules.
 Ray tracing, throughput and image accumulation remain outside this diagnostic.
+
+[RAY_IMAGE.md](RAY_IMAGE.md) follows these operations into a small custom ray-traced
+image: native AVX8, CUDA-only shading and mixed/fallback schedules match every
+path event and RGB bit. Traversal and film remain shared host reference code;
+this is not native MoonRay image parity, asynchronous execution or a speed claim.

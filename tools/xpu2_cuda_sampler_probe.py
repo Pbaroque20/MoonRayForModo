@@ -45,7 +45,10 @@ def main():
     p.add_argument("--shading-native", type=Path, help="Validated native sampler/AVX8 shading endpoint directory")
     p.add_argument("--shading-runtime", type=Path, help="Retained native DLL inventory for shading endpoint")
     p.add_argument("--shading-materials", type=Path, help="Pinned material parameter corpus for combined handoffs")
+    p.add_argument("--shading-image", action="store_true", help="Trace a small host-reference image with actual native/CUDA shading")
     a = p.parse_args()
+    if a.shading_image and not a.shading_native:
+        p.error("--shading-image requires --shading-native")
     if a.shading_native:
         if not (a.window and a.shading_runtime and a.shading_materials) or a.lambert_sample or a.lambert:
             p.error("Shading handoffs require --window, --tables, --shading-runtime and --shading-materials")
@@ -158,6 +161,8 @@ def main():
             shade_meta.get("shading_exchange_protocol")!="XHB1-XHO1" or sha(a.shading_native / "sampler.exe")!=shade_meta["executable_sha256"]):
             raise ValueError("Verified native shading endpoint required")
         verify(a.shading_runtime, shade_meta["runtime_inventory"])
+        if a.shading_image:
+            dependencies.extend([ROOT / "xpu2/ray_image.py", ROOT / "xpu2/cuda_window_samples.py"])
         dependencies.extend([a.shading_native / "report.json", a.shading_native / "sampler.exe", a.shading_materials,
                              ROOT / "xpu2/shading_exchange.py", ROOT / "xpu2/exchange.py"])
     before = {str(path): sha(path) for path in dependencies}
@@ -309,6 +314,7 @@ def main():
             print(json.dumps(handoff), flush=True)
             verify(a.handoff_runtime, meta["runtime_inventory"])
         shading_handoff = None
+        shading_image = None
         if a.shading_native:
             shade_dir = out / "shading-exchange"
             shade_dir.mkdir()
@@ -356,10 +362,16 @@ def main():
                     stream.write(struct.pack("<4sI",b"XHT1",len(rows)))
                     for (case,step),r in sorted(rows.items()):
                         stream.write(struct.pack("<2I",case,step)+r["input"]+r["output"]+struct.pack("<12I",*r["result"]))
-            shading_handoff=shade_handoffs(expected,a.shading_materials,cpu_shading,gpu_shading,save_baseline)
-            shading_handoff["native_batches"]=shade_id
-            shading_handoff["baseline_sha256"]=sha(shade_dir / "native-baseline.bin")
-            print(json.dumps(shading_handoff),flush=True)
+            if a.shading_image:
+                from xpu2.ray_image import run as run_image
+                shading_image=run_image(cpu_shading,gpu_shading,out / "ray-image")
+                shading_image["native_batches"]=shade_id
+                print(json.dumps(shading_image),flush=True)
+            else:
+                shading_handoff=shade_handoffs(expected,a.shading_materials,cpu_shading,gpu_shading,save_baseline)
+                shading_handoff["native_batches"]=shade_id
+                shading_handoff["baseline_sha256"]=sha(shade_dir / "native-baseline.bin")
+                print(json.dumps(shading_handoff),flush=True)
             verify(a.shading_runtime,shade_meta["runtime_inventory"])
     finally:
         destroy(context)  # Releases all test streams, modules and allocations.
@@ -368,14 +380,15 @@ def main():
     report = {"status": "passed" if all(r["passed"] for r in reports) and
                          (continuation is None or continuation["passed"]) and
                          (handoff is None or handoff["passed"]) and
-                         (shading_handoff is None or shading_handoff["passed"]) else "failed",
-              "scope": ("Native AVX8/CUDA combined sampling and shading handoffs; synchronous transport, no ray traversal or rendered parity" if a.shading_native else "CUDA Lambert sampling numerical diagnostic; strict selected native math-profile parity required for passed status; not rendered parity" if a.lambert_sample else "CUDA Lambert eval/albedo/PDF/geometry subset; not sampling or rendered parity" if a.lambert
+                         (shading_handoff is None or shading_handoff["passed"]) and
+                         (shading_image is None or shading_image["passed"]) else "failed",
+              "scope": (shading_image["scope"] if a.shading_image else "Native AVX8/CUDA combined sampling and shading handoffs; synchronous transport, no ray traversal or rendered parity" if a.shading_native else "CUDA Lambert sampling numerical diagnostic; strict selected native math-profile parity required for passed status; not rendered parity" if a.lambert_sample else "CUDA Lambert eval/albedo/PDF/geometry subset; not sampling or rendered parity" if a.lambert
                         else "Real CUDA integrator sampling subset; no shading/rendered parity"),
               "lambert": a.lambert, "lambert_sample": a.lambert_sample,
               "native_tables": bool(a.tables), "cache_window": bool(a.window),
               "device": name.value.decode(), "compute_capability": [major.value, minor.value],
               "cuda_driver_api": version.value, "compile_flags": compile_flags,
-              "continuation": continuation, "handoff": handoff, "shading_handoff": shading_handoff, "inputs_sha256": before, "ptx_sha256": sha(out / "sampler.ptx"), "runs": reports}
+              "continuation": continuation, "handoff": handoff, "shading_handoff": shading_handoff, "shading_image": shading_image, "inputs_sha256": before, "ptx_sha256": sha(out / "sampler.ptx"), "runs": reports}
     if a.lambert_sample:
         report["native_math_profile"] = "avx8" if a.vector_math else "cpp"
         report["renderer_migration_enabled"] = False

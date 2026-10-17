@@ -117,3 +117,7 @@ table exports must match their verified manifests.
     python tools/xpu2_shading_framing_probe.py --native test-results/shading-native-new --runtime test-results/xpu2-origin-build/control --source <shared-source-read-only> --reference xpu2/reference/sampler-window-avx8-20261017.jsonl.gz --materials xpu2/reference/lambert-sample-avx8-20261017.jsonl.gz --output test-results/shading-framing-new
     python tools/xpu2_cuda_sampler_probe.py --source <shared-source-read-only> --reference xpu2/reference/sampler-window-avx8-20261017.jsonl.gz --tables test-results/xpu2-native-tables --window test-results/xpu2-native-window-tables --shading-native test-results/shading-native-new --shading-runtime test-results/xpu2-origin-build/control --shading-materials xpu2/reference/lambert-stress-avx8-20261017.jsonl.gz --output test-results/shading-handoff-new
     python -m unittest discover -s tests -p "test_xpu2*.py" -q
+
+The follow-up [RAY_IMAGE.md](RAY_IMAGE.md) now validates a small custom path-traced
+fixture with geometric validity, throughput, visibility and film accumulation.
+Native MoonRay integration remains the next boundary; no production engine is enabled.
