@@ -31,6 +31,7 @@ try:
     result['render_camera'] = {'name': camera.name, 'blurLen': camera.channel('blurLen').get(), 'blurOff': camera.channel('blurOff').get()}
     result['final_motion'] = properties.scene_settings().get('final_motion')
     snapshot = animation.capture_current(False)
+    (out / 'snapshot.json').write_text(json.dumps(snapshot, default=str))
     box = next(m for m in snapshot['meshes'] if m.get('name', '').startswith('box') or 'box' in str(m.get('identity', '')))
     result['captured'] = {'motion_steps': snapshot.get('motion_steps'), 'box_open': box.get('matrix', [None] * 16)[12],
                           'box_close': (box.get('matrix_close') or [None] * 16)[12]}

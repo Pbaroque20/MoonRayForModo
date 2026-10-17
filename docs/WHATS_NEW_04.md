@@ -44,6 +44,18 @@ Not released yet: on the MoonLightIPR branch.
 - **The About window** has MoonRay's current logo, and names the MoonRay version the plugin is compiled from.
 - **The preview shows MoonRay's wordmark** before anything is rendered.
 
+![A stereo camera's left eye, right eye and red/cyan picture](images/stereo-eyes.png)
+
+*A stereo render camera set to both eyes: the left eye, the right eye, and Modo's red/cyan composite of the two, all from one Render EXR.*
+
+![The frame alone, and the same render with overscan](images/overscan.png)
+
+*Overscan 1.3: the frame as the preview shows it (left), and the render to a file, which goes past the frame on every side (right; the frame is outlined in yellow).*
+
+![A subdivided cube without and with creases](images/subdivision-creases.png)
+
+*A subdivided cube: without weights it renders as a ball (left); with four edges and one corner weighted in Modo's Subdivision map, MoonRay keeps them sharp (right).*
+
 ![An orthographic camera item, MoonRay left and MoonLightIPR right](images/moonlightipr-camera_ortho.png)
 
 *A MoonRay orthographic camera: MoonRay (left), MoonLightIPR (right).*
