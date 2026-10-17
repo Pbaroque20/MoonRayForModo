@@ -20,6 +20,8 @@ FLIPS = ('left to right', 'top to bottom', 'both')
 TAKES = ('the bright', 'the dark')
 CHANNELS = ('brightness', 'red', 'green', 'blue')
 RAMPS = ('left to right', 'top to bottom')
+# A Sum node's inputs: as many pictures as are wired, added up. The editor shows those wired and one free.
+SUM_INPUTS = tuple('in%d' % n for n in range(1, 33))
 
 # Each kind of node: the pictures it takes, and its settings as (kind, default, least, most) or (kind, default, choices).
 NODES = {
@@ -38,6 +40,8 @@ NODES = {
              'parameters': {'threshold': ('number', 1.0, 0.0, 100.0), 'radius': ('number', 12.0, 0.0, 200.0),
                             'strength': ('number', 0.5, 0.0, 10.0)}},
     'output': {'label': 'Composite', 'inputs': ('image',), 'tip': 'The picture the Composite buffer shows.', 'parameters': {}},
+    'sum': {'label': 'Sum', 'inputs': SUM_INPUTS, 'tip': 'Every picture wired in, added up: render passes back into one picture.',
+            'parameters': {}},
     # Colour.
     'levels': {'label': 'Levels', 'inputs': ('image',), 'family': 'colour',
                'tip': 'What is at Black becomes Out Black and what is at White becomes Out White, with a gamma between.',
@@ -86,6 +90,118 @@ NODES = {
 }
 # Buffers that are not pictures to put together.
 UNUSABLE = ('cryptomatte',)
+
+
+def ports(node):
+    """The inputs a node shows: all of its kind's, but for a Sum, those wired and the next free one."""
+    kind = node['type']
+    if kind != 'sum':
+        return list(NODES[kind]['inputs'])
+    wired = [key for key in SUM_INPUTS if (node.get('inputs') or {}).get(key)]
+    free = next((key for key in SUM_INPUTS if key not in wired), None)
+    return sorted(wired + ([free] if free else []), key=SUM_INPUTS.index)
+
+
+def port_label(key):
+    """What an input is called on the canvas."""
+    return 'input %s' % key[2:] if key in SUM_INPUTS else key
+
+
+# Render passes that together make the beauty: what the camera's ray meets first tells them apart, and diffuse and
+# glossy are split into the light that comes straight from the lights and the light that has bounced first. What none
+# of them takes (fog, and any path these leave out) is the remainder, worked out from the beauty (pass_graph).
+# (what it is called, the output's name, the light path expression)
+PASSES = (('Emission', 'pass_emission', 'CO'),
+          ('Lights and sky seen', 'pass_lights_seen', 'CL'),
+          ('Direct diffuse', 'pass_diffuse_direct', 'C<RD>[<L.>O]'),
+          ('Indirect diffuse', 'pass_diffuse_indirect', 'C<RD>[DSG]+[<L.>O]'),
+          ('Direct glossy', 'pass_glossy_direct', 'C<RG>[<L.>O]'),
+          ('Indirect glossy', 'pass_glossy_indirect', 'C<RG>[DSG]+[<L.>O]'),
+          ('Mirror reflection', 'pass_mirror', 'C<RS>[DSG]*[<L.>O]'),
+          ('Refraction', 'pass_refraction', 'C<TS>[DSG]*[<L.>O]'),
+          ('Glossy transmission', 'pass_transmission_glossy', 'C<TG>[DSG]*[<L.>O]'),
+          ('Translucency', 'pass_translucency', 'C<TD>[DSG]*[<L.>O]'))
+
+
+# Modo's environment (the plugin's, and each in the scene) carries this label: its light is a group of its own.
+ENVIRONMENT_LABEL = 'modo_environment'
+
+
+def light_groups(production, entities=()):
+    """The light groups to build from, as (what it is called, label): the environment's light, then each label the
+    scene's lights carry."""
+    return [('Environment', ENVIRONMENT_LABEL)] + [(label, label) for label in light_labels(production, entities) if label != ENVIRONMENT_LABEL]
+
+
+def light_group_expression(label):
+    """All the light that comes from the lights of one group (their label), by any path."""
+    return "C.*<L.'%s'>" % label
+
+
+def pass_outputs(custom_aovs, wanted):
+    """The scene's outputs with each wanted pass ((what it is called, name, expression)) that it lacks added, and the
+    name each pass has in it: an output with the same expression is taken as it is, whatever it is called."""
+    entries = [dict(entry) for entry in custom_aovs or []]
+    taken = {entry.get('name', '').casefold() for entry in entries}
+    names = []
+    for words, name, expression in wanted:
+        same = next((entry for entry in entries if entry.get('kind') == 'lpe' and entry.get('expression', '').strip() == expression), None)
+        if same is not None:
+            names.append(same['name'])
+            continue
+        made, number = name, 1
+        while made.casefold() in taken:
+            number += 1
+            made = '%s_%d' % (name, number)
+        taken.add(made.casefold())
+        entries.append({'name': made, 'kind': 'lpe', 'expression': expression})
+        names.append(made)
+    return entries, names
+
+
+def pass_graph(passes, remainder=True, beauty='beauty'):
+    """A graph that puts render passes back together: each pass, [(buffer, what it is called)], through a Grade of its
+    own into a Sum, and the Sum to the Composite. With remainder, what the passes leave out of the beauty (the beauty
+    less all the passes) is a pass too, so that with every Grade left alone the Composite is the beauty itself."""
+    nodes, column, row = {}, 0.0, 120.0
+    total = {'type': 'sum', 'parameters': {}, 'inputs': {}, 'position': [620.0, 0.0]}
+    rows = list(passes) + ([(None, 'Remainder')] if remainder else [])
+    top = -row * (len(rows) - 1) / 2.0
+    for index, (buffer, words) in enumerate(rows):
+        y = top + index * row
+        grade = 'grade_%d' % (index + 1)
+        if buffer is None:
+            # The beauty less the sum of the passes as they were rendered.
+            nodes['remainder_beauty'] = {'type': 'input', 'parameters': {'buffer': beauty}, 'inputs': {}, 'position': [column - 260.0, y - 60.0]}
+            nodes['remainder_passes'] = {'type': 'sum', 'parameters': {}, 'inputs': {SUM_INPUTS[n]: 'pass_%d' % (n + 1) for n in range(len(passes))},
+                                         'position': [column - 260.0, y + 40.0]}
+            nodes['remainder_negative'] = {'type': 'math', 'parameters': {'operation': 'multiply', 'value': -1.0},
+                                           'inputs': {'image': 'remainder_passes'}, 'position': [column, y + 40.0]}
+            nodes['remainder'] = {'type': 'sum', 'parameters': {}, 'inputs': {'in1': 'remainder_beauty', 'in2': 'remainder_negative'},
+                                  'position': [column + 130.0, y]}
+            source = 'remainder'
+        else:
+            source = 'pass_%d' % (index + 1)
+            nodes[source] = {'type': 'input', 'parameters': {'buffer': buffer}, 'inputs': {}, 'position': [column, y]}
+        nodes[grade] = {'type': 'grade', 'parameters': {}, 'inputs': {'image': source}, 'position': [column + 300.0, y]}
+        total['inputs'][SUM_INPUTS[index]] = grade
+    nodes['sum'] = total
+    nodes['out'] = {'type': 'output', 'parameters': {}, 'inputs': {'image': 'sum'}, 'position': [880.0, 0.0]}
+    return validate({'nodes': nodes, 'root': 'out'})
+
+
+def light_labels(production, entities=()):
+    """The light-group labels lights carry in a scene, sorted: Modo's lights and mesh lights (set in the Lighting
+    scene controls) and MoonRay's own light items."""
+    found = set()
+    for settings in ((production or {}).get('lights') or {}).values():
+        found.add(str(settings.get('label') or ''))
+    for settings in ((production or {}).get('objects') or {}).values():
+        if settings.get('mesh_light'):
+            found.add(str(settings.get('light_label') or ''))
+    for entity in entities or ():
+        found.add(str((entity.get('parameters') or {}).get('label') or ''))
+    return sorted(label for label in found if label and all(c.isalnum() or c == '_' for c in label) and label[0].isalpha())
 
 
 def new():
@@ -412,6 +528,13 @@ def program_jobs(graph, files, kinds, folder, channels, composite):
                 continue
             slot_of[identity] = step('merge', a if a is not None else none(), b, taken.get('mask', -1), i0=MODES.index(held['mode']), f=(float(held['mix']),))
             continue
+        if kind == 'sum':
+            wired = [taken[key] for key in SUM_INPUTS if key in taken]
+            total = wired[0] if wired else none()
+            for picture in wired[1:]:
+                total = step('merge', total, picture, -1, i0=MODES.index('add'), f=(1.0,))
+            slot_of[identity] = total
+            continue
         if kind == 'constant':
             slot_of[identity] = step('constant', f=[float(v) for v in held['color']])
             continue
@@ -538,10 +661,20 @@ def jobs(graph, files, kinds, folder, channels=None, composite=None):
             key = held['buffer']
             if key not in files or kinds.get(key) in UNUSABLE:
                 raise ValueError('The render has no %s buffer for the compositor to take' % key)
-            args = ['--no-autopremult', str(files[key]), '--fixnan', 'black'] + ((channels or {}).get(key) or _channels(kinds.get(key, key)))
+            # Named R, G and B whatever the buffer's channels were called (an EXR's pass_x.R and so on): the image tool
+            # keeps the first picture's names through every step, and the Composite is read by them.
+            args = ['--no-autopremult', str(files[key]), '--fixnan', 'black'] + ((channels or {}).get(key) or _channels(kinds.get(key, key))) + ['--chnames', 'R,G,B']
         elif kind == 'output':
             made[identity] = taken.get('image') or none()
             continue
+        elif kind == 'sum':
+            wired = [taken[key] for key in SUM_INPUTS if key in taken]
+            if len(wired) < 2:
+                made[identity] = wired[0] if wired else none()
+                continue
+            args = [str(wired[0])]
+            for picture in wired[1:]:
+                args += [str(picture), '--add']
         elif kind == 'merge':
             a, b = str(taken.get('a') or none()), taken.get('b')
             if b is None:

@@ -12,8 +12,8 @@ from .node_widgets import GraphView, QuickAdd, curve, MENU_STYLE, NODE_BODY, NOD
 
 WIDTH, HEADER, ROW = 170, 24, 20
 # A node's header and the wire out of it, by what the node is.
-HEADERS = {'input': '#35627f', 'merge': '#3d7449', 'grade': '#86682f', 'blur': '#65548a', 'glow': '#65548a', 'output': '#7a3f3f'}
-WIRES = {'input': '#77bce8', 'merge': '#89ce94', 'grade': '#e4b367', 'blur': '#c6a0e9', 'glow': '#c6a0e9', 'output': '#e89a9a'}
+HEADERS = {'input': '#35627f', 'merge': '#3d7449', 'sum': '#3d7449', 'grade': '#86682f', 'blur': '#65548a', 'glow': '#65548a', 'output': '#7a3f3f'}
+WIRES = {'input': '#77bce8', 'merge': '#89ce94', 'sum': '#89ce94', 'grade': '#e4b367', 'blur': '#c6a0e9', 'glow': '#c6a0e9', 'output': '#e89a9a'}
 # The other nodes are coloured by what they are for: colour as Grade is, filters as Blur is, and so on.
 FAMILIES = {'colour': ('#86682f', '#e4b367'), 'filter': ('#65548a', '#c6a0e9'), 'matte': ('#59636e', '#c8d2dc'), 'make': ('#35627f', '#77bce8')}
 for _kind, _node in compositor.NODES.items():
@@ -67,7 +67,7 @@ class Node(QtWidgets.QGraphicsRectItem):
     """A node, made of Qt's own shapes; the item itself paints nothing."""
     def __init__(self, editor, identity, value):
         kind = value['type']; schema = compositor.NODES[kind]
-        ports = list(schema['inputs'])
+        ports = compositor.ports(value)
         height = HEADER + max(1, len(ports)) * ROW + 8
         super().__init__(0, 0, WIDTH, height)
         self.editor, self.identity = editor, identity
@@ -89,7 +89,7 @@ class Node(QtWidgets.QGraphicsRectItem):
         wired = value.get('inputs') or {}
         for index, key in enumerate(ports):
             y = HEADER + 4 + index * ROW
-            label(self, key, TEXT if key in wired else TEXT_PORT, 12, y + 2, WIDTH - 22, size=-1)
+            label(self, compositor.port_label(key), TEXT if key in wired else TEXT_PORT, 12, y + 2, WIDTH - 22, size=-1)
             socket = Socket(editor, identity, key, self, '#9aa3ad'); socket.setPos(0, y + ROW / 2); self.sockets[key] = socket
         if not ports:
             label(self, 'a buffer of the render', TEXT_DIM, 12, HEADER + 6, WIDTH - 22, size=-1)
@@ -164,6 +164,7 @@ class Editor(QtWidgets.QDialog):
             button.setMenu(menu); toolbar.addWidget(button)
         menu_button('Add', [(compositor.NODES[kind]['label'], lambda kind=kind: self.add(kind)) for kind in compositor.NODES if kind != 'output'])
         menu_button('Node', [('Duplicate\tCtrl+D', self.duplicate), ('Delete\tDel', self.remove)])
+        menu_button('Build', [('From Light Passes', lambda: self.build('passes')), ('From Light Groups', lambda: self.build('groups'))])
         menu_button('View', [('Frame Selected\tF', self.frame), ('Frame All\tA', lambda: self.frame(everything=True))])
         for words, tip, callback in [('Undo', 'Ctrl+Z', self.undo), ('Redo', 'Ctrl+Y', self.redo)]:
             button = QtWidgets.QToolButton(); button.setText(words); button.setToolTip(tip); button.setAutoRaise(True); button.clicked.connect(callback); toolbar.addWidget(button)
@@ -229,6 +230,7 @@ class Editor(QtWidgets.QDialog):
         merges = group('Merge')
         for mode in compositor.MODES:
             row(merges, 'Merge: ' + mode, 'merge', {'mode': mode}, compositor.NODES['merge']['tip'])
+        row(merges, 'Sum', 'sum', {}, compositor.NODES['sum']['tip'])
         def family(name):
             return [kind for kind, node in compositor.NODES.items() if node.get('family') == name]
         colour = group('Colour')
@@ -315,6 +317,52 @@ class Editor(QtWidgets.QDialog):
             self.panel.renderer.buffers.notice.disconnect(self.heard)
         except Exception:
             pass
+
+    def build(self, kind):
+        """Lay out a graph that puts the render back together from its passes ('passes': diffuse, glossy, reflection
+        and the rest) or from its light groups ('groups'), each pass with a Grade of its own; the outputs it needs are
+        added to the scene where it lacks them, to be filled by the next render."""
+        values = self.panel._settings_values()
+        if kind == 'passes':
+            wanted = list(compositor.PASSES)
+        else:
+            groups = compositor.light_groups(values.get('production'), self.moonray_lights())
+            if len(groups) == 1:
+                asked = QtWidgets.QMessageBox.question(self, 'Build from light groups', 'No light has a light-group label yet, so '
+                                                       'only the environment\'s light is a group of its own. Give lights labels in the '
+                                                       'Lighting scene controls (or a MoonRay light\'s Label) for a group each. Build anyway?',
+                                                       QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+                if asked != QtWidgets.QMessageBox.Ok:
+                    return
+            wanted = [(words, ('environment' if label == compositor.ENVIRONMENT_LABEL else label) + '_light', compositor.light_group_expression(label))
+                      for words, label in groups]
+        if not compositor.trivial(self.graph):
+            asked = QtWidgets.QMessageBox.question(self, 'Build the compositor graph', 'This replaces the graph that is there now. '
+                                                   'Undo brings it back.', QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
+            if asked != QtWidgets.QMessageBox.Ok:
+                return
+        entries, names = compositor.pass_outputs(values.get('custom_aovs'), wanted)
+        if entries != list(values.get('custom_aovs') or []):
+            if not self.panel._store(custom_aovs=entries):
+                return
+            self.panel._sync_output_menu(entries, self.panel._display_filter_buffers())
+        before = copy.deepcopy(self.graph)
+        self.graph = compositor.pass_graph(list(zip(names, [words for words, name, expression in wanted])))
+        self.rebuild(); self.remember(before); self.frame(everything=True)
+        missing = [name for name in names if name not in {key for words, key in self.buffer_choices()}]
+        self.info.setText(('Built from %d %s and the remainder. ' % (len(names), 'passes' if kind == 'passes' else 'light groups'))
+                          + ('Render to fill the new passes; the Composite is made when the render finishes.' if missing
+                             else 'With every Grade left alone the Composite is the beauty.'))
+
+    def moonray_lights(self):
+        """The MoonRay light items in the scene, for their light-group labels."""
+        try:
+            import modo
+            from . import entities
+            return [entity for entity in entities.collect(modo.Scene(), [])
+                    if entities.catalog()[entity['class']]['category'] == 'light']
+        except Exception:
+            return []
 
     # ---- what the canvas asks of its editor ----
     def buffer_label(self, key):
