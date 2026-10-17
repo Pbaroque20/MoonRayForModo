@@ -18,7 +18,8 @@ int mode(){static int m=[] {const char* s=std::getenv("XPU2_FILM_CONTRIBUTION");
  if(!std::strcmp(s,"fast"))return 3;if(!std::strcmp(s,"sentinel"))return 4;return 0;}();return m;}
 struct State {
  std::mutex mutex;bool attempted=false,ready=false,closed=false;HMODULE driver=nullptr;
- CUcontext context=nullptr;CUmodule module=nullptr;CUfunction kernel=nullptr;CUdeviceptr input=0,output=0;CUstream stream=nullptr;
+ CUcontext context=nullptr;CUmodule module=nullptr;CUfunction kernel=nullptr,fusedKernel=nullptr;CUdeviceptr input=0,output=0;CUstream stream=nullptr;
+ U fusedCalls=0,shaderChecked=0,shaderUnsupported=0,shaderMismatch=0;
  U packets=0,dispatches=0,maxSlots=0;
  U calls=0,eligible=0,accepted=0,replaced=0,cpuSkipped=0,unsupported=0,mismatch=0,errors=0,cleanupErrors=0;
  U total=0,init=0,upload=0,launch=0,wait=0,download=0,compare=0;
@@ -39,23 +40,28 @@ struct State {
   try {check(cuCtxCreate_v2_p(&context,0,device));
    const char* path=std::getenv("XPU2_FILM_PTX");if(!path)throw std::runtime_error("Missing film PTX");
    check(cuModuleLoad_p(&module,path));check(cuModuleGetFunction_p(&kernel,module,"film_contribution"));
-   check(cuMemAlloc_v2_p(&input,128*24*sizeof(float)));check(cuMemAlloc_v2_p(&output,128*8*sizeof(float)));
+   check(cuMemAlloc_v2_p(&input,128*64*sizeof(float)));check(cuMemAlloc_v2_p(&output,128*8*sizeof(float)));
    check(cuStreamCreate_p(&stream,CU_STREAM_NON_BLOCKING));check(cuCtxSetCurrent_p(previous));ready=true;
   }catch(...){cuCtxSetCurrent_p(previous);throw;}
  }
- void run(const float* src,const float* reference,float* dst,const int* masks,int* result,unsigned count){
+ void run(const float* src,const float* reference,float* dst,const int* masks,int* result,unsigned count,const float* lambert=nullptr,const float* native=nullptr,const int* shaderMasks=nullptr){
   std::lock_guard<std::mutex> guard(mutex);U start=now();closed=false;++calls;
-  for(unsigned slot=0;slot<count;++slot)result[slot]=0;
   if(!count||count>16){++errors;total+=now()-start;return;}
+  for(unsigned slot=0;slot<count;++slot)result[slot]=0;
   if(count>maxSlots)maxSlots=count;
-  float staged[128*24]={};unsigned selected[16]={};bool any=false;
-  std::memcpy(staged,src,count*8*24*sizeof(float));
+  const bool fused=lambert!=nullptr;const unsigned stride=fused?64:24;if(fused)++fusedCalls;
+  float staged[128*64]={};unsigned selected[16]={};bool any=false;
+  const bool corrupt=fused&&std::getenv("XPU2_FUSED_BAD_REFERENCE");
+  for(unsigned i=0;i<count*8;++i){std::memcpy(staged+i*stride,src+i*24,24*sizeof(float));
+   if(fused){std::memcpy(staged+i*stride+24,lambert+i*24,24*sizeof(float));std::memcpy(staged+i*stride+48,native+i*8,8*sizeof(float));
+    if(corrupt)staged[i*stride+51]+=1.f;}}
+
   for(unsigned slot=0;slot<count;++slot){
    if(masks[slot])++packets;
    for(unsigned lane=0;lane<8;++lane){
-    float* a=staged+(slot*8+lane)*24;a[23]=0;
+    float* a=staged+(slot*8+lane)*stride;a[23]=0;
     if(!(unsigned(masks[slot])&(1u<<lane)))continue;
-    bool ok=a[0]>0&&a[1]>=0&&(a[2]==0||a[2]==1)&&a[3]==0&&a[4]==0&&a[5]>0&&a[6]>=0&&a[7]>0;
+    bool ok=(!fused||(shaderMasks[slot]&(1<<lane)))&&a[0]>0&&a[1]>=0&&(a[2]==0||a[2]==1)&&a[3]==0&&a[4]==0&&a[5]>0&&a[6]>=0&&a[7]>0;
     for(unsigned j=0;j<24;++j)ok=ok&&std::isfinite(a[j]);
     if(ok){selected[slot]|=1u<<lane;a[23]=1;++eligible;any=true;}else ++unsupported;
    }
@@ -66,14 +72,20 @@ struct State {
    if(!attempted){try{initialize();}catch(...){init+=now()-t;throw;}init+=now()-t;}
    if(!ready)throw std::runtime_error("Contribution device unavailable");
    check(cuCtxPushCurrent_v2_p(context));pushed=true;
-   t=now();check(cuMemcpyHtoD_v2_p(input,staged,count*8*24*sizeof(float)));upload+=now()-t;
-   unsigned samples=count*8;void* args[]={&input,&output,&samples};t=now();check(cuLaunchKernel_p(kernel,1,1,1,128,1,1,0,stream,args,nullptr));launch+=now()-t;++dispatches;
+   if(fused&&!fusedKernel)check(cuModuleGetFunction_p(&fusedKernel,module,"film_fused"));
+   t=now();check(cuMemcpyHtoD_v2_p(input,staged,count*8*stride*sizeof(float)));upload+=now()-t;
+   unsigned samples=count*8;void* args[]={&input,&output,&samples};t=now();check(cuLaunchKernel_p(fused?fusedKernel:kernel,1,1,1,128,1,1,0,stream,args,nullptr));launch+=now()-t;++dispatches;
    t=now();check(cuStreamSynchronize_p(stream));wait+=now()-t;
    t=now();check(cuMemcpyDtoH_v2_p(dst,output,count*8*8*sizeof(float)));download+=now()-t;
    CUcontext popped=nullptr;check(cuCtxPopCurrent_v2_p(&popped));pushed=false;if(popped!=context)throw std::runtime_error("Context restore mismatch");
    t=now();
    for(unsigned slot=0;slot<count;++slot)for(unsigned lane=0;lane<8;++lane)if(selected[slot]&(1u<<lane)){
     unsigned b=(slot*8+lane)*8;
+    if(fused){
+     if(dst[b+7]==0.f){++shaderUnsupported;++unsupported;--eligible;continue;}
+     if(dst[b+7]!=1.f){++shaderMismatch;++mismatch;continue;}
+     ++shaderChecked;
+    }
     bool finite=true;for(unsigned j=0;j<7;++j)finite=finite&&std::isfinite(dst[b+j]);
     if(!finite){++errors;continue;}
     if(mode()<=2 && std::memcmp(reference+b,dst+b,7*sizeof(float))){++mismatch;continue;}
@@ -98,9 +110,9 @@ struct State {
    checked(cuCtxDestroy_v2_p(context));CUcontext after=nullptr;if(have&&checked(cuCtxGetCurrent_p(&after))&&after!=previous)++cleanupErrors;
   }
   if(driver&&!FreeLibrary(driver))++cleanupErrors;
-  context=nullptr;module=nullptr;kernel=nullptr;driver=nullptr;input=output=0;stream=nullptr;ready=attempted=false;
+  context=nullptr;module=nullptr;kernel=fusedKernel=nullptr;driver=nullptr;input=output=0;stream=nullptr;ready=attempted=false;
   const char* path=std::getenv("XPU2_FILM_PROFILE");FILE* f=path?std::fopen(path,"wb"):nullptr;
-  if(f){std::fprintf(f,"{\"packets\":%llu,\"dispatches\":%llu,\"max_slots\":%llu,\"calls\":%llu,\"eligible\":%llu,\"accepted\":%llu,\"replaced\":%llu,\"cpu_skipped\":%llu,\"unsupported\":%llu,\"mismatch\":%llu,\"errors\":%llu,\"cleanup_errors\":%llu,\"total_ns\":%llu,\"initialization_ns\":%llu,\"upload_ns\":%llu,\"launch_ns\":%llu,\"wait_ns\":%llu,\"download_ns\":%llu,\"compare_ns\":%llu}\n",packets,dispatches,maxSlots,calls,eligible,accepted,replaced,cpuSkipped,unsupported,mismatch,errors,cleanupErrors,total,init,upload,launch,wait,download,compare);std::fclose(f);}
+  if(f){std::fprintf(f,"{\"fused_calls\":%llu,\"shader_checked\":%llu,\"shader_unsupported\":%llu,\"shader_mismatch\":%llu,\"packets\":%llu,\"dispatches\":%llu,\"max_slots\":%llu,\"calls\":%llu,\"eligible\":%llu,\"accepted\":%llu,\"replaced\":%llu,\"cpu_skipped\":%llu,\"unsupported\":%llu,\"mismatch\":%llu,\"errors\":%llu,\"cleanup_errors\":%llu,\"total_ns\":%llu,\"initialization_ns\":%llu,\"upload_ns\":%llu,\"launch_ns\":%llu,\"wait_ns\":%llu,\"download_ns\":%llu,\"compare_ns\":%llu}\n",fusedCalls,shaderChecked,shaderUnsupported,shaderMismatch,packets,dispatches,maxSlots,calls,eligible,accepted,replaced,cpuSkipped,unsupported,mismatch,errors,cleanupErrors,total,init,upload,launch,wait,download,compare);std::fclose(f);}
  }
 };
 State*& storage(){static State* s=nullptr;return s;}
@@ -118,3 +130,8 @@ extern "C" __declspec(dllexport) void xpu2FilmWindow(const float* src,const floa
 }
 
 extern "C" __declspec(dllexport) void xpu2FilmFinish(){xpu2film::finish();}
+
+extern "C" __declspec(dllexport) void xpu2FilmFusedWindow(const float* src,const float* ref,float* dst,const int* masks,int* accepted,int count,const float* lambert,const float* native,const int* shaderMasks){
+ if(count<1||count>16)return;
+ xpu2film::state().run(src,ref,dst,masks,accepted,unsigned(count),lambert,native,shaderMasks);
+}

@@ -7,11 +7,15 @@ from xpu2.film_contribution import sampler
 from xpu2_baseline import environment
 from xpu2_cuda_sampler_probe import bind
 
-def compile_ptx(source,out):
+def compile_ptx(source,out,fused=False):
     toolkit=source/'toolchain/xpu/cuda_nvrtc-windows-x86_64-12.8.93-archive/bin'
     with os.add_dll_directory(str(toolkit)):
         builtins=C.WinDLL(str(toolkit/'nvrtc-builtins64_128.dll'));nvrtc=C.WinDLL(str(toolkit/'nvrtc64_120_0.dll'))
-    code=(ROOT/'xpu2/film_contribution_cuda.cu').read_bytes();program=C.c_void_p()
+    code=(ROOT/'xpu2/film_contribution_cuda.cu').read_bytes()
+    if fused:
+        from xpu2.fused_film_patch import cuda
+        code+=b'\n'+cuda().encode('utf-8')
+    (out/'film.cu').write_bytes(code);program=C.c_void_p()
     bind(nvrtc,'nvrtcCreateProgram',[C.POINTER(C.c_void_p),C.c_char_p,C.c_char_p,C.c_int,C.c_void_p,C.c_void_p])(C.byref(program),code,b'film.cu',0,None,None)
     flags=['--std=c++14','--gpu-architecture=compute_86','--fmad=false','--ftz=false','--prec-div=true','--prec-sqrt=true']
     try:
@@ -28,6 +32,7 @@ def compile_ptx(source,out):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for key in ('source','base','output'):p.add_argument('--'+key,required=True,type=Path)
+    p.add_argument('--fused',action='store_true')
     a=p.parse_args();source,base,out=a.source.resolve(),a.base.resolve(),a.output.resolve()
     if out.is_relative_to(source) or out.is_relative_to(base):p.error('Isolated output required')
     out.mkdir(parents=True,exist_ok=False)
@@ -36,8 +41,9 @@ def main():
         for name in ('librendering_rndr.dll','librendering_shading.dll'):
             if digest_file(base/label/name)!=manifest[label+'_'+name]:raise ValueError('Retained DLL drift')
         if digest_file(base/label/'xpu2_batched.dll')!=manifest['bridge_sha256']:raise ValueError('Retained bridge drift')
-    report=dict(status='incomplete',base_manifest_sha256=digest_file(base/'build-inputs.json'))
+    report=dict(fused=a.fused,status='incomplete',base_manifest_sha256=digest_file(base/'build-inputs.json'))
     paths=[ROOT/'xpu2/film_window.ispc.inc',ROOT/'xpu2/batched_collect.ispc.inc',ROOT/'xpu2/film_contribution.py',ROOT/'xpu2/film_contribution_bridge.cc',ROOT/'xpu2/film_contribution_cuda.cu',Path(__file__).resolve()]
+    if a.fused:paths += [ROOT/'xpu2'/n for n in ('fused_capture.h','fused_film_patch.py','fused_film_cuda.cu','sampler_cuda.cu','lambert_cuda.cu','ispc_math_cuda.cuh','lambert_sample_cuda.cu')]
     report['source_hashes']={str(f.relative_to(ROOT)):digest_file(f) for f in paths}
     compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';ispc=compiler.with_name('ispc.exe');env=environment(compiler.parent,out)
     def run(args,name,stdout=None):
@@ -48,14 +54,25 @@ def main():
             else:r=subprocess.run(args,env=env,cwd=out,stdout=log,stderr=log,timeout=300,creationflags=subprocess.CREATE_NO_WINDOW)
         if r.returncode:raise ValueError(name+' failed')
     try:
-        report['cuda_flags']=compile_ptx(source,out)
+        report['cuda_flags']=compile_ptx(source,out,a.fused)
         lib=out/'libxpu2_film.dll.a';dll=out/'xpu2_film.dll'
         flags=['-std=c++17','-O2','-mavx','-mno-avx2','-mno-fma','-ffp-contract=off','-I'+str(source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include')]
         run([str(compiler),*flags,'-E',str(ROOT/'xpu2/film_contribution_bridge.cc'),'-o',str(out/'bridge.ii')],'bridge-preprocess')
         run([str(compiler),*flags,str(out/'bridge.ii'),'-shared','-Wl,--out-implib,'+str(lib),'-o',str(dll)],'bridge-compile')
+        if a.fused:
+            from xpu2 import fused_film_patch
+            old_bridge=base/'bridge.cc'
+            report['base_bridge_sha256']=digest_file(old_bridge)
+            if digest_file(base/'bridge.ii')!=manifest['preprocessed_sha256']['bridge.ii']:raise ValueError('Retained bridge preprocessor drift')
+            fused_code=out/'capture.cc';fused_code.write_text(fused_film_patch.bridge(old_bridge.read_text(encoding='utf-8')),encoding='utf-8')
+            # Expanded retained bridge has only system/toolchain includes.
+            run([str(compiler),*flags,'-E',str(fused_code),'-o',str(out/'capture.ii')],'capture-preprocess')
+            run([str(compiler),*flags,str(out/'capture.ii'),'-shared','-Wl,--out-implib,'+str(out/'libxpu2_batched.dll.a'),'-o',str(out/'xpu2_batched.dll')],'capture-compile')
         original=source/'upstream/openmoonray/moonray/moonray/lib/rendering/pbr/integrator/PathIntegratorUtil.ispc'
         text=(base/'sampler.ispc').read_text(encoding='utf-8');report['base_sampler_sha256']=digest_file(base/'sampler.ispc')
-        code=out/'sampler.ispc';code.write_text(sampler(text),encoding='utf-8')
+        code=out/'sampler.ispc';patched=sampler(text)
+        if a.fused:patched=fused_film_patch.sampler(patched)
+        code.write_text(patched,encoding='utf-8')
         ninja=(source/'build/native-renderer-avx/build.ninja').read_text(encoding='utf-8')
         stanza=next(s for s in ninja.split('\n\n') if s.startswith('build ') and original.stem+'.ispc.obj' in s.splitlines()[0] and 'ISPC_COMPILER' in s.splitlines()[0])
         variables=dict(line.strip().split(' = ',1) for line in stanza.splitlines()[1:] if ' = ' in line)
@@ -78,11 +95,16 @@ def main():
         if digest_file(context_source)!=context_hash:raise ValueError('Native source drift')
         report['render_context_source_sha256']=context_hash
         runtime=out/'runtime';shutil.copytree(base/'trace',runtime);shutil.copy2(dll,runtime/dll.name)
+        if a.fused:shutil.copy2(out/'xpu2_batched.dll',runtime/'xpu2_batched.dll')
         args=shlex.split((base/'librendering_rndr.dll-trace.rsp').read_text());target=str(base/'sampler.obj')
         matches=[i for i,s in enumerate(args) if not s.startswith('-') and Path(s).resolve()==Path(target)]
         if len(matches)!=1:raise ValueError('Sampler link anchor drift')
         held={s:digest_file(Path(s)) for s in args if not s.startswith('-')}
         args[matches[0]]=str(out/'sampler.obj');args.append(str(lib))
+        if a.fused:
+            indices=[i for i,v in enumerate(args) if v.endswith('libxpu2_batched.dll.a')]
+            if len(indices)!=1:raise ValueError('Capture import library drift')
+            args[indices[0]]=str(out/'libxpu2_batched.dll.a')
         context_matches=[i for i,s in enumerate(args) if s.endswith('-RenderContext.cc.obj')]
         if len(context_matches)!=1:raise ValueError('Context link anchor drift')
         args[context_matches[0]]=str(out/'RenderContext.obj')
@@ -90,7 +112,10 @@ def main():
         run([str(compiler),'-O3','-shared','-o',str(runtime/'librendering_rndr.dll'),'@'+str(rsp)],'link')
         if any(digest_file(Path(s))!=v for s,v in held.items()):raise ValueError('Retained input drift')
         if any(digest_file(ROOT/s)!=v for s,v in report['source_hashes'].items()):raise ValueError('Source drift')
+        if a.fused:
+            if digest_file(old_bridge)!=report['base_bridge_sha256']:raise ValueError('Retained bridge source drift')
         report.update(status='built',files={name:digest_file(out/name) for name in ('film.ptx','xpu2_film.dll','bridge.ii','sampler.pp','sampler.obj','RenderContext.obj','RenderContext.ii','runtime/librendering_rndr.dll')},inputs=held)
+        if a.fused:report['files'].update({name:digest_file(out/name) for name in ('capture.ii','xpu2_batched.dll','runtime/xpu2_batched.dll','film.cu')})
     except Exception as exc:report['error']=str(exc)
     (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'],report.get('error',''),flush=True)
     return 0 if report['status']=='built' else 1

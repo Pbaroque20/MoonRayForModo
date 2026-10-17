@@ -3,6 +3,10 @@
 Status: isolated candidate; existing XPU and the installed Modo kit are unchanged.
 This optimizes the contribution-to-film diagnostic described in [FILM_IMAGE.md](FILM_IMAGE.md).
 
+The subsequent [live fused dispatch](LIVE_FUSED_FILM.md) combines supported
+Lambert sampling and contributions in one kernel. Results below describe the
+window-batching milestone before fusion.
+
 ## Implementation
 
 Collect the existing GPU Lambert results for each available native sample slot,

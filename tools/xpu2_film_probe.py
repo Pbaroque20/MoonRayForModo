@@ -12,6 +12,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for key in ('build','base','output'):p.add_argument('--'+key,required=True,type=Path)
     p.add_argument('--showcase',action='store_true',help='Use a framed sphere, ground and distant key; run reference/audit/fast')
+    p.add_argument('--fused',action='store_true',help='Compare separate vs fused live Lambert/contribution dispatch')
     a=p.parse_args();build,base,out=a.build.resolve(),a.base.resolve(),a.output.resolve();out.mkdir(parents=True,exist_ok=False)
     report=dict(status='incomplete',runs=[],gpu=gpu_identity(),scope='Live native image with GPU Lambert and contribution arithmetic; resident CPU path, CPU lights, native visibility and film')
     try:
@@ -19,6 +20,8 @@ def main():
         for name,wanted in manifest['files'].items():
             if digest_file(build/name)!=wanted:raise ValueError('Build drift')
         report['build_manifest_sha256']=digest_file(build/'report.json')
+        if a.fused and not manifest.get('fused'):raise ValueError('Fused-capable build required')
+        report['fused']=a.fused
         runtime=build/'runtime';lock=inventory(runtime);reference=base/'control';reference_lock=inventory(reference)
         lambert=ROOT/'test-results/xpu2-ray-image-final/sampler.ptx';meta=json.loads((lambert.parent/'report.json').read_text())
         if meta['status']!='passed' or meta['ptx_sha256']!=digest_file(lambert):raise ValueError('Lambert PTX drift')
@@ -34,14 +37,18 @@ def main():
         report['scene_sha256']=digest_file(scene);report['showcase']=a.showcase
         images={}
         cases=('reference','shading','audit','fast_packet','fast','repeat') if a.showcase else ('reference','disabled','shading','audit','fast','repeat','sentinel','missing')
+        if a.fused:cases=('reference','separate','audit','fast','repeat') if a.showcase else ('reference','disabled','separate','audit','fast','repeat','sentinel','missing','bad_shader')
         for label in cases:
+            fused=a.fused and label not in ('reference','disabled','separate')
             folder=out/label;folder.mkdir();rt=reference if label=='reference' else runtime;env=environment(rt,folder)
             if label not in ('reference','disabled'):
                 env.update(XPU2_NATIVE_LAMBERT='replace',XPU2_NATIVE_LAMBERT_PTX=str(lambert),XPU2_NATIVE_BATCH_WIDTH='16',XPU2_WINDOW_DISPATCH='1',XPU2_ASYNC_TRANSFERS='1',XPU2_PACKED_READBACK='1',XPU2_SHADER_AUDIT='1',XPU2_NATIVE_LIGHT_OVERLAP='1',XPU2_PROFILE_FILE=str(folder/'shading.json'),XPU2_PROFILE_QUIET='1')
-            if label in ('audit','fast_packet','fast','repeat','sentinel','missing'):
-                mode='fast' if label in ('fast_packet','repeat','missing') else label
+            if label in ('separate','audit','fast_packet','fast','repeat','sentinel','missing','bad_shader'):
+                mode='fast' if label in ('separate','fast_packet','repeat','missing','bad_shader') else label
                 env.update(XPU2_FILM_CONTRIBUTION=mode,XPU2_FILM_PTX=str(folder/'missing.ptx' if label=='missing' else build/'film.ptx'),XPU2_FILM_PROFILE=str(folder/'film.json'))
             if label=='fast_packet':env['XPU2_FILM_WINDOW']='1'
+            if fused:env['XPU2_FUSED_FILM']='1'
+            if label=='bad_shader':env['XPU2_FUSED_BAD_REFERENCE']='1'
             print(label,flush=True);start=time.perf_counter()
             with (folder/'render.log').open('w') as log:
                 r=subprocess.run([str(rt/'moonray.exe'),'-in',str(scene),'-out',str(folder/'beauty.exr'),'-exec_mode','xpu','-threads','1','-info','-stats',str(folder/'stats.csv')],cwd=folder,env=env,stdout=log,stderr=log,timeout=240,creationflags=subprocess.CREATE_NO_WINDOW)
@@ -54,16 +61,23 @@ def main():
             if label=='sentinel':
                 if not comparison['exactly_different_pixels']:raise ValueError('GPU contributions did not reach film')
             elif comparison['status']!='passed':raise ValueError('Film parity failed '+label)
-            if label not in ('reference','disabled'):
+            if label not in ('reference','disabled') and not fused:
                 profile=json.loads((folder/'shading.json').read_text());row['shading_profile']=profile
                 if profile['errors'] or profile['mismatch'] or not profile['replaced']:raise ValueError('GPU Lambert missing or invalid')
-            if label in ('audit','fast_packet','fast','repeat','sentinel','missing'):
+            if label in ('separate','audit','fast_packet','fast','repeat','sentinel','missing','bad_shader'):
                 profile=json.loads((folder/'film.json').read_text());row['contribution_profile']=profile
-                row['contribution_validation']=validate_profile(profile,'fast' if label in ('repeat','fast_packet') else label)
+                from xpu2.fused_film_evidence import validate_fused
+                if fused:row['contribution_validation']=validate_fused(profile,'fast' if label=='repeat' else label)
+                else:row['contribution_validation']=validate_profile(profile,'fast' if label in ('repeat','fast_packet','separate') else label)
+                if fused and (folder/'shading.json').exists():raise ValueError('Separate GPU shading queue unexpectedly ran')
             (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-        if a.showcase:
+        if a.showcase and not a.fused:
             profiles={r['label']:r.get('contribution_profile') for r in report['runs']}
             report['window_validation']=compare_windows(profiles['fast_packet'],profiles['fast'])
+        if a.fused:
+            from xpu2.fused_film_evidence import compare_fused
+            profiles={r['label']:r.get('contribution_profile') for r in report['runs']}
+            report['fusion_validation']=compare_fused(profiles['separate'],profiles['fast'])
         fast=out/'fast';env=environment(runtime,fast)
         display=subprocess.run([str(runtime/'oiiotool.exe'),str(fast/'beauty.exr'),'--ch','R,G,B','--powc','0.45454545','-d','uint8','-o',str(out/'gpu-image.png')],env=env,capture_output=True,text=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
         if display.returncode:raise ValueError('Display conversion failed: '+display.stderr)
