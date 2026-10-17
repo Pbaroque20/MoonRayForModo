@@ -19,7 +19,10 @@ def main():
     p.add_argument('--source',required=True,type=Path)
     p.add_argument('--ptx',required=True,type=Path)
     p.add_argument('--output',required=True,type=Path)
+    p.add_argument('--cases',default='capacity,capacity,timeout,pending_timeout',help='Comma-separated cases; repetitions allowed')
     a=p.parse_args();source=a.source.resolve();out=a.output.resolve();ptx=a.ptx.resolve()
+    cases=a.cases.split(',')
+    if not cases or any(c not in ('capacity','timeout','pending_timeout') for c in cases):p.error('Unknown stress case')
     if out.is_relative_to(source):p.error('Isolated output required')
     out.mkdir(parents=True,exist_ok=False)
     files=[ROOT/'xpu2/native_queue_stress.cc',ROOT/'xpu2/native_lambert_queue.cc',Path(__file__).resolve(),ptx]
@@ -40,7 +43,7 @@ def main():
             (out/(label+'.log')).write_text(done.stdout+done.stderr,encoding='utf-8')
             if done.returncode:raise ValueError(label+' failed')
         report.update(compiler_sha256=digest_file(compiler),preprocessed_sha256=digest_file(preprocessed),executable_sha256=digest_file(exe))
-        for name in ['capacity','capacity','timeout']:
+        for name in cases:
             folder=out/(name+'-'+str(len(report['runs'])));folder.mkdir()
             runenv=environment(compiler.parent,folder)
             runenv.update(XPU2_NATIVE_LAMBERT='sentinel',XPU2_NATIVE_LAMBERT_PTX=str(ptx),XPU2_NATIVE_LAMBERT_LOG=str(folder/'shading.log'),XPU2_NATIVE_LAMBERT_RECORDS=str(folder/'shading.bin'),XPU2_QUEUE_CAPACITY='64',XPU2_QUEUE_POLICY='all',XPU2_QUEUE_LOG=str(folder/'queue.log'))
@@ -53,7 +56,7 @@ def main():
             counts=native_integration.summary((folder/'shading.log').read_text())
             observations=native_integration.records((folder/'shading.bin').read_bytes())
             native_integration.verify_counts(counts,observations,'replace')
-            expected=520 if name=='capacity' else 16
+            expected=16 if name=='timeout' else 520
             if observations['records']!=expected:raise ValueError('Unexpected shader sample count')
             rows=[json.loads(x) for x in (folder/'queue.log').read_text().splitlines() if x.startswith('{')]
             counters=[r for r in rows if 'calls' in r][-1]
@@ -62,6 +65,7 @@ def main():
             if len(set(ids))!=len(ids) or len(ids)!=counters['delivered']:raise ValueError('Duplicate/missing publication')
             if name=='capacity' and set(ids)!=set(range(65)):raise ValueError('Capacity delivery identities differ')
             if name=='timeout' and ids!=[1]:raise ValueError('Cancelled request published')
+            if name=='pending_timeout' and ids!=[64]:raise ValueError('Pending cancelled request published')
             record={'case':folder.name,'checks':result,'queue':counters,'delivery_ids':ids,'shading':counts,'observations':observations,'log_hashes':{f.name:digest_file(f) for f in folder.iterdir() if f.is_file()}}
             report['runs'].append(record)
         if identities!={str(x):digest_file(x) for x in files} or report['gpu']!=gpu_identity():raise ValueError('Source or device drift')

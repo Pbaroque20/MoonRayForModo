@@ -115,3 +115,28 @@ remain separate work. The four-worker image parity gate remains unresolved.
 The runner freezes preprocessing, records compiler/executable/source hashes,
 checks the GPU identity before and after, and requires a fresh output folder.
 It never starts Modo, installs a runtime, or edits the shared source build.
+
+## Follow-up: pending timeouts mixed with a fresh request
+
+[Pending-timeout evidence](queue-pending-timeout-20261017.json) extends the same
+unchanged queue implementation to pending-request timeouts. Two standalone runs
+each held one in-flight request and 63 pending requests until all 64 callers hit
+the actual ten-second deadline (10,045 and 10,024 ms observed). Each caller
+retained its native output, then reused its input and output buffers with unique
+sentinel values.
+
+A fresh request entered the remaining pending slot before the worker was released.
+It shared a 512-sample GPU batch with the 63 cancelled pending requests. Both runs
+published only request 64, preserved all reused buffers, and counted exactly
+64 late discards. The fresh result matched its expected GPU output bit for bit.
+All 520 shader samples per run matched their native reference, with zero errors.
+
+The tests expose an optimization still needed: cancelled pending requests are
+currently computed before publication is suppressed. The queue is bounded and
+ownership checks passed, but pruning cancelled work could avoid wasted GPU work.
+These controlled delays do not establish renderer shutdown, device-loss recovery,
+or production cancellation. The four-worker image parity gate is unchanged.
+
+Run just these new cases without repeating earlier checks:
+
+    python tools/xpu2_queue_stress.py --source <shared-source-read-only> --ptx test-results/xpu2-ray-image-final/sampler.ptx --output test-results/queue-pending-timeout-new --cases pending_timeout,pending_timeout

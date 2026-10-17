@@ -61,6 +61,38 @@ int main(int argc,char** argv) {
             require(q->maxBatch==512 && q->maxQueue==64 && q->merged==2,"Full batch not exercised");
             require(!q->timeouts && !q->late && !q->failed,"Unexpected queue error");q->snapshot();
             std::cout<<"{\"case\":\"capacity\",\"owned_results_checked\":65,\"fallbacks_checked\":8,\"max_batch_samples\":512,\"passed\":true}\n";
+        } else if(!std::strcmp(argv[1],"pending_timeout")) {
+            // One held in-flight request + 63 pending requests time out together.
+            // A fresh request then shares the 512-sample batch with cancelled work.
+            std::array<Packet,64> packets;
+            std::array<std::array<float,64>,64> native;
+            for(size_t i=0;i<packets.size();++i){packets[i]=packet(data,i*8);native[i]=packets[i].output;}
+            std::vector<std::thread> producers;
+            const auto began=std::chrono::steady_clock::now();
+            producers.emplace_back([&]{q->run(packets[0].input.data(),packets[0].output.data(),8);});
+            waitFor(*q,[&]{return q->submitted==1 && q->pending.empty();});
+            for(size_t i=1;i<packets.size();++i)producers.emplace_back([&,i]{q->run(packets[i].input.data(),packets[i].output.data(),8);});
+            waitFor(*q,[&]{return q->submitted==64 && q->pending.size()==63;});
+            for(auto& t:producers)t.join();
+            const auto waited=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-began).count();
+            for(size_t i=0;i<packets.size();++i) {
+                require(!std::memcmp(packets[i].output.data(),native[i].data(),sizeof(native[i])),"Timed-out output changed");
+                packets[i].input.fill(-1234.f-float(i));packets[i].output.fill(5678.f+float(i));
+            }
+            auto recovery=packet(data,64*8);
+            std::thread fresh([&]{q->run(recovery.input.data(),recovery.output.data(),8);});
+            waitFor(*q,[&]{return q->submitted==65 && q->pending.size()==64 && q->timeouts==64;});
+            hold.unlock();fresh.join();
+            waitFor(*q,[&]{return q->late==64;});
+            for(size_t i=0;i<packets.size();++i) {
+                for(auto v:packets[i].input)require(v==-1234.f-float(i),"Cancelled input buffer overwritten");
+                for(auto v:packets[i].output)require(v==5678.f+float(i),"Late output corrupted reused buffer");
+            }
+            require(!std::memcmp(recovery.output.data(),recovery.expected.data(),sizeof(recovery.output)),"Fresh request corrupted by cancelled batch neighbors");
+            std::lock_guard<std::mutex> lock(q->mutex);
+            require(q->next==65 && q->submitted==65 && q->delivered==1 && q->timeouts==64 && q->late==64 && !q->failed && !q->full,"Pending-timeout accounting failure");
+            require(q->maxBatch==512 && q->maxQueue==64 && q->merged==2,"Mixed cancelled/live batch not exercised");q->snapshot();
+            std::cout<<"{\"case\":\"pending_timeout\",\"waited_ms\":"<<waited<<",\"pending_timeouts\":63,\"inflight_timeouts\":1,\"caller_buffers_preserved\":64,\"fresh_request_in_cancelled_batch\":true,\"passed\":true}\n";
         } else {
             require(!std::strcmp(argv[1],"timeout"),"Unknown case");
             auto p=packet(data,0);auto native=p.output;
