@@ -9,9 +9,9 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.4.1 — experimental development build.** It is 0.4 with a toon material that starts as toon and shows in MoonLightIPR, ramps edited with the mouse and shown live, and an importer that can import into a new scene.
+**Current version: 0.4.2 — experimental development build.** It brings MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
 
-[Download 0.4.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
+[Download 0.4.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4, 0.4.1 and 0.4.2](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -43,6 +43,21 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
+## New in 0.4.2
+
+The full list, with pictures, is in [What's new](docs/WHATS_NEW_04.md). 0.4.2 comes with a new runtime ZIP: install both.
+
+- **MoonRay's display filters** (all 18), **pixel filters**, **time per pixel**, **visibility** and **primitive attribute** outputs.
+- **The compositor builds itself from passes or light groups**, takes a mask on its colour nodes, and runs on the graphics card.
+- **Cryptomatte**: pick mattes in the preview, names and IDs on objects and materials, a Cryptomatte node, fog with mattes of its own.
+- **MoonRay's cameras are Modo cameras**: looked through in the viewport with Modo's gate; a Modo camera converts in place; a Camera Sequence; stereo and overscan from Modo's camera.
+- **Export as MoonRay Scene** (RDLA, RDLB or both), and more of a MoonRay scene comes in on import.
+- **MoonLightIPR**: velvet, motion blur on by default, MoonRay's cameras, hair toon and fog; faster on most scenes.
+- **Saving pictures**: PNG, JPEG, TIFF and Targa besides OpenEXR, a new Export AOVs window, and EXR compression.
+- **Modo's own light linking reaches MoonRay**, HDRI environments turn quickly and match Modo, and glitter works in reference space.
+- **Eleven MoonRay Source Overrides**: fixes to MoonRay's own source, each a checkbox in Preferences, on by default.
+- **Colour**: an ACES 2.0 view beside ACES 1.3, and ACEScg scenes that render and look right.
+
 ## New in 0.4.1
 
 - **MoonRay's toon material** starts as a toon material, and MoonLightIPR draws it.
@@ -57,7 +72,7 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 ## New in 0.4
 
-The full list, with pictures, is in [What's new in 0.4 and 0.4.1](docs/WHATS_NEW_04.md).
+The full list, with pictures, is in [What's new in 0.4, 0.4.1 and 0.4.2](docs/WHATS_NEW_04.md).
 
 **The preview window**
 
@@ -228,7 +243,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.4.1
+## Known issues in 0.4.2
 
 The ones you are most likely to meet:
 
@@ -238,6 +253,7 @@ The ones you are most likely to meet:
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode; the plugin switches for you and says so.
 - Smart Render and Important Parts First work on MoonRay renders in the preview window, not on Render EXR or animations.
 - MoonLightIPR updates after you let go of a drag, not while you drag.
+- Now and then, a preview with glitter in the GPU (XPU) mode fails on the graphics card; it is rendered on the CPU instead, with a notice.
 
 Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
 
@@ -247,9 +263,9 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 - **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; [moonlightipr/README.md](moonlightipr/README.md) says how closely, scene by scene, and what it leaves out.
 - **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is not remapped. A Modo material's smoothing angle is followed, except on a mesh of more than 300,000 faces, which is smoothed all over and named in a notice. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy is untested, rough environment reflections come out dimmer in MoonRay, and remaining Shader Tree effects and some masks are not translated. Modo's own group light linking is translated but experimental; check it against Modo.
 - **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, arithmetic and UV transforms. Nodes outside that subset are not read.
-- **RDL import leaves a few things out**, and names each in its report. This comes with the format: an RDL file is MoonRay's own description of a scene, and it can hold things Modo has nothing to turn them into. MoonRay item kinds with no Modo counterpart, ways of instancing Modo cannot express (instances read from a point file, some instancing methods), words that change from point to point (a Modo vertex map holds only numbers), and render outputs Modo's settings have no place for are left out and named, rather than turned into something that would render differently. Coming in 0.4.2: motion, values that differ face by face or point by point, subdivision creases and meshes filled with fog come in.
+- **RDL import leaves a few things out**, and names each in its report. This comes with the format: an RDL file is MoonRay's own description of a scene, and it can hold things Modo has nothing to turn them into. MoonRay item kinds with no Modo counterpart, ways of instancing Modo cannot express (instances read from a point file, some instancing methods), words that change from point to point (a Modo vertex map holds only numbers), and render outputs Modo's settings have no place for are left out and named, rather than turned into something that would render differently. Motion, values that differ face by face or point by point, subdivision creases and meshes filled with fog do come in.
 - **Geometry**: some instancing, motion, subdivision, UV-projection and normal-map cases differ from Modo. A mesh that mixes polygon kinds or needs per-polygon projection is read the slower way. A shadow a coarse mesh casts on itself, as a torus's on the inside of its hole, follows its faces, in MoonRay and MoonLightIPR alike; subdivision smooths it.
-- **Cryptomatte**: ID previews are not an interactive matte-selection tool. Coming in 0.4.2: picking mattes in the preview, Cryptomatte names and IDs on objects and materials, a Cryptomatte node in the compositor, and fog with mattes of its own.
+- **Cryptomatte**: mattes are picked in the preview and named on objects and materials; the compositor's Cryptomatte node works on finished MoonRay renders.
 - **Preview**: some edits still need the whole scene read again; the compositor works on finished MoonRay renders, not on MoonLightIPR's. Safe Denoising and Continue are for the MoonRay engine.
 
 ### MoonRay's features in the plugin
@@ -260,49 +276,49 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 |---|:---:|---|
 | CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
 | XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only |
-| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget under MoonRay LS, quicker, coming in 0.4.2 |
-| Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. Coming in 0.4.2: a Modo camera converted to any of them in its place (animation kept), a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras that are Modo cameras, looked through in the viewport by their lens with Modo's resolution gate |
-| Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows each eye. Coming in 0.4.2 |
-| Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders. Coming in 0.4.2 |
+| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker |
+| Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. A Modo camera converted to any of them in its place (animation kept), a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras that are Modo cameras, looked through in the viewport by their lens with Modo's resolution gate |
+| Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows each eye |
+| Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders |
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
 | Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights |
 | Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | |
-| Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay coming in 0.4.2 |
-| Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Coming in 0.4.2: creases from Modo's Subdivision weights |
+| Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay |
+| Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
-| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews. Coming in 0.4.2: on by default in MoonLightIPR, also while it follows edits, and moving lights |
+| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews. On by default in MoonLightIPR, also while it follows edits, and moving lights |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | |
-| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
-| Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon brightest facing the light: coming in 0.4.2 |
+| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
+| Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
 | Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor |
-| Switch displacement | ![yes](docs/images/feature-yes.svg) | In the node editor. Coming in 0.4.2, with its runtime |
-| Display filters (colour correct, toon, halftone and the rest) | ![yes](docs/images/feature-yes.svg) | All 18, as MoonRay items; each a preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
-| Uniform and adaptive sampling, light sampling, bounce limits, clamping | ![yes](docs/images/feature-yes.svg) | Render Settings. Coming in 0.4.2: settings a sampling mode does not use are greyed, and MoonRay LS samples adaptively or uniformly, chosen in Preview Preferences |
+| Switch displacement | ![yes](docs/images/feature-yes.svg) | In the node editor |
+| Display filters (colour correct, toon, halftone and the rest) | ![yes](docs/images/feature-yes.svg) | All 18, as MoonRay items; each a preview buffer and an EXR channel |
+| Uniform and adaptive sampling, light sampling, bounce limits, clamping | ![yes](docs/images/feature-yes.svg) | Render Settings. Settings a sampling mode does not use are greyed, and MoonRay LS samples adaptively or uniformly, chosen in Preview Preferences |
 | Volume quality and overlap settings | ![yes](docs/images/feature-yes.svg) | |
-| Volume attenuation and contribution factors | ![yes](docs/images/feature-yes.svg) | Render Settings, Volumes, with the phase attenuation factor; MoonLightIPR follows them. Coming in 0.4.2 |
+| Volume attenuation and contribution factors | ![yes](docs/images/feature-yes.svg) | Render Settings, Volumes, with the phase attenuation factor; MoonLightIPR follows them |
 | Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
-| Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches. Coming in 0.4.2 |
-| Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: in Render Settings |
-| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. Coming in 0.4.2: the compositor adds the light passes or light groups and puts them back together, each with its own Grade; a probe shows each node's value at a pixel and keeps it as a note; the colour nodes take a mask |
-| Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
-| Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window. Coming in 0.4.2 |
-| Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window. Coming in 0.4.2 |
-| Cryptomatte | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: fog, from a VDB or in a MoonRay box or sphere, has mattes of its own, and each sample is counted once in vector and XPU modes; names and IDs given on objects and materials; picking in the preview; a Cryptomatte node in the compositor |
+| Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches |
+| Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![yes](docs/images/feature-yes.svg) | In Render Settings |
+| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. The compositor adds the light passes or light groups and puts them back together, each with its own Grade; a probe shows each node's value at a pixel and keeps it as a note; the colour nodes take a mask |
+| Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel |
+| Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window |
+| Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window |
+| Cryptomatte | ![yes](docs/images/feature-yes.svg) | Fog, from a VDB or in a MoonRay box or sphere, has mattes of its own, and each sample is counted once in vector and XPU modes; names and IDs given on objects and materials; picking in the preview; a Cryptomatte node in the compositor |
 | Deep EXR | ![yes](docs/images/feature-yes.svg) | |
 | Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
-| Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default. Coming in 0.4.2 |
-| Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them |
-| Colour management: OCIO, ACES views, ACEScg working space | ![yes](docs/images/feature-yes.svg) | Modo's own OCIO configuration and colour spaces, any OCIO display and view, and ACES 1.3 for an sRGB display. Coming in 0.4.2: ACES 2.0 beside it, and ACEScg scenes that render and look right |
-| Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: the Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included |
-| Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes. Per point and per face coming in 0.4.2 |
-| RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Coming in 0.4.2: motion, creases, fog meshes, values by point or face, and instancers of any size |
-| RDL scene export (RDLA, RDLB or split) | ![yes](docs/images/feature-yes.svg) | Export as MoonRay Scene, in the MoonRay menu and the preview's Options, to render with MoonRay on its own or on a farm: outputs, collected textures and each frame of the range optional. Coming in 0.4.2 |
+| Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default |
+| Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them |
+| Colour management: OCIO, ACES views, ACEScg working space | ![yes](docs/images/feature-yes.svg) | Modo's own OCIO configuration and colour spaces, any OCIO display and view, and ACES 1.3 and ACES 2.0 for an sRGB display; ACEScg scenes render and look right |
+| Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | The Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included |
+| Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes |
+| RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Motion, creases, fog meshes, values by point or face, and instancers of any size come in |
+| RDL scene export (RDLA, RDLB or split) | ![yes](docs/images/feature-yes.svg) | Export as MoonRay Scene, in the MoonRay menu and the preview's Options, to render with MoonRay on its own or on a farm: outputs, collected textures and each frame of the range optional |
 | Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
 
-### Where the plugin changes MoonRay (coming in 0.4.2)
+### Where the plugin changes MoonRay
 
 Besides the patches that build MoonRay on Windows, 0.4.2 changes MoonRay's source where it renders something wrongly
 for an artist: eleven MoonRay Source Overrides, each a checkbox in Preferences (MoonRay, MoonRay Source Overrides), on by
@@ -325,7 +341,7 @@ a subdivided one (left); with the override, both are smooth (right).*
 
 - Fur guides, and the fur vector and width maps.
 - More of Modo's material: the Principled model's diffuse (which brightens with roughness in Modo) and smooth highlights under every model.
-- The remaining Shader Tree effects and masks. (Motion blur while the preview follows edits is coming in 0.4.2.)
+- The remaining Shader Tree effects and masks.
 - Modo 17.1 on Windows, then macOS.
 - Broader validation: other GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.
 

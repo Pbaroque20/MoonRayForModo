@@ -324,18 +324,20 @@ Applied by `tools/port_source_switches.py`, behind the preference "Images withou
 
 ### What MoonRay does
 
-`BasicTexture` samples through OpenImageIO, whose fill value for a channel the image does not have is 0. An image with
-three channels has an alpha of 0 wherever a material reads it.
+`BasicTexture`, and `UdimTexture` for an image named with `<UDIM>`, sample through OpenImageIO, whose fill value for a
+channel the image does not have is 0. An image with three channels has an alpha of 0 wherever a material reads it.
 
 ### Why that fails
 
 An `ImageMap` with `alpha_only`, or anything taking a texture's alpha as a mask or presence, reads an ordinary RGB image as
-fully transparent.
+fully transparent. The plugin's image layers also recover unassociated colour by dividing by the image's alpha
+(`ModoTextureMap` blend 5), so a colour read through such an image is multiplied by a million: a `<UDIM>` tile set lit a
+whole scene white until `UdimTexture` had the change too.
 
 ### The change
 
-The fill is 1 for every quality level of the texture: a missing alpha channel is opaque, as `ImageMap`'s alpha-only mode
-documents. Off, OpenImageIO's 0.
+The fill is 1 for every quality level of the texture, in `BasicTexture` and in every tile of a `UdimTexture`: a missing
+alpha channel is opaque, as `ImageMap`'s alpha-only mode documents. Off, OpenImageIO's 0.
 
 ### How it was checked
 
