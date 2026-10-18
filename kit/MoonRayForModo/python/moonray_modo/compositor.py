@@ -84,6 +84,10 @@ NODES = {
     'luma_matte': {'label': 'Brightness Matte', 'inputs': ('image',), 'family': 'matte',
                    'tip': 'White where the picture is as bright as High, black where it is as dark as Low, grey between. For a Merge\'s mask.',
                    'parameters': {'low': ('number', 0.0, -10.0, 1000.0), 'high': ('number', 1.0, -10.0, 1000.0), 'take': ('choice', 'the bright', TAKES)}},
+    'cryptomatte': {'label': 'Cryptomatte', 'inputs': (), 'family': 'matte',
+                    'tip': 'A matte of what is given a Cryptomatte name or ID in its Cryptomatte tab: white where it is, as much as it '
+                           'covers each pixel. Made from the render\'s Cryptomatte buffer of that kind.',
+                    'parameters': {'category': ('choice', 'object', ('object', 'material')), 'matte': ('matte', '')}},
     'channel': {'label': 'Channel', 'inputs': ('image',), 'family': 'matte', 'tip': 'One channel of the picture, or its brightness, as grey.',
                 'parameters': {'channel': ('choice', 'brightness', CHANNELS)}},
     # Pictures made from nothing.
@@ -244,7 +248,8 @@ def sample(graph, read, x, y, width, height):
         node = nodes[identity]
         kind, held = node['type'], parameters(node)
         taken = {key: value(source) for key, source in node['inputs'].items()}
-        if any(picture is None for picture in taken.values()) or kind in NEIGHBOURS or kind == 'note':
+        # A Cryptomatte matte is made whole from its buffer, not pixel by pixel here.
+        if any(picture is None for picture in taken.values()) or kind in NEIGHBOURS or kind in ('note', 'cryptomatte'):
             return None
         black = (0.0, 0.0, 0.0)
         image = taken.get('image')
@@ -378,6 +383,11 @@ def validate(graph):
                 value = str(value)
                 if not value or not all(c.isalnum() or c == '_' for c in value):
                     raise ValueError('Unknown buffer: ' + value)
+            elif spec[0] == 'matte':
+                # A Cryptomatte name, or an ID as # and its number.
+                value = str(value).strip()
+                if len(value) > 200:
+                    raise ValueError('A Cryptomatte name is at most 200 characters')
             values[key] = value
         inputs = {key: source for key, source in (node.get('inputs') or {}).items() if key in schema['inputs'] and source}
         position = [float(v) for v in (node.get('position') or [0, 0])][:2]
@@ -427,6 +437,30 @@ def trivial(graph):
         return False
     wired = graph['nodes'][graph['root']]['inputs'].get('image')
     return wired is None or (graph['nodes'][wired]['type'] == 'input' and graph['nodes'][wired]['parameters']['buffer'] == 'beauty')
+
+
+def mattes(graph):
+    """The Cryptomatte mattes the output is made from, [(category, name or #ID)]."""
+    graph = validate(graph)
+    return [(graph['nodes'][identity]['parameters']['category'], graph['nodes'][identity]['parameters']['matte'])
+            for identity in order(graph) if graph['nodes'][identity]['type'] == 'cryptomatte']
+
+
+def lowered(graph, files, make):
+    """The graph with each Cryptomatte node a Buffer node of the matte it makes, and the files with those mattes among
+    them: make(category, matte) gives a matte's picture file. The compositor then runs it as any other graph."""
+    graph = validate(graph)
+    files = dict(files)
+    nodes = {}
+    for identity, node in graph['nodes'].items():
+        if node['type'] == 'cryptomatte':
+            held = node['parameters']
+            key = 'cryptomatte_' + hashlib.sha256(json.dumps([held['category'], held['matte']]).encode('utf-8')).hexdigest()[:12]
+            if key not in files:
+                files[key] = make(held['category'], held['matte'])
+            node = dict(node, type='input', parameters={'buffer': key})
+        nodes[identity] = node
+    return dict(graph, nodes=nodes), files
 
 
 def buffers(graph):

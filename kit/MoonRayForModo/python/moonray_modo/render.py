@@ -824,7 +824,7 @@ class Renderer(QtCore.QObject):
                 try:
                     from .composite_output import write
                     denoised=getattr(self,'denoise_result',None) if self.phase=='postdone' else None
-                    written=write(self.active['runtime'],graph,destination,denoised)
+                    written=write(self.active['runtime'],graph,destination,denoised,scene=self.active['snapshot'])
                     if written is not None:self.log+='Composite written: '+str(written)+'\n'
                 except Exception as exc:
                     self.status.emit('The composite was not written: '+str(exc))

@@ -151,6 +151,8 @@ class Node(QtWidgets.QGraphicsRectItem):
             title = editor.buffer_label(held['buffer'])
         elif kind == 'merge':
             title = 'Merge: ' + held['mode']
+        elif kind == 'cryptomatte':
+            title = 'Cryptomatte: ' + (('ID ' + held['matte'][1:]) if held['matte'].startswith('#') else held['matte'] or '(choose)')
         label(self, title, TEXT, 10, 4, WIDTH - 20).setToolTip(schema['tip'])
         self.sockets = {}
         if kind == 'note':
@@ -166,7 +168,8 @@ class Node(QtWidgets.QGraphicsRectItem):
             label(self, compositor.port_label(key), TEXT if key in wired else TEXT_PORT, 12, y + 2, WIDTH - 22, size=-1)
             socket = Socket(editor, identity, key, self, '#9aa3ad'); socket.setPos(0, y + ROW / 2); self.sockets[key] = socket
         if not ports:
-            label(self, 'a buffer of the render', TEXT_DIM, 12, HEADER + 6, WIDTH - 22, size=-1)
+            label(self, 'a matte from the %s Cryptomatte' % held['category'] if kind == 'cryptomatte' else 'a buffer of the render',
+                  TEXT_DIM, 12, HEADER + 6, WIDTH - 22, size=-1)
         self.setPos(*value.get('position', [0, 0]))
 
     def itemChange(self, change, value):
@@ -653,6 +656,33 @@ class Editor(QtWidgets.QDialog):
             key = what[1]
         self.add('input', point, target, {'buffer': key})
 
+    def matte_choices(self, category):
+        """The mattes given in the scene's Cryptomatte tabs, [(words, value)]: each name, and each ID as #number."""
+        names, numbers = set(), set()
+        try:
+            import json
+            import modo
+            from . import properties
+            scene = modo.Scene()
+            if category == 'material':
+                items = [item for item in scene.items('advancedMaterial', superType=True)]
+            else:
+                items = list(scene.items('locator', superType=True))
+            for item in items:
+                try:
+                    held = json.loads(item.readTag(properties.TAG))
+                except (LookupError, RuntimeError, ValueError, TypeError):
+                    continue
+                if not isinstance(held, dict):
+                    continue
+                if str(held.get('crypto_name') or '').strip():
+                    names.add(str(held['crypto_name']).strip())
+                if int(held.get('crypto_id') or 0) > 0:
+                    numbers.add(int(held['crypto_id']))
+        except Exception:
+            pass
+        return [(name, name) for name in sorted(names, key=str.casefold)] + [('ID %d' % number, '#%d' % number) for number in sorted(numbers)]
+
     # ---- what the canvas asks of its editor ----
     def buffer_label(self, key):
         index = self.panel.buffer.findData(key)
@@ -923,6 +953,23 @@ class Editor(QtWidgets.QDialog):
             elif spec[0] == 'choice':
                 field = QtWidgets.QComboBox(); field.addItems(list(spec[2])); field.setCurrentText(held[key])
                 field.currentTextChanged.connect(lambda value, key=key: self.set_value(identity, key, value, redraw=True))
+                if node['type'] == 'cryptomatte' and key == 'category':
+                    # Another kind of matte: the names and IDs offered are that kind's.
+                    field.currentTextChanged.connect(lambda value: QtCore.QTimer.singleShot(0, self.inspect))
+            elif spec[0] == 'matte':
+                field = QtWidgets.QComboBox()
+                field.setToolTip('The names and IDs given in the Cryptomatte tabs of the scene\'s %ss.' % held['category'])
+                offered = self.matte_choices(held['category'])
+                for words, value in offered:
+                    field.addItem(words, value)
+                if held[key] and field.findData(held[key]) < 0:
+                    field.addItem(held[key] + '  (no longer given)', held[key])
+                if not offered and not held[key]:
+                    field.addItem('(none given: name some in their Cryptomatte tabs)', '')
+                field.setCurrentIndex(max(0, field.findData(held[key])))
+                if not held[key] and field.itemData(0):
+                    self.set_value(identity, key, field.itemData(0), redraw=True)
+                field.currentIndexChanged.connect(lambda index, key=key, field=field: self.set_value(identity, key, field.itemData(index) or '', redraw=True))
             elif spec[0] == 'text':
                 field = QtWidgets.QPlainTextEdit(held[key]); field.setMinimumHeight(140)
                 field.textChanged.connect(lambda key=key, field=field: self.set_value(identity, key, field.toPlainText(), redraw=True))
