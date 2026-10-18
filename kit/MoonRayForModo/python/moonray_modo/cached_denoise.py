@@ -84,7 +84,7 @@ class CachedDenoise(QtCore.QObject):
             env=QtCore.QProcessEnvironment()
             for key,value in native.environment(frame['runtime']).items():env.insert(key,value)
             self.process.setProcessEnvironment(env)
-            self.cache.notice.emit('Denoising completed beauty — no rerender')
+            self.cache.notice.emit('Denoising...')
             self.next()
         except Exception as exc:
             self.cleanup();self.cache.notice.emit('Cannot denoise cached beauty: '+str(exc))

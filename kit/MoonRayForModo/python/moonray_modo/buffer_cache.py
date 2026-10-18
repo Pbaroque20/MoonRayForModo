@@ -146,6 +146,9 @@ class BufferCache(QtCore.QObject):
             # not the denoised picture of the render before.
             key='beauty'
         frame=self.progressive_frames.get(key,self.frame)
+        if key=='denoised_beauty' and frame is not None and key not in frame['files'] and self.denoiser.job is not None:
+            # Being made: shown when the denoiser is done with it.
+            self.notice.emit('Denoising...');return
         if frame is None or (key not in frame['files'] and key not in frame.get('linear',{})):
             self.notice.emit('Enable a Beauty denoiser and Denoise beauty preview to process the completed pass.' if key=='denoised_beauty'
                              else 'The composite is made when a MoonRay render has finished.' if key=='composite'

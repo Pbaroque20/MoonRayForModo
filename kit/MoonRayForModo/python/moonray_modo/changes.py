@@ -4,6 +4,8 @@ import lx,lxifc
 class Changes(lxifc.SceneItemListener):
     def __init__(self):
         self.full=True;self.items=set();self.service=lx.service.Listener();self.registered=False
+        # Scenes closed and made since the panel last looked: the picture may be of a scene no longer open.
+        self.closed=self.created=False
         try:self.service.AddListener(self);self.registered=True
         except (RuntimeError,LookupError):pass
     def invalidate(self,*args):self.full=True
@@ -42,8 +44,8 @@ class Changes(lxifc.SceneItemListener):
         result=(self.full or not self.registered,set(self.items));self.full=False;self.items.clear();return result
     def close(self):
         if self.registered:self.service.RemoveListener(self);self.registered=False
-    sil_SceneCreate=invalidate
-    sil_SceneDestroy=invalidate
+    def sil_SceneCreate(self,*args):self.full=self.created=True
+    def sil_SceneDestroy(self,*args):self.full=self.closed=True
     sil_SceneClear=invalidate
     sil_ItemPostDelete=invalidate
     sil_ItemAdd=placed
