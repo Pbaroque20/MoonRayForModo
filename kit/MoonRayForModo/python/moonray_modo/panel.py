@@ -904,6 +904,44 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonLightIPR follows edits as they happen, so look for them more often.
         self.timer.setInterval(60 if self._engine()=='moonlightipr' else 150)
         self._limit_buffers()
+        self._show_planned()
+
+    def _sampling_words(self, engine, settings=None, pixel_samples=None, gathering=None):
+        """How a picture is sampled, as the label beside it says it. MoonRay: uniform with its samples a pixel, or
+        adaptive with the fewest and most (LS before it for MoonRay LS); MoonLightIPR: the samples a pixel it gathers."""
+        if engine=='moonlightipr':
+            return '%d ps'%(gathering or self.preferences.get('moonlightipr/samples'))
+        from .options import render_values
+        settings=render_values(settings or {})
+        return ('LS ' if engine=='ls' else '')+('Adaptive %d-%d ps'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'])
+                                               if settings['sampling_mode']==2 else 'Uniform %d ps'%pixel_samples)
+
+    def _show_planned(self):
+        """The size and samples the engine chosen renders at, said beside the picture as soon as it is chosen, before
+        anything is rendered with it. A draft says what it is, and keeps saying it."""
+        if self.disposed or self.draft.isChecked():return
+        try:
+            import modo
+            from .host import picture_size
+            scene_w,scene_h=picture_size(modo.Scene())
+            values=self._settings_values();get=self.preferences.get
+            width,height=self._dimensions({'width':scene_w,'height':scene_h})
+            engine=self._engine()
+            if engine=='moonlightipr':
+                words=self._sampling_words('moonlightipr')
+            elif self._low():
+                # As MoonRay LS has a scene prepared: no wider than its width limit, and sampled to its own limit.
+                from .ipr import prepare
+                prepared,width,height=prepare({'width':scene_w,'height':scene_h,'render_settings':values['render']},width,height,
+                                              values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'))
+                words=self._sampling_words('ls',prepared['render_settings'],pixel_samples=1)
+            else:
+                words=self._sampling_words('moonray',values['render'],pixel_samples=int(values['samples'])**2)
+        except Exception:return
+        text='%d x %d | %s'%(width,height,words)
+        shown=self._view_words()
+        if shown:text+=' | '+shown
+        self.image_info.setText(text)
 
     def _limit_buffers(self):
         """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty: the list then holds those two.
@@ -1642,12 +1680,11 @@ class Panel(Tools, QtWidgets.QWidget):
             active=self.renderer.active or {};frame=self.renderer.buffers.displayed or {}
             snapshot=frame.get('snapshot',active.get('snapshot',{}))
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
-            if snapshot.get('_pixel_samples') and not snapshot.get('_draft') and not frame.get('moonlightipr'):
-                # How a MoonRay picture was sampled: uniform with its samples a pixel, or adaptive with the fewest and most.
-                from .options import render_values
-                settings=render_values(snapshot.get('render_settings',{}))
-                text+=' | '+('LS ' if snapshot.get('_ipr') else '')+('Adaptive %d-%d ps'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'])
-                             if settings['sampling_mode']==2 else 'Uniform %d ps'%snapshot['_pixel_samples'])
+            if snapshot.get('_draft'):pass
+            elif frame.get('moonlightipr') or active.get('moonlightipr'):
+                text+=' | '+self._sampling_words('moonlightipr',gathering=getattr(self.renderer,'moonlightipr_gathering',None))
+            elif snapshot.get('_pixel_samples'):
+                text+=' | '+self._sampling_words('ls' if snapshot.get('_ipr') else 'moonray',snapshot.get('render_settings',{}),pixel_samples=snapshot['_pixel_samples'])
             # And how it is shown: the view transform, and a LUT where there is one.
             shown=self._view_words()
             if shown:text+=' | '+shown

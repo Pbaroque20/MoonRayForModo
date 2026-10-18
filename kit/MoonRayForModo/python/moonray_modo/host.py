@@ -303,6 +303,15 @@ def solar_discs(result):
                     light['disc'] = {'radiance': [v * float(environment.get('intensity', 1.0)) for v in seen], 'angle': SUN_DEGREES * layer['solar_disc']}
 
 
+def picture_size(scene):
+    """The size the picture is rendered at: the Render item's resolution, or the render camera's where it overrides it."""
+    render, camera = scene.renderItem, scene.renderCamera
+    width, height = int(channel(render, 'resX', 1280)), int(channel(render, 'resY', 720))
+    if camera is not None and channel(camera, 'resOverride', 0):
+        width, height = int(channel(camera, 'resX', width)), int(channel(camera, 'resY', height))
+    return width, height
+
+
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):
     scene = modo.Scene()
     try:
@@ -328,9 +337,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     warnings = []
     smoothed_whole = []
     render = scene.renderItem
-    width, height = int(channel(render, 'resX', 1280)), int(channel(render, 'resY', 720))
-    if channel(camera, 'resOverride', 0):
-        width, height = int(channel(camera, 'resX', width)), int(channel(camera, 'resY', height))
+    width, height = picture_size(scene)
     aperture_x = float(channel(camera, 'apertureX', .036))
     aperture_y = float(channel(camera, 'apertureY', .024))
     pixel_aspect = float(channel(render,'pAspect',1))
