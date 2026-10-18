@@ -10,7 +10,7 @@ from . import properties, rdla
 
 # What Panel.run() does in the window; any other page is a group of render settings.
 WINDOW_PAGES = ('preferences', 'final', 'bake', 'export', 'animation', 'stop', 'log', 'objects', 'outputs', 'colors',
-                'report', 'package', 'package_sequence', 'preview', 'playblast')
+                'report', 'package', 'package_sequence', 'preview', 'playblast', 'cameras')
 
 
 class Tools:
@@ -20,7 +20,7 @@ class Tools:
                    'animation': self.render_animation, 'playblast': self.render_playblast, 'stop': self.stop, 'log': self.show_log,
                    'objects': self._edit_production, 'outputs': self._edit_outputs, 'colors': self._edit_assets,
                    'report': self._report_assets, 'package': self._package_assets,
-                   'package_sequence': self._package_sequence, 'preview': lambda: None}
+                   'package_sequence': self._package_sequence, 'preview': lambda: None, 'cameras': self.camera_sequence}
         # Anything else names a group of render settings, which are on the Render item.
         actions.get(page, self.open_settings)()
 
@@ -141,14 +141,38 @@ class Tools:
         if self._output_busy():
             self.status.setText('An output render is running. Press Stop before starting another.')
             return
-        path = self._save_path('Render OpenEXR', 'exr', 'exr', 'OpenEXR (*.exr)')
-        if not path:
+        from . import image_formats
+        filters, types = image_formats.picture_filters()
+        dialog = QtWidgets.QFileDialog(self, 'Render to a file', str(self.settings.value('output/exr', '')))
+        dialog.setAcceptMode(QtWidgets.QFileDialog.AcceptSave)
+        dialog.setNameFilter(filters)
+        held = str(self.settings.value('output/final_filter', ''))
+        if held in types:
+            dialog.selectNameFilter(held)
+        if not dialog.exec_():
             return
+        chosen_filter = dialog.selectedNameFilter()
+        kind = types.get(chosen_filter, 'exr32')
+        path = dialog.selectedFiles()[0]
+        extension = image_formats.find(kind)[2]
+        if Path(path).suffix.lower().lstrip('.') not in [e for e, k in image_formats.EXTENSIONS.items() if image_formats.find(k)[2] == extension]:
+            path = str(Path(path).with_suffix('.' + extension)) if Path(path).suffix else path + '.' + extension
+        self.settings.setValue('output/exr', str(Path(path).parent))
+        self.settings.setValue('output/final_filter', chosen_filter)
+        # MoonRay writes OpenEXR: in another type, the EXR is rendered beside the file asked for, and converted.
+        asked = None if extension == 'exr' else {'type': kind, 'path': path, 'quality': int(self.settings.value('output/jpeg_quality', 92))}
+        if asked:
+            path = str(Path(path).with_suffix('.exr'))
         self.stop()
         self._stereo_after = {}
         try:
             scene = self._capture_output()
+            if asked:
+                scene['_export_as'] = asked
             from . import stereo
+            if stereo.both(scene['camera']) and asked:
+                # Each eye is converted beside its own EXR, named for the eye.
+                scene['_export_as'] = dict(asked, path=None)
             if stereo.both(scene['camera']):
                 # Both eyes: the left, then the right, each a render of its own beside the file chosen, named for the
                 # eye; then, where the camera asks for one, their composite in the file chosen. Each step follows the
@@ -229,6 +253,25 @@ class Tools:
         except Exception as exc:
             self._failed(str(exc))
 
+    def camera_sequence(self):
+        """The Camera Sequence window: cameras keyed to ranges of frames, kept with the scene."""
+        import modo
+        from .camera_sequence_dialog import CameraSequence
+        from .host import channel
+        scene = modo.Scene()
+        render = scene.renderItem
+        fps = float(scene.fps)
+        # The scene's frame range: the Render item's, in frames.
+        frames = (int(round(float(channel(render, 'first', 0)))), int(round(float(channel(render, 'last', 120)))))
+        current = int(round(lx.service.Selection().GetTime() * fps))
+        dialog = CameraSequence(self, self._settings_values().get('camera_sequence'), scene, frames, current)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        sequence = dialog.sequence()
+        if self._store(camera_sequence=sequence):
+            count = len(sequence['keys'])
+            self.status.setText('Camera Sequence: %d key%s%s.' % (count, '' if count == 1 else 's', '' if sequence['enabled'] else ', off'))
+
     def render_animation(self):
         if self._output_busy():
             self.status.setText('An output render is running. Press Stop before starting an animation.')
@@ -242,7 +285,8 @@ class Tools:
         try:
             candidate = Sequence(self, directory, dialog.first.value(), dialog.last.value(),
                                  dialog.fps.value(), dialog.motion.isChecked(),
-                                 step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked())
+                                 step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked(),
+                                 export_as=dialog.export_as())
             self.settings.setValue('output/animation', directory)
             self.stop()
             self.sequence = candidate
@@ -321,10 +365,7 @@ class Tools:
 
     def export_buffers(self):
         """Save chosen outputs of the last finished preview, each as an image file of its own."""
-        import shutil
-        import subprocess
-        from . import native, outputs
-        from .buffers import conversion
+        from . import outputs
         frame = self.renderer.buffers.frame
         if self.preview_engine.currentData() == 'moonlightipr':
             self.status.setText('MoonLightIPR renders the one picture; choose MoonRay to export its outputs.')
@@ -332,84 +373,54 @@ class Tools:
         if not frame or not frame.get('files'):
             self.status.setText('Let a MoonRay preview finish first; its outputs are what is exported.')
             return
-        dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle('Export AOVs as images')
-        dialog.resize(380, 460)
-        layout = QtWidgets.QVBoxLayout(dialog)
-        note = QtWidgets.QLabel('The outputs of the last finished preview. Tick the ones to save; each becomes a file named after it.\n'
-                                'Outputs are ticked for rendering in the Render item\'s MoonRay properties, under Outputs (AOVs).')
-        note.setWordWrap(True)
-        layout.addWidget(note)
-        listed = QtWidgets.QListWidget()
+        from .export_dialog import ExportAOVs, group_of
+        snapshot = frame.get('snapshot') or {}
+        customs = {entry.get('name'): entry.get('kind') for entry in snapshot.get('custom_aovs') or []}
+        entries = []
         for key, label in self.buffer_names(frame):
-            row = QtWidgets.QListWidgetItem(label, listed)
-            row.setData(QtCore.Qt.UserRole, key)
-            row.setFlags(row.flags() | QtCore.Qt.ItemIsUserCheckable)
-            row.setCheckState(QtCore.Qt.Checked)
-        layout.addWidget(listed, 1)
-        ticks = QtWidgets.QHBoxLayout()
-        for text, state in (('All', QtCore.Qt.Checked), ('None', QtCore.Qt.Unchecked)):
-            button = QtWidgets.QPushButton(text)
-            button.clicked.connect(lambda checked=False, s=state: [listed.item(i).setCheckState(s) for i in range(listed.count())])
-            ticks.addWidget(button)
-        ticks.addStretch(1)
-        layout.addLayout(ticks)
-        form = QtWidgets.QFormLayout()
-        kind = QtWidgets.QComboBox()
-        kind.addItem('PNG, as shown in the preview', 'png')
-        kind.addItem('OpenEXR, the render\'s own linear values', 'exr')
-        kind.setCurrentIndex(max(0, kind.findData(self.settings.value('output/aov_format', 'png'))))
-        form.addRow('Format', kind)
-        prefix = QtWidgets.QLineEdit(str(self.settings.value('output/aov_prefix', 'preview')))
-        prefix.setToolTip('What each file\'s name starts with: preview gives preview_albedo.png, preview_alpha.png and so on.')
-        form.addRow('Name', prefix)
-        layout.addLayout(form)
-        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
+            kind = outputs.display_kind(snapshot, key)
+            entries.append((key, label, group_of(key, kind, customs.get(key)), kind))
+        # The size the render was made at, and the camera it was seen through.
+        width, height = snapshot.get('width') or self.preview.image.width(), snapshot.get('height') or self.preview.image.height()
+        identity = (snapshot.get('camera') or {}).get('identity')
+        camera = identity or 'the render camera'
+        try:
+            import modo
+            camera = modo.Scene().item(identity).name if identity else camera
+        except Exception:
+            pass
+        about = 'Output Resolution: %d x %d based on %s' % (width, height, camera)
+        dialog = ExportAOVs(self, entries, self.settings, about)
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
-        chosen = [listed.item(i).data(QtCore.Qt.UserRole) for i in range(listed.count()) if listed.item(i).checkState() == QtCore.Qt.Checked]
-        if not chosen:
-            return
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Folder for the exported AOVs', str(self.settings.value('output/aovs', '')))
-        if not folder:
-            return
-        self.settings.setValue('output/aovs', folder)
-        self.settings.setValue('output/aov_format', kind.currentData())
-        self.settings.setValue('output/aov_prefix', prefix.text())
-        saved, failed = self.write_buffers(frame, chosen, Path(folder), prefix.text().strip(), kind.currentData())
+        chosen, folder = dialog.chosen(), Path(dialog.folder.text().strip())
+        saved, failed = self.write_buffers(frame, chosen, folder, dialog.prefix.text().strip(), dialog.type(), dialog.quality.value())
         self.status.setText('Exported %d AOV%s to %s' % (len(saved), '' if len(saved) == 1 else 's', folder) + ('; could not write %s' % ', '.join(failed) if failed else ''))
+        if saved and dialog.open_after.isChecked():
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(folder)))
 
-    def write_buffers(self, frame, keys, folder, prefix, kind):
-        """Write a preview's outputs into a folder as PNG, shown as the preview shows them, or as their own EXR.
-        Returns (the files written, the outputs that could not be)."""
-        import shutil
+    def write_buffers(self, frame, keys, folder, prefix, kind, quality=92):
+        """Write a render's outputs into a folder in a picture type (image_formats): as shown in the preview for the types
+        of a picture to look at, with their own values for the linear ones. Returns (the files written, the outputs
+        that could not be)."""
         import subprocess
-        from . import native, outputs
-        from .buffers import conversion
+        from . import image_formats, native, outputs
         from .display import values as display_values
         values = self._settings_values()
         display = display_values(dict(values['display'], working_space=frame['snapshot'].get('asset_settings', {}).get('working_space', 'rec709')))
+        extension = image_formats.find(kind)[2]
         saved, failed = [], []
         for key in keys:
             source = frame['files'].get(key)
-            target = Path(folder) / ('%s%s.%s' % (prefix + '_' if prefix else '', key, kind))
+            target = Path(folder) / ('%s%s.%s' % (prefix + '_' if prefix else '', key, extension))
             try:
                 if source is None or not Path(source).is_file():
                     raise OSError('not held')
-                if kind == 'exr' and Path(source).suffix.lower() == '.exr':
-                    shutil.copyfile(str(source), str(target))
-                else:
-                    shown = outputs.display_kind(frame['snapshot'], key)
-                    if shown == 'cryptomatte':
-                        raise OSError('an ID matte is exported as OpenEXR only')
-                    args = [str(source), '-o', str(target)] if kind == 'exr' else conversion(shown, source, target, display)
-                    done = subprocess.run([str(Path(frame['runtime']) / 'oiiotool.exe')] + args, env=native.environment(frame['runtime']), capture_output=True,
-                                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
-                    if done.returncode or not target.is_file():
-                        raise OSError((done.stdout + done.stderr).decode(errors='replace')[-200:])
+                args = image_formats.arguments(kind, outputs.display_kind(frame['snapshot'], key), source, target, display, quality)
+                done = subprocess.run([str(Path(frame['runtime']) / 'oiiotool.exe')] + args, env=native.environment(frame['runtime']), capture_output=True,
+                                      creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
+                if done.returncode or not target.is_file():
+                    raise OSError((done.stdout + done.stderr).decode(errors='replace')[-200:])
                 saved.append(str(target))
             except (OSError, ValueError, subprocess.SubprocessError):
                 failed.append(key)

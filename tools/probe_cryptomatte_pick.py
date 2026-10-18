@@ -152,6 +152,21 @@ def composite():
     editor.close()
 
 
+def rerender():
+    """Render again with the box still picked: the picked matte goes during the render and comes back after it."""
+    panel = panel_widget()
+    panel.buffer.setCurrentIndex(panel.buffer.findData('crypto_object'))
+    panel.start.click()
+    QtWidgets.QApplication.processEvents()
+    result['overlay_while_rendering'] = panel.preview.overlay is not None
+
+
+def after_render():
+    panel = panel_widget()
+    result['after_render'] = {'rendering': panel._rendering, 'picked': sorted(panel._crypto_picked.get('crypto_object', set())),
+                              'overlay': panel.preview.overlay is not None}
+
+
 def put_back():
     panel = panel_widget()
     if held.get('runtime') is None:
@@ -192,4 +207,4 @@ save()
 QtCore.QTimer.singleShot(8000, lambda: run([
     (render, 60000), (ready, 8000), (survey, 500), (parts, 1000),
     (click('pair', 0, 'click ball'), 1000), (click('Box', QtCore.Qt.ShiftModifier, 'shift-click box'), 1000),
-    (click('pair', QtCore.Qt.ControlModifier, 'ctrl-click ball'), 1000), (hover, 500), (compose, 15000), (composite, 500), (put_back, 100)]))
+    (click('pair', QtCore.Qt.ControlModifier, 'ctrl-click ball'), 1000), (hover, 500), (compose, 15000), (composite, 500), (rerender, 60000), (after_render, 500), (put_back, 100)]))

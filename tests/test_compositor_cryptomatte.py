@@ -52,5 +52,29 @@ class Ids(unittest.TestCase):
         self.assertIsNone(cryptomatte_pick.buffer_of(snapshot, 'object'))
 
 
+
+LISTED = """ subimage  0:  320 x  180, 5 channel, float openexr
+    channel list: R, G, B, alpha, modo_object_id
+    name: "subimage00"
+ subimage  1:  320 x  180, 24 channel, float openexr
+    channel list: CryptoS00.R, Cryptomatte00.R, Cryptomatte00.G, Cryptomatte00.B, Cryptomatte00.A, Cryptomatte01.R
+    name: "crypto_object"
+ subimage  2:  320 x  180, 24 channel, float openexr
+    channel list: CryptoS00.R, Cryptomatte00.R, Cryptomatte00.G, Cryptomatte00.B, Cryptomatte00.A, Cryptomatte01.R
+    name: "crypto_material"
+"""
+
+
+class Parts(unittest.TestCase):
+    def test_each_kind_is_read_from_the_part_named_after_its_output(self):
+        self.assertEqual(cryptomatte_pick._part(LISTED, 'crypto_material'), (2, ['Cryptomatte00', 'Cryptomatte01']))
+        self.assertEqual(cryptomatte_pick._part(LISTED, 'crypto_object')[0], 1)
+
+    def test_a_file_of_one_kind_is_read_where_its_cryptomatte_is(self):
+        self.assertEqual(cryptomatte_pick._part(LISTED, 'crypto_asset')[0], 1)
+        single = '    channel list: CryptoS00.R, Cryptomatte00.R, Cryptomatte00.G'
+        self.assertEqual(cryptomatte_pick._part(single, 'crypto_object'), (0, ['Cryptomatte00']))
+
+
 if __name__ == '__main__':
     unittest.main()

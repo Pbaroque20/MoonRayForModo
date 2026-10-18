@@ -19,6 +19,16 @@ class AnimationDialog(QtWidgets.QDialog):
         self.fps=QtWidgets.QDoubleSpinBox();self.fps.setRange(.001,1000);self.fps.setDecimals(3);self.fps.setValue(24)
         form.addRow('First frame',self.first);form.addRow('Last frame',self.last)
         form.addRow('Frame step',self.step);form.addRow('Frames per second',self.fps)
+        # Each frame is an EXR, MoonRay's own file; it may be saved in another picture type beside it as well.
+        from .image_formats import FORMATS
+        self.type=QtWidgets.QComboBox();self.type.addItem('OpenEXR only',None)
+        for key,label,extension,numbers,shown in FORMATS:
+            if extension!='exr':self.type.addItem('OpenEXR, and '+label,key)
+        self.type.setCurrentIndex(max(0,self.type.findData(settings.value('output/animation_type',None))))
+        self.type.setToolTip('Each frame is saved as OpenEXR, with every output. Another type is saved beside it, as the preview shows the picture.')
+        self.type.currentIndexChanged.connect(self.update_summary)
+        form.addRow('Frames as',self.type)
+        self.settings=settings
         self.motion=QtWidgets.QCheckBox('Include motion blur');form.addRow(self.motion)
         self.missing=QtWidgets.QCheckBox('Render missing frames / resume sequence');form.addRow(self.missing)
         self.missing.setToolTip('Keep recognizable EXR frames and render gaps. Use the same scene and render settings as the original sequence.')
@@ -35,7 +45,17 @@ class AnimationDialog(QtWidgets.QDialog):
 
     def update_summary(self,*args):
         count=max(0,(self.last.value()-self.first.value())//self.step.value()+1)
-        self.summary.setText('%d frames · %s.%06d.exr\nExisting frames are never overwritten. Enable Render missing frames to fill gaps in a matching sequence.'%(count,self.prefix.text(),self.first.value()))
+        also=''
+        if getattr(self,'type',None) is not None and self.type.currentData():
+            from .image_formats import find
+            also=' and .%s'%find(self.type.currentData())[2]
+        self.summary.setText('%d frames · %s.%06d.exr%s\nExisting frames are never overwritten. Enable Render missing frames to fill gaps in a matching sequence.'%(count,self.prefix.text(),self.first.value(),also))
+
+    def export_as(self):
+        """The other type each frame is saved in, {'type', 'quality'}, or None for OpenEXR only."""
+        key=self.type.currentData()
+        self.settings.setValue('output/animation_type',key or '')
+        return {'type':key,'quality':int(self.settings.value('output/jpeg_quality',92))} if key else None
 
     def accept(self):
         import re

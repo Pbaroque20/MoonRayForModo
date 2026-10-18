@@ -109,6 +109,8 @@ class Browser(QtWidgets.QDialog):
   self.details=QtWidgets.QLabel();self.details.setWordWrap(True);self.details.setFixedWidth(230);self.details.setAlignment(QtCore.Qt.AlignTop);side.addWidget(self.details,1)
   # The one thing the chosen asset is for.
   self.use=QtWidgets.QPushButton('Use');self.use.setMinimumHeight(32);self.use.clicked.connect(self.put_to_use);side.addWidget(self.use)
+  # A picture opens in a viewer of its own, as large as its window.
+  self.open=QtWidgets.QPushButton('Open');self.open.setToolTip('Look at the picture in a viewer: zoom with the wheel, drag to move it, arrow keys for the next');self.open.clicked.connect(self.view_image);side.addWidget(self.open)
   self.reveal=QtWidgets.QPushButton('Show in Folder');self.reveal.clicked.connect(self.open_source);side.addWidget(self.reveal)
   row=QtWidgets.QHBoxLayout();layout.addLayout(row)
   for title,callback,tip in [('Add Folder...',self.add_folder,'Show the assets of a folder of your own here: materials you have saved, models, scenes, pictures'),
@@ -121,7 +123,8 @@ class Browser(QtWidgets.QDialog):
   more.clicked.connect(lambda:QtGui.QDesktopServices.openUrl(QtCore.QUrl(library.SOURCE)));row.addWidget(more)
   self.status=QtWidgets.QLabel();layout.addWidget(self.status)
   self.search.textChanged.connect(self.filter);self.category.currentRowChanged.connect(self.filter);self.list.itemSelectionChanged.connect(self.selection)
-  self.list.itemDoubleClicked.connect(lambda item:self.put_to_use())
+  # A double-click opens a picture to look at, and puts anything else to its use.
+  self.list.itemDoubleClicked.connect(lambda item:self.view_image() if self.is_picture(self.selected()) else self.put_to_use())
   self.timer=QtCore.QTimer(self);self.timer.setInterval(1);self.timer.timeout.connect(self.scan_next)
   # Pictures are made a few at a time after the names are up, so that a large folder does not hold the window.
   self.painter=QtCore.QTimer(self);self.painter.setInterval(1);self.painter.timeout.connect(self.paint_next)
@@ -174,7 +177,7 @@ class Browser(QtWidgets.QDialog):
  def selection(self):
   from .asset_import import action
   row=self.selected();label,about=PURPOSES.get(action(row.get('path','')),('Use',''))
-  self.use.setText(label);self.use.setEnabled(bool(row));self.reveal.setEnabled(bool(row.get('path')))
+  self.use.setText(label);self.use.setEnabled(bool(row));self.reveal.setEnabled(bool(row.get('path')));self.open.setEnabled(self.is_picture(row))
   if not row:
    self.shown.setPixmap(QtGui.QPixmap());self.title.setText('Nothing chosen');self.details.setText('Choose an asset to see what it is and what it is for.');return
   self.shown.setPixmap(QtGui.QPixmap.fromImage(picture(row,220)).scaled(220,220,QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation))
@@ -182,6 +185,18 @@ class Browser(QtWidgets.QDialog):
   if str(row.get('path','')).lower().endswith('.moonmat.json'):
    about+=' The library uses a supplied thumbnail when present; otherwise it shows a colour approximation or a Graph tile. To supply a rendered image, save it beside this file as '+Path(row['path']).with_suffix('.png').name+'.'
   self.details.setText('\n\n'.join(part for part in (about,row.get('category',''),'In the folder '+Path(row['path']).parent.name if row.get('path') else '') if part))
+ def is_picture(self,row):
+  from .image_viewer import viewable
+  return bool(row.get('path')) and viewable(row['path'])
+ def view_image(self):
+  """The chosen picture in the viewer, with the other pictures listed beside it to step through."""
+  row=self.selected()
+  if not self.is_picture(row):return
+  from .image_viewer import show
+  shown=[self.list.item(i).data(QtCore.Qt.UserRole) for i in range(self.list.count()) if not self.list.item(i).isHidden()]
+  paths=[r['path'] for r in shown if self.is_picture(r)]
+  index=paths.index(row['path']) if row['path'] in paths else 0
+  self._viewer=show(paths or [row['path']],index,self)
  def put_to_use(self):
   """Do the one thing the chosen asset is for."""
   row=self.selected()
