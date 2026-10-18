@@ -42,6 +42,7 @@ Not released yet: on the MoonLightIPR branch.
 
 ### The preview window
 
+- **Leaner notices**: they open only as tall as their text and two lines more, up to the height they had before, where a long list scrolls.
 - **The size and samples beside the picture follow the engine chosen**: choosing MoonRay, MoonRay LS or MoonLightIPR says at once the size it renders at and its samples a pixel, before anything is rendered; a MoonLightIPR picture says its samples too.
 - **Denoising... in the status line** while the denoised beauty is made from a finished render, until it is shown.
 - **Closing a scene clears its render** from the preview window, and a render of it still going stops; closing another scene leaves the picture as it is. A render to files goes on to the end.

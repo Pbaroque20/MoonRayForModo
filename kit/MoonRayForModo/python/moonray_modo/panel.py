@@ -23,6 +23,8 @@ NO_COMPOSITE = "Open the scene's compositor (Options > Compositor) and build a n
 
 
 # The Notices button when there is something to read: a background and the colour of its words.
+# The tallest the notices open to, in pixels; less where their text takes less.
+NOTICES_TALLEST=150
 NOTICE_STYLE = 'QToolButton{background-color:%s;color:%s;border-radius:3px;padding:1px 6px;}'
 # Words that make a notice an error and not a remark.
 NOTICE_ERRORS = ('error', 'failed', 'could not', 'cannot', 'unavailable', 'unsupported', 'missing', 'not found', 'invalid')
@@ -115,8 +117,11 @@ class Panel(Tools, QtWidgets.QWidget):
         self.render_progress.setTextVisible(False);self.render_progress.setFixedHeight(4)
         layout.addWidget(self.render_progress)
         layout.addLayout(self._status_line())
-        self.warnings=QtWidgets.QPlainTextEdit();self.warnings.setReadOnly(True);self.warnings.setMaximumHeight(150);self.warnings.hide()
+        self.warnings=QtWidgets.QPlainTextEdit();self.warnings.setReadOnly(True);self.warnings.hide()
         self.warnings.setPlaceholderText('What the renderer could not carry over from the scene is listed here after a render.')
+        # As tall as its text and two lines more, up to NOTICES_TALLEST: refitted as the text or its wrapping changes.
+        self.warnings.document().documentLayout().documentSizeChanged.connect(lambda size:self._fit_notices())
+        self._fit_notices()
         layout.addWidget(self.warnings)
 
         self.renderer.buckets.connect(self.preview.set_buckets)
@@ -989,6 +994,16 @@ class Panel(Tools, QtWidgets.QWidget):
         """Add what the preview engine left out to the notices of the scene it is showing."""
         snapshot=(self.renderer.active or {}).get('snapshot',{})
         self._set_notices(list(snapshot.get('warnings',[]))+list(messages))
+
+    def _fit_notices(self):
+        """The notices' height: the lines their text takes at the width they have (one for the placeholder), two more
+        lines of space, and the frame, up to NOTICES_TALLEST."""
+        try:
+            box=self.warnings
+            lines=max(1,int(round(box.document().size().height())))
+            frame=box.frameWidth()*2+int(box.document().documentMargin()*2)+box.contentsMargins().top()+box.contentsMargins().bottom()
+            box.setFixedHeight(min(NOTICES_TALLEST,(lines+2)*box.fontMetrics().lineSpacing()+frame))
+        except Exception:pass
 
     def _set_notices(self,messages):
         unique=list(dict.fromkeys(str(message) for message in messages if message))
