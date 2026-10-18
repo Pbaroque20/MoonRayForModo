@@ -1,5 +1,5 @@
 """Native Windows MoonRay integration for Modo 16.1v9."""
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 # The MoonRay the runtime is compiled from: the OpenMoonRay release, and the version of MoonRay itself in it
 # (patches/native-windows/sources.json names the commits).
 MOONRAY_RELEASE = "2026.29.1"
