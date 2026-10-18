@@ -2,7 +2,9 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [native asynchronous GPU shading and early dispatch](NATIVE_GPU_SHADING.md),
+See [neighbor-first scheduling experiment](LOCAL_TILE_SCHEDULING.md),
+[broader native diffuse shading](BROADER_DIFFUSE.md),
+[native asynchronous GPU shading and early dispatch](NATIVE_GPU_SHADING.md),
 [native first-bounce path restoration](NATIVE_PATH_RESTORE.md),
 [owned texture-to-GPU shading-stage dispatch](SHADING_DISPATCH.md),
 [native terminal-radiance suspension and film resumption](NATIVE_FILM_CONTINUATIONS.md),
