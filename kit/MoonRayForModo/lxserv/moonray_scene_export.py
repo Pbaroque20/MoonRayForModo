@@ -1,4 +1,4 @@
-"""File > Export as MoonRay Scene: moonray_modo/scene_export.py's window, then the export, without the preview window."""
+"""MoonRay menu > Export as MoonRay Scene: moonray_modo/scene_export.py's window, then the export, without the preview window."""
 import os
 import sys
 package_root=os.path.join(os.path.dirname(os.path.dirname(__file__)),"python")

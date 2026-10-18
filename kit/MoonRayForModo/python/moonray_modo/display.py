@@ -12,6 +12,9 @@ DEFAULTS={'working_space':'rec709','view':'modo','exposure':0.0,'lut':'','lut_sp
 # The ACES view needs no file: OpenColorIO carries the ACES configuration this names.
 ACES_CONFIG='ocio://cg-config-v1.0.0_aces-v1.3_ocio-v2.1'
 ACES={'config':ACES_CONFIG,'source':'Linear Rec.709 (sRGB)','display':'sRGB - Display','ocio_view':'ACES 1.0 - SDR Video'}
+# ACES 2.0's output transform, from the ACES 2.0 configuration OpenColorIO 2.5 carries.
+ACES2_CONFIG='ocio://cg-config-v4.0.0_aces-v2.0_ocio-v2.5'
+ACES2={'config':ACES2_CONFIG,'source':'Linear Rec.709 (sRGB)','display':'sRGB - Display','ocio_view':'ACES 2.0 - SDR 100 nits (Rec.709)'}
 
 
 def built_in(config):
@@ -22,7 +25,7 @@ def built_in(config):
 def values(settings):
     result={key:settings.get(key,value) for key,value in DEFAULTS.items()}
     if result['working_space'] not in ('rec709','acescg'):raise ValueError('Unknown render working space')
-    if result['view'] not in ('modo','srgb','aces','reinhard','raw','ocio'): raise ValueError('Unknown display transform')
+    if result['view'] not in ('modo','srgb','aces','aces2','reinhard','raw','ocio'): raise ValueError('Unknown display transform')
     if result['view']=='modo':
         # As Modo shows it: what modo_color last read of the scene. Where the scene has no colour management, or
         # nothing has been read yet, plain sRGB.
@@ -33,6 +36,8 @@ def values(settings):
     if result['view']=='aces':
         # ACES for an sRGB monitor is an OCIO view with everything already chosen.
         result.update(ACES,view='ocio')
+    elif result['view']=='aces2':
+        result.update(ACES2,view='ocio')
     if result['lut_space'] not in ('linear','display'): raise ValueError('Unknown LUT placement')
     result['exposure']=float(result['exposure'])
     if not math.isfinite(result['exposure']) or not -20<=result['exposure']<=20: raise ValueError('Exposure must be between -20 and 20 stops')

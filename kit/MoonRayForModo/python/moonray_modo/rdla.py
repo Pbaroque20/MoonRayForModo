@@ -1,5 +1,6 @@
 """Pure Python scene serializer. Does not import or change the Modo scene."""
 import math
+import re
 from functools import lru_cache
 from . import options, textures, outputs, __version__
 
@@ -842,4 +843,22 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     if entity_camera and entity_camera['class'] == 'BakeCamera':
         from .bake import resolve
         resolve(lines, render_meshes)
-    return '\n'.join(lines) + '\n'
+    return '\n'.join(shared_locals(lines)) + '\n'
+
+
+BLOCK_LOCAL = re.compile(r'^(\s+)local ([A-Za-z_]\w*)( = .*)$')
+
+
+def shared_locals(lines):
+    """Each mesh, instancer and shape is written in a block of its own with locals of its own (local geometry = ...),
+    and Lua counts every one of them against the whole scene: past 32767 MoonRay refuses the scene ("too many local
+    variables"). The blocks' names are declared once, at the top, and each block sets them instead; as the blocks run
+    one after another, each still sees only what it set."""
+    names = []
+    for index, line in enumerate(lines):
+        found = BLOCK_LOCAL.match(line)
+        if found:
+            if found.group(2) not in names:
+                names.append(found.group(2))
+            lines[index] = found.group(1) + found.group(2) + found.group(3)
+    return (['local ' + ', '.join(names)] if names else []) + lines

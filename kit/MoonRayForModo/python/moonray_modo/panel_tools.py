@@ -16,7 +16,7 @@ WINDOW_PAGES = ('preferences', 'final', 'bake', 'export', 'animation', 'stop', '
 class Tools:
     def run(self, page):
         """Do what a menu entry or a form button names."""
-        actions = {'preferences': self.edit_preferences, 'final': self.render_final, 'bake': self.bake_texture, 'export': self.export,
+        actions = {'preferences': self.edit_preferences, 'final': self.render_final, 'bake': self.bake_texture, 'export': self.export_moonray_scene,
                    'animation': self.render_animation, 'playblast': self.render_playblast, 'stop': self.stop, 'log': self.show_log,
                    'objects': self._edit_production, 'outputs': self._edit_outputs, 'colors': self._edit_assets,
                    'report': self._report_assets, 'package': self._package_assets,
@@ -238,8 +238,9 @@ class Tools:
         except Exception as exc:
             self._failed(str(exc))
 
-    def export(self):
-        """Export as MoonRay Scene, as the File menu has it: its window, then the export."""
+    def export_moonray_scene(self):
+        """Export as MoonRay Scene, as the MoonRay menu has it: its window, then the export. ('export', the page an
+        older MoonRay menu names, comes here too.)"""
         try:
             from .scene_export import run
             written = run(self)

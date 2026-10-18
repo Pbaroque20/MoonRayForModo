@@ -207,7 +207,7 @@ Not released yet: on the MoonLightIPR branch.
 
 ### Importing and exporting MoonRay scenes
 
-- **File > Export as MoonRay Scene**: the scene written as MoonRay reads it, to render with MoonRay on its own or on a farm, from a window that asks for the file and the format: RDLA (one text file), RDLB (one binary file, about a third of the size and quicker to load) or both, as MoonRay's split scene (its settings as text, its geometry binary). It can leave out the AOVs, Cryptomatte and deep output, collect every texture into a folder beside the scene, and write one scene for each frame of the frame range. Each way renders the same picture.
+- **Export as MoonRay Scene**, in the MoonRay menu and the preview window's Options: the scene written as MoonRay reads it, to render with MoonRay on its own or on a farm, from a window that asks for the file and the format: RDLA (one text file), RDLB (one binary file, about a third of the size and quicker to load) or both, as MoonRay's split scene (its settings as text, its geometry binary). It can leave out the AOVs, Cryptomatte and deep output, collect every texture into a folder beside the scene, and write one scene for each frame of the frame range. Each way renders the same picture.
 - **More of a MoonRay scene comes in on import**: what moves over the shutter is keyed as Modo animation at the shutter's two ends, the camera's shutter and Motion Blur set to match, copies an instancer makes included; a shape that changes over the shutter comes in as a morph keyed the same way; semi-sharp creases come in as subdivision weights; a mesh MoonRay fills with fog comes in with its volume, as a MoonRay volume item its material holds; maps wired into a MoonRay item's values (a noise in a fog's colour) come in wired; instanced curves come in, a curve set for each copy; a vector at each point comes in as a vertex map that goes back out to MoonRay as a vector; words by point or by face are kept on the mesh and go back out; a mesh given no normals comes in shaded as MoonRay shades it, smooth unless it says otherwise, where Modo would have faceted it; and an instancer of more than 20,000 copies comes in whole, the first 20,000 as Modo instances and the rest merged into meshes.
 
 ### Preferences and MoonRay Source Overrides
@@ -251,6 +251,7 @@ Not released yet: on the MoonLightIPR branch.
 - **Modo's own light linking reaches MoonRay**: a light's Light Linking group, set to include or exclude, was passed over before, and every object took every light. Checked against Modo's own render in both modes. MoonLightIPR still lights every object alike.
 - **Large MoonRay pictures the right way up**: a preview at 3840 x 2160 came out upside down in MoonRay, and now does not.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
+- **An ACES 2.0 view**: View Transform offers ACES 2.0 (sRGB display) beside ACES 1.3, ACES 2.0's own tone mapping from the ACES 2.0 configuration built into the plugin's OpenColorIO (2.5); ACES 1.3 stays as it was.
 - **Less memory kept over a long session**: small leaks after each render and selection are gone.
 
 ## New in 0.4.1

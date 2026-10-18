@@ -311,7 +311,7 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Render EXR...',self.render_final)
         menu.addAction('Render Animation...',self.render_animation)
         menu.addAction('MoonLightIPR Playblast...',self.render_playblast)
-        menu.addAction('Export Scene...',self.export)
+        menu.addAction('Export as MoonRay Scene...',self.export_moonray_scene)
         menu.addSeparator()
         menu.addAction('Render Log...',self.show_log)
         return menu
@@ -724,7 +724,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 read=modo_color.RESOLVED
                 words='Modo: %s, %s'%(read.get('name',''),read['view']) if read else 'sRGB'
             elif view=='ocio':words='OCIO: %s, %s'%(held.get('display',''),held.get('ocio_view',''))
-            else:words={'aces':'ACES','srgb':'sRGB','reinhard':'Highlight compression','raw':'Raw linear'}.get(view,str(view))
+            else:words={'aces':'ACES 1.3','aces2':'ACES 2.0','srgb':'sRGB','reinhard':'Highlight compression','raw':'Raw linear'}.get(view,str(view))
             if held.get('lut'):words+=' + LUT '+Path(held['lut']).name
             return words
         except Exception:return ''
