@@ -1,6 +1,8 @@
 # Neighbor-first tile scheduling experiment
 
-Status: **Python coordinator model only**. There is no native renderer or CUDA
+The native follow-up is documented in [native scheduling and render timing](NATIVE_TILE_SCHEDULING.md).
+
+Status of the model below: **Python coordinator model only**. There is no native renderer or CUDA
 execution in this experiment and no rendering speedup claim. The existing
 region hierarchy is also a separate policy model; it does not explain the
 blocking-transfer overhead of the current native shading candidate.
