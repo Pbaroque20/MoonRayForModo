@@ -45,6 +45,7 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 - **MoonRay preferences in sections**: the MoonRay page of Modo's Preferences is laid out in sections that fold, Preview Window, Lighting, Assign Material, Renderer and MoonRay Source Overrides, with the overrides in order of what they touch.
 - **Closing a scene clears its render** from the preview window, and a render of it still going stops; closing another scene leaves the picture as it is. A render to files goes on to the end.
 - **Denoising... in the status line** while the denoised beauty is made from a finished render, until it is shown.
+- **MoonLightIPR pixel samples from 128 to 1024**, in the preview's Preferences: 128, 256, 512 or 1024. 32 and 64 are gone, and a preview set to either now gathers 128.
 - **MoonLightIPR draws a mesh filled with even fog**, and follows MoonRay's scene scale for lights and depth of field. A box of fog standing on the floor no longer shows stripes where it meets it.
 - **Terminal** in the MoonRay menu: every program the plugin runs (MoonRay, MoonLightIPR, the denoiser, the scene reader and the rest), with its command line, what it prints and how it ended, as it happens. It shows "ready" while nothing runs.
 

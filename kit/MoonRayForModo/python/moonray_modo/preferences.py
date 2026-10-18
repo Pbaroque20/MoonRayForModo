@@ -47,7 +47,7 @@ KEYS = {
 LS_SAMPLES = (1, 4, 16, 32, 64)
 # How wide MoonRay LS may render: small, to be quick, or any of the preview sizes.
 LS_WIDTHS = (80, 160, 240) + tuple(size for label, size in SIZES)
-MOONLIGHTIPR_SAMPLES = (32, 64, 128, 256)
+MOONLIGHTIPR_SAMPLES = (128, 256, 512, 1024)
 
 
 class Preferences:
@@ -71,6 +71,9 @@ class Preferences:
                     # The engine's name as 0.3.50.1 and 0.3.50.2 stored it.
                     return 'moonlightipr'
                 return str(value) if value else (native.default_runtime() if key == 'runtime' else default)
+            if key == 'moonlightipr/samples':
+                # 32 and 64, which could once be chosen, are taken up to the fewest that can be chosen now.
+                return next((v for v in MOONLIGHTIPR_SAMPLES if v >= int(value)), MOONLIGHTIPR_SAMPLES[-1])
             if key == 'preview_size' and kind(value) <= 0:
                 # Scene resolution, as it could once be set to: a realtime preview is no longer made that large.
                 return default
