@@ -1181,6 +1181,9 @@ class Panel(Tools, QtWidgets.QWidget):
         """Keep the Render button saying what pressing it will do."""
         was=getattr(self,'_rendering',False)
         self._rendering=bool(rendering)
+        # A stop is over once nothing renders any more: the button can be pressed again.
+        if not self._rendering:self._stopping=False
+        self.start.setEnabled(not getattr(self,'_stopping',False))
         # The mattes picked are of the picture there was: a new render takes them away, and they are laid over the new
         # picture when it is finished, where they are still in it.
         if self._rendering:self.preview.set_overlay(None)
@@ -1205,6 +1208,9 @@ class Panel(Tools, QtWidgets.QWidget):
                                   else 'Realtime is off: the preview is not following the scene. Press to switch it on.')
             return
         self.start.setChecked(False);self.start.setCheckable(False)
+        if getattr(self,'_stopping',False) and self._rendering:
+            # Stopping: greyed until the render has finished with what it has, so that it is not pressed again.
+            self.start.setText('Stopping');self.start.setToolTip('The render is stopping, keeping what is rendered.');return
         self.start.setText('Stop' if active else 'Continue' if again else 'Render')
         self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)
@@ -1716,6 +1722,11 @@ class Panel(Tools, QtWidgets.QWidget):
         """A render asked to finish with what it has is given so long to say that it has; past that it is stopped
         outright, so that the window is never left waiting."""
         self._settle_token=token=object()
+        # The button is greyed while the render stops, and says so; _set_rendering gives it back.
+        self._stopping=True
+        if not self._live():
+            self.start.setEnabled(False);self.start.setText('Stopping')
+            self.start.setToolTip('The render is stopping, keeping what is rendered.')
         def late():
             if self.disposed or getattr(self,'_settle_token',None) is not token or not self._rendering:return
             self._settle_token=None

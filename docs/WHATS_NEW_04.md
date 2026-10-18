@@ -40,6 +40,7 @@
 
 ### The preview window
 
+- **The button greys while a render stops**: after Stop it says Stopping, greyed, while MoonRay finishes with what it has, and becomes Render (or Continue) again once it has.
 - **MoonRay LS can sample uniformly**: Preview Preferences > MoonRay LS quality has a Sampling choice. Adaptive, as before, takes more samples where a pixel is still noisy, up to Most samples a pixel; Uniform gives every pixel the same samples (25, 64 or 121), for an even grain, with Adaptive error greyed.
 - **Leaner notices**: they open only as tall as their text and two lines more, up to the height they had before, where a long list scrolls.
 - **The size and samples beside the picture follow the engine chosen**: choosing MoonRay, MoonRay LS or MoonLightIPR says at once the size it renders at and its samples a pixel, before anything is rendered; a MoonLightIPR picture says its samples too.
@@ -94,6 +95,7 @@
 - **MoonRay's cameras are Modo cameras**: a perspective, orthographic, fisheye, spherical or dome camera from the MoonRay menu is Modo's own camera with its MoonRay settings in a tab of its own. Modo's viewport lists it in its camera menu and looks through it framed by its MoonRay focal length and film width, with Modo's resolution gate. A fisheye, spherical or dome camera shows as a perspective view as wide across, up to 150 degrees, as Modo's viewport cannot bend the picture; the preview shows its true picture. Made Modo's render camera, a MoonRay camera is the one MoonRay renders through, and it brings its own Overscan to a render to a file. MoonRay cameras in scenes saved before become Modo cameras when the scene is opened, keeping their settings.
 - **Camera Sequence** (MoonRay menu): key cameras to ranges of frames, each the one rendered through from its first frame to its last, in the preview at the current frame, Render to a File, Render Animation and playblasts. A camera's own resolution goes with it, MoonRay's camera items can be keyed too, and frames no key covers use the render camera. A strip shows which camera covers which frames, and where keys overlap or leave gaps.
 - **Convert a Modo camera to a MoonRay camera**: in the MoonRay menu, and in the Item List's right-click menu on a camera. A popup asks which kind (perspective, orthographic, fisheye, spherical or dome); the Modo camera becomes that MoonRay camera in its place, taking its lens, film offset and depth of field where the kind has them, and keeping its name, place, parent, children, animation and role as render camera; Camera Sequence keys that named it name the MoonRay camera.
+- **Change to Modo Camera**: right-click a MoonRay camera in the Item List to make it Modo's own camera again, the same item in the same place, framing as it did (its focal length, film and depth of field). Each camera's right-click menu shows only the entry that applies: Convert to MoonRay Camera, or Change to Modo Camera.
 
 ![The same scene through a Modo camera and through the MoonRay camera converted from it](images/convert-camera.png)
 
@@ -241,6 +243,7 @@
 
 ### Fixes
 
+- **A texture that cannot be found no longer stops the render**: a MoonRay material's image is rendered with an empty texture path in its place (the image node's own default, or a neutral grey), and a notice names each missing file. Shader Tree layers and environment images with a missing file were already left out with a notice.
 - **HDRI environments reach MoonRay whole, and the right way round**: an HDRI layer as Modo makes one (its alpha set to Use, its corrections left alone) was taken for a layered environment and baked into a 512-pixel picture, every turn baked again; an image with no alpha of its own, with nothing to correct, is now sent itself, at full size, and an opaque one hides the environment's own material under it. Sent so, it showed half a turn from where Modo shows it: it now turns as in Modo (checked against Modo's renders at each eighth of a turn).
 - **Turning a layered HDRI is quick**: an HDRI with anything more to it (a colour correction, less than full opacity, a layer under it) was baked into a new picture for every new rotation, five to seven seconds each. It is now baked once, unturned, and turned as the environment light, as a plain HDRI is: about a fifth of a second for each turn, in MoonRay and in MoonLightIPR. An HDRI turned by its texture's UV rotation, or under a gradient or a sky, is baked as before.
 - **The Denoiser set to Off is off everywhere**: the denoised beauty chosen in the preview and Smart Render denoised all the same before. Denoise Preview, Save Denoised EXR, Keep Fine Detail and Smart Render are greyed while it is Off.

@@ -227,7 +227,16 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     from .working_space import configuration as working_configuration
     from .serialization import WRITING
     with WRITING,working_configuration(scene.get('asset_settings',{})),reference_configuration(scene),textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
-        return _scene_text(scene,width,height,samples,environment,output_file)
+        found=[]
+        with textures.noting_missing(found):
+            text=_scene_text(scene,width,height,samples,environment,output_file)
+        if found:
+            # Said once for each texture, with the scene's other notices.
+            said=['Texture not found, rendered without it: '+path for path in found]
+            held=scene.setdefault('warnings',[])
+            held.extend(line for line in said if line not in held)
+            scene['_missing_textures']=found
+        return text
 
 def material_volume(material):
     """The MoonRay volume item a material is filled with, and whether it is that volume alone: (name, only), the

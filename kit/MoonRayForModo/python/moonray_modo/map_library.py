@@ -30,7 +30,7 @@ def binding(ref,kind):
     return 'bind(%s, %s)'%(ref,units.get(kind,'1'))
 
 def emit(kind,path,parameters,inputs,definition):
-    from .textures import prepare,color_rule,register
+    from .textures import prepare,color_rule,register,missing,note_missing
     schema=catalog()[kind]['attributes'];attributes={}
     for key,value in parameters.items():
         if key in inputs:continue
@@ -43,7 +43,14 @@ def emit(kind,path,parameters,inputs,definition):
         # Native gamma controls perform color decoding. Prepare/mipmap without
         # an additional sRGB transform; normal maps always remain data textures.
         if spec['type']=='String' and 'FLAGS_FILENAME' in spec.get('flags','') and value:
-            if Path(value).suffix.lower() not in ('.vdb',):
+            if Path(value).suffix.lower() not in ('.vdb',) and missing(value):
+                # A texture not on this machine: an empty texture path, the map's own default colour in its place
+                # where it has one (a neutral grey where it was left at MoonRay's green), and a notice.
+                note_missing(value);value=''
+                if 'use_default_color_when_missing' in schema and 'use_default_color_when_missing' not in parameters:
+                    attributes['use_default_color_when_missing']='true'
+                    if 'default_color' in schema and 'default_color' not in parameters:attributes['default_color']='Rgb(0.5, 0.5, 0.5)'
+            elif Path(value).suffix.lower() not in ('.vdb',):
                 transformed=bool(color_rule(value));value=prepare(value,False)
                 if transformed and 'gamma' in schema:attributes['gamma']='0'
             else:register(value)

@@ -284,7 +284,7 @@ def emit_map(graph,name,lines,library=None):
 
 def emit(material,name,index,lines,library,output="root",validated=True):
     from .rdla import string,number,vector
-    from .textures import prepare
+    from .textures import prepare,missing,note_missing
     g=validate(material['node_graph']) if validated else effective(material['node_graph']);cache={}
     def definition(kind,path,attributes):
         lines.append('%s(%s) {'%(kind,string(path)))
@@ -326,6 +326,9 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 if u not in address or v not in address:raise ValueError('Unknown image address mode')
                 if params.get('filtertype','linear')!='linear':raise ValueError('This image node supports linear filtering; choose a native ImageMap for other texture controls')
                 filename=params.get('file','')
+                # A texture not on this machine is as no texture: the node's own default value, and a notice.
+                if filename and missing(filename):
+                    note_missing(filename);filename=''
                 if not filename:
                     ref=definition('ConstantColorMap',path,{'color_value':values['default']})
                     cache[identity]=ref
