@@ -166,6 +166,14 @@ public:
         else{if(r.cpuPins)return false;if(r.cpu){r.cpu.reset();stats_.ram-=r.bytes;++stats_.cpuEvictions;}}
         empty(key);return true;
     }
+    // Ready-only admission: never decode, upload or evict. Used to bypass a waiting job.
+    std::optional<Lease> acquireResident(const Key& key,size_t bytes,bool gpu){
+        check();poll();auto it=pages_.find(key);if(it==pages_.end())return {};
+        if(it->second.bytes!=bytes)throw std::invalid_argument("Immutable tile size changed");
+        if(gpu?(!it->second.gpu||it->second.uploading):!it->second.cpu)return {};
+        return acquire(key,bytes,[](const Key&,size_t)->Bytes{throw std::logic_error("Resident lookup missed");},gpu);
+    }
+    const Limits& limits()const{check();return limits_;}
     const Stats& stats() const {return stats_;}
     bool close(){check();poll();if(!uses_.empty())return false;backend_.drain();pages_.clear();uploading_.clear();stats_.ram=stats_.vram=stats_.staging=0;closed_=true;return true;}
 };

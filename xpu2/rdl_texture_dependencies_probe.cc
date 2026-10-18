@@ -1,6 +1,7 @@
 #include "rdl_texture_dependencies.h"
 #include "texture_oiio_loader.h"
 #include "texture_async.h"
+#include "texture_work.h"
 #include <chrono>
 #include <iostream>
 using namespace xpu2;
@@ -34,25 +35,28 @@ int main(int argc,char** argv){try{
     CpuBackend backend;texture::Cache cache(backend,{65536,65536,65536});
     texture::AsyncTextureLoader worker([]{auto decoder=std::make_shared<texture::OiioTileLoader>();auto files=std::make_shared<std::set<std::pair<std::string,uint64_t>>>();
         return [decoder,files](const texture::Key& k,size_t n){auto id=std::make_pair(k.asset,k.revision);if(!files->count(id)){decoder->registerFile(std::filesystem::u8path(k.asset),k.revision);files->insert(id);}return decoder->load(k,n);};},65536,8);
-    auto acquire=[&](const texture::Key& k){auto t=metadata.tile(k);std::optional<texture::Cache::Lease> lease;auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
-        while(!(lease=texture::acquireAsync(cache,worker,k,t.bytes,false))){if(std::chrono::steady_clock::now()>=deadline)throw std::runtime_error("Decode timeout");std::this_thread::sleep_for(std::chrono::milliseconds(1));}
-        check(cache.cpu(*lease)==metadata.load(k,t.bytes),"Indexed background decoded tile mismatch");return *lease;};
-    auto oldLease=acquire(key);auto oldBytes=cache.cpu(oldLease);
+    texture::TextureWorkQueue queue(cache,worker);uint64_t attempt=0;
+    auto acquire=[&](const texture::Key& k){auto t=metadata.tile(k);queue.begin(++attempt,dependencies);
+        auto material=*dependencies->users.at(texture::resourceKey(k)).begin();check(queue.submit(attempt,material,{},{{k,t.bytes}},false),"Indexed work admission failed");
+        texture::TextureWorkQueue::Lease lease;auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+        while(!(lease=queue.claim())){if(std::chrono::steady_clock::now()>=deadline)throw std::runtime_error("Decode timeout");std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+        check(lease->failure.empty()&&cache.cpu(lease->pages[0])==metadata.load(k,t.bytes),"Indexed background decoded tile mismatch");return lease;};
+    auto oldLease=acquire(key);auto oldBytes=cache.cpu(oldLease->pages[0]);
     auto idle=stage();check(lastAttributes==0&&idle->rebuiltMaterials==0,"Native idle rescanned graph");
     {rdl::SceneObject::UpdateGuard guard(mesh);auto matrix=mesh->get<rdl::Mat4d>("node_xform");matrix[3][0]=2;mesh->set<rdl::Mat4d>("node_xform",matrix);}
     auto moved=stage();check(lastAttributes==1&&moved->rebuiltMaterials==0&&moved->visitedEntities==0,"Mesh transform rescanned materials");
     ++revision;auto revised=stage();auto nextKey=revised->users.begin()->first;
     check(lastAttributes==0&&revised->retiredResources.count(key)&&revised->addedResources.count(nextKey)&&nextKey.revision==2,"External content revision failed");
-    auto newLease=acquire(nextKey);check(cache.cpu(oldLease)==oldBytes&&initial->users.count(key),"Retained old scene/page changed");cache.release(newLease);
+    auto newLease=acquire(nextKey);check(cache.cpu(oldLease->pages[0])==oldBytes&&initial->users.count(key),"Retained old scene/page changed");check(queue.finish(newLease)==texture::TextureWorkQueue::Finish::Accepted,"New work completion failed");
     {rdl::SceneObject::UpdateGuard guard(a);a->setBinding("diffuseColor",nullptr);}
     auto detached=stage();check(detached->users.at(nextKey)==std::set<std::string>{bid}&&detached->retiredResources.empty(),"Native detach retired shared file");
     {rdl::SceneObject::UpdateGuard guard(layer);layer->assign(mesh->asA<rdl::Geometry>(),"eyes",a->asA<rdl::Material>(),nullptr);}
     auto reassigned=stage();check(reassigned->affectedObjects==std::set<std::string>{objectId(mesh->getName())}&&reassigned->rebuiltMaterials==0,"Native reassignment invalidation wrong");
     {rdl::SceneObject::UpdateGuard guard(image);image->set<rdl::String>("texture",(fixtures/"gray.tx").u8string());}
     auto switched=stage();check(switched->users.size()==1&&switched->users.begin()->first.asset!=nextKey.asset&&switched->affectedMaterials==std::set<std::string>{bid},"Native filename edit affected unrelated material");
-    auto grayLease=acquire(switched->users.begin()->first);cache.release(grayLease);
+    auto grayLease=acquire(switched->users.begin()->first);check(queue.finish(grayLease)==texture::TextureWorkQueue::Finish::Accepted,"Changed-file work completion failed");
     {rdl::SceneObject::UpdateGuard guard(image);image->set<rdl::String>("texture",(fixtures/"missing.<UDIM>.tx").u8string());}
     auto missing=stage();check(missing->users.empty()&&!missing->materials.at(bid)->unresolved.empty(),"Unresolved native path accepted as ready");
-    cache.release(oldLease);worker.close();check(cache.close(),"Cache close failed");
-    std::cout<<"{\"passed\":true,\"checks\":"<<checks<<",\"native_stages\":"<<stages<<",\"background_tiles\":"<<worker.stats().loads<<",\"native_metadata_only\":true,\"rendered_validation\":false}\n";return 0;
+    check(queue.finish(oldLease)==texture::TextureWorkQueue::Finish::Revoked,"Old scene work was accepted");check(queue.close(),"Work queue close failed");worker.close();check(cache.close(),"Cache close failed");
+    std::cout<<"{\"passed\":true,\"checks\":"<<checks<<",\"native_stages\":"<<stages<<",\"background_tiles\":"<<worker.stats().loads<<",\"scheduled_accepted\":"<<queue.stats().accepted<<",\"scheduled_revoked\":"<<queue.stats().revoked<<",\"native_metadata_only\":true,\"rendered_validation\":false}\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

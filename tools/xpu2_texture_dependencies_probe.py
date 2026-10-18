@@ -21,7 +21,7 @@ def main():
         ninja=(build/'build.ninja').read_text(encoding='utf-8');comp=block(ninja,'build scene-rdl2/cmd/rdl2_cmd/rdl2_print/CMakeFiles/rdl2_print.dir/rdl2_print.cc.obj:');link=block(ninja,'build bin/rdl2_print.exe:')
         flags=shlex.split(' '.join(comp[k] for k in ('DEFINES','FLAGS','INCLUDES')))+['-I'+str(prefix/'include'),'-fno-fast-math']
         libs=[str((build/v).resolve()) if not v.startswith('-') else v for v in shlex.split(link['LINK_LIBRARIES'])]+[str(prefix/'lib'/v) for v in ('libOpenImageIO.dll.a','libOpenImageIO_Util.dll.a')]
-        files=[ROOT/'xpu2'/n for n in ('indexed_scene.h','persistent_map.h','rdl_scene_index.h','texture_cache.h','texture_residency.h','texture_dependencies.h','rdl_texture_dependencies.h','rdl_texture_dependencies_probe.cc','texture_async.h','texture_oiio_loader.h')]+[Path(__file__).resolve(),ROOT/'tools/xpu2_rdl_index_probe.py',compiler]
+        files=[ROOT/'xpu2'/n for n in ('indexed_scene.h','persistent_map.h','rdl_scene_index.h','texture_cache.h','texture_residency.h','texture_dependencies.h','rdl_texture_dependencies.h','rdl_texture_dependencies_probe.cc','texture_async.h','texture_oiio_loader.h','texture_work.h')]+[Path(__file__).resolve(),ROOT/'tools/xpu2_rdl_index_probe.py',compiler]
         files += [Path(v) for v in libs if not v.startswith('-')]
         hashes={str(f):digest_file(f) for f in files}
         for name in ('libOpenImageIO-3.1.dll','libOpenImageIO_Util-3.1.dll'):
