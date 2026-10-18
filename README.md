@@ -36,7 +36,8 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 |---|---|
 | ![Glass and a coated material, in MoonRay and in MoonLightIPR](docs/images/moonlightipr-dwa_glass_coat.jpg) | ![Smart Render's noise reading during a render](docs/images/smart-render-noise.png) |
 | **MoonLightIPR**: MoonRay (left), MoonLightIPR (right) | **Smart Render**: the noise falling, and where it will stop |
-| ![A MoonRay preview stopped part way, kept and denoised](docs/images/safe-denoising.png) | ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png) |
+| <img width="1191" height="527" alt="image" src="https://github.com/user-attachments/assets/e06a1fc0-231d-4eac-8468-669d6f3e0ec3" />
+ | ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png) |
 | **Safe Denoising**: stopped part way, kept and denoised | **Draft mode**: a region rendered among the outlines |
 | ![The material graph editor with a MoonRay material](docs/images/graph-editor.png) | ![Modo's Fur material in MoonRay](docs/images/fur-extras.jpg) |
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
