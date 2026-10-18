@@ -140,3 +140,10 @@ state; do not substitute arbitrary asynchronous results at this tested boundary.
 adapter are separate components until that connection is implemented and tested.
 Arbitrary shading paths, CPU migration, adaptive completion barriers and other
 native resource ownership remain unfinished. XPU and the installed kit are unchanged.
+
+## GPU follow-up
+
+The separate [native GPU shading candidate](NATIVE_GPU_SHADING.md) now connects
+owned child paths to the CUDA queue and validates an earlier Lambert dispatch
+boundary without a CPU BSDF oracle. The restoration results above describe the
+original restoration-only candidate, not general asynchronous material shading.

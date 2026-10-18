@@ -88,3 +88,10 @@ radiance through native queues. Unsupported materials, volumes, deep/Cryptomatte
 state and adaptive film dependencies remain on existing XPU until their contracts
 are represented. A native image and cancellation gate must pass before removing
 the duplicated CPU oracle or claiming acceleration. XPU remains unchanged.
+
+## Native follow-up
+
+[Native GPU shading](NATIVE_GPU_SHADING.md) now validates two copied-runtime
+candidates: owned child-path CUDA dispatch and an earlier Lambert sample route
+that avoids duplicate CPU lobe evaluation. Neither yet integrates this texture
+readiness coordinator into arbitrary native material execution.
