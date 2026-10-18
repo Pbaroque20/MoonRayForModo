@@ -39,12 +39,12 @@ KEYS = {
     'transmission_roughness': (True, bool),
     'auto_xpu': (True, bool),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (50.0, float), 'notices_open': (False, bool),
-    'ipr/width': (640, int), 'ipr/samples': (16, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
+    'ipr/width': (640, int), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
     'moonlightipr/samples': (256, int),
 }
 # The samples a pixel each realtime engine may be set to stop at.
-LS_SAMPLES = (1, 4, 16, 32, 64)
+LS_SAMPLES = (32, 64, 128)
 # How wide MoonRay LS may render: small, to be quick, or any of the preview sizes.
 LS_WIDTHS = (80, 160, 240) + tuple(size for label, size in SIZES)
 MOONLIGHTIPR_SAMPLES = (128, 256, 512, 1024)
@@ -71,9 +71,11 @@ class Preferences:
                     # The engine's name as 0.3.50.1 and 0.3.50.2 stored it.
                     return 'moonlightipr'
                 return str(value) if value else (native.default_runtime() if key == 'runtime' else default)
-            if key == 'moonlightipr/samples':
-                # 32 and 64, which could once be chosen, are taken up to the fewest that can be chosen now.
-                return next((v for v in MOONLIGHTIPR_SAMPLES if v >= int(value)), MOONLIGHTIPR_SAMPLES[-1])
+            if key in ('moonlightipr/samples', 'ipr/samples'):
+                # Fewer than can be chosen now (32 and 64 for MoonLightIPR, 1 to 16 for MoonRay LS, which could once
+                # be chosen) are taken up to the fewest that can.
+                levels = MOONLIGHTIPR_SAMPLES if key == 'moonlightipr/samples' else LS_SAMPLES
+                return next((v for v in levels if v >= int(value)), levels[-1])
             if key == 'preview_size' and kind(value) <= 0:
                 # Scene resolution, as it could once be set to: a realtime preview is no longer made that large.
                 return default

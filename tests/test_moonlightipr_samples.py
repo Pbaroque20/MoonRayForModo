@@ -1,4 +1,5 @@
-"""MoonLightIPR's sample levels in the preview's preferences: 128 to 1024, and what was stored before lifted to them."""
+"""The realtime engines' sample levels in the preview's preferences, MoonLightIPR's 128 to 1024 and MoonRay LS's 32 to 128,
+and what was stored before lifted to them."""
 import sys
 import types
 import unittest
@@ -27,10 +28,10 @@ class Store(dict):
         return self.get(key, default)
 
 
-def read(stored):
+def read(stored, key='moonlightipr/samples'):
     held = preferences.Preferences.__new__(preferences.Preferences)
-    held.store = Store() if stored is None else Store({'moonlightipr/samples': stored})
-    return held.get('moonlightipr/samples')
+    held.store = Store() if stored is None else Store({key: stored})
+    return held.get(key)
 
 
 class Samples(unittest.TestCase):
@@ -47,6 +48,28 @@ class Samples(unittest.TestCase):
     def test_a_level_is_kept(self):
         for level in preferences.MOONLIGHTIPR_SAMPLES:
             self.assertEqual(read(str(level)), level)
+
+
+class LowSamples(unittest.TestCase):
+    def test_the_levels(self):
+        self.assertEqual(preferences.LS_SAMPLES, (32, 64, 128))
+
+    def test_the_default_is_the_fewest(self):
+        self.assertEqual(read(None, 'ipr/samples'), 32)
+
+    def test_fewer_than_32_stored_before_is_32(self):
+        for stored in ('1', '4', 16):
+            self.assertEqual(read(stored, 'ipr/samples'), 32)
+
+    def test_a_level_is_kept(self):
+        for level in preferences.LS_SAMPLES:
+            self.assertEqual(read(str(level), 'ipr/samples'), level)
+
+    def test_moonray_ls_takes_128(self):
+        from moonray_modo.ipr import prepare
+        scene = {'width': 640, 'height': 360, 'render_settings': {'sampling_mode': 2, 'max_adaptive_samples': 1024}}
+        prepared, _, _ = prepare(scene, 640, 360, 4, 640, 128)
+        self.assertEqual(prepared['render_settings']['max_adaptive_samples'], 128)
 
 
 if __name__ == '__main__':
