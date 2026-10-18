@@ -2,9 +2,14 @@
 from . import options
 
 
-def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, error=100.0):
+def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, error=100.0, sampling='adaptive'):
+    """MoonRay LS's scene: adaptive, from 2 samples a pixel up to its cap, stopping where a pixel is clean enough; or,
+    with sampling 'uniform', the same samples in every pixel, MoonRay's square grid of no more than the cap
+    (kept as '_uniform_grid', for the render to be given)."""
     if width_cap not in (80,160,240,320,640,960,1280) or sample_cap not in (1,4,16,32,64,128):
         raise ValueError('Invalid IPR quality preset')
+    if sampling not in ('adaptive','uniform'):
+        raise ValueError('MoonRay LS sampling is adaptive or uniform')
     if not 0.1<=float(error)<=1000:
         raise ValueError('IPR adaptive error must be between 0.1 and 1000')
     settings=options.render_values(scene.get('render_settings',{}))
@@ -17,6 +22,9 @@ def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, erro
                     target_adaptive_error=max(float(error),settings['target_adaptive_error']),
                     light_samples=1,bsdf_samples=1,bssrdf_samples=1)
     result=dict(scene,render_settings=settings,_ipr=True)
+    if sampling=='uniform' and cap>1:
+        settings.update(sampling_mode=0,min_adaptive_samples=1)
+        result['_uniform_grid']=max(1,int(cap**.5))
     result.pop('_denoise_guides',None)
     # A quick look is the beauty and nothing else: no other buffer is rendered or kept for it.
     result['preview_buffer']='beauty';result['aovs']=['alpha'];result['custom_aovs']=[]

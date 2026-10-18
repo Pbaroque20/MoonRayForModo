@@ -955,8 +955,8 @@ class Panel(Tools, QtWidgets.QWidget):
                 # As MoonRay LS has a scene prepared: no wider than its width limit, and sampled to its own limit.
                 from .ipr import prepare
                 prepared,width,height=prepare({'width':scene_w,'height':scene_h,'render_settings':values['render']},width,height,
-                                              values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'))
-                words=self._sampling_words('ls',prepared['render_settings'],pixel_samples=1)
+                                              values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'),get('ipr/sampling'))
+                words=self._sampling_words('ls',prepared['render_settings'],pixel_samples=prepared.get('_uniform_grid',1)**2)
             else:
                 words=self._sampling_words('moonray',values['render'],pixel_samples=int(values['samples'])**2)
         except Exception:return
@@ -1286,12 +1286,12 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonRay LS is MoonRay within its quality limits. A draft's region is not held to them.
         if self._low() and not output and not scene.get('_draft'):
             from .ipr import prepare
-            scene,width,height=prepare(scene,width,height,values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'))
+            scene,width,height=prepare(scene,width,height,values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'),get('ipr/sampling'))
         if refining:
             from .ipr import refine
             scene=refine(scene)
         self.renderer.timeout_seconds = values['timeout']*60
-        grid=(4 if refining else 1) if scene.get('_ipr') and not output else values['samples']
+        grid=(4 if refining else scene.get('_uniform_grid',1)) if scene.get('_ipr') and not output else values['samples']
         # Kept with the picture, for its sampling to be said beside its size.
         if engine=='moonray':scene=dict(scene,_pixel_samples=int(grid)**2)
         self.renderer.submit(scene, self.runtime_path(), width, height, grid,

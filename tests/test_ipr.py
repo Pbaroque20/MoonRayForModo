@@ -20,6 +20,20 @@ class IprTests(unittest.TestCase):
         self.assertIsNot(preview['render_settings'],scene['render_settings'])
         self.assertEqual(preview['denoising'],scene['denoising'])
 
+    def test_uniform_gives_every_pixel_the_square_grid_within_the_cap(self):
+        scene={'width':640,'height':360,'render_settings':{'sampling_mode':2,'min_adaptive_samples':16,'max_adaptive_samples':1024}}
+        for cap,grid in ((32,5),(64,8),(128,11)):
+            preview,_,_=prepare(scene,640,360,4,640,cap,100.0,'uniform')
+            self.assertEqual(preview['render_settings']['sampling_mode'],0)
+            self.assertEqual(preview['_uniform_grid'],grid)
+        adaptive,_,_=prepare(scene,640,360,4,640,64,100.0)
+        self.assertEqual((adaptive['render_settings']['sampling_mode'],adaptive['render_settings']['max_adaptive_samples']),(2,64))
+        self.assertNotIn('_uniform_grid',adaptive)
+        # Never more than the scene's own render settings give.
+        few,_,_=prepare(dict(scene,render_settings={'sampling_mode':2,'max_adaptive_samples':36}),640,360,4,640,128,100.0,'uniform')
+        self.assertEqual(few['_uniform_grid'],6)
+        with self.assertRaises(ValueError):prepare(scene,640,360,4,640,64,100.0,'random')
+
     def test_ipr_bypasses_denoiser_and_guides(self):
         from moonray_modo import denoising
         scene={'width':640,'denoising':{'engine':'optix','preview':True,'final':True},
