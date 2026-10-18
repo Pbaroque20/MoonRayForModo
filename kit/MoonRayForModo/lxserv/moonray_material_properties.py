@@ -5,6 +5,7 @@ import sys
 package_root=os.path.join(os.path.dirname(os.path.dirname(__file__)),"python")
 if package_root not in sys.path: sys.path.insert(0,package_root)
 import lx
+import lxifc
 import lxu.command
 from moonray_modo import properties,shader_library,material_override,property_notifications
 from moonray_modo.materials import selected
@@ -233,6 +234,15 @@ class CryptomatteFilter(Observed):
     def basic_Execute(self,msg,flags): pass
 
 
+class Watched(lxifc.UIValueHints):
+    """The events a Cryptomatte field follows: the selection, and a material setting written. Without them listed here a
+    field kept the first material's value."""
+    def __init__(self,notifiers):self._notifiers=notifiers
+    def uiv_Flags(self):return 0
+    def uiv_NotifierCount(self):return len(self._notifiers)
+    def uiv_NotifierByIndex(self,index):return self._notifiers[index]
+
+
 def crypto_setting(key,text):
     """A material's Cryptomatte name (text) or ID (a whole number), kept with its other MoonRay settings."""
     from moonray_modo.options import CRYPTO_ID_MAX
@@ -242,6 +252,9 @@ def crypto_setting(key,text):
             self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
         def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
         def basic_Enable(self,msg): return bool(selected())
+        def arg_UIValueHints(self,index):
+            from moonray_modo.hint_cache import same
+            return same(Watched,(('select.event','item +v'),(property_notifications.NAME,'')))
         def cmd_Query(self,index,query):
             values=lx.object.ValueArray(query)
             for item in selected():

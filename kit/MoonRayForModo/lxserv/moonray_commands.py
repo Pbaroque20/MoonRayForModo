@@ -134,6 +134,28 @@ class ObjectFilter(lxu.command.BasicCommand):
 lx.bless(ObjectFilter,'moonray.object.filter')
 
 
+class Watched(lxifc.UIValueHints):
+    """The events a field follows: Modo listens only for those named here, and a field with none keeps showing the value it
+    was first drawn with, whichever item is selected after."""
+    def __init__(self, notifiers):
+        self._notifiers = notifiers
+
+    def uiv_Flags(self):
+        return 0
+
+    def uiv_NotifierCount(self):
+        return len(self._notifiers)
+
+    def uiv_NotifierByIndex(self, index):
+        return self._notifiers[index]
+
+
+def watched():
+    """The selection changing, and a setting of the plugin's being written."""
+    from moonray_modo import property_notifications
+    return _same(Watched, (('select.event', 'item +v'), (property_notifications.NAME, '')))
+
+
 def object_command(key):
     from moonray_modo import options
     default = options.OBJECT[key][0]
@@ -150,6 +172,9 @@ def object_command(key):
         def basic_Enable(self, msg):
             from moonray_modo import properties
             return bool(properties.selected_geometry())
+
+        def arg_UIValueHints(self, index):
+            return watched()
 
         def basic_Execute(self, msg, flags):
             from moonray_modo import properties
@@ -189,6 +214,9 @@ def object_text(key):
         def basic_Enable(self, msg):
             from moonray_modo import properties
             return bool(properties.selected_geometry())
+
+        def arg_UIValueHints(self, index):
+            return watched()
 
         def basic_Execute(self, msg, flags):
             from moonray_modo import options, properties
