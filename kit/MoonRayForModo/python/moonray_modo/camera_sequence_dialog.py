@@ -12,7 +12,8 @@ UNCOVERED = '#4a4e55'
 def cameras(scene):
     """Every camera a key can name, (words, identity): Modo's cameras, then MoonRay's camera items."""
     from . import camera_choice
-    found = [('Modo camera: ' + item.name, item.id) for item in sorted(scene.items('camera', superType=False), key=lambda i: i.name.casefold())]
+    from . import entities
+    found = [('Modo camera: ' + item.name, item.id) for item in sorted(entities.modo_cameras(scene), key=lambda i: i.name.casefold())]
     return found + [(camera_choice.label(item), item.id) for item in camera_choice.cameras(scene)]
 
 

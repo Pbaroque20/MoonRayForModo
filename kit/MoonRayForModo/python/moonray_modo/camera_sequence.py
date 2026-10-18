@@ -74,4 +74,5 @@ def keyed(scene, frame):
         item = scene.item(identity)
     except LookupError:
         return None
-    return item, item.type != 'camera'
+    from . import entities
+    return item, entities.class_of(item) is not None
