@@ -192,7 +192,8 @@ class Panel(QtWidgets.QWidget):
             # being dragged, it is held lighter to keep up.
             live=self.live.isChecked()
             size,samples,error=(256,4,50.0) if live else (384,64,5.0)
-            scene['render_settings'].update(sampling_mode=2,max_adaptive_samples=samples)
+            # The fewest as MoonRay LS takes them (2): the scene's own fewest (16 by default) is more than Live's most.
+            scene['render_settings'].update(sampling_mode=2,min_adaptive_samples=2,max_adaptive_samples=samples)
             scene=dict(scene,width=size,height=size)
             from .ipr import prepare
             scene,width,height=prepare(scene,size,size,1,640,samples,error)
