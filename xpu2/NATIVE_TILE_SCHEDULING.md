@@ -69,6 +69,8 @@ production enablement or speedup is implied by building the candidate.
 
 ## Next throughput experiment
 
+Implemented as a separate candidate: [native batches in flight](NATIVE_FLIGHTS.md).
+
 Keep FIFO and neighbor selection available, but replace the serial bridge drain
 with a small ring of persistent pinned staging slots and independent CUDA streams.
 Each slot needs its own inputs/results, completion event, scene revision and
