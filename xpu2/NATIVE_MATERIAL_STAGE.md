@@ -120,3 +120,11 @@ path decisions and other native context dependencies still require investigation
 Both helping builds remain rejected, separate diagnostics.
 
 Complete reports and identities: [native-material-stage-20261018.json](native-material-stage-20261018.json).
+
+## Queue-family follow-up
+
+[Scoped shadow work](NATIVE_SHADOW_WORK.md) separates the native queue families.
+The major error remains when all traversal stays on GPU and follows early
+intersection/shading queue work. A separate shadow-only helper preserves the RGB
+tolerance on the reflection/transmission controls. This does not rehabilitate
+the rejected intersection helpers or complete native asynchronous shading.
