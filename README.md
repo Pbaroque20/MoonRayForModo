@@ -57,9 +57,6 @@ The full list, with pictures, is in [What's new](docs/WHATS_NEW_04.md). 0.4.2 co
 - **Modo's own light linking reaches MoonRay**, HDRI environments turn quickly and match Modo, and glitter works in reference space.
 - **Eleven MoonRay Source Overrides**: fixes to MoonRay's own source, each a checkbox in Preferences, on by default.
 - **Colour**: an ACES 2.0 view beside ACES 1.3, and ACEScg scenes that render and look right.
-- **Change to Modo Camera** on a MoonRay camera's right-click menu, framing as it did.
-- **A missing texture no longer stops the render**: a notice names it, and the material renders without it.
-- **The button greys while a render stops**, saying Stopping, until MoonRay has finished with what it has.
 
 ## New in 0.4.1
 
