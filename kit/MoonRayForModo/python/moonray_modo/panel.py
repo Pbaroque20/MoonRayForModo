@@ -307,6 +307,14 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _image_menu(self,point=None):
         menu=QtWidgets.QMenu(self);menu.setStyleSheet(MENU_STYLE)
+        # The compositor in probe mode: a note of the values at the pixel under the pointer, which follows the graph and
+        # the render.
+        from . import compositor_editor
+        editor=compositor_editor._open.get('editor')
+        if point is not None and editor is not None and getattr(editor,'probing',False) and editor.probe_point is not None:
+            probed=editor.probe_point
+            menu.addAction('Create Probe Note at %d, %d'%probed,lambda:editor.note_at(probed))
+            menu.addSeparator()
         if point is not None:
             menu.addAction('Focus Here',lambda:self.focus_at(point))
             menu.addSeparator()

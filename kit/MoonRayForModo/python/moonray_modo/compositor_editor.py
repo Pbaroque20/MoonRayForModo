@@ -136,10 +136,9 @@ class Node(QtWidgets.QGraphicsRectItem):
         kind = value['type']; schema = compositor.NODES[kind]
         ports = compositor.ports(value)
         held = compositor.parameters(value)
-        # A note is its words; every other node, in probe mode, has a line more for its value at the probed pixel.
+        # A note is its words.
         words = held.get('text', '').splitlines() or ['(empty note)'] if kind == 'note' else []
-        probed = editor.probe_line(identity) if kind != 'note' else None
-        height = HEADER + (len(words) * ROW if kind == 'note' else max(1, len(ports)) * ROW) + (ROW if probed else 0) + 8
+        height = HEADER + (len(words) * ROW if kind == 'note' else max(1, len(ports)) * ROW) + 8
         super().__init__(0, 0, WIDTH, height)
         self.editor, self.identity = editor, identity
         self.setFlags(self.ItemIsMovable | self.ItemIsSelectable | self.ItemSendsGeometryChanges | self.ItemHasNoContents)
@@ -159,9 +158,6 @@ class Node(QtWidgets.QGraphicsRectItem):
                 label(self, line, TEXT, 10, HEADER + 4 + index * ROW, WIDTH - 20, size=-1)
             self.setPos(*value.get('position', [0, 0]))
             return
-        if probed:
-            text, ink = probed
-            label(self, text, ink, 10, HEADER + 4 + max(1, len(ports)) * ROW, WIDTH - 20, size=-1)
         if kind != 'output':
             self.sockets[None] = Socket(editor, identity, None, self, WIRES[kind]); self.sockets[None].setPos(WIDTH, HEADER / 2)
         wired = value.get('inputs') or {}
@@ -221,7 +217,7 @@ class View(GraphView):
             return
         if what == 'disconnect': self.editor.unlink(*connection)
         elif what == 'duplicate': self.editor.duplicate()
-        elif what == 'note_probe': self.editor.note_probe()
+        elif what == 'note_probe': self.editor.note_at(self.editor.probe_point)
         elif what == 'delete': self.editor.remove()
         elif what == 'add': self.editor.quick_add(self.mapToScene(event.pos()), event.globalPos())
         elif what == 'frame': self.editor.frame()
@@ -256,11 +252,15 @@ class Editor(QtWidgets.QDialog):
         menu_button('Build', [('From Light Passes', lambda: self.build('passes')), ('From Light Groups', lambda: self.build('groups'))])
         # Probe mode: each node's value at the pixel under the pointer in the preview, and notes of those values.
         self.probe_button = QtWidgets.QToolButton(); self.probe_button.setText('Probe'); self.probe_button.setCheckable(True); self.probe_button.setAutoRaise(True)
-        self.probe_button.setToolTip('Show what each node makes at the pixel under the pointer in the preview window. The point stays where the pointer left the picture.')
+        self.probe_button.setToolTip('Over the preview picture, a tooltip at the pointer gives what each node makes at that pixel. '
+                                     'Right-click there for a note that keeps those values and follows the graph and the render.')
         self.probe_button.toggled.connect(self.set_probing); toolbar.addWidget(self.probe_button)
         self.note_button = QtWidgets.QToolButton(); self.note_button.setText('Note Values'); self.note_button.setAutoRaise(True); self.note_button.setEnabled(False)
-        self.note_button.setToolTip('A note of the probed values of the selected nodes, or of every node when none is selected')
-        self.note_button.clicked.connect(self.note_probe); toolbar.addWidget(self.note_button)
+        self.note_button.setToolTip('A probe note of the values at the last pixel probed, as a right-click on the preview makes')
+        self.note_button.clicked.connect(lambda: self.note_at(self.probe_point)); toolbar.addWidget(self.note_button)
+        # Probe notes follow the graph and the render: looked at once a second, and worked out again when either changed.
+        self.notes_timer = QtCore.QTimer(self); self.notes_timer.setInterval(1000); self.notes_timer.timeout.connect(self.refresh_notes)
+        self.notes_seen = None; self.notes_timer.start()
         self.probing = False; self.probe_point = None; self.probed = {}
         self.probe_timer = QtCore.QTimer(self); self.probe_timer.setSingleShot(True); self.probe_timer.setInterval(120)
         self.probe_timer.timeout.connect(self.update_probe)
@@ -490,72 +490,100 @@ class Editor(QtWidgets.QDialog):
             pass
         if not self.probing:
             self.probed = {}
-            self.rebuild()
+            QtWidgets.QToolTip.hideText()
         else:
-            self.info.setText('Probe: move the pointer over the picture in the preview window. The point stays where it left it.')
-            if self.probe_point is not None:
-                self.update_probe()
+            self.info.setText('Probe: hold the pointer over the picture in the preview window for its values. Right-click there '
+                              'for a note of them.')
 
     def probe_hovered(self, x, y):
-        # Off the picture, the last point is kept, so that the values can be read in the editor.
+        # Off the picture the tooltip goes; the last point is kept for Note Values.
         if x < 0 or y < 0:
+            self.probe_timer.stop(); QtWidgets.QToolTip.hideText()
             return
         self.probe_point = (x, y)
         self.probe_timer.start()
 
-    def update_probe(self):
-        """Work out each node's value at the probed pixel, and show it on the canvas."""
-        if not self.probing or self.probe_point is None:
-            return
+    def sampled_at(self, x, y):
+        """Each node's value at a pixel of the finished render, {node: (r, g, b) or None}; None with no render to read."""
         from . import compositor_probe
         frame = getattr(self.panel.renderer.buffers, 'frame', None) or {}
-        x, y = self.probe_point
         size = compositor_probe.size(frame) if frame else None
         if size is None:
-            self.info.setText('Probe: there is no finished render to read values from.')
-            self.probed = {}
-        else:
-            try:
-                self.probed = compositor.sample(self.graph, lambda key: compositor_probe.value(frame, key, x, y), x, y, size[0], size[1])
-                self.info.setText('Probe at %d, %d.' % (x, y))
-            except (ValueError, OSError) as exc:
-                self.probed = {}
-                self.info.setText('Probe: ' + str(exc))
-        selected = self.selected_nodes()
-        self.rebuild()
-        for identity in selected:
-            if identity in self.items:
-                self.items[identity].setSelected(True)
-
-    def probe_line(self, identity):
-        """What a node shows in probe mode: its value at the probed pixel and the colour to show it in, or None."""
-        if not self.probing or identity not in self.probed:
             return None
-        picked = self.probed[identity]
-        if picked is None:
-            return 'needs the pixels around it', TEXT_DIM
-        return 'R %.3f  G %.3f  B %.3f' % tuple(picked), '#d8c86a'
+        try:
+            return compositor.sample(self.graph, lambda key: compositor_probe.value(frame, key, x, y), x, y, size[0], size[1])
+        except (ValueError, OSError):
+            return None
 
-    def note_probe(self):
-        """A note of the probed values of the selected nodes, or of every node when none is selected, beside them."""
-        if not self.probing or self.probe_point is None or not self.probed:
-            self.info.setText('Probe a pixel first: switch Probe on and move the pointer over the preview picture.'); return
-        chosen = [identity for identity in self.selected_nodes() if identity in self.probed and self.graph['nodes'][identity]['type'] != 'note'] or \
-                 [identity for identity in compositor.order(compositor.validate(self.graph)) if identity in self.probed]
+    def node_words(self, identity):
+        node = self.graph['nodes'][identity]
+        if node['type'] == 'input':
+            return self.buffer_label(compositor.parameters(node)['buffer'])
+        return compositor.NODES[node['type']]['label']
 
-        def called(identity):
-            node = self.graph['nodes'][identity]
-            if node['type'] == 'input':
-                return self.buffer_label(compositor.parameters(node)['buffer'])
-            return compositor.NODES[node['type']]['label']
-        text = compositor.probe_note([(called(identity), self.probed[identity]) for identity in chosen], *self.probe_point)
-        right = max(self.graph['nodes'][identity]['position'][0] for identity in chosen) + WIDTH + 60
-        top = min(self.graph['nodes'][identity]['position'][1] for identity in chosen)
+    def probe_text(self, sampled, x, y):
+        """The values at a pixel, node by node in the order the graph makes them, as the tooltip and a probe note say them."""
+        if sampled is None:
+            return 'Probe at %d, %d\nNo finished render to read values from.' % (x, y)
+        try:
+            made = [identity for identity in compositor.order(compositor.validate(self.graph)) if identity in sampled]
+        except ValueError:
+            made = list(sampled)
+        return compositor.probe_note([(self.node_words(identity), sampled[identity]) for identity in made], x, y)
+
+    def update_probe(self):
+        """The tooltip at the pointer: what each node makes at the pixel under it."""
+        if not self.probing or self.probe_point is None:
+            return
+        x, y = self.probe_point
+        sampled = self.sampled_at(x, y)
+        self.probed = sampled or {}
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), self.probe_text(sampled, x, y), self.panel.preview)
+
+    def note_at(self, point):
+        """A probe note of the values at a pixel, beside the Composite: it keeps the pixel and follows the graph and the
+        render (refresh_notes)."""
+        if point is None:
+            self.info.setText('Probe a pixel first: switch Probe on and hold the pointer over the preview picture.'); return
+        x, y = point
+        placed = [node['position'] for node in self.graph['nodes'].values()] or [[0.0, 0.0]]
+        right = max(position[0] for position in placed) + WIDTH + 60
+        top = min(position[1] for position in placed)
         before = copy.deepcopy(self.graph)
         identity = 'note_' + uuid.uuid4().hex[:6]
-        self.graph['nodes'][identity] = {'type': 'note', 'parameters': {'text': text}, 'inputs': {}, 'position': self.free_place(right, top)}
+        self.graph['nodes'][identity] = {'type': 'note', 'inputs': {}, 'position': self.free_place(right, top),
+                                         'parameters': {'text': self.probe_text(self.sampled_at(x, y), x, y), 'probe_x': float(x), 'probe_y': float(y)}}
         self.rebuild(); self.remember(before)
-        self.info.setText('Noted the values at %d, %d.' % self.probe_point)
+        self.info.setText('A probe note of the values at %d, %d. It follows the graph and the render.' % (x, y))
+
+    def refresh_notes(self):
+        """Work the probe notes' words out again when the graph or the render has changed since they were."""
+        if self.busy or not any(node['type'] == 'note' and compositor.parameters(node)['probe_x'] >= 0 for node in self.graph['nodes'].values()):
+            return
+        import json
+        frame = getattr(self.panel.renderer.buffers, 'frame', None) or {}
+        shape = {identity: dict(node, parameters={k: v for k, v in (node.get('parameters') or {}).items() if k != 'text'}, position=None)
+                 for identity, node in self.graph['nodes'].items()}
+        seen = (id(frame), json.dumps(shape, sort_keys=True, default=str))
+        if seen == self.notes_seen:
+            return
+        self.notes_seen = seen
+        changed = False
+        for node in self.graph['nodes'].values():
+            held = compositor.parameters(node) if node['type'] == 'note' else None
+            if held is None or held['probe_x'] < 0 or held['probe_y'] < 0:
+                continue
+            x, y = int(held['probe_x']), int(held['probe_y'])
+            text = self.probe_text(self.sampled_at(x, y), x, y)
+            if text != held['text']:
+                node.setdefault('parameters', {})['text'] = text; changed = True
+        if changed:
+            selected = self.selected_nodes()
+            self.rebuild()
+            for identity in selected:
+                if identity in self.items:
+                    self.items[identity].setSelected(True)
+            self.write_timer.start()
 
     def aov_menu(self, menu):
         """Fill the Add Input AOV menu: the render's buffers, then the light passes and light groups the scene does not

@@ -41,8 +41,9 @@ NODES = {
                             'strength': ('number', 0.5, 0.0, 10.0)}},
     'output': {'label': 'Composite', 'inputs': ('image',), 'tip': 'The picture the Composite buffer shows.', 'parameters': {}},
     'note': {'label': 'Note', 'inputs': (), 'family': 'note',
-             'tip': 'Words kept on the canvas, such as values the probe found. Not part of the picture.',
-             'parameters': {'text': ('text', '')}},
+             'tip': 'Words kept on the canvas. Not part of the picture. A probe note (made by a right-click on the preview '
+                    'in probe mode) holds the values at its pixel, Probe X and Y, and follows the graph and the render.',
+             'parameters': {'text': ('text', ''), 'probe_x': ('number', -1.0, -1.0, 100000.0), 'probe_y': ('number', -1.0, -1.0, 100000.0)}},
     'sum': {'label': 'Sum', 'inputs': SUM_INPUTS, 'tip': 'Every picture wired in, added up: render passes back into one picture.',
             'parameters': {}},
     # Colour.
