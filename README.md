@@ -118,7 +118,7 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 
 ### Working in Modo
 
-- **MoonRay lights, cameras, light filters, shapes and volumes have a Transform section** in their Properties, laid out as Modo's: Position, Rotation with its order, and Scale as X, Y and Z, with the Reset, Freeze, Zero and Add menus.
+- **MoonRay lights, light filters, shapes, volumes and the bake camera have a Transform section** in their Properties, laid out as Modo's: Position, Rotation with its order, and Scale as X, Y and Z, with the Reset, Freeze, Zero and Add menus. MoonRay's perspective, orthographic, fisheye, spherical and dome cameras are Modo cameras, with Modo's own camera Transform.
 - **Terminal** in the MoonRay menu: every program the plugin runs (MoonRay, MoonLightIPR, the denoiser, the scene reader and the rest), with its command line, what it prints and how it ended, as it happens. It shows "ready" while nothing runs.
 
 ![The MoonRay Terminal after a MoonRay render and a stereo composite](docs/images/terminal.png)
