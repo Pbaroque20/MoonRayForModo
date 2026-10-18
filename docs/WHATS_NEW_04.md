@@ -40,6 +40,7 @@
 
 ### The preview window
 
+- **The button greys while a render stops**: after Stop it says Stopping, greyed, while MoonRay finishes with what it has, and becomes Render (or Continue) again once it has.
 - **MoonRay LS can sample uniformly**: Preview Preferences > MoonRay LS quality has a Sampling choice. Adaptive, as before, takes more samples where a pixel is still noisy, up to Most samples a pixel; Uniform gives every pixel the same samples (25, 64 or 121), for an even grain, with Adaptive error greyed.
 - **Leaner notices**: they open only as tall as their text and two lines more, up to the height they had before, where a long list scrolls.
 - **The size and samples beside the picture follow the engine chosen**: choosing MoonRay, MoonRay LS or MoonLightIPR says at once the size it renders at and its samples a pixel, before anything is rendered; a MoonLightIPR picture says its samples too.
