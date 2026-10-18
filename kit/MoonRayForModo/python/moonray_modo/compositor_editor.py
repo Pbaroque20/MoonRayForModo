@@ -6,6 +6,7 @@ Composite buffer again from the render it has kept. Nothing here renders.
 """
 import copy
 import uuid
+from pathlib import Path
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import compositor
 from .node_widgets import GraphView, QuickAdd, curve, MENU_STYLE, NODE_BODY, NODE_EDGE, ACCENT, TEXT, TEXT_PORT, TEXT_DIM, GRID
@@ -307,7 +308,10 @@ class Editor(QtWidgets.QDialog):
         for words, tip, callback in [('Undo', 'Ctrl+Z', self.undo), ('Redo', 'Ctrl+Y', self.redo)]:
             button = QtWidgets.QToolButton(); button.setText(words); button.setToolTip(tip); button.setAutoRaise(True); button.clicked.connect(callback); toolbar.addWidget(button)
         toolbar.addStretch(1)
-        show = QtWidgets.QToolButton(); show.setText('Show Composite'); show.setAutoRaise(True)
+        self.preview_button = QtWidgets.QToolButton(); self.preview_button.setText('Preview Composite'); self.preview_button.setCheckable(True); self.preview_button.setAutoRaise(True)
+        self.preview_button.setToolTip('Show the Composite in a viewer here, under the settings, as the preview window would show it; it follows each new Composite')
+        self.preview_button.toggled.connect(self.set_previewing); toolbar.addWidget(self.preview_button)
+        show = QtWidgets.QToolButton(); show.setText('Send Composite to Preview Window'); show.setAutoRaise(True)
         show.setToolTip('Choose the Composite buffer in the preview window'); show.clicked.connect(self.show_composite); toolbar.addWidget(show)
         clear = QtWidgets.QToolButton(); clear.setText('Clear Graph'); clear.setAutoRaise(True)
         clear.setToolTip('Back to the beauty wired straight to the output, which makes no Composite buffer'); clear.clicked.connect(self.clear); toolbar.addWidget(clear)
@@ -320,6 +324,15 @@ class Editor(QtWidgets.QDialog):
         self.property_help = QtWidgets.QLabel(''); self.property_help.setWordWrap(True); self.property_help.setEnabled(False); right.addWidget(self.property_help)
         self.form_host = QtWidgets.QWidget(); self.form = QtWidgets.QFormLayout(self.form_host); self.form.setContentsMargins(0, 0, 0, 0); right.addWidget(self.form_host)
         right.addStretch(1)
+        # The Composite, looked at here: Preview Composite shows it under the settings.
+        self.mini = QtWidgets.QWidget(); shown = QtWidgets.QVBoxLayout(self.mini); shown.setContentsMargins(0, 6, 0, 0); shown.setSpacing(4)
+        heading = QtWidgets.QLabel('Composite'); bold = heading.font(); bold.setBold(True); heading.setFont(bold); shown.addWidget(heading)
+        from .viewer import SoftwarePreview
+        self.mini_view = SoftwarePreview(); self.mini_view.setMinimumHeight(200); shown.addWidget(self.mini_view, 1)
+        self.mini_note = QtWidgets.QLabel(''); self.mini_note.setWordWrap(True); self.mini_note.setEnabled(False); shown.addWidget(self.mini_note)
+        self.mini.setVisible(False); right.addWidget(self.mini, 3)
+        self.mini_seen = None
+        self.mini_timer = QtCore.QTimer(self); self.mini_timer.setInterval(500); self.mini_timer.timeout.connect(self.refresh_mini)
         footer = QtWidgets.QHBoxLayout(); layout.addLayout(footer)
         self.info = QtWidgets.QLabel('Tab or double-click adds a node. Drag between sockets to connect. The Composite buffer is made when a MoonRay render has finished.')
         self.info.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
@@ -456,6 +469,7 @@ class Editor(QtWidgets.QDialog):
 
     def closing(self):
         self.watch_timer.stop()
+        self.mini_timer.stop()
         if self.probing:
             self.set_probing(False)
         if self.write_timer.isActive():
@@ -969,6 +983,54 @@ class Editor(QtWidgets.QDialog):
     def clear(self):
         before = copy.deepcopy(self.graph)
         self.graph = compositor.new(); self.rebuild(); self.remember(before); self.frame(everything=True)
+
+    def set_previewing(self, on):
+        """Preview Composite on or off: the viewer under the settings, following each new Composite."""
+        self.mini.setVisible(bool(on))
+        self.mini_seen = None
+        if on:
+            self.mini_timer.start(); self.refresh_mini()
+        else:
+            self.mini_timer.stop()
+
+    def refresh_mini(self):
+        """The Composite in the viewer, made again only when its file or the way pictures are shown has changed."""
+        if not self.mini.isVisible():
+            return
+        import json
+        frame = getattr(self.panel.renderer.buffers, 'frame', None) or {}
+        source = (frame.get('files') or {}).get('composite')
+        try:
+            values = self.panel._settings_values()
+        except Exception:
+            return
+        stamp = (str(source), Path(source).stat().st_mtime_ns if source and Path(source).is_file() else 0, json.dumps(values.get('display'), sort_keys=True, default=str))
+        if stamp == self.mini_seen:
+            return
+        self.mini_seen = stamp
+        if not source or not Path(source).is_file():
+            self.mini_view.clear()
+            self.mini_note.setText('No Composite yet: it is made when a MoonRay render has finished, from a graph that does something.')
+            return
+        import subprocess
+        import tempfile
+        from . import native
+        from .buffers import conversion
+        from .display import values as display_values
+        display = display_values(dict(values['display'], working_space=frame.get('snapshot', {}).get('asset_settings', {}).get('working_space', 'rec709')))
+        runtime = Path(frame['runtime'])
+        try:
+            with tempfile.TemporaryDirectory(prefix='MoonRayComposite-') as folder:
+                target = Path(folder) / 'composite.png'
+                done = subprocess.run([str(runtime / 'oiiotool.exe')] + conversion('beauty', source, target, display), env=native.environment(runtime),
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                if done.returncode or not target.is_file():
+                    raise RuntimeError(done.stdout.decode('utf-8', errors='replace')[-200:])
+                image = QtGui.QImage(str(target)).copy()
+            self.mini_view.set_image(image)
+            self.mini_note.setText('%d x %d, as the preview window shows it.' % (image.width(), image.height()))
+        except Exception as exc:
+            self.mini_note.setText('Cannot show the Composite: ' + str(exc))
 
     def show_composite(self):
         if self.write_timer.isActive():
