@@ -127,3 +127,7 @@ capture and restoration remain incomplete; the paired shader fixture is independ
 [CORRELATED_STATE.md](CORRELATED_STATE.md) adds a same-call sampler/shader
 fixture for the mailbox. This supersedes the independent pairing for that new
 validation only; it does not turn these payloads into resumable native paths.
+
+[Native terminal-radiance suspension](NATIVE_FILM_CONTINUATIONS.md) now validates
+owned completed contributions returning through the native film handler. It does
+not yet restore this mailbox's numerical state into a suspended shading path.
