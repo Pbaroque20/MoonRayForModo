@@ -110,6 +110,11 @@ def choice(key,entries):
     return Choice
 
 
+def draft_widths():
+    from moonray_modo.preferences import DRAFT_WIDTHS
+    return [(float(width),'%d'%width) for width in DRAFT_WIDTHS]
+
+
 def shaders():
     from moonray_modo import shader_library
     return [(name,name) for name in sorted(shader_library.catalog())]
@@ -158,7 +163,7 @@ lx.bless(choice('assign/shader',shaders),'moonray.pref.assignType')
 lx.bless(switch('assign/smooth'),'moonray.pref.assignSmooth')
 lx.bless(number('assign/angle',0.0,180.0),'moonray.pref.assignAngle')
 lx.bless(choice('draft/ink',(('tan','Tan'),('purple','Pastel purple'),('grey','Grey'))),'moonray.pref.draftInk')
-lx.bless(number('draft/width',64.0,3200.0),'moonray.pref.draftWidth')
+lx.bless(choice('draft/width',draft_widths),'moonray.pref.draftWidth')
 lx.bless(number('light_intensity',0.0,1e9),'moonray.pref.lightIntensity')
 lx.bless(RuntimeFolder,'moonray.pref.runtime')
 lx.bless(RuntimeBrowse,'moonray.pref.runtimeBrowse')
