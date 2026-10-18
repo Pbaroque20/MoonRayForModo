@@ -117,7 +117,9 @@ def collect(scene, warnings):
                     if not clip:
                         raise ValueError('environment images require a still image')
                     from .texture_controls import capture
-                    entry['corrections']=capture(layer,channel)
+                    # Kept only where they change something: neutral ones would send a plain HDRI to the layered path.
+                    corrections=capture(layer,channel)
+                    if corrections!={'gamma':1.0,'brightness':1.0,'contrast':1.0}:entry['corrections']=corrections
                     entry['image_channel']=channel(layer,'rgba','use') if channel(layer,'swizzling',0) else channel(layer,'alpha','use')
                     entry['flips']=[bool(channel(layer,c+'Inv',0)) for c in ('red','green','blue')]
                     if channel(locator,'randOffset','none')!='none':
@@ -133,6 +135,10 @@ def collect(scene, warnings):
                     if not path.is_file():
                         raise ValueError('missing image '+str(path))
                     space = channel(clip,'colorspace','(default)')
+                    if entry['image_channel']=='use':
+                        # Modo's image layers use their alpha by default; an image with none (any HDR) has nothing to use.
+                        from .environment_layers import has_alpha
+                        if not has_alpha(path):entry['image_channel']='ignore'
                     entry.update(kind='image',color_space=space,path=str(path.resolve()),mtime=path.stat().st_mtime_ns,
                         size=path.stat().st_size, matrix=world_matrix(locator),
                         srgb=space=='sRGB' or (space=='(default)' and path.suffix.lower() not in ('.exr','.hdr','.tx')))
@@ -142,12 +148,22 @@ def collect(scene, warnings):
                 # Keep lower rows: nested groups and Layer Masks can expose them.
             except (ValueError, LookupError, OSError) as exc:
                 warnings.append('Environment %s: %s.' % (layer.name,exc))
+        if len(stack)>1 and covers(stack[0]) and not any(layer.get('groups') or layer.get('effect')!='envColor' for layer in stack):
+            # An opaque image on top hides every layer under it (as an HDRI over Modo's own environment material):
+            # it is the environment alone, sent whole rather than baked with what cannot be seen.
+            stack=stack[:1]
         if stack:
-            if len(stack)==1 and not stack[0].get('groups') and stack[0].get('effect')=='envColor' and stack[0]['kind'] not in ('physical','color','procedural','gradient') and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections') and stack[0].get('image_channel','ignore') not in ('use','only'):
+            if len(stack)==1 and not stack[0].get('groups') and stack[0].get('effect')=='envColor' and stack[0]['kind'] not in ('physical','color','procedural','gradient') and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections') and not any(stack[0].get('flips') or []) and stack[0].get('image_channel','ignore') not in ('use','only'):
                 result.append(stack[0])
             else:
                 result.append(dict(item,kind='stack',layers=stack))
     return result
+
+
+def covers(layer):
+    """Whether an environment layer hides all under it: an image seen whole, opaque, with no alpha of its own."""
+    return (layer.get('kind')=='image' and layer.get('effect')=='envColor' and layer.get('opacity')==1 and layer.get('blend')=='normal'
+            and not layer.get('invert') and layer.get('image_channel','ignore') not in ('use','only') and not layer.get('groups'))
 
 
 def gradient_color(environment, height):
@@ -218,7 +234,12 @@ def emit(environments, lines):
             # Use a full-resolution tiled image with bilinear filtering.
             attributes['texture_filter']='1'
         if 'matrix' in environment:
-            attributes['node_xform']=matrix(environment['matrix'])
+            placed=environment['matrix']
+            if environment['kind']=='image':
+                # MoonRay's environment light shows a latitude-longitude image half a turn about the vertical from
+                # where Modo's spherical projection puts it (tools/probe_hdri_turn.py): turned so in its own space first.
+                placed=[-v for v in placed[0:4]]+list(placed[4:8])+[-v for v in placed[8:12]]+list(placed[12:16])
+            attributes['node_xform']=matrix(placed)
         lines.append('table.insert(lights, EnvLight("/modo/environment/scene/%d") {' % index)
         lines.extend('  [%s] = %s,' % (string(k),v) for k,v in attributes.items())
         lines.append('})')

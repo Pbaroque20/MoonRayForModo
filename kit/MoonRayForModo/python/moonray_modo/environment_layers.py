@@ -45,6 +45,29 @@ def alpha_index(xml):
     return int(value)
 
 
+_ALPHA = {}
+
+
+def has_alpha(path):
+    """Whether an image file has an alpha channel: never for Radiance HDR (or PFM); for others, as OIIO reads it (kept
+    for each file as it stands). Unknown is taken as having one, which leaves the image to the layered path."""
+    path = Path(path)
+    if path.suffix.lower() in ('.hdr', '.hdri', '.pfm'):
+        return False
+    try:
+        stat = path.stat()
+        key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
+        if key not in _ALPHA:
+            runtime = Path(native.default_runtime())
+            result = subprocess.run([str(runtime / 'oiiotool.exe'), '--info:format=xml', '-v', str(path)], env=native.environment(runtime),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            _ALPHA[key] = alpha_index(result.stdout.decode(errors='replace')) >= 0
+        return _ALPHA[key]
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return True
+
+
 def image_pixels(layer, folder, width, height):
     runtime=Path(native.default_runtime());converter=runtime/'oiiotool.exe'
     if not converter.is_file():raise ValueError('Layered environments require oiiotool.exe')
@@ -98,7 +121,7 @@ def image_pixels(layer, folder, width, height):
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # The layers the whole of whose look turns with their locator, and those that look the same however it turns.
 PLACED_KINDS = ('image', 'procedural')
-UNPLACED_KINDS = ('color',)
+UNPLACED_KINDS = ('color', 'constant')
 
 
 def held_placement(environment):

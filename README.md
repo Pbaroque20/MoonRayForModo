@@ -129,6 +129,7 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 
 ### Fixes
 
+- **HDRI environments reach MoonRay whole, and the right way round**: an HDRI layer as Modo makes one (its alpha set to Use, its corrections left alone) was taken for a layered environment and baked into a 512-pixel picture, every turn baked again; an image with no alpha of its own, with nothing to correct, is now sent itself, at full size, and an opaque one hides the environment's own material under it. Sent so, it showed half a turn from where Modo shows it: it now turns as in Modo (checked against Modo's renders at each eighth of a turn).
 - **Turning a layered HDRI is quick**: an HDRI with anything more to it (a colour correction, less than full opacity, a layer under it) was baked into a new picture for every new rotation, five to seven seconds each. It is now baked once, unturned, and turned as the environment light, as a plain HDRI is: about a fifth of a second for each turn, in MoonRay and in MoonLightIPR. An HDRI turned by its texture's UV rotation, or under a gradient or a sky, is baked as before.
 - **The Denoiser set to Off is off everywhere**: the denoised beauty chosen in the preview and Smart Render denoised all the same before. Denoise Preview, Save Denoised EXR, Keep Fine Detail and Smart Render are greyed while it is Off.
 - **Pixel Samples is greyed under Adaptive sampling**, which does not use it.
