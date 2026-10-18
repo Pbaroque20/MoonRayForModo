@@ -107,8 +107,15 @@ def environment_section(scene, environment, warnings, runtime):
         if item['kind'] in ('image', 'stack'):
             try:
                 matrix = finite(item.get('matrix', IDENTITY))
+                baked = item
+                if item['kind'] == 'stack' and 'matrix' not in item:
+                    # A layered HDRI turned whole is baked at rest once, and turned here (environment_layers.held_placement).
+                    from .environment_layers import held_placement
+                    held = held_placement(item)
+                    if held:
+                        baked, matrix = held[0], finite(held[1])
                 # The image's own axes in world space, which the session turns directions into.
-                record = (environment_image(item, runtime), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
+                record = (environment_image(baked, runtime), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
                 warnings.append('MoonLightIPR shows environment %s as uniform grey; its image could not be made (%s).' % (item.get('name', ''), exc))
             else:

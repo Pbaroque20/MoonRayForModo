@@ -129,6 +129,7 @@ Not released yet. More detail is in [What's new](docs/WHATS_NEW_04.md).
 
 ### Fixes
 
+- **Turning a layered HDRI is quick**: an HDRI with anything more to it (a colour correction, less than full opacity, a layer under it) was baked into a new picture for every new rotation, five to seven seconds each. It is now baked once, unturned, and turned as the environment light, as a plain HDRI is: about a fifth of a second for each turn, in MoonRay and in MoonLightIPR. An HDRI turned by its texture's UV rotation, or under a gradient or a sky, is baked as before.
 - **The Denoiser set to Off is off everywhere**: the denoised beauty chosen in the preview and Smart Render denoised all the same before. Denoise Preview, Save Denoised EXR, Keep Fine Detail and Smart Render are greyed while it is Off.
 - **Pixel Samples is greyed under Adaptive sampling**, which does not use it.
 - **The MoonRay Widget says Rendered only when its new picture has come**, and shows that picture; a render that ends without one says so.
