@@ -767,6 +767,52 @@ def proxy(name, number):
     return [('strip', [(s, 0, 0), (0, s, 0), (-s, 0, 0), (0, -s, 0), (s, 0, 0)]), ('strip', [(0, s, 0), (0, 0, s), (0, -s, 0), (0, 0, -s), (0, s, 0)])]
 
 
+# The MoonRay cameras that are Modo cameras too, so that Modo's viewport can look through them. The bake camera is
+# not: it renders from a mesh's UVs and has no view.
+VIEWED_CAMERAS = ('DomeMaster3DCamera', 'FisheyeCamera', 'OrthographicCamera', 'PerspectiveCamera', 'SphericalCamera')
+# The widest view Modo's perspective viewport shows a fisheye, spherical or dome camera with.
+WIDEST_VIEW = 150.0
+# Modo's own lens for those, in metres: a 36 mm film, as Modo's cameras start with.
+MODO_FILM = .036
+
+
+def lens_inputs(name):
+    """The attributes modo_lens() reads for a camera class."""
+    return {'PerspectiveCamera': ('focal', 'film_width_aperture', 'horizontal_film_offset', 'vertical_film_offset'),
+            'OrthographicCamera': ('film_width_aperture', 'horizontal_film_offset', 'vertical_film_offset'),
+            'FisheyeCamera': ('fov',), 'SphericalCamera': ('min_longitude', 'max_longitude'),
+            'DomeMaster3DCamera': ('FOV_horizontal_angle',)}.get(name, ())
+
+
+def modo_lens(name, number, target=1.0):
+    """The Modo camera channels that frame Modo's viewport as a MoonRay camera of this class frames its picture.
+
+    number(attribute) is the camera's value of one of lens_inputs(name); target is the Modo camera's own Target
+    Distance, which sets an orthographic view's width with its focal length and film. A perspective camera's focal
+    length and film width are MoonRay's in millimetres; an orthographic one's film width is the view's width in the
+    scene. Fisheye, spherical and dome cameras show as a perspective view as wide across as theirs, up to
+    WIDEST_VIEW: Modo's viewport cannot bend the picture as they do. Returns focalLen, apertureX, offsetX and offsetY
+    in metres, filmFit and projType, as Modo names them."""
+    lens = {'filmFit': 'horizontal', 'projType': 'persp', 'offsetX': 0.0, 'offsetY': 0.0}
+    if name == 'PerspectiveCamera':
+        film = max(1e-3, number('film_width_aperture'))
+        lens.update(focalLen=max(1e-3, number('focal')) / 1000.0, apertureX=film / 1000.0,
+                    offsetX=number('horizontal_film_offset') / 1000.0, offsetY=number('vertical_film_offset') / 1000.0)
+        return lens
+    if name == 'OrthographicCamera':
+        # Modo's orthographic view is its film times its target distance over its focal length across.
+        width, focal = max(1e-6, number('film_width_aperture')), .05
+        aperture = width * focal / max(1e-6, target)
+        lens.update(projType='ortho', focalLen=focal, apertureX=aperture,
+                    offsetX=number('horizontal_film_offset') * aperture / width, offsetY=number('vertical_film_offset') * aperture / width)
+        return lens
+    across = {'FisheyeCamera': lambda: number('fov'), 'SphericalCamera': lambda: number('max_longitude') - number('min_longitude'),
+              'DomeMaster3DCamera': lambda: number('FOV_horizontal_angle')}[name]()
+    across = max(1.0, min(WIDEST_VIEW, abs(across)))
+    lens.update(focalLen=MODO_FILM / 2 / math.tan(math.radians(across) / 2), apertureX=MODO_FILM)
+    return lens
+
+
 def proxy_inputs(name):
     """The numeric attributes proxy() asks for, as (asked name, channel name)."""
     wanted = {'SphereLight': ['radius'], 'RectLight': ['width', 'height'], 'PortalLight': ['width', 'height'], 'DiskLight': ['radius'],

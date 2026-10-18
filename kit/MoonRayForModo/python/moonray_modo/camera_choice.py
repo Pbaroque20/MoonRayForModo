@@ -65,9 +65,23 @@ def rendering(item):
         return False
 
 
+def modo_render_moonray(scene=None):
+    """Modo's render camera where it is one of MoonRay's cameras, which are Modo cameras too; otherwise None."""
+    scene = scene or modo.Scene()
+    try:
+        camera = scene.renderCamera
+        return camera if camera is not None and camera.type.startswith(entities.TYPE_PREFIX) else None
+    except Exception:
+        return None
+
+
 def current(scene=None):
     """The id of the MoonRay camera being rendered through, or '' for the Modo camera."""
-    return next((item.id for item in cameras(scene) if rendering(item)), '')
+    chosen = next((item.id for item in cameras(scene) if rendering(item)), '')
+    if not chosen:
+        made = modo_render_moonray(scene)
+        chosen = made.id if made is not None else ''
+    return chosen
 
 
 def choose(identity, scene=None):
