@@ -55,8 +55,25 @@ def start():
 
 
 def during():
+    """Waits for the first picture of the pass, which says MoonLightIPR is sampling, then notes the card's load and
+    switches realtime off at once, while the pass is still under way."""
     panel = panel_widget()
-    result['during'] = {'rendering': panel._rendering, 'following': panel._following, 'load': load()}
+    held['tries'] = held.get('tries', 0) + 1
+    if not (panel._rendering and not panel.preview.image.isNull()) and held['tries'] < 400:
+        QtCore.QTimer.singleShot(50, during)
+        return
+    result['during'] = {'rendering': panel._rendering, 'following': panel._following, 'load': load(2), 'waited_ms': held['tries'] * 50}
+    switch_off()
+    QtCore.QTimer.singleShot(3000, finish)
+
+
+def finish():
+    try:
+        after()
+    except Exception:
+        result.setdefault('errors', []).append(traceback.format_exc())
+    save()
+    lx.eval('!app.quit')
 
 
 def switch_off():
@@ -94,12 +111,29 @@ def run(steps, index=0):
 
 
 try:
-    lx.eval('item.create mesh')
-    lx.eval('tool.set prim.sphere on')
-    lx.eval('tool.apply')
-    lx.eval('tool.set prim.sphere off')
+    # A scene heavy enough that a pass of 1024 samples is still under way when realtime goes off: the one in
+    # MOONRAY_PROBE_SCENE, else a ball.
+    import os
+    scene = os.environ.get('MOONRAY_PROBE_SCENE', '')
+    if scene:
+        lx.eval('scene.open {%s} normal' % scene)
+    else:
+        lx.eval('item.create mesh')
+        lx.eval('tool.set prim.sphere on')
+        lx.eval('tool.apply')
+        lx.eval('tool.set prim.sphere off')
     lx.eval('moonray.open')
 except Exception:
     result['error'] = traceback.format_exc()
 save()
-QtCore.QTimer.singleShot(8000, lambda: run([(start, 6000), (during, 200), (switch_off, 3000), (after, 200)]))
+
+
+def begin():
+    try:
+        start()
+    except Exception:
+        result.setdefault('errors', []).append(traceback.format_exc())
+    QtCore.QTimer.singleShot(400, during)
+
+
+QtCore.QTimer.singleShot(15000, begin)
