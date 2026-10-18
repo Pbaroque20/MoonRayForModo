@@ -393,10 +393,16 @@ class Editor(QtWidgets.QDialog):
             self.info.setText('The Composite buffer is not made: the graph does nothing yet.' if not held
                               else 'Written to the scene. The Composite buffer is made from the render that is kept.')
 
+    def held_by_hand(self):
+        """Whether a node is being moved, or the mouse button is down on the canvas: the graph is not read again then,
+        or a node held for longer than the scene is looked at was put back where the scene last had it."""
+        return (getattr(self.view, 'move_before', None) is not None or self.view.start_socket is not None
+                or QtWidgets.QApplication.mouseButtons() != QtCore.Qt.NoButton)
+
     def watch(self):
         if getattr(self, 'library_listed', None) != self.buffer_choices():
             self.fill_library()
-        if self.write_timer.isActive() or self.busy or self.view.start_socket is not None:
+        if self.write_timer.isActive() or self.busy or self.held_by_hand():
             return
         held = self.stored()
         if held is None:
@@ -561,7 +567,8 @@ class Editor(QtWidgets.QDialog):
 
     def refresh_notes(self):
         """Work the probe notes' words out again when the graph or the render has changed since they were."""
-        if self.busy or not any(node['type'] == 'note' and compositor.parameters(node)['probe_x'] >= 0 for node in self.graph['nodes'].values()):
+        if self.busy or self.held_by_hand() or not any(node['type'] == 'note' and compositor.parameters(node)['probe_x'] >= 0
+                                                       for node in self.graph['nodes'].values()):
             return
         import json
         frame = getattr(self.panel.renderer.buffers, 'frame', None) or {}

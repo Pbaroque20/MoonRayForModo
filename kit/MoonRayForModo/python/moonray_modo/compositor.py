@@ -100,6 +100,15 @@ NODES = {
 UNUSABLE = ('cryptomatte',)
 
 
+# The nodes that change colour, which each take a mask as well: the change in full where it is white, none where it is
+# black, as much as it is grey. Made after the node as a Merge of the picture with the node's own, through the mask.
+COLOUR = ('grade', 'levels', 'contrast', 'invert', 'clamp', 'tonemap', 'math')
+for _kind in COLOUR:
+    if 'mask' not in NODES[_kind]['inputs']:
+        NODES[_kind]['inputs'] = NODES[_kind]['inputs'] + ('mask',)
+        NODES[_kind]['tip'] = NODES[_kind]['tip'] + ' A mask, where wired, says where: in full where white, not at all where black.'
+
+
 def ports(node):
     """The inputs a node shows: all of its kind's, but for a Sum, those wired and the next free one."""
     kind = node['type']
@@ -323,6 +332,9 @@ def sample(graph, read, x, y, width, height):
             index = CHANNELS.index(held['channel'])
             m = _luma(image) if index == 0 else image[index - 1]
             result = (m, m, m)
+        if kind in COLOUR and result is not None and image is not None and 'mask' in taken:
+            mask = taken['mask'][0]
+            result = tuple(image[c] + (result[c] - image[c]) * mask for c in range(3))
         made[identity] = result
         return result
     for identity in nodes:
@@ -782,6 +794,8 @@ def program_jobs(graph, files, kinds, folder, channels, composite):
             out = step('channel', image, i0=CHANNELS.index(held['channel']))
         else:
             raise ValueError('The compositor program has no %s node' % kind)
+        if kind in COLOUR and taken.get('mask') is not None and out is not None:
+            out = step('merge', image, out, taken['mask'], i0=MODES.index('normal'), f=(1.0,))
         slot_of[identity] = out
     result = slot_of[graph['root']]
     if not loads:
@@ -899,4 +913,10 @@ def jobs(graph, files, kinds, folder, channels=None, composite=None):
                 continue
         steps.append((args + ['-d', 'float', '-o', str(target)], target))
         made[identity] = target
+        if kind in COLOUR and taken.get('mask') is not None and taken.get('image') is not None:
+            # The picture, and the node's change to it as much as the mask says: picture + (changed - picture) * mask.
+            masked = folder / (identity + '_masked.exr')
+            image = str(taken['image'])
+            steps.append(([str(target), image, '--sub', str(taken['mask']), '--mul', image, '--add', '-d', 'float', '-o', str(masked)], masked))
+            made[identity] = masked
     return steps, made[graph['root']]
