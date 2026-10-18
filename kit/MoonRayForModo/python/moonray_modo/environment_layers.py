@@ -45,6 +45,29 @@ def alpha_index(xml):
     return int(value)
 
 
+_ALPHA = {}
+
+
+def has_alpha(path):
+    """Whether an image file has an alpha channel: never for Radiance HDR (or PFM); for others, as OIIO reads it (kept
+    for each file as it stands). Unknown is taken as having one, which leaves the image to the layered path."""
+    path = Path(path)
+    if path.suffix.lower() in ('.hdr', '.hdri', '.pfm'):
+        return False
+    try:
+        stat = path.stat()
+        key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
+        if key not in _ALPHA:
+            runtime = Path(native.default_runtime())
+            result = subprocess.run([str(runtime / 'oiiotool.exe'), '--info:format=xml', '-v', str(path)], env=native.environment(runtime),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            _ALPHA[key] = alpha_index(result.stdout.decode(errors='replace')) >= 0
+        return _ALPHA[key]
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return True
+
+
 def image_pixels(layer, folder, width, height):
     runtime=Path(native.default_runtime());converter=runtime/'oiiotool.exe'
     if not converter.is_file():raise ValueError('Layered environments require oiiotool.exe')
@@ -93,6 +116,33 @@ def image_pixels(layer, folder, width, height):
     if any(flips):args+=['--mulc',','.join('-1' if v else '1' for v in flips),'--addc',','.join('1' if v else '0' for v in flips)]
     if channel in ('red','green','blue'):args+=['--ch',','.join([{'red':'R','green':'G','blue':'B'}[channel]]*3)]
     return read(args),alpha
+
+
+IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+# The layers the whole of whose look turns with their locator, and those that look the same however it turns.
+PLACED_KINDS = ('image', 'procedural')
+UNPLACED_KINDS = ('color', 'constant')
+
+
+def held_placement(environment):
+    """A stack whose placed layers (images, procedurals) all share one placement, with nothing else in it but plain
+    colours, baked unturned once, its placement given to the environment light instead: (the stack with its layers
+    at rest, their placement), or None where the stack cannot be turned whole that way (a gradient or sky, which reads
+    height, or layers placed apart). Turning such an HDRI then changes only the light's transform, which MoonRay takes
+    as a small update, rather than baking the stack again (seconds for each value)."""
+    layers = environment.get('layers') or []
+    placed = [layer for layer in layers if layer.get('kind') in PLACED_KINDS]
+    if not placed or any(layer.get('kind') not in PLACED_KINDS + UNPLACED_KINDS for layer in layers):
+        return None
+    matrices = {json.dumps(layer.get('matrix', IDENTITY)) for layer in placed}
+    if len(matrices) != 1:
+        return None
+    placement = placed[0].get('matrix', IDENTITY)
+    if placement == IDENTITY:
+        return None
+    rested = dict(environment, layers=[dict(layer, matrix=IDENTITY) if layer.get('kind') in PLACED_KINDS else layer for layer in layers])
+    # The bake reads a placed layer through the inverse of its placement; the light, to show the same, is turned by it.
+    return rested, coordinates.inverse(placement)
 
 
 def texture(environment, width=512, height=256):

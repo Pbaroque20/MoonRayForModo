@@ -27,11 +27,16 @@ def label(item):
 def choices(scene=None):
     """(label, item id) for every camera that can be rendered through; the Modo camera's id is ''."""
     scene = scene or modo.Scene()
+    moonray = [(label(item), item.id) for item in cameras(scene)]
+    if modo_render_moonray(scene) is not None:
+        # The render camera is a MoonRay camera (converted, or chosen as render camera): it is listed as such, and
+        # not again as "Modo camera", which would render through it all the same.
+        return moonray
     try:
         name = scene.renderCamera.name
     except Exception:
         name = 'none'
-    return [('Modo camera: ' + name, '')] + [(label(item), item.id) for item in cameras(scene)]
+    return [('Modo camera: ' + name, '')] + moonray
 
 
 def dicing_choices(scene=None):

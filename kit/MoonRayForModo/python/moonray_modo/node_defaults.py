@@ -62,13 +62,8 @@ def value(spec):
 # the light; it starts the other way round, brightest facing the light, as Modo's toon is (issue 127).
 STARTS={'DwaToonMaterial':{'diffuse_model':1,'specular_model':2,
                            'colors':[[1.0,1.0,1.0],[0.75,0.75,0.75],[0.25,0.25,0.25],[0.0,0.0,0.0]]}}
-# Glitter starts in object space (4), not MoonRay's reference space (5): reference space places the flakes by each
-# point's rest position (the ref_P primitive attribute, so that they stay put on a deforming surface), which Modo's
-# meshes do not carry, and without it MoonRay renders the whole surface black.
-GLITTER_SPACE_OBJECT=4
-for _shader in ('DwaBaseMaterial','DwaFabricMaterial','DwaMetalMaterial','DwaSkinMaterial','DwaSolidDielectricMaterial',
-                'DwaToonMaterial','DwaVelvetMaterial_v2'):
-    STARTS.setdefault(_shader,{})['glitter_space']=GLITTER_SPACE_OBJECT
+# Glitter starts in MoonRay's own reference space: each mesh is sent with its rest positions for it (reference_points),
+# so that the flakes stay put on a deforming surface.
 
 
 def keep_moonray_defaults(graph):

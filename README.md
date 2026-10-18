@@ -297,6 +297,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: the Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included |
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes. Per point and per face coming in 0.4.2 |
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Coming in 0.4.2: motion, creases, fog meshes, values by point or face, and instancers of any size |
+| RDL scene export (RDLA, RDLB or split) | ![yes](docs/images/feature-yes.svg) | File > Export as MoonRay Scene, to render with MoonRay on its own or on a farm: outputs, collected textures and each frame of the range optional. Coming in 0.4.2 |
 | Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
 

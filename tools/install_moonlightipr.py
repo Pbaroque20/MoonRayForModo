@@ -109,6 +109,11 @@ if reader.is_file() and (kit / 'runtime').is_dir():
 grower = root / 'build/native-avx/bin/modo_hair_grow.exe'
 if grower.is_file() and (kit / 'runtime').is_dir():
     shutil.copyfile(grower, kit / 'runtime' / grower.name)
+# MoonRay's scene converter, which writes RDLB for Export as MoonRay Scene, where it has been built (the renderer
+# build's rdl2_convert target): it uses the runtime's MoonRay libraries.
+converter = root / 'build/native-renderer-avx/bin/rdl2_convert.exe'
+if converter.is_file() and (kit / 'runtime').is_dir():
+    shutil.copyfile(converter, kit / 'runtime' / converter.name)
 # What reads a VDB file for the preview, where it has been built (tools/build_vdb_grid.py).
 grids = root / 'build/native-avx/bin/modo_vdb_grid.exe'
 if grids.is_file() and (kit / 'runtime').is_dir():

@@ -1,8 +1,8 @@
 """Render DwaBaseMaterial's glitter with MoonRay, as the plugin writes it, to find what makes it fail.
 
 A ball of glitter (DwaBaseMaterial with Glitter shown) under a distant light, rendered in each of MoonRay's modes
-(vectorized, scalar, xpu) and with each glitter space (reference, the default, and object), and once more with the
-plain material for comparison. Printed for each: whether MoonRay finished, its exit code, the last lines it printed
+(vectorized, scalar, xpu) and with each glitter space (reference, the default, and object), in reference space once
+more with the mesh's rest positions (ref_P), and with the plain material for comparison. Printed for each: whether MoonRay finished, its exit code, the last lines it printed
 on failure, and the picture's average brightness. Usage: check_glitter.py <moonray-runtime> [mode ...]"""
 import math
 import subprocess
@@ -33,13 +33,17 @@ def ball():
     return vertices, faces, [uvs[corner] for face in faces for corner in face]
 
 
-def scene(parameters):
+def scene(parameters, rest=False):
     vertices, faces, uvs = ball()
-    return {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 4, 1], 'focal_mm': 50, 'film_mm': 36},
+    value = {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 4, 1], 'focal_mm': 50, 'film_mm': 36},
             'materials': {'': {'native_shader': 'DwaBaseMaterial', 'native_parameters': parameters}},
             'meshes': [{'name': 'Ball', 'identity': 'ball', 'vertices': vertices, 'faces': faces, 'uvs': uvs, 'matrix': rdla.IDENTITY}],
             'lights': [{'identity': 'key', 'name': 'Key', 'kind': 'DistantLight', 'color': [1, 1, 1], 'intensity': 2.0,
                         'matrix': [1, 0, 0, 0, 0, .7, .7, 0, 0, -.7, .7, 0, 0, 0, 0, 1]}]}
+    if rest:
+        # Rest positions, as the plugin sends them where glitter is in reference space (reference_points).
+        value['meshes'][0]['point_attributes'] = {'ref_P': {'kind': 'vec3', 'values': [list(v) for v in vertices]}}
+    return value
 
 
 def render(runtime, name, value, mode):
@@ -66,10 +70,11 @@ def main():
     folder.mkdir(parents=True, exist_ok=True)
     cases = [('plain', {}),
              ('glitter_reference', {'show_glitter': True, 'glitter': 1.0}),
-             ('glitter_object', {'show_glitter': True, 'glitter': 1.0, 'glitter_space': 4})]
+             ('glitter_object', {'show_glitter': True, 'glitter': 1.0, 'glitter_space': 4}),
+             ('glitter_reference_rest', {'show_glitter': True, 'glitter': 1.0})]
     for mode in modes:
         for name, parameters in cases:
-            status, brightness, tail = render(runtime, name, scene(parameters), mode)
+            status, brightness, tail = render(runtime, name, scene(parameters, rest=name.endswith('_rest')), mode)
             print('%-10s %-18s %s%s' % (mode, name, status, '' if brightness is None else '  brightness %.4f' % brightness), flush=True)
             if tail:
                 print('    ' + tail.replace('\n', '\n    '))

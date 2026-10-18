@@ -473,6 +473,14 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             result['materials'], _ = shader_library.mend(result['materials'], library, warnings, names)
             shader_library.attach_dependencies(result['materials'],library)
             result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)
+            from . import reference_points
+            if reference_points.wanted(result['materials']):
+                # Modo's render cache gives each piece its points as rendered, not which of the mesh's points they are:
+                # they serve as their own rest positions, so that glitter in reference space draws (as in object space,
+                # its flakes moving with a deformer).
+                for mesh in result['meshes']:
+                    if reference_points.NAME not in (mesh.get('point_attributes') or {}):
+                        mesh['point_attributes'] = dict(mesh.get('point_attributes') or {}, **{reference_points.NAME: {'kind': 'vec3', 'values': mesh['vertices']}})
             result['extra_geometry']=evaluated.extra_geometry(data,warnings)
         if reuse_geometry is not None and refresh_materials and not evaluated_geometry:
             if coordinates.descriptors(result['materials']) != coordinates.descriptors(reuse_geometry['materials']):
@@ -502,6 +510,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 instance_attributes[instance.id]=primitive_attributes.read(instance)
             except (ValueError, LookupError) as exc:
                 warnings.append('Instance %s: %s.' % (instance.name, exc))
+        # Rest positions, where a material reads its surface in reference space (glitter): reference_points.
+        from . import reference_points
+        rest_wanted = reference_points.wanted(result['materials'])
         # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
         for item in ([] if evaluated_geometry or (reuse_geometry is not None and not dirty_meshes) else scene.items('mesh', superType=False)):
             if dirty_meshes and item.id not in dirty_meshes:continue
@@ -637,6 +648,17 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                             lxu.utils.decodeID4(polygons.Type()) in ('SUBD', 'PSUB'), uv_of, corner_values(polygons, normal_map, count, 3), surfaces)
                     surfaces += 1
             transform = world_matrix(item)
+            rest = None
+            if rest_wanted:
+                try:
+                    rest = reference_points.read(item, len(vertices))
+                except (LookupError, RuntimeError, AttributeError, TypeError) as exc:
+                    warnings.append('Rest positions of %s could not be read: %s.' % (item.name, exc))
+                if rest is None:
+                    # A deformer that adds or takes away points leaves no base point for each: the points as rendered
+                    # serve, so that glitter in reference space draws (its flakes moving with the deformer, as in object
+                    # space) rather than fail.
+                    rest = [list(point) for point in vertices]
             object_settings = options.object_values(properties.read(item))
             instance_records = sorted(instances.get(item.id, []),key=lambda pair:pair[0])
             if item.id in instances and render_visible(item):
@@ -694,6 +716,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                         result['meshes'][-1]['point_attributes'] = point_maps
                     if corner_maps:
                         result['meshes'][-1]['corner_attributes'] = corner_maps
+                if rest is not None:
+                    result['meshes'][-1].setdefault('point_attributes', {})[reference_points.NAME] = {'kind': 'vec3', 'values': rest}
                 own_attributes = primitive_attributes.read(item)
                 if own_attributes:
                     result['meshes'][-1]['attributes'] = own_attributes
