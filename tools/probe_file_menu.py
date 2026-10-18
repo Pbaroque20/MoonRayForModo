@@ -20,7 +20,7 @@ def shoot():
     try:
         windows = sorted((w for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible()), key=lambda w: w.width() * w.height())
         result['windows'] = [(w.windowTitle(), w.width(), w.height()) for w in windows]
-        windows[0].grab().save(str(out / 'file_menu.png'))
+        next(w for w in windows if w.windowTitle() == 'File').grab().save(str(out / 'file_menu.png'))
     except Exception:
         result['shot_error'] = traceback.format_exc()
     save()
