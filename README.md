@@ -83,8 +83,7 @@ The full list, with pictures, is in [What's new in 0.4, 0.4.1 and 0.4.2](docs/WH
 - **The preview follows Modo's color management** by default, and names the view and LUT at the foot of the window.
 - **Draft** redraws in about a third of a second after a move, and follows the scene by itself.
 
-![The preview window with MoonLightIPR chosen and realtime on]<img width="1299" height="883" alt="image" src="https://github.com/user-attachments/assets/2bcfd060-1089-4521-8469-5eef93aaf094" />
-
+<img width="1299" height="883" alt="image" src="https://github.com/user-attachments/assets/2bcfd060-1089-4521-8469-5eef93aaf094" />
 
 *MoonLightIPR chosen, RT On.*
 
