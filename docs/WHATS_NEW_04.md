@@ -1,8 +1,6 @@
-# What's new in 0.4, 0.4.1 and the coming 0.4.2
+# What's new in 0.4, 0.4.1 and 0.4.2
 
-## Coming in 0.4.2
-
-Not released yet: on the MoonLightIPR branch.
+## New in 0.4.2
 
 0.4.2 brings a new runtime ZIP: the pixel filters, the display filters, time per pixel's finer timings and the colour fixes are in MoonRay and its display program.
 
