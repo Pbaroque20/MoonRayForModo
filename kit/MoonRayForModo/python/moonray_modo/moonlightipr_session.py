@@ -31,6 +31,15 @@ def supported(directory):
     return (directory / EXECUTABLE).is_file() and (directory / PROGRAM).is_file() and any(directory.glob('cudart64_*.dll'))
 
 
+def rejected(reason):
+    """What the window says of a scene MoonLightIPR rejected: plainly, where the graphics card ran out of memory."""
+    words = (reason or '').lower()
+    if 'out of memory' in words or 'memory allocation' in words or 'cudaerrormemoryallocation' in words:
+        return ('MoonLightIPR ran out of graphics card memory for this scene, even with its textures made smaller. '
+                'Choose MoonRay to render it, or close other programs using the graphics card.')
+    return 'MoonLightIPR rejected the scene' + (': ' + reason if reason else '') + '. Open Render Log for details.'
+
+
 class Packer(QtCore.QThread):
     """A snapshot made into what the session reads, away from Modo's own thread: the snapshot is plain data, and
     making it into bytes asks Modo nothing. Modo is then free to move its view while a followed edit is on its way."""
@@ -168,6 +177,7 @@ class Session(QtCore.QObject):
         self.process.write(b'view 0 denoised\n' if getattr(self, 'denoised_view', True) else b'view 0 beauty\n')
 
     def _read(self):
+        """The session's output: frames, events, and what it says of a scene."""
         text = self.process.readAllStandardOutput().data().decode('utf-8', errors='replace')
         self.output.emit(text)
         self.partial += text
@@ -181,6 +191,13 @@ class Session(QtCore.QObject):
                     if not self.stopping and not self.closed and not self.latest and packet[0] == self.current: self.memory_image.emit(packet)
                 except (ValueError, OSError) as exc: self.status.emit('MoonLightIPR frame skipped: ' + str(exc))
                 continue
+            # What the session says of a scene: its textures made smaller to fit the card, or why it was rejected.
+            if line.startswith('MoonLightIPR textures: '):
+                self.status.emit('MoonLightIPR shows textures ' + line[len('MoonLightIPR textures: '):].strip() + '.')
+                continue
+            if line.startswith('MoonLightIPR scene rejected: '):
+                self.rejection = line[len('MoonLightIPR scene rejected: '):].strip()
+                continue
             if not line.startswith('@@MODO_SESSION '): continue
             parts = line.strip().split()
             if len(parts) != 3: continue
@@ -193,7 +210,7 @@ class Session(QtCore.QObject):
                 except OSError: pass
                 if parts[1] == 'APPLIED':
                     self.known = sent['keys']; self.acknowledged.emit(generation)
-                else: self.failed.emit('MoonLightIPR rejected the scene. Open Render Log for details.')
+                else: self.failed.emit(rejected(getattr(self, 'rejection', '')))
                 self._dispatch()
             elif parts[1] == 'DONE' and not self.latest and generation == self.current:
                 self.idle.arm()

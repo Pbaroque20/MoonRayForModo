@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -854,15 +855,94 @@ void Renderer::setMeshUvSlots(uint32_t mesh, const int32_t slots[UV_SLOT_COUNT])
     impl->restart();
 }
 
+namespace {
+
+uint16_t toHalf(float value) {
+    uint32_t bits;
+    std::memcpy(&bits, &value, 4);
+    const uint32_t sign = (bits >> 16) & 0x8000u;
+    const int32_t exponent = int32_t((bits >> 23) & 0xffu) - 127 + 15;
+    uint32_t mantissa = bits & 0x7fffffu;
+    if (((bits >> 23) & 0xffu) == 0xffu) return uint16_t(sign | 0x7c00u | (mantissa ? 0x200u : 0u));   // not a number, or infinite
+    if (exponent >= 31) return uint16_t(sign | 0x7c00u);                                               // too large: infinite
+    if (exponent <= 0) {
+        if (exponent < -10) return uint16_t(sign);                                                     // too small: nothing
+        mantissa |= 0x800000u;
+        const uint32_t shift = uint32_t(14 - exponent);
+        uint32_t half = mantissa >> shift;
+        if ((mantissa >> (shift - 1)) & 1u) ++half;                                                    // rounded
+        return uint16_t(sign | half);
+    }
+    uint32_t half = sign | (uint32_t(exponent) << 10) | (mantissa >> 13);
+    if (mantissa & 0x1000u) ++half;                                                                    // rounded
+    return uint16_t(half);
+}
+
+float fromSrgb(float c) { return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f); }
+float toSrgb(float c) { return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f; }
+
+// A picture of four floats a texel, halved across and down, each texel the mean of the four (or two, at an odd edge)
+// it covers.
+void halve(std::vector<float>& rgba, uint32_t& width, uint32_t& height) {
+    const uint32_t w = std::max(1u, width / 2), h = std::max(1u, height / 2);
+    std::vector<float> out(size_t(w) * h * 4);
+    for (uint32_t y = 0; y < h; ++y)
+        for (uint32_t x = 0; x < w; ++x) {
+            float sum[4] = {0, 0, 0, 0};
+            int count = 0;
+            for (uint32_t dy = 0; dy < 2; ++dy)
+                for (uint32_t dx = 0; dx < 2; ++dx) {
+                    const uint32_t sx = std::min(width - 1, x * 2 + dx), sy = std::min(height - 1, y * 2 + dy);
+                    const float* in = &rgba[(size_t(sy) * width + sx) * 4];
+                    for (int c = 0; c < 4; ++c) sum[c] += in[c];
+                    ++count;
+                }
+            for (int c = 0; c < 4; ++c) out[(size_t(y) * w + x) * 4 + c] = sum[c] / float(count);
+        }
+    rgba.swap(out);
+    width = w;
+    height = h;
+}
+
+}
+
 uint32_t Renderer::addTexture(const TextureDesc& desc) {
     if (!desc.pixels || !desc.width || !desc.height || desc.width > 16384 || desc.height > 16384)
         throw std::runtime_error("MoonLightIPR texture has no pixels or is too large");
     auto texture = std::make_unique<Texture>();
-    const cudaChannelFormatDesc format = desc.floatData ? cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat)
+    // What the card is given: the picture as it is, or halved to its size limit, with a picture of high dynamic range
+    // as halves. Bytes are halved as light, from sRGB where they are sRGB, so that a smaller picture is not darker.
+    uint32_t width = desc.width, height = desc.height;
+    std::vector<unsigned char> bytes;
+    std::vector<uint16_t> halves;
+    const bool smaller = desc.maxSize && std::max(width, height) > desc.maxSize;
+    if (desc.floatData || smaller) {
+        std::vector<float> rgba(size_t(width) * height * 4);
+        for (size_t i = 0; i < rgba.size(); ++i) {
+            if (desc.floatData) rgba[i] = static_cast<const float*>(desc.pixels)[i];
+            else {
+                const float v = static_cast<const unsigned char*>(desc.pixels)[i] / 255.0f;
+                rgba[i] = desc.srgb && (i % 4) != 3 ? fromSrgb(v) : v;
+            }
+        }
+        while (desc.maxSize && std::max(width, height) > desc.maxSize) halve(rgba, width, height);
+        if (desc.floatData) {
+            halves.resize(rgba.size());
+            for (size_t i = 0; i < rgba.size(); ++i) halves[i] = toHalf(rgba[i]);
+        } else {
+            bytes.resize(rgba.size());
+            for (size_t i = 0; i < rgba.size(); ++i) {
+                const float v = desc.srgb && (i % 4) != 3 ? toSrgb(rgba[i]) : rgba[i];
+                bytes[i] = static_cast<unsigned char>(std::lround(std::min(1.0f, std::max(0.0f, v)) * 255.0f));
+            }
+        }
+    }
+    const void* uploaded = desc.floatData ? static_cast<const void*>(halves.data()) : (bytes.empty() ? desc.pixels : bytes.data());
+    const cudaChannelFormatDesc format = desc.floatData ? cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat)
                                                         : cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
-    const size_t rowBytes = size_t(desc.width) * (desc.floatData ? 16 : 4);
-    ML_CHECK(cudaMallocArray(&texture->array, &format, desc.width, desc.height));
-    ML_CHECK(cudaMemcpy2DToArray(texture->array, 0, 0, desc.pixels, rowBytes, rowBytes, desc.height, cudaMemcpyHostToDevice));
+    const size_t rowBytes = size_t(width) * (desc.floatData ? 8 : 4);
+    ML_CHECK(cudaMallocArray(&texture->array, &format, width, height));
+    ML_CHECK(cudaMemcpy2DToArray(texture->array, 0, 0, uploaded, rowBytes, rowBytes, height, cudaMemcpyHostToDevice));
     cudaResourceDesc resource = {};
     resource.resType = cudaResourceTypeArray;
     resource.res.array.array = texture->array;
@@ -1540,6 +1620,12 @@ void Renderer::readDenoised(float* rgb) {
 }
 
 void Renderer::synchronize() { ML_CHECK(cudaDeviceSynchronize()); }
+
+size_t Renderer::freeMemory() const {
+    size_t free = 0, total = 0;
+    ML_CHECK(cudaMemGetInfo(&free, &total));
+    return free;
+}
 
 std::string Renderer::deviceName() const {
     int device = 0;

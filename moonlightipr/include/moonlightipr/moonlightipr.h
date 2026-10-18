@@ -132,6 +132,9 @@ struct TextureDesc {
     bool srgb = false;              // decode bytes from sRGB when sampling
     Wrap wrapU = Repeat;
     Wrap wrapV = Repeat;
+    // The most texels across a side the card is given: a larger picture is halved, each texel the mean of four, until
+    // it is no larger. 0 for no limit. A picture of high dynamic range is kept on the card as halves whatever its size.
+    uint32_t maxSize = 0;
 };
 
 // One row of a material's layer stack, blended over the rows before it. The channel, blend and
@@ -387,6 +390,8 @@ public:
     // Blocks until queued GPU work has finished; for timing.
     void synchronize();
     std::string deviceName() const;
+    // How much of the graphics card's memory is free, in bytes.
+    size_t freeMemory() const;
 
 private:
     struct Impl;
