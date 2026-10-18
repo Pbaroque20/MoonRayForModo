@@ -45,10 +45,10 @@ def selection(key, names):
     return None
 
 
-def write(runtime, graph, rendered, denoised=None):
+def write(runtime, graph, rendered, denoised=None, scene=None):
     """Make the composite of the render saved at `rendered` and write it beside it. Returns the file written, or None
     where the graph does nothing. Raises ValueError where the graph asks for what the render has not, and OSError or
-    RuntimeError where it cannot be made or written."""
+    RuntimeError where it cannot be made or written. scene is what was rendered, for the names of Cryptomatte mattes."""
     if compositor.trivial(graph):
         return None
     runtime, rendered = Path(runtime), Path(rendered)
@@ -67,6 +67,15 @@ def write(runtime, graph, rendered, denoised=None):
     files.setdefault('beauty', rendered); channels.setdefault('beauty', ['--ch', 'R,G,B'])
     with tempfile.TemporaryDirectory(prefix='MoonRayComposite-') as held:
         # The same program as the preview's Composite, where the runtime has it: the two always agree.
+        # Each Cryptomatte node is a picture of its matte, from the Cryptomatte channels of the render's EXR.
+        from . import cryptomatte_pick
+
+        def matte(category, named):
+            frame = {'files': {cryptomatte_pick.buffer_of(scene, category) or 'cryptomatte': rendered}, 'runtime': runtime, 'snapshot': scene or {}}
+            return cryptomatte_pick.matte_file(frame, category, named, held)
+        graph, files = compositor.lowered(graph, files, matte)
+        for key in files:
+            channels.setdefault(key, ['--ch', 'R,G,B'])
         steps, result = compositor.jobs(graph, files, {key: 'beauty' for key in files}, held, channels=channels,
                                         composite=compositor.program(runtime))
         for args, target in steps:

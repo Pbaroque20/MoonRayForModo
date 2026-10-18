@@ -82,7 +82,7 @@ def open_and_build_passes():
     panel.open_compositor()
     from moonray_modo import compositor_editor
     held['editor'] = compositor_editor._open.get('editor')
-    # The chooser Build opens: shown, saved as a picture, and three passes picked from it with the Remainder.
+    # The chooser Build opens, with nothing ticked: shown, saved as a picture, and three passes picked from it.
     def pick(parent, title, intro, options, ticked):
         dialog = compositor_editor.PassChooser(parent, title, intro, options, ticked)
         dialog.show()
@@ -91,7 +91,7 @@ def open_and_build_passes():
         picked = [i for i, (label, name, expression) in enumerate(options) if label in ('Emission', 'Direct diffuse', 'Direct glossy')]
         result['chooser'] = {'offered': [label for label, name, expression in options], 'ticked': sorted(ticked), 'picked': picked}
         dialog.close()
-        return picked, True
+        return picked
     compositor_editor.choose = pick
     held['editor'].build('passes')
     held['editor'].frame(everything=True)
@@ -110,7 +110,8 @@ def compare_passes():
     # Yes to replacing the graph there.
     QtWidgets.QMessageBox.question = staticmethod(lambda *args, **kw: QtWidgets.QMessageBox.Ok)
     from moonray_modo import compositor_editor
-    compositor_editor.choose = lambda parent, title, intro, options, ticked: (sorted(ticked), True)
+    # Every light group.
+    compositor_editor.choose = lambda parent, title, intro, options, ticked: list(range(len(options)))
     held['editor'].build('groups')
     held['editor'].frame(everything=True)
 

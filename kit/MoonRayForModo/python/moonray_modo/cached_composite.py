@@ -55,9 +55,12 @@ class CachedComposite(QtCore.QObject):
         try:
             self.directory = tempfile.TemporaryDirectory(prefix='MoonRayComposite-')
             root = Path(self.directory.name)
-            kinds = {key: outputs.display_kind(frame['snapshot'], key) for key in frame['files']}
+            # Each Cryptomatte node is a picture of its matte, made from the render's Cryptomatte buffer.
+            from . import cryptomatte_pick
+            ran, files = compositor.lowered(graph, frame['files'], lambda category, matte: cryptomatte_pick.matte_file(frame, category, matte, root))
+            kinds = {key: outputs.display_kind(frame['snapshot'], key) for key in files}
             # The compositor program where the runtime has it: the graph in one go, on the graphics card or the processor.
-            self.steps, self.result = compositor.jobs(graph, frame['files'], kinds, root, composite=compositor.program(frame['runtime']))
+            self.steps, self.result = compositor.jobs(ran, files, kinds, root, composite=compositor.program(frame['runtime']))
             self.tool = str(Path(frame['runtime']) / 'oiiotool.exe')
             self.job = (frame, wanted)
             env = QtCore.QProcessEnvironment()

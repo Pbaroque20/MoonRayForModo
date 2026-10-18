@@ -175,6 +175,42 @@ def object_command(key):
     return ObjectSetting
 
 
+def object_text(key):
+    """A text setting of an object, such as its Cryptomatte name."""
+    class ObjectText(lxu.command.BasicCommand):
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('value', lx.symbol.sTYPE_STRING)
+            self.basic_SetFlags(0, lx.symbol.fCMDARG_QUERY)
+
+        def cmd_Flags(self):
+            return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+
+        def basic_Enable(self, msg):
+            from moonray_modo import properties
+            return bool(properties.selected_geometry())
+
+        def basic_Execute(self, msg, flags):
+            from moonray_modo import options, properties
+            for item in properties.selected_geometry():
+                values = options.object_values(properties.read(item))
+                values[key] = self.dyna_String(0) or ''
+                properties.write(item, dict(properties.read(item), **options.object_values(values)))
+
+        def cmd_Query(self, index, query):
+            from moonray_modo import options, properties
+            values = lx.object.ValueArray(query)
+            for item in properties.selected_geometry():
+                values.AddString(str(options.object_values(properties.read(item))[key]))
+
+        def basic_Notifier(self, index):
+            if index == 0:
+                return ('select.event', 'item +v')
+            if index == 1:
+                return ('scene.edit', '')
+    return ObjectText
+
+
 class ObjectPopup(lxifc.UIValueHints):
     """The choices of an object setting that is one of a list."""
     def __init__(self, labels):
@@ -262,12 +298,13 @@ def curve_bases():
 
 
 lx.bless(object_choice('curve_basis', curve_bases), 'moonray.object.curve_basis')
+lx.bless(object_text('crypto_name'), 'moonray.object.crypto_name')
 lx.bless(PreviewPage, 'moonray.page')
 lx.bless(SaveSceneSettings, 'moonray.sceneSettings')
 lx.bless(SaveObjectSettings, 'moonray.objectSettings')
 for _key in ('override', 'subdivision', 'level', 'smooth', 'normal_override', 'smoothing_angle', 'angular_tessellation', 'tessellation_angle', 'adaptive_error', 'share_instances', 'dynamic_tessellation',
              'curves', 'curve_root_width', 'curve_tip_width', 'curve_envelope', 'curve_samples', 'curve_uv', 'curve_round',
-             'hair', 'hair_count', 'hair_width', 'hair_clump', 'hair_length', 'hair_seed', 'hair_guides'):
+             'hair', 'hair_count', 'hair_width', 'hair_clump', 'hair_length', 'hair_seed', 'hair_guides', 'crypto_id'):
     lx.bless(object_command(_key), 'moonray.object.' + _key)
 
 

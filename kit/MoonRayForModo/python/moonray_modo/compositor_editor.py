@@ -65,24 +65,36 @@ class Socket(QtWidgets.QGraphicsEllipseItem):
 
 
 class PassChooser(QtWidgets.QDialog):
-    """Which passes a built graph takes, each to a Grade of its own; and whether what they leave out of the beauty is a
-    Remainder pass too."""
+    """Which passes a built graph takes, each to a Grade of its own; what they leave out of the beauty is the Remainder.
+    None is ticked to begin with."""
     def __init__(self, parent, title, intro, options, ticked):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(460, 480)
+        # Slim, and no taller than the choices need.
+        self.setFixedWidth(300)
         layout = QtWidgets.QVBoxLayout(self)
         words = QtWidgets.QLabel(intro)
         words.setWordWrap(True)
         layout.addWidget(words)
-        self.list = QtWidgets.QListWidget()
+        # A checkbox each, as Modo draws them: a list's own check marks are drawn by Modo's style only when ticked, so
+        # with none ticked there was nothing to show that they can be.
+        self.boxes = []
+        holder = QtWidgets.QWidget()
+        rows = QtWidgets.QVBoxLayout(holder)
         for index, (label, name, expression) in enumerate(options):
-            item = QtWidgets.QListWidgetItem(label)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.Checked if index in ticked else QtCore.Qt.Unchecked)
-            item.setToolTip('%s: %s' % (name, expression))
-            self.list.addItem(item)
-        layout.addWidget(self.list, 1)
+            box = QtWidgets.QCheckBox(label)
+            box.setChecked(index in ticked)
+            box.setToolTip('%s: %s' % (name, expression))
+            box.toggled.connect(self.check)
+            rows.addWidget(box)
+            self.boxes.append(box)
+        rows.addStretch(1)
+        rows.setContentsMargins(4, 4, 4, 4); rows.setSpacing(2)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(holder)
+        scroll.setFixedHeight(min(holder.sizeHint().height() + 4, 280))
+        layout.addWidget(scroll)
         row = QtWidgets.QHBoxLayout()
         for label, state in (('Select All', QtCore.Qt.Checked), ('Select None', QtCore.Qt.Unchecked)):
             button = QtWidgets.QPushButton(label)
@@ -91,25 +103,19 @@ class PassChooser(QtWidgets.QDialog):
             row.addWidget(button)
         row.addStretch(1)
         layout.addLayout(row)
-        self.remainder = QtWidgets.QCheckBox('Add a Remainder: what the chosen passes leave out of the beauty')
-        self.remainder.setChecked(True)
-        self.remainder.setToolTip('With it, the graph left alone gives back the beauty whatever passes are chosen. Without it, '
-                                  'the Composite is the chosen passes alone.')
-        layout.addWidget(self.remainder)
         self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         self.buttons.button(QtWidgets.QDialogButtonBox.Ok).setText('Build')
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
-        self.list.itemChanged.connect(self.check)
         self.check()
 
     def tick_all(self, state):
-        for row in range(self.list.count()):
-            self.list.item(row).setCheckState(state)
+        for box in self.boxes:
+            box.setChecked(state == QtCore.Qt.Checked)
 
     def chosen(self):
-        return [row for row in range(self.list.count()) if self.list.item(row).checkState() == QtCore.Qt.Checked]
+        return [index for index, box in enumerate(self.boxes) if box.isChecked()]
 
     def check(self, *args):
         # A graph needs a pass at least.
@@ -117,11 +123,11 @@ class PassChooser(QtWidgets.QDialog):
 
 
 def choose(parent, title, intro, options, ticked):
-    """Ask which of the options to build from: (the indices chosen, whether to add a Remainder), or None."""
+    """Ask which of the options to build from: the indices chosen, or None."""
     dialog = PassChooser(parent, title, intro, options, ticked)
     if dialog.exec_() != QtWidgets.QDialog.Accepted:
         return None
-    return dialog.chosen(), dialog.remainder.isChecked()
+    return dialog.chosen()
 
 
 class Node(QtWidgets.QGraphicsRectItem):
@@ -130,10 +136,9 @@ class Node(QtWidgets.QGraphicsRectItem):
         kind = value['type']; schema = compositor.NODES[kind]
         ports = compositor.ports(value)
         held = compositor.parameters(value)
-        # A note is its words; every other node, in probe mode, has a line more for its value at the probed pixel.
+        # A note is its words.
         words = held.get('text', '').splitlines() or ['(empty note)'] if kind == 'note' else []
-        probed = editor.probe_line(identity) if kind != 'note' else None
-        height = HEADER + (len(words) * ROW if kind == 'note' else max(1, len(ports)) * ROW) + (ROW if probed else 0) + 8
+        height = HEADER + (len(words) * ROW if kind == 'note' else max(1, len(ports)) * ROW) + 8
         super().__init__(0, 0, WIDTH, height)
         self.editor, self.identity = editor, identity
         self.setFlags(self.ItemIsMovable | self.ItemIsSelectable | self.ItemSendsGeometryChanges | self.ItemHasNoContents)
@@ -146,6 +151,8 @@ class Node(QtWidgets.QGraphicsRectItem):
             title = editor.buffer_label(held['buffer'])
         elif kind == 'merge':
             title = 'Merge: ' + held['mode']
+        elif kind == 'cryptomatte':
+            title = 'Cryptomatte: ' + (('ID ' + held['matte'][1:]) if held['matte'].startswith('#') else held['matte'] or '(choose)')
         label(self, title, TEXT, 10, 4, WIDTH - 20).setToolTip(schema['tip'])
         self.sockets = {}
         if kind == 'note':
@@ -153,9 +160,6 @@ class Node(QtWidgets.QGraphicsRectItem):
                 label(self, line, TEXT, 10, HEADER + 4 + index * ROW, WIDTH - 20, size=-1)
             self.setPos(*value.get('position', [0, 0]))
             return
-        if probed:
-            text, ink = probed
-            label(self, text, ink, 10, HEADER + 4 + max(1, len(ports)) * ROW, WIDTH - 20, size=-1)
         if kind != 'output':
             self.sockets[None] = Socket(editor, identity, None, self, WIRES[kind]); self.sockets[None].setPos(WIDTH, HEADER / 2)
         wired = value.get('inputs') or {}
@@ -164,7 +168,8 @@ class Node(QtWidgets.QGraphicsRectItem):
             label(self, compositor.port_label(key), TEXT if key in wired else TEXT_PORT, 12, y + 2, WIDTH - 22, size=-1)
             socket = Socket(editor, identity, key, self, '#9aa3ad'); socket.setPos(0, y + ROW / 2); self.sockets[key] = socket
         if not ports:
-            label(self, 'a buffer of the render', TEXT_DIM, 12, HEADER + 6, WIDTH - 22, size=-1)
+            label(self, 'a matte from the %s Cryptomatte' % held['category'] if kind == 'cryptomatte' else 'a buffer of the render',
+                  TEXT_DIM, 12, HEADER + 6, WIDTH - 22, size=-1)
         self.setPos(*value.get('position', [0, 0]))
 
     def itemChange(self, change, value):
@@ -215,7 +220,7 @@ class View(GraphView):
             return
         if what == 'disconnect': self.editor.unlink(*connection)
         elif what == 'duplicate': self.editor.duplicate()
-        elif what == 'note_probe': self.editor.note_probe()
+        elif what == 'note_probe': self.editor.note_at(self.editor.probe_point)
         elif what == 'delete': self.editor.remove()
         elif what == 'add': self.editor.quick_add(self.mapToScene(event.pos()), event.globalPos())
         elif what == 'frame': self.editor.frame()
@@ -250,11 +255,15 @@ class Editor(QtWidgets.QDialog):
         menu_button('Build', [('From Light Passes', lambda: self.build('passes')), ('From Light Groups', lambda: self.build('groups'))])
         # Probe mode: each node's value at the pixel under the pointer in the preview, and notes of those values.
         self.probe_button = QtWidgets.QToolButton(); self.probe_button.setText('Probe'); self.probe_button.setCheckable(True); self.probe_button.setAutoRaise(True)
-        self.probe_button.setToolTip('Show what each node makes at the pixel under the pointer in the preview window. The point stays where the pointer left the picture.')
+        self.probe_button.setToolTip('Over the preview picture, a tooltip at the pointer gives what each node makes at that pixel. '
+                                     'Right-click there for a note that keeps those values and follows the graph and the render.')
         self.probe_button.toggled.connect(self.set_probing); toolbar.addWidget(self.probe_button)
         self.note_button = QtWidgets.QToolButton(); self.note_button.setText('Note Values'); self.note_button.setAutoRaise(True); self.note_button.setEnabled(False)
-        self.note_button.setToolTip('A note of the probed values of the selected nodes, or of every node when none is selected')
-        self.note_button.clicked.connect(self.note_probe); toolbar.addWidget(self.note_button)
+        self.note_button.setToolTip('A probe note of the values at the last pixel probed, as a right-click on the preview makes')
+        self.note_button.clicked.connect(lambda: self.note_at(self.probe_point)); toolbar.addWidget(self.note_button)
+        # Probe notes follow the graph and the render: looked at once a second, and worked out again when either changed.
+        self.notes_timer = QtCore.QTimer(self); self.notes_timer.setInterval(1000); self.notes_timer.timeout.connect(self.refresh_notes)
+        self.notes_seen = None; self.notes_timer.start()
         self.probing = False; self.probe_point = None; self.probed = {}
         self.probe_timer = QtCore.QTimer(self); self.probe_timer.setSingleShot(True); self.probe_timer.setInterval(120)
         self.probe_timer.timeout.connect(self.update_probe)
@@ -420,10 +429,9 @@ class Editor(QtWidgets.QDialog):
         added to the scene where it lacks them, to be filled by the next render."""
         values = self.panel._settings_values()
         if kind == 'passes':
-            # MoonRay's light passes, which together make the beauty, ticked; and the scene's own light path outputs,
-            # not ticked, to take as passes too.
+            # MoonRay's light passes, which together make the beauty, and the scene's own light path outputs, to take as
+            # passes too. None is ticked: what is worked on is chosen.
             wanted = list(compositor.PASSES)
-            ticked = set(range(len(wanted)))
             wanted += [(name + '  (in the scene)', name, expression) for words, name, expression in compositor.scene_passes(values.get('custom_aovs'), wanted)]
         else:
             groups = compositor.light_groups(values.get('production'), self.moonray_lights())
@@ -436,14 +444,12 @@ class Editor(QtWidgets.QDialog):
                     return
             wanted = [(words, ('environment' if label == compositor.ENVIRONMENT_LABEL else label) + '_light', compositor.light_group_expression(label))
                       for words, label in groups]
-            ticked = set(range(len(wanted)))
         title = 'Build from Light Passes' if kind == 'passes' else 'Build from Light Groups'
         intro = ('Choose the passes to work on, each with a Grade of its own. A pass not chosen stays in the Remainder.' if kind == 'passes'
                  else 'Choose the light groups to work on, each with a Grade of its own. A group not chosen stays in the Remainder.')
-        answer = choose(self, title, intro, wanted, ticked)
-        if answer is None:
+        picked = choose(self, title, intro, wanted, set())
+        if picked is None:
             return
-        picked, remainder = answer
         wanted = [wanted[index] for index in picked]
         if not compositor.trivial(self.graph):
             asked = QtWidgets.QMessageBox.question(self, 'Build the compositor graph', 'This replaces the graph that is there now. '
@@ -456,12 +462,12 @@ class Editor(QtWidgets.QDialog):
                 return
             self.panel._sync_output_menu(entries, self.panel._display_filter_buffers())
         before = copy.deepcopy(self.graph)
-        self.graph = compositor.pass_graph(list(zip(names, [words for words, name, expression in wanted])), remainder=remainder)
+        self.graph = compositor.pass_graph(list(zip(names, [words for words, name, expression in wanted])))
         self.rebuild(); self.remember(before); self.frame(everything=True)
         missing = [name for name in names if name not in {key for words, key in self.buffer_choices()}]
-        self.info.setText(('Built from %d %s%s. ' % (len(names), 'passes' if kind == 'passes' else 'light groups', ' and the Remainder' if remainder else ''))
+        self.info.setText('Built from %d %s and the Remainder. ' % (len(names), 'passes' if kind == 'passes' else 'light groups')
                           + ('Render to fill the new passes; the Composite is made when the render finishes.' if missing
-                             else 'With every Grade left alone the Composite is the beauty.' if remainder else ''))
+                             else 'With every Grade left alone the Composite is the beauty.'))
 
     def moonray_lights(self):
         """The MoonRay light items in the scene, for their light-group labels."""
@@ -487,86 +493,116 @@ class Editor(QtWidgets.QDialog):
             pass
         if not self.probing:
             self.probed = {}
-            self.rebuild()
+            QtWidgets.QToolTip.hideText()
         else:
-            self.info.setText('Probe: move the pointer over the picture in the preview window. The point stays where it left it.')
-            if self.probe_point is not None:
-                self.update_probe()
+            self.info.setText('Probe: hold the pointer over the picture in the preview window for its values. Right-click there '
+                              'for a note of them.')
 
     def probe_hovered(self, x, y):
-        # Off the picture, the last point is kept, so that the values can be read in the editor.
+        # Off the picture the tooltip goes; the last point is kept for Note Values.
         if x < 0 or y < 0:
+            self.probe_timer.stop(); QtWidgets.QToolTip.hideText()
             return
         self.probe_point = (x, y)
         self.probe_timer.start()
 
-    def update_probe(self):
-        """Work out each node's value at the probed pixel, and show it on the canvas."""
-        if not self.probing or self.probe_point is None:
-            return
+    def sampled_at(self, x, y):
+        """Each node's value at a pixel of the finished render, {node: (r, g, b) or None}; None with no render to read."""
         from . import compositor_probe
         frame = getattr(self.panel.renderer.buffers, 'frame', None) or {}
-        x, y = self.probe_point
         size = compositor_probe.size(frame) if frame else None
         if size is None:
-            self.info.setText('Probe: there is no finished render to read values from.')
-            self.probed = {}
-        else:
-            try:
-                self.probed = compositor.sample(self.graph, lambda key: compositor_probe.value(frame, key, x, y), x, y, size[0], size[1])
-                self.info.setText('Probe at %d, %d.' % (x, y))
-            except (ValueError, OSError) as exc:
-                self.probed = {}
-                self.info.setText('Probe: ' + str(exc))
-        selected = self.selected_nodes()
-        self.rebuild()
-        for identity in selected:
-            if identity in self.items:
-                self.items[identity].setSelected(True)
-
-    def probe_line(self, identity):
-        """What a node shows in probe mode: its value at the probed pixel and the colour to show it in, or None."""
-        if not self.probing or identity not in self.probed:
             return None
-        picked = self.probed[identity]
-        if picked is None:
-            return 'needs the pixels around it', TEXT_DIM
-        return 'R %.3f  G %.3f  B %.3f' % tuple(picked), '#d8c86a'
+        try:
+            return compositor.sample(self.graph, lambda key: compositor_probe.value(frame, key, x, y), x, y, size[0], size[1])
+        except (ValueError, OSError):
+            return None
 
-    def note_probe(self):
-        """A note of the probed values of the selected nodes, or of every node when none is selected, beside them."""
-        if not self.probing or self.probe_point is None or not self.probed:
-            self.info.setText('Probe a pixel first: switch Probe on and move the pointer over the preview picture.'); return
-        chosen = [identity for identity in self.selected_nodes() if identity in self.probed and self.graph['nodes'][identity]['type'] != 'note'] or \
-                 [identity for identity in compositor.order(compositor.validate(self.graph)) if identity in self.probed]
+    def node_words(self, identity):
+        node = self.graph['nodes'][identity]
+        if node['type'] == 'input':
+            return self.buffer_label(compositor.parameters(node)['buffer'])
+        return compositor.NODES[node['type']]['label']
 
-        def called(identity):
-            node = self.graph['nodes'][identity]
-            if node['type'] == 'input':
-                return self.buffer_label(compositor.parameters(node)['buffer'])
-            return compositor.NODES[node['type']]['label']
-        text = compositor.probe_note([(called(identity), self.probed[identity]) for identity in chosen], *self.probe_point)
-        right = max(self.graph['nodes'][identity]['position'][0] for identity in chosen) + WIDTH + 60
-        top = min(self.graph['nodes'][identity]['position'][1] for identity in chosen)
+    def probe_text(self, sampled, x, y):
+        """The values at a pixel, node by node in the order the graph makes them, as the tooltip and a probe note say them."""
+        if sampled is None:
+            return 'Probe at %d, %d\nNo finished render to read values from.' % (x, y)
+        try:
+            made = [identity for identity in compositor.order(compositor.validate(self.graph)) if identity in sampled]
+        except ValueError:
+            made = list(sampled)
+        return compositor.probe_note([(self.node_words(identity), sampled[identity]) for identity in made], x, y)
+
+    def update_probe(self):
+        """The tooltip at the pointer: what each node makes at the pixel under it."""
+        if not self.probing or self.probe_point is None:
+            return
+        x, y = self.probe_point
+        sampled = self.sampled_at(x, y)
+        self.probed = sampled or {}
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), self.probe_text(sampled, x, y), self.panel.preview)
+
+    def note_at(self, point):
+        """A probe note of the values at a pixel, beside the Composite: it keeps the pixel and follows the graph and the
+        render (refresh_notes)."""
+        if point is None:
+            self.info.setText('Probe a pixel first: switch Probe on and hold the pointer over the preview picture.'); return
+        x, y = point
+        placed = [node['position'] for node in self.graph['nodes'].values()] or [[0.0, 0.0]]
+        right = max(position[0] for position in placed) + WIDTH + 60
+        top = min(position[1] for position in placed)
         before = copy.deepcopy(self.graph)
         identity = 'note_' + uuid.uuid4().hex[:6]
-        self.graph['nodes'][identity] = {'type': 'note', 'parameters': {'text': text}, 'inputs': {}, 'position': self.free_place(right, top)}
+        self.graph['nodes'][identity] = {'type': 'note', 'inputs': {}, 'position': self.free_place(right, top),
+                                         'parameters': {'text': self.probe_text(self.sampled_at(x, y), x, y), 'probe_x': float(x), 'probe_y': float(y)}}
         self.rebuild(); self.remember(before)
-        self.info.setText('Noted the values at %d, %d.' % self.probe_point)
+        self.info.setText('A probe note of the values at %d, %d. It follows the graph and the render.' % (x, y))
+
+    def refresh_notes(self):
+        """Work the probe notes' words out again when the graph or the render has changed since they were."""
+        if self.busy or not any(node['type'] == 'note' and compositor.parameters(node)['probe_x'] >= 0 for node in self.graph['nodes'].values()):
+            return
+        import json
+        frame = getattr(self.panel.renderer.buffers, 'frame', None) or {}
+        shape = {identity: dict(node, parameters={k: v for k, v in (node.get('parameters') or {}).items() if k != 'text'}, position=None)
+                 for identity, node in self.graph['nodes'].items()}
+        seen = (id(frame), json.dumps(shape, sort_keys=True, default=str))
+        if seen == self.notes_seen:
+            return
+        self.notes_seen = seen
+        changed = False
+        for node in self.graph['nodes'].values():
+            held = compositor.parameters(node) if node['type'] == 'note' else None
+            if held is None or held['probe_x'] < 0 or held['probe_y'] < 0:
+                continue
+            x, y = int(held['probe_x']), int(held['probe_y'])
+            text = self.probe_text(self.sampled_at(x, y), x, y)
+            if text != held['text']:
+                node.setdefault('parameters', {})['text'] = text; changed = True
+        if changed:
+            selected = self.selected_nodes()
+            self.rebuild()
+            for identity in selected:
+                if identity in self.items:
+                    self.items[identity].setSelected(True)
+            self.write_timer.start()
 
     def aov_menu(self, menu):
         """Fill the Add Input AOV menu: the render's buffers, then the light passes and light groups the scene does not
-        have yet, and a light path expression of one's own. Each action's data says what it adds."""
+        have yet, and a light path expression of one's own. A buffer the graph has a Buffer node for already is not
+        offered again. Each action's data says what it adds."""
         menu.setStyleSheet(MENU_STYLE)
         values = self.panel._settings_values()
-        listed = self.buffer_choices()
+        present = {compositor.parameters(node).get('buffer') for node in self.graph['nodes'].values() if node.get('type') == 'input'}
+        listed = [(words, key) for words, key in self.buffer_choices() if key not in present]
         for words, key in listed:
             menu.addAction(words).setData(('buffer', key))
         have = {entry.get('expression', '').strip() for entry in values.get('custom_aovs') or [] if entry.get('kind') == 'lpe'}
-        passes = [(words, name, expression) for words, name, expression in compositor.PASSES if expression not in have]
+        passes = [(words, name, expression) for words, name, expression in compositor.PASSES if expression not in have and name not in present]
         groups = [(words, ('environment' if label == compositor.ENVIRONMENT_LABEL else label) + '_light', compositor.light_group_expression(label))
                   for words, label in compositor.light_groups(values.get('production'), self.moonray_lights())]
-        groups = [group for group in groups if group[2] not in have]
+        groups = [group for group in groups if group[2] not in have and group[1] not in present]
         if listed:
             menu.addSeparator()
         # Each submenu is made with its parent menu as its owner and kept on it, so that Python does not let it go.
@@ -619,6 +655,33 @@ class Editor(QtWidgets.QDialog):
         else:
             key = what[1]
         self.add('input', point, target, {'buffer': key})
+
+    def matte_choices(self, category):
+        """The mattes given in the scene's Cryptomatte tabs, [(words, value)]: each name, and each ID as #number."""
+        names, numbers = set(), set()
+        try:
+            import json
+            import modo
+            from . import properties
+            scene = modo.Scene()
+            if category == 'material':
+                items = [item for item in scene.items('advancedMaterial', superType=True)]
+            else:
+                items = list(scene.items('locator', superType=True))
+            for item in items:
+                try:
+                    held = json.loads(item.readTag(properties.TAG))
+                except (LookupError, RuntimeError, ValueError, TypeError):
+                    continue
+                if not isinstance(held, dict):
+                    continue
+                if str(held.get('crypto_name') or '').strip():
+                    names.add(str(held['crypto_name']).strip())
+                if int(held.get('crypto_id') or 0) > 0:
+                    numbers.add(int(held['crypto_id']))
+        except Exception:
+            pass
+        return [(name, name) for name in sorted(names, key=str.casefold)] + [('ID %d' % number, '#%d' % number) for number in sorted(numbers)]
 
     # ---- what the canvas asks of its editor ----
     def buffer_label(self, key):
@@ -752,7 +815,8 @@ class Editor(QtWidgets.QDialog):
 
         def chosen(words):
             self.add(names[words], scene_point, connect)
-        self.popup = QuickAdd(self, list(names), chosen); self.popup.open_at(global_point)
+        tips = {words: compositor.NODES[kind].get('tip', '') for words, kind in names.items()}
+        self.popup = QuickAdd(self, list(names), chosen, tips); self.popup.open_at(global_point)
 
     def consumers(self, identity):
         """The inputs that take a node's picture: [(node, input)]."""
@@ -889,6 +953,23 @@ class Editor(QtWidgets.QDialog):
             elif spec[0] == 'choice':
                 field = QtWidgets.QComboBox(); field.addItems(list(spec[2])); field.setCurrentText(held[key])
                 field.currentTextChanged.connect(lambda value, key=key: self.set_value(identity, key, value, redraw=True))
+                if node['type'] == 'cryptomatte' and key == 'category':
+                    # Another kind of matte: the names and IDs offered are that kind's.
+                    field.currentTextChanged.connect(lambda value: QtCore.QTimer.singleShot(0, self.inspect))
+            elif spec[0] == 'matte':
+                field = QtWidgets.QComboBox()
+                field.setToolTip('The names and IDs given in the Cryptomatte tabs of the scene\'s %ss.' % held['category'])
+                offered = self.matte_choices(held['category'])
+                for words, value in offered:
+                    field.addItem(words, value)
+                if held[key] and field.findData(held[key]) < 0:
+                    field.addItem(held[key] + '  (no longer given)', held[key])
+                if not offered and not held[key]:
+                    field.addItem('(none given: name some in their Cryptomatte tabs)', '')
+                field.setCurrentIndex(max(0, field.findData(held[key])))
+                if not held[key] and field.itemData(0):
+                    self.set_value(identity, key, field.itemData(0), redraw=True)
+                field.currentIndexChanged.connect(lambda index, key=key, field=field: self.set_value(identity, key, field.itemData(index) or '', redraw=True))
             elif spec[0] == 'text':
                 field = QtWidgets.QPlainTextEdit(held[key]); field.setMinimumHeight(140)
                 field.textChanged.connect(lambda key=key, field=field: self.set_value(identity, key, field.toPlainText(), redraw=True))

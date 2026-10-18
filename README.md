@@ -225,7 +225,7 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 - **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, arithmetic and UV transforms. Nodes outside that subset are not read.
 - **RDL import leaves a few things out**, and names each in its report. This comes with the format: an RDL file is MoonRay's own description of a scene, and it can hold things Modo has nothing to turn them into. MoonRay item kinds with no Modo counterpart, ways of instancing Modo cannot express (instances read from a point file, some instancing methods), words that change from point to point (a Modo vertex map holds only numbers), and render outputs Modo's settings have no place for are left out and named, rather than turned into something that would render differently. Coming in 0.4.2: motion, values that differ face by face or point by point, subdivision creases and meshes filled with fog come in.
 - **Geometry**: some instancing, motion, subdivision, UV-projection and normal-map cases differ from Modo. A mesh that mixes polygon kinds or needs per-polygon projection is read the slower way. A shadow a coarse mesh casts on itself, as a torus's on the inside of its hole, follows its faces, in MoonRay and MoonLightIPR alike; subdivision smooths it.
-- **Cryptomatte**: ID previews are not an interactive matte-selection tool. Fog has mattes of its own coming in 0.4.2.
+- **Cryptomatte**: ID previews are not an interactive matte-selection tool. Coming in 0.4.2: picking mattes in the preview, Cryptomatte names and IDs on objects and materials, a Cryptomatte node in the compositor, and fog with mattes of its own.
 - **Preview**: some edits still need the whole scene read again; the compositor works on finished MoonRay renders, not on MoonLightIPR's. Safe Denoising and Continue are for the MoonRay engine.
 
 ### MoonRay's features in the plugin
@@ -264,7 +264,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel. Coming in 0.4.2, with its runtime |
 | Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window. Coming in 0.4.2 |
 | Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window. Coming in 0.4.2 |
-| Cryptomatte | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: fog, from a VDB or in a MoonRay box or sphere, has mattes of its own, and each sample is counted once in vector and XPU modes |
+| Cryptomatte | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: fog, from a VDB or in a MoonRay box or sphere, has mattes of its own, and each sample is counted once in vector and XPU modes; names and IDs given on objects and materials; picking in the preview; a Cryptomatte node in the compositor |
 | Deep EXR | ![yes](docs/images/feature-yes.svg) | |
 | Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |

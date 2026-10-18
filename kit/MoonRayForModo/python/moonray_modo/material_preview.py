@@ -182,7 +182,7 @@ class Panel(QtWidgets.QWidget):
             scene=self.capture_snapshot()
             record("Capture draft complete")
             self.timer.stop()  # Draft commit can itself notify graph_changed.
-            # MoonRay LS, as the render window's quick look, but with more samples to a pixel than its own default (16)
+            # MoonRay LS, as the render window's quick look, but with more samples to a pixel than its own default (32)
             # and an adaptive error that stops once the picture is clean, to load fast. Live, while values are
             # being dragged, it is held lighter to keep up.
             live=self.live.isChecked()

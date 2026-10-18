@@ -21,6 +21,10 @@ class _PreviewBody:
         self.zoom = 1.0
         self.pan = QtCore.QPointF()
         self._drag = None
+        # Where the left button went down, to tell a click from a drag; and a picture laid over the render, such as
+        # the Cryptomatte mattes picked, at the render's size.
+        self._press = None
+        self.overlay = None
         # Which of the picture is shown: all of it, or one of red, green and blue as greys.
         self.channel = 'rgb'
         self._single = None
@@ -339,6 +343,8 @@ class _PreviewBody:
             else:
                 painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
                 painter.drawImage(self.image_rect(), self.shown())
+                if self.overlay is not None and not self.overlay.isNull():
+                    painter.drawImage(self.image_rect(), self.overlay)
                 if self._crest_fade is not None and self._crest_fade[2] <= 0.0:
                     # The crest fading out over the first picture.
                     from . import crest
@@ -419,6 +425,7 @@ class _PreviewBody:
             return
         if event.button() in (QtCore.Qt.LeftButton, QtCore.Qt.MiddleButton):
             self._drag = event.pos()
+            self._press = event.pos() if event.button() == QtCore.Qt.LeftButton else None
             self.setCursor(QtCore.Qt.ClosedHandCursor)
             event.accept()
 
@@ -447,8 +454,19 @@ class _PreviewBody:
                                        (kept.right() - area.left()) / area.width(), (kept.bottom() - area.top()) / area.height())
             self.update()
             return
+        # A press and release with the picture hardly moved is a click on the pixel under it.
+        if self._press is not None and event.button() == QtCore.Qt.LeftButton and (event.pos() - self._press).manhattanLength() < 4:
+            found = self.pixel_at(event.pos())
+            if found is not None:
+                self.clicked.emit(found[0], found[1], int(event.modifiers()))
+        self._press = None
         self._drag = None
         self.unsetCursor()
+
+    def set_overlay(self, image):
+        """Lay a picture over the render, at its size, or take it away with None."""
+        self.overlay = image
+        self.update()
 
     def leaveEvent(self, event):
         self.hovered.emit(-1, -1)
@@ -465,6 +483,7 @@ class Preview(_PreviewBody,QtWidgets.QOpenGLWidget):
     start_requested=QtCore.Signal()
     region_drawn=QtCore.Signal(float,float,float,float)
     hovered=QtCore.Signal(int,int)
+    clicked=QtCore.Signal(int,int,int)
 
 
 class SoftwarePreview(_PreviewBody,QtWidgets.QWidget):
@@ -472,6 +491,7 @@ class SoftwarePreview(_PreviewBody,QtWidgets.QWidget):
     start_requested=QtCore.Signal()
     region_drawn=QtCore.Signal(float,float,float,float)
     hovered=QtCore.Signal(int,int)
+    clicked=QtCore.Signal(int,int,int)
 
     def paintEvent(self,event):
         self.paintGL()

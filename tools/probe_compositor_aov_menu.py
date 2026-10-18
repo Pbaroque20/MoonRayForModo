@@ -3,7 +3,8 @@
 
 The compositor's editor is opened on a new scene. The Add Input AOV menu is filled and saved as a picture, with what it
 offers noted. Then, as its entries would: the beauty is added wired into the Composite node's input, and a light pass
-the scene has no output for is added, which puts that output in the scene."""
+the scene has no output for is added, which puts that output in the scene. The menu is filled again, and offers
+neither of them, the graph having a Buffer node for each."""
 import json
 import pathlib
 import traceback
@@ -63,6 +64,10 @@ def run():
         added = [n for n in editor.graph['nodes'] if n not in before]
         result['pass_added'] = [editor.graph['nodes'][n]['parameters'] for n in added]
         result['outputs'] = [entry['name'] for entry in panel._settings_values().get('custom_aovs', [])]
+        # Asked again with both in the graph: neither is offered a second time.
+        again = QtWidgets.QMenu('Add Input AOV', menu)
+        editor.aov_menu(again)
+        result['offered_after'] = listed(again)
         editor.frame(everything=True)
         QtWidgets.QApplication.processEvents()
         editor.grab().save(str(out / 'editor.png'))

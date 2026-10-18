@@ -48,38 +48,60 @@ def curve(a,b):
 
 
 class QuickAdd(QtWidgets.QFrame):
-    """A search box that opens at the pointer: type part of a node's name, Enter adds it."""
-    def __init__(self,parent,kinds,chosen):
+    """The Add Node popup: a field to type a node's name in, over the list of every node. What is typed picks the node
+    it names and scrolls the list to it: the first whose name begins with it, or else the first whose name holds it.
+    Enter, or a click on a name, adds that node; the arrow keys move through the list. tips gives each name's tooltip;
+    without it, the material nodes' descriptions are used."""
+    def __init__(self,parent,kinds,chosen,tips=None):
         super().__init__(parent,QtCore.Qt.Popup)
         self.chosen=chosen;self.kinds=sorted(kinds,key=str.casefold)
         layout=QtWidgets.QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(4)
-        self.search=QtWidgets.QLineEdit();self.search.setPlaceholderText('Add node');layout.addWidget(self.search)
-        self.results=QtWidgets.QListWidget();self.results.setMinimumSize(240,260);layout.addWidget(self.results)
-        self.search.textChanged.connect(self.fill);self.search.returnPressed.connect(self.accept)
+        self.search=QtWidgets.QLineEdit();self.search.setPlaceholderText('Node name');layout.addWidget(self.search)
+        self.results=QtWidgets.QListWidget();self.results.setMinimumSize(240,300);layout.addWidget(self.results)
+        self.results.setFocusPolicy(QtCore.Qt.NoFocus)
+        if tips is None:
+            from .node_descriptions import tooltip
+            tips={kind:tooltip(kind) for kind in self.kinds}
+        for kind in self.kinds:
+            row=QtWidgets.QListWidgetItem(kind);row.setToolTip(tips.get(kind,''));self.results.addItem(row)
+        if self.results.count():self.results.setCurrentRow(0)
+        self.search.textChanged.connect(self.find);self.search.returnPressed.connect(self.accept)
         self.results.itemClicked.connect(lambda item:self.accept())
         self.search.installEventFilter(self)
-        self.fill('')
-    def fill(self,text):
-        query=text.casefold().strip();self.results.clear()
-        # Names that begin with what was typed come before names that only contain it.
-        first=[kind for kind in self.kinds if kind.casefold().startswith(query)]
-        rest=[kind for kind in self.kinds if query in kind.casefold() and kind not in first]
-        from .node_descriptions import tooltip
-        for kind in first+rest:
-            row=QtWidgets.QListWidgetItem(kind);row.setToolTip(tooltip(kind));self.results.addItem(row)
-        if self.results.count():self.results.setCurrentRow(0)
+    def match(self,text):
+        """The row of the node what is typed names: a name beginning with it, else one holding it; None for none."""
+        query=text.casefold().strip()
+        if not query:return 0 if self.kinds else None
+        for test in (lambda name:name.startswith(query),lambda name:any(word.startswith(query) for word in name.split()),lambda name:query in name):
+            for row,kind in enumerate(self.kinds):
+                if test(kind.casefold()):return row
+        return None
+    def find(self,text):
+        row=self.match(text)
+        if row is None:
+            # Nothing is called that: no node is picked, and Enter adds none.
+            self.results.setCurrentRow(-1);self.results.clearSelection();return
+        self.results.setCurrentRow(row)
+        self.results.scrollToItem(self.results.item(row),QtWidgets.QAbstractItemView.PositionAtCenter)
     def eventFilter(self,watched,event):
-        # The arrow keys move through the list while the text stays in the search box.
+        # The arrow keys move through the list while the text stays in the field.
         if event.type()==QtCore.QEvent.KeyPress and event.key() in (QtCore.Qt.Key_Down,QtCore.Qt.Key_Up) and self.results.count():
             step=1 if event.key()==QtCore.Qt.Key_Down else -1
             self.results.setCurrentRow(max(0,min(self.results.count()-1,self.results.currentRow()+step)));return True
+        if event.type()==QtCore.QEvent.KeyPress and event.key()==QtCore.Qt.Key_Escape:
+            self.close();return True
         return super().eventFilter(watched,event)
     def accept(self):
-        item=self.results.currentItem()
+        item=self.results.currentItem() if self.results.currentRow()>=0 else None
         self.close()
         if item is not None:self.chosen(item.text())
     def open_at(self,point):
-        self.move(point);self.show();self.search.setFocus()
+        # Kept on the screen the pointer is on.
+        self.adjustSize()
+        screen=QtWidgets.QApplication.screenAt(point) or QtWidgets.QApplication.primaryScreen()
+        area=screen.availableGeometry()
+        x=min(max(point.x(),area.left()),area.right()-self.width());y=min(max(point.y(),area.top()),area.bottom()-self.height())
+        self.move(x,y);self.show();self.raise_();self.activateWindow();self.search.setFocus(QtCore.Qt.PopupFocusReason)
 
 
 class GraphView(QtWidgets.QGraphicsView):
@@ -174,6 +196,18 @@ class GraphView(QtWidgets.QGraphicsView):
     def focusNextPrevChild(self,forward):
         # Tab opens the add-node search here rather than leaving the canvas.
         return False
+    def event(self,event):
+        # Tab is the canvas's own, before any shortcut of Modo's or of the window takes it.
+        if event.type()==QtCore.QEvent.ShortcutOverride and event.key()==QtCore.Qt.Key_Tab:
+            event.accept();return True
+        return super().event(event)
+    def enterEvent(self,event):
+        # The pointer over the canvas gives it the keys, so that Tab adds a node there whatever was clicked last;
+        # but not from a field being typed in.
+        focused=QtWidgets.QApplication.focusWidget()
+        if not isinstance(focused,(QtWidgets.QLineEdit,QtWidgets.QAbstractSpinBox,QtWidgets.QPlainTextEdit,QtWidgets.QTextEdit)):
+            self.setFocus(QtCore.Qt.MouseFocusReason)
+        super().enterEvent(event)
     def contextMenuEvent(self,event):
         socket=self.socket_at(event.pos());item=self.itemAt(event.pos())
         owner=self.node_at(event.pos())

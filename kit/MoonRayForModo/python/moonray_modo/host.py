@@ -214,7 +214,8 @@ def material_values(material):
     from .shading_models import translated
     model = str(channel(material, 'brdfType', 'gtr'))
     lobe_roughness, lobe_strength, beckmann = translated(model, float(channel(material, 'rough', .4)))
-    value = {'name':material.name,'color': [c * diffuse_amount for c in diffuse],
+    value = {'name':material.name,'item':material.id,'crypto_name':str(settings.get('crypto_name') or '').strip(),
+             'crypto_id':int(settings.get('crypto_id') or 0),'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
                                 'node_graph': arranged(settings.get('node_graph')),
                                 'node_override': settings.get('node_override',False) or material.type in ('material.moonrayMaterialX','material.moonrayMoonShine'),
@@ -303,6 +304,15 @@ def solar_discs(result):
                     light['disc'] = {'radiance': [v * float(environment.get('intensity', 1.0)) for v in seen], 'angle': SUN_DEGREES * layer['solar_disc']}
 
 
+def picture_size(scene):
+    """The size the picture is rendered at: the Render item's resolution, or the render camera's where it overrides it."""
+    render, camera = scene.renderItem, scene.renderCamera
+    width, height = int(channel(render, 'resX', 1280)), int(channel(render, 'resY', 720))
+    if camera is not None and channel(camera, 'resOverride', 0):
+        width, height = int(channel(camera, 'resX', width)), int(channel(camera, 'resY', height))
+    return width, height
+
+
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):
     scene = modo.Scene()
     try:
@@ -328,9 +338,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     warnings = []
     smoothed_whole = []
     render = scene.renderItem
-    width, height = int(channel(render, 'resX', 1280)), int(channel(render, 'resY', 720))
-    if channel(camera, 'resOverride', 0):
-        width, height = int(channel(camera, 'resX', width)), int(channel(camera, 'resY', height))
+    width, height = picture_size(scene)
     aperture_x = float(channel(camera, 'apertureX', .036))
     aperture_y = float(channel(camera, 'apertureY', .024))
     pixel_aspect = float(channel(render,'pAspect',1))
@@ -798,5 +806,20 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                         'Set a smoothing angle in the MoonRay material settings to hold it.'
                         % (SMOOTHING_ANGLE_FACES, ', '.join(smoothed_whole[:6]) + (' ...' if len(smoothed_whole) > 6 else '')))
     unworn(scene, result, warnings)
+    result['cryptomatte_objects'] = cryptomatte_objects(scene)
     result['warnings'] = sorted(set(warnings))
     return result
+
+
+def cryptomatte_objects(scene):
+    """The Cryptomatte name and ID each object is given in its Cryptomatte tab, {item: {'name', 'id'}}, for those given one."""
+    import json
+    found = {}
+    for item in scene.items('locator', superType=True):
+        try:
+            held = json.loads(item.readTag(properties.TAG))
+        except (LookupError, RuntimeError, ValueError, TypeError):
+            continue
+        if isinstance(held, dict) and (held.get('crypto_name') or held.get('crypto_id')):
+            found[item.id] = {'name': str(held.get('crypto_name') or '').strip(), 'id': int(held.get('crypto_id') or 0)}
+    return found
