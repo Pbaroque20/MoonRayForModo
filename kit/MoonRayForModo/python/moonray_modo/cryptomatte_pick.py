@@ -34,21 +34,43 @@ def _read_pfm(path):
     return width, height, values
 
 
+def _part(listed, key):
+    """Which part of an EXR holds a Cryptomatte, from the image tool's description of the file: (its index, its layers).
+    A render to a file with Cryptomatte of more than one kind keeps each in a part named after its output; the part of
+    that name is taken, and otherwise the first with Cryptomatte in it."""
+    parts, current = {}, 0
+    for line in listed.splitlines():
+        found = re.match(r'\s*subimage\s+(\d+):', line)
+        if found:
+            current = int(found.group(1))
+        held = parts.setdefault(current, {'name': None, 'layers': []})
+        if 'channel list:' in line:
+            held['layers'] = sorted(set(re.findall(r'\b(Cryptomatte\d\d)\.R\b', line)))
+        named = re.match(r'\s*name:\s*"(.*)"', line)
+        if named:
+            held['name'] = named.group(1)
+    with_mattes = [index for index in sorted(parts) if parts[index]['layers']]
+    index = next((index for index in with_mattes if parts[index]['name'] == key), with_mattes[0] if with_mattes else 0)
+    return index, parts.get(index, {}).get('layers', [])
+
+
 def ranks(frame, key):
     """A Cryptomatte buffer's ranks, (width, height, [(IDs, coverages)]), each as floats rows from the bottom up; None where
     the buffer has no file to read."""
     path = (frame.get('files') or {}).get(key)
     if not path or not Path(path).is_file():
         return None
-    stamp = (str(path), Path(path).stat().st_mtime_ns)
+    # A file may hold Cryptomatte of more than one kind, each in its own part: each is kept by the file and its output.
+    stamp = (str(path), Path(path).stat().st_mtime_ns, key)
     if stamp in _ranks:
         return _ranks[stamp]
     runtime = Path(frame['runtime'])
     env = native.environment(runtime)
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    listed = subprocess.run([str(runtime / 'oiiotool.exe'), '--info', '-v', str(path)], env=env, stdout=subprocess.PIPE,
+    listed = subprocess.run([str(runtime / 'oiiotool.exe'), '--info', '-v', '-a', str(path)], env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, timeout=60, creationflags=flags).stdout.decode(errors='replace')
-    layers = sorted(set(re.findall(r'\b(Cryptomatte\d\d)\.R\b', listed)))
+    part, layers = _part(listed, key)
+    chosen = ['--subimage', str(part)] if part else []
     found, size = [], None
     with tempfile.TemporaryDirectory(prefix='MoonRayCrypto-') as folder:
         # Every rank in one run: the file is read once, and each rank written as (ID, coverage, coverage).
@@ -56,7 +78,7 @@ def ranks(frame, key):
         for layer in layers:
             for id_channel, amount in (('R', 'G'), ('B', 'A')):
                 target = Path(folder) / ('%s%s.pfm' % (layer, id_channel))
-                command += ['-i', str(path), '--ch', '%s.%s,%s.%s,%s.%s' % (layer, id_channel, layer, amount, layer, amount), '-d', 'float', '-o', str(target)]
+                command += ['-i', str(path)] + chosen + ['--ch', '%s.%s,%s.%s,%s.%s' % (layer, id_channel, layer, amount, layer, amount), '-d', 'float', '-o', str(target)]
                 targets.append(target)
         subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120, creationflags=flags)
         for target in targets:
@@ -66,7 +88,7 @@ def ranks(frame, key):
             size = (width, height)
             found.append((values[0::3], values[1::3]))
     result = (size[0], size[1], found) if size else None
-    for held in [held for held in _ranks if held[0] == stamp[0]]:
+    for held in [held for held in _ranks if held[0] == stamp[0] and held[2] == key]:
         del _ranks[held]
     _ranks[stamp] = result
     return result

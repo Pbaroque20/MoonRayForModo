@@ -1200,9 +1200,13 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _set_rendering(self,rendering):
         """Keep the Render button saying what pressing it will do."""
+        was=getattr(self,'_rendering',False)
         self._rendering=bool(rendering)
-        # The mattes picked are of the picture there was: a new render takes them away.
+        # The mattes picked are of the picture there was: a new render takes them away, and they are laid over the new
+        # picture when it is finished, where they are still in it.
         if self._rendering:self.preview.set_overlay(None)
+        elif was and any(self._crypto_picked.values()):
+            QtCore.QTimer.singleShot(500,lambda:None if self.disposed or self._rendering else self._crypto_ready())
         # The crest breathes while a render is on its way and nothing is shown yet.
         if hasattr(self.preview,'set_waiting'):self.preview.set_waiting(self._rendering)
         from . import terminal
@@ -1380,17 +1384,24 @@ class Panel(Tools, QtWidgets.QWidget):
         return key,entry.get('category','object'),frame
 
     def _crypto_ready(self):
-        """Read the Cryptomatte buffer shown, in the background, so that the first hover and click do not wait for it."""
+        """Read the Cryptomatte buffer shown, in the background, so that the first hover and click do not wait for it; the
+        mattes picked in it are laid over the picture once it is read."""
         shown=self._crypto_buffer()
-        self._crypto_overlay()
-        if shown is None:return
+        if shown is None:
+            self.preview.set_overlay(None);return
         key,category,frame=shown
         import threading
         from . import cryptomatte_pick
         def read():
             try:cryptomatte_pick.ranks(frame,key);cryptomatte_pick.names(frame,category)
             except Exception:pass
-        threading.Thread(target=read,daemon=True).start()
+        reading=threading.Thread(target=read,daemon=True);reading.start()
+        # The window goes on while it is read; the picked are laid over when it has been.
+        def done():
+            if self.disposed:return
+            if reading.is_alive():QtCore.QTimer.singleShot(150,done);return
+            if not self._rendering:self._crypto_overlay()
+        done()
         self.status.setText('Cryptomatte: hold the pointer over the picture for a name. Click selects in Modo; Shift-click picks more, Ctrl-click takes one away.')
 
     def _crypto_hovered(self,x,y):
