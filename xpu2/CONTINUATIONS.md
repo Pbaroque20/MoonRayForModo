@@ -135,3 +135,8 @@ not yet restore this mailbox's numerical state into a suspended shading path.
 [Owned asynchronous shading-stage dispatch](SHADING_DISPATCH.md) now joins
 texture readiness, CUDA Lambert work and guarded CPU resume leases. Native
 whole-path capture/restoration remains a separate integration requirement.
+
+[Native first-bounce path restoration](NATIVE_PATH_RESTORE.md) now exercises
+owned post-shading child rays and fresh native allocations. It is a restricted
+ordering-preserving boundary; connecting asynchronous shading before native
+child construction remains unfinished.
