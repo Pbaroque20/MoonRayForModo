@@ -35,8 +35,10 @@ def look(label, key, render=False):
         if render:
             lx.eval('render.camera {%s}' % item.id)
         lx.eval('select.drop item')
+        lx.eval('view3d.projection cam')
         lx.eval('view3d.cameraItem {%s}' % item.id)
-        result['views'][label] = {'camera': lx.eval('view3d.cameraItem ?'), 'render_camera': modo.Scene().renderCamera.name}
+        result['views'][label] = {'camera': lx.eval('view3d.cameraItem ?'), 'render_camera': modo.Scene().renderCamera.name,
+                                  'lens': {c: item.channel(c).get() for c in ('focalLen', 'apertureX', 'apertureY', 'filmFit', 'resOverride')}}
         QtCore.QTimer.singleShot(2500, lambda: window_picture(label + '.png'))
     return step
 
@@ -46,6 +48,8 @@ def perspective():
     lx.eval('view3d.projection psp')
     result['views']['5_perspective'] = {'camera': lx.eval('view3d.cameraItem ?')}
     QtCore.QTimer.singleShot(2500, lambda: window_picture('5_perspective.png'))
+    # The test Modo keeps its layout: the viewport is put back to looking through a camera.
+    QtCore.QTimer.singleShot(3000, lambda: lx.eval('view3d.projection cam'))
 
 
 def run(steps, index=0):
