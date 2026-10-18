@@ -273,3 +273,8 @@ render speed. The production XPU path remains unchanged.
 [NATIVE_EFFICIENCY.md](NATIVE_EFFICIENCY.md) separates lean wire transfers,
 paced completion queries and deterministic CPU/GPU lobe ownership. It requires
 exact images and nonzero consumed CPU work before crediting independent shading.
+
+[NATIVE_MATERIAL_WINDOW.md](NATIVE_MATERIAL_WINDOW.md) adds bounded numeric
+prefetch across already-owned native shading blocks. It preserves native
+contribution order, verifies input identities before reuse, and cancels unused
+tickets; it does not retain arbitrary shader stacks beyond the bundle lifetime.
