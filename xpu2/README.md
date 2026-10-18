@@ -291,3 +291,7 @@ The [wider native-window experiment](NATIVE_WIDE_WINDOWS.md) identifies the nati
 32-ray chunk limit, measures two outstanding GPU batches with larger bounded
 chunks, and separately reports native rounding differences and timing gains.
 It remains opt-in; strict original-XPU bitwise parity is not claimed.
+
+The [64-ray chunk follow-up](NATIVE_CHUNK64.md) restores exact original-XPU
+images on the tested one-worker fixtures while retaining two outstanding GPU
+batches. It includes paired timing against the 128-ray rounding comparison.

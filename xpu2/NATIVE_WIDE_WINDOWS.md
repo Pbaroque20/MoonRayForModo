@@ -3,6 +3,9 @@
 Experimental work on draft PR #130. Original XPU and the installed kit are unchanged.
 All flags are opt-in. GPU shading support is unchanged; this is a scheduling experiment.
 
+Follow-up: [64-ray native chunks](NATIVE_CHUNK64.md) retain exact original images
+on the tested fixtures; the 128-ray findings below remain unchanged.
+
 ## Why larger windows alone did not help
 
 MoonRay's RenderOptions defaults to a 32-ray shading workload chunk. The shade
