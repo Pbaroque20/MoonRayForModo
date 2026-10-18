@@ -239,17 +239,12 @@ class Tools:
             self._failed(str(exc))
 
     def export(self):
-        path = self._save_path('Export MoonRay scene', 'rdla', 'rdla', 'MoonRay scene (*.rdla)')
-        if not path:
-            return
+        """Export as MoonRay Scene, as the File menu has it: its window, then the export."""
         try:
-            scene = self._capture_output()
-            width, height = self._dimensions(scene, True)
-            values = self._settings_values()
-            text = rdla.scene_text(scene, width, height, values['samples'], values['environment'],
-                                   str(Path(path).with_suffix('.exr')))
-            Path(path).write_text(text, encoding='utf-8')
-            self.status.setText('Exported ' + path)
+            from .scene_export import run
+            written = run(self)
+            if written:
+                self.status.setText('Exported ' + str(written[0]) + (' and %d more' % (len(written) - 1) if len(written) > 1 else ''))
         except Exception as exc:
             self._failed(str(exc))
 
