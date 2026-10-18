@@ -70,19 +70,31 @@ class PassChooser(QtWidgets.QDialog):
     def __init__(self, parent, title, intro, options, ticked):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(460, 480)
+        # Slim, and no taller than the choices need.
+        self.setFixedWidth(300)
         layout = QtWidgets.QVBoxLayout(self)
         words = QtWidgets.QLabel(intro)
         words.setWordWrap(True)
         layout.addWidget(words)
-        self.list = QtWidgets.QListWidget()
+        # A checkbox each, as Modo draws them: a list's own check marks are drawn by Modo's style only when ticked, so
+        # with none ticked there was nothing to show that they can be.
+        self.boxes = []
+        holder = QtWidgets.QWidget()
+        rows = QtWidgets.QVBoxLayout(holder)
         for index, (label, name, expression) in enumerate(options):
-            item = QtWidgets.QListWidgetItem(label)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.Checked if index in ticked else QtCore.Qt.Unchecked)
-            item.setToolTip('%s: %s' % (name, expression))
-            self.list.addItem(item)
-        layout.addWidget(self.list, 1)
+            box = QtWidgets.QCheckBox(label)
+            box.setChecked(index in ticked)
+            box.setToolTip('%s: %s' % (name, expression))
+            box.toggled.connect(self.check)
+            rows.addWidget(box)
+            self.boxes.append(box)
+        rows.addStretch(1)
+        rows.setContentsMargins(4, 4, 4, 4); rows.setSpacing(2)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(holder)
+        scroll.setFixedHeight(min(holder.sizeHint().height() + 4, 280))
+        layout.addWidget(scroll)
         row = QtWidgets.QHBoxLayout()
         for label, state in (('Select All', QtCore.Qt.Checked), ('Select None', QtCore.Qt.Unchecked)):
             button = QtWidgets.QPushButton(label)
@@ -96,15 +108,14 @@ class PassChooser(QtWidgets.QDialog):
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
-        self.list.itemChanged.connect(self.check)
         self.check()
 
     def tick_all(self, state):
-        for row in range(self.list.count()):
-            self.list.item(row).setCheckState(state)
+        for box in self.boxes:
+            box.setChecked(state == QtCore.Qt.Checked)
 
     def chosen(self):
-        return [row for row in range(self.list.count()) if self.list.item(row).checkState() == QtCore.Qt.Checked]
+        return [index for index, box in enumerate(self.boxes) if box.isChecked()]
 
     def check(self, *args):
         # A graph needs a pass at least.
@@ -746,7 +757,8 @@ class Editor(QtWidgets.QDialog):
 
         def chosen(words):
             self.add(names[words], scene_point, connect)
-        self.popup = QuickAdd(self, list(names), chosen); self.popup.open_at(global_point)
+        tips = {words: compositor.NODES[kind].get('tip', '') for words, kind in names.items()}
+        self.popup = QuickAdd(self, list(names), chosen, tips); self.popup.open_at(global_point)
 
     def consumers(self, identity):
         """The inputs that take a node's picture: [(node, input)]."""
