@@ -31,6 +31,8 @@ if '--build-only' not in sys.argv or not (BUILD / 'build.ninja').exists():
          '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=' + str(BIN / 'g++.exe'),
          '-DCMAKE_MAKE_PROGRAM=' + str(BIN / 'ninja.exe')], 'configure')
 run([BIN / 'cmake.exe', '--build', BUILD, '--target', 'moonlightipr_probe', 'moonlightipr_session', 'modo_composite'], 'compile')
+# The kernel without each set of its heavy features, for scenes that do not use them (compile_moonlightipr_variants.py).
+run([sys.executable, ROOT / 'tools/compile_moonlightipr_variants.py', ROOT / 'moonlightipr/src/device/kernel.cu', BUILD / 'shaders'], 'kernel variants')
 if '--probe' in sys.argv:
     images = BUILD / 'probe'
     images.mkdir(exist_ok=True)

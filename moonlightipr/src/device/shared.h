@@ -7,6 +7,10 @@ namespace moonlightipr {
 
 typedef unsigned long long DevicePtr;
 
+// The heavy features a kernel can be made without (ML_FEATURES in kernel.cu): a scene that uses none of them is rendered
+// by a kernel without their code, a third faster or more. All of them is FEATURE_ALL, the kernel as it is built.
+const unsigned FEATURE_FOG = 1, FEATURE_HAIR = 2, FEATURE_SUBSURFACE = 4, FEATURE_TOON = 8, FEATURE_FUZZ = 16, FEATURE_ALL = 31;
+
 // Material channels a layer can drive; they are the plugin's Shader Tree effects.
 const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 2, CHANNEL_METALLIC = 3,
                CHANNEL_EMISSION = 4, CHANNEL_EMISSION_AMOUNT = 5, CHANNEL_NORMAL = 6, CHANNEL_TRANSMISSION = 7,

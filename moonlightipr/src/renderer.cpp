@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -278,15 +279,45 @@ struct Renderer::Impl {
     std::vector<DeviceLight> lightsOpen, lightsClose;
     uint32_t samples = 0;
     bool validated = false;
+    // The kernel loaded: the full one's file, and the features of the one in use (FEATURE_*). A scene whose materials
+    // use fewer is rendered by a kernel made without the rest (specialize).
+    std::string kernelPath;
+    unsigned kernelFeatures = FEATURE_ALL;
 
     ~Impl() {
         if (denoiser) optixDenoiserDestroy(denoiser);
+        destroyPipeline();
+        if (context) optixDeviceContextDestroy(context);
+    }
+
+    void destroyPipeline() {
         if (pipeline) optixPipelineDestroy(pipeline);
-        for (OptixProgramGroup group : groups) if (group) optixProgramGroupDestroy(group);
+        for (OptixProgramGroup& group : groups) { if (group) optixProgramGroupDestroy(group); group = nullptr; }
         if (curveModule) optixModuleDestroy(curveModule);
         if (linearModule) optixModuleDestroy(linearModule);
         if (module) optixModuleDestroy(module);
-        if (context) optixDeviceContextDestroy(context);
+        pipeline = nullptr; curveModule = linearModule = module = nullptr;
+    }
+
+    // The kernel made for these features, where it is beside the full one (MoonLightIPRKernel_fNN.ptx); the full one
+    // where it is not, or where MOONLIGHTIPR_FULL_KERNEL is set. Only the pipeline is made again: meshes, their
+    // acceleration structures and every buffer stay as they are.
+    void specialize(unsigned features) {
+        if (std::getenv("MOONLIGHTIPR_FULL_KERNEL")) features = FEATURE_ALL;
+        std::string path = kernelPath;
+        if (features != FEATURE_ALL) {
+            const size_t dot = kernelPath.rfind(".ptx");
+            char suffix[16];
+            std::snprintf(suffix, sizeof(suffix), "_f%02u", features);
+            const std::string candidate = dot == std::string::npos ? kernelPath : kernelPath.substr(0, dot) + suffix + kernelPath.substr(dot);
+            if (std::ifstream(candidate).good()) path = candidate;
+            else features = FEATURE_ALL;
+        }
+        if (features == kernelFeatures) return;
+        ML_CHECK(cudaDeviceSynchronize());  // a queued launch may still run the pipeline
+        destroyPipeline();
+        createPipeline(path);
+        kernelFeatures = features;
     }
 
     void createPipeline(const std::string& ptxPath) {
@@ -726,6 +757,7 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     options.logCallbackFunction = &logCallback;
     options.logCallbackLevel = 2;
     ML_CHECK(optixDeviceContextCreate(nullptr, &options, &impl->context));
+    impl->kernelPath = ptxPath;
     impl->createPipeline(ptxPath);
     // MoonRay's defaults, including its sample_clamping_value.
     impl->params.maxDepth = 4;
@@ -1028,6 +1060,19 @@ void Renderer::removeTexture(uint32_t texture) {
 
 void Renderer::setMaterials(const Material* materials, size_t count, const Layer* layers, size_t layerCount,
                             const int32_t* tiles, size_t tileCount) {
+    // The kernel for what these materials use: without the code of the heavy features none of them has.
+    unsigned features = 0;
+    for (size_t i = 0; i < count; ++i) {
+        const Material& m = materials[i];
+        if (m.volume) features |= FEATURE_FOG;
+        if (m.hair) features |= FEATURE_HAIR;
+        if (m.subsurface > 0.0f && m.subsurfaceRadius > 0.0f) features |= FEATURE_SUBSURFACE;
+        if (m.toonDiffuse || m.toonSpecular) features |= FEATURE_TOON;
+        if (m.fuzz > 0.0f) features |= FEATURE_FUZZ;
+    }
+    for (size_t i = 0; i < layerCount; ++i)
+        if (layers[i].channel == CHANNEL_SUBSURFACE || layers[i].channel == CHANNEL_SUBSURFACE_COLOR) features |= FEATURE_SUBSURFACE;
+    impl->specialize(features);
     std::vector<DeviceMaterial> table(count);
     std::transform(materials, materials + count, table.begin(), toDevice);
     std::vector<DeviceHair> hairs;

@@ -12,6 +12,13 @@ using namespace moonlightipr;
 extern "C" { __constant__ LaunchParams params; }
 
 // What a radiance ray found: the geometry, and the material resolved at that point.
+// The features a kernel is made with: all of them, unless ML_FEATURES says otherwise when it is compiled, so that one
+// made for a scene without them can leave their code out.
+#ifndef ML_FEATURES
+#define ML_FEATURES 0xffffffffu
+#endif
+#define ML_HAS(feature) ((ML_FEATURES & (feature)) != 0u)
+
 struct Hit {
     float3 p, ng, ns;
     float3 albedo, emission, transmissionColor;
@@ -749,7 +756,7 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.back = hit.back;
     s.frontKeep = hit.frontKeep;
     s.passes = maxComponent(hit.back) > 0.0f;
-    s.fuzz = hit.fuzz;
+    s.fuzz = ML_HAS(FEATURE_FUZZ) ? hit.fuzz : 0.0f;
     s.fuzzColor = hit.fuzzColor;
     s.fuzzRoughness = hit.fuzzRoughness;
     s.fuzzDims = hit.fuzzDims;
@@ -757,7 +764,7 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.fuzzNormalization = 1.0f / VELVET_NORMALIZATION[min(max(int(floorf(hit.fuzzRoughness * VELVET_NORMALIZATION_STEPS - 1.0f)), 0),
                                                           int(VELVET_NORMALIZATION_STEPS) - 1)];
     // On a strand as on a surface: MoonRay's own strand is a ribbon facing the ray, which a toon look shades as a surface.
-    const bool toon = (hit.flags & (MATERIAL_TOON_DIFFUSE | MATERIAL_TOON_SPECULAR)) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME));
+    const bool toon = ML_HAS(FEATURE_TOON) && (hit.flags & (MATERIAL_TOON_DIFFUSE | MATERIAL_TOON_SPECULAR)) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME));
     s.toon = toon ? reinterpret_cast<const DeviceToon*>(params.toons) + hit.hair : nullptr;
     s.toonDiffuse = toon && (hit.flags & MATERIAL_TOON_DIFFUSE);
     s.smoothToon = s.toonDiffuse && params.toonTerminator;
@@ -1702,7 +1709,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
     for (unsigned depth = 0;; ++depth) {
         Hit hit;
         traceRadiance(origin, direction, hit, reach, seen);
-        if (params.volumeCount && !probing) {
+        if (ML_HAS(FEATURE_FOG) && params.volumeCount && !probing) {
             // Fogs as thick as their grids say. Each fills the unit cube its rows take the scene into, so the stretch of
             // the ray inside each is worked out from the cube, and they may overlap. Steps are drawn as if the fog were
             // everywhere as thick as all of them at their thickest together, each of which is a real stop only as often
@@ -1925,7 +1932,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
         }
         if (!hit.valid) break;
-        if ((hit.flags & MATERIAL_VOLUME) && !emerged) {
+        if (ML_HAS(FEATURE_FOG) && (hit.flags & MATERIAL_VOLUME) && !emerged) {
             // A surface in the plane of the fog's edge, as the floor under a box of fog standing on it, is met as far
             // off as the edge, and which of the two the trace returns is chance; going on past the edge would miss the
             // surface, in stripes. So a surface there, or a hair beyond, is the hit, met before the edge is crossed,
@@ -1988,7 +1995,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             throughput *= vec(1.0f / survive);
         }
 
-        if (hit.curve && (hit.flags & MATERIAL_HAIR)) {
+        if (ML_HAS(FEATURE_HAIR) && hit.curve && (hit.flags & MATERIAL_HAIR)) {
             // A hair fibre scatters light all round itself, so nothing here asks which side the light is on.
             const Fibre fibre = fibreFrom(hit, reinterpret_cast<const DeviceHair*>(params.hairs)[hit.hair], -direction);
             if (camera) {
@@ -2087,7 +2094,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         // Light that scatters beneath the surface is gathered where it comes out again, so at
         // this point only the mirror-like lobes are lit. The share that scatters is chosen by
         // chance, as is whether this path follows it.
-        const bool scatters = !inside && hit.subsurface > 0.0f && maxComponent(hit.subsurfaceRadius) > 0.0f
+        const bool scatters = ML_HAS(FEATURE_SUBSURFACE) && !inside && hit.subsurface > 0.0f && maxComponent(hit.subsurfaceRadius) > 0.0f
                               && lobes.specular < 1.0f && rnd(seed) < hit.subsurface;
         const float beneath = scatters ? 1.0f - lobes.specular : 0.0f;
         if (scatters) {

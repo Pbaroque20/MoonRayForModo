@@ -18,6 +18,9 @@ assets = {'moonlightipr_session.exe': build / 'bin/moonlightipr_session.exe',
           'licenses/MoonLightIPR.txt': root / 'moonlightipr/LICENSE', 'licenses/MoonLightIPR-NOTICE.md': root / 'moonlightipr/NOTICE.md',
           'licenses/CUDA.txt': xpu / 'cuda_cudart-windows-x86_64-12.8.90-archive/LICENSE',
           'licenses/OptiX.txt': xpu / 'optix-dev/LICENSE.txt'}
+# The kernel without each set of its heavy features, for scenes that do not use them; the full kernel serves any missing.
+for variant in (build / 'shaders').glob('MoonLightIPRKernel_f*.ptx'):
+    assets[variant.name] = variant
 for library in (xpu / 'cuda_cudart-windows-x86_64-12.8.90-archive/bin').glob('cudart64_*.dll'):
     assets[library.name] = library
 missing = [str(source) for source in assets.values() if not source.is_file()]
