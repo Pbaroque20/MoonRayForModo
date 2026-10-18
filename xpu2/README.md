@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [grouped native shading packets](NATIVE_BATCH_GROUPS.md),
+See [native lobe lookahead and shared inputs](NATIVE_READY_WORK.md),
+[grouped native shading packets](NATIVE_BATCH_GROUPS.md),
 [native batches in flight](NATIVE_FLIGHTS.md),
 [native neighbor scheduling and render timing](NATIVE_TILE_SCHEDULING.md),
 [neighbor-first scheduling model](LOCAL_TILE_SCHEDULING.md),
