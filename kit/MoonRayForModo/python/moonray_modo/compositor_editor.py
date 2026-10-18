@@ -53,6 +53,38 @@ def rounded(width, height, radius, square_bottom=False):
     return path
 
 
+def shown(linear):
+    """A linear value as the sRGB a chip and the colour picker show it in, 0 to 1."""
+    value = min(max(float(linear), 0.0), 1.0)
+    return value * 12.92 if value <= 0.0031308 else 1.055 * value ** (1.0 / 2.4) - 0.055
+
+
+def linear(shown_value):
+    """An sRGB value from the colour picker, as the linear value a node keeps."""
+    value = min(max(float(shown_value), 0.0), 1.0)
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+
+class Swatch(QtWidgets.QGraphicsRectItem):
+    """A colour setting shown as a chip on its node, made of Qt's own shapes; a click on it chooses another colour."""
+    def __init__(self, editor, identity, key, value, parent):
+        super().__init__(parent)
+        self.editor, self.identity, self.key = editor, identity, key
+        self.setBrush(QtGui.QColor.fromRgbF(*[shown(v) for v in value]))
+        self.setPen(QtGui.QPen(QtGui.QColor(NODE_EDGE), 1))
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setToolTip('Click to choose the colour')
+
+    def mousePressEvent(self, event):
+        # The press is the chip's, so that the node is not moved by it; the colour is chosen when the button comes up.
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        event.accept()
+        if self.rect().contains(event.pos()):
+            QtCore.QTimer.singleShot(0, lambda: self.editor.choose_colour(self.identity, self.key))
+
+
 class Socket(QtWidgets.QGraphicsEllipseItem):
     """Where a wire begins (key None, a node's picture) or ends (one of its inputs)."""
     def __init__(self, editor, identity, key, parent, color):
@@ -167,7 +199,11 @@ class Node(QtWidgets.QGraphicsRectItem):
             y = HEADER + 4 + index * ROW
             label(self, compositor.port_label(key), TEXT if key in wired else TEXT_PORT, 12, y + 2, WIDTH - 22, size=-1)
             socket = Socket(editor, identity, key, self, '#9aa3ad'); socket.setPos(0, y + ROW / 2); self.sockets[key] = socket
-        if not ports:
+        if kind == 'constant':
+            # The colour itself, to be clicked to choose another.
+            chip = Swatch(editor, identity, 'color', held['color'], self)
+            chip.setRect(12, HEADER + 5, WIDTH - 24, ROW - 4)
+        elif not ports:
             label(self, 'a matte from the %s Cryptomatte' % held['category'] if kind == 'cryptomatte' else 'a buffer of the render',
                   TEXT_DIM, 12, HEADER + 6, WIDTH - 22, size=-1)
         self.setPos(*value.get('position', [0, 0]))
@@ -662,6 +698,19 @@ class Editor(QtWidgets.QDialog):
         else:
             key = what[1]
         self.add('input', point, target, {'buffer': key})
+
+    def choose_colour(self, identity, key):
+        """The colour picker for a colour setting of a node, from a click on its chip: what is chosen is kept linear."""
+        node = self.graph['nodes'].get(identity)
+        if node is None:
+            return
+        held = compositor.parameters(node)[key]
+        picked = QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[shown(v) for v in held]), self, 'Colour')
+        if not picked.isValid():
+            return
+        self.set_value(identity, key, [round(linear(v), 6) for v in (picked.redF(), picked.greenF(), picked.blueF())], redraw=True)
+        if self.selected() == identity:
+            self.inspect()
 
     def matte_choices(self, category):
         """The mattes given in the scene's Cryptomatte tabs, [(words, value)]: each name, and each ID as #number."""
