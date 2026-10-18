@@ -1,0 +1,13 @@
+{
+  "scope": "Scheduling and cost-policy model; not native GPU/adaptive rendering",
+  "status": "passed",
+  "regression_tests": 368,
+  "new_priority_tests": 13,
+  "seconds": 44.873,
+  "regression_log_sha256": "5cf59c62f79d8cd8c5bbfc91f5e0835fa53895ecfcffe693d158c06ae27522d7",
+  "source_hashes": {
+    "xpu2/region_priority.py": "73209f5a6d25f43388e6be3fb889495def0a9aea8f554f2869f1b9170b523b10",
+    "xpu2/morton_schedule.py": "4d4d09d67bc3fb0f5f9ab087db1f82bfb039bf599857dde11675b5a0206abf4a",
+    "tests/test_xpu2_region_priority.py": "025c9d7622c0a4d36176e564e07f146a51636dc4cfd2532a430dc1047bf5ab03"
+  }
+}

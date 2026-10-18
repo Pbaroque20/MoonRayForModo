@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [persistent native index updates](RDL_LIVE_INDEX.md),
+See [region hierarchy and importance scheduling](REGION_PRIORITY.md),
+[persistent native index updates](RDL_LIVE_INDEX.md),
 [native RDL adaptation and metadata optimization](NATIVE_SCENE_INDEX.md),
 [native indexed scene resources and Morton convergence checkpoints](INDEXED_SCENE.md),
 [coalesced native-worker jobs and upload ordering](COALESCED_FILM.md),

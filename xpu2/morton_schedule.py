@@ -26,7 +26,7 @@ def morton(x, y):
 class MortonPlan:
     """Fixed sample addresses; partial edge tiles and sparse active pixel masks."""
     def __init__(self, seed, frame, width, height, start, stop, active=None,
-                 tile_size=8, block_size=256):
+                 tile_size=8, block_size=256, tile_order=None):
         Sample(seed, frame, 0, 0)
         for name, value in (('width', width), ('height', height), ('tile_size', tile_size),
                             ('block_size', block_size), ('stop', stop)):
@@ -46,7 +46,22 @@ class MortonPlan:
         for pixel in sorted(active):
             x, y = pixel % width, pixel // width
             tiles.setdefault((x // tile_size, y // tile_size), []).append(pixel)
-        self.tiles = tuple(tuple(tiles[key]) for key in sorted(tiles, key=lambda xy: morton(*xy)))
+        if tile_order is None:
+            order = sorted(tiles, key=lambda xy: morton(*xy))
+        else:
+            order, seen = [], set()
+            for key in tile_order:
+                if not isinstance(key, tuple) or len(key) != 2:
+                    raise ValueError('Expected tile coordinates')
+                uint(key[0], 'tile x'); uint(key[1], 'tile y')
+                if key[0]*tile_size >= width or key[1]*tile_size >= height or key in seen:
+                    raise ValueError('Invalid/duplicate tile order')
+                seen.add(key)
+                if key in tiles:
+                    order.append(key)
+            if set(order) != set(tiles):
+                raise ValueError('Priority order omitted active tiles')
+        self.tiles = tuple(tuple(tiles[key]) for key in order)
         self.ends = []
         total = 0
         for pixels in self.tiles:
@@ -85,7 +100,7 @@ class AdaptiveMortonSchedule:
     Retries retain addresses and revoke prior ownership through Scheduler.
     """
     def __init__(self, gate, seed, frame, width, height, milestones, *,
-                 tile_size=8, block_size=256, window=4):
+                 tile_size=8, block_size=256, window=4, tile_order=None):
         milestones = tuple(milestones)
         if not milestones:
             raise ValueError('At least one sample milestone is required')
@@ -99,11 +114,12 @@ class AdaptiveMortonSchedule:
         self.seed, self.frame, self.width, self.height = seed, frame, width, height
         self.milestones = milestones
         self.tile_size, self.block_size, self.window = tile_size, block_size, window
+        self.tile_order = None if tile_order is None else tuple(tile_order)
         self.phase = 0
         self._checkpoint = None
         self.done = False
         self.queue = Scheduler(gate, MortonPlan(seed, frame, width, height, 0, milestones[0],
-                                               tile_size=tile_size, block_size=block_size), window=window)
+                                               tile_size=tile_size, block_size=block_size, tile_order=self.tile_order), window=window)
         self.active_pixels = frozenset(range(self.queue.plan.pixels))
 
     @property
@@ -127,7 +143,7 @@ class AdaptiveMortonSchedule:
                 tuple(self.queue.counts), tuple(tuple(row) for row in self.queue.film))
         return self._checkpoint
 
-    def advance(self, checkpoint, converged):
+    def advance(self, checkpoint, converged, *, tile_order=None):
         """Apply native estimator's pixel decisions only to this complete milestone."""
         if checkpoint is None or checkpoint is not self.checkpoint() or not self.queue.active:
             return False
@@ -142,13 +158,15 @@ class AdaptiveMortonSchedule:
             self._checkpoint = None
             self.active_pixels = remaining
             return True
+        following_order = self.tile_order if tile_order is None else tuple(tile_order)
         plan = MortonPlan(self.seed, self.frame, self.width, self.height,
                           self.milestones[self.phase], self.milestones[self.phase + 1], remaining,
-                          self.tile_size, self.block_size)
+                          self.tile_size, self.block_size, following_order)
         following = Scheduler(self.gate, plan, window=self.window)
         # New queue has a new lease namespace; sample ranges never overlap phases.
         following.film = self.queue.film
         following.counts = self.queue.counts
+        self.tile_order = following_order
         self.queue = following
         self.active_pixels = remaining
         self.phase += 1
