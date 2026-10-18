@@ -286,3 +286,8 @@ material-window candidate, without removing input validation or changing XPU.
 The [numeric native sampler-cache experiment](NATIVE_SAMPLER_CACHE.md) reuses
 checked sampler setup within a material window, with native rebuild verification
 and forced-miss controls. It remains opt-in and preserves original XPU.
+
+The [wider native-window experiment](NATIVE_WIDE_WINDOWS.md) identifies the native
+32-ray chunk limit, measures two outstanding GPU batches with larger bounded
+chunks, and separately reports native rounding differences and timing gains.
+It remains opt-in; strict original-XPU bitwise parity is not claimed.
