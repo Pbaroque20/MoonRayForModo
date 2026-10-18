@@ -197,8 +197,9 @@ class Panel(QtWidgets.QWidget):
             from .ipr import prepare
             scene,width,height=prepare(scene,size,size,1,640,samples,error)
             scene['_pixel_samples']=samples
-            settings=QtCore.QSettings('MoonRayForModo',native.settings_name())
-            runtime=native.default_runtime() or str(settings.value('runtime',''))
+            # The runtime the preview window renders with, chosen in Preferences (the kit's own where none is).
+            from .preferences import Preferences
+            runtime=Preferences().get('runtime') or native.default_runtime()
             key=cache_key(scene,runtime,width,height)
             if key in CACHE:
                 if self.rendering:self.renderer.stop()
