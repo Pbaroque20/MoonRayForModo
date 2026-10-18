@@ -65,8 +65,8 @@ class Socket(QtWidgets.QGraphicsEllipseItem):
 
 
 class PassChooser(QtWidgets.QDialog):
-    """Which passes a built graph takes, each to a Grade of its own; and whether what they leave out of the beauty is a
-    Remainder pass too."""
+    """Which passes a built graph takes, each to a Grade of its own; what they leave out of the beauty is the Remainder.
+    None is ticked to begin with."""
     def __init__(self, parent, title, intro, options, ticked):
         super().__init__(parent)
         self.setWindowTitle(title)
@@ -91,11 +91,6 @@ class PassChooser(QtWidgets.QDialog):
             row.addWidget(button)
         row.addStretch(1)
         layout.addLayout(row)
-        self.remainder = QtWidgets.QCheckBox('Add a Remainder: what the chosen passes leave out of the beauty')
-        self.remainder.setChecked(True)
-        self.remainder.setToolTip('With it, the graph left alone gives back the beauty whatever passes are chosen. Without it, '
-                                  'the Composite is the chosen passes alone.')
-        layout.addWidget(self.remainder)
         self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         self.buttons.button(QtWidgets.QDialogButtonBox.Ok).setText('Build')
         self.buttons.accepted.connect(self.accept)
@@ -117,11 +112,11 @@ class PassChooser(QtWidgets.QDialog):
 
 
 def choose(parent, title, intro, options, ticked):
-    """Ask which of the options to build from: (the indices chosen, whether to add a Remainder), or None."""
+    """Ask which of the options to build from: the indices chosen, or None."""
     dialog = PassChooser(parent, title, intro, options, ticked)
     if dialog.exec_() != QtWidgets.QDialog.Accepted:
         return None
-    return dialog.chosen(), dialog.remainder.isChecked()
+    return dialog.chosen()
 
 
 class Node(QtWidgets.QGraphicsRectItem):
@@ -420,10 +415,9 @@ class Editor(QtWidgets.QDialog):
         added to the scene where it lacks them, to be filled by the next render."""
         values = self.panel._settings_values()
         if kind == 'passes':
-            # MoonRay's light passes, which together make the beauty, ticked; and the scene's own light path outputs,
-            # not ticked, to take as passes too.
+            # MoonRay's light passes, which together make the beauty, and the scene's own light path outputs, to take as
+            # passes too. None is ticked: what is worked on is chosen.
             wanted = list(compositor.PASSES)
-            ticked = set(range(len(wanted)))
             wanted += [(name + '  (in the scene)', name, expression) for words, name, expression in compositor.scene_passes(values.get('custom_aovs'), wanted)]
         else:
             groups = compositor.light_groups(values.get('production'), self.moonray_lights())
@@ -436,14 +430,12 @@ class Editor(QtWidgets.QDialog):
                     return
             wanted = [(words, ('environment' if label == compositor.ENVIRONMENT_LABEL else label) + '_light', compositor.light_group_expression(label))
                       for words, label in groups]
-            ticked = set(range(len(wanted)))
         title = 'Build from Light Passes' if kind == 'passes' else 'Build from Light Groups'
         intro = ('Choose the passes to work on, each with a Grade of its own. A pass not chosen stays in the Remainder.' if kind == 'passes'
                  else 'Choose the light groups to work on, each with a Grade of its own. A group not chosen stays in the Remainder.')
-        answer = choose(self, title, intro, wanted, ticked)
-        if answer is None:
+        picked = choose(self, title, intro, wanted, set())
+        if picked is None:
             return
-        picked, remainder = answer
         wanted = [wanted[index] for index in picked]
         if not compositor.trivial(self.graph):
             asked = QtWidgets.QMessageBox.question(self, 'Build the compositor graph', 'This replaces the graph that is there now. '
@@ -456,12 +448,12 @@ class Editor(QtWidgets.QDialog):
                 return
             self.panel._sync_output_menu(entries, self.panel._display_filter_buffers())
         before = copy.deepcopy(self.graph)
-        self.graph = compositor.pass_graph(list(zip(names, [words for words, name, expression in wanted])), remainder=remainder)
+        self.graph = compositor.pass_graph(list(zip(names, [words for words, name, expression in wanted])))
         self.rebuild(); self.remember(before); self.frame(everything=True)
         missing = [name for name in names if name not in {key for words, key in self.buffer_choices()}]
-        self.info.setText(('Built from %d %s%s. ' % (len(names), 'passes' if kind == 'passes' else 'light groups', ' and the Remainder' if remainder else ''))
+        self.info.setText('Built from %d %s and the Remainder. ' % (len(names), 'passes' if kind == 'passes' else 'light groups')
                           + ('Render to fill the new passes; the Composite is made when the render finishes.' if missing
-                             else 'With every Grade left alone the Composite is the beauty.' if remainder else ''))
+                             else 'With every Grade left alone the Composite is the beauty.'))
 
     def moonray_lights(self):
         """The MoonRay light items in the scene, for their light-group labels."""
