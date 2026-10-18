@@ -95,7 +95,7 @@ class Renderer(QtCore.QObject):
         # Modo ending while a scene is being written: the thread is let finish, not cut off under it.
         application=QtCore.QCoreApplication.instance()
         if application is not None:application.aboutToQuit.connect(self._quitting)
-        self.session.failed.connect(self.failed.emit)
+        self.session.failed.connect(self._session_failed)
         self.session.status.connect(self.status.emit)
         self.session_serial=0;self.gather=None
         self.using_session=False
@@ -601,11 +601,26 @@ class Renderer(QtCore.QObject):
         except Exception as exc:
             self.failed.emit(str(exc))
 
-    def _fall_back_to_cpu(self):
+    def _session_failed(self,message):
+        """The preview's MoonRay ended. Where its GPU mode failed (MoonRay's GPU tracing now and then reads memory it
+        should not in the loaded preview session, whatever the scene: about one render in ten here, never on the CPU),
+        the render is begun again on the CPU, as when the GPU runs out of room; anything else is said as it is."""
+        mode=(getattr(self,'active',None) or {}).get('snapshot',{}).get('execution_mode','auto')
+        if self.gpu_error and not self.cpu_fallback and mode in ('auto','xpu') and getattr(self,'active',None)                 and not self.closed and not self.canceled:
+            self.cpu_fallback=True
+            QtCore.QTimer.singleShot(0,lambda:self._fall_back_to_cpu("MoonRay's GPU mode failed on this render; rendering it on the CPU instead"))
+            return
+        self.failed.emit(message)
+
+    def _fall_back_to_cpu(self,reason='The GPU ran out of room for this scene with all its buffers; rendering it on the CPU instead'):
         if self.closed or self.canceled or not getattr(self,'active',None):
             self.cpu_fallback=False;return
         self.fallback_mode=self.active['snapshot'].get('execution_mode','auto')
-        self.status.emit('The GPU ran out of room for this scene with all its buffers; rendering it on the CPU instead')
+        self.status.emit(reason)
+        said=reason+'. Renders stay on the CPU until an execution mode is chosen again in Render Settings.'
+        self.active['snapshot'].setdefault('warnings',[]).append(said)
+        # Among the notices too: the status line soon moves on to the render's progress.
+        self.notices.emit([said])
         self.generation+=1
         self.pending=dict(self.active,generation=self.generation)
         if self.using_session:

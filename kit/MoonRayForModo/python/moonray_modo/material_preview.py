@@ -138,10 +138,15 @@ class Panel(QtWidgets.QWidget):
         # The last picture can be converted after the render said it was done: it is the one kept.
         elif self.done in CACHE:CACHE[self.done]=image.copy()
     def cache(self,*args):
+        # "Rendered." only where this render's picture came, and that picture is the one shown: a finish with none
+        # (an earlier render's, or one that ended without a picture) says so rather than claim the old one is new.
         if self.rendering and self.picture is not None:
             CACHE[self.rendering]=self.picture;CACHE.move_to_end(self.rendering);self.done=self.rendering
             while len(CACHE)>CACHE_SIZE:CACHE.popitem(last=False)
-        if self.rendering and not self.closed:self.status.setText('Rendered.')
+            if not self.closed:
+                self.viewer.set_image(self.picture);self.status.setText('Rendered.')
+        elif self.rendering and not self.closed:
+            self.status.setText('The render ended without a new picture. Click Refresh to render it again.')
         self.picture=None;self.idle()
     def preview_failed(self,message):
         if not self.closed:self.status.setText('Preview failed: '+message)

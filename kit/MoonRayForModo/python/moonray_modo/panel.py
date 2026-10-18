@@ -731,7 +731,8 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _smart_on(self):
         """Whether Smart Render is on for the scene."""
-        try:return self._settings_values()['denoising'].get('smart','off')!='off'
+        from . import denoising
+        try:return denoising.settings(self._settings_values()['denoising'])['smart']!='off'
         except Exception:return False
 
     def _settings_values_stored(self):
@@ -1377,12 +1378,14 @@ class Panel(Tools, QtWidgets.QWidget):
     def _preview_denoiser(self):
         denoising=self._settings_values()['denoising']
         if self._following or self._low():return 'off'
-        if denoising['engine']!='off' and denoising['preview']:return denoising['engine']
-        # Smart Render stops a render for the denoiser to finish: with none chosen, whichever will run.
-        if denoising.get('smart','off')!='off' and self._engine()!='moonlightipr':return denoising['engine'] if denoising['engine']!='off' else 'auto'
-        # The scene asks for none, and the denoised beauty is chosen in the list all the same: it is denoised with
-        # the graphics card's denoiser, or the processor's where that will not run.
-        return 'auto' if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' else 'off'
+        # The Denoiser set to Off in Render Settings is off everywhere: not the preview, not Smart Render, not the
+        # denoised beauty chosen in the list.
+        if denoising['engine']=='off':return 'off'
+        if denoising['preview']:return denoising['engine']
+        # Smart Render stops a render for the denoiser to finish.
+        if denoising.get('smart','off')!='off' and self._engine()!='moonlightipr':return denoising['engine']
+        # Denoise Preview off, and the denoised beauty chosen in the list all the same: it is denoised.
+        return denoising['engine'] if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' else 'off'
 
     def _denoising_changed(self,*args):
         if self.disposed:return

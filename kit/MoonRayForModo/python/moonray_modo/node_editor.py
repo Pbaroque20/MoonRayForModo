@@ -20,6 +20,8 @@ import lx
 WIDTH,HEADER,ROW=190,24,20
 # Inputs shown on a node that has more; the rest are a click away.
 SHOWN=6
+# The property groups open in the graph editor for a kind of node never folded or unfolded yet; the rest start folded.
+OPEN_GROUPS=('diffuse','specular')
 
 
 def grouped(kind):
@@ -810,7 +812,11 @@ class Editor(QtWidgets.QDialog):
         identity=self.selected()
         if not identity or identity not in self.graph['nodes']:return set()
         kind=self.graph['nodes'][identity]['type']
-        held=QtCore.QSettings('MoonRayForModo','GraphEditor').value('folded/'+kind,'') or ''
+        settings=QtCore.QSettings('MoonRayForModo','GraphEditor')
+        if not settings.contains('folded/'+kind):
+            # A kind never folded or unfolded yet starts with only its Diffuse and Specular groups open.
+            return {group for group in set(getattr(self,'group_rows',{}).values()) if group.casefold() not in OPEN_GROUPS}
+        held=settings.value('folded/'+kind,'') or ''
         return {name for name in str(held).split('|') if name}
     def fold_group(self,row,column=0):
         """A group's header was clicked: its rows are put away, or brought back."""

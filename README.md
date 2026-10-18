@@ -267,7 +267,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
 | Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights |
 | Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | |
-| Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | |
+| Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay coming in 0.4.2 |
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Coming in 0.4.2: creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
@@ -294,7 +294,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
 | Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default. Coming in 0.4.2 |
 | Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them |
-| Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | |
+| Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | Coming in 0.4.2: the Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included |
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes. Per point and per face coming in 0.4.2 |
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Coming in 0.4.2: motion, creases, fog meshes, values by point or face, and instancers of any size |
 | Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |

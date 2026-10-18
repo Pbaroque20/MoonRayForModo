@@ -187,7 +187,9 @@ class Stopping(unittest.TestCase):
 class Settings(unittest.TestCase):
     def test_the_level_is_a_denoising_setting(self):
         self.assertEqual(denoising.settings({})['smart'], 'off')
-        self.assertEqual(denoising.settings({'smart': 'fine'})['smart'], 'fine')
+        self.assertEqual(denoising.settings({'engine': 'optix', 'smart': 'fine'})['smart'], 'fine')
+        # With the Denoiser Off, Smart Render is off too: it stops a render for a denoiser to finish.
+        self.assertEqual(denoising.settings({'engine': 'off', 'smart': 'fine'})['smart'], 'off')
         with self.assertRaises(ValueError):
             denoising.settings({'smart': 'sometimes'})
         self.assertEqual(set(smart_render.LEVELS) | {'off'}, set(denoising.SMART))
