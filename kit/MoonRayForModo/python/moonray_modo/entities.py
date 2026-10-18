@@ -827,6 +827,19 @@ def gate(projection, focal, aperture_x, offset_x, offset_y, target, aspect, dept
     return [(a, b, -float(depth)) for a, b in corners + corners[:1]]
 
 
+def gate_margins(outline, reach=40.0):
+    """The margin around a gate's outline (gate()), as four quads that reach out reach times its width on every side:
+    left and right the full height, above and below between them."""
+    xs, ys = [p[0] for p in outline], [p[1] for p in outline]
+    z = outline[0][2]
+    low_x, high_x, low_y, high_y = min(xs), max(xs), min(ys), max(ys)
+    far = reach * max(high_x - low_x, high_y - low_y)
+    left, right, bottom, top = low_x - far, high_x + far, low_y - far, high_y + far
+    rectangle = lambda x0, y0, x1, y1: [(x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z)]
+    return [rectangle(left, bottom, low_x, top), rectangle(high_x, bottom, right, top),
+            rectangle(low_x, high_y, high_x, top), rectangle(low_x, bottom, high_x, low_y)]
+
+
 def proxy_inputs(name):
     """The numeric attributes proxy() asks for, as (asked name, channel name)."""
     wanted = {'SphereLight': ['radius'], 'RectLight': ['width', 'height'], 'PortalLight': ['width', 'height'], 'DiskLight': ['radius'],

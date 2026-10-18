@@ -34,6 +34,9 @@ class Popup(lxifc.UIValueHints):
 
 # Modo's camera channels a MoonRay camera's lens drives, and the numbers its choices are stored as.
 LENS_FLOATS=('focalLen','apertureX','offsetX','offsetY')
+# How dark the margin outside a MoonRay camera's resolution gate is drawn, and how far in front of the camera.
+GATE_DIM=.5
+GATE_DIM_DEPTH=.05
 LENS_CHOICES={'filmFit':{'fill':0,'horizontal':1,'vertical':2,'overscan':3},'projType':{'persp':0,'ortho':1}}
 
 
@@ -144,8 +147,28 @@ def register():
                                          number(item,'offsetY'),number(item,'target'),aspect)
                     stroke.Begin(lx.symbol.iSTROKE_LINE_STRIP,itemColor,1.0)
                     for point in points:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
+                    if looking_through(read,item):
+                        # Outside the picture dimmed, as Modo dims it for its own cameras: only in a view that looks
+                        # through this camera, close in front of it so that nothing in the scene comes between.
+                        near=entities.gate(projection,number(item,'focalLen'),number(item,'apertureX'),number(item,'offsetX'),
+                                           number(item,'offsetY'),number(item,'target'),aspect,depth=GATE_DIM_DEPTH)
+                        stroke.Begin(lx.symbol.iSTROKE_QUADS,(0.0,0.0,0.0),GATE_DIM)
+                        for quad in entities.gate_margins(near):
+                            for point in quad:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
                 except Exception:pass
         return Gate
+
+    def looking_through(read,item):
+        """Whether the 3D view being drawn looks through this camera: its eye stands where the camera does."""
+        try:
+            service=lx.service.View3Dport()
+            view=lx.object.View3D(service.View(service.Current()))
+            eye=view.Center()
+            matrix=lx.object.Matrix(read.ValueObj(item,item.ChannelLookup('worldMatrix')))
+            place=matrix.GetOffset()
+            return sum((float(a)-float(b))**2 for a,b in zip(eye,place))<1e-10
+        except Exception:
+            return False
 
     def package(name):
         plan=entities.channels(name)

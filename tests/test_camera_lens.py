@@ -54,6 +54,17 @@ class Lens(unittest.TestCase):
         self.assertAlmostEqual(max(xs) - min(xs), 6.0)
         self.assertAlmostEqual((max(xs) + min(xs)) / 2, 3.0)
 
+    def test_margins_surround_the_gate_without_covering_it(self):
+        outline = entities.gate('persp', .030, .024, 0.0, 0.0, 4.0, 16 / 9, depth=2.0)
+        margins = entities.gate_margins(outline)
+        self.assertEqual(len(margins), 4)
+        inside = lambda x, y, quad: min(p[0] for p in quad) < x < max(p[0] for p in quad) and min(p[1] for p in quad) < y < max(p[1] for p in quad)
+        # The picture's middle is in none of them; just past each edge, and at a corner, is in one.
+        self.assertFalse(any(inside(0.0, 0.0, quad) for quad in margins))
+        for x, y in ((.81, 0.0), (-.81, 0.0), (0.0, .46), (0.0, -.46), (.81, .46)):
+            self.assertEqual(sum(inside(x, y, quad) for quad in margins), 1, (x, y))
+        self.assertTrue(all(p[2] == -2.0 for quad in margins for p in quad))
+
     def test_every_viewed_camera_is_a_moonray_camera_with_its_inputs(self):
         for name in entities.VIEWED_CAMERAS:
             self.assertEqual(entities.catalog()[name]['category'], 'camera')
