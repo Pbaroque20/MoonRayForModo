@@ -10,7 +10,7 @@ from . import properties, rdla
 
 # What Panel.run() does in the window; any other page is a group of render settings.
 WINDOW_PAGES = ('preferences', 'final', 'bake', 'export', 'animation', 'stop', 'log', 'objects', 'outputs', 'colors',
-                'report', 'package', 'package_sequence', 'preview', 'playblast')
+                'report', 'package', 'package_sequence', 'preview', 'playblast', 'cameras')
 
 
 class Tools:
@@ -20,7 +20,7 @@ class Tools:
                    'animation': self.render_animation, 'playblast': self.render_playblast, 'stop': self.stop, 'log': self.show_log,
                    'objects': self._edit_production, 'outputs': self._edit_outputs, 'colors': self._edit_assets,
                    'report': self._report_assets, 'package': self._package_assets,
-                   'package_sequence': self._package_sequence, 'preview': lambda: None}
+                   'package_sequence': self._package_sequence, 'preview': lambda: None, 'cameras': self.camera_sequence}
         # Anything else names a group of render settings, which are on the Render item.
         actions.get(page, self.open_settings)()
 
@@ -252,6 +252,25 @@ class Tools:
             self.status.setText('Exported ' + path)
         except Exception as exc:
             self._failed(str(exc))
+
+    def camera_sequence(self):
+        """The Camera Sequence window: cameras keyed to ranges of frames, kept with the scene."""
+        import modo
+        from .camera_sequence_dialog import CameraSequence
+        from .host import channel
+        scene = modo.Scene()
+        render = scene.renderItem
+        fps = float(scene.fps)
+        # The scene's frame range: the Render item's, in frames.
+        frames = (int(round(float(channel(render, 'first', 0)))), int(round(float(channel(render, 'last', 120)))))
+        current = int(round(lx.service.Selection().GetTime() * fps))
+        dialog = CameraSequence(self, self._settings_values().get('camera_sequence'), scene, frames, current)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        sequence = dialog.sequence()
+        if self._store(camera_sequence=sequence):
+            count = len(sequence['keys'])
+            self.status.setText('Camera Sequence: %d key%s%s.' % (count, '' if count == 1 else 's', '' if sequence['enabled'] else ', off'))
 
     def render_animation(self):
         if self._output_busy():

@@ -119,7 +119,7 @@ sys.path.insert(0, str(root / 'tools'))
 import moonray_menu
 layout = kit / 'layout.cfg'
 text = layout.read_bytes().decode('utf-8')
-tidied = moonray_menu.terminal_entry(moonray_menu.context_menus(moonray_menu.viewport_title(moonray_menu.playblast_entry(moonray_menu.rdl_entry(moonray_menu.curve_controls(moonray_menu.tidy(text)))))))
+tidied = moonray_menu.camera_sequence_entry(moonray_menu.terminal_entry(moonray_menu.context_menus(moonray_menu.viewport_title(moonray_menu.playblast_entry(moonray_menu.rdl_entry(moonray_menu.curve_controls(moonray_menu.tidy(text))))))))
 if 'MoonRayEntityMenu' not in tidied:
     print('Could not find where to add "Add MoonRay Item" in', layout)
 if tidied != text:

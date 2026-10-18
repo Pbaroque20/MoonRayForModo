@@ -304,9 +304,10 @@ def solar_discs(result):
                     light['disc'] = {'radiance': [v * float(environment.get('intensity', 1.0)) for v in seen], 'angle': SUN_DEGREES * layer['solar_disc']}
 
 
-def picture_size(scene):
-    """The size the picture is rendered at: the Render item's resolution, or the render camera's where it overrides it."""
-    render, camera = scene.renderItem, scene.renderCamera
+def picture_size(scene, camera=None):
+    """The size the picture is rendered at: the Render item's resolution, or the camera's where it overrides it (the
+    render camera's, unless another is given)."""
+    render, camera = scene.renderItem, camera or scene.renderCamera
     width, height = int(channel(render, 'resX', 1280)), int(channel(render, 'resY', 720))
     if camera is not None and channel(camera, 'resOverride', 0):
         width, height = int(channel(camera, 'resX', width)), int(channel(camera, 'resY', height))
@@ -330,6 +331,12 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         if needs_cache(channel(mask,'ptyp',''),channel(mask,'ptag',''),any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets)) or channel(mask,'submask',False):
             evaluated_geometry = True
     camera = scene.renderCamera
+    # The camera keyed for this frame in the Camera Sequence, where one is: one of Modo's renders in place of the
+    # render camera, and one of MoonRay's camera items is the one rendered through (below, with the MoonRay items).
+    from . import camera_sequence
+    keyed = camera_sequence.keyed(scene, round(lx.service.Selection().GetTime() * float(scene.fps)))
+    if keyed is not None and not keyed[1]:
+        camera = keyed[0]
     if camera is None:
         raise ValueError('The scene needs a render camera.')
     projection = channel(camera,'projType','persp')
@@ -338,7 +345,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     warnings = []
     smoothed_whole = []
     render = scene.renderItem
-    width, height = picture_size(scene)
+    width, height = picture_size(scene, camera)
     aperture_x = float(channel(camera, 'apertureX', .036))
     aperture_y = float(channel(camera, 'apertureY', .024))
     pixel_aspect = float(channel(render,'pAspect',1))
@@ -794,6 +801,14 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             result['source_assets'].append(str(Path(path).resolve()))
     from .entities import collect as collect_entities
     result['entities']=collect_entities(scene,warnings)
+    if keyed is not None:
+        # A key decides which camera renders: a MoonRay camera item keyed is the one rendered through, and a Modo
+        # camera keyed renders in place of every MoonRay one.
+        from .entities import catalog as entity_catalog
+        for entity in result['entities']:
+            if entity_catalog().get(entity.get('class'), {}).get('category') == 'camera':
+                entity.setdefault('parameters', {})['modo_render_camera'] = bool(keyed[1]) and entity.get('identity') == keyed[0].id
+        result['camera_keyed'] = keyed[0].id
     # Native shapes are absent from Modo's evaluated surface list but still use named materials.
     for entity in result['entities']:
         tag = entity.get('parameters', {}).get('modo_material')

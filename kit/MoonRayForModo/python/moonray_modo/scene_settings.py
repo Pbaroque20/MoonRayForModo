@@ -27,6 +27,8 @@ DEFAULTS = {
     'dicing_camera': '',
     # The compositor's graph over a finished render's buffers (compositor.py); none until one is made.
     'compositor': {},
+    # Cameras keyed to ranges of frames, each rendered through over its range (camera_sequence.py).
+    'camera_sequence': {'enabled': True, 'keys': []},
 }
 
 

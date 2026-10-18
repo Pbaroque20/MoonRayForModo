@@ -937,7 +937,9 @@ class Panel(Tools, QtWidgets.QWidget):
         try:
             import modo
             from .host import picture_size
-            scene_w,scene_h=picture_size(modo.Scene())
+            from . import camera_sequence
+            scene=modo.Scene();keyed=camera_sequence.keyed(scene,round(lx.service.Selection().GetTime()*float(scene.fps)))
+            scene_w,scene_h=picture_size(scene,keyed[0] if keyed and not keyed[1] else None)
             values=self._settings_values();get=self.preferences.get
             width,height=self._dimensions({'width':scene_w,'height':scene_h})
             engine=self._engine()

@@ -17,7 +17,7 @@ class PlayblastMenu(unittest.TestCase):
     def test_the_window_knows_the_page(self):
         text = (ROOT / 'kit/MoonRayForModo/python/moonray_modo/panel_tools.py').read_text(encoding='utf-8')
         self.assertIn("'playblast': self.render_playblast", text)
-        self.assertIn("'preview', 'playblast')", text)
+        self.assertIn("'preview', 'playblast'", text)
 
     def test_an_installed_menu_gains_the_entry_once(self):
         old = ('<list type="Control" val="cmd moonray.page animation">\r\n<atom type="Label">Render Animation...</atom>\r\n</list>\r\n'

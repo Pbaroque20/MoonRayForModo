@@ -175,6 +175,17 @@ def terminal_entry(text):
             '<atom type="Hash">MoonRayMenu_terminal:control</atom></list>' + text[end:])
 
 
+def camera_sequence_entry(text):
+    """Camera Sequence in the MoonRay menu, after Render Animation; unchanged if it is there."""
+    anchor = '<list type="Control" val="cmd moonray.page animation">'
+    if 'cmd moonray.page cameras' in text or text.count(anchor) != 1:
+        return text
+    end = text.index('</list>', text.index(anchor)) + len('</list>')
+    eol = '\r\n' if '\r\n' in text else '\n'
+    return (text[:end] + eol + '      <list type="Control" val="cmd moonray.page cameras"><atom type="Label">Camera Sequence...</atom>'
+            '<atom type="Hash">MoonRayMenu_cameras:control</atom></list>' + text[end:])
+
+
 def round_control(text):
     """The mesh form's round-curves and curve-basis controls, after the curve UV control; each unchanged if it is there."""
     anchor = '<list type="Control" val="cmd moonray.object.curve_uv ?">'
