@@ -269,3 +269,7 @@ and standalone contract checks are distinct from timing and native integration.
 contract to the isolated native dispatcher. Same-build controls, exact image
 gates, failure drains and held-stream cancellation distinguish correctness from
 render speed. The production XPU path remains unchanged.
+
+[NATIVE_EFFICIENCY.md](NATIVE_EFFICIENCY.md) separates lean wire transfers,
+paced completion queries and deterministic CPU/GPU lobe ownership. It requires
+exact images and nonzero consumed CPU work before crediting independent shading.

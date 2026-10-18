@@ -129,3 +129,7 @@ remain separate unfinished gates.
 
 Full source/build identities, images, failures, recovery and measured rounds:
 [native-transport-20261018.json](native-transport-20261018.json).
+
+The next isolated transport and independent-work candidate is documented in
+[NATIVE_EFFICIENCY.md](NATIVE_EFFICIENCY.md); these results remain the preceding
+ownership-library measurement.
