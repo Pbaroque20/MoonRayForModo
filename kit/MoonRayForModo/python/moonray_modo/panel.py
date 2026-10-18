@@ -1015,6 +1015,12 @@ class Panel(Tools, QtWidgets.QWidget):
         else:
             was=self._following
             self._follow(False)
+            if was and self._rendering and self._engine()=='moonlightipr' and not self._output_busy():
+                # MoonLightIPR rests at once on the graphics card: what it has drawn is kept as the picture, as Stop keeps
+                # it, and it frees the card's memory when idle for as long as Preferences says.
+                self.stop()
+                self.status.setText('Realtime off: MoonLightIPR is resting, its picture kept.')
+                return
             self.status.setText('IPR off.' + (' The current pass may finish.' if was and self._rendering else ''))
 
     def _follow(self,following):

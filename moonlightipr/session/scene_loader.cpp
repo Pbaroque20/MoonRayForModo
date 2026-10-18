@@ -4,6 +4,9 @@
 #include "subdivide.h"
 
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <sstream>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -73,6 +76,43 @@ struct Image {
     std::vector<unsigned char> bytes;   // RGBA, top row first
     std::vector<float> floats;
 };
+
+// A texture file's size without reading its pixels: (width, height, whether it holds floats). Zero where it is not one
+// of the packer's files.
+struct ImageSize {
+    uint32_t width = 0, height = 0;
+    bool floatData = false;
+};
+
+ImageSize imageSize(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    char head[64] = {};
+    file.read(head, sizeof(head));
+    const size_t got = size_t(file.gcount());
+    ImageSize size;
+    if (got >= 12 && std::memcmp(head, "MLF1", 4) == 0) {
+        std::memcpy(&size.width, head + 4, 4);
+        std::memcpy(&size.height, head + 8, 4);
+        size.floatData = true;
+    } else if (got >= 2 && head[0] == 'P' && head[1] == 'F') {
+        std::istringstream fields(std::string(head + 2, got - 2));
+        fields >> size.width >> size.height;
+        size.floatData = true;
+    } else if (got >= 18) {
+        const auto byte = [&](size_t i) { return static_cast<unsigned char>(head[i]); };
+        size.width = byte(12) | (byte(13) << 8);
+        size.height = byte(14) | (byte(15) << 8);
+    }
+    return size;
+}
+
+// The bytes a texture takes on the card, given the most texels it may have across a side (0 for no limit): halves for
+// floats, bytes for the rest, four to a texel.
+size_t cardBytes(const ImageSize& size, uint32_t limit) {
+    uint32_t width = size.width, height = size.height;
+    while (limit && std::max(width, height) > limit) { width = std::max(1u, width / 2); height = std::max(1u, height / 2); }
+    return size_t(width) * height * (size.floatData ? 8 : 4);
+}
 
 Image readImage(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
@@ -214,11 +254,47 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     }
 
     // Read new images before the materials whose layers will refer to them.
-    std::vector<uint32_t> textureIndices(in.value<uint32_t>());
-    for (uint32_t& textureIndex : textureIndices) {
-        const uint64_t key = in.value<uint64_t>();
-        const uint32_t flags = in.value<uint32_t>();
-        const std::string file = in.text(in.value<uint32_t>());
+    struct TextureEntry {
+        uint64_t key;
+        uint32_t flags;
+        std::string file;
+    };
+    std::vector<TextureEntry> entries(in.value<uint32_t>());
+    for (TextureEntry& entry : entries) {
+        entry.key = in.value<uint64_t>();
+        entry.flags = in.value<uint32_t>();
+        entry.file = in.text(in.value<uint32_t>());
+    }
+    // Where the new images would not all fit on the graphics card as they are, each is made smaller: halved until no
+    // side is longer than the largest limit, a power of two, at which they all fit. The card keeps room for the
+    // picture's own buffers, the denoiser and the geometry. MOONLIGHTIPR_TEXTURE_LIMIT, where it is set, is the limit.
+    uint32_t limit = 0;
+    {
+        std::vector<ImageSize> sizes;
+        for (const TextureEntry& entry : entries)
+            if (textures.find(entry.key) == textures.end()) sizes.push_back(imageSize(entry.file));
+        const auto needed = [&](uint32_t cap) { size_t total = 0; for (const ImageSize& size : sizes) total += cardBytes(size, cap); return total; };
+        const size_t reserve = size_t(1024) << 20;
+        const size_t free = renderer.freeMemory();
+        const size_t room = free > reserve ? size_t(double(free - reserve) * 0.8) : 0;
+        if (const char* forced = std::getenv("MOONLIGHTIPR_TEXTURE_LIMIT")) limit = uint32_t(std::strtoul(forced, nullptr, 10));
+        else if (!sizes.empty() && needed(0) > room) {
+            limit = 256;
+            for (uint32_t cap = 8192; cap >= 256; cap /= 2)
+                if (needed(cap) <= room) { limit = cap; break; }
+        }
+        uint32_t largest = 0;
+        for (const ImageSize& size : sizes) largest = std::max(largest, std::max(size.width, size.height));
+        if (limit && largest > limit)
+            std::cerr << "MoonLightIPR textures: at most " << limit << " pixels across, to fit the " << (free >> 20)
+                      << " MB free on the graphics card (they would take " << (needed(0) >> 20) << " MB as they are)" << std::endl;
+    }
+    std::vector<uint32_t> textureIndices(entries.size());
+    for (size_t t = 0; t < entries.size(); ++t) {
+        uint32_t& textureIndex = textureIndices[t];
+        const uint64_t key = entries[t].key;
+        const uint32_t flags = entries[t].flags;
+        const std::string& file = entries[t].file;
         auto cached = textures.find(key);
         if (cached == textures.end()) {
             const Image image = readImage(file);
@@ -230,6 +306,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             desc.srgb = (flags & TEXTURE_SRGB) != 0;
             desc.wrapU = TextureDesc::Wrap((flags >> TEXTURE_WRAP_U_SHIFT) & 3);
             desc.wrapV = TextureDesc::Wrap((flags >> TEXTURE_WRAP_V_SHIFT) & 3);
+            desc.maxSize = limit;
             cached = textures.emplace(key, CachedMesh{renderer.addTexture(desc), 0}).first;
         }
         cached->second.lastUsed = generation;
