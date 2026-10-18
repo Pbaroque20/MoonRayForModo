@@ -100,6 +100,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.start_requested.connect(self.start_render)
         self.preview.region_drawn.connect(self._region_drawn)
         self.preview.hovered.connect(self._probe)
+        # Over a Cryptomatte buffer: the name under the pointer, and a click picks (cryptomatte_pick).
+        self._crypto_picked={};self._crypto_point=None
+        self.crypto_timer=QtCore.QTimer(self);self.crypto_timer.setSingleShot(True);self.crypto_timer.setInterval(90)
+        self.crypto_timer.timeout.connect(self._crypto_hover)
+        self.preview.hovered.connect(self._crypto_hovered)
+        self.preview.clicked.connect(self._crypto_clicked)
         self.preview.set_gamma(self.preferences.get('display_gamma'))
         self.preview.set_worker_overlay(self.preferences.get('worker_tiles'))
         self.preview.set_show_buckets(self.preferences.get('show_buckets'))
@@ -1195,6 +1201,8 @@ class Panel(Tools, QtWidgets.QWidget):
     def _set_rendering(self,rendering):
         """Keep the Render button saying what pressing it will do."""
         self._rendering=bool(rendering)
+        # The mattes picked are of the picture there was: a new render takes them away.
+        if self._rendering:self.preview.set_overlay(None)
         # The crest breathes while a render is on its way and nothing is shown yet.
         if hasattr(self.preview,'set_waiting'):self.preview.set_waiting(self._rendering)
         from . import terminal
@@ -1360,6 +1368,121 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.buffers.denoiser.request(engine)
         self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' else 'denoised_beauty'))
 
+    # ---- Cryptomatte in the preview ----
+    def _crypto_buffer(self):
+        """The Cryptomatte buffer shown, (key, category, frame), or None for any other."""
+        key=self.buffer.currentData()
+        try:entries=self._settings_values().get('custom_aovs') or []
+        except Exception:return None
+        entry=next((v for v in entries if v.get('name')==key and v.get('kind')=='cryptomatte'),None)
+        frame=self.renderer.buffers.displayed or self.renderer.buffers.frame
+        if entry is None or not frame or key not in (frame.get('files') or {}):return None
+        return key,entry.get('category','object'),frame
+
+    def _crypto_ready(self):
+        """Read the Cryptomatte buffer shown, in the background, so that the first hover and click do not wait for it."""
+        shown=self._crypto_buffer()
+        self._crypto_overlay()
+        if shown is None:return
+        key,category,frame=shown
+        import threading
+        from . import cryptomatte_pick
+        def read():
+            try:cryptomatte_pick.ranks(frame,key);cryptomatte_pick.names(frame,category)
+            except Exception:pass
+        threading.Thread(target=read,daemon=True).start()
+        self.status.setText('Cryptomatte: hold the pointer over the picture for a name. Click selects in Modo; Shift-click picks more, Ctrl-click takes one away.')
+
+    def _crypto_hovered(self,x,y):
+        if x<0:
+            self.crypto_timer.stop();self._crypto_point=None;return
+        self._crypto_point=(x,y);self.crypto_timer.start()
+
+    def _crypto_hover(self):
+        """The name of the matte under the pointer, said by it. The compositor's probe, where it is on, says more."""
+        from . import compositor_editor
+        editor=compositor_editor._open.get('editor')
+        if self._crypto_point is None or (editor is not None and getattr(editor,'probing',False)):return
+        shown=self._crypto_buffer()
+        if shown is None:return
+        key,category,frame=shown
+        from . import cryptomatte_pick
+        try:
+            value=cryptomatte_pick.at(frame,key,*self._crypto_point)
+            label=cryptomatte_pick.names(frame,category)[0].get(value) if value is not None else None
+        except Exception as exc:
+            label='Cannot read the Cryptomatte: '+str(exc)
+        words=(label or ('an ID not in the scene (%08x)'%value)) if value is not None else 'nothing'
+        if label and label in self._crypto_picked.get(key,set()):words+='  (picked)'
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(),words,self.preview)
+
+    def _crypto_clicked(self,x,y,modifiers):
+        """Pick the matte clicked: alone, and selected in Modo; with Shift, as well as those picked; with Ctrl, no longer."""
+        shown=self._crypto_buffer()
+        if shown is None:return
+        key,category,frame=shown
+        from . import cryptomatte_pick
+        try:
+            value=cryptomatte_pick.at(frame,key,x,y)
+            ids,owners=cryptomatte_pick.names(frame,category)
+        except Exception as exc:
+            self.status.setText('Cannot read the Cryptomatte: '+str(exc));return
+        label=ids.get(value) if value is not None else None
+        picked=set(self._crypto_picked.get(key,set()))
+        adding,taking=bool(modifiers&int(QtCore.Qt.ShiftModifier)),bool(modifiers&int(QtCore.Qt.ControlModifier))
+        if taking:picked.discard(label)
+        elif adding:
+            if label:picked.add(label)
+        else:picked={label} if label else set()
+        self._crypto_picked[key]=picked
+        self._crypto_overlay()
+        self._crypto_select(category,frame,[owner for name in picked for owner in owners.get(name,[])])
+        self.status.setText(('Picked: '+', '.join(sorted(picked))) if picked else 'Nothing picked.')
+
+    def _crypto_select(self,category,frame,owners):
+        """Select in Modo what the picked mattes are of: the objects, or the materials."""
+        found=[]
+        for owner in owners:
+            if category=='material':
+                material=(frame.get('snapshot') or {}).get('materials',{}).get(owner,{})
+                owner=material.get('item') or next((layer.get('item') for layer in reversed(material.get('material_stack') or []) if layer.get('item')),None)
+            if owner and str(owner).split('|')[0] not in found:found.append(str(owner).split('|')[0])
+        # Modo's own selection commands, as a click in the Item List selects.
+        try:
+            lx.eval('select.drop item')
+            for identity in found:
+                try:lx.eval('select.item {%s} add'%identity)
+                except RuntimeError:pass
+        except Exception as exc:
+            self.status.setText('Cannot select in Modo: '+str(exc))
+
+    def _crypto_overlay(self):
+        """The mattes picked in the Cryptomatte buffer shown, laid over the picture in the crest's orange."""
+        shown=self._crypto_buffer()
+        picked=self._crypto_picked.get(shown[0],set()) if shown else set()
+        if not picked:
+            self.preview.set_overlay(None);return
+        key,category,frame=shown
+        from . import cryptomatte_pick
+        try:
+            ids,_=cryptomatte_pick.names(frame,category)
+            wanted=[value for value,label in ids.items() if label in picked]
+            read=cryptomatte_pick.coverage(frame,key,wanted)
+        except Exception:
+            read=None
+        if read is None:
+            self.preview.set_overlay(None);return
+        width,height,covered=read
+        # Only the pixels the mattes cover are set, on a picture that is otherwise clear: an image made from Python's own
+        # bytes took Modo down.
+        image=QtGui.QImage(width,height,QtGui.QImage.Format_ARGB32_Premultiplied);image.fill(0)
+        for pixel,amount in covered.items():
+            alpha=int(min(1.0,amount)*150)
+            # Premultiplied: the crest's orange (#f5a623), as strong as the matte covers the pixel.
+            y,x=divmod(pixel,width)
+            image.setPixel(x,y,(alpha<<24)|((0xf5*alpha//255)<<16)|((0xa6*alpha//255)<<8)|(0x23*alpha//255))
+        self.preview.set_overlay(image)
+
     def _buffer_changed(self,index):
         if self.disposed:return
         # MoonRay LS is a quick look and is not denoised. MoonLightIPR denoises as it goes.
@@ -1381,8 +1504,9 @@ class Panel(Tools, QtWidgets.QWidget):
             if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
                 # MoonLightIPR has not been denoising: it renders again, denoising this time.
                 if self._following or self._rendering or not self.preview.image.isNull():self.render_once()
-            if not self._rendering and any(v['name']==key and v['kind']=='cryptomatte' for v in stored['custom_aovs']):
-                self.status.setText('Cryptomatte: each color is one ID. The EXR holds the mattes.')
+            # A Cryptomatte buffer is read for picking, with what was picked in it laid over it; any other has nothing laid over.
+            if not self._rendering:self._crypto_ready()
+            else:self.preview.set_overlay(None)
         except Exception as exc:
             self.status.setText('Cannot update buffer display: '+str(exc))
 
