@@ -264,3 +264,8 @@ acceleration or production lifecycle is claimed.
 [NATIVE_CONTEXT.md](NATIVE_CONTEXT.md) investigates shared CUDA-context lifetime
 and prepares a reusable batch packing/ownership contract. Context image controls
 and standalone contract checks are distinct from timing and native integration.
+
+[NATIVE_TRANSPORT.md](NATIVE_TRANSPORT.md) connects the reusable packing/ownership
+contract to the isolated native dispatcher. Same-build controls, exact image
+gates, failure drains and held-stream cancellation distinguish correctness from
+render speed. The production XPU path remains unchanged.

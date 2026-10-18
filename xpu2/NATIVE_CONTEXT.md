@@ -128,3 +128,7 @@ The preparatory batch contract passes both compiler modes, including a stale-tok
 check after reconstructing a slot at the same address. Native integration remains
 a separate step. Full identities, controls, excluded timing and accepted timing:
 [native-context-20261018.json](native-context-20261018.json).
+
+The subsequent opt-in native integration and its recovery/image gates are tracked
+in [NATIVE_TRANSPORT.md](NATIVE_TRANSPORT.md). The measurements above remain the
+historical context-sharing experiment, before that integration.

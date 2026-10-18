@@ -1,4 +1,4 @@
-// Preparatory, backend-independent batch ownership. Not yet wired into MoonRay.
+// Backend-independent batch ownership; native integration is opt-in and experimental.
 #pragma once
 #include <array>
 #include <atomic>
@@ -59,6 +59,12 @@ public:
     unsigned packets()const{return packets_;}
     const float* input()const{return input_.data();}
     const float* fallback()const{return fallback_.data();}
+    // The dispatch owner may fill result storage only after its backend event
+    // confirms completion. Failure leaves the original packed fallback intact.
+    float* resultStorage(Token t){
+        if(!owns(t)||phase_!=Phase::InFlight)throw std::logic_error("Batch result ownership");
+        return fallback_.data();
+    }
     PacketRange range(unsigned i)const{if(i>=packets_)throw std::out_of_range("Batch packet");return ranges_[i];}
     Token pack(const PacketView* views,unsigned count,uint64_t revision){
         if(phase_!=Phase::Empty || !views || !count || count>Layout::maxPackets || !revision)throw std::invalid_argument("Batch admission");
