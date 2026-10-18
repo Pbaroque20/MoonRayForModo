@@ -42,6 +42,7 @@ Not released yet: on the MoonLightIPR branch.
 
 ### The preview window
 
+- **MoonRay LS can sample uniformly**: Preview Preferences > MoonRay LS quality has a Sampling choice. Adaptive, as before, takes more samples where a pixel is still noisy, up to Most samples a pixel; Uniform gives every pixel the same samples (25, 64 or 121), for an even grain, with Adaptive error greyed.
 - **Leaner notices**: they open only as tall as their text and two lines more, up to the height they had before, where a long list scrolls.
 - **The size and samples beside the picture follow the engine chosen**: choosing MoonRay, MoonRay LS or MoonLightIPR says at once the size it renders at and its samples a pixel, before anything is rendered; a MoonLightIPR picture says its samples too.
 - **Denoising... in the status line** while the denoised beauty is made from a finished render, until it is shown.
@@ -230,7 +231,7 @@ Not released yet: on the MoonLightIPR branch.
 
 ### Working in Modo
 
-- **MoonRay lights, cameras, light filters, shapes and volumes have a Transform section** in their Properties, laid out as Modo's: Position, Rotation with its order, and Scale as X, Y and Z, with the Reset, Freeze, Zero and Add menus.
+- **MoonRay lights, light filters, shapes, volumes and the bake camera have a Transform section** in their Properties, laid out as Modo's: Position, Rotation with its order, and Scale as X, Y and Z, with the Reset, Freeze, Zero and Add menus. MoonRay's perspective, orthographic, fisheye, spherical and dome cameras are Modo cameras, with Modo's own camera Transform.
 - **Terminal** in the MoonRay menu: every program the plugin runs (MoonRay, MoonLightIPR, the denoiser, the scene reader and the rest), with its command line, what it prints and how it ended, as it happens. It shows "ready" while nothing runs.
 
 ![The MoonRay Terminal after a MoonRay render and a stereo composite](images/terminal.png)

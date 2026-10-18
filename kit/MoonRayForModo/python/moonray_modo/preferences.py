@@ -39,7 +39,7 @@ KEYS = {
     'transmission_roughness': (True, bool),
     'auto_xpu': (True, bool),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (10.0, float), 'notices_open': (False, bool),
-    'ipr/width': (640, int), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
+    'ipr/width': (640, int), 'ipr/sampling': ('adaptive', str), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
     'moonlightipr/samples': (256, int),
 }
@@ -69,6 +69,8 @@ class Preferences:
             if kind is bool:
                 return str(value).lower() in ('true', '1')
             if kind is str:
+                if key == 'ipr/sampling' and value not in ('adaptive', 'uniform'):
+                    return default
                 if key == 'preview_engine' and value == 'moonlight':
                     # The engine's name as 0.3.50.1 and 0.3.50.2 stored it.
                     return 'moonlightipr'
@@ -143,15 +145,23 @@ class Dialog(QtWidgets.QDialog):
         form.addRow(heading)
         form.addRow('Width limit', combo('ipr/width', [('%d px' % v, v) for v in LS_WIDTHS],
                                           'How wide MoonRay LS renders, and never wider than the preview size above. Narrower is quicker.'))
-        form.addRow('Pixel samples', combo('ipr/samples', [('%d per pixel' % v, v) for v in LS_SAMPLES],
-                                            'The most samples a pixel MoonRay LS takes, and never more than the render settings of the scene give. More is cleaner and slower.'))
+        sampling = combo('ipr/sampling', [('Adaptive', 'adaptive'), ('Uniform', 'uniform')],
+                         'Adaptive takes more samples where a pixel is still noisy and stops where it is clean enough, by the '
+                         'Adaptive error below. Uniform gives every pixel the same samples, for an even grain.')
+        form.addRow('Sampling', sampling)
+        form.addRow('Most samples a pixel', combo('ipr/samples', [('%d per pixel' % v, v) for v in LS_SAMPLES],
+                                                   'The most samples a pixel MoonRay LS takes, never more than the render settings of the scene give. '
+                                                   "Uniform takes MoonRay's square grid of no more than this: 25 for 32, 64, 121 for 128. More is cleaner and slower."))
         self.error = QtWidgets.QDoubleSpinBox()
         self.error.setRange(.1, 1000)
         self.error.setDecimals(1)
         self.error.setSingleStep(10)
         self.error.setValue(preferences.get('ipr/error'))
-        self.error.setToolTip('Higher stops sooner')
+        self.error.setToolTip('Adaptive sampling: higher stops sooner')
         form.addRow('Adaptive error', self.error)
+        # Adaptive sampling's own: greyed under uniform sampling.
+        self.error.setEnabled(sampling.currentData() == 'adaptive')
+        sampling.currentIndexChanged.connect(lambda _: self.error.setEnabled(sampling.currentData() == 'adaptive'))
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
