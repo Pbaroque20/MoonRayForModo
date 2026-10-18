@@ -32,7 +32,8 @@ class ToonRamp(unittest.TestCase):
         self.assertEqual(held['colors'][0], [0.0, 0.0, 0.0])
         self.assertEqual(held['diffuse_model'], node_defaults.value(nodes.specs('DwaToonMaterial')['diffuse_model']))
         self.assertEqual(held['specular_model'], 2)
-        self.assertEqual(graph['nodes']['b']['parameters'], {})
+        # Only what the plugin starts otherwise is given MoonRay's own value: here glitter's reference space.
+        self.assertEqual(graph['nodes']['b']['parameters'], {'glitter_space': 5})
 
 
 if __name__ == '__main__':

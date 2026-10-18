@@ -15,6 +15,9 @@ def settings(value):
             'smart':value.get('smart','off'),'detail':value.get('detail','some')}
     if result['detail'] not in DETAIL:raise ValueError('Invalid denoising settings')
     if result['smart'] not in SMART:raise ValueError('Invalid denoising settings')
+    # Smart Render stops a render for the denoiser to finish: with the Denoiser Off it is off too, its control greyed,
+    # rather than stop a render early and leave it noisy.
+    if result['engine']=='off':result['smart']='off'
     # One or the other: a scene saved with both has Smart Render.
     if result['smart']!='off' and result['safe'] is True:result['safe']=False
     if result['engine'] not in ENGINES or type(result['preview']) is not bool or type(result['final']) is not bool or type(result['safe']) is not bool:

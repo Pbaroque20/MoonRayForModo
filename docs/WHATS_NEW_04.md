@@ -112,6 +112,8 @@ Not released yet: on the MoonLightIPR branch.
 
 ### Materials and the node editor
 
+- **The graph editor opens a material with only its Diffuse and Specular groups unfolded**; the rest start folded, and a group folded or unfolded is still kept that way for that kind of material.
+- **Glitter starts in object space**, not MoonRay's reference space: reference space places the flakes by each point's rest position (so that they stay put on a deforming surface), which Modo's meshes do not carry, and without it MoonRay draws the surface pink or black. A MoonRay scene's own glitter keeps its space.
 - **Add Node by name**: Tab in the compositor or the material editor opens a field over the list of every node; what you type picks the node it names, whole or in part, and Enter adds it.
 - **Switch displacement in the node editor.** The switch colour, float and normal maps, the switch and mix materials, and the toon materials' per-point ramp multipliers and offsets now reach MoonRay: they were never passed on before. Scenes saved with them are carried over.
 - **Materials made of others**: Two Sided and Color Correct take the other DWA materials as their inputs. A layer, two-sided or hair layer material missing one of its pair, or an empty Adjust or Color Correct plugged into another material, no longer crashes MoonRay: the plugin fills in or leaves out what is missing and says so in the notices.
@@ -239,6 +241,9 @@ Not released yet: on the MoonLightIPR branch.
 
 ### Fixes
 
+- **The Denoiser set to Off is off everywhere**: the denoised beauty chosen in the preview and Smart Render denoised all the same before. Denoise Preview, Save Denoised EXR, Keep Fine Detail and Smart Render are greyed while it is Off.
+- **Pixel Samples is greyed under Adaptive sampling**, which does not use it.
+- **The MoonRay Widget says Rendered only when its new picture has come**, and shows that picture; a render that ends without one says so.
 - **The preview no longer stops when MoonRay's GPU mode fails**: now and then (about one preview render in ten here, whatever the scene) MoonRay's GPU tracing fails in the preview and the render ended with "Persistent MoonRay exited". The render is now begun again on the CPU, and the notices say so.
 - **Modo's own light linking reaches MoonRay**: a light's Light Linking group, set to include or exclude, was passed over before, and every object took every light. Checked against Modo's own render in both modes. MoonLightIPR still lights every object alike.
 - **Large MoonRay pictures the right way up**: a preview at 3840 x 2160 came out upside down in MoonRay, and now does not.

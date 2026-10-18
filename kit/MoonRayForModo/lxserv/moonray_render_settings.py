@@ -34,6 +34,10 @@ def register():
     import modo
     from moonray_modo import properties,scene_settings,property_notifications
     WATCHED=(('select.event','item +v'),(property_notifications.NAME,''))
+    # MoonRay's sampling mode for adaptive sampling (options.ENUMS['sampling_mode']).
+    ADAPTIVE=2
+    # The settings that only mean something with a denoiser chosen.
+    NEEDS_DENOISER=('denoise_preview','denoise_final','denoise_detail','smart_render')
     TYPES={'bool':lx.symbol.sTYPE_BOOLEAN,'member':lx.symbol.sTYPE_BOOLEAN,'int':lx.symbol.sTYPE_INTEGER,
            'choice':lx.symbol.sTYPE_INTEGER,'float':lx.symbol.sTYPE_FLOAT,'hex':lx.symbol.sTYPE_COLOR}
 
@@ -46,6 +50,16 @@ def register():
                 self.dyna_Add('value',TYPES.get(kind,lx.symbol.sTYPE_STRING))
                 self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+            def basic_Enable(self,msg):
+                # Pixel Samples is uniform sampling's: under adaptive sampling MoonRay does not use it, so it is greyed.
+                if entry['key']=='samples':
+                    try:return scene_settings.complete(properties.scene_settings())['render'].get('sampling_mode')!=ADAPTIVE
+                    except Exception:return True
+                # What a denoiser does is greyed while the Denoiser is Off: it is off everywhere then.
+                if entry['key'] in NEEDS_DENOISER:
+                    try:return scene_settings.complete(properties.scene_settings())['denoising'].get('engine','off')!='off'
+                    except Exception:return True
+                return True
             def arg_UIValueHints(self,index):return _same(Hints,WATCHED,labels)
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
