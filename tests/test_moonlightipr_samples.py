@@ -72,5 +72,17 @@ class LowSamples(unittest.TestCase):
         self.assertEqual(prepared['render_settings']['max_adaptive_samples'], 128)
 
 
+class DraftWidth(unittest.TestCase):
+    def test_the_widths(self):
+        self.assertEqual(preferences.DRAFT_WIDTHS, (320, 640, 1280))
+
+    def test_the_default_is_640(self):
+        self.assertEqual(read(None, 'draft/width'), 640.0)
+
+    def test_a_width_typed_before_is_the_nearest(self):
+        for stored, nearest in (('64', 320.0), (500, 640.0), ('900', 640.0), ('1000', 1280.0), (3200, 1280.0)):
+            self.assertEqual(read(stored, 'draft/width'), nearest)
+
+
 if __name__ == '__main__':
     unittest.main()

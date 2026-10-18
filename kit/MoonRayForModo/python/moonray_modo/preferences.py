@@ -48,6 +48,8 @@ LS_SAMPLES = (32, 64, 128)
 # How wide MoonRay LS may render: small, to be quick, or any of the preview sizes.
 LS_WIDTHS = (80, 160, 240) + tuple(size for label, size in SIZES)
 MOONLIGHTIPR_SAMPLES = (128, 256, 512, 1024)
+# How wide Draft renders while the scene is moved, for a quick picture.
+DRAFT_WIDTHS = (320, 640, 1280)
 
 
 class Preferences:
@@ -76,6 +78,9 @@ class Preferences:
                 # be chosen) are taken up to the fewest that can.
                 levels = MOONLIGHTIPR_SAMPLES if key == 'moonlightipr/samples' else LS_SAMPLES
                 return next((v for v in levels if v >= int(value)), levels[-1])
+            if key == 'draft/width':
+                # A width that could once be typed is taken to the nearest of those that can be chosen now.
+                return float(min(DRAFT_WIDTHS, key=lambda width: abs(width - float(value))))
             if key == 'preview_size' and kind(value) <= 0:
                 # Scene resolution, as it could once be set to: a realtime preview is no longer made that large.
                 return default
