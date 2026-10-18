@@ -58,6 +58,12 @@ class ModoColor(unittest.TestCase):
         modo_color.RESOLVED = {'config': 'x', 'source': 'linear', 'display': 'default', 'view': 'sRGB'}
         self.assertEqual(display.values({'view': 'aces'})['config'], display.ACES_CONFIG)
 
+    def test_aces_2_is_its_own_view(self):
+        chosen = display.values({'view': 'aces2'})
+        self.assertEqual((chosen['view'], chosen['config'], chosen['ocio_view']),
+                         ('ocio', display.ACES2_CONFIG, 'ACES 2.0 - SDR 100 nits (Rec.709)'))
+        self.assertNotEqual(display.values({'view': 'aces'})['ocio_view'], chosen['ocio_view'])
+
     def test_what_was_last_chosen_is_what_a_scene_starts_with(self):
         from moonray_modo import display_memory, scene_settings
         self.assertEqual(display_memory.remembered(), {})       # nothing is read outside Modo

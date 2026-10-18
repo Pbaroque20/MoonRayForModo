@@ -724,7 +724,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 read=modo_color.RESOLVED
                 words='Modo: %s, %s'%(read.get('name',''),read['view']) if read else 'sRGB'
             elif view=='ocio':words='OCIO: %s, %s'%(held.get('display',''),held.get('ocio_view',''))
-            else:words={'aces':'ACES','srgb':'sRGB','reinhard':'Highlight compression','raw':'Raw linear'}.get(view,str(view))
+            else:words={'aces':'ACES 1.3','aces2':'ACES 2.0','srgb':'sRGB','reinhard':'Highlight compression','raw':'Raw linear'}.get(view,str(view))
             if held.get('lut'):words+=' + LUT '+Path(held['lut']).name
             return words
         except Exception:return ''

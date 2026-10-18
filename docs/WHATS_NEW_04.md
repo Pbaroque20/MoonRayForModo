@@ -251,6 +251,7 @@ Not released yet: on the MoonLightIPR branch.
 - **Modo's own light linking reaches MoonRay**: a light's Light Linking group, set to include or exclude, was passed over before, and every object took every light. Checked against Modo's own render in both modes. MoonLightIPR still lights every object alike.
 - **Large MoonRay pictures the right way up**: a preview at 3840 x 2160 came out upside down in MoonRay, and now does not.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
+- **An ACES 2.0 view**: View Transform offers ACES 2.0 (sRGB display) beside ACES 1.3, ACES 2.0's own tone mapping from the ACES 2.0 configuration built into the plugin's OpenColorIO (2.5); ACES 1.3 stays as it was.
 - **Less memory kept over a long session**: small leaks after each render and selection are gone.
 
 ## New in 0.4.1
