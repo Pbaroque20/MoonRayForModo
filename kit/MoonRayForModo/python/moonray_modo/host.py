@@ -819,6 +819,17 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             if entity_catalog().get(entity.get('class'), {}).get('category') == 'camera':
                 entity.setdefault('parameters', {})['modo_render_camera'] = bool(keyed[1]) and entity.get('identity') == keyed[0].id
         result['camera_keyed'] = keyed[0].id
+    # A MoonRay camera rendered through is a Modo camera too: its own Overscan holds, not the render camera's.
+    through = next((entity for entity in result['entities'] if entity.get('parameters', {}).get('modo_render_camera')), None)
+    if through is not None:
+        try:
+            overscan = float(channel(scene.item(through['identity']), 'overscan', 1.0))
+        except (LookupError, KeyError, TypeError, ValueError):
+            overscan = float(result['camera'].get('overscan', 1.0))
+        if overscan > 1.0:
+            result['camera']['overscan'] = overscan
+        else:
+            result['camera'].pop('overscan', None)
     # Native shapes are absent from Modo's evaluated surface list but still use named materials.
     for entity in result['entities']:
         tag = entity.get('parameters', {}).get('modo_material')
