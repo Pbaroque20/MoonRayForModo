@@ -282,3 +282,7 @@ tickets; it does not retain arbitrary shader stacks beyond the bundle lifetime.
 The optional [native input preparation experiment](NATIVE_INPUT_PREPARATION.md)
 qualifies invariant lobe packing and grouped replay checks against the bounded
 material-window candidate, without removing input validation or changing XPU.
+
+The [numeric native sampler-cache experiment](NATIVE_SAMPLER_CACHE.md) reuses
+checked sampler setup within a material window, with native rebuild verification
+and forced-miss controls. It remains opt-in and preserves original XPU.
