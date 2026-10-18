@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [bounded native texture-tile residency](TEXTURE_CACHE.md),
+See [native OIIO mip loading and parity checks](TEXTURE_OIIO.md),
+[bounded native texture-tile residency](TEXTURE_CACHE.md),
 [region hierarchy and importance scheduling](REGION_PRIORITY.md),
 [persistent native index updates](RDL_LIVE_INDEX.md),
 [native RDL adaptation and metadata optimization](NATIVE_SCENE_INDEX.md),

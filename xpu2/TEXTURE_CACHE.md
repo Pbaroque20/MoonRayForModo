@@ -3,6 +3,8 @@
 The native cache foundation is implemented in `texture_cache.h`, with an isolated
 CUDA transfer backend in `texture_cuda_backend.h`. It is read-only, backed by a
 loader, and is not connected to native MoonRay shading or the installed kit yet.
+The follow-up [OIIO loader](TEXTURE_OIIO.md) now validates real mip texels through
+this cache; GPU filtering and shader integration remain separate.
 
 ## Ownership and residency
 
@@ -86,6 +88,6 @@ Compact evidence is `texture-cache-20261017.json`; full local results are in
 installed kit or user scene was changed. The prior 368 Python regressions are
 unchanged by this standalone C++ addition and were not unnecessarily repeated.
 
-Next steps are native/OIIO tile loading, worker I/O/decode, exact filtering parity,
+Next steps after the OIIO tile-loader checks are worker I/O/decode, exact filtering parity,
 scene-index revision bindings, region-prefetch integration, and full image checks.
 GPU-generated textures will need an explicit dirty-data readback/publication path.

@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "scope": "Native OIIO raw mip texels and base-level point lookups; CUDA copies, not GPU filtering or rendered-image parity",
+  "native": {
+    "passed": true,
+    "oiio_version": "3.1.17.0",
+    "checks": 4694,
+    "tiles": 37,
+    "mip_levels": 23,
+    "point_samples": 2215,
+    "compared_bytes": 95232,
+    "cuda_consumers": 8,
+    "loads": 38,
+    "cpu_evictions": 35,
+    "gpu_evictions": 4,
+    "h2d_bytes": 20480,
+    "eviction_d2h_bytes": 0,
+    "verification_d2h_bytes": 20480,
+    "peak_ram": 8192,
+    "peak_vram": 8192,
+    "peak_staging": 4096
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+  "source_sha256": {
+    "texture_cache.h": "d1e41c9335cf06388ac8a2676f9d9f41fb6d74b14d739e9d663130d7b2af5ac1",
+    "texture_cuda_backend.h": "1b934ac19dec58b8c3b576bdcb2ab313248a0e08355519b204bb2b1997ff8f09",
+    "texture_oiio_loader.h": "e43adba167769d42cd3cbefbc09e64871ee8b03d36a50b8f5d22903ef1dd70d5",
+    "texture_oiio_probe.cc": "7d7a6c152c7e37bde118db4fcc68ee5dc0f0191909757aad6f7dbb7178ab023e",
+    "xpu2_texture_oiio_probe.py": "7898a49d7648ce5c61062c898bb2c19a8f60881dbe8f035aebda989b36945988",
+    "libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+    "libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+    "g++.exe": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "maketx.exe": "2d2a08959fdae4ffbaf9a7118d84224f9a490dbe38cb415f918574de3970f65b"
+  },
+  "fixture_sha256": {
+    "gray.tx": "3fc11ea58217339d453794a5fa6f4583691840ccb9166dd940cbc553319e3076",
+    "rg.tx": "65693a96be48a5f79c1a897dabeb589b2a26b02373814a809a9093f3dc2d02da",
+    "rgb.tx": "d36d58990ced16e7d4e86b0d6ae9259e310401f0486e7820a035bf47ce1eae42",
+    "rgba.tx": "7658bb27011badc00908cbdaafb9281176058b09cb51448b8d1648e60113961f",
+    "unmipped.tx": "549cf29dbbc9356cb7a07d83ff0d619dfd81abdc36ea2dab53fce3d1d0b3d079"
+  },
+  "preprocessed_sha256": "6390af98a0560fec427779542c8f6c37151a96b348110977d79b7f121dd3feef",
+  "executable_sha256": "8abf32da8ab8fa164a85c2320ea507ae3398542a4a35d722a5bbcd5c39669575",
+  "local_report": "test-results/xpu2-texture-oiio-publish/report.json",
+  "limits": [
+    "No filtered image comparison or GPU texture sampling",
+    "No native shading/Modo integration",
+    "Synchronous loader; no I/O overlap measurement",
+    "Revision ownership remains with caller",
+    "Single-subimage fixtures only"
+  ]
+}
