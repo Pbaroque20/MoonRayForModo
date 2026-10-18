@@ -56,6 +56,7 @@ class Panel(Tools, QtWidgets.QWidget):
         from .changes import Changes
         self.changes=Changes();self._geometry_cache=None;self._last_time=None;self._live_settings=None;self._asset_signature=[];self._asset_scene={};self._last_full_capture=0
         self.last_digest = None
+        self._rendered_scene=None
         self._pending_preview=False
         self._surroundings=None
         self._rendering=False
@@ -734,6 +735,12 @@ class Panel(Tools, QtWidgets.QWidget):
     def _poll(self):
         """Follow the scene's settings, which are edited in Modo's properties, not here."""
         if self.disposed:return
+        closed,created=self.changes.closed,self.changes.created
+        self.changes.closed=self.changes.created=False
+        # Closed, the scene rendered is told by another being open in its place, or by a new one made for it when it
+        # was the last.
+        if closed and self._rendered_scene is not None and (created or self._scene_key()!=self._rendered_scene):
+            self._scene_closed()
         try:
             import modo
             scene_id=modo.Scene().renderItem.id
@@ -1254,6 +1261,29 @@ class Panel(Tools, QtWidgets.QWidget):
                              values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine, resume=resume)
         if resume:self.status.setText('Continuing the stopped render.')
         self.last_digest = original_digest
+        self._rendered_scene=self._scene_key()
+
+    def _scene_key(self):
+        """What tells the scene open in Modo from others: its name, its file and its render item."""
+        try:
+            import modo
+            scene=modo.Scene()
+            return (scene.name,scene.filename,scene.renderItem.id)
+        except Exception:return None
+
+    def _scene_closed(self):
+        """The scene the picture was rendered from is closed in Modo. Its render, and the render of it still going,
+        are let go of, so that no picture is left standing over a scene it is not of. A render to files goes on."""
+        if self._output_busy():return
+        self._rendered_scene=None;self._settle_token=None
+        if self._following:self._follow(False)
+        if self.sequence is not None:self.sequence.stop()
+        if self._rendering:self.renderer.stop()
+        self._set_rendering(False)
+        self._continuable=None;self.last_digest=None;self._draft_image=self._draft_render=None
+        self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
+        self.renderer.buffers.forget()
+        self.status.setText('The scene was closed: its render is cleared.')
 
     def _digest(self, scene):
         render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')}
