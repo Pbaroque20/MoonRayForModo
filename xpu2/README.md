@@ -260,3 +260,7 @@ Calls are still synchronous and retain CPU validation, so no acceleration is cla
 overlap in the native integrator. Single-worker results remain exact; the separate
 four-worker bitwise image gate is unresolved. GPU callers still wait, and no
 acceleration or production lifecycle is claimed.
+
+[NATIVE_CONTEXT.md](NATIVE_CONTEXT.md) investigates shared CUDA-context lifetime
+and prepares a reusable batch packing/ownership contract. Context image controls
+and standalone contract checks are distinct from timing and native integration.
