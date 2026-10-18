@@ -92,17 +92,44 @@ completion queries from 1,674,407 to 178,478 (89.34%) in the observed controls.
 The host still loops and checks the clock, so fewer driver queries are not a
 claim of proportionally less CPU usage or shorter rendering.
 
-A competing stress renderer repeatedly appeared during these correctness runs.
-Their elapsed times are excluded from performance conclusions. A clean warmup
-plus three rotated timing rounds remains pending; the user has been asked to
-pause the competing render tests. No optimization is enabled in the installed
-plugin, and no speedup over original XPU is claimed.
+## Timing results
 
-When competing rendering is paused, repeat the probe without `--checks`, using
-the reflection/transmission fixture and `--require-cpu-ahead`. This compares
-original XPU, same-build control, wire only, polling only, combined transport,
-and combined transport with CPU lookahead. Do not compare wall times from the
-failed coverage fixtures with those from the accepted fixture.
+The correctness-run durations remain excluded because another renderer was active.
+The subsequent warmup plus three rotated measurement rounds produced 24 exact
+float32 RGBA images. An installed Modo renderer started at 19:32:30 UTC during
+`3-control`; that measurement is excluded. All other measured render logs ended
+before it started. Five-second process snapshots and final-round file timestamps
+are retained. These checks identify MoonRay competition, not all system activity.
+
+Accepted MCRT medians (seconds) and ranges:
+
+- Original XPU: **7.704**, range 7.522-8.112 (three rounds).
+- Same-build control: **17.170**, range 17.061-17.278 (two uncontaminated rounds).
+- Lean transfers only: **17.275**, range 17.254-17.727 (three rounds).
+- Paced completion queries only: **17.832**, range 17.287-18.743 (three rounds).
+- Combined transport changes: **17.638**, range 16.567-18.282 (three rounds).
+- Transport plus independent CPU lobe work: **15.066**, range 14.376-16.118
+  (three rounds).
+
+Lean transfers and fewer driver queries alone do not establish a speedup.
+Independent CPU lobe work reduces the median by **14.58%** against combined
+transport in the three unaffected comparisons; the individual round reductions
+are 8.62%, 9.06%, and 21.37%. The candidate is still **95.56% slower** than
+original XPU on this single-worker fixture. These small-sample results do not
+qualify production performance or other materials/scenes.
+
+CPU ownership halves submissions from 45,170 to 22,585 and preserves exactly-once
+sample consumption. The CPU-work variant reaches only one in-flight batch here;
+none of its 203,265 tickets is ready at the first resume check in any measured
+round. Its median submission time is 2.028 seconds and packing is only 25.9 ms.
+Those counters have overlapping scopes and must not be added as a frame-time
+breakdown. The next bottleneck is the frequency of native/GPU handoffs and lack
+of independent work across native material invocations, rather than bulk packing.
+Reducing transfers did not remove the per-batch launch and continuation costs.
+
+The raw report is retained unchanged, including its contaminated control summary.
+Use `timing_analysis.accepted_summary` in the evidence file for accepted timings.
+No optimization is enabled in the installed plugin, and XPU remains unchanged.
 
 Complete identities, reports and the two excluded coverage attempts:
 [native-efficiency-20261018.json](native-efficiency-20261018.json).
