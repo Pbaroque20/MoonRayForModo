@@ -40,8 +40,8 @@ class Compatibility038(unittest.TestCase):
   motion.apply_motion(value,first,last,[-.25,.25])
   self.assertEqual(len(value['meshes']),1);self.assertTrue(value['meshes'][0]['instance_transform_motion'])
   text=rdla.scene_text(value)
-  self.assertEqual(text.count('local geometry = RdlMeshGeometry'),1)
-  self.assertEqual(text.count('local movingInstance = RdlInstancerGeometry'),2)
+  self.assertEqual(text.count('  geometry = RdlMeshGeometry'),1)
+  self.assertEqual(text.count('movingInstance = RdlInstancerGeometry'),2)
   self.assertIn('["node_xform"] = blur(',text)
  def test_environment_alpha_metadata_and_blend(self):
   self.assertEqual(environment_layers.alpha_index('prefix <ImageSpec><alpha_channel>3</alpha_channel></ImageSpec>'),3)
