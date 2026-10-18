@@ -36,6 +36,10 @@ def register():
     WATCHED=(('select.event','item +v'),(property_notifications.NAME,''))
     # MoonRay's sampling mode for adaptive sampling (options.ENUMS['sampling_mode']).
     ADAPTIVE=2
+    # What only adaptive sampling uses.
+    ADAPTIVE_ONLY=('min_adaptive_samples','max_adaptive_samples','target_adaptive_error')
+    # MoonRay's light sampling mode for adaptive light sampling (options.ENUMS['light_sampling_mode']).
+    ADAPTIVE_LIGHTS=1
     # The settings that only mean something with a denoiser chosen.
     NEEDS_DENOISER=('denoise_preview','denoise_final','denoise_detail','smart_render')
     TYPES={'bool':lx.symbol.sTYPE_BOOLEAN,'member':lx.symbol.sTYPE_BOOLEAN,'int':lx.symbol.sTYPE_INTEGER,
@@ -54,6 +58,15 @@ def register():
                 # Pixel Samples is uniform sampling's: under adaptive sampling MoonRay does not use it, so it is greyed.
                 if entry['key']=='samples':
                     try:return scene_settings.complete(properties.scene_settings())['render'].get('sampling_mode')!=ADAPTIVE
+                    except Exception:return True
+                # And adaptive sampling's own settings under uniform sampling.
+                if entry['key'] in ADAPTIVE_ONLY:
+                    try:return scene_settings.complete(properties.scene_settings())['render'].get('sampling_mode')==ADAPTIVE
+                    except Exception:return True
+                # Light Quality is adaptive light sampling's: under uniform light sampling every light is sampled.
+                # (Light Samples counts in both.)
+                if entry['key']=='light_sampling_quality':
+                    try:return scene_settings.complete(properties.scene_settings())['render'].get('light_sampling_mode')==ADAPTIVE_LIGHTS
                     except Exception:return True
                 # What a denoiser does is greyed while the Denoiser is Off: it is off everywhere then.
                 if entry['key'] in NEEDS_DENOISER:
