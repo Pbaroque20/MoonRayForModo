@@ -11,9 +11,11 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for n in ('build','reference','baseline','output'):p.add_argument('--'+n,type=Path,required=True)
     p.add_argument('--ptx',type=Path,required=True)
+    p.add_argument('--wait-timeout',type=int,default=180,help='Bounded session-marker wait in seconds')
     a=p.parse_args();build,reference,baseline,out=(getattr(a,n).resolve() for n in ('build','reference','baseline','output'))
-    out.mkdir(parents=True,exist_ok=False);report=dict(status='incomplete',runs=[])
+    out.mkdir(parents=True,exist_ok=False);report=dict(status='incomplete',runs=[],wait_timeout=a.wait_timeout)
     try:
+        if not 1<=a.wait_timeout<=900:raise ValueError('Wait timeout must be between 1 and 900 seconds')
         ptx=a.ptx.resolve();report['ptx_sha256']=digest_file(ptx)
         m=json.loads((build/'report.json').read_text());runtime=build/'runtime'
         if m['status']!='built' or digest_file(runtime/'librendering_rndr.dll')!=m['dll_sha256']:raise ValueError('Build drift')
@@ -42,7 +44,7 @@ def main():
             with logpath.open('w') as log:
                 proc=subprocess.Popen(cmd,cwd=folder,env=env,stdout=log,stderr=log,creationflags=subprocess.CREATE_NO_WINDOW)
                 def wait(marker,path=logpath):
-                    deadline=time.monotonic()+180
+                    deadline=time.monotonic()+a.wait_timeout
                     while not path.exists() or marker not in path.read_text(errors='replace'):
                         if proc.poll() is not None or time.monotonic()>deadline:raise ValueError(label+': missing '+marker)
                         time.sleep(.005)

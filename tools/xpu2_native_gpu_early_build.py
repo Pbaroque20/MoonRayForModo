@@ -24,7 +24,10 @@ def main():
         hashes={str(f):digest_file(f) for f in files};native={};objects={};preprocessed={}
         (out/'native_gpu_paths.inc').write_text(native_gpu_early.adapter((ROOT/'xpu2/native_path_restore.inc').read_text()),encoding='utf-8')
         (out/'early_queue.inc').write_text(native_gpu_early.queue((ROOT/'xpu2/native_lambert_queue.cc').read_text()),encoding='utf-8')
-        (out/'native_gpu_shading.h').write_text((ROOT/'xpu2/native_gpu_shading.h').read_text().replace('native_lambert_queue.cc','early_queue.inc'),encoding='utf-8')
+        shader=(ROOT/'xpu2/native_gpu_shading.h').read_text().replace('native_lambert_queue.cc','early_queue.inc')
+        shader=shader.replace('if(shaderQueue->retainedAsync)throw', '''if(const char* name=std::getenv("XPU2_NATIVE_FAMILY_PROFILE"))if(FILE* f=std::fopen(name,"a")){std::fprintf(f,"{\\\"lambert\\\":%llu,\\\"transmission\\\":%llu,\\\"rough_diffuse\\\":%llu}\\n",d.diffuseReflection,d.diffuseTransmission,d.roughDiffuse);std::fclose(f);}
+    if(shaderQueue->retainedAsync)throw''')
+        (out/'native_gpu_shading.h').write_text(shader,encoding='utf-8')
         def run(args,label):
             print(label,flush=True)
             with (out/(label+'.log')).open('w') as log:

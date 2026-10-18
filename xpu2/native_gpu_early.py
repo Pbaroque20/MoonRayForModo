@@ -16,6 +16,8 @@ def queue(text):
     text=once(text,'if(!std::strcmp(mode,"replace") || !std::strcmp(mode,"sentinel"))', 'if(raw || !std::strcmp(mode,"replace") || !std::strcmp(mode,"sentinel"))')
     text=once(text,'std::memcpy(output+i*8,gpu+1,28);++replaced;', 'std::memcpy(output+i*8,gpu+1,28);output[i*8+7]=float(gpu[8]);++replaced;')
     text=once(text,'if(!std::strcmp(mode,"sentinel"))for', 'if(!std::strcmp(mode,"sentinel")||!std::strcmp(mode,"execute_sentinel"))for')
+    text=once(text,'    bool ready=false, attempted=false;', '    unsigned long long diffuseReflection=0,diffuseTransmission=0,roughDiffuse=0;\n    bool ready=false, attempted=false;')
+    text=once(text,'                ++accepted;', '                ++accepted;uint32_t kind,reflection;std::memcpy(&kind,input+i*24+1,4);std::memcpy(&reflection,input+i*24+20,4);if(kind==2)++roughDiffuse;else if(reflection)++diffuseReflection;else ++diffuseTransmission;')
     return text
 
 def adapter(text):
@@ -37,6 +39,8 @@ def ispc(text,bsdf_header):
     sample.f=Color_ctor(result[programIndex*8+3],result[programIndex*8+4],result[programIndex*8+5]);
     sample.pdf=result[programIndex*8+6];''')
     declarations='''#include <moonray/rendering/shading/ispc/bsdf/BsdfLambert.isph>
+#include <moonray/rendering/shading/ispc/bsdf/BsdfOrenNayar.isph>
+#include <moonray/rendering/shading/ispc/bsdf/npr/BsdfFlatDiffuse.isph>
 extern "C" uniform bool CPP_gpuEarlyEnabled(uniform PbrTLState *uniform tls);
 extern "C" uniform uint64 CPP_gpuEarlySubmit(const uniform float *uniform input);
 extern "C" void CPP_gpuEarlyCollect(uniform PbrTLState *uniform tls, uniform uint64 token, uniform float *uniform result);

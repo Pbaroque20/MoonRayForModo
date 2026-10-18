@@ -4,6 +4,10 @@ Status: **experimental Lambert shading in isolated native runtimes**. XPU is
 unchanged; this is not an installed or selectable XPU2 engine. Two candidates
 separate lifetime restoration from removal of duplicate CPU BSDF evaluation.
 
+Follow-up: [broader diffuse shading](BROADER_DIFFUSE.md) extends the early route
+to ordinary DwaBase rough diffuse and Lambert transmission. The Lambert results
+below describe the preceding candidate.
+
 ## Owned child-path dispatch
 
 `native_gpu_paths.py` copies first diffuse-bounce shader inputs and numerical
