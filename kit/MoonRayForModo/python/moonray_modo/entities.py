@@ -813,6 +813,20 @@ def modo_lens(name, number, target=1.0):
     return lens
 
 
+def gate(projection, focal, aperture_x, offset_x, offset_y, target, aspect, depth=1.0):
+    """The resolution gate of a camera with this Modo lens, in its own space: the outline, at depth in front of it,
+    of the picture that renders, a rectangle of the picture's aspect (width over height) as a closed strip of points.
+    Seen through the camera it lies on the picture's edges, as Modo's own gate does for its cameras. For a perspective
+    lens the outline widens with the depth; an orthographic one is as wide as its view at any depth."""
+    focal, aperture_x, aspect = max(1e-6, float(focal)), max(1e-6, float(aperture_x)), max(1e-6, float(aspect))
+    scale = float(target) / focal if projection == 'ortho' else float(depth) / focal
+    width = aperture_x * scale
+    height = width / aspect
+    x, y = float(offset_x) * scale, float(offset_y) * scale
+    corners = [(x - width / 2, y - height / 2), (x + width / 2, y - height / 2), (x + width / 2, y + height / 2), (x - width / 2, y + height / 2)]
+    return [(a, b, -float(depth)) for a, b in corners + corners[:1]]
+
+
 def proxy_inputs(name):
     """The numeric attributes proxy() asks for, as (asked name, channel name)."""
     wanted = {'SphereLight': ['radius'], 'RectLight': ['width', 'height'], 'PortalLight': ['width', 'height'], 'DiskLight': ['radius'],

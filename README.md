@@ -261,7 +261,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
 | XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only |
 | Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget under MoonRay LS, quicker, coming in 0.4.2 |
-| Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. Coming in 0.4.2: a Modo camera converted to any of them in its place (animation kept), a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras in the viewport's camera menu, looked through as they frame |
+| Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. Coming in 0.4.2: a Modo camera converted to any of them in its place (animation kept), a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras in the viewport's camera menu, looked through as they frame, with a resolution gate |
 | Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows each eye. Coming in 0.4.2 |
 | Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders. Coming in 0.4.2 |
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |

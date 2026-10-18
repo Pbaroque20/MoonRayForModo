@@ -39,6 +39,21 @@ class Lens(unittest.TestCase):
         self.assertAlmostEqual(across(entities.modo_lens('FisheyeCamera', values(fov=180))), entities.WIDEST_VIEW)
         self.assertAlmostEqual(across(entities.modo_lens('SphericalCamera', values(min_longitude=-45, max_longitude=45))), 90.0)
 
+    def test_gate_lies_on_the_pictures_edges(self):
+        # A 24 mm film at 30 mm, 16:9: at depth 2 the outline is 1.6 across, 0.9 high, centred, in front of the camera.
+        points = entities.gate('persp', .030, .024, 0.0, 0.0, 4.0, 16 / 9, depth=2.0)
+        xs, ys, zs = zip(*points)
+        self.assertEqual(points[0], points[-1])
+        self.assertAlmostEqual(max(xs) - min(xs), 1.6)
+        self.assertAlmostEqual(max(ys) - min(ys), .9)
+        self.assertEqual(set(zs), {-2.0})
+        # An orthographic view is as wide as its film times its target over its focal length, at any depth; an offset
+        # moves the outline by as much of it as the offset is of the film.
+        points = entities.gate('ortho', .05, .075, .0375, 0.0, 4.0, 2.0, depth=1.0)
+        xs = [p[0] for p in points]
+        self.assertAlmostEqual(max(xs) - min(xs), 6.0)
+        self.assertAlmostEqual((max(xs) + min(xs)) / 2, 3.0)
+
     def test_every_viewed_camera_is_a_moonray_camera_with_its_inputs(self):
         for name in entities.VIEWED_CAMERAS:
             self.assertEqual(entities.catalog()[name]['category'], 'camera')
