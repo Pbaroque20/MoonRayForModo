@@ -9,9 +9,9 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.4.2 — experimental development build.** It brings MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
+**Current version: 0.4.2.1 — experimental development build.** It is 0.4.2 with the graph editor's Live material preview mended. 0.4.2 brings MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
 
-[Download 0.4.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4, 0.4.1 and 0.4.2](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
+[Download 0.4.2.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.2.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4, 0.4.1 and 0.4.2](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -243,7 +243,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.4.2
+## Known issues in 0.4.2.1
 
 The ones you are most likely to meet:
 
