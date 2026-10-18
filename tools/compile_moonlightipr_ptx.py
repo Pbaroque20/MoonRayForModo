@@ -28,6 +28,8 @@ try:
     precise='--precise' in sys.argv[3:]
     flags=['--std=c++14','--gpu-architecture=compute_75']+(['--fmad=false','--prec-div=true','--prec-sqrt=true','--ftz=false'] if precise else ['--use_fast_math'])
     flags+=['--include-path='+str(p) for p in includes]
+    # Defines given after the paths (-DNAME=value), such as a kernel made with some of its features left out.
+    flags+=[a for a in sys.argv[3:] if a.startswith('-D')]
     options=(C.c_char_p*len(flags))(*(v.encode() for v in flags))
     result=lib.nvrtcCompileProgram(program,len(flags),options)
     size=C.c_size_t();lib.nvrtcGetProgramLogSize(program,C.byref(size))
