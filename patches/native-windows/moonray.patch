@@ -3964,10 +3964,30 @@ index 26d6e7b..2be3ae0 100644
  
      moonray::util::InclusiveExclusiveAverage<int64> mShaderCallStat;
 diff --git a/lib/rendering/shading/UdimTexture.cc b/lib/rendering/shading/UdimTexture.cc
-index 9af3ab0..396db2f 100644
+index 9af3ab0..3436db1 100644
 --- a/lib/rendering/shading/UdimTexture.cc
 +++ b/lib/rendering/shading/UdimTexture.cc
-@@ -28,7 +28,12 @@
+@@ -22,13 +22,32 @@
+ #endif
+ #include <OpenImageIO/texture.h>
+ 
++#include <cstdlib>
++
++namespace {
++// Modo: an image with no alpha channel reads as opaque (tools/port_source_switches.py). True when MoonRay was started with MOONRAY_MODO_OPAQUE_ALPHA=1; read once.
++inline bool modoOpaqueAlpha()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_OPAQUE_ALPHA");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++}
++
+ #include <tbb/blocked_range.h>
+ #include <tbb/parallel_for.h>
+ #include <tbb/mutex.h>
  
  #include <algorithm>
  #include <dirent.h>
@@ -3980,7 +4000,7 @@ index 9af3ab0..396db2f 100644
  #include <memory>
  #include <vector>
  
-@@ -97,6 +102,20 @@ getUdimFilenames(const std::string& filename,
+@@ -97,6 +116,20 @@ getUdimFilenames(const std::string& filename,
      size_t udimPos = filename.find("<UDIM>");
      const std::string pattern = filename.substr(0, udimPos) + "*";
  
@@ -4001,7 +4021,7 @@ index 9af3ab0..396db2f 100644
      glob_t glob_result;
      memset(&glob_result, 0, sizeof(glob_result));
  
-@@ -111,6 +130,7 @@ getUdimFilenames(const std::string& filename,
+@@ -111,6 +144,7 @@ getUdimFilenames(const std::string& filename,
      }
  
      globfree(&glob_result);
@@ -4009,6 +4029,18 @@ index 9af3ab0..396db2f 100644
  
      return true;
  }
+@@ -273,6 +307,11 @@ public:
+             mTextureOpt[i].swrap = getOIIOWrap(wrapS);
+             mTextureOpt[i].twrap = getOIIOWrap(wrapT);
+             mTextureOpt[i].subimagename.clear();
++            // Modo: with MOONRAY_MODO_OPAQUE_ALPHA, a tile with no fourth channel is opaque, as BasicTexture's images
++            // are. Off, as MoonRay's source: OpenImageIO's fill, 0.
++            if (modoOpaqueAlpha()) {
++                mTextureOpt[i].fill = 1.0f;
++            }
+         }
+         mIspc.mApplyGamma = applyGamma;
+         mIspc.mIs8bit = mIs8bit;
 diff --git a/lib/rendering/shading/bsdf/npr/BsdfToon.cc b/lib/rendering/shading/bsdf/npr/BsdfToon.cc
 index e5a2d65..b7447b8 100644
 --- a/lib/rendering/shading/bsdf/npr/BsdfToon.cc

@@ -4,8 +4,8 @@ preferences, each on by default); off, MoonRay behaves as its source does.
 1. MOONRAY_MODO_USD_SPECULAR: UsdPreviewSurface's specular workflow reflects its specularColor, by Schlick's
    Fresnel. MoonRay's source gives that workflow no highlight at all ("We can't support this until we implement
    Schlick fresnel").
-2. MOONRAY_MODO_OPAQUE_ALPHA: an image with no alpha channel reads as opaque in a texture's alpha. MoonRay leaves the
-   missing channel at OpenImageIO's fill, 0.
+2. MOONRAY_MODO_OPAQUE_ALPHA: an image with no alpha channel reads as opaque in a texture's alpha, a <UDIM> tile set
+   included. MoonRay leaves the missing channel at OpenImageIO's fill, 0.
 3. MOONRAY_MODO_TRANSMISSION_ROUGHNESS (moonshine): DwaBase's independent transmission roughness is kept when the
    surface itself is mirror smooth. MoonRay's source then makes the transmission mirror sharp as well.
 4. MOONRAY_MODO_AUTO_XPU: the Auto execution mode starts with XPU, falling back where the scene has what XPU does not
@@ -106,6 +106,27 @@ namespace {
             if (modoOpaqueAlpha()) {
                 mTextureOpt[i].fill = 1.0f;
             }''', 1),
+    ],
+    # The same for an image named with <UDIM>, which ImageMap reads through UdimTexture, not BasicTexture. Without it a
+    # tile set with no alpha channel reads alpha 0, and the plugin's recovery of unassociated colour (colour divided by
+    # alpha, ModoTextureMap blend 5) multiplies the colour by a million.
+    MOONRAY / 'lib/rendering/shading/UdimTexture.cc': [
+        ('''#include <OpenImageIO/texture.h>
+''', '''#include <OpenImageIO/texture.h>
+
+#include <cstdlib>
+
+namespace {
+''' + switch_function('modoOpaqueAlpha', 'MOONRAY_MODO_OPAQUE_ALPHA', 'an image with no alpha channel reads as opaque') + '''}
+''', 1),
+        ('''            mTextureOpt[i].subimagename.clear();
+        }''', '''            mTextureOpt[i].subimagename.clear();
+            // Modo: with MOONRAY_MODO_OPAQUE_ALPHA, a tile with no fourth channel is opaque, as BasicTexture's images
+            // are. Off, as MoonRay's source: OpenImageIO's fill, 0.
+            if (modoOpaqueAlpha()) {
+                mTextureOpt[i].fill = 1.0f;
+            }
+        }''', 1),
     ],
     # 4. The Auto execution mode.
     MOONRAY / 'lib/rendering/rndr/RenderContext.cc': [
