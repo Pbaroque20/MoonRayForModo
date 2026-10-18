@@ -32,6 +32,41 @@ class Popup(lxifc.UIValueHints):
     def uiv_PopInternalName(self,index):return self._entries[index][0]
 
 
+# Modo's camera channels a MoonRay camera's lens drives, and the numbers its choices are stored as.
+LENS_FLOATS=('focalLen','apertureX','offsetX','offsetY')
+LENS_CHOICES={'filmFit':{'fill':0,'horizontal':1,'vertical':2,'overscan':3},'projType':{'persp':0,'ortho':1}}
+
+
+def lens_modifiers():
+    """One evaluation modifier for each MoonRay camera with a view: it sets the item's Modo camera channels from its
+    MoonRay lens (entities.modo_lens), so that Modo's viewport, looking through it, frames what MoonRay renders.
+    The Modo channels are then driven, and follow each change to the MoonRay ones, undo included."""
+    import lxu.meta
+    from moonray_modo import entities
+    metas=[]
+    for name in entities.VIEWED_CAMERAS:
+        inputs=entities.lens_inputs(name)
+        class Lens(lxu.meta.EvalModifier):
+            CLASS=name;INPUTS=inputs
+            def bind(self,item,ident):
+                for key in self.INPUTS:self.mod_add_chan(item,entities.CHANNEL_PREFIX+key)
+                self.mod_add_chan(item,'target')
+                for channel in LENS_FLOATS+tuple(LENS_CHOICES):self.mod_add_chan(item,channel,lx.symbol.fECHAN_WRITE)
+            def eval(self):
+                attributes=self.mod_attr()
+                count=len(self.INPUTS)
+                read={key:attributes.GetFlt(self.mod_cust_index(i)) for i,key in enumerate(self.INPUTS)}
+                lens=entities.modo_lens(self.CLASS,lambda key:read.get(key,0.0),attributes.GetFlt(self.mod_cust_index(count)))
+                for j,channel in enumerate(LENS_FLOATS):attributes.SetFlt(self.mod_cust_index(count+1+j),float(lens[channel]))
+                for j,channel in enumerate(LENS_CHOICES):
+                    attributes.SetInt(self.mod_cust_index(count+1+len(LENS_FLOATS)+j),LENS_CHOICES[channel][lens[channel]])
+        meta=lxu.meta.Meta_EvalModifier('moonray.lens.'+name,Lens)
+        meta.set_itemtype(entities.item_type(name))
+        metas.append(meta)
+    root=lxu.meta.MetaRoot(*metas)
+    root.initialize()
+
+
 def register():
     from moonray_modo import entities
 
@@ -467,7 +502,17 @@ def register():
                 lx.bless(remove_command(name,channel),'moonray.entity.remove%d_%d'%(i,j))
 
     for name in entities.classes():
-        lx.bless(package(name),entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'locator',lx.symbol.sSRV_USERNAME:entities.display(name)})
+        # MoonRay's cameras with a view are Modo cameras too, so that Modo's viewport lists them and looks through
+        # them; Modo draws them as it draws its own cameras.
+        viewed=name in entities.VIEWED_CAMERAS
+        typed=package(name)
+        if viewed:
+            typed.pkg_Attach=lambda self:lxu.package.BasicPackageInstance(self.acts)
+            typed.pkg_TestInterface=lambda self,guid:guid==lx.symbol.u_PACKAGEINSTANCE
+        lx.bless(typed,entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'camera' if viewed else 'locator',lx.symbol.sSRV_USERNAME:entities.display(name)})
+    try:lens_modifiers()
+    except Exception as exc:
+        lx.out('MoonRay cameras will not frame the viewport as they render: %s'%exc)
 
     # The first, generic item kept its class and values in a tag. It stays registered so that
     # scenes holding one still load and render; new items use the types above.

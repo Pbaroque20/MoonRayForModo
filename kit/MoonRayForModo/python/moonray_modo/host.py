@@ -801,6 +801,16 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             result['source_assets'].append(str(Path(path).resolve()))
     from .entities import collect as collect_entities
     result['entities']=collect_entities(scene,warnings)
+    from .camera_choice import modo_render_moonray
+    picked = any(entity.get('parameters', {}).get('modo_render_camera') for entity in result['entities'])
+    chosen_in_modo = modo_render_moonray(scene) if keyed is None and not picked else None
+    if chosen_in_modo is not None:
+        # A MoonRay camera made Modo's render camera (it is a Modo camera too) is the one rendered through, where no
+        # MoonRay camera is chosen to render through already.
+        from .entities import catalog as entity_catalog
+        for entity in result['entities']:
+            if entity_catalog().get(entity.get('class'), {}).get('category') == 'camera':
+                entity.setdefault('parameters', {})['modo_render_camera'] = entity.get('identity') == chosen_in_modo.id
     if keyed is not None:
         # A key decides which camera renders: a MoonRay camera item keyed is the one rendered through, and a Modo
         # camera keyed renders in place of every MoonRay one.
