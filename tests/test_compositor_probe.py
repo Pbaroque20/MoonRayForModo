@@ -63,6 +63,23 @@ class Sample(unittest.TestCase):
         self.assertIsNone(sample(made)['out'])
 
 
+class Masks(unittest.TestCase):
+    def test_a_colour_node_changes_the_picture_as_much_as_its_mask_says(self):
+        for kind in compositor.COLOUR:
+            self.assertIn('mask', compositor.NODES[kind]['inputs'])
+        buffers = {'beauty': (0.5, 0.25, 1.0), 'half': (0.5, 0.5, 0.5), 'none': (0.0, 0.0, 0.0)}
+        for mask, kept in (('half', 0.5), ('none', 0.0)):
+            made = graph(b=('input', {'buffer': 'beauty'}, {}), m=('input', {'buffer': mask}, {}),
+                         i=('invert', {}, {'image': 'b', 'mask': 'm'}), out=('output', {}, {'image': 'i'}))
+            got = compositor.sample(made, buffers.get, 0, 0, 4, 4)['out']
+            for value, before in zip(got, buffers['beauty']):
+                self.assertAlmostEqual(value, before + ((1.0 - before) - before) * kept)
+
+    def test_without_a_mask_the_change_is_whole(self):
+        made = graph(b=('input', {'buffer': 'beauty'}, {}), i=('invert', {}, {'image': 'b'}), out=('output', {}, {'image': 'i'}))
+        self.assertAlmostEqual(sample(made)['out'][0], 0.5)
+
+
 class Notes(unittest.TestCase):
     def test_a_note_is_kept_and_not_part_of_the_picture(self):
         made = graph(b=('input', {'buffer': 'beauty'}, {}), n=('note', {'text': 'key light too hot'}, {}), out=('output', {}, {'image': 'b'}))
