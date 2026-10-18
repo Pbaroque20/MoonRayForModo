@@ -655,8 +655,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 except (LookupError, RuntimeError, AttributeError, TypeError) as exc:
                     warnings.append('Rest positions of %s could not be read: %s.' % (item.name, exc))
                 if rest is None:
-                    warnings.append('%s has no rest positions for glitter in reference space (a deformer changes its points): '
-                                    'set the glitter to object space for it.' % item.name)
+                    # A deformer that adds or takes away points leaves no base point for each: the points as rendered
+                    # serve, so that glitter in reference space draws (its flakes moving with the deformer, as in object
+                    # space) rather than fail.
+                    rest = [list(point) for point in vertices]
             object_settings = options.object_values(properties.read(item))
             instance_records = sorted(instances.get(item.id, []),key=lambda pair:pair[0])
             if item.id in instances and render_visible(item):
