@@ -108,7 +108,12 @@ OBJECT = {
     'hair_length': (0.1, 'How much strands vary in length (0 to 1)'),
     'hair_seed': (1, 'Seed: another number grows other hair'),
     'hair_guides': (False, 'Render the guides as well'),
+    # Cryptomatte: items given the same name share one matte; a number other than 0 is the matte's ID itself.
+    'crypto_name': ('', 'Cryptomatte name (empty: the item\'s own)'),
+    'crypto_id': (0, 'Cryptomatte ID (0: worked out from the name)'),
 }
+# The largest Cryptomatte ID that can be typed: Modo's whole numbers stop at 2147483647.
+CRYPTO_ID_MAX = 2147483647
 CURVE_BASES = [('The line itself', 0), ('Bezier control points', 1), ('B-spline control points', 2)]
 HAIR_MODES = [('Around each guide (locks)', 0), ('Between guides (fur)', 1)]
 # In the order the preview's buffer list and the form show them: what the surface is and how it is lit first (colour,
@@ -169,10 +174,12 @@ def object_values(values):
             raise ValueError('Invalid object setting: ' + key)
     if type(result['level']) is not int or not 1 <= result['level'] <= 5:
         raise ValueError('Subdivision level must be between 1 and 5')
-    if type(result['hair_scalp']) is not str:
-        raise ValueError('Invalid object setting: hair_scalp')
+    for key in ('hair_scalp', 'crypto_name'):
+        if type(result[key]) is not str:
+            raise ValueError('Invalid object setting: ' + key)
+    result['crypto_name'] = result['crypto_name'].strip()
     # Numbers past their limits are brought back to them rather than refused.
-    for key, low, high in (('curve_basis', 0, 2), ('hair_mode', 0, 1), ('hair_count', 1, 2000), ('hair_seed', 0, 1000000)):
+    for key, low, high in (('curve_basis', 0, 2), ('hair_mode', 0, 1), ('hair_count', 1, 2000), ('hair_seed', 0, 1000000), ('crypto_id', 0, CRYPTO_ID_MAX)):
         if type(result[key]) is not int:
             raise ValueError('Invalid object setting: ' + key)
         result[key] = min(high, max(low, result[key]))

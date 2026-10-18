@@ -226,6 +226,40 @@ class RegularMaterialFilter(Observed):
 lx.bless(RegularMaterialFilter,'moonray.material.regularFilter')
 
 
+class CryptomatteFilter(Observed):
+    """The Cryptomatte tab, for any material."""
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Enable(self,msg): return bool(selected())
+    def basic_Execute(self,msg,flags): pass
+
+
+def crypto_setting(key,text):
+    """A material's Cryptomatte name (text) or ID (a whole number), kept with its other MoonRay settings."""
+    from moonray_modo.options import CRYPTO_ID_MAX
+    class CryptoSetting(Observed):
+        def __init__(self):
+            super().__init__();self.dyna_Add('value',lx.symbol.sTYPE_STRING if text else lx.symbol.sTYPE_INTEGER)
+            self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
+        def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Enable(self,msg): return bool(selected())
+        def cmd_Query(self,index,query):
+            values=lx.object.ValueArray(query)
+            for item in selected():
+                held=properties.read(item).get(key)
+                if text: values.AddString(str(held or ''))
+                else: values.AddInt(int(held or 0))
+        def basic_Execute(self,msg,flags):
+            value=(self.dyna_String(0) or '').strip() if text else min(CRYPTO_ID_MAX,max(0,self.dyna_Int(0)))
+            for item in selected():
+                settings=properties.read(item);settings[key]=value;properties.write(item,settings)
+    return CryptoSetting
+
+
+lx.bless(CryptomatteFilter,'moonray.material.cryptoFilter')
+lx.bless(crypto_setting('crypto_name',True),'moonray.material.crypto_name')
+lx.bless(crypto_setting('crypto_id',False),'moonray.material.crypto_id')
+
+
 class AddMoonShineOverride(OpenNodes):
     def basic_Enable(self,msg):return True
     def basic_Execute(self,msg,flags):
