@@ -114,7 +114,38 @@ def register():
                             stroke.Begin(lx.symbol.iSTROKE_LINES if kind=='lines' else lx.symbol.iSTROKE_LINE_STRIP,itemColor,1.0)
                             for point in data:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
                 except Exception:pass
+        if name in entities.VIEWED_CAMERAS:
+            return gate_instance(point3)
         return Drawn
+
+    def gate_instance(point3):
+        """A MoonRay camera in the viewport: Modo draws it as its own cameras, but draws a resolution gate only when
+        looking through one of its own. This draws one: the outline of the picture that renders, in front of the camera,
+        from its Modo lens as the viewport has it (driven by its MoonRay lens) and the render's resolution and pixel
+        aspect, or the camera's own resolution where it overrides the render's."""
+        render_type=[]
+        class Gate(lxu.package.BasicPackageInstance, lxifc.ViewItem3D):
+            def vitm_WorldSpace(self):
+                return False
+            def vitm_Draw(self,chanRead,strokeDraw,selectionFlags,itemColor):
+                try:
+                    read=lx.object.ChannelRead(chanRead);stroke=lx.object.StrokeDraw(strokeDraw)
+                    item=self.item
+                    def number(owner,channel):return float(read.Double(owner,owner.ChannelLookup(channel)))
+                    def whole(owner,channel):return int(read.Integer(owner,owner.ChannelLookup(channel)))
+                    if not render_type:render_type.append(lx.service.Scene().ItemTypeLookup('polyRender'))
+                    scene=lx.object.Scene(item.Context())
+                    render=scene.ItemByIndex(render_type[0],0)
+                    width,height,pixel=whole(render,'resX'),whole(render,'resY'),number(render,'pAspect')
+                    if whole(item,'resOverride'):width,height=whole(item,'resX'),whole(item,'resY')
+                    aspect=width*max(1e-6,pixel)/max(1,height)
+                    projection='ortho' if whole(item,'projType')==1 else 'persp'
+                    points=entities.gate(projection,number(item,'focalLen'),number(item,'apertureX'),number(item,'offsetX'),
+                                         number(item,'offsetY'),number(item,'target'),aspect)
+                    stroke.Begin(lx.symbol.iSTROKE_LINE_STRIP,itemColor,1.0)
+                    for point in points:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
+                except Exception:pass
+        return Gate
 
     def package(name):
         plan=entities.channels(name)
@@ -503,12 +534,9 @@ def register():
 
     for name in entities.classes():
         # MoonRay's cameras with a view are Modo cameras too, so that Modo's viewport lists them and looks through
-        # them; Modo draws them as it draws its own cameras.
+        # them; Modo draws them as it draws its own cameras, and they draw their resolution gate (gate_instance).
         viewed=name in entities.VIEWED_CAMERAS
         typed=package(name)
-        if viewed:
-            typed.pkg_Attach=lambda self:lxu.package.BasicPackageInstance(self.acts)
-            typed.pkg_TestInterface=lambda self,guid:guid==lx.symbol.u_PACKAGEINSTANCE
         lx.bless(typed,entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'camera' if viewed else 'locator',lx.symbol.sSRV_USERNAME:entities.display(name)})
     try:lens_modifiers()
     except Exception as exc:
