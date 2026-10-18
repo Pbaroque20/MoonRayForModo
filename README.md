@@ -19,6 +19,19 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 *The preview window in Modo 16.1v9, rendering The Wooden Staircase (by Wig42, CC BY) after it was imported from MoonRay's own scene files.*
 
+## Major features
+
+- **MoonLightIPR**: the plugin's own GPU preview engine (NVIDIA), which shows an approximation of MoonRay's picture moments after each edit. Final renders always come from MoonRay.
+- **Smart Render**: MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
+- **Safe Denoising**: stop a MoonRay render at any time and keep it, denoised. **Continue** takes it up where it stood.
+- **Draft mode**: the scene as clean outlines, redrawn in about a third of a second after a move. Press **Region** and drag to render just that part among the lines.
+- **One dockable preview, three engines**: MoonRay for the full render, MoonRay LS for a quick low-sample look, and MoonLightIPR. **Important Parts First** renders the most detailed buckets before the plain ones.
+- **MoonRay's own materials and items in Modo**: native MoonRay materials with a node graph editor, and 30 of MoonRay's lights, light filters, cameras, shapes and volumes as Modo items.
+- **Modo scenes render in MoonRay**: Modo's lights, daylight, standard and Principled materials, textures, fur, curves, hair and instances are translated for you.
+- **Compositor**: a node graph over a finished render's buffers, with nothing rendered again.
+- **MoonRay scene and MaterialX import**: `.rdla` and `.rdlb` scenes come in whole; `.mtlx` materials become Shader Tree materials.
+- **Outputs**: AOVs and light path expressions, one-click Cryptomatte, deep EXR, texture baking, and denoising with OptiX or Open Image Denoise.
+
 ## New in 0.4.1
 
 - **MoonRay's toon material** starts as a toon material, and MoonLightIPR draws it.
