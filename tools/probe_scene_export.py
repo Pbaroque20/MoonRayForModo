@@ -1,10 +1,9 @@
 # python
-"""Isolated GUI test: File > Export as MoonRay Scene.
+"""Isolated GUI test: Export as MoonRay Scene.
 
 A small scene (a cube, an image on the environment) is saved, then exported each way the window offers: RDLA, RDLB,
-RDLA + RDLB, RDLA with its textures collected, and RDLA for every frame of a three-frame range. The File menu is shown
-on its own (attr.formPopover) and pictured, and the command is run as the menu runs it: its window is pictured,
-filled in and accepted, and the summary that follows is pictured and closed. tools/check_scene_export.py renders what
+RDLA + RDLB, RDLA with its textures collected, and RDLA for every frame of a three-frame range. The command is run
+as the MoonRay menu runs it: its window is pictured, filled in and accepted, and the summary that follows is pictured and closed. tools/check_scene_export.py renders what
 was written with MoonRay."""
 import json
 import pathlib
@@ -95,27 +94,6 @@ def shown():
     return [w for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible()]
 
 
-def picture_menu():
-    try:
-        lx.eval('attr.formPopover {69223020078:sheet}')
-    except Exception:
-        result['menu_error'] = traceback.format_exc()
-    save()
-    QtCore.QTimer.singleShot(2500, shoot_menu)
-
-
-def shoot_menu():
-    try:
-        windows = sorted(shown(), key=lambda w: w.width() * w.height())
-        result['menu_windows'] = [(w.windowTitle(), w.width(), w.height()) for w in windows]
-        windows[0].grab().save(str(out / 'file_menu.png'))
-        windows[0].close()
-    except Exception:
-        result['menu_shot_error'] = traceback.format_exc()
-    save()
-    QtCore.QTimer.singleShot(1000, run_command)
-
-
 def fill_dialog():
     try:
         from moonray_modo.scene_export import ExportDialog
@@ -166,4 +144,4 @@ try:
 except Exception:
     result['error'] = traceback.format_exc()
 save()
-QtCore.QTimer.singleShot(4000, picture_menu)
+QtCore.QTimer.singleShot(4000, run_command)

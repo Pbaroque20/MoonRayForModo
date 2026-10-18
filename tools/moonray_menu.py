@@ -40,7 +40,7 @@ MENU = (
     # Bringing things in and sending them out.
     ('cmd moonray.rdl.import', 'Import MoonRay Scene (RDL)...', 'rdl_import'),
     ('cmd moonray.material.importMaterialX', 'Import MaterialX Material...', 'materialx'),
-    ('cmd moonray.page export', 'Export MoonRay Scene...', 'export'),
+    ('cmd moonray.scene.export', 'Export as MoonRay Scene...', 'export'),
     None,
     # The scene's files.
     ('cmd moonray.page report', 'Report Scene Assets...', 'report'),

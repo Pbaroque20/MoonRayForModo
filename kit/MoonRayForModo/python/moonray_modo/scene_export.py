@@ -1,4 +1,4 @@
-"""Export as MoonRay Scene (File menu): the Modo scene written as MoonRay reads it, to render with moonray.exe or on a
+"""Export as MoonRay Scene (the MoonRay menu, and the preview window's Options): the Modo scene written as MoonRay reads it, to render with moonray.exe or on a
 farm, without the preview window.
 
 Its window asks for the file, the format and what to put in:
@@ -215,7 +215,7 @@ def export(choices, warnings):
 
 
 def run(parent=None):
-    """The File menu's Export as MoonRay Scene: the window, then the export."""
+    """Export as MoonRay Scene: the window, then the export."""
     import modo
     scene = modo.Scene()
     folder = Path(scene.filename).parent if getattr(scene, 'filename', None) else Path.home()
