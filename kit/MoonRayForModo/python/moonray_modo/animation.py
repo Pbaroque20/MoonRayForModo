@@ -45,8 +45,10 @@ from .motion import apply_motion
 
 
 class Sequence(QtCore.QObject):
-    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False):
+    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False, export_as=None):
         super().__init__(panel)
+        # Each frame in another picture type as well, beside its EXR (image_formats): {'type', 'quality'}, or None.
+        self.export_as = export_as
         if last < first or last-first > 100000 or not math.isfinite(fps) or fps<=0:
             raise ValueError('Invalid animation frame range or frame rate')
         if not isinstance(step,int) or step<1:
@@ -107,6 +109,7 @@ class Sequence(QtCore.QObject):
                                  self.motion, self.fps)
         snapshot['frame']=self.frame;snapshot['fps']=self.fps
         snapshot = self.panel._configure_snapshot(snapshot)
+        if self.export_as:snapshot['_export_as']=dict(self.export_as)
         self.expected_output = destination.resolve()
         self.panel._submit(snapshot,str(destination))
 

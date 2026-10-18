@@ -828,6 +828,17 @@ class Renderer(QtCore.QObject):
                     if written is not None:self.log+='Composite written: '+str(written)+'\n'
                 except Exception as exc:
                     self.status.emit('The composite was not written: '+str(exc))
+            # The picture in the type it was asked for, from the EXR MoonRay wrote, which is kept beside it with every
+            # output: as the preview shows it, for the types of a picture to look at.
+            asked=self.active['snapshot'].get('_export_as')
+            if asked:
+                try:
+                    from .image_formats import convert,find
+                    target=Path(asked['path']) if asked.get('path') else destination.with_suffix('.'+find(asked['type'])[2])
+                    convert(self.active['runtime'],asked['type'],destination,target,self.active['snapshot'].get('display'),asked.get('quality',92))
+                    self.log+='Saved as '+str(target)+'\n'
+                except Exception as exc:
+                    self.status.emit('The %s copy was not written: %s'%(asked.get('type'),exc))
             self.finished.emit(str(destination))
             return
         self.image_ready.emit(str(self.image_path))
