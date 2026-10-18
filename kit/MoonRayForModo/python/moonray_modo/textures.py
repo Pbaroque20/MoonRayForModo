@@ -11,6 +11,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 _policy=ContextVar("moonray_texture_policy",default={})
 _collector=ContextVar("moonray_asset_collector",default=None)
+# The textures a scene names that are not on this machine, while a scene is written (noting_missing).
+_missing=ContextVar("moonray_missing_textures",default=None)
 
 @contextmanager
 def configuration(settings):
@@ -24,6 +26,23 @@ def collect_files(files):
     token=_collector.set(files)
     try:yield
     finally:_collector.reset(token)
+
+@contextmanager
+def noting_missing(found):
+    """While a scene is written, the textures it names that cannot be found are listed in found."""
+    token=_missing.set(found)
+    try:yield
+    finally:_missing.reset(token)
+
+def missing(source):
+    """Whether a texture (or every tile of a <UDIM> set) is not on this machine: the scene is then written with an
+    empty texture path in its place, rather than not at all."""
+    try:return not source_tiles(source)
+    except OSError:return True
+
+def note_missing(source):
+    found=_missing.get()
+    if found is not None and str(source) not in found:found.append(str(source))
 
 def register(path):
     files=_collector.get()

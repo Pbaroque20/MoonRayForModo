@@ -571,6 +571,8 @@ class Renderer(QtCore.QObject):
 
     def _pass_ready(self, request, snapshot, scene, mode, text, prepared=None):
         """The pass's scene is written: MoonRay is given it."""
+        # Textures found missing while it was written are among its notices now: shown with the others.
+        if snapshot.get('_missing_textures'):self.notices.emit([])
         try:
             env = QtCore.QProcessEnvironment()
             for key, value in native.environment(request['runtime']).items():
