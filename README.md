@@ -32,6 +32,17 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 - **MoonRay scene and MaterialX import**: `.rdla` and `.rdlb` scenes come in whole; `.mtlx` materials become Shader Tree materials.
 - **Outputs**: AOVs and light path expressions, one-click Cryptomatte, deep EXR, texture baking, and denoising with OptiX or Open Image Denoise.
 
+| | |
+|---|---|
+| ![Glass and a coated material, in MoonRay and in MoonLightIPR](docs/images/moonlightipr-dwa_glass_coat.jpg) | ![Smart Render's noise reading during a render](docs/images/smart-render-noise.png) |
+| **MoonLightIPR**: MoonRay (left), MoonLightIPR (right) | **Smart Render**: the noise falling, and where it will stop |
+| ![A MoonRay preview stopped part way, kept and denoised](docs/images/safe-denoising.png) | ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png) |
+| **Safe Denoising**: stopped part way, kept and denoised | **Draft mode**: a region rendered among the outlines |
+| ![The material graph editor with a MoonRay material](docs/images/graph-editor.png) | ![Modo's Fur material in MoonRay](docs/images/fur-extras.jpg) |
+| **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
+| ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
+| **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
 ## New in 0.4.1
 
 - **MoonRay's toon material** starts as a toon material, and MoonLightIPR draws it.
