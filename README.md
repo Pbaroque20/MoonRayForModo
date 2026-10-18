@@ -130,7 +130,7 @@ The full list is in [What's new in 0.3.51](docs/WHATS_NEW_0351.md).
 - **Bake Selected Mesh to Texture**, **deep EXR** output, more render settings and one-click outputs, and **light path presets**.
 - **Mesh lights** are seen glowing; MoonRay light items can be **linked**; an object can cast **no shadow onto chosen objects**.
 
-![A MoonRay preview stopped part way, kept and denoised](docs/images/safe-denoising.png)
+<img width="1191" height="527" alt="image" src="https://github.com/user-attachments/assets/abccced7-7f65-4eb1-99b4-b311f69e5257" />
 
 *Stopped part way, kept and denoised, with Continue on offer.*
 
