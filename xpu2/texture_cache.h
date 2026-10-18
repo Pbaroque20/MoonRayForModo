@@ -156,6 +156,8 @@ public:
     void release(const Lease& lease){check();auto& u=use(lease);if(u.lease.device)throw std::logic_error("GPU texture needs a completion fence");--pages_.at(lease.key).cpuPins;uses_.erase(lease.serial);}
     void retire(const Lease& lease,std::shared_ptr<Fence> completion){check();auto& u=use(lease);if(!u.lease.device||u.fence||!completion)throw std::invalid_argument("Invalid GPU completion fence");u.fence=std::move(completion);poll();}
     // Coordinator snapshots and guarded eviction for the residency policy.
+    bool hasBacking(const Key& key,size_t bytes,bool gpu){check();poll();auto i=pages_.find(key);if(i==pages_.end())return false;
+        if(i->second.bytes!=bytes)throw std::invalid_argument("Immutable tile size changed without revision");return bool(i->second.cpu)||(gpu&&bool(i->second.gpu));}
     std::vector<Residency> residency(){check();poll();std::vector<Residency> out;out.reserve(pages_.size());
         for(const auto& p:pages_){const auto& r=p.second;out.push_back({p.first,r.bytes,bool(r.cpu),bool(r.gpu),r.cpuPins!=0,r.gpuPins!=0,r.uploading});}return out;
     }

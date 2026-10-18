@@ -1,6 +1,7 @@
 // Standalone CUDA/OIIO filtering validation; not connected to MoonRay shading.
 #include "texture_oiio_loader.h"
 #include "texture_residency.h"
+#include "texture_async.h"
 #include "texture_cuda_backend.h"
 #include <OpenImageIO/texture.h>
 #include <chrono>
@@ -50,11 +51,23 @@ int main(int argc,char** argv){try{
     OIIO::attribute("threads",1);OIIO::attribute("exr_threads",-1);
     auto ref=OIIO::TextureSystem::create(false);
     require(ref->attribute("automip",0)&&ref->attribute("autotile",0)&&ref->attribute("accept_untiled",0)&&ref->attribute("accept_unmipped",0)&&ref->attribute("gray_to_rgb",1),"OIIO reference configuration failed");
-    CudaBackend device(32768,65536);unsigned cases=0,statusChecks=0;uint64_t sampleCount=0,exact=0,components=0,policyEvictions=0;double pointMax=0,bilinearMax=0,sumSquared=0;bool passed=true;
+    CudaBackend device(32768,65536);unsigned cases=0,statusChecks=0;uint64_t sampleCount=0,exact=0,components=0,policyEvictions=0;double pointMax=0,bilinearMax=0,sumSquared=0;bool passed=true;AsyncTextureLoader::Stats decodeStats;
     std::ofstream detail(out/"cases.jsonl");require(bool(detail),"Cannot write case log");
     {
         Kernel kernel(device,argv[2]);OiioTileLoader loader;Cache cache(device,{262144,32768,65536});
-        auto load=[&](const Key& k,size_t n){return loader.load(k,n);};
+        const auto coordinator=std::this_thread::get_id();
+        AsyncTextureLoader worker([coordinator]{
+            require(std::this_thread::get_id()!=coordinator,"Decoder created on coordinator");
+            auto decoder=std::make_shared<OiioTileLoader>();
+            return [decoder,registered=std::set<std::pair<std::string,uint64_t>>{}](const Key& key,size_t bytes)mutable{
+                auto identity=std::make_pair(key.asset,key.revision);
+                if(!registered.count(identity)){
+                    auto base=decoder->registerFile(std::filesystem::u8path(key.asset),key.revision);
+                    require(base.asset==key.asset&&base.interpretation==key.interpretation,"Worker interpretation mismatch");registered.insert(identity);
+                }
+                return decoder->load(key,bytes);
+            };
+        },65536,64);
         for(const auto* name:{"rgba.tx","rgb.tx","gray.tx","rg.tx"}){
             Key base=loader.registerFile(fixtures/name,1);auto s=loader.level(base);require(s.x==0&&s.y==0,"This filter requires a zero-origin window");
             const int cols=(s.width+s.tileWidth-1)/s.tileWidth,rows=(s.height+s.tileHeight-1)/s.tileHeight;
@@ -63,9 +76,12 @@ int main(int argc,char** argv){try{
             auto plan=planTextures(cache.residency(),requests,{262144,65536,32768,65536});
             require(!plan.pinnedOverBudget&&plan.defer.empty()&&plan.gpu<=32768,"Policy failed to admit fixture within reserved budget");
             auto evictions=cache.stats().gpuEvictions;require(trimTextures(cache,plan),"Policy trim failed");policyEvictions+=cache.stats().gpuEvictions-evictions;
+            // Queue admitted exact pages together; disk/decoding stays on the worker.
+            for(const auto& request:requests)if(!cache.hasBacking(request.key,request.bytes,true))
+                require(bool(worker.submit(request.key,request.bytes)),"Decode queue could not admit fixture");
             auto resident=[&](std::vector<Cache::Lease>& leases){std::vector<uint64_t> pages;for(int y=0;y<rows;++y)for(int x=0;x<cols;++x){
                 auto key=base;key.x=x;key.y=y;auto tile=loader.tile(key);auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);std::optional<Cache::Lease> lease;
-                while(!(lease=cache.acquire(key,tile.bytes,load,true))){require(std::chrono::steady_clock::now()<deadline,"Page admission timeout");std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+                while(!(lease=acquireAsync(cache,worker,key,tile.bytes,true))){require(std::chrono::steady_clock::now()<deadline,"Page admission timeout");std::this_thread::sleep_for(std::chrono::milliseconds(1));}
                 leases.push_back(*lease);pages.push_back(cache.gpu(*lease));}return pages;};
             for(int mode=0;mode<2;++mode)for(int wrap=0;wrap<4;++wrap){
                 std::vector<Query> q;
@@ -98,9 +114,11 @@ int main(int argc,char** argv){try{
             pages=resident(leases);auto invalid=s;invalid.channels=5;result=kernel.run(pages,invalid,one,cache,leases);require(result[0].status==2,"Unsupported channel count accepted");++statusChecks;
         }
         require(policyEvictions>0,"Residency policy did not evict GPU pages");require(cache.stats().peakVram<=32768&&device.vramArena->peak<=32768,"Reserved device budget exceeded");
+        worker.close();decodeStats=worker.stats();
+        require(decodeStats.loads>0&&decodeStats.failures==0&&decodeStats.heldBytes==0&&decodeStats.heldRecords==0&&decodeStats.peakBytes<=65536,"Background decode lifecycle failed");
         require(cache.close(),"Cache did not drain");
     }
     require(device.close()&&!device.cleanupErrors,"CUDA cleanup failed");
-    std::cout<<"{\"passed\":"<<(passed?"true":"false")<<",\"cases\":"<<cases<<",\"queries\":"<<sampleCount<<",\"components\":"<<components<<",\"exact_components\":"<<exact<<",\"point_max_abs\":"<<pointMax<<",\"bilinear_max_abs\":"<<bilinearMax<<",\"rms\":"<<std::sqrt(sumSquared/components)<<",\"fallback_checks\":"<<statusChecks<<",\"policy_gpu_evictions\":"<<policyEvictions<<",\"texture_vram_budget\":32768,\"reserved_device_bytes\":32768,\"point_tolerance\":0,\"bilinear_tolerance\":0.000002,\"cleanup_errors\":0}\n";
+    std::cout<<"{\"passed\":"<<(passed?"true":"false")<<",\"cases\":"<<cases<<",\"queries\":"<<sampleCount<<",\"components\":"<<components<<",\"exact_components\":"<<exact<<",\"point_max_abs\":"<<pointMax<<",\"bilinear_max_abs\":"<<bilinearMax<<",\"rms\":"<<std::sqrt(sumSquared/components)<<",\"fallback_checks\":"<<statusChecks<<",\"policy_gpu_evictions\":"<<policyEvictions<<",\"background_decoded_tiles\":"<<decodeStats.loads<<",\"decode_queue_peak_bytes\":"<<decodeStats.peakBytes<<",\"decode_queue_peak_records\":"<<decodeStats.peakRecords<<",\"texture_vram_budget\":32768,\"reserved_device_bytes\":32768,\"point_tolerance\":0,\"bilinear_tolerance\":0.000002,\"cleanup_errors\":0}\n";
     return passed?0:2;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

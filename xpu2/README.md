@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [hierarchical texture residency policy](TEXTURE_RESIDENCY.md),
+See [background texture decoding and cancellation](TEXTURE_ASYNC.md),
+[hierarchical texture residency policy](TEXTURE_RESIDENCY.md),
 [CUDA point/bilinear filtering checks](TEXTURE_FILTER.md),
 [native OIIO mip loading and parity checks](TEXTURE_OIIO.md),
 [bounded native texture-tile residency](TEXTURE_CACHE.md),

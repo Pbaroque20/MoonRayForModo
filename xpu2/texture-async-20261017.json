@@ -1,0 +1,170 @@
+{
+  "status": "passed",
+  "scope": "Bounded background texture decoding and real CUDA point/bilinear parity; not a full renderer or speed benchmark",
+  "contracts": [
+    {
+      "case": "contract",
+      "checks": {
+        "passed": true,
+        "checks": 29532,
+        "random_operations": 20000,
+        "clean_eviction_d2h_bytes": 0
+      },
+      "executable_sha256": "d7e353449e9d676e51b6e08ba9ae904d1d89a7f9b1d0f0e5b3dbf01a4031cd42",
+      "preprocessed_sha256": "c1b81f3a30b345bfb07b8c6f2dfe4ed4f6869839e8612665bc384511f6f584ca"
+    },
+    {
+      "case": "residency",
+      "checks": {
+        "passed": true,
+        "checks": 74689,
+        "randomized_plans": 5000
+      },
+      "executable_sha256": "f8f3086a5d7ef2bde89e540857bd24a5d814365375860d0048adf498d207cc49",
+      "preprocessed_sha256": "81d8cf7425cccf892382366075f8fdff1be4ed704c5e3fd886d8e2e47abfd578"
+    },
+    {
+      "case": "async",
+      "checks": {
+        "passed": true,
+        "checks": 1292,
+        "lifecycle_jobs": 1000,
+        "background_decode": true,
+        "cancelled_results_discarded": true
+      },
+      "executable_sha256": "55476d0f2b52ab1439345a973939302e41d4e15703caa16e0759aaadc88050c9",
+      "preprocessed_sha256": "da0a8995dbb618c01a854144c7274521ff7b25164a4bbc91c6afc7e2f9709934"
+    },
+    {
+      "case": "cuda",
+      "checks": {
+        "passed": true,
+        "cuda_consumers": 4,
+        "loads": 3,
+        "h2d_bytes": 212992,
+        "eviction_d2h_bytes": 0,
+        "verification_d2h_bytes": 212992,
+        "gpu_evictions": 3,
+        "peak_ram": 131072,
+        "peak_vram": 65536,
+        "peak_staging": 65536,
+        "upload_milliseconds": 0.076832,
+        "cpu_hits": 0,
+        "gpu_hits": 4,
+        "blocked_admissions": 2,
+        "pending_upload_polls": 0,
+        "device_allocation_reuses": 1,
+        "pinned_allocation_reuses": 1,
+        "peak_reserved_device": 65536,
+        "peak_reserved_pinned": 65536,
+        "cleanup_errors": 0
+      },
+      "executable_sha256": "43088a5d555e2e15a0d3ea5962b9bf17023042159d345a40b8ad29a02f8ea4d3",
+      "preprocessed_sha256": "8b7254cc86f989cde141d1a9b2b280b33a61eb136283063b78a0cefc8aae1d56"
+    }
+  ],
+  "filter": {
+    "passed": true,
+    "cases": 32,
+    "queries": 234976,
+    "components": 587776,
+    "exact_components": 587776,
+    "point_max_abs": 0,
+    "bilinear_max_abs": 0,
+    "rms": 0,
+    "fallback_checks": 32,
+    "policy_gpu_evictions": 2,
+    "background_decoded_tiles": 16,
+    "decode_queue_peak_bytes": 24576,
+    "decode_queue_peak_records": 6,
+    "texture_vram_budget": 32768,
+    "reserved_device_bytes": 32768,
+    "point_tolerance": 0,
+    "bilinear_tolerance": 2e-06,
+    "cleanup_errors": 0
+  },
+  "texture_image": {
+    "status": "passed",
+    "dimensions": [
+      96,
+      64
+    ],
+    "channels": {
+      "R": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "G": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "B": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "A": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      }
+    },
+    "exactly_different_pixels": 0,
+    "first_difference": null,
+    "largest_differences": [],
+    "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+    "metadata": {
+      "colorInteropID": null,
+      "oiio:ColorSpace": null,
+      "PixelAspectRatio": "1"
+    }
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+  "contract_source_sha256": {
+    "texture_cache.h": "2dd4b292ad490bf237a4b247608ad7100f91c748291bb49696047aefe6c40c04",
+    "texture_cache_test.cc": "8098703afe10ec5996af9f21debcfda205abf5a0c547f7859d117ab48b2d0f3d",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "texture_residency_test.cc": "34e4ed2cbe2082a0977c9b0d54b39d65cf784d7f4a0eae5274d1778a8e7ab305",
+    "texture_async.h": "ee332be031f9eeb6cd03033fb8aed06e57bf4d0dd6c861ab7e970ca5f87ec7ff",
+    "texture_async_test.cc": "669607e8a4d7cb25de9d2e01a3a509b1b6dd419396e5c9b09ca4639e03f37805",
+    "xpu2_texture_cache_probe.py": "ef4d30f7bec050f9c785c1fa18cc434d1e0eff3b595a2e4945dc5f2ca30a4f22",
+    "texture_cuda_backend.h": "1b934ac19dec58b8c3b576bdcb2ab313248a0e08355519b204bb2b1997ff8f09",
+    "texture_cache_gpu_probe.cc": "e52a14ae6fe5eacf795be4b5fc77ffa90148e6e8a0dc2f67567cc8b09cc8a8c0"
+  },
+  "filter_source_sha256": {
+    "texture_filter_cuda.cu": "f7442ef24159c53a3ab671ffca650b2c13837301abcfd15680c2a8942600aae1",
+    "texture_filter_probe.cc": "ffe3586ab9b42a3f239c9454a3be8fe2149946f58f34f9bd1213c0cb7d822e0b",
+    "texture_cache.h": "2dd4b292ad490bf237a4b247608ad7100f91c748291bb49696047aefe6c40c04",
+    "texture_cuda_backend.h": "1b934ac19dec58b8c3b576bdcb2ab313248a0e08355519b204bb2b1997ff8f09",
+    "texture_oiio_loader.h": "e43adba167769d42cd3cbefbc09e64871ee8b03d36a50b8f5d22903ef1dd70d5",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "texture_async.h": "ee332be031f9eeb6cd03033fb8aed06e57bf4d0dd6c861ab7e970ca5f87ec7ff",
+    "images.py": "85cddd6352847ba050f315863b278121f73e7a0af7e7688da23988dd9a57de81",
+    "validate_reference_images.py": "6cf001301014c9afe44460f1cd869ad52ef4131a00ff18e3538317e0d4aacd1e",
+    "xpu2_texture_filter_probe.py": "f7280fb07669fbf319d19d4e7f0cc14909ccdbcd9c92a2291c45d6b22131b50f",
+    "xpu2_cuda_sampler_probe.py": "4d808ecbb2e29e506fb10a476b8b57bf68995f442af685942a09a4001b5a36f1",
+    "g++.exe": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+    "libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+    "report.json": "0be97c4201afc451f0a383d0f44992d90955e8d1ab8f75d7ca369cd9733be184",
+    "nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+    "nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5"
+  },
+  "filter_executable_sha256": "5a41d5a72bceceaad8140087608bac2d717183dd6a07f87434e131b3240d9649",
+  "filter_preprocessed_sha256": "e6500b80db82860346445c4c60ef06bba82cd445d5758333537b44d8b7a326bf",
+  "ptx_sha256": "041f2c174c209f28116cac9460718d3b9332047233bca90583ce8c260249ebd6",
+  "local_reports": [
+    "test-results/xpu2-async-contract-publish/report.json",
+    "test-results/xpu2-async-filter-first/report.json"
+  ]
+}

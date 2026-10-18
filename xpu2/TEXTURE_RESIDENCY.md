@@ -73,8 +73,8 @@ python tools/xpu2_texture_filter_probe.py --source <read-only-toolchain-root> --
 
 ## Remaining integration
 
-The loader remains synchronous. Native scene-index dependency ingestion, worker
-I/O/decode, measured cost feedback, dispatcher replay, dynamic arena-budget changes
+Background worker I/O/decode is now validated separately in [TEXTURE_ASYNC.md](TEXTURE_ASYNC.md).
+Native scene-index dependency ingestion, measured cost feedback, dispatcher replay, dynamic arena-budget changes
 and production residency scheduling remain. Plans currently rebuild the small
 request index from a snapshot; production overhead needs measurement and likely
 incremental updates. OIIO's separate cache, driver overhead and probe query/output

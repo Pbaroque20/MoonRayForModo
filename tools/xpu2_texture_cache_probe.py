@@ -15,8 +15,8 @@ def main():
     try:
         compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';include=source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include'
         env=environment(compiler.parent,out)
-        files=[ROOT/'xpu2'/s for s in ('texture_cache.h','texture_cache_test.cc','texture_residency.h','texture_residency_test.cc')]+[Path(__file__).resolve()]
-        cases=[('contract',ROOT/'xpu2/texture_cache_test.cc'),('residency',ROOT/'xpu2/texture_residency_test.cc')]
+        files=[ROOT/'xpu2'/s for s in ('texture_cache.h','texture_cache_test.cc','texture_residency.h','texture_residency_test.cc','texture_async.h','texture_async_test.cc')]+[Path(__file__).resolve()]
+        cases=[('contract',ROOT/'xpu2/texture_cache_test.cc'),('residency',ROOT/'xpu2/texture_residency_test.cc'),('async',ROOT/'xpu2/texture_async_test.cc')]
         if a.gpu:
             files += [ROOT/'xpu2/texture_cuda_backend.h',ROOT/'xpu2/texture_cache_gpu_probe.cc'];cases.append(('cuda',files[-1]));report['gpu']=gpu_identity()
         hashes={str(f):digest_file(f) for f in files}
