@@ -1,5 +1,6 @@
 // Standalone CUDA/OIIO filtering validation; not connected to MoonRay shading.
 #include "texture_oiio_loader.h"
+#include "texture_residency.h"
 #include "texture_cuda_backend.h"
 #include <OpenImageIO/texture.h>
 #include <chrono>
@@ -49,14 +50,19 @@ int main(int argc,char** argv){try{
     OIIO::attribute("threads",1);OIIO::attribute("exr_threads",-1);
     auto ref=OIIO::TextureSystem::create(false);
     require(ref->attribute("automip",0)&&ref->attribute("autotile",0)&&ref->attribute("accept_untiled",0)&&ref->attribute("accept_unmipped",0)&&ref->attribute("gray_to_rgb",1),"OIIO reference configuration failed");
-    CudaBackend device(262144,65536);unsigned cases=0,statusChecks=0;uint64_t sampleCount=0,exact=0,components=0;double pointMax=0,bilinearMax=0,sumSquared=0;bool passed=true;
+    CudaBackend device(32768,65536);unsigned cases=0,statusChecks=0;uint64_t sampleCount=0,exact=0,components=0,policyEvictions=0;double pointMax=0,bilinearMax=0,sumSquared=0;bool passed=true;
     std::ofstream detail(out/"cases.jsonl");require(bool(detail),"Cannot write case log");
     {
-        Kernel kernel(device,argv[2]);OiioTileLoader loader;Cache cache(device,{262144,262144,65536});
+        Kernel kernel(device,argv[2]);OiioTileLoader loader;Cache cache(device,{262144,32768,65536});
         auto load=[&](const Key& k,size_t n){return loader.load(k,n);};
         for(const auto* name:{"rgba.tx","rgb.tx","gray.tx","rg.tx"}){
             Key base=loader.registerFile(fixtures/name,1);auto s=loader.level(base);require(s.x==0&&s.y==0,"This filter requires a zero-origin window");
             const int cols=(s.width+s.tileWidth-1)/s.tileWidth,rows=(s.height+s.tileHeight-1)/s.tileHeight;
+            std::vector<TextureRequest> requests;
+            for(int y=0;y<rows;++y)for(int x=0;x<cols;++x){auto key=base;key.x=x;key.y=y;requests.push_back({name,key,loader.tile(key).bytes,true,true,1,8,.0001,.00001,0});}
+            auto plan=planTextures(cache.residency(),requests,{262144,65536,32768,65536});
+            require(!plan.pinnedOverBudget&&plan.defer.empty()&&plan.gpu<=32768,"Policy failed to admit fixture within reserved budget");
+            auto evictions=cache.stats().gpuEvictions;require(trimTextures(cache,plan),"Policy trim failed");policyEvictions+=cache.stats().gpuEvictions-evictions;
             auto resident=[&](std::vector<Cache::Lease>& leases){std::vector<uint64_t> pages;for(int y=0;y<rows;++y)for(int x=0;x<cols;++x){
                 auto key=base;key.x=x;key.y=y;auto tile=loader.tile(key);auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);std::optional<Cache::Lease> lease;
                 while(!(lease=cache.acquire(key,tile.bytes,load,true))){require(std::chrono::steady_clock::now()<deadline,"Page admission timeout");std::this_thread::sleep_for(std::chrono::milliseconds(1));}
@@ -91,9 +97,10 @@ int main(int argc,char** argv){try{
             pages=resident(leases);pages.pop_back();result=kernel.run(pages,s,one,cache,leases);require(result[0].status==2,"Truncated page table accepted");++statusChecks;
             pages=resident(leases);auto invalid=s;invalid.channels=5;result=kernel.run(pages,invalid,one,cache,leases);require(result[0].status==2,"Unsupported channel count accepted");++statusChecks;
         }
+        require(policyEvictions>0,"Residency policy did not evict GPU pages");require(cache.stats().peakVram<=32768&&device.vramArena->peak<=32768,"Reserved device budget exceeded");
         require(cache.close(),"Cache did not drain");
     }
     require(device.close()&&!device.cleanupErrors,"CUDA cleanup failed");
-    std::cout<<"{\"passed\":"<<(passed?"true":"false")<<",\"cases\":"<<cases<<",\"queries\":"<<sampleCount<<",\"components\":"<<components<<",\"exact_components\":"<<exact<<",\"point_max_abs\":"<<pointMax<<",\"bilinear_max_abs\":"<<bilinearMax<<",\"rms\":"<<std::sqrt(sumSquared/components)<<",\"fallback_checks\":"<<statusChecks<<",\"point_tolerance\":0,\"bilinear_tolerance\":0.000002,\"cleanup_errors\":0}\n";
+    std::cout<<"{\"passed\":"<<(passed?"true":"false")<<",\"cases\":"<<cases<<",\"queries\":"<<sampleCount<<",\"components\":"<<components<<",\"exact_components\":"<<exact<<",\"point_max_abs\":"<<pointMax<<",\"bilinear_max_abs\":"<<bilinearMax<<",\"rms\":"<<std::sqrt(sumSquared/components)<<",\"fallback_checks\":"<<statusChecks<<",\"policy_gpu_evictions\":"<<policyEvictions<<",\"texture_vram_budget\":32768,\"reserved_device_bytes\":32768,\"point_tolerance\":0,\"bilinear_tolerance\":0.000002,\"cleanup_errors\":0}\n";
     return passed?0:2;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

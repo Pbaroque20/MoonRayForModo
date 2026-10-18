@@ -54,7 +54,7 @@ def main():
         cuda=source/'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include'
         nvrtc=source/'toolchain/xpu/cuda_nvrtc-windows-x86_64-12.8.93-archive/bin'
         libraries=[prefix/'lib'/n for n in ('libOpenImageIO.dll.a','libOpenImageIO_Util.dll.a')]
-        files=[ROOT/'xpu2'/n for n in ('texture_filter_cuda.cu','texture_filter_probe.cc','texture_cache.h','texture_cuda_backend.h','texture_oiio_loader.h')]
+        files=[ROOT/'xpu2'/n for n in ('texture_filter_cuda.cu','texture_filter_probe.cc','texture_cache.h','texture_cuda_backend.h','texture_oiio_loader.h','texture_residency.h')]
         files += [ROOT/'xpu2/images.py',ROOT/'tools/validate_reference_images.py',Path(__file__).resolve(),ROOT/'tools/xpu2_cuda_sampler_probe.py',compiler,*libraries,fixtures/'report.json',nvrtc/'nvrtc64_120_0.dll',nvrtc/'nvrtc-builtins64_128.dll']
         hashes={str(f):digest_file(f) for f in files};report['gpu']=gpu_identity()
         for n in ('libOpenImageIO-3.1.dll','libOpenImageIO_Util-3.1.dll'):

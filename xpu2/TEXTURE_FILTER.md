@@ -79,3 +79,6 @@ integration remain. HDR/negative values and wider UV ranges need separate covera
 Host eligibility checks must account for those semantics before submitting native
 lookups to the GPU. Full rendered-scene comparisons and speed measurements follow;
 no performance gain or general texture parity is claimed here.
+
+The follow-up [residency-policy pressure test](TEXTURE_RESIDENCY.md) repeats these
+comparisons after policy-driven GPU evictions under a reserved texture budget.

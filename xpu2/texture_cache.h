@@ -31,6 +31,7 @@ struct Backend {
     virtual void drain()=0;
 };
 struct Limits {size_t ram=256<<20,vram=256<<20,staging=16<<20,entries=65536,leases=4096,uploads=64;};
+struct Residency {Key key;size_t bytes=0;bool cpu=false,gpu=false,cpuPinned=false,gpuPinned=false,uploading=false;};
 struct Stats {
     uint64_t loads=0,cpuHits=0,gpuHits=0,h2dBytes=0,d2hBytes=0;
     uint64_t cpuEvictions=0,gpuEvictions=0,blocked=0,failedLoads=0,pendingUploads=0,uploadPolls=0;
@@ -154,6 +155,15 @@ public:
     uint64_t gpu(const Lease& lease){check();auto& u=use(lease);if(!u.lease.device||u.fence)throw std::logic_error("Expected active GPU texture lease");return pages_.at(lease.key).gpu->address();}
     void release(const Lease& lease){check();auto& u=use(lease);if(u.lease.device)throw std::logic_error("GPU texture needs a completion fence");--pages_.at(lease.key).cpuPins;uses_.erase(lease.serial);}
     void retire(const Lease& lease,std::shared_ptr<Fence> completion){check();auto& u=use(lease);if(!u.lease.device||u.fence||!completion)throw std::invalid_argument("Invalid GPU completion fence");u.fence=std::move(completion);poll();}
+    // Coordinator snapshots and guarded eviction for the residency policy.
+    std::vector<Residency> residency(){check();poll();std::vector<Residency> out;out.reserve(pages_.size());
+        for(const auto& p:pages_){const auto& r=p.second;out.push_back({p.first,r.bytes,bool(r.cpu),bool(r.gpu),r.cpuPins!=0,r.gpuPins!=0,r.uploading});}return out;
+    }
+    bool discard(const Key& key,bool device){check();poll();auto it=pages_.find(key);if(it==pages_.end())return true;auto& r=it->second;
+        if(device){if(r.gpuPins||r.uploading)return false;if(r.gpu){r.gpu.reset();stats_.vram-=r.bytes;++stats_.gpuEvictions;}}
+        else{if(r.cpuPins)return false;if(r.cpu){r.cpu.reset();stats_.ram-=r.bytes;++stats_.cpuEvictions;}}
+        empty(key);return true;
+    }
     const Stats& stats() const {return stats_;}
     bool close(){check();poll();if(!uses_.empty())return false;backend_.drain();pages_.clear();uploading_.clear();stats_.ram=stats_.vram=stats_.staging=0;closed_=true;return true;}
 };
