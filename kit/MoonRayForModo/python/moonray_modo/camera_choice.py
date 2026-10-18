@@ -16,15 +16,12 @@ def cameras(scene=None):
     scene = scene or modo.Scene()
     found = []
     for name in entities.classes('camera'):
-        try:
-            found += list(scene.items(entities.item_type(name), superType=False))
-        except (LookupError, RuntimeError, TypeError):
-            pass
+        found += entities.items_of(scene, name)
     return sorted(found, key=lambda item: item.name.casefold())
 
 
 def label(item):
-    return '%s: %s' % (entities.display(item.type[len(entities.TYPE_PREFIX):]), item.name)
+    return '%s: %s' % (entities.display(entities.class_of(item) or 'Camera'), item.name)
 
 
 def choices(scene=None):
@@ -41,7 +38,7 @@ def dicing_choices(scene=None):
     """(label, item id) for every camera adaptive tessellation can be worked out for: the render camera (''), then each
     Modo camera and each MoonRay camera item."""
     scene = scene or modo.Scene()
-    modo_cameras = sorted(scene.items('camera', superType=False), key=lambda item: item.name.casefold())
+    modo_cameras = sorted(entities.modo_cameras(scene), key=lambda item: item.name.casefold())
     return ([('Render camera (default)', '')] + [('Modo camera: ' + item.name, item.id) for item in modo_cameras]
             + [(label(item), item.id) for item in cameras(scene)])
 
@@ -70,7 +67,7 @@ def modo_render_moonray(scene=None):
     scene = scene or modo.Scene()
     try:
         camera = scene.renderCamera
-        return camera if camera is not None and camera.type.startswith(entities.TYPE_PREFIX) else None
+        return camera if camera is not None and entities.class_of(camera) is not None else None
     except Exception:
         return None
 

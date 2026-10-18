@@ -16,8 +16,12 @@ def selected_cameras():
     """The Modo cameras selected, or the render camera where none is."""
     import modo
     scene = modo.Scene()
-    chosen = [item for item in scene.selected if item.type == 'camera']
-    return chosen or ([scene.renderCamera] if scene.renderCamera is not None else [])
+    from . import entities
+    chosen = [item for item in scene.selected if item.type == 'camera' and entities.class_of(item) is None]
+    if chosen:
+        return chosen
+    render = scene.renderCamera
+    return [render] if render is not None and entities.class_of(render) is None else []
 
 
 def suited(camera):
@@ -60,20 +64,6 @@ def lens(camera, kind):
     return result
 
 
-def place(item, matrix):
-    """Puts an item where a world matrix says, with no parent: position, a turn and a scale along its axes."""
-    import modo
-    from .rdl_import import decomposed
-    parts = decomposed(matrix)
-    if parts is None:
-        raise ValueError('The camera shears or mirrors, which a MoonRay camera item cannot copy')
-    position, turn, sizes = parts
-    locator = item if hasattr(item, 'position') else modo.LocatorSuperType(item)
-    locator.position.set(position)
-    locator.rotation.set(modo.Matrix4([row + [0.0] for row in turn] + [[0.0, 0.0, 0.0, 1.0]]).asEuler())
-    locator.scale.set(sizes)
-
-
 def retarget(old, new):
     """The scene's MoonRay settings that name a camera by its identity, the Camera Sequence's keys and the dicing
     camera, made to name the camera that replaced it."""
@@ -97,47 +87,17 @@ def retarget(old, new):
 
 
 def convert(camera, kind):
-    """The Modo camera made a MoonRay camera of the chosen kind, with its lens, in its place: the Modo camera is gone.
-
-    Modo's Change Type makes the camera the new kind as it stands, MoonRay's cameras being Modo cameras too, so that
-    its name, place, parent, children, animation and links, and being the render camera, are kept. Where Modo will
-    not change it, a new camera is made where it stands and given its name, children and render camera, and the Modo
-    camera is deleted; its animation is then not carried over. Either way, the Camera Sequence's keys and the dicing
-    camera that named it name the new one. Returns the MoonRay camera."""
-    import lx
-    import modo
+    """The Modo camera made a MoonRay camera of the chosen kind, with its lens: it takes the kind's package, and stays
+    the item it is, with its name, place, parent, children, animation and links, and its part as render camera, in
+    the Camera Sequence and as the dicing camera. Returns it."""
     from . import entities
-    from .host import world_matrix
     if kind not in dict(KINDS):
         raise ValueError('Unknown MoonRay camera: ' + kind)
-    scene = modo.Scene()
     values = dict(entities.starting(kind), **lens(camera, kind))
-    old, name, wanted = camera.id, camera.name, entities.item_type(kind)
-    render = scene.renderCamera is not None and scene.renderCamera.id == old
-    item = None
-    try:
-        lx.eval('select.item {%s} set' % old)
-        lx.eval('item.setType {%s}' % wanted)
-        made = [i for i in modo.Scene().selected if i.type == wanted]
-        item = made[-1] if made else None
-    except Exception:
-        item = None
-    if item is None:
-        children = list(camera.children())
-        item = scene.addItem(wanted, name=name)
-        place(item, world_matrix(camera))
-        for child in children:
-            lx.eval('item.parent {%s} {%s} 0 inPlace:1' % (child.id, item.id))
-        scene.removeItems(camera)
-        item.name = name
-        lx.out('MoonRay: %s was made a new MoonRay camera in its place; its animation, if it had any, was not carried over.' % name)
+    camera.PackageAdd(entities.camera_package(kind))
     for key, value in values.items():
         try:
-            item.channel(entities.CHANNEL_PREFIX + key).set(value)
+            camera.channel(entities.CHANNEL_PREFIX + key).set(value)
         except (TypeError, ValueError, AttributeError, LookupError, RuntimeError):
             pass
-    if render:
-        # Modo's Change Type leaves the scene with another render camera.
-        lx.eval('render.camera {%s}' % item.id)
-    retarget(old, item.id)
-    return item
+    return camera

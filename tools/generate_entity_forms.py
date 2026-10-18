@@ -172,12 +172,16 @@ for name in sorted(catalog, key=lambda name: (ORDER.index(catalog[name]['categor
 
 for i, name in enumerate(sorted(catalog)):
     form = sheet('MoonRayEntity%d:sheet' % i, entities.display(name))
-    atom(form, 'FilterCommand', 'item.withTypeIsSelected {%s} testSupertypes:true' % entities.item_type(name))
+    if name in entities.VIEWED_CAMERAS:
+        # A MoonRay camera with a view is Modo's own camera with the class's package: its form shows for the package.
+        atom(form, 'FilterCommand', 'item.withPackageIsSelected {%s}' % entities.camera_package(name))
+    else:
+        atom(form, 'FilterCommand', 'item.withTypeIsSelected {%s} testSupertypes:true' % entities.item_type(name))
     # Without this a form shown by a command never becomes the tab in front.
     atom(form, 'FilterCommandPriorityInfluencesTabChoice', 1)
     atom(form, 'Group', 'itemprops')
     ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'
-    if catalog[name]['category'] in PLACED:
+    if catalog[name]['category'] in PLACED and name not in entities.VIEWED_CAMERAS:
         # Modo shows its Transform section (position, rotation and scale, each as X, Y and Z) only for its own kinds
         # of item; its rows hide themselves for any other. A MoonRay light or camera is given rows of the same
         # commands, which work on the item selected.
@@ -195,7 +199,7 @@ for i, name in enumerate(sorted(catalog)):
             groups[group] = nested(form, 'MoonRayEntity_%s_%d:sheet' % (name, len(groups)), group, collapsed=1 if groups else 0)
         label = spec.get('label', key.replace('_', ' '))
         tip = brief(spec.get('comment', ''))
-        channel_control = 'item.channel %s$%s ?' % (entities.item_type(name), channel)
+        channel_control = 'item.channel %s$%s ?' % (entities.channel_owner(name), channel)
         if opens:
             # The three lists of a ramp are one thing to edit; this opens the editor on them together.
             for k, ramp_label in opens:
@@ -230,7 +234,7 @@ for i, name in enumerate(sorted(catalog)):
                 for side in SIZES:
                     if side in held:
                         about = catalog[name]['attributes'][side]
-                        control(groups['sizes'], 'item.channel %s$%s ?' % (entities.item_type(name), held[side]), about.get('label', side), brief(about.get('comment', '')))
+                        control(groups['sizes'], 'item.channel %s$%s ?' % (entities.channel_owner(name), held[side]), about.get('label', side), brief(about.get('comment', '')))
         else:
             control(groups[group], channel_control, label, tip)
 ET.indent(config)

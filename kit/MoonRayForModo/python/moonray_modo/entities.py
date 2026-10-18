@@ -368,13 +368,9 @@ def collect(scene, warnings):
     from . import properties
     from .host import render_visible, world_matrix
     result = []
-    # Each class has an item type whose channels are its attributes.
+    # Each class has an item type whose channels are its attributes; a camera class, a package on Modo's camera.
     for name in classes():
-        try:
-            typed_items = list(scene.items(item_type(name), superType=False))
-        except (LookupError, RuntimeError, TypeError):
-            continue
-        for item in typed_items:
+        for item in items_of(scene, name):
             try:
                 if render_visible(item):
                     from . import primitive_attributes
@@ -767,9 +763,72 @@ def proxy(name, number):
     return [('strip', [(s, 0, 0), (0, s, 0), (-s, 0, 0), (0, -s, 0), (s, 0, 0)]), ('strip', [(0, s, 0), (0, 0, s), (0, -s, 0), (0, 0, -s), (0, s, 0)])]
 
 
-# The MoonRay cameras that are Modo cameras too, so that Modo's viewport can look through them. The bake camera is
-# not: it renders from a mesh's UVs and has no view.
+# The MoonRay cameras that are Modo cameras: Modo's own camera item with the class's attributes added as a package
+# (camera_package), so that Modo's viewport lists them, looks through them by their lens and draws their resolution
+# gate as it does for any camera. The bake camera is not: it renders from a mesh's UVs and has no view.
 VIEWED_CAMERAS = ('DomeMaster3DCamera', 'FisheyeCamera', 'OrthographicCamera', 'PerspectiveCamera', 'SphericalCamera')
+CAMERA_PACKAGE_PREFIX = 'moonray.cameraKind.'
+
+
+def camera_package(name):
+    """The package that makes a Modo camera a MoonRay camera of this class."""
+    return CAMERA_PACKAGE_PREFIX + name
+
+
+def channel_owner(name):
+    """What a class's channels are named under in item.channel commands (owner$channel): its package for a camera,
+    its item type for the rest."""
+    return camera_package(name) if name in VIEWED_CAMERAS else item_type(name)
+
+
+def class_of(item):
+    """The MoonRay class an item is, or None: by its item type (moonray.<Class>), or, for a Modo camera, by the
+    MoonRay camera package it carries."""
+    try:
+        kind = item.type
+    except Exception:
+        return None
+    if kind.startswith(TYPE_PREFIX) and kind[len(TYPE_PREFIX):] in catalog():
+        return kind[len(TYPE_PREFIX):]
+    if kind == 'camera':
+        for name in VIEWED_CAMERAS:
+            try:
+                if item.PackageTest(camera_package(name)):
+                    return name
+            except Exception:
+                return None
+    return None
+
+
+def items_of(scene, name):
+    """The scene's items of a MoonRay class: of its item type, and for a camera class the Modo cameras that carry its
+    package (and those of its item type from before, until they are made Modo cameras on loading)."""
+    found = []
+    try:
+        found += list(scene.items(item_type(name), superType=False))
+    except (LookupError, RuntimeError, TypeError):
+        pass
+    if name in VIEWED_CAMERAS:
+        try:
+            found += [item for item in scene.items('camera', superType=False) if class_of(item) == name]
+        except (LookupError, RuntimeError, TypeError):
+            pass
+    return found
+
+
+def make_item(scene, name, label):
+    """A new item of a MoonRay class: a Modo camera with the class's package for a camera with a view, otherwise an
+    item of the class's type. Call inside a command."""
+    if name in VIEWED_CAMERAS:
+        item = scene.addItem('camera', name=label)
+        item.PackageAdd(camera_package(name))
+        return item
+    return scene.addItem(item_type(name), name=label)
+
+
+def modo_cameras(scene):
+    """The scene's Modo cameras that are not MoonRay cameras."""
+    return [item for item in scene.items('camera', superType=False) if class_of(item) is None]
 # The widest view Modo's perspective viewport shows a fisheye, spherical or dome camera with.
 WIDEST_VIEW = 150.0
 # Modo's own lens for those, in metres: a 36 mm film, as Modo's cameras start with.
@@ -811,20 +870,6 @@ def modo_lens(name, number, target=1.0):
     across = max(1.0, min(WIDEST_VIEW, abs(across)))
     lens.update(focalLen=MODO_FILM / 2 / math.tan(math.radians(across) / 2), apertureX=MODO_FILM)
     return lens
-
-
-def gate(projection, focal, aperture_x, offset_x, offset_y, target, aspect, depth=1.0):
-    """The resolution gate of a camera with this Modo lens, in its own space: the outline, at depth in front of it,
-    of the picture that renders, a rectangle of the picture's aspect (width over height) as a closed strip of points.
-    Seen through the camera it lies on the picture's edges, as Modo's own gate does for its cameras. For a perspective
-    lens the outline widens with the depth; an orthographic one is as wide as its view at any depth."""
-    focal, aperture_x, aspect = max(1e-6, float(focal)), max(1e-6, float(aperture_x)), max(1e-6, float(aspect))
-    scale = float(target) / focal if projection == 'ortho' else float(depth) / focal
-    width = aperture_x * scale
-    height = width / aspect
-    x, y = float(offset_x) * scale, float(offset_y) * scale
-    corners = [(x - width / 2, y - height / 2), (x + width / 2, y - height / 2), (x + width / 2, y + height / 2), (x - width / 2, y + height / 2)]
-    return [(a, b, -float(depth)) for a, b in corners + corners[:1]]
 
 
 def proxy_inputs(name):

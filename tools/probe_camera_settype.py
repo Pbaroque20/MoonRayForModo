@@ -68,9 +68,21 @@ try:
     result['key_camera'] = (properties.scene_settings().get('camera_sequence') or {}).get('keys')
     try:
         result['mr_focal'] = modo.Scene().item(after_id).channel('mr_focal').get()
+        result['class'] = __import__('moonray_modo.entities', fromlist=['class_of']).class_of(modo.Scene().item(after_id))
     except Exception as exc:
         result['mr_focal'] = 'error: %s' % exc
 except Exception:
     result['error'] = traceback.format_exc()
-(out / 'settype.json').write_text(json.dumps(result, indent=1, default=str))
-QtCore.QTimer.singleShot(1500, lambda: lx.eval('!app.quit'))
+
+
+def finish():
+    # The Modo lens, once evaluated: driven by the MoonRay one (50 mm, as the camera had).
+    try:
+        result['focalLen'] = modo.Scene().item(result['after']['id']).channel('focalLen').get()
+    except Exception as exc:
+        result['focalLen'] = 'error: %s' % exc
+    (out / 'settype.json').write_text(json.dumps(result, indent=1, default=str))
+    lx.eval('!app.quit')
+
+
+QtCore.QTimer.singleShot(1500, finish)

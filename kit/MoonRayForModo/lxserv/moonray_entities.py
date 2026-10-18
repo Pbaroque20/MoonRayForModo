@@ -37,33 +37,58 @@ LENS_FLOATS=('focalLen','apertureX','offsetX','offsetY')
 LENS_CHOICES={'filmFit':{'fill':0,'horizontal':1,'vertical':2,'overscan':3},'projType':{'persp':0,'ortho':1}}
 
 
+def camera_kind(item):
+    """The MoonRay camera class a Modo camera is (by the package it carries, or by its item type from before MoonRay
+    cameras were Modo cameras), or None."""
+    from moonray_modo import entities
+    item=lx.object.Item(item)
+    try:
+        kind=lx.service.Scene().ItemTypeName(item.Type())
+        if kind.startswith(entities.TYPE_PREFIX) and kind[len(entities.TYPE_PREFIX):] in entities.VIEWED_CAMERAS:
+            return kind[len(entities.TYPE_PREFIX):]
+    except Exception:
+        return None
+    for name in entities.VIEWED_CAMERAS:
+        try:
+            if item.PackageTest(entities.camera_package(name)):return name
+        except Exception:pass
+    return None
+
+
 def lens_modifiers():
-    """One evaluation modifier for each MoonRay camera with a view: it sets the item's Modo camera channels from its
-    MoonRay lens (entities.modo_lens), so that Modo's viewport, looking through it, frames what MoonRay renders.
-    The Modo channels are then driven, and follow each change to the MoonRay ones, undo included."""
+    """An evaluation modifier on Modo's cameras: on each that is a MoonRay camera it sets the Modo lens from the
+    MoonRay one (entities.modo_lens), so that Modo's viewport, looking through it, frames what MoonRay renders and
+    draws its resolution gate there. The Modo channels are then driven, and follow each change to the MoonRay ones,
+    undo included. Other cameras are left alone."""
     import lxu.meta
     from moonray_modo import entities
-    metas=[]
-    for name in entities.VIEWED_CAMERAS:
-        inputs=entities.lens_inputs(name)
-        class Lens(lxu.meta.EvalModifier):
-            CLASS=name;INPUTS=inputs
-            def bind(self,item,ident):
-                for key in self.INPUTS:self.mod_add_chan(item,entities.CHANNEL_PREFIX+key)
-                self.mod_add_chan(item,'target')
-                for channel in LENS_FLOATS+tuple(LENS_CHOICES):self.mod_add_chan(item,channel,lx.symbol.fECHAN_WRITE)
-            def eval(self):
-                attributes=self.mod_attr()
-                count=len(self.INPUTS)
-                read={key:attributes.GetFlt(self.mod_cust_index(i)) for i,key in enumerate(self.INPUTS)}
-                lens=entities.modo_lens(self.CLASS,lambda key:read.get(key,0.0),attributes.GetFlt(self.mod_cust_index(count)))
-                for j,channel in enumerate(LENS_FLOATS):attributes.SetFlt(self.mod_cust_index(count+1+j),float(lens[channel]))
-                for j,channel in enumerate(LENS_CHOICES):
-                    attributes.SetInt(self.mod_cust_index(count+1+len(LENS_FLOATS)+j),LENS_CHOICES[channel][lens[channel]])
-        meta=lxu.meta.Meta_EvalModifier('moonray.lens.'+name,Lens)
-        meta.set_itemtype(entities.item_type(name))
-        metas.append(meta)
-    root=lxu.meta.MetaRoot(*metas)
+
+    class Lens(lxu.meta.EvalModifier):
+        def bind(self,item,ident):
+            # Read: the MoonRay lens and the target distance. Written: the Modo lens. Each by its place in self.slots.
+            self.slots={};self.kind=camera_kind(item)
+            if self.kind is None:return
+            def add(label,channel,kind=lx.symbol.fECHAN_READ):
+                self.slots[label]=len(self.slots);self.mod_add_chan(item,channel,kind)
+            for key in entities.lens_inputs(self.kind):add(key,entities.CHANNEL_PREFIX+key)
+            add('target','target')
+            for channel in LENS_FLOATS+tuple(LENS_CHOICES):add('out.'+channel,channel,lx.symbol.fECHAN_WRITE)
+        def change_test(self):
+            # A camera made a MoonRay camera (or no longer one) is bound again, with the channels of its kind.
+            try:return camera_kind(self.mod_item())==self.kind
+            except Exception:return False
+        def eval(self):
+            if self.kind is None:return
+            attributes=self.mod_attr();slots=self.slots
+            number=lambda label:attributes.GetFlt(self.mod_cust_index(slots[label]))
+            lens=entities.modo_lens(self.kind,number,number('target'))
+            for channel in LENS_FLOATS:attributes.SetFlt(self.mod_cust_index(slots['out.'+channel]),float(lens[channel]))
+            for channel in LENS_CHOICES:
+                attributes.SetInt(self.mod_cust_index(slots['out.'+channel]),LENS_CHOICES[channel][lens[channel]])
+
+    meta=lxu.meta.Meta_EvalModifier('moonray.cameraLens',Lens)
+    meta.set_itemtype('camera')
+    root=lxu.meta.MetaRoot(meta)
     root.initialize()
 
 
@@ -114,38 +139,7 @@ def register():
                             stroke.Begin(lx.symbol.iSTROKE_LINES if kind=='lines' else lx.symbol.iSTROKE_LINE_STRIP,itemColor,1.0)
                             for point in data:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
                 except Exception:pass
-        if name in entities.VIEWED_CAMERAS:
-            return gate_instance(point3)
         return Drawn
-
-    def gate_instance(point3):
-        """A MoonRay camera in the viewport: Modo draws it as its own cameras, but draws a resolution gate only when
-        looking through one of its own. This draws one: the outline of the picture that renders, in front of the camera,
-        from its Modo lens as the viewport has it (driven by its MoonRay lens) and the render's resolution and pixel
-        aspect, or the camera's own resolution where it overrides the render's."""
-        render_type=[]
-        class Gate(lxu.package.BasicPackageInstance, lxifc.ViewItem3D):
-            def vitm_WorldSpace(self):
-                return False
-            def vitm_Draw(self,chanRead,strokeDraw,selectionFlags,itemColor):
-                try:
-                    read=lx.object.ChannelRead(chanRead);stroke=lx.object.StrokeDraw(strokeDraw)
-                    item=self.item
-                    def number(owner,channel):return float(read.Double(owner,owner.ChannelLookup(channel)))
-                    def whole(owner,channel):return int(read.Integer(owner,owner.ChannelLookup(channel)))
-                    if not render_type:render_type.append(lx.service.Scene().ItemTypeLookup('polyRender'))
-                    scene=lx.object.Scene(item.Context())
-                    render=scene.ItemByIndex(render_type[0],0)
-                    width,height,pixel=whole(render,'resX'),whole(render,'resY'),number(render,'pAspect')
-                    if whole(item,'resOverride'):width,height=whole(item,'resX'),whole(item,'resY')
-                    aspect=width*max(1e-6,pixel)/max(1,height)
-                    projection='ortho' if whole(item,'projType')==1 else 'persp'
-                    points=entities.gate(projection,number(item,'focalLen'),number(item,'apertureX'),number(item,'offsetX'),
-                                         number(item,'offsetY'),number(item,'target'),aspect)
-                    stroke.Begin(lx.symbol.iSTROKE_LINE_STRIP,itemColor,1.0)
-                    for point in points:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
-                except Exception:pass
-        return Gate
 
     def package(name):
         plan=entities.channels(name)
@@ -213,7 +207,7 @@ def register():
 
     def chosen(name):
         import modo
-        return [item for item in modo.Scene().selected if item.type==entities.item_type(name)]
+        return [item for item in modo.Scene().selected if entities.class_of(item)==name]
 
     def kinds(category):
         """The classes of a kind: a category by name, or the classes themselves."""
@@ -236,11 +230,11 @@ def register():
             except Exception:custom=[]
             filters=[]
             for name in kinds(category):
-                try:filters+=[item.name for item in scene.items(entities.item_type(name),superType=False) if item.id not in excluding]
+                try:filters+=[item.name for item in entities.items_of(scene,name) if item.id not in excluding]
                 except (LookupError,RuntimeError,TypeError):pass
             return entities.output_names(custom)+sorted(set(filters))
         for name in kinds(category):
-            try:names+=[item.name for item in scene.items(entities.item_type(name),superType=False) if item.id not in excluding]
+            try:names+=[item.name for item in entities.items_of(scene,name) if item.id not in excluding]
             except (LookupError,RuntimeError,TypeError):pass
         return sorted(set(names))
 
@@ -429,7 +423,7 @@ def register():
             found=set()
             for owner in entities.classes():
                 if channel[len(entities.CHANNEL_PREFIX):] not in entities.catalog()[owner]['attributes']:continue
-                try:found.update(text(other,channel) for other in scene.items(entities.item_type(owner),superType=False))
+                try:found.update(text(other,channel) for other in entities.items_of(scene,owner))
                 except (LookupError,RuntimeError,TypeError):pass
             return sorted(found-{''})
         if mode=='material':
@@ -533,14 +527,98 @@ def register():
                 lx.bless(remove_command(name,channel),'moonray.entity.remove%d_%d'%(i,j))
 
     for name in entities.classes():
-        # MoonRay's cameras with a view are Modo cameras too, so that Modo's viewport lists them and looks through
-        # them; Modo draws them as it draws its own cameras, and they draw their resolution gate (gate_instance).
-        viewed=name in entities.VIEWED_CAMERAS
-        typed=package(name)
-        lx.bless(typed,entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'camera' if viewed else 'locator',lx.symbol.sSRV_USERNAME:entities.display(name)})
+        if name in entities.VIEWED_CAMERAS:
+            # A MoonRay camera with a view is Modo's own camera with this package, its attributes as channels: Modo
+            # lists it, looks through it by its lens and draws its resolution gate, as for any camera.
+            pkg=package(name)
+            pkg.pkg_Attach=lambda self:lxu.package.BasicPackageInstance(self.acts)
+            pkg.pkg_TestInterface=lambda self,guid:guid==lx.symbol.u_PACKAGEINSTANCE
+            lx.bless(pkg,entities.camera_package(name),{lx.symbol.sSRV_USERNAME:entities.display(name)})
+            # Its item type from before stays, so that scenes saved with one load; each is made a Modo camera with
+            # the package as it loads (Upgrade, below).
+            legacy=package(name)
+            legacy.pkg_Attach=lambda self:lxu.package.BasicPackageInstance(self.acts)
+            legacy.pkg_TestInterface=lambda self,guid:guid==lx.symbol.u_PACKAGEINSTANCE
+            lx.bless(legacy,entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'camera',lx.symbol.sSRV_USERNAME:entities.display(name)})
+        else:
+            lx.bless(package(name),entities.item_type(name),{lx.symbol.sPKG_SUPERTYPE:'locator',lx.symbol.sSRV_USERNAME:entities.display(name)})
     try:lens_modifiers()
     except Exception as exc:
         lx.out('MoonRay cameras will not frame the viewport as they render: %s'%exc)
+
+    class Upgrade(lxu.command.BasicCommand):
+        """A MoonRay camera item of the type from before made Modo's own camera with the MoonRay package, by Modo's
+        Change Type: its name, place, parent, children, animation and MoonRay values are kept, and so is its part in
+        the render camera, the Camera Sequence and the dicing camera."""
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('item',lx.symbol.sTYPE_STRING)
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Execute(self,msg,flags):
+            import modo
+            from moonray_modo import camera_convert
+            scene=modo.Scene()
+            try:item=scene.item(self.dyna_String(0))
+            except LookupError:return
+            name=entities.class_of(item)
+            if name is None or not item.type.startswith(entities.TYPE_PREFIX):return
+            values={}
+            for key,channel,kind,default,choices in entities.channels(name):
+                try:values[channel]=item.channel(channel).get()
+                except Exception:pass
+            old=item.id
+            render=scene.renderCamera is not None and scene.renderCamera.id==old
+            lx.eval('select.item {%s} set'%old)
+            lx.eval('item.setType camera')
+            made=[i for i in modo.Scene().selected if i.type=='camera']
+            if not made:
+                lx.out('MoonRay: %s could not be made a Modo camera.'%item.name);return
+            camera=made[-1]
+            camera.PackageAdd(entities.camera_package(name))
+            for channel,value in values.items():
+                try:camera.channel(channel).set(value)
+                except Exception:pass
+            if render:lx.eval('render.camera {%s}'%camera.id)
+            camera_convert.retarget(old,camera.id)
+            lx.out('MoonRay: %s is now a Modo camera with its MoonRay settings.'%camera.name)
+
+    lx.bless(Upgrade,'moonray.camera.upgrade')
+
+    def upgrade(identity):
+        try:lx.eval('moonray.camera.upgrade {%s}'%identity)
+        except Exception:pass
+
+    legacy_types={entities.item_type(name) for name in entities.VIEWED_CAMERAS}
+
+    def upgrade_all():
+        """Every MoonRay camera of the type from before in the scene made a Modo camera."""
+        try:
+            import modo
+            for item in [item for item in modo.Scene().items() if item.type in legacy_types]:
+                upgrade(item.id)
+        except Exception:pass
+
+    class Watcher(lxifc.SceneItemListener):
+        """Sees MoonRay cameras of the type from before come in, and has them made Modo cameras once Modo has finished:
+        a scene may not be changed from inside the making of an item. A scene being opened tells of no items as they
+        are read, so the whole scene is looked through once it is open."""
+        def sil_SceneCreate(self,scene):
+            try:
+                from PySide2 import QtCore
+                QtCore.QTimer.singleShot(0,upgrade_all)
+            except Exception:pass
+        def sil_ItemAdd(self,item):
+            try:
+                made=lx.object.Item(item)
+                kind=lx.service.Scene().ItemTypeName(made.Type())
+                if kind.startswith(entities.TYPE_PREFIX) and kind[len(entities.TYPE_PREFIX):] in entities.VIEWED_CAMERAS:
+                    from PySide2 import QtCore
+                    identity=made.Ident()
+                    QtCore.QTimer.singleShot(0,lambda:upgrade(identity))
+            except Exception:pass
+    # Kept, or the listener is let go of as soon as this function returns.
+    register.watcher=Watcher()
+    lx.service.Listener().AddListener(register.watcher)
 
     # The first, generic item kept its class and values in a tag. It stays registered so that
     # scenes holding one still load and render; new items use the types above.
@@ -560,7 +638,7 @@ def register():
             name=self.dyna_String(0)
             if name not in entities.catalog():raise ValueError('Unknown MoonRay class: '+name)
             scene=modo.Scene()
-            item=scene.addItem(entities.item_type(name),name=entities.display(name))
+            item=entities.make_item(scene,name,entities.display(name))
             # MoonRay's own starting values make some items do nothing visible; begin with ones that show.
             for key,value in entities.starting(name).items():
                 try:item.channel(entities.CHANNEL_PREFIX+key).set(value)

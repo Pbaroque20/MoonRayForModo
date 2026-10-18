@@ -1306,7 +1306,7 @@ def apply(data, alone=True, progress=None):
             properties.write(item, options.object_values(values))
         for record in data['entities']:
             try:
-                item = scene.addItem(entities.item_type(record['class']), name=record['name'])
+                item = entities.make_item(scene, record['class'], record['name'])
             except (LookupError, RuntimeError, TypeError):
                 warnings.append('%s: the MoonRay item for %s is not available in this Modo' % (record['name'], record['class']))
                 continue

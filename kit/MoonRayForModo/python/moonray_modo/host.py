@@ -110,7 +110,8 @@ def dicing_view(scene, identity, width, height, pixel_aspect, warnings):
     except LookupError:
         warnings.append('The dicing camera chosen is no longer in the scene; the render camera is used.')
         return None
-    if item.type != 'camera':
+    from .entities import class_of
+    if item.type != 'camera' or class_of(item) is not None:
         return {'entity': item.id}
     if item.id == scene.renderCamera.id:
         return None

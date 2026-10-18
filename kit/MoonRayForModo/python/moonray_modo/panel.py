@@ -859,7 +859,7 @@ class Panel(Tools, QtWidgets.QWidget):
         from .host import render_visible
         result=[]
         for name in entities.classes('displayfilter'):
-            try:result+=[(item.name,entities.filter_key({'identity':item.id})) for item in modo.Scene().items(entities.item_type(name),superType=False) if render_visible(item)]
+            try:result+=[(item.name,entities.filter_key({'identity':item.id})) for item in entities.items_of(modo.Scene(),name) if render_visible(item)]
             except (LookupError,RuntimeError,TypeError,AttributeError):pass
         return tuple(sorted(result))
 
