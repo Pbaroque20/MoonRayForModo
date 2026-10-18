@@ -1,8 +1,8 @@
 # python
 """Isolated GUI test: the pixel samples of each realtime engine, set apart in the preview's preferences.
 
-A ball. MoonLightIPR is set to 32 samples and MoonRay LS to 64. With realtime on in each, what is handed to the engine
-is written down: MoonLightIPR is asked for 32, MoonRay LS for at most 64. The preferences dialog is pictured, and the
+A ball. MoonLightIPR is set to 128 samples and MoonRay LS to 64. With realtime on in each, what is handed to the engine
+is written down: MoonLightIPR is asked for 128, MoonRay LS for at most 64. The preferences dialog is pictured, and the
 preferences are put back as they were."""
 import json
 import pathlib
@@ -50,7 +50,7 @@ def moonlightipr():
     result['rows'] = [dialog.layout().itemAt(i).widget().text() for i in range(dialog.layout().count())
                       if isinstance(dialog.layout().itemAt(i).widget(), (QtWidgets.QLabel, QtWidgets.QCheckBox))]
     # As choosing in the dialog and pressing OK does.
-    dialog.widgets['moonlightipr/samples'].setCurrentIndex(dialog.widgets['moonlightipr/samples'].findData(32))
+    dialog.widgets['moonlightipr/samples'].setCurrentIndex(dialog.widgets['moonlightipr/samples'].findData(128))
     dialog.widgets['ipr/samples'].setCurrentIndex(dialog.widgets['ipr/samples'].findData(64))
     QtWidgets.QApplication.processEvents()
     dialog.grab().save(str(out / 'preferences.png'))
