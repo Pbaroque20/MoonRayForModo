@@ -556,17 +556,19 @@ class Editor(QtWidgets.QDialog):
 
     def aov_menu(self, menu):
         """Fill the Add Input AOV menu: the render's buffers, then the light passes and light groups the scene does not
-        have yet, and a light path expression of one's own. Each action's data says what it adds."""
+        have yet, and a light path expression of one's own. A buffer the graph has a Buffer node for already is not
+        offered again. Each action's data says what it adds."""
         menu.setStyleSheet(MENU_STYLE)
         values = self.panel._settings_values()
-        listed = self.buffer_choices()
+        present = {compositor.parameters(node).get('buffer') for node in self.graph['nodes'].values() if node.get('type') == 'input'}
+        listed = [(words, key) for words, key in self.buffer_choices() if key not in present]
         for words, key in listed:
             menu.addAction(words).setData(('buffer', key))
         have = {entry.get('expression', '').strip() for entry in values.get('custom_aovs') or [] if entry.get('kind') == 'lpe'}
-        passes = [(words, name, expression) for words, name, expression in compositor.PASSES if expression not in have]
+        passes = [(words, name, expression) for words, name, expression in compositor.PASSES if expression not in have and name not in present]
         groups = [(words, ('environment' if label == compositor.ENVIRONMENT_LABEL else label) + '_light', compositor.light_group_expression(label))
                   for words, label in compositor.light_groups(values.get('production'), self.moonray_lights())]
-        groups = [group for group in groups if group[2] not in have]
+        groups = [group for group in groups if group[2] not in have and group[1] not in present]
         if listed:
             menu.addSeparator()
         # Each submenu is made with its parent menu as its owner and kept on it, so that Python does not let it go.
