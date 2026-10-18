@@ -273,7 +273,10 @@ def material_values(material):
                                 'presence': 1.0 - min(1.0, max(0.0, float(channel(material, 'dissAmt', 0)))),
                                 'opacity': 1.0 - float(channel(material, 'dissAmt', 0)),
                                 'clearcoat': float(channel(material, 'coatAmt', 0)),
-                                'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
+                                'clearcoat_roughness': float(channel(material, 'coatRough', .01)),
+                                # Displacement Distance, and the value the Shader Tree's displacement layers start from.
+                                'displacement_distance': float(channel(material, 'displace', .02)),
+                                'displacement_value': float(channel(material, 'dispVal', 0))}
     from .group_scale import material as scale_material
     return scale_material(material,value,channel)
 

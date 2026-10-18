@@ -351,7 +351,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     clay=clay_material(scene.get('_clay_preview'))
     media = {tag:None if clay else absorption.medium(material) for tag,material in materials.items()}
     native_index = [1000000000]
+    # Each material's Shader Tree displacement, (height, distance), for its NormalDisplacement below.
+    shader_displacement = {}
+    from . import graph as graph_module
+    noted = None
     for index, (tag, material) in enumerate(sorted(materials.items())):
+        # What the Shader Tree's displacement layers make, noted by graph.bindings as each material is written (the
+        # loop goes on early in places, so the last material's is taken at the start of the next, and after it).
+        if noted and noted[1]:shader_displacement[noted[0]] = noted[1][-1]
+        noted = (tag, [])
+        graph_module.DISPLACEMENT = noted[1]
         if clay:material=dict(clay)
         if material.get('material_stack'):
             from .moonshine import emit_stack
@@ -418,6 +427,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         for attribute, binding in bindings.items():
             lines.append('  [%s] = %s,' % (string(attribute), binding))
         lines.append('}')
+    if noted and noted[1]:shader_displacement[noted[0]] = noted[1][-1]
+    graph_module.DISPLACEMENT = None
     displacement_tags=set()
     lines.append('local displacements = {}')
     for index,(tag,material) in enumerate(sorted(materials.items())):
@@ -427,6 +438,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             from .nodes import emit as emit_graph
             ref=emit_graph(source,'/modo/displacement/%d'%index,native_index,lines,native_library,output='displacement')
             lines.append('displacements[%s] = %s'%(string(tag),ref));displacement_tags.add(tag)
+        elif shader_displacement.get(tag) and shader_displacement[tag][1]:
+            # Displacement layers in the Shader Tree: the surface moved along its normal by their height times the
+            # material's Displacement Distance, as Modo moves it.
+            raised,distance=shader_displacement[tag]
+            lines += ['displacements[%s] = NormalDisplacement("/modo/displacement/shader/%d") {' % (string(tag), index),
+                      '  ["height"] = %s,' % raised, '  ["height_multiplier"] = %s,' % number(distance), '}']
+            displacement_tags.add(tag)
     lines.append('local volumes = {}')
     for index,(tag,material) in enumerate(sorted(media.items())):
         if material is not None:

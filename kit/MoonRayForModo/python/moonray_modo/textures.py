@@ -73,7 +73,10 @@ EFFECTS = {**{key:key for key in INTERNAL_EFFECTS}, 'diffCol': 'diffuseColor', '
            'tranAmt': 'transmission', 'tranCol': 'transmissionColor', 'tranRough': 'refractionRoughness',
            'normal':'normal', 'normalCoat':'coatNormal', 'coatBump':'coatBump', 'diffRough':'diffuseRoughness', 'bump':'bump', 'diffAmt':'diffuseAmount',
            'specAmt':'specularAmount', 'layerMask':'singleLayerMask', 'groupMask':'layerMask', 'aniso':'anisotropy', 'lumiAmt':'emissiveAmount', 'dissolve':'presence',
-           'subsCol':'subsurfaceColor', 'subsAmt':'subsurfaceAmount', 'ior':'ior'}
+           'subsCol':'subsurfaceColor', 'subsAmt':'subsurfaceAmount', 'ior':'ior',
+           # Not material attributes: displacement goes to the material's NormalDisplacement, and a stencil
+           # into its presence (graph.bindings).
+           'displace':'_displacement', 'stencil':'_stencil'}
 COLOR_EFFECTS = {'diffCol', 'specCol', 'lumiCol', 'tranCol', 'subsCol'}
 
 # Shader Tree effect identifiers differ from advancedMaterial channel names.
