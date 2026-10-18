@@ -68,6 +68,28 @@ def mapped(material,effect):
     return any(textures.EFFECT_ALIASES.get(e,e)==effect for e in effects)
 
 
+# Modo's Principled sheen as DwaBaseMaterial's fuzz: how much fuzz a sheen of 1 is, and how rough it is, as measured
+# against Modo's renders (tools/probe_fresnel.py, sheen cases).
+# Fitted to Modo's sheen of 1 over black, its Principled edge without sheen taken away: within 0.01 of Modo's up to 75
+# degrees from straight on, darker past that.
+SHEEN_FUZZ = 0.1
+SHEEN_ROUGHNESS = 0.05
+
+
+def sheen(material, number, vector):
+    """The fuzz attributes for a material's sheen: none where it has none. Its tint goes from white to the hue of the
+    base colour (the colour at a brightness of 1), as Principled tints its sheen."""
+    amount = material.get('sheen', 0)
+    if not amount:
+        return {}
+    color = material.get('sheen_color', material.get('raw_color', material.get('color', [.5, .5, .5])))
+    bright = 0.3 * color[0] + 0.6 * color[1] + 0.1 * color[2]
+    hue = [c / bright for c in color] if bright > 0 else [1, 1, 1]
+    tint = material.get('sheen_tint', 0)
+    return {'show_fuzz': 'true', 'fuzz': number(min(1.0, amount * SHEEN_FUZZ)), 'fuzz_roughness': number(SHEEN_ROUGHNESS),
+            'fuzz_albedo': vector([min(1.0, 1 - tint + tint * h) for h in hue], 'Rgb')}
+
+
 def emit(material, tag, index, bindings, lines):
     from .rdla import string, number, vector
     from .shading_models import curve,principled_rise,strengths
@@ -111,6 +133,7 @@ def emit(material, tag, index, bindings, lines):
         'clearcoat':number(material.get('clearcoat',0)),
         'clearcoat_roughness':number(material.get('clearcoat_roughness',.01)),
         'show_specular':'true' if material.get('specular_amount',.04)>0 else 'false',
+        **sheen(material,number,vector),
         'thin_geometry':'true' if material.get('thin_geometry',False) else 'false',
     }
     names={'diffuseColor':'albedo','emissiveColor':'emission','ior':'refractive_index',

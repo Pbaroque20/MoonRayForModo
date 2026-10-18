@@ -276,7 +276,10 @@ def material_values(material):
                                 'clearcoat_roughness': float(channel(material, 'coatRough', .01)),
                                 # Displacement Distance, and the value the Shader Tree's displacement layers start from.
                                 'displacement_distance': float(channel(material, 'displace', .02)),
-                                'displacement_value': float(channel(material, 'dispVal', 0))}
+                                'displacement_value': float(channel(material, 'dispVal', 0)),
+                                # Sheen and its tint, which Modo's Principled model alone draws.
+                                'sheen': max(0.0, float(channel(material, 'sheen', 0))) if channel(material, 'brdfType', '') == 'principled' else 0.0,
+                                'sheen_tint': min(1.0, max(0.0, float(channel(material, 'sheenTint', 0))))}
     from .group_scale import material as scale_material
     return scale_material(material,value,channel)
 
@@ -430,7 +433,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 # What of Modo's material MoonRay is not given as Modo renders it, as measured against Modo's renders.
                 if float(channel(material,'reflAmt',0))>0 and not channel(material,'reflSpec',1):
                     warnings.append("%s: a reflection amount apart from the specular amount (Match Specular off) is not followed." % material.name)
-            if channel(material,'subsAmt',0) or channel(material,'aniso',0):
+            if channel(material,'subsAmt',0) or channel(material,'aniso',0) or result['materials'][tag].get('sheen',0):
                 result['materials'][tag]['shader'] = 'DwaBaseMaterial'
             if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
                 warnings.append('Anisotropy requires MoonShine Material: ' + material.name)
