@@ -1,0 +1,618 @@
+{
+  "status": "passed",
+  "scope": "Owned stage dispatcher with real CUDA Lambert; synthetic tint tiles and resume metadata; no native path restoration or rendered image",
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+  "compiler_flags": [
+    "-std=c++17",
+    "-O2",
+    "-mavx",
+    "-mno-avx2",
+    "-mno-fma",
+    "-ffp-contract=off",
+    "-ffast-math"
+  ],
+  "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+  "preprocessed_sha256": "8f1de6fb2bf238ca2dd9f347498b601fc4492a2fa60cd8c97db5c2ecbf159226",
+  "executable_sha256": "b8dc7d3eaa20fb67b3057d294780a388017918a6ee71fbafd006fac3b193f002",
+  "sources": {
+    "xpu2/shading_dispatch.h": "effb4beb72a27e7b71bdb57997d7df8f22010f6e9262e07e35c3926695a7c257",
+    "xpu2/shading_dispatch_probe.cc": "5b0e3d2152f955da2c763ad5e40def1a7bf5b40530644d3c8eac6eab7e5919f2",
+    "xpu2/continuation_mailbox.h": "1476194e07c22ea8dc75e720afbbab60d1f868c946887a7606f294b3cf9faacf",
+    "xpu2/native_lambert_queue.cc": "cf6943f5724059ddec9eadde37b85bfb97057cd49539798246057cc711d6cf7a",
+    "xpu2/texture_work.h": "f91107968e713b310fdd26fb392f7bc29094113edd3735d94ba69fb1cf2928e9",
+    "xpu2/texture_async.h": "ee332be031f9eeb6cd03033fb8aed06e57bf4d0dd6c861ab7e970ca5f87ec7ff",
+    "xpu2/texture_cache.h": "c0924b5b0c1be87de826af23af453dcdaa3a64597dcd0ea61b3255e844988229",
+    "xpu2/texture_dependencies.h": "613c8cdf694e732900e41420d0b132037dda43b4b0f4104357a5d7d9bd81c452",
+    "xpu2/texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "xpu2/indexed_scene.h": "6c5a83c3e3bae7489b56d10957ff323f1b0b02bf62aec5609982aeb1e87110d0",
+    "tools/xpu2_shading_dispatch_probe.py": "0f15cda14f65a587a80fb509570f2aee300b2a6606b3223f9352f92e06829c73",
+    "xpu2/reference/native-lambert-avx8-cuda-20261017.bin.gz": "2ba0d77d58e2ebb026dc5900a8d75f2000e7a4bfe342326c2345be957e25f395",
+    "test-results/xpu2-ray-image-final/sampler.ptx": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2"
+  },
+  "runs": [
+    {
+      "case": "pipeline",
+      "checks": {
+        "case": "pipeline",
+        "passed": true,
+        "accepted": 2,
+        "revoked": 0,
+        "failed": 0,
+        "dispatched": 2,
+        "admitted": 2,
+        "cancelled": 0,
+        "peak_jobs": 2,
+        "prepared": 2,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 2,
+        "delivered": 2,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "shader": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "logs": {
+        "process.log": "7e401c25e91ccda99303cd0510257ca4516e4a83f22c71e63cbc3db52a9250e6",
+        "queue.log": "0b8a477b5fe994585198685b9a6d8c8bbdcc2fa430e73facf3d28291c942e921",
+        "shader.bin": "45ff8aff130c419a31b0a24b0fc7fc474cbf1005701d1aa67b37d2ff505a4e4a",
+        "shader.log": "bb7c79cab99ead1050b68cbee416be85cb4d396b877d48fc25512e1a08468c3c"
+      }
+    },
+    {
+      "case": "missing_ptx",
+      "checks": {
+        "case": "missing_ptx",
+        "passed": true,
+        "accepted": 2,
+        "revoked": 0,
+        "failed": 0,
+        "dispatched": 2,
+        "admitted": 2,
+        "cancelled": 0,
+        "peak_jobs": 2,
+        "prepared": 2,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 2,
+        "delivered": 2,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0
+      },
+      "shader": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 0,
+        "replaced": 0,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 2
+      },
+      "logs": {
+        "process.log": "1e0accb7ccef82c3fcc28a3f5af42719015bb4cb76826bc2ba95cca25e21aad1",
+        "queue.log": "72c0e6df9d25393cc2fab89124e7c770ebc9c17e10a64946153421591dfcf065",
+        "shader.bin": "e2051e4efa2906f26ded96cc4b5e469204d7c4ae138df85523941f2bf81f6e1f",
+        "shader.log": "4624987f828c98f81c563529fcddf11659b627a224ec2688a8c533a14c254d62"
+      }
+    },
+    {
+      "case": "admission_fallback",
+      "checks": {
+        "case": "admission_fallback",
+        "passed": true,
+        "accepted": 2,
+        "revoked": 0,
+        "failed": 0,
+        "dispatched": 2,
+        "admitted": 2,
+        "cancelled": 0,
+        "peak_jobs": 2,
+        "prepared": 2,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 0,
+        "delivered": 0,
+        "cpu_batches": 0,
+        "queue_full": 2,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 0,
+        "max_batch_samples": 0,
+        "max_queue": 0,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0
+      },
+      "shader": {},
+      "logs": {
+        "process.log": "fe1209e340e7fce8585a41cccacc40e8d312b451257c3a91bb005eec5361e5af",
+        "queue.log": "babaff970b0b9be03bf6d7c492231f143f943aeeb6f26c407785513805dfd429"
+      }
+    },
+    {
+      "case": "restart",
+      "checks": {
+        "case": "restart",
+        "passed": true,
+        "accepted": 1,
+        "revoked": 0,
+        "failed": 0,
+        "dispatched": 2,
+        "admitted": 3,
+        "cancelled": 2,
+        "peak_jobs": 2,
+        "prepared": 2,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 2,
+        "delivered": 1,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 1,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 1,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "shader": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "logs": {
+        "process.log": "3fb49895700f78d8b342379c076b0cee1cb34a93fd58776ca349042ae51b108e",
+        "queue.log": "48b5f5f629cb2db19e56d164eada466161371dfdbe54665a60b20ee28b0699b3",
+        "shader.bin": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a",
+        "shader.log": "bb7c79cab99ead1050b68cbee416be85cb4d396b877d48fc25512e1a08468c3c"
+      }
+    },
+    {
+      "case": "leased_restart",
+      "checks": {
+        "case": "leased_restart",
+        "passed": true,
+        "accepted": 1,
+        "revoked": 1,
+        "failed": 0,
+        "dispatched": 2,
+        "admitted": 2,
+        "cancelled": 0,
+        "peak_jobs": 1,
+        "prepared": 2,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 2,
+        "delivered": 2,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "shader": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "logs": {
+        "process.log": "ee6a0e768c9393221654537520a536f7aaf6cd141da8be63c93af2296b6f2f1e",
+        "queue.log": "0b8a477b5fe994585198685b9a6d8c8bbdcc2fa430e73facf3d28291c942e921",
+        "shader.bin": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a",
+        "shader.log": "bb7c79cab99ead1050b68cbee416be85cb4d396b877d48fc25512e1a08468c3c"
+      }
+    },
+    {
+      "case": "decode_failure",
+      "checks": {
+        "case": "decode_failure",
+        "passed": true,
+        "accepted": 0,
+        "revoked": 0,
+        "failed": 1,
+        "dispatched": 0,
+        "admitted": 1,
+        "cancelled": 0,
+        "peak_jobs": 1,
+        "prepared": 0,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 0,
+        "submitted": 0,
+        "delivered": 0,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 0,
+        "max_batch_samples": 0,
+        "max_queue": 0,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0
+      },
+      "shader": {},
+      "logs": {
+        "process.log": "216aa7fabf7e5996cf02ddcabd211e12f48a593cd62c1443a25e06c2346dba6f",
+        "queue.log": "68e69dc4c0bf86d6f595d23804d138114f5ec68e7417eb03080e3791ab9a22cf"
+      }
+    },
+    {
+      "case": "prepare_failure",
+      "checks": {
+        "case": "prepare_failure",
+        "passed": true,
+        "accepted": 0,
+        "revoked": 0,
+        "failed": 1,
+        "dispatched": 0,
+        "admitted": 1,
+        "cancelled": 0,
+        "peak_jobs": 1,
+        "prepared": 1,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 0,
+        "submitted": 0,
+        "delivered": 0,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 0,
+        "max_batch_samples": 0,
+        "max_queue": 0,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0
+      },
+      "shader": {},
+      "logs": {
+        "process.log": "65c390508d1860f9d3d234671a952132b5c5da581979b081e032a7385b01dc13",
+        "queue.log": "68e69dc4c0bf86d6f595d23804d138114f5ec68e7417eb03080e3791ab9a22cf"
+      }
+    },
+    {
+      "case": "identity_failure",
+      "checks": {
+        "case": "identity_failure",
+        "passed": true,
+        "accepted": 0,
+        "revoked": 0,
+        "failed": 1,
+        "dispatched": 0,
+        "admitted": 1,
+        "cancelled": 0,
+        "peak_jobs": 1,
+        "prepared": 1,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 0,
+        "submitted": 0,
+        "delivered": 0,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 0,
+        "max_batch_samples": 0,
+        "max_queue": 0,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0
+      },
+      "shader": {},
+      "logs": {
+        "process.log": "80f8b0b8476549ad2f48e5d633d0021f103de42d27309c87030563b722e77837",
+        "queue.log": "68e69dc4c0bf86d6f595d23804d138114f5ec68e7417eb03080e3791ab9a22cf"
+      }
+    },
+    {
+      "case": "capacity",
+      "checks": {
+        "case": "capacity",
+        "passed": true,
+        "accepted": 32,
+        "revoked": 0,
+        "failed": 0,
+        "dispatched": 32,
+        "admitted": 32,
+        "cancelled": 0,
+        "peak_jobs": 32,
+        "prepared": 32,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 32,
+        "submitted": 32,
+        "delivered": 32,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 248,
+        "max_queue": 31,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 22
+      },
+      "shader": {
+        "batches": 2,
+        "samples": 256,
+        "accepted": 256,
+        "replaced": 256,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "logs": {
+        "process.log": "e7fc63e6ab0f558bbf5eac138f7bc6378f721eeeec3f5076cd5b464684c06367",
+        "queue.log": "938f0fef570e591aebc0a0deb41d3d09427aaab165a9f05f8da5bc0e6f6a2541",
+        "shader.bin": "aa5b1c606b9c98dbacf179b0912be08b8e333ddff6e01434f99c13fe0ad46bc5",
+        "shader.log": "1940748e716fc784710602a747bfe9544743eb34d7041d83ef12f686ec2dd758"
+      }
+    },
+    {
+      "case": "close_pending",
+      "checks": {
+        "case": "close_pending",
+        "passed": true,
+        "accepted": 0,
+        "revoked": 0,
+        "failed": 0,
+        "dispatched": 1,
+        "admitted": 1,
+        "cancelled": 1,
+        "peak_jobs": 1,
+        "prepared": 1,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 1,
+        "submitted": 1,
+        "delivered": 0,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 1,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 1,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 1,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 9
+      },
+      "shader": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "logs": {
+        "process.log": "ead33b6ed8c3665489d3de3cff4a2397d7066514875213318a2b587e55ccd1c1",
+        "queue.log": "d38645b709ea04605a7ebd6164966dc620b449a4b348e5bb288b1f9dd4fa6970",
+        "shader.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shader.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "nonfinite",
+      "checks": {
+        "case": "nonfinite",
+        "passed": true,
+        "accepted": 0,
+        "revoked": 0,
+        "failed": 1,
+        "dispatched": 0,
+        "admitted": 1,
+        "cancelled": 0,
+        "peak_jobs": 1,
+        "prepared": 1,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 0,
+        "submitted": 0,
+        "delivered": 0,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 0,
+        "max_batch_samples": 0,
+        "max_queue": 0,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 0
+      },
+      "shader": {},
+      "logs": {
+        "process.log": "621755835385d7129ee7b8030fea3c4a09c4d3a35854867910d31fbea1101555",
+        "queue.log": "68e69dc4c0bf86d6f595d23804d138114f5ec68e7417eb03080e3791ab9a22cf"
+      }
+    },
+    {
+      "case": "ready_restart",
+      "checks": {
+        "case": "ready_restart",
+        "passed": true,
+        "accepted": 1,
+        "revoked": 0,
+        "failed": 0,
+        "dispatched": 2,
+        "admitted": 2,
+        "cancelled": 1,
+        "peak_jobs": 1,
+        "prepared": 2,
+        "outstanding": 0
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 2,
+        "delivered": 2,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "closed_fallback": 0,
+        "cancelled_requests": 0,
+        "retained_async": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "shader": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "logs": {
+        "process.log": "ab4a904834886faa65ebc8f76d432881a6801fdc81c43b70769edfcb76a27807",
+        "queue.log": "0b8a477b5fe994585198685b9a6d8c8bbdcc2fa430e73facf3d28291c942e921",
+        "shader.bin": "8deb66a784f3d867d3ddfa5885d8e7ec6814b7f1337ba0c2dec0181c7facf17a",
+        "shader.log": "bb7c79cab99ead1050b68cbee416be85cb4d396b877d48fc25512e1a08468c3c"
+      }
+    }
+  ],
+  "totals": {
+    "admitted": 50,
+    "accepted": 41,
+    "revoked": 1,
+    "failed": 4,
+    "cancelled": 4,
+    "outstanding": 0
+  },
+  "limitations": [
+    "Not connected to native integrator path restoration",
+    "No new native image or performance result",
+    "Synthetic constant tint tiles and numerical resume metadata",
+    "CPU oracle retained",
+    "No kit or runtime installation"
+  ]
+}

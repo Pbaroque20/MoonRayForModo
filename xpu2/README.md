@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-See [native terminal-radiance suspension and film resumption](NATIVE_FILM_CONTINUATIONS.md),
+See [owned texture-to-GPU shading-stage dispatch](SHADING_DISPATCH.md),
+[native terminal-radiance suspension and film resumption](NATIVE_FILM_CONTINUATIONS.md),
 [texture-ready work dispatch](TEXTURE_WORK.md),
 [scene-index texture dependencies](TEXTURE_DEPENDENCIES.md),
 [background texture decoding and cancellation](TEXTURE_ASYNC.md),

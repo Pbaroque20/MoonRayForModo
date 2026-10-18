@@ -131,3 +131,7 @@ validation only; it does not turn these payloads into resumable native paths.
 [Native terminal-radiance suspension](NATIVE_FILM_CONTINUATIONS.md) now validates
 owned completed contributions returning through the native film handler. It does
 not yet restore this mailbox's numerical state into a suspended shading path.
+
+[Owned asynchronous shading-stage dispatch](SHADING_DISPATCH.md) now joins
+texture readiness, CUDA Lambert work and guarded CPU resume leases. Native
+whole-path capture/restoration remains a separate integration requirement.
