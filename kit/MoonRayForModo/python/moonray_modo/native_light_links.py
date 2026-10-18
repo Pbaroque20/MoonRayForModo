@@ -1,14 +1,25 @@
 """Capture host shading-group links without touching selection."""
 
+def kind(item):
+    """An item's type by name. Modo's Python gives a group's as '' from item.type, so it is looked up in the scene's
+    type list from the item's own type number."""
+    try:
+        import lx
+        return lx.service.Scene().ItemTypeName(lx.object.Item(item).Type()) or item.type
+    except Exception:
+        return item.type
+
+
 def linked_members(item):
     import modo
-    linked=[v for v in item.itemGraph('shadeLoc').forward() if v.type in ('group','groupLocator')]
+    linked=[v for v in item.itemGraph('shadeLoc').forward() if kind(v) in ('group','groupLocator')]
     if not linked:return None # No selected group is not an empty, explicitly linked group.
     members=set()
     def visit(group,trail):
         if group.id in trail:raise ValueError('Cyclic light-link group')
-        if group.type=='group':children=modo.Group(group).items
-        elif group.type=='groupLocator':children=group.children()
+        found=kind(group)
+        if found=='group':children=modo.Group(group).items
+        elif found=='groupLocator':children=group.children()
         else:members.add(group.id);return
         for child in children:visit(child,trail+(group.id,))
     for group in linked:visit(group,())
@@ -92,11 +103,15 @@ def emit(scene,meshes,refs,environment_refs,lines):
     for mesh in list(meshes)+scene.get('extra_geometry',[]):
         for tag in set(mesh.get('face_materials',[]) or [mesh.get('material','')]):pairs.add((owner(mesh),tag))
     shared={}
+    # Filed under the material each part renders with, as the scene's assignments look them up (rdla): a polygon tag
+    # with no material of its own renders with the base one, ''.
+    known=scene.get('materials',{})
     for identity,tag in sorted(pairs):
         selected=tuple(allowed(links,identity,tag,light_ids))
         if selected not in shared:
             name='/modo/nativeLinks/'+str(len(shared));shared[selected]='LightSet('+string(name)+')'
             members=[ref for light in selected for ref in refs[light]]+ambient
             lines.append(shared[selected]+'('+array(members)+')')
+        rendered=tag if tag in known else ''
         lines.append('nativeLightSets[%s] = nativeLightSets[%s] or {}'%(string(identity),string(identity)))
-        lines.append('nativeLightSets[%s][%s] = %s'%(string(identity),string(tag),shared[selected]))
+        lines.append('nativeLightSets[%s][%s] = %s'%(string(identity),string(rendered),shared[selected]))

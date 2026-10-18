@@ -239,6 +239,7 @@ Not released yet: on the MoonLightIPR branch.
 
 ### Fixes
 
+- **Modo's own light linking reaches MoonRay**: a light's Light Linking group, set to include or exclude, was passed over before, and every object took every light. Checked against Modo's own render in both modes. MoonLightIPR still lights every object alike.
 - **Large MoonRay pictures the right way up**: a preview at 3840 x 2160 came out upside down in MoonRay, and now does not.
 - **ACEScg scenes render and look right**: MoonRay no longer refuses them, and the preview no longer shows their colours washed out.
 - **Less memory kept over a long session**: small leaks after each render and selection are gone.
