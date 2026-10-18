@@ -71,6 +71,10 @@ the next run matched texels but failed a test coverage assertion because its RAM
 budget was too large to evict anything. The final run tightened RAM/VRAM budgets
 and passed both parity and eviction checks. No mismatch tolerance was relaxed.
 
+A follow-up [CUDA point/bilinear filter experiment](TEXTURE_FILTER.md) now validates
+base-level sampling and texture-space images. The rendered-scene and production
+filtering gates below remain open.
+
 ## Remaining integration
 
 This establishes raw mip data equivalence for these fixtures, **not filtered

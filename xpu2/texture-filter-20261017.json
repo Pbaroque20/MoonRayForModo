@@ -1,0 +1,118 @@
+{
+  "status": "passed",
+  "scope": "Raw native-channel, base-level CUDA point/bilinear filtering. Texture-space test images, not full MoonRay renders.",
+  "cuda_flags": [
+    "--std=c++14",
+    "--gpu-architecture=compute_86",
+    "--fmad=false",
+    "--ftz=false",
+    "--prec-div=true",
+    "--prec-sqrt=true"
+  ],
+  "native": {
+    "passed": true,
+    "cases": 32,
+    "queries": 234976,
+    "components": 587776,
+    "exact_components": 587776,
+    "point_max_abs": 0,
+    "bilinear_max_abs": 0,
+    "rms": 0,
+    "fallback_checks": 32,
+    "point_tolerance": 0,
+    "bilinear_tolerance": 2e-06,
+    "cleanup_errors": 0
+  },
+  "texture_image": {
+    "status": "passed",
+    "dimensions": [
+      96,
+      64
+    ],
+    "channels": {
+      "R": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "G": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "B": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "A": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      }
+    },
+    "exactly_different_pixels": 0,
+    "first_difference": null,
+    "largest_differences": [],
+    "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+    "metadata": {
+      "colorInteropID": null,
+      "oiio:ColorSpace": null,
+      "PixelAspectRatio": "1"
+    }
+  },
+  "image_channel_ranges": {
+    "R": [
+      0.00048828125,
+      0.9725494384765625
+    ],
+    "G": [
+      0.011138916015625,
+      0.976654052734375
+    ],
+    "B": [
+      0.0135345458984375,
+      0.9698028564453125
+    ],
+    "A": [
+      0.0055389404296875,
+      0.9696502685546875
+    ]
+  },
+  "preprocessed_sha256": "033a7fd391118216f27aa34e92c819c770cc913a727ad4e23185e4c228e62f3a",
+  "executable_sha256": "f6c629b0ccd32b6f4c9701f9d1c33dd679a8258a6ee068789382cd3298a7cee6",
+  "ptx_sha256": "041f2c174c209f28116cac9460718d3b9332047233bca90583ce8c260249ebd6",
+  "fixture_hashes": {
+    "rgba.tx": "7658bb27011badc00908cbdaafb9281176058b09cb51448b8d1648e60113961f",
+    "rgb.tx": "d36d58990ced16e7d4e86b0d6ae9259e310401f0486e7820a035bf47ce1eae42",
+    "gray.tx": "3fc11ea58217339d453794a5fa6f4583691840ccb9166dd940cbc553319e3076",
+    "rg.tx": "65693a96be48a5f79c1a897dabeb589b2a26b02373814a809a9093f3dc2d02da"
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+  "source_sha256": {
+    "texture_filter_cuda.cu": "f7442ef24159c53a3ab671ffca650b2c13837301abcfd15680c2a8942600aae1",
+    "texture_filter_probe.cc": "3477f623cac80f2d4ff0d9cae47b110045321d8e88ae7e7a284c3821a4e03e5d",
+    "texture_cache.h": "d1e41c9335cf06388ac8a2676f9d9f41fb6d74b14d739e9d663130d7b2af5ac1",
+    "texture_cuda_backend.h": "1b934ac19dec58b8c3b576bdcb2ab313248a0e08355519b204bb2b1997ff8f09",
+    "texture_oiio_loader.h": "e43adba167769d42cd3cbefbc09e64871ee8b03d36a50b8f5d22903ef1dd70d5",
+    "images.py": "85cddd6352847ba050f315863b278121f73e7a0af7e7688da23988dd9a57de81",
+    "validate_reference_images.py": "6cf001301014c9afe44460f1cd869ad52ef4131a00ff18e3538317e0d4aacd1e",
+    "xpu2_texture_filter_probe.py": "e18b6649d65fb792bed610d01b2cad080ee970ca8c674c2e4b7573eb873587ea",
+    "xpu2_cuda_sampler_probe.py": "4d808ecbb2e29e506fb10a476b8b57bf68995f442af685942a09a4001b5a36f1",
+    "g++.exe": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+    "libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+    "report.json": "0be97c4201afc451f0a383d0f44992d90955e8d1ab8f75d7ca369cd9733be184",
+    "nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+    "nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5"
+  },
+  "local_report": "test-results/xpu2-texture-filter-image/report.json"
+}
