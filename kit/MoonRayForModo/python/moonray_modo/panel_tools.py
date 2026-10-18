@@ -361,9 +361,16 @@ class Tools:
         for key, label in self.buffer_names(frame):
             kind = outputs.display_kind(snapshot, key)
             entries.append((key, label, group_of(key, kind, customs.get(key)), kind))
-        width, height = self.preview.image.width(), self.preview.image.height()
-        about = 'The outputs of the last finished render%s. Tick the ones to save; each becomes a file named after it.' % (
-            ', %d x %d' % (width, height) if width else '')
+        # The size the render was made at, and the camera it was seen through.
+        width, height = snapshot.get('width') or self.preview.image.width(), snapshot.get('height') or self.preview.image.height()
+        identity = (snapshot.get('camera') or {}).get('identity')
+        camera = identity or 'the render camera'
+        try:
+            import modo
+            camera = modo.Scene().item(identity).name if identity else camera
+        except Exception:
+            pass
+        about = 'Output Resolution: %d x %d based on %s' % (width, height, camera)
         dialog = ExportAOVs(self, entries, self.settings, about)
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return

@@ -56,7 +56,7 @@ def window():
     entries = [(key, label, group_of(key, outputs.display_kind(snapshot, key), customs.get(key)), outputs.display_kind(snapshot, key))
                for key, label in panel.buffer_names(frame)]
     result['groups'] = sorted({group for _, _, group, _ in entries})
-    dialog = ExportAOVs(panel, entries, panel.settings, 'The outputs of the last finished render, 1280 x 720.')
+    dialog = ExportAOVs(panel, entries, panel.settings, 'Output Resolution: %d x %d based on Camera' % (snapshot['width'], snapshot['height']))
     dialog.folder.setText(str(out))
     dialog.kind.setCurrentIndex(dialog.kind.findData('png16'))
     dialog.show()
