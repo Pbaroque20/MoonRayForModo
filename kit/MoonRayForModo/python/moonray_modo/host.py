@@ -433,6 +433,11 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 # What of Modo's material MoonRay is not given as Modo renders it, as measured against Modo's renders.
                 if float(channel(material,'reflAmt',0))>0 and not channel(material,'reflSpec',1):
                     warnings.append("%s: a reflection amount apart from the specular amount (Match Specular off) is not followed." % material.name)
+                # Principled settings MoonRay's material has nothing for.
+                if channel(material,'brdfType','')=='principled':
+                    for name,label in (('specTint','Specular Tint'),('flatness','Flatness')):
+                        if float(channel(material,name,0))>0:
+                            warnings.append("%s: %s is not followed: MoonRay's material has nothing like it." % (material.name,label))
             if channel(material,'subsAmt',0) or channel(material,'aniso',0) or result['materials'][tag].get('sheen',0):
                 result['materials'][tag]['shader'] = 'DwaBaseMaterial'
             if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
