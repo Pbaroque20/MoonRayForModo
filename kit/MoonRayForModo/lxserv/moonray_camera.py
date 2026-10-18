@@ -105,6 +105,22 @@ def register():
 
     lx.bless(Convert,'moonray.camera.convert')
 
+    class Revert(lxu.command.BasicCommand):
+        """The selected MoonRay cameras made Modo's own cameras again (Change to Modo Camera), framing as they did."""
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Enable(self,msg):
+            from moonray_modo.camera_convert import selected_moonray_cameras
+            try:return bool(selected_moonray_cameras())
+            except Exception:return False
+        def basic_Execute(self,msg,flags):
+            import modo
+            from moonray_modo.camera_convert import revert,selected_moonray_cameras
+            made=[revert(camera) for camera in selected_moonray_cameras()]
+            if made:modo.Scene().select(made)
+            property_notifications.notify()
+
+    lx.bless(Revert,'moonray.camera.revert')
+
 
 # A fault here must not keep the rest of the kit from loading.
 try:register()

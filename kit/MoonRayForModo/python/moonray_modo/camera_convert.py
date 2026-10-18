@@ -101,3 +101,41 @@ def convert(camera, kind):
         except (TypeError, ValueError, AttributeError, LookupError, RuntimeError):
             pass
     return camera
+
+
+def selected_moonray_cameras():
+    """The MoonRay cameras that are Modo cameras (a camera with a MoonRay camera package) among those selected."""
+    import modo
+    from . import entities
+    return [item for item in modo.Scene().selected if item.type == 'camera' and entities.class_of(item) in entities.VIEWED_CAMERAS]
+
+
+def revert(camera):
+    """A MoonRay camera made Modo's own camera again (Change to Modo Camera): Modo's lens channels are given what the
+    MoonRay lens framed (focal length, film, offsets, or an orthographic view's width; a fisheye, spherical or dome
+    camera's width across as a perspective view), and its depth of field, and the MoonRay package is taken off. It
+    stays the item it is, with its name, place, parent, children, animation and its part as render camera, in the
+    Camera Sequence and as the dicing camera. Returns it."""
+    from . import entities
+    name = entities.class_of(camera)
+    if name not in entities.VIEWED_CAMERAS:
+        return camera
+
+    def number(attribute):
+        try:
+            return float(camera.channel(attribute if attribute == 'target' else entities.CHANNEL_PREFIX + attribute).get())
+        except (TypeError, ValueError, AttributeError, LookupError, RuntimeError):
+            return float(entities.starting(name).get(attribute, 0.0))
+    values = entities.modo_lens(name, number, number('target'))
+    for modo_name, attribute in (('dof', 'dof'), ('fStop', 'dof_aperture'), ('focusDist', 'dof_focus_distance')):
+        try:
+            values[modo_name] = camera.channel(entities.CHANNEL_PREFIX + attribute).get()
+        except (TypeError, ValueError, AttributeError, LookupError, RuntimeError):
+            pass
+    camera.PackageRemove(entities.camera_package(name))
+    for key, value in values.items():
+        try:
+            camera.channel(key).set(value)
+        except (TypeError, ValueError, AttributeError, LookupError, RuntimeError):
+            pass
+    return camera

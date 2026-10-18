@@ -148,6 +148,19 @@ def context_menus(text):
     return text[:head] + eol + block + text[head:]
 
 
+def camera_revert_entry(text):
+    """Change to Modo Camera in the Item List's right-click menu of a camera, after Convert to MoonRay Camera, each
+    shown only where it applies; unchanged if it is there."""
+    old = ('<list type="Control" val="cmd moonray.camera.convert"><atom type="Label">Convert to MoonRay Camera...</atom>'
+           '<atom type="Hash">MoonRayContext_convert_camera:control</atom></list>')
+    if 'cmd moonray.camera.revert' in text or text.count(old) != 1:
+        return text
+    eol = chr(13) + chr(10) if chr(13) + chr(10) in text else chr(10)
+    return text.replace(old, old.replace('<atom type="Hash">', '<atom type="ShowWhenDisabled">0</atom><atom type="Hash">') + eol +
+                        '      <list type="Control" val="cmd moonray.camera.revert"><atom type="Label">Change to Modo Camera</atom>'
+                        '<atom type="ShowWhenDisabled">0</atom><atom type="Hash">MoonRayContext_revert_camera:control</atom></list>')
+
+
 def viewport_title(text):
     """The preview set into Modo's layout is titled MoonRay; its own window keeps MoonRay Preview."""
     return text.replace('<atom type="ViewportTitle">MoonRay Preview</atom>', '<atom type="ViewportTitle">MoonRay</atom>')
