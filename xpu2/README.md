@@ -330,5 +330,9 @@ small measured gain is against its same-build control, not original XPU.
 
 The [larger GPU direct-light unit](NATIVE_DIRECT_LIGHT_UNIT.md) qualifies diffuse
 material evaluation, PDFs, MIS weighting and unshadowed lighting together against
-captured native results. Live asynchronous transport and image restoration remain
-the next gate; the capture runtime still publishes native CPU results.
+captured native results. Its capture runtime still publishes native CPU results.
+
+The [native asynchronous direct-light connection](NATIVE_DIRECT_LIGHT_ASYNC.md)
+uses those GPU results in the image, with bounded numeric ownership, native-order
+consumption, fallback and cancellation checks. It remains opt-in: the current
+small work groups increase handoff costs and have not demonstrated acceleration.
