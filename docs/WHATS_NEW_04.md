@@ -7,7 +7,7 @@ Not released yet: on the MoonLightIPR branch.
 - **Shader Tree Displacement and Stencil layers render in MoonRay**: displacement layers raise the surface by their value times the material's Displacement Distance, and a Stencil takes the surface away where it is white, as Modo's do.
 - **Principled sheen**: a Principled material's Sheen and Sheen Tint show in MoonRay, as a soft glow at grazing angles fitted to Modo's renders. Specular Tint and Flatness, which MoonRay's material has nothing like, are named in a notice.
 - **Principled highlights keep their edge**: a Principled material with a low specular amount, Modo's default among them, brightens toward the edge in MoonRay as it does in Modo.
-- **Anisotropy follows Modo's UV map**: a material with Anisotropy but no UV map named for it renders a round highlight, as Modo draws it.
+- **Anisotropy follows Modo's UV map, and its strength Modo's**: a material with Anisotropy but no UV map named for it renders a round highlight, as Modo draws it; with one, MoonRay's highlight stretches and spreads nearer Modo's (fitted against Modo's renders). A very strong anisotropy still draws a shorter streak than Modo's.
 - **Shader Tree masks checked against Modo**: material, Part and Selection Set masks colour the same surfaces in MoonRay as in Modo; a layer or group placed above the Base Shader, which Modo applies to nothing, is left out too, with a notice.
 
 ## New in 0.4.2.1
