@@ -9,7 +9,7 @@ from xpu2.native_gpu_paths import once
 HISTORICAL_REF='4b696165e7a9cff743bbabbb9a43bb42fe1924da'
 STAGES={'resident':'native_resident_records','prepared':'native_prepared_records',
         'overhead':'native_overhead','material_jobs':'native_material_jobs',
-        'material_admission':'native_material_admission','exclusive_profile':'native_exclusive_profile','no_wait':'native_no_wait'}
+        'material_admission':'native_material_admission','exclusive_profile':'native_exclusive_profile','no_wait':'native_no_wait','owner_stage':'native_owner_stage'}
 
 
 def historical_source(path,expected):
@@ -71,6 +71,13 @@ def main():
   # Patch dependencies, not 44 independent compiler implementations.
   for dependency in (ROOT/'xpu2').glob('*.h'):pinned[str(dependency)]=digest_file(dependency)
   for dependency in (ROOT/'xpu2').glob('*.isph'):pinned[str(dependency)]=digest_file(dependency)
+  handler_object=None
+  module=importlib.import_module("xpu2."+recipe)
+  if getattr(module,'PATCH_HANDLER',False):
+   handler_object=next(f for f in linked if f.name=='ShadeBundleHandler.obj')
+   handler_source=handler_object.with_suffix('.cc')
+   pinned[str(handler_source)]=digest_file(handler_source)
+   shutil.copyfile(handler_source,out/'ShadeBundleHandler.cc')
   patch(out)
   cc=out/'PathIntegratorUtil.cc';shutil.copyfile(base/'PathIntegratorUtil.cc',cc)
   compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';build=source/'build/native-renderer-avx'
@@ -85,6 +92,16 @@ def main():
    if r.returncode:raise ValueError(label+' failed')
   pp=out/'PathIntegratorUtil.ii';obj=out/'PathIntegratorUtil.obj'
   run([*flags,'-E',str(cc),'-o',str(pp)],'sample-preprocess');run([*flags,'-c',str(pp),'-o',str(obj)],'sample-compile')
+  handler_objects={};handler_preprocessed={}
+  if handler_object:
+   htarget='moonray/lib/rendering/pbr/CMakeFiles/rendering_pbr_objects.dir/handlers/ShadeBundleHandler.cc.obj'
+   hcommand=subprocess.run([str(compiler.with_name('ninja.exe')),'-t','commands',htarget],cwd=build,capture_output=True,text=True,check=True).stdout.splitlines()[-1]
+   hflags=shlex.split(hcommand);hflags=hflags[:hflags.index('-MD')]+['-I'+str(ROOT/'xpu2'),'-iquote',str(source/'upstream/openmoonray/moonray/moonray/lib/rendering/pbr/handlers')]
+   hpp=out/'ShadeBundleHandler.ii';hobj=out/'ShadeBundleHandler.obj'
+   run([*hflags,'-E',str(out/'ShadeBundleHandler.cc'),'-o',str(hpp)],'handler-preprocess')
+   run([*hflags,'-c',str(hpp),'-o',str(hobj)],'handler-compile')
+   rsp=once(rsp,chr(34)+str(handler_object).replace('\\','/')+chr(34),chr(34)+str(hobj).replace('\\','/')+chr(34))
+   handler_objects['ShadeBundleHandler']=digest_file(hobj);handler_preprocessed['ShadeBundleHandler']=digest_file(hpp)
   ispc_objects={};ispc_preprocessed={}
   for header in (source/'upstream/openmoonray/moonray/moonray/lib/rendering').rglob('*.isph'):pinned[str(header)]=digest_file(header)
   ninja=(build/'build.ninja').read_text()
@@ -107,7 +124,7 @@ def main():
   for f,h in pinned.items():
    if digest_file(Path(f))!=h:raise ValueError('Source drift '+f)
   verify(base/'runtime',held)
-  report.update(status='built',stage=a.stage,historical_sources=history,source_hashes=pinned,native_hashes={},dll_sha256=digest_file(runtime/'librendering_rndr.dll'),objects={'PathIntegratorUtil':digest_file(obj),**ispc_objects},preprocessed={'PathIntegratorUtil':digest_file(pp),**ispc_preprocessed},experimental_only=True,base_sha256=digest_file(base/'report.json'))
+  report.update(status='built',stage=a.stage,historical_sources=history,source_hashes=pinned,native_hashes={},dll_sha256=digest_file(runtime/'librendering_rndr.dll'),objects={'PathIntegratorUtil':digest_file(obj),**ispc_objects,**handler_objects},preprocessed={'PathIntegratorUtil':digest_file(pp),**ispc_preprocessed,**handler_preprocessed},experimental_only=True,base_sha256=digest_file(base/'report.json'))
  except Exception as e:
   import traceback
   report['error']=str(e);report['traceback']=traceback.format_exc()
