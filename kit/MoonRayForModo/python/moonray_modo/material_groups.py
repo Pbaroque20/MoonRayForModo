@@ -30,6 +30,8 @@ def merged(stack):
     result.update(color=[.5]*3,raw_color=[.5]*3,roughness=.4,transmission=0,
                   emission=[0]*3,raw_emission=[0]*3,metallic=0,layer_opacity=1)
     result['subsurface_distance']=max(m.get('subsurface_distance',0) for m in stack)
+    # The colour a sheen is tinted towards: the topmost material's, which the backing grey above stands in for.
+    result['sheen_color']=stack[-1].get('raw_color',stack[-1].get('color',[.5]*3))
     result['dispersion_abbe']=next((m.get('dispersion_abbe',0) for m in reversed(stack) if m.get('dispersion_abbe',0)>0),0)
     result.pop('material_stack',None)
     return result

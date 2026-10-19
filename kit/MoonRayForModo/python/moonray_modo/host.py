@@ -259,7 +259,9 @@ def material_values(material):
                                 'layer_opacity': float(channel(material,'opacity',1)),
                                 'layer_blend': channel(material,'blend','normal'),
                                 'layer_invert': bool(channel(material,'invert',False)),
-                                'anisotropy': float(channel(material, 'aniso', 0)),
+                                # Modo stretches a highlight only along a UV map (or vector map) named on the material: without
+                                # one it draws a round highlight, whatever the Anisotropy (seen in its own renders).
+                                'anisotropy': float(channel(material, 'aniso', 0)) if channel(material, 'uvMap', '') or channel(material, 'isVectorMap', 0) else 0.0,
                                 # Modo's material is a metal only under its Principled shading model; the others ignore the setting.
                                 'metallic': float(channel(material, 'metallic', 0)) if channel(material, 'brdfType', '') == 'principled' else 0.0,
                                 'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
@@ -273,7 +275,13 @@ def material_values(material):
                                 'presence': 1.0 - min(1.0, max(0.0, float(channel(material, 'dissAmt', 0)))),
                                 'opacity': 1.0 - float(channel(material, 'dissAmt', 0)),
                                 'clearcoat': float(channel(material, 'coatAmt', 0)),
-                                'clearcoat_roughness': float(channel(material, 'coatRough', .01))}
+                                'clearcoat_roughness': float(channel(material, 'coatRough', .01)),
+                                # Displacement Distance, and the value the Shader Tree's displacement layers start from.
+                                'displacement_distance': float(channel(material, 'displace', .02)),
+                                'displacement_value': float(channel(material, 'dispVal', 0)),
+                                # Sheen and its tint, which Modo's Principled model alone draws.
+                                'sheen': max(0.0, float(channel(material, 'sheen', 0))) if channel(material, 'brdfType', '') == 'principled' else 0.0,
+                                'sheen_tint': min(1.0, max(0.0, float(channel(material, 'sheenTint', 0))))}
     from .group_scale import material as scale_material
     return scale_material(material,value,channel)
 
@@ -427,9 +435,14 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 # What of Modo's material MoonRay is not given as Modo renders it, as measured against Modo's renders.
                 if float(channel(material,'reflAmt',0))>0 and not channel(material,'reflSpec',1):
                     warnings.append("%s: a reflection amount apart from the specular amount (Match Specular off) is not followed." % material.name)
-            if channel(material,'subsAmt',0) or channel(material,'aniso',0):
+                # Principled settings MoonRay's material has nothing for.
+                if channel(material,'brdfType','')=='principled':
+                    for name,label in (('specTint','Specular Tint'),('flatness','Flatness')):
+                        if float(channel(material,name,0))>0:
+                            warnings.append("%s: %s is not followed: MoonRay's material has nothing like it." % (material.name,label))
+            if channel(material,'subsAmt',0) or result['materials'][tag].get('anisotropy',0) or result['materials'][tag].get('sheen',0):
                 result['materials'][tag]['shader'] = 'DwaBaseMaterial'
-            if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
+            if result['materials'][tag].get('anisotropy',0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
                 warnings.append('Anisotropy requires MoonShine Material: ' + material.name)
             if channel(material, 'tranAmt', 0):
                 if channel(material, 'disperse', 0):

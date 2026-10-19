@@ -17,7 +17,7 @@ out.mkdir(parents=True, exist_ok=True)
 result = {'cases': []}
 SIZE = 128
 BASE = {'diffAmt': 0.0, 'diffCol.R': .8, 'diffCol.G': .5, 'diffCol.B': .3, 'specAmt': 0.0, 'specFres': 0.0, 'reflAmt': 0.0, 'reflFres': 0.0,
-        'rough': .1, 'brdfType': 'gtr', 'metallic': 0.0, 'aniso': 0.0}
+        'rough': .1, 'brdfType': 'gtr', 'metallic': 0.0, 'aniso': 0.0, 'sheen': 0.0, 'sheenTint': 0.0}
 CASES = [('diffuse_colour', {'diffAmt': 1.0}), ('diffuse_half', {'diffAmt': .5}),
          ('spec_004', {'specAmt': .04}), ('spec_030', {'specAmt': .3}), ('spec_100', {'specAmt': 1.0}),
          ('spec_000_fresnel', {'specFres': 1.0}), ('spec_004_fresnel', {'specAmt': .04, 'specFres': 1.0}), ('spec_030_fresnel', {'specAmt': .3, 'specFres': 1.0}),
@@ -30,7 +30,17 @@ CASES = [('diffuse_colour', {'diffAmt': 1.0}), ('diffuse_half', {'diffAmt': .5})
          ('aniso_030', {'specAmt': .3, 'rough': .3, 'aniso': .7}),
          # Modo's Principled model: its highlight alone on black at three roughnesses, then over a colour.
          *[('principled_gloss_%02d' % round(r * 100), {'brdfType': 'principled', 'specAmt': 1.0, 'rough': r, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0}) for r in (.1, .35, .7)],
-         *[('principled_paint_%02d' % round(r * 100), {'brdfType': 'principled', 'specAmt': .25, 'rough': r, 'diffAmt': 1.0}) for r in (.1, .35, .7)]]
+         *[('principled_paint_%02d' % round(r * 100), {'brdfType': 'principled', 'specAmt': .25, 'rough': r, 'diffAmt': 1.0}) for r in (.1, .35, .7)],
+         # Principled sheen: alone over black, at full and half, then over red with and without its tint; and under GTR,
+         # which should draw none.
+         ('principled_default_black', {'brdfType': 'principled', 'specAmt': .04, 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0}),
+         ('principled_default_paint', {'brdfType': 'principled', 'specAmt': .04, 'diffAmt': 1.0, 'rough': .4}),
+         ('sheen_black_000', {'brdfType': 'principled', 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0}),
+         ('sheen_black_100', {'brdfType': 'principled', 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0, 'sheen': 1.0}),
+         ('sheen_black_050', {'brdfType': 'principled', 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0, 'sheen': 0.5}),
+         ('sheen_red_notint', {'brdfType': 'principled', 'diffAmt': 1.0, 'diffCol.R': .8, 'diffCol.G': .1, 'diffCol.B': .1, 'sheen': 1.0}),
+         ('sheen_red_tint', {'brdfType': 'principled', 'diffAmt': 1.0, 'diffCol.R': .8, 'diffCol.G': .1, 'diffCol.B': .1, 'sheen': 1.0, 'sheenTint': 1.0}),
+         ('sheen_gtr', {'brdfType': 'gtr', 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0, 'sheen': 1.0})]
 # Only the cases named in MOONRAY_PROBE_CASES, where any are: the others' pictures are kept as they are.
 import os
 if os.environ.get('MOONRAY_PROBE_CASES'):

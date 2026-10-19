@@ -291,7 +291,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Depth of field | ![yes](docs/images/feature-yes.svg) | |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
-| Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor |
+| Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor. Coming next: the Shader Tree's Displacement and Stencil layers too |
 | Switch displacement | ![yes](docs/images/feature-yes.svg) | In the node editor |
 | Display filters (colour correct, toon, halftone and the rest) | ![yes](docs/images/feature-yes.svg) | All 18, as MoonRay items; each a preview buffer and an EXR channel |
 | Uniform and adaptive sampling, light sampling, bounce limits, clamping | ![yes](docs/images/feature-yes.svg) | Render Settings. Settings a sampling mode does not use are greyed, and MoonRay LS samples adaptively or uniformly, chosen in Preview Preferences |

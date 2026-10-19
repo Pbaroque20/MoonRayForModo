@@ -221,7 +221,7 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
     for color_effect, amount_effect in amounts.items():
         if amount_effect in used:
             used.add(color_effect)
-    for effect in sorted(used-textures.INTERNAL_EFFECTS-{'normal','normalCoat','coatBump','bump','diffAmt','specAmt','lumiAmt','dissolve'}):
+    for effect in sorted(used-textures.INTERNAL_EFFECTS-{'normal','normalCoat','coatBump','bump','diffAmt','specAmt','lumiAmt','dissolve','displace','stencil'}):
         value = current[effect]
         if effect in amounts:
             amount_effect = amounts[effect]
@@ -234,6 +234,16 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
     if 'dissolve' in used:
         value = node('ModoTextureMap',{'background':rgb(1),'foreground':current['dissolve'],'blend':'3'})
         result['presence'] = value[:-1] + ', 1)'
+    if 'stencil' in used:
+        # A stencil takes the surface away where it is white, as Modo's does (checked against Modo's render), over any
+        # dissolve.
+        kept = node('ModoTextureMap',{'background':rgb(1),'foreground':current['stencil'],'blend':'3'})
+        if 'dissolve' in used:kept = node('ModoTextureMap',{'background':value,'foreground':kept,'blend':'1'})
+        result['presence'] = kept[:-1] + ', 1)'
+    if 'displace' in used and DISPLACEMENT is not None:
+        # The height the displacement layers make, and the material's Displacement Distance, noted for its
+        # NormalDisplacement (rdla): a displacement is not an attribute of the material.
+        DISPLACEMENT.append((current['displace'][:-1] + ', 1)', material.get('displacement_distance', .02)))
     for normal_effect,bump_effect,result_key in (('normal','bump','normal'),('normalCoat','coatBump','coatNormal')):
         if used & {normal_effect,bump_effect}:
             # The height is read a thousandth of the image to either side: of the image as its layer lays it on,
@@ -257,6 +267,10 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
 # for any that does not say so, since a MoonRay that does not know an attribute refuses the scene.
 BUMP_STEP = False
 
+# While a material is written (rdla), the Shader Tree displacements its layers make, in the order they are written:
+# the last, the topmost, is the one MoonRay is given. None when no material is being written.
+DISPLACEMENT = None
+
 
 def defaults_for(material):
     defaults = {**{key:0 for key in textures.INTERNAL_EFFECTS}, 'diffCol':material.get('color',[.5,.5,.5]),
@@ -269,7 +283,8 @@ def defaults_for(material):
         'normal':[.5,.5,1], 'normalCoat':[.5,.5,1], 'coatBump':0, 'diffRough':material.get('diffuse_roughness',0), 'bump':0, 'layerMask':1, 'groupMask':1, 'aniso':material.get('anisotropy',0),
         'subsCol':material.get('subsurface_color',[1,1,1]), 'subsAmt':material.get('subsurface_amount',0),
         'diffAmt':material.get('diffuse_amount',1), 'specAmt':material.get('specular_amount',1),
-        'lumiAmt':material.get('emission_amount',1), 'dissolve':1-material.get('presence',1)}
+        'lumiAmt':material.get('emission_amount',1), 'dissolve':1-material.get('presence',1),
+        'displace':material.get('displacement_value',0), 'stencil':0}
     for effect, raw, amount in [('diffCol','raw_color','diffuse_amount'),
                                 ('specCol','raw_specular','specular_amount'),
                                 ('lumiCol','raw_emission','emission_amount')]:

@@ -36,6 +36,34 @@ def fresnel_match(straight,rise):
     return min(.99,found)
 
 
+# Modo's Principled model, specular at none, over black in an even white sky (its own renders, tools/probe_fresnel.py,
+# sheen_black_000): what it reflects from straight on to 75 degrees. Its specular rises as Schlick's does, toward a
+# mirror at the edge, whatever the amount.
+PRINCIPLED_RISE=((1.0,0.0),(math.cos(math.radians(40)),.001),(math.cos(math.radians(55)),.019))+MODO_RISE
+
+
+# The most a Principled highlight reflects straight on (8% of a specular amount of 0.125) for which it is fitted over
+# its whole curve: past it, the weight held to that amount was as near Modo's renders or nearer (principled_paint and
+# principled_gloss cases).
+PRINCIPLED_FITTED=.01
+
+
+def principled_match(straight,rise):
+    """(reflectance, weight) of MoonRay's specular layer nearest a Principled highlight that reflects straight on
+    what it does there and rises toward the edge as Modo's does (rise of 1 for the whole rise). MoonRay's layer rises
+    as glass does, which cannot start from nothing as Schlick's rise does: the reflectance and the weight are fitted
+    together over the whole curve, straight on included, rather than the weight held to the amount straight on."""
+    targets=[(cosine,straight+(1-straight)*rise*share) for cosine,share in PRINCIPLED_RISE]
+    best=None
+    for step in range(1,400):
+        lobe=(step/400.0)**2
+        reflected=[dielectric(cosine,lobe) for cosine,_ in targets]
+        weight=min(1.0,max(0.0,sum(r*target for r,(_,target) in zip(reflected,targets))/max(1e-12,sum(r*r for r in reflected))))
+        error=sum((weight*r-target)**2 for r,(_,target) in zip(reflected,targets))
+        if best is None or error<best[0]:best=(error,lobe,weight)
+    return min(.99,best[1]),best[2]
+
+
 def sources(material):
     """The Modo materials a surface is made of: the rows of its stack, or itself."""
     rows=[layer['material'] for layer in material.get('layers') or [] if layer.get('kind')=='materialBase' and layer.get('material')]
@@ -66,6 +94,28 @@ def mapped(material,effect):
     layers=material.get('layers')
     effects=[layer.get('effect') for layer in layers if layer.get('kind')!='materialBase'] if layers is not None else list(material.get('textures',{}))
     return any(textures.EFFECT_ALIASES.get(e,e)==effect for e in effects)
+
+
+# Modo's Principled sheen as DwaBaseMaterial's fuzz: how much fuzz a sheen of 1 is, and how rough it is, as measured
+# against Modo's renders (tools/probe_fresnel.py, sheen cases).
+# Fitted to Modo's sheen of 1 over black, its Principled edge without sheen taken away: within 0.01 of Modo's up to 75
+# degrees from straight on, darker past that.
+SHEEN_FUZZ = 0.1
+SHEEN_ROUGHNESS = 0.05
+
+
+def sheen(material, number, vector):
+    """The fuzz attributes for a material's sheen: none where it has none. Its tint goes from white to the hue of the
+    base colour (the colour at a brightness of 1), as Principled tints its sheen."""
+    amount = material.get('sheen', 0)
+    if not amount:
+        return {}
+    color = material.get('sheen_color', material.get('raw_color', material.get('color', [.5, .5, .5])))
+    bright = 0.3 * color[0] + 0.6 * color[1] + 0.1 * color[2]
+    hue = [c / bright for c in color] if bright > 0 else [1, 1, 1]
+    tint = material.get('sheen_tint', 0)
+    return {'show_fuzz': 'true', 'fuzz': number(min(1.0, amount * SHEEN_FUZZ)), 'fuzz_roughness': number(SHEEN_ROUGHNESS),
+            'fuzz_albedo': vector([min(1.0, 1 - tint + tint * h) for h in hue], 'Rgb')}
 
 
 def emit(material, tag, index, bindings, lines):
@@ -111,6 +161,7 @@ def emit(material, tag, index, bindings, lines):
         'clearcoat':number(material.get('clearcoat',0)),
         'clearcoat_roughness':number(material.get('clearcoat_roughness',.01)),
         'show_specular':'true' if material.get('specular_amount',.04)>0 else 'false',
+        **sheen(material,number,vector),
         'thin_geometry':'true' if material.get('thin_geometry',False) else 'false',
     }
     names={'diffuseColor':'albedo','emissiveColor':'emission','ior':'refractive_index',
@@ -156,19 +207,23 @@ def emit(material, tag, index, bindings, lines):
         # the same thing but cannot take a map, so it is set for the most this material reflects and the
         # weight of the specular layer, which can, carries the amount as a share of that.
         most=specular_ceiling(material)
-        if any(m.get('metallic',0)>0 for m in sources(material)) or metal_mapped(material):
+        stack=sources(material)
+        principled=any(m.get('principled') for m in stack)
+        if any(m.get('metallic',0)>0 for m in stack) or metal_mapped(material):
             # A metal reflects by its colour, whatever the specular amount.
             pass
-        elif most<=0:
+        elif most<=0 and not principled:
             attributes.update(specular='0',show_specular='false')
         else:
-            stack=sources(material)
-            principled=any(m.get('principled') for m in stack)
             # Under Modo's Principled model the specular amount is a share of 8% seen straight on, as measured
-            # against Modo, and it always rises toward the edge.
+            # against Modo, and it always rises toward the edge, even at none.
             straight=most*(.08 if principled else 1.0)
             rise=max(principled_rise(m) for m in stack if m.get('principled')) if principled else max(0.0,min(1.0,max(m.get('specular_fresnel',1.0) for m in stack)))
-            lobe=fresnel_match(straight,rise)
+            if principled and straight<=PRINCIPLED_FITTED:
+                # A weak highlight: the weight held to its amount straight on would leave it no edge.
+                lobe,weight=principled_match(straight,rise)
+            else:
+                lobe=fresnel_match(straight,rise);weight=straight/lobe
             root=math.sqrt(lobe)
             path='/modo/fresnel/'+str(index)
             # Modo's Blinn and Ashikhmin highlights reflect less than a lobe that keeps all the light. The amount is divided
@@ -180,12 +235,16 @@ def emit(material, tag, index, bindings, lines):
                 points=strengths(material['shading_model']);ramp='/modo/strength/%s'%index
                 lines += ['RampMap(%s) {'%string(ramp),'  ["ramp_type"] = 8,','  ["input"] = %s,'%driven,
                           '  ["positions"] = {%s},'%', '.join(number(a) for a,_ in points),
-                          '  ["colors"] = {%s},'%', '.join('Rgb(%s, %s, %s)'%((number(most*lobe/straight/max(1e-6,k)),)*3) for _,k in points),
+                          '  ["colors"] = {%s},'%', '.join('Rgb(%s, %s, %s)'%((number(most/max(1e-6,weight)/max(1e-6,k)),)*3) for _,k in points),
                           '  ["interpolations"] = {%s},'%', '.join('1' for _ in points),'}']
                 lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = bind(RampMap(%s), Rgb(1, 1, 1)), ["blend"] = 5 }'%(string(path),bindings['specularColor'],string(ramp)))
+            elif principled and straight<=PRINCIPLED_FITTED and (most<=0 or not (mapped(material,'specCol') or mapped(material,'specAmt'))):
+                # A Principled highlight no image drives: the fitted weight, whatever the amount (its edge is there at none).
+                path=None
             else:
-                lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most*lobe/straight/strength),)*3))
-            attributes.update(refractive_index=number((1+root)/(1-root)),specular='bind(ModoTextureMap(%s), 1)'%string(path),show_specular='true')
+                lines.append('ModoTextureMap(%s) { ["background"] = %s, ["foreground"] = Rgb(%s, %s, %s), ["blend"] = 5 }'%((string(path),bindings['specularColor'])+(number(most/max(1e-6,weight)/strength),)*3))
+            attributes.update(refractive_index=number((1+root)/(1-root)),show_specular='true',
+                              specular=number(min(1.0,weight/strength)) if path is None else 'bind(ModoTextureMap(%s), 1)'%string(path))
     from .working_space import surface as working_surface
     attributes=working_surface(attributes,'/modo/material/'+str(index),lines,{'albedo','metallic_color','scattering_color','transmission_color','emission','clearcoat_attenuation_color'})
     lines.append('materials[%s] = DwaBaseMaterial("/modo/material/%s") {' % (string(tag),index))
