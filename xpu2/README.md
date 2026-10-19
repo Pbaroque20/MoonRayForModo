@@ -355,3 +355,8 @@ packing; exact-image, recovery and fault gates pass. Paired timing improves on
 eager stealing, but the direct-light-off control locates most of the remaining
 gap in the earlier XPU2 material pipeline. The report lists active features and
 separates this render test from unmeasured scene-loading and update benefits.
+
+The [bounded multi-lobe material experiment](NATIVE_MATERIAL_JOBS.md) lets the GPU
+consume several supported material components per native submission while
+preserving sample order, CPU fallback and bounded ownership. Qualification and
+performance are recorded separately; it is not a general GPU material renderer.

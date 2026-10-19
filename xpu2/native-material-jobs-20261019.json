@@ -1,0 +1,3869 @@
+{
+  "scope": "One native worker; existing diffuse sampling kernels with larger bounded multi-lobe submissions.",
+  "reports": {
+    "checks": {
+      "path": "test-results\\xpu2-material-jobs-checks\\report.json",
+      "sha256": "f568175ced2e140867c30bc26dedf765d3a0c712246cc209bcee809d1a418f99",
+      "status": "incomplete",
+      "error": "Transport imbalance",
+      "runs": [
+        {
+          "label": "reference",
+          "round": 0,
+          "seconds": 10.015245899907313,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 8.502,
+          "profiles": {}
+        },
+        {
+          "label": "control",
+          "round": 0,
+          "seconds": 12.354386900085956,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 10.66,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1625067,
+              "gpu_replaced": 1625067,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 5727
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 1,
+                "calls": 22557,
+                "multi_lobe_jobs": 0,
+                "lobes": 22557,
+                "packets": 203013,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 1,
+                "calls": 22585,
+                "multi_lobe_jobs": 0,
+                "lobes": 22585,
+                "packets": 203265,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 203265,
+              "consumed": 203265
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 592394,
+              "lobe_rejected": 0,
+              "record_packets": 203013,
+              "replay_packets": 203202,
+              "direct_packets": 63,
+              "record_bytes": 162410400,
+              "replay_bytes": 162561600,
+              "direct_bytes": 50400
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 203013,
+              "reused": 203013,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 198871,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 203265,
+              "local": 0,
+              "shared": 203265,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7721,
+              "mixed_packets": 83853,
+              "unknown_packets": 0,
+              "selection_ns": 21540600,
+              "device_ns": 1845668800,
+              "idle_ns": 9580453800,
+              "staging_bytes": 214647840,
+              "batches": 3744,
+              "queue_full": 0,
+              "max_queue": 224
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 3744,
+              "retired": 3744,
+              "queries": 51266,
+              "not_ready": 47522,
+              "submit_ns": 576629900,
+              "poll_ns": 149578700,
+              "error_drains": 0,
+              "kernel_us": 900062
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 3744,
+              "retired": 3744,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 33306900,
+              "retire_ns": 62156200
+            }
+          }
+        },
+        {
+          "label": "two",
+          "round": 0,
+          "seconds": 13.549255799967796,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 12.08,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 7703
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358609,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 64469400,
+              "device_ns": 3854747300,
+              "idle_ns": 9526738300,
+              "staging_bytes": 429295680,
+              "batches": 10439,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10439,
+              "retired": 10439,
+              "queries": 100495,
+              "not_ready": 90056,
+              "submit_ns": 1239276300,
+              "poll_ns": 301453700,
+              "error_drains": 0,
+              "kernel_us": 1814768
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10439,
+              "retired": 10439,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 59034300,
+              "retire_ns": 141061200
+            }
+          }
+        },
+        {
+          "label": "four",
+          "round": 0,
+          "seconds": 13.656091000069864,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 12.17,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 7508
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 4,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 4,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358935,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 64606700,
+              "device_ns": 3969580300,
+              "idle_ns": 9627902700,
+              "staging_bytes": 429295680,
+              "batches": 10472,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10472,
+              "retired": 10472,
+              "queries": 106483,
+              "not_ready": 96011,
+              "submit_ns": 1240622900,
+              "poll_ns": 315927600,
+              "error_drains": 0,
+              "kernel_us": 1876845
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10472,
+              "retired": 10472,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 59236400,
+              "retire_ns": 147577400
+            }
+          }
+        },
+        {
+          "label": "reuse_verify",
+          "round": 0,
+          "seconds": 13.777603900060058,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 12.334,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9648
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358625,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 67903000,
+              "device_ns": 4031754700,
+              "idle_ns": 9749231000,
+              "staging_bytes": 429295680,
+              "batches": 10443,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10443,
+              "retired": 10443,
+              "queries": 112740,
+              "not_ready": 102297,
+              "submit_ns": 1182216900,
+              "poll_ns": 339392600,
+              "error_drains": 0,
+              "kernel_us": 2000553
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10443,
+              "retired": 10443,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 59332000,
+              "retire_ns": 143943000
+            }
+          }
+        },
+        {
+          "label": "profile_two",
+          "round": 0,
+          "seconds": 13.804174400051124,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 12.352,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 7744
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358388,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 68024800,
+              "device_ns": 4088812300,
+              "idle_ns": 9685019400,
+              "staging_bytes": 429295680,
+              "batches": 10445,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10445,
+              "retired": 10445,
+              "queries": 119059,
+              "not_ready": 108614,
+              "submit_ns": 1196719100,
+              "poll_ns": 350839600,
+              "error_drains": 0,
+              "kernel_us": 2024305
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10445,
+              "retired": 10445,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 54446000,
+              "retire_ns": 137665500
+            }
+          }
+        },
+        {
+          "label": "sentinel",
+          "round": 0,
+          "seconds": 12.974228600040078,
+          "image_exact": false,
+          "different_pixels": 45629,
+          "profile_checks_completed": true,
+          "mcrt": 11.442,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3249882,
+              "gpu_replaced": 3249882,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 7534
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22552,
+                "multi_lobe_jobs": 22552,
+                "lobes": 45104,
+                "packets": 405936,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22587,
+                "multi_lobe_jobs": 22587,
+                "lobes": 45174,
+                "packets": 406566,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22552,
+              "window_rejected": 0,
+              "submit_calls": 45139,
+              "submit_rejected": 0,
+              "lobe_calls": 581018,
+              "lobe_rejected": 0,
+              "record_packets": 405936,
+              "replay_packets": 406440,
+              "direct_packets": 126,
+              "record_bytes": 324748800,
+              "replay_bytes": 325152000,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3844,
+              "active": 0,
+              "windows": 3844,
+              "published": 363346,
+              "reused": 363346,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358919,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406566,
+              "local": 0,
+              "shared": 406566,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7939,
+              "mixed_packets": 167436,
+              "unknown_packets": 0,
+              "selection_ns": 63758300,
+              "device_ns": 3791731700,
+              "idle_ns": 8989366900,
+              "staging_bytes": 429333696,
+              "batches": 10522,
+              "queue_full": 42590,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10522,
+              "retired": 10522,
+              "queries": 90834,
+              "not_ready": 80312,
+              "submit_ns": 1289944300,
+              "poll_ns": 272231600,
+              "error_drains": 0,
+              "kernel_us": 1692351
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10522,
+              "retired": 10522,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 58455400,
+              "retire_ns": 155284900
+            }
+          }
+        },
+        {
+          "label": "missing",
+          "round": 0,
+          "seconds": 12.4868373000063,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": false,
+          "mcrt": 11.06,
+          "profiles": {}
+        }
+      ]
+    },
+    "recovery-checks": {
+      "path": "test-results\\xpu2-material-jobs-recovery-checks\\report.json",
+      "sha256": "9b7f36a016e7659d4afa2299a6f5ad26e7ea711ba49681a2f3241c4600ed479d",
+      "status": "passed",
+      "error": null,
+      "runs": [
+        {
+          "label": "reference",
+          "round": 0,
+          "seconds": 9.461551500018686,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 8.046,
+          "profiles": {}
+        },
+        {
+          "label": "two_shallow",
+          "round": 0,
+          "seconds": 13.189237800077535,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.714,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 11106
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 376911,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7719,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 43457700,
+              "device_ns": 3530416800,
+              "idle_ns": 9593790700,
+              "staging_bytes": 429295680,
+              "batches": 7112,
+              "queue_full": 0,
+              "max_queue": 288
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7112,
+              "retired": 7112,
+              "queries": 108734,
+              "not_ready": 101622,
+              "submit_ns": 953063500,
+              "poll_ns": 316977300,
+              "error_drains": 0,
+              "kernel_us": 1849984
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7112,
+              "retired": 7112,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 58470400,
+              "retire_ns": 127229300
+            }
+          }
+        },
+        {
+          "label": "missing",
+          "round": 0,
+          "seconds": 12.856523600057699,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.321,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 14211,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 363928,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 27328400,
+              "device_ns": 161704400,
+              "idle_ns": 11138546000,
+              "staging_bytes": 0,
+              "batches": 14211,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 0,
+              "submitted": 0,
+              "retired": 0,
+              "queries": 0,
+              "not_ready": 0,
+              "submit_ns": 154361000,
+              "poll_ns": 0,
+              "error_drains": 0,
+              "kernel_us": 0
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 14211,
+              "retired": 14211,
+              "failed": 14211,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 54699900,
+              "retire_ns": 35512000
+            }
+          }
+        },
+        {
+          "label": "capacity0",
+          "round": 0,
+          "seconds": 12.38612739997916,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 10.914,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 0,
+              "reused": 0,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 0,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 0,
+              "local": 0,
+              "shared": 0,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 0,
+              "mixed_packets": 0,
+              "unknown_packets": 0,
+              "selection_ns": 2400,
+              "device_ns": 0,
+              "idle_ns": 11035664700,
+              "staging_bytes": 0,
+              "batches": 0,
+              "queue_full": 812556,
+              "max_queue": 0
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 0,
+              "submitted": 0,
+              "retired": 0,
+              "queries": 0,
+              "not_ready": 0,
+              "submit_ns": 0,
+              "poll_ns": 0,
+              "error_drains": 0,
+              "kernel_us": 0
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 0,
+              "retired": 0,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 0,
+              "retire_ns": 0
+            }
+          }
+        },
+        {
+          "label": "upload_failure",
+          "round": 0,
+          "seconds": 13.477371099987067,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.991,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 14376,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 363944,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 28013900,
+              "device_ns": 189609700,
+              "idle_ns": 11744911500,
+              "staging_bytes": 0,
+              "batches": 14376,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 0,
+              "submitted": 0,
+              "retired": 0,
+              "queries": 0,
+              "not_ready": 0,
+              "submit_ns": 181801000,
+              "poll_ns": 0,
+              "error_drains": 1,
+              "kernel_us": 0
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 14376,
+              "retired": 14376,
+              "failed": 14376,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 58191600,
+              "retire_ns": 36624800
+            }
+          }
+        },
+        {
+          "label": "mismatch",
+          "round": 0,
+          "seconds": 20.905477699940093,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 19.422,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 6144694,
+              "gpu_replaced": 6144694,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8957
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 0,
+              "discarded": 364016,
+              "changed": 406026,
+              "ready_at_replay": 0,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 768350,
+              "local": 0,
+              "shared": 768350,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 14923,
+              "mixed_packets": 318015,
+              "unknown_packets": 0,
+              "selection_ns": 197885900,
+              "device_ns": 14506883300,
+              "idle_ns": 9673203600,
+              "staging_bytes": 811377600,
+              "batches": 49181,
+              "queue_full": 44206,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 49181,
+              "retired": 49181,
+              "queries": 397900,
+              "not_ready": 348719,
+              "submit_ns": 4823366800,
+              "poll_ns": 1192019000,
+              "error_drains": 0,
+              "kernel_us": 6799043
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 49181,
+              "retired": 49181,
+              "failed": 0,
+              "discarded": 4,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 110531800,
+              "retire_ns": 379374500
+            }
+          }
+        },
+        {
+          "label": "drop",
+          "round": 0,
+          "seconds": 27.01839470001869,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 25.472,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 6136614,
+              "gpu_replaced": 6136614,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 15419
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 0,
+              "discarded": 364016,
+              "changed": 0,
+              "ready_at_replay": 0,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 767340,
+              "local": 0,
+              "shared": 767340,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 14894,
+              "mixed_packets": 317077,
+              "unknown_packets": 0,
+              "selection_ns": 212019500,
+              "device_ns": 18101704000,
+              "idle_ns": 13353055600,
+              "staging_bytes": 810311040,
+              "batches": 49286,
+              "queue_full": 45200,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 49286,
+              "retired": 49286,
+              "queries": 466615,
+              "not_ready": 417329,
+              "submit_ns": 5048595300,
+              "poll_ns": 1421377100,
+              "error_drains": 0,
+              "kernel_us": 8323647
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 49286,
+              "retired": 49286,
+              "failed": 0,
+              "discarded": 14,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 117850300,
+              "retire_ns": 431461400
+            }
+          }
+        }
+      ]
+    },
+    "cancel-retry": {
+      "path": "test-results\\xpu2-material-jobs-cancel-retry\\report.json",
+      "sha256": "237b8f16e2fa41278a962c971f4b1c54b40ff97e17fad970d7bace16fceb03f4",
+      "status": "passed",
+      "error": null,
+      "runs": [
+        {
+          "label": "reference",
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 8.171,
+          "profiles": {},
+          "recovery": {}
+        },
+        {
+          "label": "fresh",
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 22.723,
+          "profiles": {},
+          "recovery": {
+            "flights": [
+              {
+                "slots": 2,
+                "peak_inflight": 2,
+                "submitted": 7085,
+                "retired": 7085,
+                "queries": 51464,
+                "not_ready": 44379,
+                "submit_ns": 1081955900,
+                "poll_ns": 194437200,
+                "error_drains": 0,
+                "kernel_us": 3127736
+              }
+            ],
+            "frames": [
+              {
+                "epoch": 1,
+                "captured": 0,
+                "restored": 0,
+                "cancelled": 0,
+                "batches": 0,
+                "fallback_batches": 0,
+                "peak_owner_paths": 0,
+                "poisoned": 0,
+                "outstanding": 0
+              }
+            ],
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22441,
+                "multi_lobe_jobs": 22441,
+                "lobes": 44882,
+                "packets": 403938,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22479,
+                "multi_lobe_jobs": 22479,
+                "lobes": 44958,
+                "packets": 404622,
+                "limited": 0
+              }
+            ],
+            "light_queue": [
+              {
+                "mode": 1,
+                "submitted": 1511,
+                "collected": 1511,
+                "canceled": 0,
+                "refused": 0,
+                "retired": 1511,
+                "batches": 359,
+                "peak_flights": 2,
+                "waits": 344,
+                "errors": 0,
+                "abandoned": 0,
+                "gpu_used": 6113,
+                "cpu_used": 1425792,
+                "verified": 0,
+                "mismatch": 0,
+                "credits": 0
+              }
+            ],
+            "window": [
+              {
+                "blocks": 8,
+                "scopes": 3739,
+                "active": 0,
+                "windows": 3739,
+                "published": 403938,
+                "reused": 403938,
+                "discarded": 0,
+                "changed": 0,
+                "ready_at_replay": 378565,
+                "overflow": 0
+              }
+            ]
+          }
+        },
+        {
+          "label": "restart",
+          "versus_fresh": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 24.122,
+          "profiles": {},
+          "recovery": {
+            "flights": [
+              {
+                "slots": 2,
+                "peak_inflight": 2,
+                "submitted": 286,
+                "retired": 286,
+                "queries": 410,
+                "not_ready": 124,
+                "submit_ns": 196876400,
+                "poll_ns": 1872700,
+                "error_drains": 0,
+                "kernel_us": 38442
+              },
+              {
+                "slots": 2,
+                "peak_inflight": 2,
+                "submitted": 7084,
+                "retired": 7084,
+                "queries": 57213,
+                "not_ready": 50129,
+                "submit_ns": 928232300,
+                "poll_ns": 174497700,
+                "error_drains": 0,
+                "kernel_us": 3306943
+              }
+            ],
+            "frames": [
+              {
+                "epoch": 1,
+                "captured": 0,
+                "restored": 0,
+                "cancelled": 0,
+                "batches": 0,
+                "fallback_batches": 0,
+                "peak_owner_paths": 0,
+                "poisoned": 0,
+                "outstanding": 0
+              },
+              {
+                "epoch": 2,
+                "captured": 0,
+                "restored": 0,
+                "cancelled": 0,
+                "batches": 0,
+                "fallback_batches": 0,
+                "peak_owner_paths": 0,
+                "poisoned": 0,
+                "outstanding": 0
+              }
+            ],
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 898,
+                "multi_lobe_jobs": 898,
+                "lobes": 1796,
+                "packets": 16164,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 890,
+                "multi_lobe_jobs": 890,
+                "lobes": 1780,
+                "packets": 16020,
+                "limited": 0
+              },
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22441,
+                "multi_lobe_jobs": 22441,
+                "lobes": 44882,
+                "packets": 403938,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22479,
+                "multi_lobe_jobs": 22479,
+                "lobes": 44958,
+                "packets": 404622,
+                "limited": 0
+              }
+            ],
+            "light_queue": [
+              {
+                "mode": 1,
+                "submitted": 322,
+                "collected": 320,
+                "canceled": 2,
+                "refused": 0,
+                "retired": 322,
+                "batches": 100,
+                "peak_flights": 2,
+                "waits": 92,
+                "errors": 0,
+                "abandoned": 0,
+                "gpu_used": 1253,
+                "cpu_used": 55217,
+                "verified": 0,
+                "mismatch": 0,
+                "credits": 0
+              },
+              {
+                "mode": 1,
+                "submitted": 2509,
+                "collected": 2509,
+                "canceled": 0,
+                "refused": 0,
+                "retired": 2509,
+                "batches": 586,
+                "peak_flights": 2,
+                "waits": 557,
+                "errors": 0,
+                "abandoned": 0,
+                "gpu_used": 10204,
+                "cpu_used": 1421701,
+                "verified": 0,
+                "mismatch": 0,
+                "credits": 0
+              }
+            ],
+            "window": [
+              {
+                "blocks": 8,
+                "scopes": 184,
+                "active": 0,
+                "windows": 184,
+                "published": 16164,
+                "reused": 15966,
+                "discarded": 198,
+                "changed": 0,
+                "ready_at_replay": 15122,
+                "overflow": 0
+              },
+              {
+                "blocks": 8,
+                "scopes": 3739,
+                "active": 0,
+                "windows": 3739,
+                "published": 403938,
+                "reused": 403938,
+                "discarded": 0,
+                "changed": 0,
+                "ready_at_replay": 379096,
+                "overflow": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "rough-transmission": {
+      "path": "test-results\\xpu2-material-jobs-rough-transmission\\report.json",
+      "sha256": "4cc1995b6d56aa3a404f33cf24639860b853647c1082663251eb5f238ac97249",
+      "status": "passed",
+      "error": null,
+      "runs": [
+        {
+          "label": "reference",
+          "round": 0,
+          "seconds": 9.453646600013599,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 8.109,
+          "profiles": {}
+        },
+        {
+          "label": "two_shallow",
+          "round": 0,
+          "seconds": 13.226998499943875,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.665,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9881
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 377840,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7719,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 42015900,
+              "device_ns": 3277724100,
+              "idle_ns": 9697628300,
+              "staging_bytes": 429295680,
+              "batches": 7113,
+              "queue_full": 0,
+              "max_queue": 288
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7113,
+              "retired": 7113,
+              "queries": 87852,
+              "not_ready": 80739,
+              "submit_ns": 995957800,
+              "poll_ns": 261495200,
+              "error_drains": 0,
+              "kernel_us": 1596827
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7113,
+              "retired": 7113,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 63759100,
+              "retire_ns": 132050200
+            }
+          }
+        }
+      ]
+    },
+    "mixed-larger": {
+      "path": "test-results\\xpu2-material-jobs-mixed-larger\\report.json",
+      "sha256": "750bfcd9907f8b1039731dc84d3f8cad019f1f26d8943edf32141eab0a258717",
+      "status": "passed",
+      "error": null,
+      "runs": [
+        {
+          "label": "reference",
+          "round": 0,
+          "seconds": 14.927861199947074,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 13.591,
+          "profiles": {}
+        },
+        {
+          "label": "two_shallow",
+          "round": 0,
+          "seconds": 18.963347700075246,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 17.469,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1847664,
+              "gpu_replaced": 1847664,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 5829
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 12831,
+                "multi_lobe_jobs": 12831,
+                "lobes": 25662,
+                "packets": 230958,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 12831,
+                "multi_lobe_jobs": 12831,
+                "lobes": 25662,
+                "packets": 230958,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 39978,
+              "window_rejected": 27147,
+              "submit_calls": 52810,
+              "submit_rejected": 27148,
+              "lobe_calls": 1022108,
+              "lobe_rejected": 211060,
+              "record_packets": 230958,
+              "replay_packets": 230958,
+              "direct_packets": 0,
+              "record_bytes": 184766400,
+              "replay_bytes": 184766400,
+              "direct_bytes": 0
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 8426,
+              "active": 0,
+              "windows": 8426,
+              "published": 230958,
+              "reused": 230958,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 215218,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 230958,
+              "local": 0,
+              "shared": 230958,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 10108,
+              "mixed_packets": 226152,
+              "unknown_packets": 0,
+              "selection_ns": 22506500,
+              "device_ns": 1793278000,
+              "idle_ns": 16414686000,
+              "staging_bytes": 243891648,
+              "batches": 4042,
+              "queue_full": 0,
+              "max_queue": 288
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 4042,
+              "retired": 4042,
+              "queries": 43501,
+              "not_ready": 39459,
+              "submit_ns": 635807700,
+              "poll_ns": 126828800,
+              "error_drains": 0,
+              "kernel_us": 796500
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 4042,
+              "retired": 4042,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 34119500,
+              "retire_ns": 73744900
+            }
+          }
+        }
+      ]
+    },
+    "packet-bound": {
+      "path": "test-results\\xpu2-material-jobs-packet-bound\\report.json",
+      "sha256": "56281ce6d5b78a197752759a7038669c0681266371b2c67fbf74b023077e6ebf",
+      "status": "passed",
+      "error": null,
+      "runs": [
+        {
+          "label": "reference",
+          "round": 0,
+          "seconds": 15.077245599939488,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 13.515,
+          "profiles": {}
+        },
+        {
+          "label": "two_shallow",
+          "round": 0,
+          "seconds": 21.21406140003819,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 19.579,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 5775456,
+              "gpu_replaced": 5775456,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 20582
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22542,
+                "multi_lobe_jobs": 22542,
+                "lobes": 45084,
+                "packets": 721344,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22581,
+                "multi_lobe_jobs": 22581,
+                "lobes": 45162,
+                "packets": 722592,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22542,
+              "window_rejected": 0,
+              "submit_calls": 45123,
+              "submit_rejected": 0,
+              "lobe_calls": 973874,
+              "lobe_rejected": 0,
+              "record_packets": 721344,
+              "replay_packets": 722304,
+              "direct_packets": 288,
+              "record_bytes": 577075200,
+              "replay_bytes": 577843200,
+              "direct_bytes": 230400
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3790,
+              "active": 0,
+              "windows": 3790,
+              "published": 721344,
+              "reused": 721344,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 650159,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 722592,
+              "local": 0,
+              "shared": 722592,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 8012,
+              "mixed_packets": 297248,
+              "unknown_packets": 0,
+              "selection_ns": 75423000,
+              "device_ns": 6876654400,
+              "idle_ns": 15685229800,
+              "staging_bytes": 763057152,
+              "batches": 11347,
+              "queue_full": 0,
+              "max_queue": 512
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 11347,
+              "retired": 11347,
+              "queries": 232888,
+              "not_ready": 221541,
+              "submit_ns": 1465156400,
+              "poll_ns": 693038400,
+              "error_drains": 0,
+              "kernel_us": 3966753
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 11347,
+              "retired": 11347,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 108895000,
+              "retire_ns": 228670500
+            }
+          }
+        }
+      ]
+    },
+    "timing": {
+      "path": "test-results\\xpu2-material-jobs-timing\\report.json",
+      "sha256": "c7ef08b587eb5ac811d3dbe80909cd7128f6aa5b92165a160f46cc9cb18d661a",
+      "status": "passed",
+      "error": null,
+      "runs": [
+        {
+          "label": "reference",
+          "round": 0,
+          "seconds": 9.636123100062832,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 8.232,
+          "profiles": {}
+        },
+        {
+          "label": "control",
+          "round": 0,
+          "seconds": 12.949156900052913,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.401,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1625067,
+              "gpu_replaced": 1625067,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9864
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 1,
+                "calls": 22557,
+                "multi_lobe_jobs": 0,
+                "lobes": 22557,
+                "packets": 203013,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 1,
+                "calls": 22585,
+                "multi_lobe_jobs": 0,
+                "lobes": 22585,
+                "packets": 203265,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 203265,
+              "consumed": 203265
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 592394,
+              "lobe_rejected": 0,
+              "record_packets": 203013,
+              "replay_packets": 203202,
+              "direct_packets": 63,
+              "record_bytes": 162410400,
+              "replay_bytes": 162561600,
+              "direct_bytes": 50400
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 203013,
+              "reused": 203013,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 198405,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 203265,
+              "local": 0,
+              "shared": 203265,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7721,
+              "mixed_packets": 83853,
+              "unknown_packets": 0,
+              "selection_ns": 25385100,
+              "device_ns": 2184243800,
+              "idle_ns": 10127171100,
+              "staging_bytes": 214647840,
+              "batches": 3748,
+              "queue_full": 0,
+              "max_queue": 288
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 3748,
+              "retired": 3748,
+              "queries": 60416,
+              "not_ready": 56668,
+              "submit_ns": 645887200,
+              "poll_ns": 186164800,
+              "error_drains": 0,
+              "kernel_us": 1107911
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 3748,
+              "retired": 3748,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 38412800,
+              "retire_ns": 71633600
+            }
+          }
+        },
+        {
+          "label": "two",
+          "round": 0,
+          "seconds": 13.967053200001828,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 12.445,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9509
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358055,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 72731400,
+              "device_ns": 4363686100,
+              "idle_ns": 9655169200,
+              "staging_bytes": 429295680,
+              "batches": 10510,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10510,
+              "retired": 10510,
+              "queries": 122255,
+              "not_ready": 111745,
+              "submit_ns": 1291005500,
+              "poll_ns": 367629400,
+              "error_drains": 0,
+              "kernel_us": 2162983
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10510,
+              "retired": 10510,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 63535800,
+              "retire_ns": 150251200
+            }
+          }
+        },
+        {
+          "label": "two_shallow",
+          "round": 0,
+          "seconds": 12.7395696999738,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.246,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8324
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378402,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7719,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 40089300,
+              "device_ns": 3316834300,
+              "idle_ns": 9297183700,
+              "staging_bytes": 429295680,
+              "batches": 7106,
+              "queue_full": 0,
+              "max_queue": 224
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7106,
+              "retired": 7106,
+              "queries": 103895,
+              "not_ready": 96789,
+              "submit_ns": 892469000,
+              "poll_ns": 295587400,
+              "error_drains": 0,
+              "kernel_us": 1671641
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7106,
+              "retired": 7106,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 51950800,
+              "retire_ns": 118221900
+            }
+          }
+        },
+        {
+          "label": "reference",
+          "round": 1,
+          "seconds": 9.682029999908991,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 8.286,
+          "profiles": {}
+        },
+        {
+          "label": "control",
+          "round": 1,
+          "seconds": 12.062710800091736,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 10.622,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1625067,
+              "gpu_replaced": 1625067,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 1606
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 1,
+                "calls": 22557,
+                "multi_lobe_jobs": 0,
+                "lobes": 22557,
+                "packets": 203013,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 1,
+                "calls": 22585,
+                "multi_lobe_jobs": 0,
+                "lobes": 22585,
+                "packets": 203265,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 203265,
+              "consumed": 203265
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 592394,
+              "lobe_rejected": 0,
+              "record_packets": 203013,
+              "replay_packets": 203202,
+              "direct_packets": 63,
+              "record_bytes": 162410400,
+              "replay_bytes": 162561600,
+              "direct_bytes": 50400
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 203013,
+              "reused": 203013,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 200726,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 203265,
+              "local": 0,
+              "shared": 203265,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7721,
+              "mixed_packets": 83853,
+              "unknown_packets": 0,
+              "selection_ns": 19310300,
+              "device_ns": 1439485800,
+              "idle_ns": 9721297600,
+              "staging_bytes": 214647840,
+              "batches": 3807,
+              "queue_full": 0,
+              "max_queue": 224
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 3807,
+              "retired": 3807,
+              "queries": 21348,
+              "not_ready": 17541,
+              "submit_ns": 661139100,
+              "poll_ns": 62837500,
+              "error_drains": 0,
+              "kernel_us": 482918
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 3807,
+              "retired": 3807,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 35976700,
+              "retire_ns": 69513600
+            }
+          }
+        },
+        {
+          "label": "two",
+          "round": 1,
+          "seconds": 13.923794799949974,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 12.44,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 10138
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358795,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 69091300,
+              "device_ns": 4212138800,
+              "idle_ns": 9693288400,
+              "staging_bytes": 429295680,
+              "batches": 10517,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10517,
+              "retired": 10517,
+              "queries": 113931,
+              "not_ready": 103414,
+              "submit_ns": 1298581200,
+              "poll_ns": 339238500,
+              "error_drains": 0,
+              "kernel_us": 2065098
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10517,
+              "retired": 10517,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 61860000,
+              "retire_ns": 148039900
+            }
+          }
+        },
+        {
+          "label": "two_shallow",
+          "round": 1,
+          "seconds": 12.860253100050613,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.359,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9113
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378117,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7719,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 40890900,
+              "device_ns": 3278752400,
+              "idle_ns": 9414387900,
+              "staging_bytes": 429295680,
+              "batches": 7114,
+              "queue_full": 0,
+              "max_queue": 224
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7114,
+              "retired": 7114,
+              "queries": 94204,
+              "not_ready": 87090,
+              "submit_ns": 937225200,
+              "poll_ns": 276959500,
+              "error_drains": 0,
+              "kernel_us": 1619693
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7114,
+              "retired": 7114,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 58991300,
+              "retire_ns": 127707300
+            }
+          }
+        },
+        {
+          "label": "control",
+          "round": 2,
+          "seconds": 12.69744240003638,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.178,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1625067,
+              "gpu_replaced": 1625067,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 6609
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 1,
+                "calls": 22557,
+                "multi_lobe_jobs": 0,
+                "lobes": 22557,
+                "packets": 203013,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 1,
+                "calls": 22585,
+                "multi_lobe_jobs": 0,
+                "lobes": 22585,
+                "packets": 203265,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 203265,
+              "consumed": 203265
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 592394,
+              "lobe_rejected": 0,
+              "record_packets": 203013,
+              "replay_packets": 203202,
+              "direct_packets": 63,
+              "record_bytes": 162410400,
+              "replay_bytes": 162561600,
+              "direct_bytes": 50400
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 203013,
+              "reused": 203013,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 198067,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 203265,
+              "local": 0,
+              "shared": 203265,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7721,
+              "mixed_packets": 83853,
+              "unknown_packets": 0,
+              "selection_ns": 22014200,
+              "device_ns": 2066653500,
+              "idle_ns": 9986769300,
+              "staging_bytes": 214647840,
+              "batches": 3731,
+              "queue_full": 0,
+              "max_queue": 224
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 3731,
+              "retired": 3731,
+              "queries": 62176,
+              "not_ready": 58445,
+              "submit_ns": 601234700,
+              "poll_ns": 180680700,
+              "error_drains": 0,
+              "kernel_us": 1059337
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 3731,
+              "retired": 3731,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 35167100,
+              "retire_ns": 64861000
+            }
+          }
+        },
+        {
+          "label": "two",
+          "round": 2,
+          "seconds": 13.24764720001258,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.824,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8091
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358597,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 68249700,
+              "device_ns": 4065346600,
+              "idle_ns": 9152783200,
+              "staging_bytes": 429295680,
+              "batches": 10414,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10414,
+              "retired": 10414,
+              "queries": 120461,
+              "not_ready": 110047,
+              "submit_ns": 1174841300,
+              "poll_ns": 352531800,
+              "error_drains": 0,
+              "kernel_us": 2032235
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10414,
+              "retired": 10414,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 54189000,
+              "retire_ns": 134039600
+            }
+          }
+        },
+        {
+          "label": "two_shallow",
+          "round": 2,
+          "seconds": 12.496403899975121,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.055,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 7502
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378319,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7719,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 38422600,
+              "device_ns": 3109170600,
+              "idle_ns": 9186381700,
+              "staging_bytes": 429295680,
+              "batches": 7104,
+              "queue_full": 0,
+              "max_queue": 224
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7104,
+              "retired": 7104,
+              "queries": 92878,
+              "not_ready": 85774,
+              "submit_ns": 880559900,
+              "poll_ns": 264370500,
+              "error_drains": 0,
+              "kernel_us": 1532109
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7104,
+              "retired": 7104,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 53492400,
+              "retire_ns": 117692200
+            }
+          }
+        },
+        {
+          "label": "reference",
+          "round": 2,
+          "seconds": 9.23633909993805,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 7.863,
+          "profiles": {}
+        },
+        {
+          "label": "two",
+          "round": 3,
+          "seconds": 13.426947799976915,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.958,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8195
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 364016,
+              "reused": 364016,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 358234,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7724,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 69748000,
+              "device_ns": 4040711800,
+              "idle_ns": 9368367100,
+              "staging_bytes": 429295680,
+              "batches": 10410,
+              "queue_full": 42010,
+              "max_queue": 448
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 10410,
+              "retired": 10410,
+              "queries": 118128,
+              "not_ready": 107718,
+              "submit_ns": 1179278600,
+              "poll_ns": 346059600,
+              "error_drains": 0,
+              "kernel_us": 2014378
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 10410,
+              "retired": 10410,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 54824900,
+              "retire_ns": 137176800
+            }
+          }
+        },
+        {
+          "label": "two_shallow",
+          "round": 3,
+          "seconds": 12.747877499903552,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.221,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8213
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 2,
+                "calls": 22557,
+                "multi_lobe_jobs": 22557,
+                "lobes": 45114,
+                "packets": 406026,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 2,
+                "calls": 22585,
+                "multi_lobe_jobs": 22585,
+                "lobes": 45170,
+                "packets": 406530,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 0,
+              "consumed": 0
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 637536,
+              "lobe_rejected": 0,
+              "record_packets": 406026,
+              "replay_packets": 406404,
+              "direct_packets": 126,
+              "record_bytes": 324820800,
+              "replay_bytes": 325123200,
+              "direct_bytes": 100800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378110,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 406530,
+              "local": 0,
+              "shared": 406530,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7719,
+              "mixed_packets": 167706,
+              "unknown_packets": 0,
+              "selection_ns": 39343300,
+              "device_ns": 3233308300,
+              "idle_ns": 9330104900,
+              "staging_bytes": 429295680,
+              "batches": 7110,
+              "queue_full": 0,
+              "max_queue": 224
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7110,
+              "retired": 7110,
+              "queries": 98463,
+              "not_ready": 91353,
+              "submit_ns": 896634800,
+              "poll_ns": 281391800,
+              "error_drains": 0,
+              "kernel_us": 1621927
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7110,
+              "retired": 7110,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 54378000,
+              "retire_ns": 119419900
+            }
+          }
+        },
+        {
+          "label": "reference",
+          "round": 3,
+          "seconds": 9.696403400041163,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 8.022,
+          "profiles": {}
+        },
+        {
+          "label": "control",
+          "round": 3,
+          "seconds": 12.602077099960297,
+          "image_exact": true,
+          "different_pixels": 0,
+          "profile_checks_completed": true,
+          "mcrt": 11.134,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1625067,
+              "gpu_replaced": 1625067,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9586
+            },
+            "jobs": [
+              {
+                "phase": 0,
+                "limit": 1,
+                "calls": 22557,
+                "multi_lobe_jobs": 0,
+                "lobes": 22557,
+                "packets": 203013,
+                "limited": 0
+              },
+              {
+                "phase": 1,
+                "limit": 1,
+                "calls": 22585,
+                "multi_lobe_jobs": 0,
+                "lobes": 22585,
+                "packets": 203265,
+                "limited": 0
+              }
+            ],
+            "cpu_ahead": {
+              "packed": 203265,
+              "consumed": 203265
+            },
+            "admission": {
+              "mode": 1,
+              "window_calls": 22557,
+              "window_rejected": 0,
+              "submit_calls": 45142,
+              "submit_rejected": 0,
+              "lobe_calls": 592394,
+              "lobe_rejected": 0,
+              "record_packets": 203013,
+              "replay_packets": 203202,
+              "direct_packets": 63,
+              "record_bytes": 162410400,
+              "replay_bytes": 162561600,
+              "direct_bytes": 50400
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 203013,
+              "reused": 203013,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 197697,
+              "overflow": 0
+            },
+            "tiles": {
+              "neighbor": false,
+              "scan_limit": 16,
+              "batch_limit": 64,
+              "claims": 203265,
+              "local": 0,
+              "shared": 203265,
+              "aged": 0,
+              "reordered": 0,
+              "inspected": 0,
+              "switches": 7721,
+              "mixed_packets": 83853,
+              "unknown_packets": 0,
+              "selection_ns": 24476700,
+              "device_ns": 2200383700,
+              "idle_ns": 9840712000,
+              "staging_bytes": 214647840,
+              "batches": 3747,
+              "queue_full": 0,
+              "max_queue": 224
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 3747,
+              "retired": 3747,
+              "queries": 68786,
+              "not_ready": 65039,
+              "submit_ns": 601910200,
+              "poll_ns": 214708500,
+              "error_drains": 0,
+              "kernel_us": 1194985
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 3747,
+              "retired": 3747,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 33670300,
+              "retire_ns": 65313800
+            }
+          }
+        }
+      ]
+    }
+  },
+  "timings": {
+    "reference": {
+      "mcrt_median": 8.022,
+      "mcrt_min": 7.863,
+      "mcrt_max": 8.286,
+      "wall_median": 9.682029999908991
+    },
+    "control": {
+      "mcrt_median": 11.134,
+      "mcrt_min": 10.622,
+      "mcrt_max": 11.178,
+      "wall_median": 12.602077099960297
+    },
+    "two": {
+      "mcrt_median": 11.958,
+      "mcrt_min": 11.824,
+      "mcrt_max": 12.44,
+      "wall_median": 13.426947799976915
+    },
+    "two_shallow": {
+      "mcrt_median": 11.221,
+      "mcrt_min": 11.055,
+      "mcrt_max": 11.359,
+      "wall_median": 12.747877499903552
+    }
+  },
+  "paired": {
+    "two_minus_control": {
+      "seconds": [
+        1.8179999999999996,
+        0.645999999999999,
+        0.8239999999999998
+      ],
+      "median_seconds": 0.8239999999999998
+    },
+    "two_shallow_minus_control": {
+      "seconds": [
+        0.7370000000000001,
+        -0.12300000000000111,
+        0.08699999999999974
+      ],
+      "median_seconds": 0.08699999999999974
+    },
+    "two_shallow_minus_two": {
+      "seconds": [
+        -1.0809999999999995,
+        -0.7690000000000001,
+        -0.7370000000000001
+      ],
+      "median_seconds": -0.7690000000000001
+    },
+    "two_shallow_minus_reference": {
+      "seconds": [
+        3.0730000000000004,
+        3.1919999999999993,
+        3.199
+      ],
+      "median_seconds": 3.1919999999999993
+    }
+  },
+  "build_report_sha256": "75f4f29e0a24686ade21dffc25b9faecfaf3421a8e7991ef344b2b7dc774abe3",
+  "exact_candidate_images": 28,
+  "preserved_cancellation_attempt": {
+    "path": "test-results/xpu2-material-jobs-cancel/report.json",
+    "sha256": "c932f76910c338ee602f920be6d69e63cfade7bb0306d5332edb44fd658c9e49",
+    "reason": "Harness still expected four chunks after configuration changed to two; stopped before cancellation."
+  },
+  "admission_baseline": {
+    "path": "test-results/xpu2-material-admission-first/report.json",
+    "sha256": "a02dcafa16a0045532dfb7808d42beaa089563a73ffab8e21a1a3dbbc904e9a5",
+    "note": "Earlier eight-case single-worker admission check; original probe predates failed-launch accounting correction."
+  },
+  "limitations": [
+    "Not multiworker or production qualification.",
+    "No broader shader kernel, GPU texture lookup or complete GPU path integration.",
+    "Four-lobe cap only exercised with up to two eligible lobes in current fixtures.",
+    "No kit installation or default activation.",
+    "Before/after activity checks cannot exclude brief competing work between observations."
+  ]
+}

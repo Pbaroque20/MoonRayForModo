@@ -1,0 +1,35 @@
+// Numeric eligibility only. No samples are generated and no scene pointer escapes.
+#include <moonray/rendering/shading/ispc/bsdf/BsdfLambert.isph>
+#include <moonray/rendering/shading/ispc/bsdf/BsdfOrenNayar.isph>
+#include <moonray/rendering/shading/ispc/bsdf/npr/BsdfFlatDiffuse.isph>
+extern "C" uniform int CPP_gpuMaterialAdmissionMode();
+extern "C" void CPP_gpuAdmissionCount(uniform unsigned stage,uniform bool admitted);
+extern "C" void CPP_gpuAdmissionPacking(uniform unsigned packets);
+inline varying bool xpu2AdmissionLanes(const varying BsdfLobe *uniform lobe,uniform int mode){
+    if(!isActive(lobe) || mode==3)return false;
+    uniform bool rough=lobe->mName==BSDF_LOBE_FLAT_DIFFUSE;
+    if(lobe->mName!=BSDF_LOBE_LAMBERT && !rough)return false;
+    bool allowed=!isActive(BsdfLobe_getFresnel(lobe)) && !BsdfLobe_getIsSpherical(lobe);
+    if(rough){
+        const varying FlatDiffuseBsdfLobe *uniform flat=(const varying FlatDiffuseBsdfLobe *uniform)lobe;
+        const varying OrenNayarBsdfLobe *uniform oren=(const varying OrenNayarBsdfLobe *uniform)lobe;
+        allowed &= BsdfLobe_matchesFlag(lobe,BSDF_LOBE_TYPE_REFLECTION) && flat->mFlatness==0.f && flat->mTerminatorShift==0.f && flat->mFlatnessFalloff>=0.f && flat->mFlatnessFalloff<=1.f;
+        if(mode==2)allowed &= oren->mB>0.f;
+    }else if(mode==2)return false;
+    return allowed;
+}
+inline uniform bool xpu2AdmissionBsdf(const varying Bsdf &bsdf,uniform int mode){
+    if(!mode)return true;
+    for(uniform int k=0;k<Bsdf_getLobeCount(&bsdf);++k)
+        if(any(xpu2AdmissionLanes(Bsdf_getLobe(&bsdf,k),mode)))return true;
+    return false;
+}
+inline uniform bool xpu2AdmissionLobe(const varying BsdfLobe *uniform lobe,varying int count,uniform int mode){
+    if(!mode)return true;
+    uniform int largest=reduce_max(count);
+    if(largest<1 || largest>16)return false;
+    bool allowed=xpu2AdmissionLanes(lobe,mode) && count>0;
+    // Initial cost hypothesis, not a calibrated hardware cost model.
+    uniform int useful=reduce_add(select(allowed,count,0));
+    return useful>=(mode==2?32:1);
+}
