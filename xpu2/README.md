@@ -336,3 +336,9 @@ The [native asynchronous direct-light connection](NATIVE_DIRECT_LIGHT_ASYNC.md)
 uses those GPU results in the image, with bounded numeric ownership, native-order
 consumption, fallback and cancellation checks. It remains opt-in: the current
 small work groups increase handoff costs and have not demonstrated acceleration.
+
+The [grouped light-sample experiment](NATIVE_LIGHT_GROUPS.md) combines samples
+already owned by one native light call into one bounded packet. It preserves
+result order and lifetime and reduces submissions by 75%, but paired timings
+show no speed gain: the existing queue already coalesces most of that work. Wider
+cross-call batching and independent device ownership are still pending.
