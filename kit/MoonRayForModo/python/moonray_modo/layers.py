@@ -14,6 +14,16 @@ def ordered_items(parent):
         yield item
         yield from ordered_items(item)
 
+def above_shader(render):
+    """The items at the top of the Shader Tree that sit above its topmost Base Shader, which Modo does not apply to
+    any surface (render outputs, which are not layers, aside)."""
+    children = list(render.children())  # bottom first
+    shaders = [i for i, item in enumerate(children) if item.type == 'defaultShader']
+    if not shaders:
+        return set()
+    return {item.id for item in children[max(shaders) + 1:] if item.type not in ('renderOutput', 'defaultShader')}
+
+
 def layer_mask_target(layer,channel):
     if channel(layer,'effect','')!='layerMask' or not layer.parent:return ''
     siblings=list(reversed(list(layer.parent.children())))
@@ -61,8 +71,19 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
     items = list(ordered_items(scene.renderItem))
     positions = {item.id:i for i,item in enumerate(items)}
     by_id = {item.id:item for item in items}
+    ignored = above_shader(scene.renderItem)
+    told = set()
     for layer in reversed(items): # Modo's upper rows are applied last.
         if layer_filter is not None and layer.id not in layer_filter:
+            continue
+        top = layer
+        while top.parent is not None and top.parent.id != scene.renderItem.id:
+            top = top.parent
+        if top.id in ignored:
+            # Modo shades nothing with a layer above the Base Shader (seen in its own renders): neither is it here.
+            if top.id not in told and (layer.type != 'renderOutput'):
+                told.add(top.id)
+                warnings.append('%s is above the Base Shader, where Modo does not apply it; it is left out too. Move it below the Base Shader.' % top.name)
             continue
         if not channel(layer,'enable',1) or not channel(layer,'render',1):
             continue
