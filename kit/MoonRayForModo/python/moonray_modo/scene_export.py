@@ -9,11 +9,13 @@ Its window asks for the file, the format and what to put in:
 - Collect textures: every picture the scene reads copied into a folder beside it, named from the scene, the scene
   pointing to them there (paths relative to the scene's folder: render from that folder).
 - Every frame of the frame range: one scene for each frame, numbered, as Render Animation would render them.
-RDLB is written by MoonRay's own converter (rdl2_convert), from the RDLA the plugin writes."""
+RDLB is MoonRay's own binary format, written by MoonRay's own converter (rdl2_convert) from the scene text the
+plugin makes; that text goes through a temporary folder, not beside the scene."""
 import hashlib
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from PySide2 import QtCore, QtWidgets
@@ -148,7 +150,10 @@ def write(text, target, kind, runtime):
         written = target.with_suffix('.rdla')
         written.write_text(text, encoding='utf-8')
         return [written]
-    source = target.with_name(target.stem + '.export-source.rdla')
+    # The converter reads the scene text from a file: one in a temporary folder of its own, so nothing but the
+    # scene asked for appears beside it.
+    folder = Path(tempfile.mkdtemp(prefix='moonray-export-'))
+    source = folder / (target.stem + '.rdla')
     source.write_text(text, encoding='utf-8')
     try:
         from . import native
@@ -163,8 +168,7 @@ def write(text, target, kind, runtime):
         escaped(output.with_suffix(".rdla"))
         return [output.with_suffix('.rdla'), output.with_suffix('.rdlb')]
     finally:
-        if source.exists():
-            source.unlink()
+        shutil.rmtree(str(folder), ignore_errors=True)
 
 
 def export(choices, warnings):
