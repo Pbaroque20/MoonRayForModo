@@ -33,6 +33,8 @@ CASES = [('diffuse_colour', {'diffAmt': 1.0}), ('diffuse_half', {'diffAmt': .5})
          *[('principled_paint_%02d' % round(r * 100), {'brdfType': 'principled', 'specAmt': .25, 'rough': r, 'diffAmt': 1.0}) for r in (.1, .35, .7)],
          # Principled sheen: alone over black, at full and half, then over red with and without its tint; and under GTR,
          # which should draw none.
+         ('principled_default_black', {'brdfType': 'principled', 'specAmt': .04, 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0}),
+         ('principled_default_paint', {'brdfType': 'principled', 'specAmt': .04, 'diffAmt': 1.0, 'rough': .4}),
          ('sheen_black_000', {'brdfType': 'principled', 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0}),
          ('sheen_black_100', {'brdfType': 'principled', 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0, 'sheen': 1.0}),
          ('sheen_black_050', {'brdfType': 'principled', 'diffAmt': 1.0, 'diffCol.R': 0.0, 'diffCol.G': 0.0, 'diffCol.B': 0.0, 'sheen': 0.5}),
