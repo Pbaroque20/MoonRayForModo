@@ -1,0 +1,2522 @@
+{
+  "schema": 1,
+  "experiment": "rough diffuse inverse-cosine/cosine to clamped dot product",
+  "scope": "One native worker, fixed sampling, rough diffuse plus transmission fixture.",
+  "reports": {
+    "checks": {
+      "sha256": "14a113f741cf820e1e650287766ec830b8398ddc8c467e3120c5a509cf732589",
+      "status": "image_differences",
+      "exact_parity": false,
+      "tolerance_parity": true,
+      "runs": [
+        {
+          "round": 0,
+          "label": "reference",
+          "seconds": 9.596929099992849,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 8.212
+        },
+        {
+          "round": 0,
+          "label": "exact",
+          "seconds": 12.782433200045489,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.293,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9684
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7110,
+              "retired": 7110,
+              "queries": 98869,
+              "not_ready": 91759,
+              "submit_ns": 926957800,
+              "poll_ns": 287968600,
+              "error_drains": 0,
+              "kernel_us": 1689510
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7110,
+              "retired": 7110,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 50046600,
+              "retire_ns": 122060500
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 376575,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        },
+        {
+          "round": 0,
+          "label": "shortcut",
+          "seconds": 13.33830439997837,
+          "exact_parity": false,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 5.960464477539063e-08,
+                "rms_error": 1.9987455661836875e-09,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.1169536322218874e-09,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 2.9802322387695312e-08,
+                "rms_error": 2.31740346401777e-09,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 3803,
+            "first_difference": {
+              "x": 12,
+              "y_from_bottom": 0,
+              "reference": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087051272392273,
+                1.0
+              ],
+              "actual": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087050974369049,
+                1.0
+              ],
+              "max_absolute_error": 2.9802322387695312e-08
+            },
+            "largest_differences": [
+              {
+                "x": 203,
+                "y_from_bottom": 174,
+                "reference": [
+                  0.3231552243232727,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "actual": [
+                  0.32315516471862793,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 192,
+                "y_from_bottom": 162,
+                "reference": [
+                  0.33768439292907715,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "actual": [
+                  0.3376844525337219,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 197,
+                "y_from_bottom": 153,
+                "reference": [
+                  0.4454219341278076,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "actual": [
+                  0.4454219937324524,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 196,
+                "y_from_bottom": 139,
+                "reference": [
+                  0.33057159185409546,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "actual": [
+                  0.3305715322494507,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 186,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.29233860969543457,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "actual": [
+                  0.2923385798931122,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 184,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.38445529341697693,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "actual": [
+                  0.38445526361465454,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 200,
+                "y_from_bottom": 173,
+                "reference": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.20084713399410248,
+                  1.0
+                ],
+                "actual": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.2008471041917801,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 199,
+                "y_from_bottom": 170,
+                "reference": [
+                  0.31413784623146057,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "actual": [
+                  0.3141378164291382,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              }
+            ],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.845,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8927
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7109,
+              "retired": 7109,
+              "queries": 94198,
+              "not_ready": 87089,
+              "submit_ns": 1425115900,
+              "poll_ns": 277803500,
+              "error_drains": 0,
+              "kernel_us": 1623047
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7109,
+              "retired": 7109,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 51226700,
+              "retire_ns": 128150300
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 377838,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        }
+      ],
+      "summary": {}
+    },
+    "timing": {
+      "sha256": "e9c4bd99a912c4b26eb6789f4ad462fa9546cf40ceedad165499dfaae18b3e29",
+      "status": "image_differences",
+      "exact_parity": false,
+      "tolerance_parity": true,
+      "runs": [
+        {
+          "round": 0,
+          "label": "reference",
+          "seconds": 9.130162799963728,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 7.788
+        },
+        {
+          "round": 0,
+          "label": "exact",
+          "seconds": 12.45980390009936,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 10.779,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 6141
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7109,
+              "retired": 7109,
+              "queries": 66931,
+              "not_ready": 59822,
+              "submit_ns": 915657700,
+              "poll_ns": 192775800,
+              "error_drains": 0,
+              "kernel_us": 1198224
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7109,
+              "retired": 7109,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 49329500,
+              "retire_ns": 121424800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378820,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        },
+        {
+          "round": 0,
+          "label": "shortcut",
+          "seconds": 13.118298400077038,
+          "exact_parity": false,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 5.960464477539063e-08,
+                "rms_error": 1.9987455661836875e-09,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.1169536322218874e-09,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 2.9802322387695312e-08,
+                "rms_error": 2.31740346401777e-09,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 3803,
+            "first_difference": {
+              "x": 12,
+              "y_from_bottom": 0,
+              "reference": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087051272392273,
+                1.0
+              ],
+              "actual": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087050974369049,
+                1.0
+              ],
+              "max_absolute_error": 2.9802322387695312e-08
+            },
+            "largest_differences": [
+              {
+                "x": 203,
+                "y_from_bottom": 174,
+                "reference": [
+                  0.3231552243232727,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "actual": [
+                  0.32315516471862793,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 192,
+                "y_from_bottom": 162,
+                "reference": [
+                  0.33768439292907715,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "actual": [
+                  0.3376844525337219,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 197,
+                "y_from_bottom": 153,
+                "reference": [
+                  0.4454219341278076,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "actual": [
+                  0.4454219937324524,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 196,
+                "y_from_bottom": 139,
+                "reference": [
+                  0.33057159185409546,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "actual": [
+                  0.3305715322494507,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 186,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.29233860969543457,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "actual": [
+                  0.2923385798931122,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 184,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.38445529341697693,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "actual": [
+                  0.38445526361465454,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 200,
+                "y_from_bottom": 173,
+                "reference": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.20084713399410248,
+                  1.0
+                ],
+                "actual": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.2008471041917801,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 199,
+                "y_from_bottom": 170,
+                "reference": [
+                  0.31413784623146057,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "actual": [
+                  0.3141378164291382,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              }
+            ],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.516,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9834
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7112,
+              "retired": 7112,
+              "queries": 104761,
+              "not_ready": 97649,
+              "submit_ns": 928397400,
+              "poll_ns": 306380200,
+              "error_drains": 0,
+              "kernel_us": 1769518
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7112,
+              "retired": 7112,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 51835500,
+              "retire_ns": 124486400
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 376938,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        },
+        {
+          "round": 1,
+          "label": "reference",
+          "seconds": 9.115908299922012,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 7.756
+        },
+        {
+          "round": 1,
+          "label": "exact",
+          "seconds": 12.75607159989886,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.293,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9752
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7113,
+              "retired": 7113,
+              "queries": 97643,
+              "not_ready": 90530,
+              "submit_ns": 935935200,
+              "poll_ns": 281618200,
+              "error_drains": 0,
+              "kernel_us": 1670969
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7113,
+              "retired": 7113,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 49715500,
+              "retire_ns": 121383100
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 376531,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        },
+        {
+          "round": 1,
+          "label": "shortcut",
+          "seconds": 12.524284099927172,
+          "exact_parity": false,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 5.960464477539063e-08,
+                "rms_error": 1.9987455661836875e-09,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.1169536322218874e-09,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 2.9802322387695312e-08,
+                "rms_error": 2.31740346401777e-09,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 3803,
+            "first_difference": {
+              "x": 12,
+              "y_from_bottom": 0,
+              "reference": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087051272392273,
+                1.0
+              ],
+              "actual": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087050974369049,
+                1.0
+              ],
+              "max_absolute_error": 2.9802322387695312e-08
+            },
+            "largest_differences": [
+              {
+                "x": 203,
+                "y_from_bottom": 174,
+                "reference": [
+                  0.3231552243232727,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "actual": [
+                  0.32315516471862793,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 192,
+                "y_from_bottom": 162,
+                "reference": [
+                  0.33768439292907715,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "actual": [
+                  0.3376844525337219,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 197,
+                "y_from_bottom": 153,
+                "reference": [
+                  0.4454219341278076,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "actual": [
+                  0.4454219937324524,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 196,
+                "y_from_bottom": 139,
+                "reference": [
+                  0.33057159185409546,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "actual": [
+                  0.3305715322494507,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 186,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.29233860969543457,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "actual": [
+                  0.2923385798931122,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 184,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.38445529341697693,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "actual": [
+                  0.38445526361465454,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 200,
+                "y_from_bottom": 173,
+                "reference": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.20084713399410248,
+                  1.0
+                ],
+                "actual": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.2008471041917801,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 199,
+                "y_from_bottom": 170,
+                "reference": [
+                  0.31413784623146057,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "actual": [
+                  0.3141378164291382,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              }
+            ],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.008,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8080
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7109,
+              "retired": 7109,
+              "queries": 88372,
+              "not_ready": 81263,
+              "submit_ns": 934455000,
+              "poll_ns": 252420200,
+              "error_drains": 0,
+              "kernel_us": 1480992
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7109,
+              "retired": 7109,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 46986900,
+              "retire_ns": 115212400
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378368,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        },
+        {
+          "round": 2,
+          "label": "exact",
+          "seconds": 12.459886000026017,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.009,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 7531
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7109,
+              "retired": 7109,
+              "queries": 82846,
+              "not_ready": 75737,
+              "submit_ns": 905938700,
+              "poll_ns": 236986800,
+              "error_drains": 0,
+              "kernel_us": 1420574
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7109,
+              "retired": 7109,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 49816400,
+              "retire_ns": 118074600
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378087,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        },
+        {
+          "round": 2,
+          "label": "shortcut",
+          "seconds": 12.58714980003424,
+          "exact_parity": false,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 5.960464477539063e-08,
+                "rms_error": 1.9987455661836875e-09,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.1169536322218874e-09,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 2.9802322387695312e-08,
+                "rms_error": 2.31740346401777e-09,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 3803,
+            "first_difference": {
+              "x": 12,
+              "y_from_bottom": 0,
+              "reference": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087051272392273,
+                1.0
+              ],
+              "actual": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087050974369049,
+                1.0
+              ],
+              "max_absolute_error": 2.9802322387695312e-08
+            },
+            "largest_differences": [
+              {
+                "x": 203,
+                "y_from_bottom": 174,
+                "reference": [
+                  0.3231552243232727,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "actual": [
+                  0.32315516471862793,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 192,
+                "y_from_bottom": 162,
+                "reference": [
+                  0.33768439292907715,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "actual": [
+                  0.3376844525337219,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 197,
+                "y_from_bottom": 153,
+                "reference": [
+                  0.4454219341278076,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "actual": [
+                  0.4454219937324524,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 196,
+                "y_from_bottom": 139,
+                "reference": [
+                  0.33057159185409546,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "actual": [
+                  0.3305715322494507,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 186,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.29233860969543457,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "actual": [
+                  0.2923385798931122,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 184,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.38445529341697693,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "actual": [
+                  0.38445526361465454,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 200,
+                "y_from_bottom": 173,
+                "reference": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.20084713399410248,
+                  1.0
+                ],
+                "actual": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.2008471041917801,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 199,
+                "y_from_bottom": 170,
+                "reference": [
+                  0.31413784623146057,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "actual": [
+                  0.3141378164291382,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              }
+            ],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.125,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8948
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7106,
+              "retired": 7106,
+              "queries": 93959,
+              "not_ready": 86853,
+              "submit_ns": 890403400,
+              "poll_ns": 268978300,
+              "error_drains": 0,
+              "kernel_us": 1581060
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7106,
+              "retired": 7106,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 47346500,
+              "retire_ns": 120338800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 377556,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        },
+        {
+          "round": 2,
+          "label": "reference",
+          "seconds": 9.120680300053209,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 7.745
+        },
+        {
+          "round": 3,
+          "label": "shortcut",
+          "seconds": 12.680783099960536,
+          "exact_parity": false,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 5.960464477539063e-08,
+                "rms_error": 1.9987455661836875e-09,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 1.4901161193847656e-08,
+                "rms_error": 1.1169536322218874e-09,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 2.9802322387695312e-08,
+                "rms_error": 2.31740346401777e-09,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 3803,
+            "first_difference": {
+              "x": 12,
+              "y_from_bottom": 0,
+              "reference": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087051272392273,
+                1.0
+              ],
+              "actual": [
+                0.1963852047920227,
+                0.11588703840970993,
+                0.2087050974369049,
+                1.0
+              ],
+              "max_absolute_error": 2.9802322387695312e-08
+            },
+            "largest_differences": [
+              {
+                "x": 203,
+                "y_from_bottom": 174,
+                "reference": [
+                  0.3231552243232727,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "actual": [
+                  0.32315516471862793,
+                  0.12695179879665375,
+                  0.20589348673820496,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 192,
+                "y_from_bottom": 162,
+                "reference": [
+                  0.33768439292907715,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "actual": [
+                  0.3376844525337219,
+                  0.12729290127754211,
+                  0.21143271028995514,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 197,
+                "y_from_bottom": 153,
+                "reference": [
+                  0.4454219341278076,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "actual": [
+                  0.4454219937324524,
+                  0.14692935347557068,
+                  0.17067447304725647,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 196,
+                "y_from_bottom": 139,
+                "reference": [
+                  0.33057159185409546,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "actual": [
+                  0.3305715322494507,
+                  0.11542674899101257,
+                  0.15229405462741852,
+                  1.0
+                ],
+                "max_absolute_error": 5.960464477539063e-08
+              },
+              {
+                "x": 186,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.29233860969543457,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "actual": [
+                  0.2923385798931122,
+                  0.12612251937389374,
+                  0.21854163706302643,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 184,
+                "y_from_bottom": 175,
+                "reference": [
+                  0.38445529341697693,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "actual": [
+                  0.38445526361465454,
+                  0.14335189759731293,
+                  0.22893129289150238,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 200,
+                "y_from_bottom": 173,
+                "reference": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.20084713399410248,
+                  1.0
+                ],
+                "actual": [
+                  0.27664318680763245,
+                  0.1137186661362648,
+                  0.2008471041917801,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              },
+              {
+                "x": 199,
+                "y_from_bottom": 170,
+                "reference": [
+                  0.31413784623146057,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "actual": [
+                  0.3141378164291382,
+                  0.12081097066402435,
+                  0.19633238017559052,
+                  1.0
+                ],
+                "max_absolute_error": 2.9802322387695312e-08
+              }
+            ],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.183,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 8463
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7109,
+              "retired": 7109,
+              "queries": 75328,
+              "not_ready": 68219,
+              "submit_ns": 916852600,
+              "poll_ns": 217977400,
+              "error_drains": 0,
+              "kernel_us": 1320680
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7109,
+              "retired": 7109,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 50363700,
+              "retire_ns": 121542500
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378909,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        },
+        {
+          "round": 3,
+          "label": "reference",
+          "seconds": 9.366631700075231,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 8.088
+        },
+        {
+          "round": 3,
+          "label": "exact",
+          "seconds": 13.192421699990518,
+          "exact_parity": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "families": {
+            "lambert": 0,
+            "transmission": 1625067,
+            "rough_diffuse": 1625067
+          },
+          "activity_before": [],
+          "activity_after": [],
+          "mcrt_seconds": 11.539,
+          "profiles": {
+            "gpu": {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 9287
+            },
+            "flight": {
+              "slots": 2,
+              "peak_inflight": 2,
+              "submitted": 7107,
+              "retired": 7107,
+              "queries": 95090,
+              "not_ready": 87983,
+              "submit_ns": 958254200,
+              "poll_ns": 280779000,
+              "error_drains": 0,
+              "kernel_us": 1651940
+            },
+            "transport": {
+              "enabled": true,
+              "packed": 7107,
+              "retired": 7107,
+              "failed": 0,
+              "discarded": 0,
+              "bypassed": 0,
+              "active": 0,
+              "pack_ns": 52537400,
+              "retire_ns": 129677800
+            },
+            "window": {
+              "blocks": 8,
+              "scopes": 3979,
+              "active": 0,
+              "windows": 3979,
+              "published": 406026,
+              "reused": 406026,
+              "discarded": 0,
+              "changed": 0,
+              "ready_at_replay": 378207,
+              "overflow": 0
+            },
+            "prepared": {
+              "enabled": true,
+              "capacity": 128,
+              "allocated_bytes": 244736,
+              "acquired": 45114,
+              "reused": 44986,
+              "exhausted": 0,
+              "queued": 406026,
+              "expanded": 406026,
+              "retained": 0,
+              "record_bytes": 63700968,
+              "equivalent_bytes": 324820800
+            },
+            "resident": {
+              "enabled": false,
+              "flush": false,
+              "stale": false,
+              "batches": 0,
+              "updates": 0,
+              "reused_groups": 0,
+              "descriptors": 0,
+              "upload_bytes": 0,
+              "fallback_batches": 0
+            }
+          }
+        }
+      ],
+      "summary": {
+        "reference": {
+          "mcrt_median": 7.756,
+          "mcrt_min": 7.745,
+          "mcrt_max": 8.088
+        },
+        "exact": {
+          "mcrt_median": 11.293,
+          "mcrt_min": 11.009,
+          "mcrt_max": 11.539
+        },
+        "shortcut": {
+          "mcrt_median": 11.125,
+          "mcrt_min": 11.008,
+          "mcrt_max": 11.183
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Not a general reversible representation compiler or full GPU material shading.",
+    "Numerical tolerance passing does not imply bitwise parity or production qualification.",
+    "CUDA event intervals may include scheduling contention; they are not isolated arithmetic timings.",
+    "Three measured rounds and process snapshots do not exclude all background system activity."
+  ],
+  "paired_shortcut_minus_exact_seconds": [
+    -0.28500000000000014,
+    0.11599999999999966,
+    -0.35599999999999987
+  ],
+  "paired_median_seconds": -0.28500000000000014,
+  "build_report_sha256": "a47878453cd6c863193d458dac19f4e8b11098524fd0f6bc8c314c739f50e4f1",
+  "ptx_reports": {
+    "exact": {
+      "status": "built",
+      "experiment": "unchanged native math",
+      "compiler_sha256": "3a99b76550d904be9cdeeb95152c837d77e4b67e61e9db80442ea799c1ca0091",
+      "generated_source_sha256": "2bcf26696523f7be8d60caa856c1aa5e4d63433f8569ae8f3eccfca9502bf4ff",
+      "sources": {
+        "sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+        "lambert_cuda.cu": "0b48936ea62593212e60282d76d09b600fa56bcc637d25cd8778c1b2ab0f4e57",
+        "ispc_math_cuda.cuh": "d0235c32c6459830419e6bd099997876984fe6435dd1be85ee38695ccdb4e306",
+        "diffuse_sample_cuda.cu": "9f9dff6e7ec1d95e1082c61c52ede3cebd03fb8d49e34d64e22334e43c00f887",
+        "native_work.py": "0fe79d498b1081199517354750261cbc7e3e86bb1107ef5d76be3fab4a7f3ccf",
+        "resident_sample_cuda.cuh": "409317d9c6a67c2a14d76d3fa4c674ebeeb2dc70371fdad7fd9f35b049bea131"
+      },
+      "flags": [
+        "--std=c++14",
+        "--gpu-architecture=compute_86",
+        "--fmad=false",
+        "--ftz=false",
+        "--prec-div=true",
+        "--prec-sqrt=true"
+      ],
+      "ptx_sha256": "68fde6e7040a59e7ed29d8301c9d59093af6ec543bce779fab3760a56cd38313"
+    },
+    "shortcut": {
+      "status": "built",
+      "experiment": "rough diffuse clamped-dot",
+      "compiler_sha256": "3a99b76550d904be9cdeeb95152c837d77e4b67e61e9db80442ea799c1ca0091",
+      "generated_source_sha256": "afc2db3bc19d405cf3c4aae48556bb603884d1eaccd77a02af93d7a4e8ce877d",
+      "sources": {
+        "sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+        "lambert_cuda.cu": "0b48936ea62593212e60282d76d09b600fa56bcc637d25cd8778c1b2ab0f4e57",
+        "ispc_math_cuda.cuh": "d0235c32c6459830419e6bd099997876984fe6435dd1be85ee38695ccdb4e306",
+        "diffuse_sample_cuda.cu": "9f9dff6e7ec1d95e1082c61c52ede3cebd03fb8d49e34d64e22334e43c00f887",
+        "native_work.py": "0fe79d498b1081199517354750261cbc7e3e86bb1107ef5d76be3fab4a7f3ccf",
+        "resident_sample_cuda.cuh": "409317d9c6a67c2a14d76d3fa4c674ebeeb2dc70371fdad7fd9f35b049bea131"
+      },
+      "flags": [
+        "--std=c++14",
+        "--gpu-architecture=compute_86",
+        "--fmad=false",
+        "--ftz=false",
+        "--prec-div=true",
+        "--prec-sqrt=true"
+      ],
+      "ptx_sha256": "26a5b4aa6f64c30e4600c4741fef03bedd180f3f148d461322a2808822751e0a"
+    }
+  }
+}
