@@ -341,4 +341,10 @@ The [grouped light-sample experiment](NATIVE_LIGHT_GROUPS.md) combines samples
 already owned by one native light call into one bounded packet. It preserves
 result order and lifetime and reduces submissions by 75%, but paired timings
 show no speed gain: the existing queue already coalesces most of that work. Wider
-cross-call batching and independent device ownership are still pending.
+cross-call batching remains pending.
+
+The [alternating device-claim experiment](NATIVE_LIGHT_TILE_CLAIMS.md) gives
+supported direct-light tasks CPU/GPU tile preferences and lets either device
+claim untouched work from the other. Claims are exclusive and native output
+consumption stays ordered. This is not complete independent GPU tile rendering;
+it remains a default-off experiment with the qualification scope recorded there.
