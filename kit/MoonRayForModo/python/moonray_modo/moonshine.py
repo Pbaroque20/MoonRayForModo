@@ -118,6 +118,13 @@ def sheen(material, number, vector):
             'fuzz_albedo': vector([min(1.0, 1 - tint + tint * h) for h in hue], 'Rgb')}
 
 
+# Modo's anisotropy as MoonRay's, fitted against Modo's renders of a ball (tools/probe_aniso_direction.py, grid cases):
+# MoonRay's stretches far more for the same number, so it is given a share of Modo's, and its highlight is drawn rougher
+# to spread as broadly as Modo's stretched one does.
+ANISO_SHARE = 0.6
+ANISO_ROUGHNESS = 1.35
+
+
 def emit(material, tag, index, bindings, lines):
     from .rdla import string, number, vector
     from .shading_models import curve,principled_rise,strengths
@@ -129,11 +136,14 @@ def emit(material, tag, index, bindings, lines):
     if material.get('standard_material') and not material.get('metallic',0):
         f0 = max(0,min(.99,sum(material.get('specular',[.04]*3))/3))
         reflection_ior = (1+math.sqrt(f0))/(1-math.sqrt(f0))
+    # A highlight that stretches, as Modo's anisotropy makes it: given MoonRay's measure of it below.
+    stretched = bool(material.get('standard_material')) and (any(m.get('anisotropy',0) for m in sources(material)) or mapped(material,'aniso'))
+    rougher = ANISO_ROUGHNESS if stretched else 1.0
     attributes = {
         'albedo':vector(material['color'],'Rgb'),
         'metallic':number(material.get('metallic',0)),
         'metallic_color':vector(material['color'],'Rgb'),
-        'roughness':number(material.get('roughness',.4)),
+        'roughness':number(min(1.0,material.get('roughness',.4)*rougher)),
         'diffuse_roughness':number(material.get('diffuse_roughness',0)),
         'scattering_radius':number(max(0,material.get('subsurface_distance',0)) if material.get('subsurface_amount',0)>0 or sss_weight else 0),
         'scattering_color':vector(material.get('subsurface_color',[1,1,1]),'Rgb'),
@@ -143,7 +153,7 @@ def emit(material, tag, index, bindings, lines):
         # Beckmann for a highlight that stretches, and for Modo's Blinn and Ashikhmin models, whose shape it is.
         'specular_model':'0' if material.get('anisotropy',0) or material.get('_beckmann') else '1',
         'shading_tangent':vector([math.cos(controls['anisotropy_angle']), math.sin(controls['anisotropy_angle'])],'Vec2'),
-        'anisotropy':number(max(-1,min(1,material.get('anisotropy',0)))),
+        'anisotropy':number(max(-1,min(1,material.get('anisotropy',0)*(ANISO_SHARE if stretched else 1.0)))),
         'refractive_index':number(reflection_ior),
         'use_independent_transmission_refractive_index':'true',
         'independent_transmission_refractive_index':number(material.get('ior',1.5)),
@@ -173,6 +183,14 @@ def emit(material, tag, index, bindings, lines):
         if key=='anisotropy' and (not material.get('standard_material') or any(m.get('anisotropy',0) for m in sources(material)) or mapped(material,'aniso')):
             # Only the Beckmann highlight stretches; a standard material that does not stretch keeps GGX, the shape of Modo's own.
             attributes['specular_model']='0'
+        if key=='anisotropy' and stretched:
+            # Modo's anisotropy, plain or from an image, as MoonRay's measure of it (a ramp from Modo's to MoonRay's).
+            path='/modo/anisotropy/%s'%index
+            lines += ['RampMap(%s) {'%string(path),'  ["ramp_type"] = 8,','  ["input"] = %s,'%value,
+                      '  ["positions"] = {0, 1},','  ["colors"] = {Rgb(0, 0, 0), Rgb(%s, %s, %s)},'%((number(ANISO_SHARE),)*3),
+                      '  ["interpolations"] = {1, 1},','}']
+            attributes['anisotropy']='bind(RampMap(%s), 1)'%string(path)
+            continue
         if key in ('normal','coatNormal'):
             name='/modo/normal/%s/%s' % (index,key)
             lines += ['ModoNormalMap(%s) { ["input"] = %s }' % (string(name),value)]
@@ -191,7 +209,7 @@ def emit(material, tag, index, bindings, lines):
             points=curve(material['shading_model']);path='/modo/roughness/%s'%index
             lines += ['RampMap(%s) {'%string(path),'  ["ramp_type"] = 8,','  ["input"] = %s,'%value,
                       '  ["positions"] = {%s},'%', '.join(number(a) for a,_ in points),
-                      '  ["colors"] = {%s},'%', '.join('Rgb(%s, %s, %s)'%((number(b),)*3) for _,b in points),
+                      '  ["colors"] = {%s},'%', '.join('Rgb(%s, %s, %s)'%((number(min(1.0,b*rougher)),)*3) for _,b in points),
                       '  ["interpolations"] = {%s},'%', '.join('1' for _ in points),'}']
             attributes['roughness']='bind(RampMap(%s), 1)'%string(path)
             # What drives the roughness, for the highlight's strength to follow it too.

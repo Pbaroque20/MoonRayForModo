@@ -340,7 +340,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Principled model | ![partly](docs/images/feature-partly.svg) | Its diffuse does not brighten with roughness as Modo's does. Coming next: sheen, and the highlight's rise toward the edge at a low specular amount |
 | Transparency, refraction and dispersion | ![partly](docs/images/feature-partly.svg) | Glass under GTR is still being matched to Modo's |
 | Subsurface scattering, clearcoat, metallic, luminosity, dissolve | ![yes](docs/images/feature-yes.svg) |  |
-| Anisotropy | ![partly](docs/images/feature-partly.svg) | Along the material's UV map, as Modo's; its strength is not yet matched to Modo's |
+| Anisotropy | ![partly](docs/images/feature-partly.svg) | Along the material's UV map, as Modo's. Coming next: its strength fitted to Modo's renders; a very strong anisotropy still draws a shorter streak than Modo's |
 | Specular Tint, Flatness, and a reflection amount apart from specular | ![no](docs/images/feature-no.svg) | MoonRay's material has nothing like them; named in a notice |
 | Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) |  |
 | **Shader Tree** | | |
