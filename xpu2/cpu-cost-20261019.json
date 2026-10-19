@@ -1,0 +1,602 @@
+{
+  "fixtures": {
+    "diffuse": {
+      "estimated_selected_lighting_us_per_material_point": [],
+      "lighting_scope": "Sum of three disjoint sampled stages amortized over material shading points; includes multiple light samples per point. Excludes shadow tracing/visibility and is not a contiguous full-bounce measurement.",
+      "mcrt_seconds": {
+        "reference": 7.878,
+        "off_before": 8.592,
+        "sample64": 8.532,
+        "sample16": 8.464,
+        "off_after": 8.095
+      },
+      "sampling_overhead_fraction_vs_off_bracket": {
+        "sample64": 0.02259243722658355,
+        "sample16": 0.014442380296038726
+      },
+      "off_bracket_spread_fraction": 0.061395923409512054,
+      "compiled_candidate_off_vs_original_fraction": 0.05908860116780912,
+      "stages": {
+        "diffuse_sample": {
+          "active_lanes": 5452906,
+          "sampled_calls": [
+            10701,
+            42902
+          ],
+          "us_per_active_lane": [
+            0.03397158469945355,
+            0.03152241422269123
+          ],
+          "mean_us_per_active_lane": 0.03274699946107239,
+          "estimated_total_seconds": [
+            0.18524385803715845,
+            0.17188876164939837
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "other_bsdf_sample": {
+          "active_lanes": 0,
+          "sampled_calls": [
+            0,
+            0
+          ],
+          "us_per_active_lane": [],
+          "mean_us_per_active_lane": null,
+          "estimated_total_seconds": [
+            null,
+            null
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "lobe_eval": {
+          "active_lanes": 3636836,
+          "sampled_calls": [
+            11991,
+            48646
+          ],
+          "us_per_active_lane": [
+            0.03713012870653488,
+            0.03602918493208135
+          ],
+          "mean_us_per_active_lane": 0.03657965681930811,
+          "estimated_total_seconds": [
+            0.13503618876455947,
+            0.131032236811651
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "light_sample_eval": {
+          "active_lanes": 3636836,
+          "sampled_calls": [
+            7197,
+            28325
+          ],
+          "us_per_active_lane": [
+            0.030601725339839663,
+            0.029572505125014942
+          ],
+          "mean_us_per_active_lane": 0.030087115232427304,
+          "estimated_total_seconds": [
+            0.11129345637804113,
+            0.10755035124883884
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "light_tree": {
+          "active_lanes": 0,
+          "sampled_calls": [
+            0,
+            0
+          ],
+          "us_per_active_lane": [],
+          "mean_us_per_active_lane": null,
+          "estimated_total_seconds": [
+            null,
+            null
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "material_construct_maps": {
+          "active_lanes": 1273597,
+          "sampled_calls": [
+            636,
+            2520
+          ],
+          "us_per_active_lane": [
+            0.3015161560850476,
+            0.2930913070045267
+          ],
+          "mean_us_per_active_lane": 0.2973037315447872,
+          "estimated_total_seconds": [
+            0.38401007184144836,
+            0.3732802093270442
+          ],
+          "above_1_5us_in_both_samples": false
+        }
+      }
+    },
+    "layered": {
+      "estimated_selected_lighting_us_per_material_point": [],
+      "lighting_scope": "Sum of three disjoint sampled stages amortized over material shading points; includes multiple light samples per point. Excludes shadow tracing/visibility and is not a contiguous full-bounce measurement.",
+      "mcrt_seconds": {
+        "reference": 33.964,
+        "off_before": 35.198,
+        "sample64": 36.619,
+        "sample16": 36.7,
+        "off_after": 36.208
+      },
+      "sampling_overhead_fraction_vs_off_bracket": {
+        "sample64": 0.02565610732991619,
+        "sample16": 0.02792482424446119
+      },
+      "off_bracket_spread_fraction": 0.02869481220523884,
+      "compiled_candidate_off_vs_original_fraction": 0.051201271934990134,
+      "stages": {
+        "diffuse_sample": {
+          "active_lanes": 115880,
+          "sampled_calls": [
+            208,
+            952
+          ],
+          "us_per_active_lane": [
+            0.06813466334164589,
+            0.07086559734513274
+          ],
+          "mean_us_per_active_lane": 0.06950013034338931,
+          "estimated_total_seconds": [
+            0.007895444788029926,
+            0.008211905420353981
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "other_bsdf_sample": {
+          "active_lanes": 16838582,
+          "sampled_calls": [
+            37723,
+            150600
+          ],
+          "us_per_active_lane": [
+            0.15574688084781727,
+            0.15295361332165366
+          ],
+          "mean_us_per_active_lane": 0.15435024708473546,
+          "estimated_total_seconds": [
+            2.6225566244002003,
+            2.5755219601129578
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "lobe_eval": {
+          "active_lanes": 16276496,
+          "sampled_calls": [
+            54602,
+            217817
+          ],
+          "us_per_active_lane": [
+            0.14457754897530112,
+            0.1420002600967284
+          ],
+          "mean_us_per_active_lane": 0.14328890453601476,
+          "estimated_total_seconds": [
+            2.353215897586293,
+            2.3112666654633593
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "light_sample_eval": {
+          "active_lanes": 7340148,
+          "sampled_calls": [
+            14389,
+            58003
+          ],
+          "us_per_active_lane": [
+            0.041157255802538394,
+            0.040293441132060695
+          ],
+          "mean_us_per_active_lane": 0.04072534846729954,
+          "estimated_total_seconds": [
+            0.30210034886449055,
+            0.29575982133861306
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "light_tree": {
+          "active_lanes": 0,
+          "sampled_calls": [
+            0,
+            0
+          ],
+          "us_per_active_lane": [],
+          "mean_us_per_active_lane": null,
+          "estimated_total_seconds": [
+            null,
+            null
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "material_construct_maps": {
+          "active_lanes": 3240291,
+          "sampled_calls": [
+            1580,
+            6466
+          ],
+          "us_per_active_lane": [
+            3.263610854503464,
+            3.1725243953989146
+          ],
+          "mean_us_per_active_lane": 3.218067624951189,
+          "estimated_total_seconds": [
+            10.575048879349884,
+            10.279902245691545
+          ],
+          "above_1_5us_in_both_samples": true
+        }
+      }
+    },
+    "many_adaptive": {
+      "estimated_selected_lighting_us_per_material_point": [
+        19.252545325485855,
+        19.026148129900132
+      ],
+      "lighting_scope": "Sum of three disjoint sampled stages amortized over material shading points; includes multiple light samples per point. Excludes shadow tracing/visibility and is not a contiguous full-bounce measurement.",
+      "mcrt_seconds": {
+        "reference": 148.272,
+        "off_before": 162.231,
+        "sample64": 164.284,
+        "sample16": 161.404,
+        "off_after": 158.00900000000001
+      },
+      "sampling_overhead_fraction_vs_off_bracket": {
+        "sample64": 0.02600549587809131,
+        "sample16": 0.008018985760679387
+      },
+      "off_bracket_spread_fraction": 0.02671999696219829,
+      "compiled_candidate_off_vs_original_fraction": 0.07990719758282094,
+      "stages": {
+        "diffuse_sample": {
+          "active_lanes": 328513,
+          "sampled_calls": [
+            616,
+            2637
+          ],
+          "us_per_active_lane": [
+            0.06873391448733915,
+            0.06526317320277279
+          ],
+          "mean_us_per_active_lane": 0.06699854384505596,
+          "estimated_total_seconds": [
+            0.022579984449979246,
+            0.021439800818362498
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "other_bsdf_sample": {
+          "active_lanes": 16753746,
+          "sampled_calls": [
+            35164,
+            140323
+          ],
+          "us_per_active_lane": [
+            0.12726026044724342,
+            0.12446921857495333
+          ],
+          "mean_us_per_active_lane": 0.1258647395110984,
+          "estimated_total_seconds": [
+            2.132086079426963,
+            2.08532567282325
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "all_lobes_mis": {
+          "active_lanes": 191621900,
+          "sampled_calls": [
+            433809,
+            1739981
+          ],
+          "us_per_active_lane": [
+            0.2739805712150352,
+            0.2718017704635832
+          ],
+          "mean_us_per_active_lane": 0.27289117083930925,
+          "estimated_total_seconds": [
+            52.500677619310366,
+            52.0831716795957
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "light_sample_eval": {
+          "active_lanes": 222765482,
+          "sampled_calls": [
+            437751,
+            1757320
+          ],
+          "us_per_active_lane": [
+            0.02526321025886898,
+            0.02402045944600797
+          ],
+          "mean_us_per_active_lane": 0.024641834852438475,
+          "estimated_total_seconds": [
+            5.627771210184293,
+            5.350929226351419
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "light_tree": {
+          "active_lanes": 3129286,
+          "sampled_calls": [
+            6057,
+            24565
+          ],
+          "us_per_active_lane": [
+            0.6769185436913322,
+            0.6724083611646712
+          ],
+          "mean_us_per_active_lane": 0.6746634524280017,
+          "estimated_total_seconds": [
+            2.118271721913674,
+            2.1041580708755494
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "material_construct_maps": {
+          "active_lanes": 3129286,
+          "sampled_calls": [
+            1515,
+            6221
+          ],
+          "us_per_active_lane": [
+            12.431197126558208,
+            12.497949390472955
+          ],
+          "mean_us_per_active_lane": 12.464573258515582,
+          "estimated_total_seconds": [
+            38.90077113137883,
+            39.10965805631555
+          ],
+          "above_1_5us_in_both_samples": true
+        }
+      }
+    },
+    "textured": {
+      "estimated_selected_lighting_us_per_material_point": [
+        0.7783727685792774,
+        0.7455520018812799
+      ],
+      "lighting_scope": "Sum of three disjoint sampled stages amortized over material shading points; includes multiple light samples per point. Excludes shadow tracing/visibility and is not a contiguous full-bounce measurement.",
+      "mcrt_seconds": {
+        "reference": 63.309,
+        "off_before": 62.705,
+        "sample64": 65.685,
+        "sample16": 62.394,
+        "off_after": 66.596
+      },
+      "sampling_overhead_fraction_vs_off_bracket": {
+        "sample64": 0.01600142303617158,
+        "sample16": -0.0349030556608223
+      },
+      "off_bracket_spread_fraction": 0.06205246790527075,
+      "compiled_candidate_off_vs_original_fraction": 0.021189720260942346,
+      "stages": {
+        "diffuse_sample": {
+          "active_lanes": 327905,
+          "sampled_calls": [
+            616,
+            2636
+          ],
+          "us_per_active_lane": [
+            0.07326067653276955,
+            0.06092004488023806
+          ],
+          "mean_us_per_active_lane": 0.0670903607065038,
+          "estimated_total_seconds": [
+            0.0240225421384778,
+            0.01997598731645446
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "other_bsdf_sample": {
+          "active_lanes": 16754277,
+          "sampled_calls": [
+            35162,
+            140310
+          ],
+          "us_per_active_lane": [
+            0.11494407732931688,
+            0.10929716896759191
+          ],
+          "mean_us_per_active_lane": 0.11212062314845439,
+          "estimated_total_seconds": [
+            1.9258049110847952,
+            1.831195044198839
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "all_lobes_mis": {
+          "active_lanes": 4757446,
+          "sampled_calls": [
+            13582,
+            54810
+          ],
+          "us_per_active_lane": [
+            0.45139181929181926,
+            0.4323728959702609
+          ],
+          "mean_us_per_active_lane": 0.4418823576310401,
+          "estimated_total_seconds": [
+            2.1474722051225883,
+            2.056990704442134
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "light_sample_eval": {
+          "active_lanes": 7047421,
+          "sampled_calls": [
+            13886,
+            55715
+          ],
+          "us_per_active_lane": [
+            0.04090336520528753,
+            0.039168913887348486
+          ],
+          "mean_us_per_active_lane": 0.040036139546318,
+          "estimated_total_seconds": [
+            0.2882632349184126,
+            0.27603982627689133
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "light_tree": {
+          "active_lanes": 0,
+          "sampled_calls": [
+            0,
+            0
+          ],
+          "us_per_active_lane": [],
+          "mean_us_per_active_lane": null,
+          "estimated_total_seconds": [
+            null,
+            null
+          ],
+          "above_1_5us_in_both_samples": false
+        },
+        "material_construct_maps": {
+          "active_lanes": 3129266,
+          "sampled_calls": [
+            1516,
+            6224
+          ],
+          "us_per_active_lane": [
+            13.135612831671455,
+            12.459590826273585
+          ],
+          "mean_us_per_active_lane": 12.797601828972521,
+          "estimated_total_seconds": [
+            41.10482662331321,
+            38.989373946569835
+          ],
+          "above_1_5us_in_both_samples": true
+        }
+      }
+    }
+  },
+  "scope": "Exclusive elapsed time inside disjoint native CPU operations, sampled by SIMD call; includes preemption/internal waits, not hardware CPU-cycle attribution.",
+  "bridge": {
+    "sampler_used_lanes": 3250134,
+    "light_used_lanes": 43665,
+    "light_queue_host_us_per_used_lane": 28.8690714531089,
+    "light_gpu_service_us_per_used_lane": 19.899519328203368,
+    "sampler_queue_host_us_per_used_lane": 0.5458816116504736,
+    "sampler_gpu_service_us_per_used_lane": 0.6161321252216062,
+    "sampler_plus_all_native_plumbing_serialized_us_per_used_lane": 1.453812529168028,
+    "all_pipelines_serialized_us_per_used_lane": 2.0810517117592786,
+    "limitations": "The ~1.5us model charges all native admission/replay plumbing to sampler lanes but excludes the separate light queue. Host and GPU can overlap; original measurement added 14.7% frame time. These are planning scales, not a measured async critical-path break-even."
+  },
+  "unmeasured": [
+    "Pure texture lookup cost separate from construction: material_construct_maps includes map evaluation and closure construction.",
+    "A whole bounce through the next trace: queues cross scope/thread/device boundaries; no exclusive per-bounce causal ledger was added.",
+    "Native multiworker scaling and enabled XPU2 speed on these heavier fixtures."
+  ],
+  "validation": {
+    "accepted_frames": 20,
+    "all_float32_rgba_exact": true,
+    "native_workers": 1,
+    "xpu2_gpu_shading_enabled": false,
+    "sampled_scope_contract": "O3 native fast-math accounting passed",
+    "process_guard": "Positive active-renderer snapshot checked; final continuation uses process snapshots before/during/after each frame.",
+    "interruptions": [
+      "Competing renderer active",
+      "Command '['powershell.exe', '-NoProfile', '-Command', '@(Get-CimInstance Win32_Process -Filter \"Name = \\'moonray.exe\\'\" | Select-Object ProcessId,ExecutablePath) | ConvertTo-Json -Compress']' timed out after 15 seconds"
+    ],
+    "excluded": "The early extra textured reference and completed many-light sample whose WMI boundary query timed out are not used; the latter was rerendered. Original interrupted reports are retained."
+  },
+  "artifacts": {
+    "test-results\\xpu2-cpu-cost-run\\report.json": "331b82295768babc64bec02f18341ad7e790a0824fc940a4fcf7f6d8e3594394",
+    "test-results\\xpu2-cpu-cost-full-finish\\report.json": "c5c839cccf57920e33643da166425ade1a969549878f705bc7793edbe086d823",
+    "test-results\\xpu2-cpu-cost-full-run\\report.json": "815cc7eb6d661247ddc3543dfd0c09269a84a13015fc1eb4aa188992c65e85c4",
+    "test-results\\xpu2-cpu-cost-run\\probe_at_capture.py": "1516d0090f5c434f7a14617afda9b6e938cb2daf9cd4682b05836d7ef99ba8de",
+    "test-results\\xpu2-cpu-cost-run\\native_build_at_capture.py": "5d90685975e4e95d3144b2021710dac0ae37cda86ece0640a2cd0ab45c14486d",
+    "test-results\\xpu2-cpu-cost-full-run\\probe_at_capture.py": "bd5a7b789055bc278535f3a017e4e21b94f86b9f03039ef2739afab9a3739cd4",
+    "test-results\\xpu2-cpu-cost-full-finish\\probe_at_capture.py": "39db31608ae3f66dc640562d18da5b9609c0400d243126417379b863e039ca2f",
+    "test-results\\xpu2-cpu-cost-build\\report.json": "ba8c3f44c5ee1fe3e71427b2eacc4c1c16e41061ec6ef41797844f031090765c",
+    "test-results\\xpu2-cpu-cost-full-build\\report.json": "235ccd49b7140430180157b1caebef6dfced5994ba861fe51251e96a5e2e8b25",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-reference\\stats.csv": "997531a5bd4cbf7d7c594681b3c2a732a51f344c78c45e8534c18f6f73876276",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-reference\\beauty.exr": "88820c5ba34cc409bb7ef0f2b16bcdb5ca6ce60c23dff34979078efd5a5c3f91",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-reference\\render.log": "38ea5dbf0f57c38fff1d2589467feb1d43d9626543bd459a08ea50d67cdd1b4b",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-off_before\\stats.csv": "daab2be5e7adeac4a6095240e0b2dadc9127d09e4c6c20e38de20e7a236fd940",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-off_before\\beauty.exr": "fd2f9e0659ccf752849f6ea27580ed4f3778ef445da024533dda3cc1421b5ae9",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-off_before\\render.log": "80378d14b40db7818cebe16d32b0606a3b76b1ddd29f38debba592f8ad3ff877",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-sample64\\cpu.csv": "5f3e21129104e6da04ef3014a4fc1458c56a0a932c545f8930f0f31b344648d1",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-sample64\\stats.csv": "72ab6a9e9de7376c595e899e827f03cce0bbc9f1d33f8af29e404a402fa89edc",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-sample64\\beauty.exr": "016d30929f3ed641493c21e428ecd29e8ebb2cdb3ad8c3c14b13778543ecaa3f",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-sample64\\render.log": "e5b0d58d49658da7b3c88a0778fa19c7618efe64dc652ae3511afe8e07d5cfd0",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-sample16\\cpu.csv": "4af9ca79e62a779c85a87517db0a310fb071faca56aefe1262104772f6e440bd",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-sample16\\stats.csv": "018cac6f87dfaacbd10bafa0131a948003593d5bc73f522f1611c70e9499d0fd",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-sample16\\beauty.exr": "f2716fd1665d5ad39a656c7ea2124c571b0998bd767029d4070208d1b6620cca",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-sample16\\render.log": "ca7f1f28477814c4bdd0f8d18e039df0e9524d9ea612d03a3ba5878d5fbc10f0",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-off_after\\stats.csv": "3ae380eb9db2c7f097895df9d623218877ec3375ca64847f7aacd583d9905176",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-off_after\\beauty.exr": "2defc0bc36b6d92f5274c57cf7dd11d13645a9985a0d16024692e587a8dd22f2",
+    "test-results\\xpu2-cpu-cost-run\\diffuse-off_after\\render.log": "a0dfddf3e4b0a333805b3a3613141fc18a8cb2a593ccd5c29bae1c8a92a7d5b3",
+    "test-results\\xpu2-cpu-cost-run\\layered-reference\\stats.csv": "daa134837b3b9a798e3c6ffa2f02d810f70e162cea7819f215e6b833f28c4719",
+    "test-results\\xpu2-cpu-cost-run\\layered-reference\\beauty.exr": "d4d102f67bdcd96249c326d21683cb705fae0c1e61f9abd0026fe2ab334061e6",
+    "test-results\\xpu2-cpu-cost-run\\layered-reference\\render.log": "8c966a67465f42e25f70ccba702e3350a2823d1a6aa592c384263c962650b58f",
+    "test-results\\xpu2-cpu-cost-run\\layered-off_before\\stats.csv": "3e424b7cc5cfe9483617d8b19fbf98f02b6d77a677499e39c5a1aa0387d326a1",
+    "test-results\\xpu2-cpu-cost-run\\layered-off_before\\beauty.exr": "4c90878c352a4ec96079e82ec26cef080752ec551141f76edc1a76f56ab38832",
+    "test-results\\xpu2-cpu-cost-run\\layered-off_before\\render.log": "b1afac5751674d8de63f1a62132f8b0e16f53b23bd506b60a5179306b9c17694",
+    "test-results\\xpu2-cpu-cost-run\\layered-sample64\\cpu.csv": "67ae8fbbc3349cf353f267df8d719e9f89d54b23735bf690cea45abb66240b8a",
+    "test-results\\xpu2-cpu-cost-run\\layered-sample64\\stats.csv": "9aa71f49d5bd938026d11057ab566c038f7c58d0cce051fbdaa28d079fdac4a0",
+    "test-results\\xpu2-cpu-cost-run\\layered-sample64\\beauty.exr": "ede5bbddb2c1326addb31e606baed4f90305dbfd7dde718934502a759e51d86c",
+    "test-results\\xpu2-cpu-cost-run\\layered-sample64\\render.log": "8120176ba995e880b1e0374ee960f3993ce34186f010253dc4f757144b23604d",
+    "test-results\\xpu2-cpu-cost-run\\layered-sample16\\cpu.csv": "fbe39748a80fcac5f81d94657de0f0a0b9f3931f40fa5f59913f15f54b42a24c",
+    "test-results\\xpu2-cpu-cost-run\\layered-sample16\\stats.csv": "e64cdfacf85b8759f82bbe5b2a1a39986368ad6a66c5e04de8c872390e41ed61",
+    "test-results\\xpu2-cpu-cost-run\\layered-sample16\\beauty.exr": "73d745245fd87504c69c39892761f553470893ef6d8828c2e2697e5b2bde82a9",
+    "test-results\\xpu2-cpu-cost-run\\layered-sample16\\render.log": "9bae03511fbbf904882c1f773b93b1c51129676269a937cbe1a968cf92ce3565",
+    "test-results\\xpu2-cpu-cost-run\\layered-off_after\\stats.csv": "ae3a2947cee535d2af9795a0cf419aca2912c53d18c29de647c2912ba723a441",
+    "test-results\\xpu2-cpu-cost-run\\layered-off_after\\beauty.exr": "e3e16a8d4f7aeac0af3cf917bf5441676d88ad4ba923f701227c172dfbd9fd9d",
+    "test-results\\xpu2-cpu-cost-run\\layered-off_after\\render.log": "e16f5b8440ae189af76e24d9c6185563cccc61ebd661ff2cdf572d69d7059a28",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-reference\\stats.csv": "2c9561d1f6d5d840a79c6d86c6ac1657741e2c817f6098ce1823f0422e7ee25c",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-reference\\beauty.exr": "094d23d6de68cede2464f911941e3140c076d824e4c885207cd9f9295504467d",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-reference\\render.log": "551cebb1299e2a49567eec9d9e54eacade462556cb1c9db5fb1761a8d9252306",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-off_before\\stats.csv": "0b10ae02f0d729129254797ade9e03a9509970b4ca8843b49b9328bef2e58b3b",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-off_before\\beauty.exr": "2e910a7565f0507e4fe17ca75e12160ca99eda217ce432a865d90b197dd345b6",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-off_before\\render.log": "3168b2a661e59248d8e7cfcd7540e078530379058efc9245a174e697dc64a119",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-sample64\\cpu.csv": "f2dacb400c337173870c1b448cfb143267809e58f7c6796cd70b03db5a5c85ee",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-sample64\\stats.csv": "4bdac1e7523bd567870b361c7cc702d107e6a77b14ef3f4c4f4eb04fb26f1ee0",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-sample64\\beauty.exr": "e5a4e7aef76b19d3e2d1a6add468783b735d2ca9b88669ec60bf9dc0171ad6c5",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-sample64\\render.log": "c14f65a66cb5cea04e71fc7c67d884ef248283088ed3f750f53c37c83d998e73",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-sample16\\cpu.csv": "da53a7523306fe7234221eab59aba474c03eb5a80cddb99af729676be378a7de",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-sample16\\stats.csv": "9c73bba76b2caa851486cfe98de4281b5b28cdf44594c6515b8b52a1e4d4516b",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-sample16\\beauty.exr": "7abcc1856dc1ff4d937de344e30c077885ef224911df0ab01c176cfe5de6e34e",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-sample16\\render.log": "6893e1679105ef5b7ebdae5c846843875f6049e0496de10ec44dca88acb43486",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-off_after\\stats.csv": "e84b5d642daf8dbc0affc9f92c6753a8eb3a5dac7ef5db00cd22ca3612fa0c6b",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-off_after\\beauty.exr": "a23b2d343a0efe82d6587e1c4e42e5c91e8815ce2e1fc554be73251d9f9efb6a",
+    "test-results\\xpu2-cpu-cost-full-run\\textured-off_after\\render.log": "cffca62ee65e0d333be156a1fe214b7b4af732f61210427a6cbf4c720d65b2f1",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-reference\\stats.csv": "3777abb26514c5c932244295e0323238a046bcbde839b4092415d83af810a2ce",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-reference\\beauty.exr": "012c39330b6cd94c799194a267529f3cad66c4df450c3cba4045562a2d545521",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-reference\\render.log": "98b5d670c645e6dc0ed497220335cb4ed7b0577dfcbbcbc196dfe21ea6026c63",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-off_before\\stats.csv": "16b3e4f0b84022c71b9107a5fc9e6ee83959fe420089303fc694706869a4c371",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-off_before\\beauty.exr": "49fd42b9cc1eee4308d7b1c124a0f370f71fa8f35e911a58bf875f2a5e0ef422",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-off_before\\render.log": "944a3d734f4fad73cb643f06189d093da33c8c8aa21d23882983c27a23802ac0",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-sample64\\cpu.csv": "5c6253af824c9abb714c90ecd32802c75d07115c5a99500d2e59fad033ba2583",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-sample64\\stats.csv": "eb30a71438635373d99dac902ccc9c7945c739149fe05e96b84bd31dc5ecaf41",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-sample64\\beauty.exr": "865d0579c8bbe774e968dd475aa188563231a7b1e0fe71a06a0907cd7f6fe6c3",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive-sample64\\render.log": "b21a612db39f94dca01db81327d8eb08d7d36736c1d39524709af1398b1bbbae",
+    "test-results\\xpu2-cpu-cost-full-finish\\many_adaptive-sample16\\cpu.csv": "32c1057a3d42ead27fa7b23baf3874d493af2dee6ed62abe0b6e81f5d917175c",
+    "test-results\\xpu2-cpu-cost-full-finish\\many_adaptive-sample16\\stats.csv": "2f4b1709373c4aa94b2e98b8ce384fd1209fe7fb4cf7094f074dabd4824957e4",
+    "test-results\\xpu2-cpu-cost-full-finish\\many_adaptive-sample16\\beauty.exr": "224d972c50425a796c109773205f41dc7cb541eb0ce0f67de0c58cda0326349d",
+    "test-results\\xpu2-cpu-cost-full-finish\\many_adaptive-sample16\\render.log": "0bd06d9b8e490081b4f6fad50bdbbff1d3835a9401669094e71e9b12dbb2c2c1",
+    "test-results\\xpu2-cpu-cost-full-finish\\many_adaptive-off_after\\stats.csv": "798e2be222256d136517df8ababc72b208e7b53adfe46c1c2f676d4c219c9a70",
+    "test-results\\xpu2-cpu-cost-full-finish\\many_adaptive-off_after\\beauty.exr": "177664dfbf8420af768f3e98346bf3846b611ac58a182e4c5071a296ae245205",
+    "test-results\\xpu2-cpu-cost-full-finish\\many_adaptive-off_after\\render.log": "f7c1cf7ce71b71f0edc6f90916937293a5fadb312f973c66e9b197b9dc77db4a",
+    "test-results\\xpu2-cpu-cost-run\\diffuse.rdla": "fd5aaec66f9a379897c4e835ce66f8eb572cedc9f5c585976b598360fb01d023",
+    "test-results\\xpu2-cpu-cost-run\\layered.rdla": "3bf71d09d6e6f17bf0af7c9bdbbd8b2b5eff93cf6d9dcc98f3d07dd2d8aedb3b",
+    "test-results\\xpu2-cpu-cost-run\\textured.rdla": "b33dc89862a7583e9f6cab0dea90e193a6023eb3d20c9f505507c337aef60b73",
+    "test-results\\xpu2-cpu-cost-run\\many_lights.rdla": "6f49ec6853b74a82e9af5b09bc5bab17aa4b221472207e558dde47133db622dc",
+    "test-results\\xpu2-cpu-cost-full-run\\diffuse.rdla": "fd5aaec66f9a379897c4e835ce66f8eb572cedc9f5c585976b598360fb01d023",
+    "test-results\\xpu2-cpu-cost-full-run\\layered.rdla": "3bf71d09d6e6f17bf0af7c9bdbbd8b2b5eff93cf6d9dcc98f3d07dd2d8aedb3b",
+    "test-results\\xpu2-cpu-cost-full-run\\textured.rdla": "9632abbac38ffdeb1aca15439362fdb64f8cd5b104de2f180a1287968c736fd0",
+    "test-results\\xpu2-cpu-cost-full-run\\many_lights.rdla": "2209cba8ac4f5a7aca19ed0807432349ea8b438ce7aaabf71c33245798192437",
+    "test-results\\xpu2-cpu-cost-full-run\\many_adaptive.rdla": "119e2b0d32accf96a9c36704a708d46081845e2d1ce91c862fe84f95bd79ba2f",
+    "test-results\\xpu2-cpu-cost-full-run\\pattern.ppm": "ef21787ca2170d2acd98fe98c29ba6ea3b19a5ce1298dc0eb6ca51efa38935c7",
+    "test-results\\xpu2-cpu-cost-full-run\\pattern.tx": "61d11c14b108321473d477e168eb0037f1583154abad321e3df911660612b82a"
+  }
+}

@@ -9,7 +9,7 @@ from xpu2.native_gpu_paths import once
 HISTORICAL_REF='4b696165e7a9cff743bbabbb9a43bb42fe1924da'
 STAGES={'resident':'native_resident_records','prepared':'native_prepared_records',
         'overhead':'native_overhead','material_jobs':'native_material_jobs',
-        'material_admission':'native_material_admission','exclusive_profile':'native_exclusive_profile','no_wait':'native_no_wait','owner_stage':'native_owner_stage'}
+        'material_admission':'native_material_admission','exclusive_profile':'native_exclusive_profile','no_wait':'native_no_wait','owner_stage':'native_owner_stage','cpu_cost':'native_cpu_cost','cpu_cost_full':'native_cpu_cost_full'}
 
 
 def historical_source(path,expected):
@@ -78,6 +78,8 @@ def main():
    handler_source=handler_object.with_suffix('.cc')
    pinned[str(handler_source)]=digest_file(handler_source)
    shutil.copyfile(handler_source,out/'ShadeBundleHandler.cc')
+  for dependency in getattr(module,'PATCH_DEPENDENCIES',()):
+   path=ROOT/dependency;pinned[str(path)]=digest_file(path)
   patch(out)
   cc=out/'PathIntegratorUtil.cc';shutil.copyfile(base/'PathIntegratorUtil.cc',cc)
   compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';build=source/'build/native-renderer-avx'

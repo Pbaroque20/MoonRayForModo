@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-Latest: [rolling owner queue: higher GPU coverage, no speed gain](NATIVE_OWNER_STAGE.md).
+Latest: [sampled CPU costs: identify larger shading jobs](NATIVE_CPU_COST.md).
+Previous: [rolling owner queue: higher GPU coverage, no speed gain](NATIVE_OWNER_STAGE.md).
 Previous: [no-wait CPU fallback, exact images and measured remaining gap](NATIVE_NO_WAIT.md).
 Previous: [exclusive bridge-stage costs and profiling perturbation](NATIVE_EXCLUSIVE_PROFILE.md).
 Previous: [resident-record review fixes and true disabled baseline](NATIVE_RESIDENT_REVIEW.md).
