@@ -305,3 +305,8 @@ evidence is recorded alongside paired timings; original XPU remains faster.
 The [coordination experiment](NATIVE_COORDINATION.md) tests earlier staging
 rejection and ready-only grouped result claims. Exact images and recovery pass;
 the small combined timing difference is not yet a reliable performance gain.
+
+The [bounded local-neighbor experiment](NATIVE_LOCAL_NEIGHBOR.md) uses tile
+location as a hint, with immediate nonlocal fallback and aging. Exact-image,
+policy and recovery checks pass, but reduced search work has not demonstrated
+a render-speed gain; the policy remains opt-in.
