@@ -63,7 +63,9 @@ def profiles(folder,label,env,bypass=False,require_cost_gpu=False,cost_cpu_only=
  require(not t['active'] and t['packed']==t['retired'],'Transport imbalance')
  # Packing precedes device launch. A failed launch retires a batch without a flight.
  require(t['packed']-t['failed']<=f['submitted']<=t['packed'],'Flight/packing imbalance')
- if label not in ('missing','upload_failure'):require(not t['failed'] and t['packed']==f['submitted'],'Unexpected transport failure')
+ if env.get('XPU2_RESIDENT_MIXED_ONCE')=='1':
+  require(t['failed']==1 and t['packed']==f['submitted']+1 and not f['error_drains'] and not g['gpu_errors'],'Mixed batch was not a local rejection')
+ elif label not in ('missing','upload_failure'):require(not t['failed'] and t['packed']==f['submitted'],'Unexpected transport failure')
  require(not w['active'] and w['published']==w['reused']+w['discarded'],'Window ownership imbalance')
  require(o['prepared']==o['finished'] and o['resumed']==o['finished'] and not o['canceled'],'Owned chunk imbalance')
  require(m['calls']==m['resumes'] and m['tokens']==m['ready_on_resume']+m['pending_on_resume'],'Material continuation imbalance')

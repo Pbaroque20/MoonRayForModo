@@ -11,7 +11,7 @@ def compile_ptx(source,out):
     with os.add_dll_directory(str(toolkit)):
         builtins=C.WinDLL(str(toolkit/'nvrtc-builtins64_128.dll'));nvrtc=C.WinDLL(str(toolkit/'nvrtc64_120_0.dll'))
     code=b'\n'.join((cuda((ROOT/'xpu2'/name).read_text()).encode() if name=='diffuse_sample_cuda.cu' else (ROOT/'xpu2'/name).read_bytes()) for name in ('sampler_cuda.cu','lambert_cuda.cu','ispc_math_cuda.cuh','diffuse_sample_cuda.cu'))
-    code+=b'\n'+(ROOT/'xpu2/resident_sample_cuda.cuh').read_bytes()
+    code+=b'\n'+(ROOT/'xpu2/resident_wire.h').read_bytes()+b'\n'+(ROOT/'xpu2/resident_sample_cuda.cuh').read_bytes()
     (out/'film.cu').write_bytes(code);program=C.c_void_p()
     bind(nvrtc,'nvrtcCreateProgram',[C.POINTER(C.c_void_p),C.c_char_p,C.c_char_p,C.c_int,C.c_void_p,C.c_void_p])(C.byref(program),code,b'film.cu',0,None,None)
     flags=['--std=c++14','--gpu-architecture=compute_86','--fmad=false','--ftz=false','--prec-div=true','--prec-sqrt=true']
@@ -30,7 +30,7 @@ def main():
     p=argparse.ArgumentParser(description='Compile the versioned broader diffuse GPU kernel')
     p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
-    names=('sampler_cuda.cu','lambert_cuda.cu','ispc_math_cuda.cuh','diffuse_sample_cuda.cu','native_work.py','resident_sample_cuda.cuh')
+    names=('sampler_cuda.cu','lambert_cuda.cu','ispc_math_cuda.cuh','diffuse_sample_cuda.cu','native_work.py','resident_sample_cuda.cuh','resident_wire.h')
     hashes={name:digest_file(ROOT/'xpu2'/name) for name in names}
     flags=compile_ptx(a.source.resolve(),out)
     if any(digest_file(ROOT/'xpu2'/n)!=h for n,h in hashes.items()):raise ValueError('Kernel source drift')

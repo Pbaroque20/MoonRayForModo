@@ -1,20 +1,45 @@
-"""Build opt-in diagnostic allocation and dispatch scopes from a frozen qualified runtime."""
-import argparse,json,os,shlex,shutil,subprocess,sys
+"""Shared isolated native build pipeline. Stage-specific code only patches copied sources."""
+import argparse,hashlib,importlib,json,os,shlex,shutil,subprocess,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path[:0]=[str(ROOT),str(ROOT/'tools')]
 from xpu2.reference import digest_file,inventory,verify
 from xpu2_baseline import environment
 from xpu2.native_gpu_paths import once
 
+HISTORICAL_REF='4b696165e7a9cff743bbabbb9a43bb42fe1924da'
+STAGES={'resident':'native_resident_records','prepared':'native_prepared_records',
+        'overhead':'native_overhead','material_jobs':'native_material_jobs',
+        'material_admission':'native_material_admission'}
+
+
+def historical_source(path,expected):
+ # A frozen base may name retired builders. Validate their actual historical
+ # contents, including the original checkout newline convention; never ignore drift.
+ relative=path.relative_to(ROOT).as_posix()
+ content=subprocess.check_output(['git','show',HISTORICAL_REF+':'+relative],cwd=ROOT)
+ variants=(content,content.replace(b'\r\n',b'\n').replace(b'\n',b'\r\n'))
+ if not any(hashlib.sha256(data).hexdigest()==expected for data in variants):
+  raise ValueError('Historical build source mismatch '+relative)
+ return {'revision':HISTORICAL_REF,'path':relative,'sha256':expected}
+
+
 def main():
  p=argparse.ArgumentParser(description=__doc__)
+ p.add_argument('--stage',choices=tuple(STAGES),default='resident')
  for k in ('source','base','output'):p.add_argument('--'+k,type=Path,required=True)
- a=p.parse_args();source,base,out=(getattr(a,k).resolve() for k in ('source','base','output'))
+ a=p.parse_args();recipe=STAGES[a.stage];source,base,out=(getattr(a,k).resolve() for k in ('source','base','output'))
  if out.is_relative_to(source) or out.is_relative_to(base):p.error('Isolated output required')
  out.mkdir(parents=True,exist_ok=False);report={'status':'incomplete'}
  try:
   m=json.loads((base/'report.json').read_text());assert m['status']=='built'
-  pinned={**m['source_hashes'],**m['native_hashes'],str(base/'report.json'):digest_file(base/'report.json'),str(base/'link.rsp'):digest_file(base/'link.rsp'),str(base/'PathIntegratorUtil.cc'):digest_file(base/'PathIntegratorUtil.cc'),str(ROOT/'xpu2/native_overhead.py'):digest_file(ROOT/'xpu2/native_overhead.py'),str(Path(__file__).resolve()):digest_file(Path(__file__))}
+  inherited={**m['source_hashes'],**m['native_hashes']};history=[];current={}
+  for filename,expected in inherited.items():
+   path=Path(filename)
+   if path.parent==ROOT/'tools' and path.name.startswith('xpu2_native_') and path.name.endswith('_build.py'):
+    history.append(historical_source(path,expected))
+   else:current[filename]=expected
+  if digest_file(base/'runtime/librendering_rndr.dll')!=m['dll_sha256']:raise ValueError('Base runtime drift')
+  pinned={**current,str(base/'report.json'):digest_file(base/'report.json'),str(base/'link.rsp'):digest_file(base/'link.rsp'),str(base/'PathIntegratorUtil.cc'):digest_file(base/'PathIntegratorUtil.cc'),str(ROOT/'xpu2'/(recipe+'.py')):digest_file(ROOT/'xpu2'/(recipe+'.py')),str(Path(__file__).resolve()):digest_file(Path(__file__))}
   for line in (base/'link.rsp').read_text().splitlines():
    f=Path(line.strip().strip(chr(34)))
    if f.is_absolute() and f.is_file():pinned[str(f)]=digest_file(f)
@@ -28,8 +53,8 @@ def main():
   # Retain all local generated includes; only queue selection and its header change.
   for src in list(base.glob('*.h'))+list(base.glob('*.inc')):
    pinned[str(src)]=digest_file(src);shutil.copyfile(src,out/src.name)
-  from xpu2.native_overhead import patch
-  pinned[str(ROOT/'xpu2/native_overhead.py')]=digest_file(ROOT/'xpu2/native_overhead.py')
+  patch=importlib.import_module("xpu2."+recipe).patch
+  pinned[str(ROOT/'xpu2'/(recipe+'.py'))]=digest_file(ROOT/'xpu2'/(recipe+'.py'))
   rsp=(base/'link.rsp').read_text()
   linked=[Path(line.strip().strip(chr(34))) for line in rsp.splitlines()]
   old_ispc=next(f for f in linked if f.name=='PathIntegratorUtil-ispc.obj')
@@ -43,6 +68,9 @@ def main():
   admission_header=ROOT/'xpu2/native_material_admission.isph'
   pinned[str(admission_header)]=digest_file(admission_header)
   shutil.copyfile(admission_header,out/admission_header.name)
+  # Patch dependencies, not 44 independent compiler implementations.
+  for dependency in (ROOT/'xpu2').glob('*.h'):pinned[str(dependency)]=digest_file(dependency)
+  for dependency in (ROOT/'xpu2').glob('*.isph'):pinned[str(dependency)]=digest_file(dependency)
   patch(out)
   cc=out/'PathIntegratorUtil.cc';shutil.copyfile(base/'PathIntegratorUtil.cc',cc)
   compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe';build=source/'build/native-renderer-avx'
@@ -79,7 +107,7 @@ def main():
   for f,h in pinned.items():
    if digest_file(Path(f))!=h:raise ValueError('Source drift '+f)
   verify(base/'runtime',held)
-  report.update(status='built',source_hashes=pinned,native_hashes={},dll_sha256=digest_file(runtime/'librendering_rndr.dll'),objects={'PathIntegratorUtil':digest_file(obj),**ispc_objects},preprocessed={'PathIntegratorUtil':digest_file(pp),**ispc_preprocessed},experimental_only=True,base_sha256=digest_file(base/'report.json'))
+  report.update(status='built',stage=a.stage,historical_sources=history,source_hashes=pinned,native_hashes={},dll_sha256=digest_file(runtime/'librendering_rndr.dll'),objects={'PathIntegratorUtil':digest_file(obj),**ispc_objects},preprocessed={'PathIntegratorUtil':digest_file(pp),**ispc_preprocessed},experimental_only=True,base_sha256=digest_file(base/'report.json'))
  except Exception as e:
   import traceback
   report['error']=str(e);report['traceback']=traceback.format_exc()

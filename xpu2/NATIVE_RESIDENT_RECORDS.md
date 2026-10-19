@@ -1,5 +1,9 @@
 # Per-flight resident GPU shading records
 
+Historical experiment at commit 6c86ffd. For the current transactional tags,
+descriptor-only host path and shared builder, see [review fixes](NATIVE_RESIDENT_REVIEW.md).
+The optimistic-tag and full-copy descriptions below describe that older experiment.
+
 Experimental opt-in extension of the early shared host records. Original XPU and
 installed kits are unchanged. This remains a one-native-worker, fixed-sampling
 candidate for the existing selected diffuse sampling operations. It does not

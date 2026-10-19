@@ -1,0 +1,182 @@
+{
+  "revision": "4b696165e7a9cff743bbabbb9a43bb42fe1924da",
+  "builders": [
+    {
+      "path": "tools/xpu2_native_batch_build.py",
+      "git_content_sha256": "af87b0d70f8c491a8e8aede780f6125da4457558612eb4d5a67ccd993bec8fc6"
+    },
+    {
+      "path": "tools/xpu2_native_chunk_build.py",
+      "git_content_sha256": "0e302de9316a5f137845a52f83c2bb3a3000256248d9140711493e316b5a66ad"
+    },
+    {
+      "path": "tools/xpu2_native_collect_build.py",
+      "git_content_sha256": "34ca2312cd7eb6a934b74def6d55e84d38ddbe4e61b34c67c1c622bc9f8ee0b8"
+    },
+    {
+      "path": "tools/xpu2_native_context_build.py",
+      "git_content_sha256": "0a2f85cad0afe3dd62c648777c95ec47a40011c66ad6e4e2ed82c2eaf624d4b2"
+    },
+    {
+      "path": "tools/xpu2_native_coordination_build.py",
+      "git_content_sha256": "7c83aa88dfec4ddda0949f1ff53e28b5fbd02199c14a15ecb053761a09b56f80"
+    },
+    {
+      "path": "tools/xpu2_native_drain_build.py",
+      "git_content_sha256": "99d03d8420ad8b08a2fe289b225660dce00e26f56f17f01bbc2b973c272f3fbe"
+    },
+    {
+      "path": "tools/xpu2_native_efficiency_build.py",
+      "git_content_sha256": "d9ce9566a4fb6bff51eb18c7937e5b079da93f0d6d8087ef1a0b95c61f320d4c"
+    },
+    {
+      "path": "tools/xpu2_native_flight_build.py",
+      "git_content_sha256": "0111f334f612303e80cfb5717810e0b5c15966af2773cdfaf45c4e769933dbd1"
+    },
+    {
+      "path": "tools/xpu2_native_gpu_early_build.py",
+      "git_content_sha256": "5939fdf4d8842b58942014e4dd37e4781fa5ae880890e9c23bd6064a69f731ac"
+    },
+    {
+      "path": "tools/xpu2_native_gpu_paths_build.py",
+      "git_content_sha256": "665f3b24f60e27c43b44c636540d77bcbc59a6bc87a8a00c9e418d0e9671cb35"
+    },
+    {
+      "path": "tools/xpu2_native_integration_build.py",
+      "git_content_sha256": "f591096d5703b79a65b8b5d9e44066ec6ee08c4cd9f43bcf2526fddd669c14ae"
+    },
+    {
+      "path": "tools/xpu2_native_light_async_build.py",
+      "git_content_sha256": "e3ced22e7948814af1b08d90e91c74bedfae8a157ac5193bd25f2ee11b401d26"
+    },
+    {
+      "path": "tools/xpu2_native_light_build.py",
+      "git_content_sha256": "0b214f01458d8f6712369c1d750d5637a57da11e983cf72a5a1a2e421ea02957"
+    },
+    {
+      "path": "tools/xpu2_native_light_group_build.py",
+      "git_content_sha256": "b2e196bb1e1324119fb18f101f31ad54f6238b0daeccd40e3b2b56e5cbaaf2cd"
+    },
+    {
+      "path": "tools/xpu2_native_light_lazy_build.py",
+      "git_content_sha256": "0068a939d27b2d74662bbedbe0f4f27ff2dc3efcdbf95081982ef83d6d9256d4"
+    },
+    {
+      "path": "tools/xpu2_native_light_tiles_build.py",
+      "git_content_sha256": "0fbc0832d1f69d56c9914022fb2bf1c2541d240c99429f7c22a7fa0f86602cd9"
+    },
+    {
+      "path": "tools/xpu2_native_local_neighbor_build.py",
+      "git_content_sha256": "5994b636f0adcfcafc8ed1c41618c765c52fa5524c2eb285659a637bcbaa7585"
+    },
+    {
+      "path": "tools/xpu2_native_material_admission_build.py",
+      "git_content_sha256": "da90f7dda72cd6633ccf54a825e6d693e30667fa56d3320112875d1f96214c1e"
+    },
+    {
+      "path": "tools/xpu2_native_material_build.py",
+      "git_content_sha256": "6b7fc148e60186c1e41db424a74486381ead294b9f7b991c808dbfb7484c5059"
+    },
+    {
+      "path": "tools/xpu2_native_material_context_build.py",
+      "git_content_sha256": "0a32c03a445907aed1d40f6d524b83be3c9f2d64cc475a5173401883c1ffc521"
+    },
+    {
+      "path": "tools/xpu2_native_material_help_build.py",
+      "git_content_sha256": "dac99a1029949d7158b724289a99fb7c5a87b548317302cb6722d6787962a2bd"
+    },
+    {
+      "path": "tools/xpu2_native_material_jobs_build.py",
+      "git_content_sha256": "b11855a0693b6bde1d111139f2795fc0cfd554143997be7190b0412047443b17"
+    },
+    {
+      "path": "tools/xpu2_native_overhead_build.py",
+      "git_content_sha256": "7d613d070175dc28e4b4e3b77d03667e851565fb40130e6fd1936d364f06abff"
+    },
+    {
+      "path": "tools/xpu2_native_owned_build.py",
+      "git_content_sha256": "9a52c730808eacfdbb3c6b337ea79c22056c0f6229b7fcf292d1e354fe976626"
+    },
+    {
+      "path": "tools/xpu2_native_owned_cancel_gate_build.py",
+      "git_content_sha256": "07b8389bd1da115644ef73f82e0d02a9e769966c8d5dc8f9f958d655166765a6"
+    },
+    {
+      "path": "tools/xpu2_native_owned_cancel_gate_v2_build.py",
+      "git_content_sha256": "c5f89036a26b8b9bcd896bb9fc945e1705833b1badf6da73ea155496dbda3609"
+    },
+    {
+      "path": "tools/xpu2_native_owned_depth_build.py",
+      "git_content_sha256": "5cce0c14f68f4fc7f377c12580bad297070248fead2c15c919bd19661bda99fa"
+    },
+    {
+      "path": "tools/xpu2_native_owned_mixed_build.py",
+      "git_content_sha256": "53f18daa2621d9e4b09fdfda240612639cb60242fc7b819c20bd7cdd938cd242"
+    },
+    {
+      "path": "tools/xpu2_native_path_build.py",
+      "git_content_sha256": "edbfc24785f5f26b5cb034375c7c43973cee9cfa6b78c784206b6b4e72e198d1"
+    },
+    {
+      "path": "tools/xpu2_native_preparation_build.py",
+      "git_content_sha256": "9eebed3e274928bab1305a8518e865ede88f36dba9482dae2a7a2e31a8d9aa6a"
+    },
+    {
+      "path": "tools/xpu2_native_prepared_build.py",
+      "git_content_sha256": "12c92e578776a4d8035a164ef72933af2b371d4efb3ec1d77c1f5ab5de967cc6"
+    },
+    {
+      "path": "tools/xpu2_native_queue_scope_build.py",
+      "git_content_sha256": "c7c9699768f1da61d028fe73e1e365f3fdc69551f5c92cf87d33c9fa4f057b2e"
+    },
+    {
+      "path": "tools/xpu2_native_ray_route_build.py",
+      "git_content_sha256": "6baadfcb56da91dc314c05b4c01b9a4b0c5aa31dd7c8504fdd4a7efd0b381dd0"
+    },
+    {
+      "path": "tools/xpu2_native_replay_build.py",
+      "git_content_sha256": "71d0635aabd750e17b3a3cd85953fc24b542d9abf48e2231252a19daf40f8a5e"
+    },
+    {
+      "path": "tools/xpu2_native_resident_build.py",
+      "git_content_sha256": "c1d18d9f781f156fcf727f19a7b81bf1b3fc3c579649085aef2f235526352b09"
+    },
+    {
+      "path": "tools/xpu2_native_sample_build.py",
+      "git_content_sha256": "78daa03226a11e7bf093844de8a02b07c7a9afc62199ecdb11c54fcd8a612a99"
+    },
+    {
+      "path": "tools/xpu2_native_sampler_build.py",
+      "git_content_sha256": "207eb3ccaed2ba4e04b93e7de7aa7ef1ea2c9ed5826678b16add0a3bf775b76c"
+    },
+    {
+      "path": "tools/xpu2_native_shadow_work_build.py",
+      "git_content_sha256": "6c5bbec19190989a3f0157ab9a50335d04738f0e72282fcf49f38a58443a577b"
+    },
+    {
+      "path": "tools/xpu2_native_tile_build.py",
+      "git_content_sha256": "4da01c3db418592f46244b7a9c43bcda2111cf026be03e2a7c50f27289df8b7a"
+    },
+    {
+      "path": "tools/xpu2_native_timeline_build.py",
+      "git_content_sha256": "b7a974f60993ff51337ee9a7e9c35f2c289e470800f5ee7a85a7b0de5d3f67ce"
+    },
+    {
+      "path": "tools/xpu2_native_transport_build.py",
+      "git_content_sha256": "128ceb26b361e3d27290511a52281bfb538d12e8f88d7798c2b1d9c411bce6a9"
+    },
+    {
+      "path": "tools/xpu2_native_wide_build.py",
+      "git_content_sha256": "e0dcfbc7443355f38a85f615c7c715b0426886c472f7c8185539e0d311018b47"
+    },
+    {
+      "path": "tools/xpu2_native_window_build.py",
+      "git_content_sha256": "a6baf38f852b19482fb741bc9a1e9e66debd7cebe06c1205d39840e9690c73e4"
+    },
+    {
+      "path": "tools/xpu2_native_work_build.py",
+      "git_content_sha256": "d3b9aaf71741c6d808f100152cf0796719916f770a4e576cd5f4ff5694898649"
+    }
+  ],
+  "replacement": "tools/xpu2_native_build.py"
+}

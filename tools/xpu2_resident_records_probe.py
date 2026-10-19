@@ -10,7 +10,7 @@ def main():
     a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
     compiler=a.compiler.resolve();env=dict(os.environ);env['PATH']=str(compiler.parent)+os.pathsep+env.get('PATH','')
     files=[ROOT/'xpu2/resident_records.h',ROOT/'xpu2/resident_records_test.cc',Path(__file__).resolve()]
-    report={'status':'incomplete','source_hashes':{str(f):digest_file(f) for f in [*files,ROOT/'xpu2/prepared_records.h']},'compiler_sha256':digest_file(compiler),'runs':[]}
+    report={'status':'incomplete','source_hashes':{str(f):digest_file(f) for f in [*files,ROOT/'xpu2/prepared_records.h',ROOT/'xpu2/resident_wire.h']},'compiler_sha256':digest_file(compiler),'runs':[]}
     try:
         for name,extra in [('normal',[]),('native_math',['-ffast-math','-mavx','-mno-avx2','-mno-fma'])]:
             exe=out/(name+'.exe');args=[str(compiler),'-std=c++17','-O2','-Wall','-Wextra','-Werror','-static',*extra,'-I'+str(ROOT/'xpu2'),str(files[1]),'-o',str(exe)]

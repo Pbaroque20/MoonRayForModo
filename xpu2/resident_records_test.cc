@@ -24,12 +24,17 @@ int main(){
  Cache cache;Table table{};std::array<uint32_t,maxWords> wire{};View views[]={{&a,3,2},{&a,3,8},{&b,7,1}};
  auto verify=[&]{for(unsigned p=0;p<3;++p){float expanded[192];views[p].group->expand(views[p].packet,expanded);
   for(unsigned lane=0;lane<8;++lane){float restored[24];decode(wire.data(),table,p*8+lane,restored);check(!std::memcmp(restored,expanded+lane*24,96));}}};
- cache.encode(wire.data(),views,3);check(wire[2]==2);verify();commit(wire.data(),table);
- cache.encode(wire.data(),views,3);check(wire[2]==0&&cache.reusedGroups==2);verify();
- ++a.serial;a.common[1]=0.75f;cache.encode(wire.data(),views,3);check(wire[2]==1);verify();commit(wire.data(),table);
- ++a.revision;++b.revision;cache.encode(wire.data(),views,3);check(wire[2]==2);verify();commit(wire.data(),table);
- cache.encode(wire.data(),views,3,true);check(wire[2]==2);verify();commit(wire.data(),table);
- cache.encode(wire.data(),views,3,false,true);float zeros[24]{},stale[24];decode(wire.data(),table,1,stale);check(!std::memcmp(zeros,stale,96));
+ cache.encode(wire.data(),views,3);check(wire[2]==2 && cache.tags[3].revision==0);verify();commit(wire.data(),table);cache.complete(true);
+ cache.encode(wire.data(),views,3);check(wire[2]==0&&cache.reusedGroups==2);verify();cache.complete(true);
+ ++a.serial;a.common[1]=0.75f;cache.encode(wire.data(),views,3);check(wire[2]==1);verify();commit(wire.data(),table);cache.complete(true);
+ ++a.revision;++b.revision;cache.encode(wire.data(),views,3);check(wire[2]==2);verify();commit(wire.data(),table);cache.complete(true);
+ cache.encode(wire.data(),views,3,true);check(wire[2]==2);verify();commit(wire.data(),table);cache.complete(true);
+ cache.encode(wire.data(),views,3,false,true);float zeros[24]{},stale[24];decode(wire.data(),table,1,stale);check(!std::memcmp(zeros,stale,96));cache.complete(true);
+ // A submitted/partly completed upload is not resident until completion succeeds.
+ ++a.serial;cache.encode(wire.data(),views,3);check(cache.tags[3].serial!=a.serial);
+ rejects([&]{cache.encode(wire.data(),views,3);});cache.complete(false);
+ check(!cache.pending && cache.tags[3].revision==0 && cache.aborted==1);
+ cache.encode(wire.data(),views,3);check(wire[2]==2);cache.complete(true);
  auto saved=cache.tags;View bad[]={{&a,3,0},{&b,3,0}};rejects([&]{cache.encode(wire.data(),bad,2);});
  check(!std::memcmp(saved.data(),cache.tags.data(),sizeof(saved)));
  bad[0]={&a,128,0};rejects([&]{cache.encode(wire.data(),bad,1);});
@@ -38,5 +43,10 @@ int main(){
  std::array<xpu2::prepared::Group,64> groups;std::array<View,64> maxViews;
  for(unsigned i=0;i<64;++i){groups[i]=a;groups[i].serial=i+1;maxViews[i]={&groups[i],i,0};}
  check(cache.encode(wire.data(),maxViews.data(),64,true)==maxWords*4);check(wire[2]==64);
- std::cout<<"PASS: cold/reused/replaced records, revisions, masks, stale references, bounds, transactional validation, maximum wire size\n";
+ check(!enabled(nullptr)&&!enabled("")&&!enabled("0")&&!enabled("false")&&enabled("1"));
+ cache.complete(true);b.revision++;View mixed[]={{&a,3,0},{&b,7,0}};
+ check(!Cache::valid(mixed,2));rejects([&]{cache.encode(wire.data(),mixed,2);});check(!cache.pending);
+ View valid[]={{&a,3,0}};cache.encode(wire.data(),valid,1);cache.complete(true);
+ check(cache.committed>0 && !cache.pending);
+ std::cout<<"PASS: cold/reused/replaced records, revisions, masks, stale references, bounds, transactional completion/abort, zero flags, mixed revision rejection/recovery, maximum wire size\n";
 }

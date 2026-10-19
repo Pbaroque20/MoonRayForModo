@@ -53,7 +53,7 @@ def main():
             if label!='reference':env.update(XPU2_LIGHT_GROUP='1',XPU2_DIRECT_LIGHT='1',XPU2_LIGHT_PTX=str(a.light_ptx.resolve()),XPU2_LIGHT_PROFILE=str(folder/'light.jsonl'))
             if label!='reference':env.update(XPU2_LIGHT_TILES='steal',XPU2_LIGHT_LAZY='neighbor',XPU2_LAZY_PROFILE=str(folder/'lazy.jsonl'),XPU2_TILE_CLAIM_PROFILE=str(folder/'claims.jsonl'))
             if label!='reference':env.update(XPU2_MATERIAL_ADMISSION='supported',XPU2_MATERIAL_JOB_LOBES='2',XPU2_MATERIAL_JOB_PROFILE=str(folder/'jobs.jsonl'),XPU2_ADMISSION_PROFILE=str(folder/'admission.jsonl'))
-            if label!='reference':env.update(XPU2_PREPARED_RECORDS='1',XPU2_PREPARED_PROFILE=str(folder/'prepared.jsonl'),XPU2_RESIDENT_RECORDS='1',XPU2_RESIDENT_PROFILE=str(folder/'resident.jsonl'))
+            if label!='reference':env.update(XPU2_PREPARED_RECORDS='1',XPU2_PREPARED_PROFILE=str(folder/'prepared.jsonl'),XPU2_RESIDENT_RECORDS='1',XPU2_RESIDENT_PROFILE=str(folder/'resident.jsonl'),XPU2_RESIDENT_DETAIL_PROFILE=str(folder/'resident-detail.jsonl'))
             if label=='restart':env['XPU2_LIGHT_HOLD_PACKET']='100'
             logpath=folder/'render.log';cmd=[str(rt/'moonray.exe'),'-in',str(longscene if label=='restart' else scene),'-out',str(folder/'beauty.exr'),'-exec_mode','xpu','-threads','1','-info','-stats',str(folder/'stats.csv')]
             print(label,flush=True)
@@ -81,9 +81,11 @@ def main():
             if label!='reference':
                 resident=[json.loads(line) for line in (folder/'resident.jsonl').read_text().splitlines()];row['resident']=resident
                 if len(resident)!=(2 if label=='restart' else 1) or any(not r['enabled'] for r in resident) or not resident[-1]['reused_groups']:raise ValueError('Resident recovery not exercised')
+                detail=[json.loads(line) for line in (folder/'resident-detail.jsonl').read_text().splitlines()];row['resident_detail']=detail
+                if len(detail)!=(2 if label=='restart' else 1) or any(d['pending'] or d['rejected_records'] or d['rejected_batches'] for d in detail):raise ValueError('Resident transaction recovery failure')
                 prepared=[json.loads(line) for line in (folder/'prepared.jsonl').read_text().splitlines()];row['prepared']=prepared
                 if len(prepared)!=(2 if label=='restart' else 1) or any(r['retained'] or not r['enabled'] or r['expanded']>r['queued'] for r in prepared):raise ValueError('Prepared frame ownership failure')
-                if not prepared[-1]['reused'] or not prepared[-1]['expanded']:raise ValueError('Replacement did not reuse prepared records')
+                if not prepared[-1]['reused'] or not (prepared[-1]['expanded']+detail[-1]['fast_packets']):raise ValueError('Replacement did not reuse prepared records')
                 samples=[json.loads(line) for line in (folder/'sample_reuse.jsonl').read_text().splitlines()];row['sample_reuse']=samples
                 if any(r['mode']!=1 or r['checked'] or r['mismatch'] for r in samples) or not samples[-1]['gpu_lanes']:raise ValueError('Sample reuse recovery failed')
                 local=[json.loads(line) for line in (folder/'tiles.jsonl').read_text().splitlines()];row['tiles']=local

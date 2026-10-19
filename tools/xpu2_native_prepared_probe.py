@@ -48,7 +48,9 @@ def profiles(folder,label,env,bypass=False,require_cost_gpu=False,cost_cpu_only=
    require(p['record_bytes']<p['equivalent_bytes'],'Shared record did not reduce preparation bytes')
    if label=='pool1':require(p['exhausted']>0,'Pool pressure absent')
    if label in ('prepared','combined','pool1','reuse_verify','sentinel'):
-    require(p['queued']==p['expanded'] and p['expanded']>0,'Prepared worker expansion absent')
+    detail=folder/'resident-detail.jsonl'
+    skipped=json.loads(detail.read_text().splitlines()[0])['fast_packets'] if detail.exists() else 0
+    require(p['queued']==p['expanded']+skipped and p['queued']>0,'Prepared worker packet accounting')
  if label=='combined':require(data['work']['compact_batches']>0,'Combined GPU compact inputs absent')
  return data
 

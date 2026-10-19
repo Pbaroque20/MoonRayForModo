@@ -16,7 +16,7 @@ def compile_ptx(source,out,shortcut=False):
         new=b"cosine=fmaxf(0.f,fminf(1.f,sampleDot<Vector>(flatN,wi)));"
         if code.count(old)!=1:raise ValueError('Math substitution anchor drift')
         code=code.replace(old,new)
-    code+=b'\n'+(ROOT/'xpu2/resident_sample_cuda.cuh').read_bytes()
+    code+=b'\n'+(ROOT/'xpu2/resident_wire.h').read_bytes()+b'\n'+(ROOT/'xpu2/resident_sample_cuda.cuh').read_bytes()
     (out/'film.cu').write_bytes(code);program=C.c_void_p()
     bind(nvrtc,'nvrtcCreateProgram',[C.POINTER(C.c_void_p),C.c_char_p,C.c_char_p,C.c_int,C.c_void_p,C.c_void_p])(C.byref(program),code,b'film.cu',0,None,None)
     flags=['--std=c++14','--gpu-architecture=compute_86','--fmad=false','--ftz=false','--prec-div=true','--prec-sqrt=true']
@@ -35,7 +35,7 @@ def main():
     p=argparse.ArgumentParser(description='Compile the versioned broader diffuse GPU kernel')
     p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--shortcut',action='store_true');a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
-    names=('sampler_cuda.cu','lambert_cuda.cu','ispc_math_cuda.cuh','diffuse_sample_cuda.cu','native_work.py','resident_sample_cuda.cuh')
+    names=('sampler_cuda.cu','lambert_cuda.cu','ispc_math_cuda.cuh','diffuse_sample_cuda.cu','native_work.py','resident_sample_cuda.cuh','resident_wire.h')
     hashes={name:digest_file(ROOT/'xpu2'/name) for name in names}
     flags=compile_ptx(a.source.resolve(),out,a.shortcut)
     if any(digest_file(ROOT/'xpu2'/n)!=h for n,h in hashes.items()):raise ValueError('Kernel source drift')

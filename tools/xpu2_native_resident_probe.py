@@ -22,13 +22,17 @@ from xpu2_native_material_admission_probe import require
 from xpu2_native_prepared_probe import configuration as prepared_configuration, profiles as prepared_profiles
 
 def mapped(label):
- return 'prepared' if label in ('previous','control','resident','flush','stale','lean_off') else label
+ return 'prepared' if label in ('previous','control','resident','flush','stale','lean_off','zero_flags','mixed_once','fast_off') else label
 
 def configuration(runtime,folder,ptx,light_ptx,label):
  env=prepared_configuration(runtime,folder,ptx,light_ptx,mapped(label))
  if label not in ('reference','previous'):
   env['XPU2_RESIDENT_RECORDS']='0' if label=='control' else '1'
   env['XPU2_RESIDENT_PROFILE']=str(folder/'resident.jsonl')
+  env['XPU2_RESIDENT_DETAIL_PROFILE']=str(folder/'resident-detail.jsonl')
+ if label=='zero_flags':env.update(XPU2_RESIDENT_FLUSH='0',XPU2_RESIDENT_STALE='0',XPU2_RESIDENT_MIXED_ONCE='0')
+ if label=='mixed_once':env['XPU2_RESIDENT_MIXED_ONCE']='1'
+ if label=='fast_off':env['XPU2_RESIDENT_FAST']='0'
  if label=='flush':env['XPU2_RESIDENT_FLUSH']='1'
  if label=='stale':env['XPU2_RESIDENT_STALE']='1'
  if label=='lean_off':env['XPU2_LEAN_WIRE']='0'
@@ -48,6 +52,19 @@ def profiles(folder,label,env,bypass=False,require_cost_gpu=False,cost_cpu_only=
    elif label=='resident':require(p['reused_groups']>0,'Cross-batch record reuse absent')
   if label=='stale':require(data['gpu']['gpu_accepted']<p['descriptors']//10,'Stale references unexpectedly accepted')
   if label in ('pool0','capacity0'):require(not p['batches'],'Empty pool/capacity used cache')
+ detail=json.loads((folder/'resident-detail.jsonl').read_text().strip());data['resident_detail']=detail
+ require(not detail['pending'],'Unretired resident transaction')
+ if label in ('control','fast_off','lean_off'):require(not detail['fast_packets'],'Unexpected descriptor-only path')
+ if label in ('resident','zero_flags','mixed_once','flush','stale'):
+  require(detail['fast_packets']>0 and detail['fast_batches']>0,'Resident copies not eliminated')
+  require(data['prepared']['expanded']+detail['fast_packets']==data['prepared']['queued'],'Lost prepared packets')
+ if label=='zero_flags':require(not p['flush'] and not p['stale'] and not detail['mixed_injected'],'Zero flag enabled injection')
+ if label=='stale':require(detail['rejected_records']>0 and detail['aborted']>0,'Stale records not explicitly rejected')
+ elif label not in ('upload_failure','missing','capacity0'):require(not detail['rejected_records'],'Unexpected record rejection')
+ if label=='mixed_once':
+  require(detail['mixed_injected'] and detail['rejected_batches']==1,'Mixed-version batch not locally rejected')
+  require(detail['committed']>0 and data['gpu']['gpu_accepted']>100,'GPU did not recover after rejected batch')
+ if label=='upload_failure':require(detail['aborted']>0 and not detail['committed'],'Failed upload committed residency')
  return data
 
 def main():
@@ -72,8 +89,8 @@ def main():
   locked={str(rt):inventory(rt) for rt in (runtime,reference,previous/'runtime')};identity=gpu_identity()
   report.update(source_hashes=sources,gpu=identity,cost_cpu_only=a.cost_cpu_only,require_cost_gpu=a.require_cost_gpu,bypass=a.bypass)
   scene=out/'scene.rdla';scene.write_bytes(a.scene.read_bytes());images={};baseline=None
-  allowed=('reference','previous','control','resident','flush','stale','lean_off','pool0','pool1','reuse_verify','sentinel','missing','capacity0','upload_failure','mismatch','drop')
-  order=('reference','control','resident','flush') if not a.checks else allowed
+  allowed=('reference','previous','control','resident','flush','stale','lean_off','pool0','pool1','reuse_verify','sentinel','missing','capacity0','upload_failure','mismatch','drop','zero_flags','mixed_once','fast_off')
+  order=('reference','control','fast_off','resident') if not a.checks else allowed
   if a.cases:
    require(a.checks,'Cases are correctness-only');order=tuple(a.cases.split(','))
    require(order and order[0]=='reference' and len(set(order))==len(order) and all(x in allowed for x in order),'Invalid cases')
