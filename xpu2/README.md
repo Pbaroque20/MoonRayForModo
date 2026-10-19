@@ -301,3 +301,7 @@ The [owner-thread chunk preparation experiment](NATIVE_OWNED_CHUNKS.md) overlaps
 CPU preparation of two/four independent native chunks with GPU work, preserving
 64-ray math and original contribution order. Exact-image and cancellation
 evidence is recorded alongside paired timings; original XPU remains faster.
+
+The [coordination experiment](NATIVE_COORDINATION.md) tests earlier staging
+rejection and ready-only grouped result claims. Exact images and recovery pass;
+the small combined timing difference is not yet a reliable performance gain.
