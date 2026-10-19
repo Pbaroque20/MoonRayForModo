@@ -1,0 +1,1227 @@
+{
+  "status": "passed",
+  "scope": "Single native worker on reflection/transmission fixture. Diagnostics only; no performance optimization or general material claim.",
+  "reports": {
+    "controls": {
+      "path": "test-results\\xpu2-timeline-v3-controls\\report.json",
+      "sha256": "075d108bef9753f650f12c11261117e35fbd2e3e71b6343ccdb8c0a9b536288e",
+      "runs": 5
+    },
+    "timing": {
+      "path": "test-results\\xpu2-timeline-v3-timing\\report.json",
+      "sha256": "458bc14725f1dc4296a05d6f53ae7eca66acf316ab43841694d10b1aae76feb3",
+      "runs": 16
+    },
+    "cancel": {
+      "path": "test-results\\xpu2-timeline-v3-cancel\\report.json",
+      "sha256": "43dffadad19fb2418b1098207ff59dded81ad78bd5232bec827d1b3841050c7a",
+      "runs": 3
+    }
+  },
+  "traces": {
+    "test-results\\xpu2-timeline-v3-controls\\0-missing\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 9.5848063,
+      "events": 87469,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22557,
+          "sum_seconds": 0.2080378,
+          "union_seconds": 0.2080378,
+          "median_us": 8.9,
+          "max_ms": 0.2463
+        },
+        "native_cpu_lobes": {
+          "count": 22585,
+          "sum_seconds": 0.0438428,
+          "union_seconds": 0.0438428,
+          "median_us": 1.8,
+          "max_ms": 0.04
+        },
+        "native_condition_wait": {
+          "count": 16,
+          "sum_seconds": 0.1131611,
+          "union_seconds": 0.1131611,
+          "median_us": 2659.5,
+          "max_ms": 16.7317
+        },
+        "native_resume": {
+          "count": 22585,
+          "sum_seconds": 0.4214574,
+          "union_seconds": 0.4214574,
+          "median_us": 13.0,
+          "max_ms": 113.0737
+        },
+        "worker_empty_wait": {
+          "count": 2869,
+          "sum_seconds": 9.373014,
+          "union_seconds": 9.373014,
+          "median_us": 126.9,
+          "max_ms": 134.3548
+        },
+        "worker_pack": {
+          "count": 5619,
+          "sum_seconds": 0.0269135,
+          "union_seconds": 0.0269135,
+          "median_us": 5.5,
+          "max_ms": 0.1737
+        },
+        "host_dispatch_inclusive": {
+          "count": 5619,
+          "sum_seconds": 0.115873,
+          "union_seconds": 0.115873,
+          "median_us": 0.2,
+          "max_ms": 114.7685
+        },
+        "worker_retire": {
+          "count": 5619,
+          "sum_seconds": 0.0174492,
+          "union_seconds": 0.0174492,
+          "median_us": 4.3,
+          "max_ms": 0.2276
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {},
+      "native_instrumented_union_seconds": 0.673338,
+      "gpu_shading_interval_union_seconds": 0.0,
+      "native_wait_union_seconds": 0.1131611,
+      "approx_native_wait_during_shading_seconds": 0.0,
+      "approx_native_instrumented_during_shading_seconds": 0.0,
+      "kernel_interval_overlap_between_slots_seconds": 0.0,
+      "sha256": "21b94a3a2f455d6e485bdf3faab95bfffda3e000955bcf8e4fa66bca0fd02c38"
+    },
+    "test-results\\xpu2-timeline-v3-controls\\0-profile_control\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 10.3415984,
+      "events": 99198,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22557,
+          "sum_seconds": 0.2657512,
+          "union_seconds": 0.2657512,
+          "median_us": 9.4,
+          "max_ms": 0.3207
+        },
+        "native_cpu_lobes": {
+          "count": 22585,
+          "sum_seconds": 0.0523864,
+          "union_seconds": 0.0523864,
+          "median_us": 2.0,
+          "max_ms": 0.3424
+        },
+        "native_condition_wait": {
+          "count": 589,
+          "sum_seconds": 0.3474268,
+          "union_seconds": 0.3474268,
+          "median_us": 346.3,
+          "max_ms": 19.3501
+        },
+        "native_resume": {
+          "count": 22585,
+          "sum_seconds": 0.6731385,
+          "union_seconds": 0.6731385,
+          "median_us": 11.9,
+          "max_ms": 95.4774
+        },
+        "worker_empty_wait": {
+          "count": 784,
+          "sum_seconds": 8.7681683,
+          "union_seconds": 8.7681683,
+          "median_us": 3181.65,
+          "max_ms": 76.8852
+        },
+        "worker_pack": {
+          "count": 3762,
+          "sum_seconds": 0.0390703,
+          "union_seconds": 0.0390703,
+          "median_us": 6.4,
+          "max_ms": 0.2153
+        },
+        "clock_calibration": {
+          "count": 1,
+          "sum_seconds": 8.05e-05,
+          "union_seconds": 8.05e-05,
+          "median_us": 80.5,
+          "max_ms": 0.0805
+        },
+        "host_enqueue_calls": {
+          "count": 3762,
+          "sum_seconds": 0.5812496,
+          "union_seconds": 0.5812496,
+          "median_us": 126.95,
+          "max_ms": 0.5208
+        },
+        "host_dispatch_inclusive": {
+          "count": 3762,
+          "sum_seconds": 0.6836521,
+          "union_seconds": 0.6836521,
+          "median_us": 128.1,
+          "max_ms": 96.51
+        },
+        "completion_observed": {
+          "count": 3762,
+          "sum_seconds": 0.0,
+          "union_seconds": 0.0,
+          "median_us": 0.0,
+          "max_ms": 0.0
+        },
+        "gpu_upload_interval": {
+          "count": 3762,
+          "sum_seconds": 0.278420197,
+          "union_seconds": 0.278420197,
+          "median_us": 70.351,
+          "max_ms": 0.355665
+        },
+        "gpu_kernel_interval": {
+          "count": 3762,
+          "sum_seconds": 0.675011817,
+          "union_seconds": 0.67500013,
+          "median_us": 110.413,
+          "max_ms": 3.055881
+        },
+        "gpu_download_interval": {
+          "count": 3762,
+          "sum_seconds": 0.226930113,
+          "union_seconds": 0.226930113,
+          "median_us": 59.114,
+          "max_ms": 0.290199
+        },
+        "worker_retire": {
+          "count": 3762,
+          "sum_seconds": 0.0812873,
+          "union_seconds": 0.0812873,
+          "median_us": 15.6,
+          "max_ms": 0.32
+        },
+        "clock_calibration_end": {
+          "count": 1,
+          "sum_seconds": 0.0002942,
+          "union_seconds": 0.0002942,
+          "median_us": 294.2,
+          "max_ms": 0.2942
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {
+        "gpu_to_host_scale": 1.000550589461505,
+        "end_uncorrected_drift_us": 5605.711,
+        "end_half_bracket_us": 147.1,
+        "alignment": "Linear start/end bracket mapping; not a hardware profiler correlation guarantee."
+      },
+      "native_instrumented_union_seconds": 0.9912761,
+      "gpu_shading_interval_union_seconds": 1.180293832,
+      "native_wait_union_seconds": 0.3474268,
+      "approx_native_wait_during_shading_seconds": 0.22849507,
+      "approx_native_instrumented_during_shading_seconds": 0.481031887,
+      "kernel_interval_overlap_between_slots_seconds": 1.1687e-05,
+      "clock_alignment_half_bracket_us": 147.1,
+      "approx_completion_detection": {
+        "count": 3762,
+        "median_us": 130.3225,
+        "max_us": 561.632,
+        "minimum_us": 41.792,
+        "negative_beyond_calibration": 0
+      },
+      "gpu_shading_envelope_seconds": 10.135124659,
+      "gpu_shading_envelope_uncovered_seconds": 8.954830827,
+      "uncovered_does_not_mean_device_idle": true,
+      "sha256": "e3a88a1eadba9b7916b7979b37eff134a2190607d1320bd7ff12e9af9b43dc80"
+    },
+    "test-results\\xpu2-timeline-v3-controls\\0-upload_failure\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 9.5634243,
+      "events": 87490,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22557,
+          "sum_seconds": 0.2085009,
+          "union_seconds": 0.2085009,
+          "median_us": 8.9,
+          "max_ms": 0.1013
+        },
+        "native_cpu_lobes": {
+          "count": 22585,
+          "sum_seconds": 0.0430985,
+          "union_seconds": 0.0430985,
+          "median_us": 1.8,
+          "max_ms": 0.2162
+        },
+        "native_condition_wait": {
+          "count": 25,
+          "sum_seconds": 0.0981013,
+          "union_seconds": 0.0981013,
+          "median_us": 51.4,
+          "max_ms": 19.6967
+        },
+        "native_resume": {
+          "count": 22585,
+          "sum_seconds": 0.4042012,
+          "union_seconds": 0.4042012,
+          "median_us": 12.9,
+          "max_ms": 97.6064
+        },
+        "worker_empty_wait": {
+          "count": 2872,
+          "sum_seconds": 9.3681513,
+          "union_seconds": 9.3681513,
+          "median_us": 126.4,
+          "max_ms": 142.1219
+        },
+        "worker_pack": {
+          "count": 5621,
+          "sum_seconds": 0.0266778,
+          "union_seconds": 0.0266778,
+          "median_us": 5.6,
+          "max_ms": 0.2396
+        },
+        "clock_calibration": {
+          "count": 1,
+          "sum_seconds": 0.0001113,
+          "union_seconds": 0.0001113,
+          "median_us": 111.3,
+          "max_ms": 0.1113
+        },
+        "host_enqueue_calls": {
+          "count": 1,
+          "sum_seconds": 0.000104,
+          "union_seconds": 0.000104,
+          "median_us": 104.0,
+          "max_ms": 0.104
+        },
+        "host_dispatch_inclusive": {
+          "count": 5621,
+          "sum_seconds": 0.099539,
+          "union_seconds": 0.099539,
+          "median_us": 0.2,
+          "max_ms": 98.5001
+        },
+        "worker_retire": {
+          "count": 5621,
+          "sum_seconds": 0.0168214,
+          "union_seconds": 0.0168214,
+          "median_us": 3.9,
+          "max_ms": 0.0583
+        },
+        "clock_calibration_end": {
+          "count": 1,
+          "sum_seconds": 0.0001023,
+          "union_seconds": 0.0001023,
+          "median_us": 102.3,
+          "max_ms": 0.1023
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {},
+      "native_instrumented_union_seconds": 0.6558006,
+      "gpu_shading_interval_union_seconds": 0.0,
+      "native_wait_union_seconds": 0.0981013,
+      "approx_native_wait_during_shading_seconds": 0.0,
+      "approx_native_instrumented_during_shading_seconds": 0.0,
+      "kernel_interval_overlap_between_slots_seconds": 0.0,
+      "sha256": "326b33e2fbc8aacb1e5b1f83404c415d16df0628cdef9ff5aa9e2b68da8cfcc6"
+    },
+    "test-results\\xpu2-timeline-v3-timing\\0-profile_control\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 9.6772677,
+      "events": 100407,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22557,
+          "sum_seconds": 0.2753835,
+          "union_seconds": 0.2753835,
+          "median_us": 9.0,
+          "max_ms": 0.2452
+        },
+        "native_cpu_lobes": {
+          "count": 22585,
+          "sum_seconds": 0.0493893,
+          "union_seconds": 0.0493893,
+          "median_us": 1.9,
+          "max_ms": 0.1993
+        },
+        "native_condition_wait": {
+          "count": 461,
+          "sum_seconds": 0.2760019,
+          "union_seconds": 0.2760019,
+          "median_us": 286.2,
+          "max_ms": 16.0178
+        },
+        "native_resume": {
+          "count": 22585,
+          "sum_seconds": 0.5820882,
+          "union_seconds": 0.5820882,
+          "median_us": 11.5,
+          "max_ms": 94.7536
+        },
+        "worker_empty_wait": {
+          "count": 809,
+          "sum_seconds": 8.3453182,
+          "union_seconds": 8.3453182,
+          "median_us": 3000.3,
+          "max_ms": 80.7246
+        },
+        "worker_pack": {
+          "count": 3926,
+          "sum_seconds": 0.0344021,
+          "union_seconds": 0.0344021,
+          "median_us": 5.8,
+          "max_ms": 0.1118
+        },
+        "clock_calibration": {
+          "count": 1,
+          "sum_seconds": 0.0001235,
+          "union_seconds": 0.0001235,
+          "median_us": 123.5,
+          "max_ms": 0.1235
+        },
+        "host_enqueue_calls": {
+          "count": 3926,
+          "sum_seconds": 0.5619557,
+          "union_seconds": 0.5619557,
+          "median_us": 118.1,
+          "max_ms": 0.4398
+        },
+        "host_dispatch_inclusive": {
+          "count": 3926,
+          "sum_seconds": 0.6633619,
+          "union_seconds": 0.6633619,
+          "median_us": 119.2,
+          "max_ms": 95.5482
+        },
+        "completion_observed": {
+          "count": 3926,
+          "sum_seconds": 0.0,
+          "union_seconds": 0.0,
+          "median_us": 0.0,
+          "max_ms": 0.0
+        },
+        "gpu_upload_interval": {
+          "count": 3926,
+          "sum_seconds": 0.267054668,
+          "union_seconds": 0.267054668,
+          "median_us": 61.558,
+          "max_ms": 0.2284
+        },
+        "gpu_kernel_interval": {
+          "count": 3926,
+          "sum_seconds": 0.481242014,
+          "union_seconds": 0.481242014,
+          "median_us": 69.864,
+          "max_ms": 2.751047
+        },
+        "gpu_download_interval": {
+          "count": 3926,
+          "sum_seconds": 0.204456324,
+          "union_seconds": 0.204456324,
+          "median_us": 42.016,
+          "max_ms": 0.175879
+        },
+        "worker_retire": {
+          "count": 3926,
+          "sum_seconds": 0.0749549,
+          "union_seconds": 0.0749549,
+          "median_us": 15.1,
+          "max_ms": 0.2154
+        },
+        "clock_calibration_end": {
+          "count": 1,
+          "sum_seconds": 0.0001613,
+          "union_seconds": 0.0001613,
+          "median_us": 161.3,
+          "max_ms": 0.1613
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {
+        "gpu_to_host_scale": 1.0005584893512156,
+        "end_uncorrected_drift_us": 5320.307,
+        "end_half_bracket_us": 80.65,
+        "alignment": "Linear start/end bracket mapping; not a hardware profiler correlation guarantee."
+      },
+      "native_instrumented_union_seconds": 0.906861,
+      "gpu_shading_interval_union_seconds": 0.952753006,
+      "native_wait_union_seconds": 0.2760019,
+      "approx_native_wait_during_shading_seconds": 0.16013609,
+      "approx_native_instrumented_during_shading_seconds": 0.393219328,
+      "kernel_interval_overlap_between_slots_seconds": 0.0,
+      "clock_alignment_half_bracket_us": 80.65,
+      "approx_completion_detection": {
+        "count": 3926,
+        "median_us": 87.6745,
+        "max_us": 452.528,
+        "minimum_us": 62.446,
+        "negative_beyond_calibration": 0
+      },
+      "gpu_shading_envelope_seconds": 9.450560084,
+      "gpu_shading_envelope_uncovered_seconds": 8.497807078,
+      "uncovered_does_not_mean_device_idle": true,
+      "sha256": "0a82ef1c978e96f59734f17e08ad8f35d1df2f88913f76723234ce23396c3b9c"
+    },
+    "test-results\\xpu2-timeline-v3-timing\\1-profile_control\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 10.1165163,
+      "events": 99938,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22557,
+          "sum_seconds": 0.2731587,
+          "union_seconds": 0.2731587,
+          "median_us": 9.1,
+          "max_ms": 0.222
+        },
+        "native_cpu_lobes": {
+          "count": 22585,
+          "sum_seconds": 0.0491125,
+          "union_seconds": 0.0491125,
+          "median_us": 1.8,
+          "max_ms": 0.1865
+        },
+        "native_condition_wait": {
+          "count": 470,
+          "sum_seconds": 0.3112107,
+          "union_seconds": 0.3112107,
+          "median_us": 301.25,
+          "max_ms": 18.0787
+        },
+        "native_resume": {
+          "count": 22585,
+          "sum_seconds": 0.6322133,
+          "union_seconds": 0.6322133,
+          "median_us": 11.6,
+          "max_ms": 117.6296
+        },
+        "worker_empty_wait": {
+          "count": 795,
+          "sum_seconds": 8.6427708,
+          "union_seconds": 8.6427708,
+          "median_us": 3183.0,
+          "max_ms": 107.6739
+        },
+        "worker_pack": {
+          "count": 3868,
+          "sum_seconds": 0.03284,
+          "union_seconds": 0.03284,
+          "median_us": 5.9,
+          "max_ms": 0.0841
+        },
+        "clock_calibration": {
+          "count": 1,
+          "sum_seconds": 0.0001045,
+          "union_seconds": 0.0001045,
+          "median_us": 104.5,
+          "max_ms": 0.1045
+        },
+        "host_enqueue_calls": {
+          "count": 3868,
+          "sum_seconds": 0.5397637,
+          "union_seconds": 0.5397637,
+          "median_us": 115.5,
+          "max_ms": 0.5034
+        },
+        "host_dispatch_inclusive": {
+          "count": 3868,
+          "sum_seconds": 0.6631018,
+          "union_seconds": 0.6631018,
+          "median_us": 116.5,
+          "max_ms": 118.2722
+        },
+        "completion_observed": {
+          "count": 3868,
+          "sum_seconds": 0.0,
+          "union_seconds": 0.0,
+          "median_us": 0.0,
+          "max_ms": 0.0
+        },
+        "gpu_upload_interval": {
+          "count": 3868,
+          "sum_seconds": 0.271194192,
+          "union_seconds": 0.271194192,
+          "median_us": 63.023,
+          "max_ms": 0.266261
+        },
+        "gpu_kernel_interval": {
+          "count": 3868,
+          "sum_seconds": 0.594869814,
+          "union_seconds": 0.594869814,
+          "median_us": 89.1605,
+          "max_ms": 4.138511
+        },
+        "gpu_download_interval": {
+          "count": 3868,
+          "sum_seconds": 0.219447242,
+          "union_seconds": 0.219447242,
+          "median_us": 45.832,
+          "max_ms": 0.278474
+        },
+        "worker_retire": {
+          "count": 3868,
+          "sum_seconds": 0.069094,
+          "union_seconds": 0.069094,
+          "median_us": 15.15,
+          "max_ms": 0.2498
+        },
+        "clock_calibration_end": {
+          "count": 1,
+          "sum_seconds": 0.0002845,
+          "union_seconds": 0.0002845,
+          "median_us": 284.5,
+          "max_ms": 0.2845
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {
+        "gpu_to_host_scale": 1.0005512512445003,
+        "end_uncorrected_drift_us": 5475.879,
+        "end_half_bracket_us": 142.25,
+        "alignment": "Linear start/end bracket mapping; not a hardware profiler correlation guarantee."
+      },
+      "native_instrumented_union_seconds": 0.9544845,
+      "gpu_shading_interval_union_seconds": 1.085511248,
+      "native_wait_union_seconds": 0.3112107,
+      "approx_native_wait_during_shading_seconds": 0.176248066,
+      "approx_native_instrumented_during_shading_seconds": 0.429807231,
+      "kernel_interval_overlap_between_slots_seconds": 0.0,
+      "clock_alignment_half_bracket_us": 142.25,
+      "approx_completion_detection": {
+        "count": 3868,
+        "median_us": 127.0335,
+        "max_us": 1234.608,
+        "minimum_us": 51.895,
+        "negative_beyond_calibration": 0
+      },
+      "gpu_shading_envelope_seconds": 9.83093354,
+      "gpu_shading_envelope_uncovered_seconds": 8.745422292,
+      "uncovered_does_not_mean_device_idle": true,
+      "sha256": "55faa4b6fa3676093735e5c2de82e9317716c320bc9303d46fa1a2367eab4ee6"
+    },
+    "test-results\\xpu2-timeline-v3-timing\\2-profile_control\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 10.2129609,
+      "events": 99469,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22557,
+          "sum_seconds": 0.2674353,
+          "union_seconds": 0.2674353,
+          "median_us": 9.2,
+          "max_ms": 0.258
+        },
+        "native_cpu_lobes": {
+          "count": 22585,
+          "sum_seconds": 0.0501065,
+          "union_seconds": 0.0501065,
+          "median_us": 1.9,
+          "max_ms": 0.2703
+        },
+        "native_condition_wait": {
+          "count": 470,
+          "sum_seconds": 0.2832925,
+          "union_seconds": 0.2832925,
+          "median_us": 315.3,
+          "max_ms": 31.051
+        },
+        "native_resume": {
+          "count": 22585,
+          "sum_seconds": 0.6104267,
+          "union_seconds": 0.6104267,
+          "median_us": 11.8,
+          "max_ms": 96.0944
+        },
+        "worker_empty_wait": {
+          "count": 782,
+          "sum_seconds": 8.7685458,
+          "union_seconds": 8.7685458,
+          "median_us": 3265.5,
+          "max_ms": 144.5469
+        },
+        "worker_pack": {
+          "count": 3811,
+          "sum_seconds": 0.0361886,
+          "union_seconds": 0.0361886,
+          "median_us": 6.0,
+          "max_ms": 0.2592
+        },
+        "clock_calibration": {
+          "count": 1,
+          "sum_seconds": 0.0001035,
+          "union_seconds": 0.0001035,
+          "median_us": 103.5,
+          "max_ms": 0.1035
+        },
+        "host_enqueue_calls": {
+          "count": 3811,
+          "sum_seconds": 0.555824,
+          "union_seconds": 0.555824,
+          "median_us": 118.3,
+          "max_ms": 0.5617
+        },
+        "host_dispatch_inclusive": {
+          "count": 3811,
+          "sum_seconds": 0.6586028,
+          "union_seconds": 0.6586028,
+          "median_us": 119.4,
+          "max_ms": 97.0106
+        },
+        "completion_observed": {
+          "count": 3811,
+          "sum_seconds": 0.0,
+          "union_seconds": 0.0,
+          "median_us": 0.0,
+          "max_ms": 0.0
+        },
+        "gpu_upload_interval": {
+          "count": 3811,
+          "sum_seconds": 0.270035927,
+          "union_seconds": 0.270035927,
+          "median_us": 64.979,
+          "max_ms": 0.415272
+        },
+        "gpu_kernel_interval": {
+          "count": 3811,
+          "sum_seconds": 0.583771678,
+          "union_seconds": 0.583771678,
+          "median_us": 97.223,
+          "max_ms": 2.957715
+        },
+        "gpu_download_interval": {
+          "count": 3811,
+          "sum_seconds": 0.217524555,
+          "union_seconds": 0.217524555,
+          "median_us": 47.145,
+          "max_ms": 0.329287
+        },
+        "worker_retire": {
+          "count": 3811,
+          "sum_seconds": 0.0736597,
+          "union_seconds": 0.0736597,
+          "median_us": 15.3,
+          "max_ms": 0.1448
+        },
+        "clock_calibration_end": {
+          "count": 1,
+          "sum_seconds": 7.41e-05,
+          "union_seconds": 7.41e-05,
+          "median_us": 74.1,
+          "max_ms": 0.0741
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {
+        "gpu_to_host_scale": 1.0005616125875747,
+        "end_uncorrected_drift_us": 5647.693,
+        "end_half_bracket_us": 37.05,
+        "alignment": "Linear start/end bracket mapping; not a hardware profiler correlation guarantee."
+      },
+      "native_instrumented_union_seconds": 0.9279685,
+      "gpu_shading_interval_union_seconds": 1.07133216,
+      "native_wait_union_seconds": 0.2832925,
+      "approx_native_wait_during_shading_seconds": 0.170363574,
+      "approx_native_instrumented_during_shading_seconds": 0.406706706,
+      "kernel_interval_overlap_between_slots_seconds": 0.0,
+      "clock_alignment_half_bracket_us": 51.75,
+      "approx_completion_detection": {
+        "count": 3811,
+        "median_us": 53.832,
+        "max_us": 496.101,
+        "minimum_us": 36.997,
+        "negative_beyond_calibration": 0
+      },
+      "gpu_shading_envelope_seconds": 9.917108263,
+      "gpu_shading_envelope_uncovered_seconds": 8.845776103,
+      "uncovered_does_not_mean_device_idle": true,
+      "sha256": "d2542f7fba1182ff15aa4825d013bba125a77ca127dec35a85b81bd526252156"
+    },
+    "test-results\\xpu2-timeline-v3-timing\\3-profile_control\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 10.241742,
+      "events": 99784,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22557,
+          "sum_seconds": 0.2739076,
+          "union_seconds": 0.2739076,
+          "median_us": 9.2,
+          "max_ms": 0.3224
+        },
+        "native_cpu_lobes": {
+          "count": 22585,
+          "sum_seconds": 0.0512233,
+          "union_seconds": 0.0512233,
+          "median_us": 1.9,
+          "max_ms": 0.2135
+        },
+        "native_condition_wait": {
+          "count": 457,
+          "sum_seconds": 0.288217,
+          "union_seconds": 0.288217,
+          "median_us": 326.4,
+          "max_ms": 17.8535
+        },
+        "native_resume": {
+          "count": 22585,
+          "sum_seconds": 0.616663,
+          "union_seconds": 0.616663,
+          "median_us": 11.8,
+          "max_ms": 110.7439
+        },
+        "worker_empty_wait": {
+          "count": 798,
+          "sum_seconds": 8.8049255,
+          "union_seconds": 8.8049255,
+          "median_us": 3301.45,
+          "max_ms": 82.7854
+        },
+        "worker_pack": {
+          "count": 3850,
+          "sum_seconds": 0.0342417,
+          "union_seconds": 0.0342417,
+          "median_us": 5.9,
+          "max_ms": 0.0987
+        },
+        "clock_calibration": {
+          "count": 1,
+          "sum_seconds": 0.0001289,
+          "union_seconds": 0.0001289,
+          "median_us": 128.9,
+          "max_ms": 0.1289
+        },
+        "host_enqueue_calls": {
+          "count": 3850,
+          "sum_seconds": 0.5494404,
+          "union_seconds": 0.5494404,
+          "median_us": 117.3,
+          "max_ms": 0.5565
+        },
+        "host_dispatch_inclusive": {
+          "count": 3850,
+          "sum_seconds": 0.6662899,
+          "union_seconds": 0.6662899,
+          "median_us": 118.35,
+          "max_ms": 111.5057
+        },
+        "completion_observed": {
+          "count": 3850,
+          "sum_seconds": 0.0,
+          "union_seconds": 0.0,
+          "median_us": 0.0,
+          "max_ms": 0.0
+        },
+        "gpu_upload_interval": {
+          "count": 3850,
+          "sum_seconds": 0.271002098,
+          "union_seconds": 0.271002098,
+          "median_us": 63.511,
+          "max_ms": 0.364459
+        },
+        "gpu_kernel_interval": {
+          "count": 3850,
+          "sum_seconds": 0.565059288,
+          "union_seconds": 0.565059288,
+          "median_us": 91.1155,
+          "max_ms": 2.951824
+        },
+        "gpu_download_interval": {
+          "count": 3850,
+          "sum_seconds": 0.218202187,
+          "union_seconds": 0.218202187,
+          "median_us": 47.389,
+          "max_ms": 0.205191
+        },
+        "worker_retire": {
+          "count": 3850,
+          "sum_seconds": 0.0750263,
+          "union_seconds": 0.0750263,
+          "median_us": 15.3,
+          "max_ms": 0.3018
+        },
+        "clock_calibration_end": {
+          "count": 1,
+          "sum_seconds": 0.0002852,
+          "union_seconds": 0.0002852,
+          "median_us": 285.2,
+          "max_ms": 0.2852
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {
+        "gpu_to_host_scale": 1.0005521845363132,
+        "end_uncorrected_drift_us": 5559.402,
+        "end_half_bracket_us": 142.6,
+        "alignment": "Linear start/end bracket mapping; not a hardware profiler correlation guarantee."
+      },
+      "native_instrumented_union_seconds": 0.9417939,
+      "gpu_shading_interval_union_seconds": 1.054263573,
+      "native_wait_union_seconds": 0.288217,
+      "approx_native_wait_during_shading_seconds": 0.160049527,
+      "approx_native_instrumented_during_shading_seconds": 0.413920371,
+      "kernel_interval_overlap_between_slots_seconds": 0.0,
+      "clock_alignment_half_bracket_us": 142.6,
+      "approx_completion_detection": {
+        "count": 3850,
+        "median_us": 133.3975,
+        "max_us": 540.459,
+        "minimum_us": 66.014,
+        "negative_beyond_calibration": 0
+      },
+      "gpu_shading_envelope_seconds": 9.990337731,
+      "gpu_shading_envelope_uncovered_seconds": 8.936074158,
+      "uncovered_does_not_mean_device_idle": true,
+      "sha256": "563ee0df41650e208662a7ff145a4a5489088ce8224e5a801cf17603b4f84c31"
+    },
+    "test-results\\xpu2-timeline-v3-cancel\\fresh\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 15.2897329,
+      "events": 97024,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22441,
+          "sum_seconds": 0.2286348,
+          "union_seconds": 0.2286348,
+          "median_us": 9.6,
+          "max_ms": 0.1723
+        },
+        "native_cpu_lobes": {
+          "count": 22479,
+          "sum_seconds": 0.0486867,
+          "union_seconds": 0.0486867,
+          "median_us": 2.0,
+          "max_ms": 0.0602
+        },
+        "native_condition_wait": {
+          "count": 75,
+          "sum_seconds": 0.147062,
+          "union_seconds": 0.147062,
+          "median_us": 519.7,
+          "max_ms": 21.2977
+        },
+        "native_resume": {
+          "count": 22479,
+          "sum_seconds": 0.4541273,
+          "union_seconds": 0.4541273,
+          "median_us": 12.5,
+          "max_ms": 104.2418
+        },
+        "worker_empty_wait": {
+          "count": 780,
+          "sum_seconds": 12.1124971,
+          "union_seconds": 12.1124971,
+          "median_us": 7741.25,
+          "max_ms": 84.1135
+        },
+        "worker_pack": {
+          "count": 3596,
+          "sum_seconds": 0.0412931,
+          "union_seconds": 0.0412931,
+          "median_us": 7.8,
+          "max_ms": 0.2472
+        },
+        "clock_calibration": {
+          "count": 1,
+          "sum_seconds": 0.000121,
+          "union_seconds": 0.000121,
+          "median_us": 121.0,
+          "max_ms": 0.121
+        },
+        "host_enqueue_calls": {
+          "count": 3596,
+          "sum_seconds": 0.6768612,
+          "union_seconds": 0.6768612,
+          "median_us": 179.4,
+          "max_ms": 0.5563
+        },
+        "host_dispatch_inclusive": {
+          "count": 3596,
+          "sum_seconds": 0.7931619,
+          "union_seconds": 0.7931619,
+          "median_us": 181.95,
+          "max_ms": 106.7013
+        },
+        "completion_observed": {
+          "count": 3596,
+          "sum_seconds": 0.0,
+          "union_seconds": 0.0,
+          "median_us": 0.0,
+          "max_ms": 0.0
+        },
+        "gpu_upload_interval": {
+          "count": 3596,
+          "sum_seconds": 0.335267899,
+          "union_seconds": 0.335267899,
+          "median_us": 90.138,
+          "max_ms": 0.310475
+        },
+        "gpu_kernel_interval": {
+          "count": 3596,
+          "sum_seconds": 0.982394133,
+          "union_seconds": 0.982394133,
+          "median_us": 152.428,
+          "max_ms": 2.849229
+        },
+        "gpu_download_interval": {
+          "count": 3596,
+          "sum_seconds": 0.222120952,
+          "union_seconds": 0.222120952,
+          "median_us": 57.649,
+          "max_ms": 0.217894
+        },
+        "worker_retire": {
+          "count": 3596,
+          "sum_seconds": 0.7817512,
+          "union_seconds": 0.7817512,
+          "median_us": 72.35,
+          "max_ms": 1.6794
+        },
+        "clock_calibration_end": {
+          "count": 1,
+          "sum_seconds": 0.0002802,
+          "union_seconds": 0.0002802,
+          "median_us": 280.2,
+          "max_ms": 0.2802
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {
+        "gpu_to_host_scale": 1.000552503826337,
+        "end_uncorrected_drift_us": 8362.474,
+        "end_half_bracket_us": 140.1,
+        "alignment": "Linear start/end bracket mapping; not a hardware profiler correlation guarantee."
+      },
+      "native_instrumented_union_seconds": 0.7314488,
+      "gpu_shading_interval_union_seconds": 1.539782984,
+      "native_wait_union_seconds": 0.147062,
+      "approx_native_wait_during_shading_seconds": 0.030667207,
+      "approx_native_instrumented_during_shading_seconds": 0.139333985,
+      "kernel_interval_overlap_between_slots_seconds": 0.0,
+      "clock_alignment_half_bracket_us": 140.1,
+      "approx_completion_detection": {
+        "count": 3596,
+        "median_us": 371.086,
+        "max_us": 1615.902,
+        "minimum_us": 30.76,
+        "negative_beyond_calibration": 0
+      },
+      "gpu_shading_envelope_seconds": 15.110013318,
+      "gpu_shading_envelope_uncovered_seconds": 13.570230334,
+      "uncovered_does_not_mean_device_idle": true,
+      "sha256": "ef42cab6ae4ba196644bba0605cb7ebdd246bb5bb06b1f99985f9ebade7c996e"
+    },
+    "test-results\\xpu2-timeline-v3-cancel\\restart\\timeline.csv": {
+      "status": "passed",
+      "frame_scope_seconds": 15.7191066,
+      "events": 97176,
+      "phases": {
+        "native_window_prepare": {
+          "count": 22441,
+          "sum_seconds": 0.2379993,
+          "union_seconds": 0.2379993,
+          "median_us": 9.7,
+          "max_ms": 0.1944
+        },
+        "native_cpu_lobes": {
+          "count": 22479,
+          "sum_seconds": 0.0497772,
+          "union_seconds": 0.0497772,
+          "median_us": 2.1,
+          "max_ms": 0.0254
+        },
+        "native_condition_wait": {
+          "count": 75,
+          "sum_seconds": 0.1594514,
+          "union_seconds": 0.1594514,
+          "median_us": 548.7,
+          "max_ms": 23.2004
+        },
+        "native_resume": {
+          "count": 22479,
+          "sum_seconds": 0.4757451,
+          "union_seconds": 0.4757451,
+          "median_us": 12.6,
+          "max_ms": 115.6855
+        },
+        "worker_empty_wait": {
+          "count": 780,
+          "sum_seconds": 12.4535419,
+          "union_seconds": 12.4535419,
+          "median_us": 8131.6,
+          "max_ms": 79.8213
+        },
+        "worker_pack": {
+          "count": 3615,
+          "sum_seconds": 0.0374395,
+          "union_seconds": 0.0374395,
+          "median_us": 8.3,
+          "max_ms": 0.2265
+        },
+        "clock_calibration": {
+          "count": 1,
+          "sum_seconds": 0.0001008,
+          "union_seconds": 0.0001008,
+          "median_us": 100.8,
+          "max_ms": 0.1008
+        },
+        "host_enqueue_calls": {
+          "count": 3615,
+          "sum_seconds": 0.5646104,
+          "union_seconds": 0.5646104,
+          "median_us": 132.3,
+          "max_ms": 0.6589
+        },
+        "host_dispatch_inclusive": {
+          "count": 3615,
+          "sum_seconds": 0.6905916,
+          "union_seconds": 0.6905916,
+          "median_us": 134.0,
+          "max_ms": 118.6121
+        },
+        "completion_observed": {
+          "count": 3615,
+          "sum_seconds": 0.0,
+          "union_seconds": 0.0,
+          "median_us": 0.0,
+          "max_ms": 0.0
+        },
+        "gpu_upload_interval": {
+          "count": 3615,
+          "sum_seconds": 0.327202066,
+          "union_seconds": 0.327202066,
+          "median_us": 84.521,
+          "max_ms": 0.316583
+        },
+        "gpu_kernel_interval": {
+          "count": 3615,
+          "sum_seconds": 1.129041021,
+          "union_seconds": 1.129041021,
+          "median_us": 147.544,
+          "max_ms": 3.010473
+        },
+        "gpu_download_interval": {
+          "count": 3615,
+          "sum_seconds": 0.222324309,
+          "union_seconds": 0.222324309,
+          "median_us": 57.649,
+          "max_ms": 0.190049
+        },
+        "worker_retire": {
+          "count": 3615,
+          "sum_seconds": 0.7356317,
+          "union_seconds": 0.7356317,
+          "median_us": 43.4,
+          "max_ms": 2.2977
+        },
+        "clock_calibration_end": {
+          "count": 1,
+          "sum_seconds": 0.0001073,
+          "union_seconds": 0.0001073,
+          "median_us": 107.3,
+          "max_ms": 0.1073
+        }
+      },
+      "scope": "Single native worker, shading bridge only. Event intervals include scheduling delays. Host/GPU alignment approximate; native OptiX activity not captured.",
+      "clock_calibration": {
+        "gpu_to_host_scale": 1.0005597463832967,
+        "end_uncorrected_drift_us": 8707.113,
+        "end_half_bracket_us": 53.65,
+        "alignment": "Linear start/end bracket mapping; not a hardware profiler correlation guarantee."
+      },
+      "native_instrumented_union_seconds": 0.7635216,
+      "gpu_shading_interval_union_seconds": 1.678567396,
+      "native_wait_union_seconds": 0.1594514,
+      "approx_native_wait_during_shading_seconds": 0.033762222,
+      "approx_native_instrumented_during_shading_seconds": 0.136353743,
+      "kernel_interval_overlap_between_slots_seconds": 0.0,
+      "clock_alignment_half_bracket_us": 53.65,
+      "approx_completion_detection": {
+        "count": 3615,
+        "median_us": 235.064,
+        "max_us": 15041.745,
+        "minimum_us": 49.933,
+        "negative_beyond_calibration": 0
+      },
+      "gpu_shading_envelope_seconds": 15.518184553,
+      "gpu_shading_envelope_uncovered_seconds": 13.839617157,
+      "uncovered_does_not_mean_device_idle": true,
+      "sha256": "c6f21f5fbffc96c0558b7415e6cc6e996c92ea2bd6d1f906dcb005a3f8745f8e"
+    }
+  },
+  "timings": {
+    "reference": {
+      "wall_median": 9.127722600009292,
+      "wall_min": 8.975585700012743,
+      "wall_max": 9.33176850003656,
+      "render_median": 7.738,
+      "render_min": 7.603,
+      "render_max": 7.93
+    },
+    "previous": {
+      "wall_median": 11.351942400098778,
+      "wall_min": 11.12991979997605,
+      "wall_max": 11.495437399949878,
+      "render_median": 9.876,
+      "render_min": 9.764,
+      "render_max": 10.059
+    },
+    "control": {
+      "wall_median": 11.107168399961665,
+      "wall_min": 11.069363899994642,
+      "wall_max": 11.150960400002077,
+      "render_median": 9.673,
+      "render_min": 9.634,
+      "render_max": 9.769
+    },
+    "profile_control": {
+      "wall_median": 11.63847189990338,
+      "wall_min": 11.630402500042692,
+      "wall_max": 11.6875947000226,
+      "render_median": 10.069,
+      "render_min": 10.008,
+      "render_max": 10.161
+    }
+  },
+  "native_stage_timings": {
+    "reference": {
+      "integration_median_seconds": 2.51705,
+      "integration_seconds": [
+        2.49842,
+        2.58182,
+        2.51705
+      ]
+    },
+    "previous": {
+      "integration_median_seconds": 4.39811,
+      "integration_seconds": [
+        4.30628,
+        4.42029,
+        4.39811
+      ]
+    },
+    "control": {
+      "integration_median_seconds": 4.29413,
+      "integration_seconds": [
+        4.32678,
+        4.29413,
+        4.24391
+      ]
+    },
+    "profile_control": {
+      "integration_median_seconds": 4.58817,
+      "integration_seconds": [
+        4.55661,
+        4.58817,
+        4.6201
+      ]
+    }
+  },
+  "tracing_render_overhead_percent": 4.093869533753747,
+  "untraced_integration_delta_seconds": 1.7770800000000002,
+  "untraced_render_delta_seconds": 1.9349999999999996,
+  "limitations": [
+    "CUDA event intervals include scheduling delays; not pure copy-engine or ALU occupancy.",
+    "Host/GPU correspondence uses start/end calibration brackets; interior correlation is approximate.",
+    "The shading bridge timeline omits native OptiX traversal and uninstrumented CPU paths.",
+    "Empty shading queue is not proof the entire GPU is idle.",
+    "Nested/overlapping stage totals must not be added.",
+    "Original uses native 32-ray chunks; XPU2 uses 64. Stage delta does not isolate chunk-size effects.",
+    "Persistent trace file contains final replacement frame; cancellation correctness comes from separate lifetime counters."
+  ]
+}

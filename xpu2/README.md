@@ -310,3 +310,7 @@ The [bounded local-neighbor experiment](NATIVE_LOCAL_NEIGHBOR.md) uses tile
 location as a hint, with immediate nonlocal fallback and aging. Exact-image,
 policy and recovery checks pass, but reduced search work has not demonstrated
 a render-speed gain; the policy remains opt-in.
+
+The [native timeline diagnostic](NATIVE_TIMELINE.md) separates host waits, CPU
+preparation and CUDA shading intervals, with clock calibration and tracing-overhead
+checks. It diagnoses remaining costs without changing the rendering architecture.
