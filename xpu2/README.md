@@ -318,3 +318,7 @@ checks. It diagnoses remaining costs without changing the rendering architecture
 The [native attribution comparison](NATIVE_ATTRIBUTION.md) separates chunk-size
 effects, disabled-adapter overhead, forced CPU fallback and GPU-enabled rendering
 using the same frozen candidate and exact original-XPU images.
+
+The [grouped native replay experiment](NATIVE_REPLAY.md) combines bounded packet
+completion checks under one lock while retaining full input identity and fallback
+checks. It remains opt-in and is measured against the same-build switch-off path.
