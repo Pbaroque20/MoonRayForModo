@@ -348,3 +348,10 @@ supported direct-light tasks CPU/GPU tile preferences and lets either device
 claim untouched work from the other. Claims are exclusive and native output
 consumption stays ordered. This is not complete independent GPU tile rendering;
 it remains a default-off experiment with the qualification scope recorded there.
+
+The [descriptor-first light scheduler](NATIVE_LIGHT_LAZY.md) reuses bounded
+neighbor selection before GPU payload preparation. CPU-owned work bypasses
+packing; exact-image, recovery and fault gates pass. Paired timing improves on
+eager stealing, but the direct-light-off control locates most of the remaining
+gap in the earlier XPU2 material pipeline. The report lists active features and
+separates this render test from unmeasured scene-loading and update benefits.
