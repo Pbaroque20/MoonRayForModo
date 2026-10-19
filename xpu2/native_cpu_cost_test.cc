@@ -17,6 +17,18 @@ int main(){
   auto& r=xpu2cpu::local().rows[0];assert(r.calls==64000 && r.lanes==192000 && r.samples>850 && r.samples<1150 && r.sampledLanes==r.samples*3);
   if(!round)expected=r.samples;else assert(expected==r.samples);xpu2cpu::finish();
  }
+ // Exercise the registry and isolated counters at the production worker count.
+ _putenv_s("XPU2_CPU_COST_RATE","1");
+ for(unsigned round=0;round<2;++round){
+  xpu2cpu::reset();std::vector<std::thread> workers;
+  for(unsigned worker=0;worker<12;++worker)workers.emplace_back([worker]{
+   for(unsigned i=0;i<4096;++i){auto token=CPP_xpu2CpuCostBegin(5,worker+1);assert(token);CPP_xpu2CpuCostEnd(token);}
+  });
+  for(auto& worker:workers)worker.join();
+  assert(xpu2cpu::data.size()==12);uint64_t lanes=0,calls=0;
+  for(const auto& ptr:xpu2cpu::data){const auto& r=ptr->rows[5];assert(!ptr->active && !ptr->errors && r.samples==4096 && r.ticks>0);lanes+=r.lanes;calls+=r.calls;}
+  assert(calls==12*4096 && lanes==78*4096);xpu2cpu::finish();
+ }
  _putenv_s("XPU2_CPU_COST_RATE","0");xpu2cpu::reset();assert(!xpu2cpu::enabled && !CPP_xpu2CpuCostBegin(0,8));
  std::cout<<"sampled CPU accounting passed\n";
 }

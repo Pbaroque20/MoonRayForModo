@@ -32,13 +32,16 @@ no single successful fixture qualifies the renderer.
    path depth, texture derivatives, light linking and AOV state. Never both commit
    GPU contributions and replay the same contribution on the CPU. This requires
    a native device scene adapter and integrator, not another diffuse-sample kernel.
-5. **Image quality.** Keep bit-exact mode as a diagnostic. A separate performance
-   mode may use GPU arithmetic, but must pass predeclared linear-HDR quality gates
-   across independently seeded reference/candidate ensembles and a converged
-   reference. Compare bias, noise/error, localized defects, alpha and AOVs. Include
-   missing/black/stale contributions as negative controls. Matching total brightness
-   or one image within an arbitrary tolerance is insufficient. A failed or
-   inconclusive test cannot be relabeled a parity pass.
+5. **Exact image parity.** Bit-exact float32 RGBA against original XPU is
+   mandatory at one worker, including mixed CPU/GPU ownership, delayed results,
+   cancellation/recovery and injected failures. No statistical performance mode,
+   fast-math shortcut, FMA contraction or hardware texture filtering is allowed.
+   At twelve workers, measure original XPU's own repeated-render variation first;
+   candidate differences must not exceed that frozen reference envelope. This
+   does not relax kernel or one-worker exactness. Qualified kernels use a stable
+   one-in-1000 CPU spot check; full checking remains a debug option. A failed
+   check rejects the result and disables that kernel revision for the frame.
+   See MATERIAL_JOB_GATES.json for the prospective measurement protocol.
 6. **Full concurrency.** Qualify 1, 2, 6 and 12 native workers on this machine,
    both fixed and adaptive sampling. Require evidence of actual GPU work, bounded
    memory, no retained credits/leases, cancellation/restart recovery and no duplicate
@@ -59,5 +62,5 @@ preserve the ownership boundaries above rather than just enable their flags.
 
 `tools/xpu2_disabled_baseline.py` implements the first measurement gate at one
 and all CPU threads. Enabled multiworker qualification, native scene residency,
-large material jobs, multibounce GPU integration and statistical image qualification
+large material jobs, multibounce GPU integration and exact image qualification
 remain explicit unfinished gates. No release/install action is implied by a pass.

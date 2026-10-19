@@ -1,0 +1,133 @@
+{
+  "status": "passed",
+  "cases": {
+    "ordinary": {
+      "emitted": "UsdPreviewSurface",
+      "input_material": {
+        "color": [
+          0.7,
+          0.03,
+          0.02
+        ],
+        "roughness": 0.3
+      },
+      "sha256": "af703290686a2d512b90675875341b23a67a549d34d44dbe0511ed7f9c6243c9",
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-material-export-audit\\ordinary.rdla"
+    },
+    "ordinary-metal": {
+      "emitted": "UsdPreviewSurface",
+      "input_material": {
+        "color": [
+          0.7,
+          0.03,
+          0.02
+        ],
+        "roughness": 0.3,
+        "metallic": 0.5
+      },
+      "sha256": "f36a7c707637ddef1f29436bca036ceb42e9ee39b8d95a76894e54bf935c1a8a",
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-material-export-audit\\ordinary-metal.rdla"
+    },
+    "opaque-diffuse-first-port": {
+      "emitted": "UsdPreviewSurface",
+      "input_material": {
+        "color": [
+          0.7,
+          0.03,
+          0.02
+        ],
+        "roughness": 0.3,
+        "specular": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "metallic": 0.0,
+        "clearcoat": 0.0,
+        "opacity": 1.0,
+        "emission": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "sha256": "694217583bd0cbc75092332bb2c9f6747e9e75ffff17222ec31e7e3b095897a4",
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-material-export-audit\\opaque-diffuse-first-port.rdla"
+    },
+    "glass": {
+      "emitted": "DwaBaseMaterial",
+      "input_material": {
+        "color": [
+          0.7,
+          0.03,
+          0.02
+        ],
+        "roughness": 0.3,
+        "transmission": 0.5
+      },
+      "sha256": "195e129389e142d60a2a4e9daa2e80baddcbeb60eff2729aead1b2d9c27e8c02",
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-material-export-audit\\glass.rdla"
+    },
+    "rough-diffuse": {
+      "emitted": "DwaBaseMaterial",
+      "input_material": {
+        "color": [
+          0.7,
+          0.03,
+          0.02
+        ],
+        "roughness": 0.3,
+        "diffuse_roughness": 0.5
+      },
+      "sha256": "3db03927e0fbc07183117b5e5d4b5b0430a13e33016e7283f79658bff2f89e48",
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-material-export-audit\\rough-diffuse.rdla"
+    },
+    "moonshine": {
+      "emitted": "DwaBaseMaterial",
+      "input_material": {
+        "color": [
+          0.7,
+          0.03,
+          0.02
+        ],
+        "roughness": 0.3,
+        "shader": "DwaBaseMaterial"
+      },
+      "sha256": "a4027620c160570053e5448855469d92a7a18603a463b6bc1fdd9f8c76e7e0a9",
+      "path": "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-material-export-audit\\moonshine.rdla"
+    }
+  },
+  "scope": "Exporter branch checks, not measured user-scene frequency or GPU qualification",
+  "source_hashes": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\__init__.py": "c9e3b0c3d153447ba7f176c1ed5ed2456ba03da009e164cbc521380fe1520844",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\options.py": "a50f32880e420291810356a3da5cc796534e5ce3468b6107ef37e30f0275a25a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\native.py": "96a8c5b1f8e702fa33588f93b88e4b553d6b91a3cc79db15a7793ffe70c24fc0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\textures.py": "a331613e5c5e4952c157fc5d0eeef359c963714ce982be3e96f0167768ccef01",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\outputs.py": "b0656b5b88d995c8ce964034f641e8f1fc3b3399a7861b230cb8088ff3cbf125",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\rdla.py": "76d800a3f5c99dfd5dcbc035208400c074aa3cc9637ebb2428761874c0f5aee1",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\mask_types.py": "50e264ae50d3d96573908dcfa82776aa20154f664be74abb7e4b179b10e9343d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\layers.py": "14d883c113801905a9583c351401d9aad58eadf5f162a9b839332d52e7770088",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\graph.py": "00e1a64f04b3bf5ee3c4fce18a8e7c6894ed2dd9a1bcb4e329d4161b304229f4",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\serialization.py": "ce37bf9c481498f1ffb9ab2e786fb99cc0a848285d79511a57f295e1b933ca99",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\scene_references.py": "88fe9013ec7b551f52dd46877e7fea9118428109748dd4aa4fcb5686575edcc5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\working_space.py": "0fb239f3b7a65cf336cb309685ac03d42da61c4fcd57e65ec11c32d26eee6beb",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\assets.py": "c9b15f862385db9aacdb53c569a55b2b61c7568d3109ded5725b961413a5ce86",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\entities.py": "f97d7de2374bb9137f92589b639fdf9bddeebd1be89cef0625ed315702d72a65",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\stereo.py": "30346632819a0df1cdeb09086d5a90de70492042c596c594403d0e16da407ec5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\geometry.py": "7aa183000d6485f7eadbc2b0af1878afd1f60104706f90a7ad2d62b676a2f57d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\lighting.py": "30b8542d5097f19a78c253766905068e902ffb6552b028323a3ca9754f1ca1e3",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\cryptomatte.py": "82bf7bf4d38533211a3565defb17aeee45ee28c7f159d95318b18fe5e995db03",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\channel_values.py": "17bceb95c4f055a9d39dafd8e1bab383be95f23279cd225fcaba06b9cf54cdb3",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\environments.py": "c4a298eee9a8e15fd6bbf457f56f2282e74ab27080989b0ccda694dae990d4d0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\native_light_links.py": "06d5619053602295b5c453e79af4ad4cace6571f20d2b300a7dcb71312aa5b90",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\absorption.py": "09c882064758201ee815a96ea56338e70abe7435aed9072e9d940ca029eac961",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\clay.py": "22eea59b29fcc1abf559b194cd7c52a93e5e78c51d28ae48c5c834820b843bbb",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\compositing.py": "3ce0605f7d75416a78c7c6b34a818fb63bfac9989632cce91159e1c345a5bdb5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\shader_library.py": "64bbdf728a582ef03cae2a824a16546f132ec1b3efcd5ae9c79ba5bfe13ccee9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\primitive_attributes.py": "2c4fe47da7f8e8cf6ee96100df3e13420ef1cdc00e7c785479c2f9b3412166c9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\extra_geometry.py": "7ca9398616a3033b43f17f4be33537d82908c04658b12362ae753076d36676c4",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\moonshine.py": "c3640579278c3722f5be4105c25f192866b96367a97e06f211d276b9fea13902",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\shading_models.py": "177d8bc256669364dde10a374d10ae9bd68766b552ce78fad2a20d6b51dc8024",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\kit\\MoonRayForModo\\python\\moonray_modo\\material_settings.py": "b77e76665015451e8aa956dd03300096135dc329a152c6865ab6332000833bf7"
+  }
+}
