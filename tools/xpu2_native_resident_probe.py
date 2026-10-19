@@ -38,7 +38,7 @@ def configuration(runtime,folder,ptx,light_ptx,label):
  if label=='lean_off':env['XPU2_LEAN_WIRE']='0'
  return env
 
-def profiles(folder,label,env,bypass=False,require_cost_gpu=False,cost_cpu_only=False):
+def profiles(folder,label,env,bypass=False,require_cost_gpu=False,cost_cpu_only=False,require_resident_reuse=True):
  data=prepared_profiles(folder,'mismatch' if label=='stale' else mapped(label),env,bypass)
  if label=='previous':return data
  rows=(folder/'resident.jsonl').read_text().splitlines();require(len(rows)==1,'Missing resident profile')
@@ -49,7 +49,7 @@ def profiles(folder,label,env,bypass=False,require_cost_gpu=False,cost_cpu_only=
   if label in ('resident','flush','stale','lean_off','reuse_verify','sentinel'):
    require(p['batches']>0 and p['updates']>0 and p['descriptors']>0,'Resident path not exercised')
    if label=='flush':require(not p['reused_groups'],'Flush reused stale cache')
-   elif label=='resident':require(p['reused_groups']>0,'Cross-batch record reuse absent')
+   elif label=='resident' and require_resident_reuse:require(p['reused_groups']>0,'Cross-batch record reuse absent')
   if label=='stale':require(data['gpu']['gpu_accepted']<p['descriptors']//10,'Stale references unexpectedly accepted')
   if label in ('pool0','capacity0'):require(not p['batches'],'Empty pool/capacity used cache')
  detail=json.loads((folder/'resident-detail.jsonl').read_text().strip());data['resident_detail']=detail

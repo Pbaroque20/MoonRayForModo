@@ -9,7 +9,7 @@ from xpu2.native_gpu_paths import once
 HISTORICAL_REF='4b696165e7a9cff743bbabbb9a43bb42fe1924da'
 STAGES={'resident':'native_resident_records','prepared':'native_prepared_records',
         'overhead':'native_overhead','material_jobs':'native_material_jobs',
-        'material_admission':'native_material_admission'}
+        'material_admission':'native_material_admission','exclusive_profile':'native_exclusive_profile'}
 
 
 def historical_source(path,expected):
