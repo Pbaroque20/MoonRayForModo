@@ -30,7 +30,7 @@ try:
     lx.eval('item.create mesh')
     lx.eval('shader.create imageMap') if False else None
     layer = scene.addItem('imageMap')
-    words = ('disp', 'stencil', 'micro', 'subd', 'adaptive', 'dice', 'height', 'ratio', 'rate', 'smooth')
+    words = ('disp', 'stencil', 'sheen', 'flat', 'film', 'thin', 'tint', 'refl', 'aniso', 'irid', 'brdf', 'spec', 'coat')
     result['material'] = channels(material, words)
     result['imageMap'] = channels(layer, words + ('min', 'max', 'value'))
     result['render'] = channels(scene.renderItem, words)

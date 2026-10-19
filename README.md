@@ -6,6 +6,15 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.4.2.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.2.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## Coming next
+
+Not released yet: on the MoonLightIPR branch.
+
+- **Shader Tree Displacement and Stencil layers render in MoonRay**: displacement layers raise the surface by their value times the material's Displacement Distance, and a Stencil takes the surface away where it is white, as Modo's do.
+- **Principled sheen**: a Principled material's Sheen and Sheen Tint show in MoonRay, as a soft glow at grazing angles fitted to Modo's renders. Specular Tint and Flatness, which MoonRay's material has nothing like, are named in a notice.
+- **Principled highlights keep their edge**: a Principled material with a low specular amount, Modo's default among them, brightens toward the edge in MoonRay as it does in Modo.
+- **Anisotropy follows Modo's UV map**: a material with Anisotropy but no UV map named for it renders a round highlight, as Modo draws it.
+
 ## New in 0.4.2.1
 
 - **The graph editor's Live material preview renders again**: with Live on, the MoonRay Widget refused the scene ("Minimum adaptive samples must not exceed maximum samples").
