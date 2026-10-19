@@ -363,7 +363,7 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 - **The result is the Composite buffer**, always in the buffer list. Editing the graph updates it without rendering again. Chosen before a graph is built, it says to build one.
 - **Saved with the scene**, with undo.
 - **Render EXR and animations write `name.composite.exr`** beside the EXR.
-- Not yet: compositing during a render, Cryptomatte mattes, MoonLightIPR renders.
+- Not yet: compositing during a render, MoonLightIPR renders. (Cryptomatte mattes came in 0.4.2, as a Cryptomatte node.)
 
 ![The compositor](images/compositor-editor.png)
 
