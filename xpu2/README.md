@@ -327,3 +327,8 @@ The [native sample-coordinate reuse experiment](NATIVE_SAMPLE_REUSE.md) avoids
 regenerating already-owned random coordinates during material resume. Exact
 image, bit-verification and recovery checks pass on the tested fixtures; the
 small measured gain is against its same-build control, not original XPU.
+
+The [larger GPU direct-light unit](NATIVE_DIRECT_LIGHT_UNIT.md) qualifies diffuse
+material evaluation, PDFs, MIS weighting and unshadowed lighting together against
+captured native results. Live asynchronous transport and image restoration remain
+the next gate; the capture runtime still publishes native CPU results.
