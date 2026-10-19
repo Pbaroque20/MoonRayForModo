@@ -322,3 +322,8 @@ using the same frozen candidate and exact original-XPU images.
 The [grouped native replay experiment](NATIVE_REPLAY.md) combines bounded packet
 completion checks under one lock while retaining full input identity and fallback
 checks. It remains opt-in and is measured against the same-build switch-off path.
+
+The [native sample-coordinate reuse experiment](NATIVE_SAMPLE_REUSE.md) avoids
+regenerating already-owned random coordinates during material resume. Exact
+image, bit-verification and recovery checks pass on the tested fixtures; the
+small measured gain is against its same-build control, not original XPU.
