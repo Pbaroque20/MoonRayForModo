@@ -11,7 +11,7 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 **Current version: 0.4.2.1 — experimental development build.** It is 0.4.2 with the graph editor's Live material preview mended. 0.4.2 brings MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
 
-[Download 0.4.2.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.2.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4, 0.4.1 and 0.4.2](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
+[Download 0.4.2.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.2.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4, 0.4.1 and 0.4.2](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -317,6 +317,49 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | RDL scene export (RDLA, RDLB or split) | ![yes](docs/images/feature-yes.svg) | Export as MoonRay Scene, in the MoonRay menu and the preview's Options, to render with MoonRay on its own or on a farm: outputs, collected textures and each frame of the range optional |
 | Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
+
+### Modo's features in the plugin
+
+Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scene MoonRay renders as Modo does.
+
+| Modo feature | Plugin | Notes |
+|---|:---:|---|
+| **Lights** | | |
+| Directional light, with the physical sun | ![yes](docs/images/feature-yes.svg) |  |
+| Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Their intensity measured against Modo per kind |
+| Cylinder, dome and photometric (IES) lights | ![no](docs/images/feature-no.svg) | Skipped, with a notice; MoonRay's own cylinder and environment lights stand in |
+| Light linking (Modo's groups, include or exclude) | ![yes](docs/images/feature-yes.svg) |  |
+| Light volumetrics, and fog | ![no](docs/images/feature-no.svg) | MoonRay volume items in their place |
+| **Environment** | | |
+| Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI turns as in Modo, and quickly |
+| **Cameras** | | |
+| Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur, stereo and overscan |
+| Other camera projections | ![no](docs/images/feature-no.svg) | Refused; MoonRay's fisheye, spherical and dome cameras in their place |
+| **Materials** | | |
+| Standard material: GTR, Blinn and Ashikhmin | ![partly](docs/images/feature-partly.svg) | Highlights matched by measurement; very smooth ones (roughness under 0.2) come out dimmer, as do rough reflections of the environment |
+| Principled model | ![partly](docs/images/feature-partly.svg) | Its diffuse does not brighten with roughness as Modo's does. Coming next: sheen, and the highlight's rise toward the edge at a low specular amount |
+| Transparency, refraction and dispersion | ![partly](docs/images/feature-partly.svg) | Glass under GTR is still being matched to Modo's |
+| Subsurface scattering, clearcoat, metallic, luminosity, dissolve | ![yes](docs/images/feature-yes.svg) |  |
+| Anisotropy | ![partly](docs/images/feature-partly.svg) | Along the material's UV map, as Modo's; its strength is not yet matched to Modo's |
+| Specular Tint, Flatness, and a reflection amount apart from specular | ![no](docs/images/feature-no.svg) | MoonRay's material has nothing like them; named in a notice |
+| Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) |  |
+| **Shader Tree** | | |
+| Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | A locator projection is worked out at the polygons' corners |
+| Procedural textures | ![partly](docs/images/feature-partly.svg) | Constant, checker, noise, grid, dots, gradient, cellular, wood, weave and ripples, each with limits; the others not |
+| Layer blend modes | ![yes](docs/images/feature-yes.svg) | All fourteen |
+| Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
+| Displacement and Stencil layers | ![no](docs/images/feature-no.svg) | Coming next, checked against Modo's renders |
+| Other texture effects (Modo has 218) | ![partly](docs/images/feature-partly.svg) | The ones a standard or Principled material uses |
+| Group masks by material, Part and Selection Set | ![yes](docs/images/feature-yes.svg) | Checked against Modo's render |
+| Group masks by item | ![partly](docs/images/feature-partly.svg) | Read, not yet checked against Modo |
+| **Geometry** | | |
+| Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) |  |
+| Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry |
+| Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | Through Modo's evaluated geometry |
+| Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur guides, and the fur vector and width maps, are not read |
+| Weight and colour vertex maps | ![yes](docs/images/feature-yes.svg) | As values MoonRay's materials read |
+| Modo's volume items | ![partly](docs/images/feature-partly.svg) | Rendered from a VDB file attached in the MoonRay controls |
+| Blobs and particles | ![no](docs/images/feature-no.svg) |  |
 
 ### Where the plugin changes MoonRay
 
