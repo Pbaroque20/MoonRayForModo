@@ -296,3 +296,8 @@ It remains opt-in; strict original-XPU bitwise parity is not claimed.
 The [64-ray chunk follow-up](NATIVE_CHUNK64.md) restores exact original-XPU
 images on the tested one-worker fixtures while retaining two outstanding GPU
 batches. It includes paired timing against the 128-ray rounding comparison.
+
+The [owner-thread chunk preparation experiment](NATIVE_OWNED_CHUNKS.md) overlaps
+CPU preparation of two/four independent native chunks with GPU work, preserving
+64-ray math and original contribution order. Exact-image and cancellation
+evidence is recorded alongside paired timings; original XPU remains faster.
