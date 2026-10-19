@@ -259,7 +259,9 @@ def material_values(material):
                                 'layer_opacity': float(channel(material,'opacity',1)),
                                 'layer_blend': channel(material,'blend','normal'),
                                 'layer_invert': bool(channel(material,'invert',False)),
-                                'anisotropy': float(channel(material, 'aniso', 0)),
+                                # Modo stretches a highlight only along a UV map (or vector map) named on the material: without
+                                # one it draws a round highlight, whatever the Anisotropy (seen in its own renders).
+                                'anisotropy': float(channel(material, 'aniso', 0)) if channel(material, 'uvMap', '') or channel(material, 'isVectorMap', 0) else 0.0,
                                 # Modo's material is a metal only under its Principled shading model; the others ignore the setting.
                                 'metallic': float(channel(material, 'metallic', 0)) if channel(material, 'brdfType', '') == 'principled' else 0.0,
                                 'specular': [c * float(channel(material, 'specAmt', .04)) for c in color(material, 'specCol')],
@@ -438,9 +440,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                     for name,label in (('specTint','Specular Tint'),('flatness','Flatness')):
                         if float(channel(material,name,0))>0:
                             warnings.append("%s: %s is not followed: MoonRay's material has nothing like it." % (material.name,label))
-            if channel(material,'subsAmt',0) or channel(material,'aniso',0) or result['materials'][tag].get('sheen',0):
+            if channel(material,'subsAmt',0) or result['materials'][tag].get('anisotropy',0) or result['materials'][tag].get('sheen',0):
                 result['materials'][tag]['shader'] = 'DwaBaseMaterial'
-            if channel(material, 'aniso', 0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
+            if result['materials'][tag].get('anisotropy',0) and result['materials'][tag]['shader'] != 'DwaBaseMaterial':
                 warnings.append('Anisotropy requires MoonShine Material: ' + material.name)
             if channel(material, 'tranAmt', 0):
                 if channel(material, 'disperse', 0):
