@@ -314,3 +314,7 @@ a render-speed gain; the policy remains opt-in.
 The [native timeline diagnostic](NATIVE_TIMELINE.md) separates host waits, CPU
 preparation and CUDA shading intervals, with clock calibration and tracing-overhead
 checks. It diagnoses remaining costs without changing the rendering architecture.
+
+The [native attribution comparison](NATIVE_ATTRIBUTION.md) separates chunk-size
+effects, disabled-adapter overhead, forced CPU fallback and GPU-enabled rendering
+using the same frozen candidate and exact original-XPU images.
