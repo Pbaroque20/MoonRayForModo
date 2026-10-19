@@ -304,6 +304,9 @@ More detail and pictures are in [What's new in 0.4, 0.4.1 and 0.4.2](docs/WHATS_
 The ones you are most likely to meet:
 
 - Very smooth highlights are dimmer than Modo's, though closer than before under GTR.
+- Under Principled, Modo's diffuse gets brighter with roughness and MoonRay's does not.
+- A very strong anisotropy draws a shorter streak than Modo's.
+- Glass under GTR is still being matched to Modo's.
 - Hair in MoonLightIPR is close to MoonRay's but not exact.
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode. The faster modes do not draw them rightly in this build.
 - Now and then, a preview with glitter in the GPU (XPU) mode fails on the graphics card; it is rendered on the CPU instead, with a notice.
