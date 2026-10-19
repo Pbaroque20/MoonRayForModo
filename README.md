@@ -1,7 +1,7 @@
 # Dreamworks' MoonRay for Modo
 
 <img width="2048" height="829" alt="Screenshot_2026-10-15_174857" src="https://github.com/user-attachments/assets/0330c515-5e3a-4388-802b-200e814cd811" />
-<p align="right">Technik Tom by PixelWerk, with MoonLightIPR active</p><br>
+<p align="right">Technik Tom by Pixelwerk, with MoonLightIPR active</p><br>
 
 MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Modo 16.1v9 on Windows**, running natively without WSL. Developed by Raphael Tobar w/ AI-Assistance.
 
