@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-Latest: [exclusive bridge-stage costs and profiling perturbation](NATIVE_EXCLUSIVE_PROFILE.md).
+Latest: [no-wait CPU fallback, exact images and measured remaining gap](NATIVE_NO_WAIT.md).
+Previous: [exclusive bridge-stage costs and profiling perturbation](NATIVE_EXCLUSIVE_PROFILE.md).
 Previous: [resident-record review fixes and true disabled baseline](NATIVE_RESIDENT_REVIEW.md).
 Architecture requirements: [six XPU2 acceptance gates](XPU2_ACCEPTANCE.md).
 Previous: [rough-diffuse math shortcut, image differences and timing](NATIVE_MATH_SHORTCUT.md).
