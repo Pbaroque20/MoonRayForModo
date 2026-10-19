@@ -39,6 +39,16 @@ def main():
  for high,low in [('two','control'),('two_shallow','control'),('two_shallow','two'),('two_shallow','reference')]:
   d=[pairs[n,high]['mcrt']-pairs[n,low]['mcrt'] for n in (1,2,3)]
   result['paired'][high+'_minus_'+low]={'seconds':d,'median_seconds':statistics.median(d)}
+ result['overhead_medians']={}
+ timing=json.loads((ROOT/'test-results/xpu2-material-jobs-timing/report.json').read_text())
+ for label in ('control','two','two_shallow'):
+  runs=[r['profiles'] for r in timing['runs'] if r['round']>0 and r['label']==label]
+  metrics={}
+  for group,field,scale in [('transport','pack_ns',1e-9),('transport','retire_ns',1e-9),('flight','submit_ns',1e-9),('flight','poll_ns',1e-9),('flight','kernel_us',1e-6),('flight','queries',1),('flight','submitted',1),('tiles','selection_ns',1e-9),('tiles','staging_bytes',1)]:
+   metrics[group+'.'+field]=statistics.median(v[group][field] for v in runs)*scale
+  result['overhead_medians'][label]=metrics
+ result['overhead_units']='Fields ending ns or us are converted to seconds; all other fields retain counts/bytes.'
+ result['overhead_caveats']=['Scopes overlap and are not additive frame-time costs.','Submit scope includes first-flight initialization; cold setup is not yet isolated.','CUDA-event kernel intervals may include device scheduling/contention; they do not prove pure kernel compute cost.','Transport packing does not include all native packet preparation or replay reconstruction.','CPU request/ticket allocations are visible in source but not separately timed.','Pinned/device slot buffers, streams and events are reused after initialization.']
  result['preserved_cancellation_attempt']={'path':'test-results/xpu2-material-jobs-cancel/report.json','sha256':digest_file(ROOT/'test-results/xpu2-material-jobs-cancel/report.json'),'reason':'Harness still expected four chunks after configuration changed to two; stopped before cancellation.'}
  result['admission_baseline']={'path':'test-results/xpu2-material-admission-first/report.json','sha256':digest_file(ROOT/'test-results/xpu2-material-admission-first/report.json'),'note':'Earlier eight-case single-worker admission check; original probe predates failed-launch accounting correction.'}
  result['limitations']=['Not multiworker or production qualification.','No broader shader kernel, GPU texture lookup or complete GPU path integration.','Four-lobe cap only exercised with up to two eligible lobes in current fixtures.','No kit installation or default activation.','Before/after activity checks cannot exclude brief competing work between observations.']

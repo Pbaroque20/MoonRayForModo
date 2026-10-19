@@ -3849,6 +3849,50 @@
   },
   "build_report_sha256": "75f4f29e0a24686ade21dffc25b9faecfaf3421a8e7991ef344b2b7dc774abe3",
   "exact_candidate_images": 28,
+  "overhead_medians": {
+    "control": {
+      "transport.pack_ns": 0.0351671,
+      "transport.retire_ns": 0.0653138,
+      "flight.submit_ns": 0.6019102000000001,
+      "flight.poll_ns": 0.1806807,
+      "flight.kernel_us": 1.059337,
+      "flight.queries": 62176,
+      "flight.submitted": 3747,
+      "tiles.selection_ns": 0.0220142,
+      "tiles.staging_bytes": 214647840
+    },
+    "two": {
+      "transport.pack_ns": 0.0548249,
+      "transport.retire_ns": 0.13717680000000002,
+      "flight.submit_ns": 1.1792786000000002,
+      "flight.poll_ns": 0.3460596,
+      "flight.kernel_us": 2.032235,
+      "flight.queries": 118128,
+      "flight.submitted": 10414,
+      "tiles.selection_ns": 0.06909130000000001,
+      "tiles.staging_bytes": 429295680
+    },
+    "two_shallow": {
+      "transport.pack_ns": 0.054378,
+      "transport.retire_ns": 0.11941990000000001,
+      "flight.submit_ns": 0.8966348000000001,
+      "flight.poll_ns": 0.2769595,
+      "flight.kernel_us": 1.6196929999999998,
+      "flight.queries": 94204,
+      "flight.submitted": 7110,
+      "tiles.selection_ns": 0.039343300000000005,
+      "tiles.staging_bytes": 429295680
+    }
+  },
+  "overhead_units": "Fields ending ns or us are converted to seconds; all other fields retain counts/bytes.",
+  "overhead_caveats": [
+    "Scopes overlap and are not additive frame-time costs.",
+    "Submit scope includes first-flight initialization; cold setup is not yet isolated.",
+    "CUDA-event kernel intervals may include device scheduling/contention; they do not prove pure kernel compute cost.",
+    "Transport packing does not include all native packet preparation or replay reconstruction.",
+    "CPU request/ticket allocations are visible in source but not separately timed.",
+    "Pinned/device slot buffers, streams and events are reused after initialization."
+  ],
   "preserved_cancellation_attempt": {
     "path": "test-results/xpu2-material-jobs-cancel/report.json",
     "sha256": "c932f76910c338ee602f920be6d69e63cfade7bb0306d5332edb44fd658c9e49",

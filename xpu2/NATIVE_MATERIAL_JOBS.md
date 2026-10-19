@@ -114,3 +114,30 @@ Before/after checks found no competing MoonRay process; they cannot exclude brie
 intervening activity or unrelated system load.
 
 [Retained reports, hashes, counters and paired timings](native-material-jobs-20261019.json).
+
+## Initial overhead audit
+
+In the reduced-lookahead two-lobe timing runs, median measured scopes are:
+transport packing 0.054 s, retirement 0.119 s, flight submission 0.897 s,
+completion polling 0.277 s, and tile selection 0.039 s. There are 7,110 GPU
+submissions and 94,204 completion queries per frame. The one-lobe control has
+3,747 submissions and 62,176 queries. These scopes overlap and must not be added
+as an exclusive frame-time breakdown. Submission includes first-flight setup.
+
+The 1.620 s CUDA-event kernel total can include device contention and is summed
+across flights; it does not establish a pure shader-compute limit. Transport
+packing also excludes native packet generation and replay reconstruction.
+
+Frozen source inspection shows that device/pinned buffers, streams and events
+are allocated once for the flight slots and reused. Host-side request objects
+and ticket holders are still dynamically allocated per packet. Their allocation
+and destruction time is not yet isolated. Submission, polling and retirement
+also enter/leave the CUDA context and acquire locks; these costs need separate
+measurement before changing ownership or synchronization.
+
+Next instrumentation should separate cold initialization, host allocation,
+native payload generation/copies, lock wait, driver dispatch, completion checks
+and GPU upload/compute/readback intervals. Measure critical-path exposure as
+well as aggregate work, keeping an uninstrumented control. Existing counters
+make dispatch/completion and repeated native preparation stronger initial
+candidates than the measured transport-packing loop alone.
