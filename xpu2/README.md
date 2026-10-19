@@ -2,7 +2,8 @@
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
-Latest: [early shared host records, lifetime checks and timing](NATIVE_PREPARED_RECORDS.md).
+Latest: [per-flight GPU record tables, version checks and timing](NATIVE_RESIDENT_RECORDS.md).
+Previous: [early shared host records, lifetime checks and timing](NATIVE_PREPARED_RECORDS.md).
 Previous: [host overhead and shared-data tests](NATIVE_OVERHEAD.md).
 See also [integration profiling and bounded completion waits](NATIVE_INTEGRATION_PROFILE.md).
 See [scoped shadow work and native queue-failure isolation](NATIVE_SHADOW_WORK.md),
