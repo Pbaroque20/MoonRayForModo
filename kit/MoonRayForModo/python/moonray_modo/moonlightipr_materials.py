@@ -1024,7 +1024,8 @@ class Compiler:
         if stack:
             # DwaBaseMaterial dims diffuse by its transmission roughness, which the plugin sets apart
             # from the surface roughness.
-            under = min(1.0, max(0.0, float(source.get('refraction_roughness', 0))))
+            from .moonshine import refraction_through
+            under = refraction_through(source)
             # Stacks render through DwaBaseMaterial, where a standard material's specular amount is
             # its reflectance at normal incidence and no amount means no specular lobe.
             if source.get('standard_material') and not source.get('metallic', 0):
@@ -1098,11 +1099,12 @@ class Compiler:
             if medium is not None:
                 inner = [m for m in medium['stack_medium'] if absorption.enabled(m)] if medium.get('stack_medium') else [medium]
                 depth = float(inner[-1]['absorption_distance'])
+        from .moonshine import passed_once, refraction_through
         values = (triple(defaults['diffCol']) + [min(1.0, max(0.0, float(defaults['metallic']))),
                   min(1.0, max(0.0, float(defaults['rough']))), max(1.0, ior)] + triple(defaults['lumiCol'])
                   + [float(defaults['diffAmt']), float(defaults['lumiAmt']), under, min(1.0, max(0.0, float(defaults['tranAmt'])))]
-                  + triple(defaults['tranCol'])
-                  + [min(1.0, max(0.0, float(v))) for v in (defaults['tranRough'],)]
+                  + triple(passed_once(source, defaults['tranCol']))
+                  + [refraction_through(source, defaults['tranRough'])]
                   + [max(1.0, float(source.get('transmission_ior', source.get('ior', 1.5))))]
                   + [min(1.0, max(0.0, float(defaults[key]))) for key in ('coatAmt', 'coatRough', 'dissolve')]
                   + [float(source.get('bump_strength', .005)) if bumped else 0.0]
