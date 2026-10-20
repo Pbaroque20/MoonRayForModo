@@ -1,5 +1,20 @@
 """MoonShine material and ordered BSDF-layer serialization."""
 import math
+
+# MoonRay's gamma map that takes a colour to its square root.
+TINT_GAMMA = 2.0
+
+
+def passed_once(material, colour=None):
+    """A Modo material's Transmission Color as MoonRay's: Modo tints the light that goes through a glass solid once,
+    MoonRay as it goes in and again as it comes out, so a solid is given the square root of Modo's colour (measured on
+    Modo's renders of a tinted ball: 0.3, 0.8, 0.5 came out at 0.32, 0.81, 0.52 of the clear ball in Modo and at their
+    squares in MoonRay). A thin surface, crossed once, and MoonRay's own materials keep their colour as it is."""
+    colour = material.get('transmission_color', [1, 1, 1]) if colour is None else colour
+    if not material.get('standard_material') or material.get('thin_geometry'):
+        return colour
+    return [math.sqrt(max(0.0, float(c))) for c in colour]
+
 def dielectric(cosine,straight):
     """How much a smooth surface reflects at an angle, given how much it reflects seen straight on."""
     root=math.sqrt(max(0.0,min(.9999,straight)))
@@ -161,7 +176,7 @@ def emit(material, tag, index, bindings, lines):
         'use_dispersion':'true' if material.get('dispersion_abbe',0)>0 else 'false',
         'dispersion_abbe_number':number(material.get('dispersion_abbe',0)),
         'transmission':number(material.get('transmission',0)),
-        'transmission_color':vector(material.get('transmission_color',[1,1,1]),'Rgb'),
+        'transmission_color':vector(passed_once(material),'Rgb'),
         'use_independent_transmission_roughness':'true',
         'independent_transmission_roughness':number(material.get('refraction_roughness',0)),
         'presence':number(material.get('presence',1)),
@@ -203,6 +218,12 @@ def emit(material, tag, index, bindings, lines):
         elif key=='specularAmount' and material.get('standard_material'):
             attributes['specular']='1'
             attributes['show_specular']='true'
+        elif key=='transmissionColor' and passed_once(material,[.25,.25,.25])!=[.25,.25,.25]:
+            # Through a solid, MoonRay tints twice where Modo tints once (passed_once): the colour the Shader Tree
+            # gives is taken to its square root on its way in.
+            path='/modo/transmission/%s'%index
+            lines += ['ColorCorrectGammaMap(%s) {'%string(path),'  ["input"] = %s,'%value,'  ["gamma"] = %s,'%number(TINT_GAMMA),'}']
+            attributes['transmission_color']='bind(ColorCorrectGammaMap(%s), Rgb(1, 1, 1))'%string(path)
         elif key=='roughness' and curve(material.get('shading_model')):
             # A roughness an image drives goes through the same curve a plain one does: Modo's roughness in, the
             # roughness of MoonRay's lobe that draws the same highlight out.

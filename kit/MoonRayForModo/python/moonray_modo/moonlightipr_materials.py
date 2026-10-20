@@ -1098,10 +1098,11 @@ class Compiler:
             if medium is not None:
                 inner = [m for m in medium['stack_medium'] if absorption.enabled(m)] if medium.get('stack_medium') else [medium]
                 depth = float(inner[-1]['absorption_distance'])
+        from .moonshine import passed_once
         values = (triple(defaults['diffCol']) + [min(1.0, max(0.0, float(defaults['metallic']))),
                   min(1.0, max(0.0, float(defaults['rough']))), max(1.0, ior)] + triple(defaults['lumiCol'])
                   + [float(defaults['diffAmt']), float(defaults['lumiAmt']), under, min(1.0, max(0.0, float(defaults['tranAmt'])))]
-                  + triple(defaults['tranCol'])
+                  + triple(passed_once(source, defaults['tranCol']))
                   + [min(1.0, max(0.0, float(v))) for v in (defaults['tranRough'],)]
                   + [max(1.0, float(source.get('transmission_ior', source.get('ior', 1.5))))]
                   + [min(1.0, max(0.0, float(defaults[key]))) for key in ('coatAmt', 'coatRough', 'dissolve')]
