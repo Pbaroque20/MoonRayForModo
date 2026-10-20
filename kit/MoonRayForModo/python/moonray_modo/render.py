@@ -440,7 +440,9 @@ class Renderer(QtCore.QObject):
         self.moonlightipr_frame=None
         serial,key,width,height,pixels=packet
         self.moonlightipr_newest=serial
-        try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
+        try:
+            self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
+            self.frames_shown=getattr(self,'frames_shown',0)+1
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
 
     def _moonlightipr_ready(self,serial):
