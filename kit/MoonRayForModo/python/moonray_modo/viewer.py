@@ -1,6 +1,10 @@
 """Qt OpenGL image viewer hosted by Modo's CustomView, independent of PView."""
 from PySide2 import QtCore, QtGui, QtWidgets
 
+# Whether the crest has come in once in this Modo session: it does so the first time a preview is seen, and a window
+# opened after that shows it still, as it rests.
+_crest_shown = False
+
 
 class _PreviewBody:
     def __init__(self, parent=None):
@@ -67,9 +71,14 @@ class _PreviewBody:
     def showEvent(self, event):
         super().showEvent(event)
         if self._crest_entered is None:
-            # The crest comes in the first time the preview is seen.
-            self._crest_entered = self._crest_now()
-            self._crest_timer.start()
+            # The crest comes in the first time a preview is seen in this Modo session; after that it rests.
+            global _crest_shown
+            if _crest_shown:
+                self._crest_entered = self._crest_now() - 3600.0
+            else:
+                _crest_shown = True
+                self._crest_entered = self._crest_now()
+                self._crest_timer.start()
 
     def _crest_now(self):
         return self._crest_clock.elapsed() / 1000.0
