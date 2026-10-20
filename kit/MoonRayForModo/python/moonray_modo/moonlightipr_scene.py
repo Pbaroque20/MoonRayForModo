@@ -278,11 +278,12 @@ def scene_scale_of(scene):
     return held if held > 0 and math.isfinite(held) else 1.0
 
 
-def lights(scene, warnings, environment=0.0, compiler=None, closing=None):
+def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=None):
     """Return (distant, local) light records, with MoonRay's default normalization applied.
 
     closing, given a dict, is given each light's pose when the shutter closes, in the order of the records: under
-    'distant' its direction and axes (9 floats), under 'local' its position, axes and direction (12)."""
+    'distant' its direction and axes (9 floats), under 'local' its position, axes and direction (12). named, given a
+    dict, is given each record's light by its identity, under 'distant' and 'local' in the same order, for light links."""
     scene_scale = scene_scale_of(scene)
     import subprocess
     from .working_space import color as working_color
@@ -329,6 +330,8 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None):
                            + unit(matrix[0:3]) + unit(matrix[4:7]) + [texture] + shown)
             if closing is not None:
                 closing.setdefault('distant', []).append(unit(ending[8:11]) + unit(ending[0:3]) + unit(ending[4:7]))
+            if named is not None:
+                named.setdefault('distant', []).append(light.get('identity', str(index)))
             continue
         # Sizes follow the node's scale; the flat lights emit along local -Z.
         scale_x, scale_y = math.sqrt(sum(v * v for v in matrix[0:3])), math.sqrt(sum(v * v for v in matrix[4:7]))
@@ -356,6 +359,8 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None):
         normalization = 1.0 if kind == 'PortalLight' else (1 / (math.pi * area * scene_scale ** 2) if scaled else 1 / area)
         if closing is not None:
             closing.setdefault('local', []).append(ending[12:15] + unit(ending[0:3]) + unit(ending[4:7]) + [-v for v in unit(ending[8:11])])
+        if named is not None:
+            named.setdefault('local', []).append(light.get('identity', str(index)))
         local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
             + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture)
@@ -579,6 +584,57 @@ def mesh_payload(mesh, material_index, slots):
     return _packed[signature]
 
 
+def linked_lights(scene, owner, tag, every):
+    """The identities of the lights that reach a part of an object, by MoonRay's own order (rdla, lighting): the
+    object's Light Links, else its material's, else Modo's group light links, which leave the environment on; None
+    where nothing limits them."""
+    held = (scene.get('production') or {}).get('objects', {}).get(owner) or {}
+    if held.get('link_enabled'):
+        return set(held.get('lights') or [])
+    material = ((scene.get('materials') or {}).get(tag) or {}).get('rdl_layer_links') or {}
+    if material.get('link_enabled'):
+        return set(material.get('lights') or [])
+    links = scene.get('native_light_links') or {}
+    if any(links.values()):
+        from .native_light_links import allowed
+        return set(allowed(links, owner, tag, every)) | {'__environment__'}
+    return None
+
+
+def light_sets(scene, named, linked, instances, warnings):
+    """The lights each instance is lit by, as a table of sets: a bit for the lighting environment, then one for each
+    distant light and each other light, in the order they are packed. Set 0 is every light, which the GPU takes as
+    such without looking. Each instance's set is written in its visibility word, above its eight bits.
+    Returns (words a set, the sets)."""
+    count = 1 + len(named['distant']) + len(named['local'])
+    words = (count + 31) // 32
+    every = set(named['distant']) | set(named['local'])
+    surroundings = {'__environment__'} | {e.get('identity') for e in scene.get('environments', []) if e.get('identity')}
+    table, index = [[0xffffffff] * words], {}
+    for place, owner, tags in linked:
+        chosen = [linked_lights(scene, owner, tag, every) for tag in dict.fromkeys(tags)]
+        if any(c != chosen[0] for c in chosen[1:]):
+            warnings.append('MoonLightIPR lights all of %s as its first material is lit; its materials are linked to different '
+                            'lights, which MoonRay shows.' % owner)
+        allowed = chosen[0]
+        if allowed is None:
+            continue
+        bits = ([0] if allowed & surroundings else []) + [1 + i for i, name in enumerate(named['distant']) if name in allowed]
+        bits += [1 + len(named['distant']) + i for i, name in enumerate(named['local']) if name in allowed]
+        key = tuple(bits)
+        if key not in index:
+            row = [0] * words
+            for bit in bits:
+                row[bit >> 5] |= 1 << (bit & 31)
+            index[key] = len(table)
+            table.append(row)
+        record = bytearray(instances[place])
+        seen = struct.unpack_from('<I', record, 12)[0] & 255
+        struct.pack_into('<I', record, 12, seen | (index[key] << 8))
+        instances[place] = bytes(record)
+    return words, table
+
+
 def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
     """Serialize a snapshot. Return (bytes, mesh keys, warnings).
 
@@ -604,10 +660,11 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if samples < 1:
         raise ValueError('MoonLightIPR needs at least one sample')
     warnings = []
-    # Which lights light an object, and whose shadows fall where, are MoonRay's to work out.
-    if any(held.get('link_enabled') or held.get('shadow_exclude') or held.get('shadow_receivers')
+    # Which lights light an object is drawn (light_sets); whose shadows fall where is still MoonRay's to work out.
+    if any(held.get('shadow_exclude') or held.get('shadow_receivers')
            for held in (scene.get('production') or {}).get('objects', {}).values() if isinstance(held, dict)):
-        warnings.append('MoonLightIPR lights and shadows every object alike: light links and the shadows objects are set not to cast show in MoonRay only.')
+        warnings.append('MoonLightIPR casts every shadow alike: the shadows objects are set not to cast, and those set not to fall on '
+                        'other objects, show in MoonRay only.')
     if any(isinstance(held, dict) and held.get('sss_trace_set') for held in (scene.get('materials') or {}).values()):
         warnings.append('MoonLightIPR does not join neighbouring objects in subsurface light: a material\'s subsurface neighbours show in MoonRay only.')
     # MoonRay's own items arrive beside the Modo ones; draw those that have a counterpart here.
@@ -676,7 +733,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSI', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSJ', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
@@ -732,7 +789,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Lights now, since a filter's ramp or a light's picture adds to the images.
     # Where each light is when the shutter closes: lights move as the camera and the meshes do.
     closing = {'distant': [], 'local': []}
-    distant, local = lights(scene, warnings, environment, compiler, closing)
+    named = {'distant': [], 'local': []}
+    distant, local = lights(scene, warnings, environment, compiler, closing, named)
+    # Each instance's object and materials, for the lights that reach it (light_sets), by its place among the instances.
+    linked = []
     # Images first: the session reads them before the layers and lights that name them.
     parts += [struct.pack('<I', len(compiler.textures))] + list(compiler.textures)
     parts += [struct.pack('<I', len(compiler.grids))] + list(compiler.grids)
@@ -774,6 +834,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             if record:
                 light = len(local)
                 local.append(record)
+                named['local'].append(mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0])
                 # A mesh light is held where it is during the shutter.
                 closing['local'].append([0.0] * 12)
         opening = mesh['instances'] if 'instances' in mesh else [mesh.get('matrix', IDENTITY)]
@@ -783,6 +844,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         # A fog's box is found by every ray, and so is a mesh light, which is the light itself.
         seen = 255 if light >= 0 or mesh.get('volume') else seen_by(mesh)
         for placement, later in zip(opening, ending):
+            linked.append((len(instances), mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0],
+                           mesh.get('face_materials') or [mesh.get('material', '')]))
             instances.append(struct.pack('<2IiI12f', order[key], material, light, seen, *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
     # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
@@ -812,10 +875,12 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             meshes.append(head if key in known else head + payload)
         used.add(key)
         placement = transform(entry.get('matrix') or IDENTITY)
+        linked.append((len(instances), entry.get('source_item') or str(entry.get('identity', '')).split('|')[0], [entry.get('material', '')]))
         instances.append(struct.pack('<2IiI12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, seen_by(entry), *placement)
                          + (struct.pack('<12f', *transform(entry.get('matrix_close') or entry.get('matrix') or IDENTITY)) if motion else b''))
     if any(entry.get('kind') not in ('curves', 'vdb') for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points.')
+    table = light_sets(scene, named, linked, instances, warnings)
     parts.append(struct.pack('<I', len(distant)))
     parts += [struct.pack('<7fI6fi4f', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local
@@ -824,6 +889,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         # Form 'F': the lights' poses when the shutter closes, as many as there are lights of each kind.
         parts += [struct.pack('<I', len(closing['distant']))] + [struct.pack('<9f', *pose) for pose in closing['distant']]
         parts += [struct.pack('<I', len(closing['local']))] + [struct.pack('<12f', *pose) for pose in closing['local']]
+    # Form 'J': the light sets, as many words each as the lights need bits.
+    parts += [struct.pack('<2I', table[0], len(table[1]))] + [struct.pack('<%dI' % table[0], *words) for words in table[1]]
     # Drop cached triangulations of meshes that have left the scene.
     for identity in [k for k, v in _packed.items() if v[0] not in used]:
         del _packed[identity]

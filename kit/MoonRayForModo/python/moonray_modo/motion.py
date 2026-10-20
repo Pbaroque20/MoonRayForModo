@@ -90,7 +90,12 @@ def apply_motion(scene, start, end, endpoints):
             if 'instances' in node:
                 cm,am,bm=instances(original),instances(a),instances(b)
                 if set(cm)!=set(am) or set(cm)!=set(bm):
-                    raise ValueError('Motion blur cannot change instance identities')
+                    # Copies that are not there at an end of the shutter (Modo's render cache can give a replicator
+                    # fewer of them a moment from the frame, though nothing moves) are held where they are at the
+                    # frame for that end; those there only at an end are left out, as the frame has them not.
+                    am={key:am.get(key,cm[key]) for key in cm};bm={key:bm.get(key,cm[key]) for key in cm}
+                    warning='Some copies of '+str(original.get('name',identity))+' come and go during the shutter; those are shown still, where they are at the frame.'
+                    if warning not in warnings:warnings.append(warning)
                 # MoonRay supports per-instance linear velocity. Keep the shared
                 # prototype when scale/rotation/shear are constant over the shutter.
                 stable=all(all(math.isclose(am[key][i],bm[key][i],rel_tol=1e-8,abs_tol=1e-10) for i in range(16) if i not in (12,13,14)) for key in cm)

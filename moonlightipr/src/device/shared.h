@@ -203,7 +203,7 @@ struct DeviceInstance {
     unsigned mesh;
     unsigned material;
     int light;              // the mesh light this instance is the surface of, or -1
-    unsigned pad;
+    unsigned lightSet;      // the lights that reach it (LaunchParams::lightSets), 0 for all of them
 };
 
 // A uniform spherical cap at infinity, as MoonRay's DistantLight.
@@ -305,6 +305,11 @@ struct LaunchParams {
     DevicePtr done;
     unsigned doneColumns;
     unsigned donePad;
+    // Light links: each set lightSetWords words, a bit for the lighting environment, then each distant light, then
+    // each other light. An instance names its set (DeviceInstance::lightSet); set 0 is every light.
+    DevicePtr lightSets;
+    unsigned lightSetWords;
+    unsigned lightSetPad;
 
     DevicePtr meshes;       // DeviceMesh, indexed by DeviceInstance::mesh
     DevicePtr instances;    // DeviceInstance, indexed by the OptiX instance id

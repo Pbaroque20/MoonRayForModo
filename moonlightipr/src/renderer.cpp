@@ -267,6 +267,7 @@ struct Renderer::Impl {
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
     // Stopping once clean (setConvergence): the even samples' mean, and which squares of the picture are done.
     Buffer half, done;
+    Buffer lightSetTable;
     float cleanBelow = 0.0f;
     uint32_t nextCheck = 0;
     std::vector<uint8_t> tileDone, tilePassed;
@@ -538,7 +539,7 @@ struct Renderer::Impl {
             if ((instances[i].visibility & 31u) != 31u) mixed = true;
             input[i].flags = OPTIX_INSTANCE_FLAG_NONE;
             input[i].traversableHandle = meshes[instances[i].mesh]->handle;
-            table[i] = {instances[i].mesh, instances[i].material, instances[i].light, 0};
+            table[i] = {instances[i].mesh, instances[i].material, instances[i].light, instances[i].visibility >> 8};
         }
         params.mixedVisibility = mixed ? 1 : 0;
         instanceTable.upload(table);
@@ -1722,6 +1723,13 @@ void Renderer::render() {
         // Often at first, when a simple picture may already be clean, then every 256 samples.
         impl->nextCheck = impl->nextCheck < 256 ? impl->nextCheck * 2 : impl->nextCheck + 256;
     }
+}
+
+void Renderer::setLightSets(const uint32_t* sets, uint32_t words, size_t count) {
+    impl->lightSetTable.upload(sets, size_t(words) * count * sizeof(uint32_t));
+    impl->params.lightSets = impl->lightSetTable.ptr;
+    impl->params.lightSetWords = words;
+    impl->restart();
 }
 
 void Renderer::setConvergence(float noise) {

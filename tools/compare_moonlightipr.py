@@ -565,6 +565,15 @@ def scenes(folder):
         **({'vdb_cloud': dict(base, lights=fixture.snapshot()['lights'], _environment=.6, extra_geometry=[
                {'kind': 'vdb', 'identity': 'cloud|vdb', 'source_item': 'cloud', 'name': 'Cloud', 'file': os.environ['MOONLIGHTIPR_TEST_VDB'],
                 'density': 4.0, 'matrix': fixture.placed(0, 2.2, 1.5, .8)}])} if os.environ.get('MOONLIGHTIPR_TEST_VDB') else {}),
+        # Light links: the ball lit by the warm sphere light alone, the cube by the cool rect light and the environment,
+        # the ground by everything; then Modo's own group links, the sphere light kept off the ball.
+        **{'light_links' + suffix: dict(base, _environment=.25, lights=[
+               dict(lamp, identity='warm', kind='SphereLight', intensity=60.0, radius=.4, color=[1, .7, .4], matrix=fixture.placed(-2, 4, 3)),
+               dict(lamp, identity='cool', kind='RectLight', intensity=60.0, width=2.0, height=1.0, color=[.4, .6, 1], matrix=aimed([2.5, 4, 2], [0, .5, 0]))],
+               **links) for suffix, links in (
+               ('', {'production': {'objects': {'ball': {'link_enabled': True, 'lights': ['warm']},
+                                                'cube': {'link_enabled': True, 'lights': ['cool', '__environment__']}}}}),
+               ('_modo_groups', {'native_light_links': {'lights': {'warm': {'mode': 'exclude', 'members': ['ball']}}, 'materials': {}}}))},
         'uniform_sky': dict(base, _environment=1.0),
         'gradient_sky': dict(base, environments=fixture.snapshot()['environments']),
         'sphere_light': dict(base, lights=[dict(lamp, kind='SphereLight', intensity=60.0, radius=.4, matrix=fixture.placed(-1, 5, 3))]),
