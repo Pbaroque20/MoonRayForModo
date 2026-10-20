@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
         // How long a render is spread over at least (see the render loop). MOONLIGHTIPR_PACE, in seconds, chooses for
         // experiments; 0 renders as fast as the graphics card can.
         const char* paced = std::getenv("MOONLIGHTIPR_PACE");
-        const std::chrono::duration<double> pace(paced ? std::max(0.0, std::atof(paced)) : 4.0);
+        const std::chrono::duration<double> pace(paced ? std::max(0.0, std::atof(paced)) : 8.0);
 
         // The scene last applied, for a finish to send as it stands.
         moonlightipr::SceneSettings lastSettings;
