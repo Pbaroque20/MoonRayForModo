@@ -19,7 +19,10 @@ from moonray_modo import moonlightipr_scene, native, rdla
 import check_moonlightipr_session as fixture
 
 WIDTH, HEIGHT = fixture.WIDTH, fixture.HEIGHT
-MOONLIGHTIPR_SAMPLES, MOONRAY_GRID = 2048, 6
+# Quicker, rougher comparisons (a draft, as Smart Render's Draft level stops at) with MOONLIGHTIPR_COMPARE_SAMPLES and
+# MOONRAY_COMPARE_GRID (the side of MoonRay's grid of samples a pixel).
+MOONLIGHTIPR_SAMPLES = int(os.environ.get('MOONLIGHTIPR_COMPARE_SAMPLES', 2048))
+MOONRAY_GRID = int(os.environ.get('MOONRAY_COMPARE_GRID', 6))
 BLOCK = 20
 
 
@@ -325,6 +328,17 @@ def vdb_ball(folder):
     return str(path)
 
 
+def stacked(base, path, tag):
+    """The fixture with its ball wearing a captured stack, images left out and the top row red, under a sky."""
+    material = json.loads(pathlib.Path(path).read_text(encoding='utf-8'))['materials'][tag]
+    rows = [dict(row, layers=[], textures={}) for row in material['material_stack']]
+    rows[-1] = dict(rows[-1], raw_color=[.8, .1, .1], color=[.8 * rows[-1].get('diffuse_amount', 1), .1, .1])
+    worn = dict(material, layers=[], textures={}, material_stack=rows)
+    return dict(base, _environment=.6, lights=fixture.snapshot()['lights'],
+                materials=dict(base['materials'], stacked=worn),
+                meshes=[dict(mesh, material='stacked') if mesh.get('identity') == 'ball' else mesh for mesh in base['meshes']])
+
+
 def scenes(folder):
     base = fixture.snapshot()
     base.update(lights=[], environments=[], render_settings={'sampling_mode': 0, 'max_depth': 4})
@@ -574,6 +588,14 @@ def scenes(folder):
                ('', {'production': {'objects': {'ball': {'link_enabled': True, 'lights': ['warm']},
                                                 'cube': {'link_enabled': True, 'lights': ['cool', '__environment__']}}}}),
                ('_modo_groups', {'native_light_links': {'lights': {'warm': {'mode': 'exclude', 'members': ['ball']}}, 'materials': {}}}))},
+        # A stack of material rows of different specular amounts, as Modo makes one (a can's label, a shiny metal under
+        # a dull print): the ball wears it, taken from a captured scene (MOONLIGHTIPR_TEST_STACK, a snapshot's file and
+        # material) with its images left out and its top row red.
+        **({'specular_stack': stacked(base, *os.environ['MOONLIGHTIPR_TEST_STACK'].rsplit('|', 1))}
+           if os.environ.get('MOONLIGHTIPR_TEST_STACK') else {}),
+        # A scene captured in Modo (tools/probe_cl_scene_materials.py writes one), named in MOONLIGHTIPR_TEST_SNAPSHOT.
+        **({'snapshot': json.loads(pathlib.Path(os.environ['MOONLIGHTIPR_TEST_SNAPSHOT']).read_text(encoding='utf-8'))}
+           if os.environ.get('MOONLIGHTIPR_TEST_SNAPSHOT') else {}),
         'uniform_sky': dict(base, _environment=1.0),
         'gradient_sky': dict(base, environments=fixture.snapshot()['environments']),
         'sphere_light': dict(base, lights=[dict(lamp, kind='SphereLight', intensity=60.0, radius=.4, matrix=fixture.placed(-1, 5, 3))]),

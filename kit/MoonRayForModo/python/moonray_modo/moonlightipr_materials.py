@@ -18,7 +18,10 @@ from pathlib import Path
 CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4, 'lumiAmt': 5, 'normal': 6,
             'tranAmt': 7, 'tranCol': 8, 'tranRough': 9, 'coatAmt': 10, 'coatRough': 11, 'dissolve': 12, 'bump': 13,
             'groupMask': 14, 'aniso': 15, 'subsAmt': 16, 'subsCol': 17,
-            'driverA': 18, 'driverB': 19, 'driverC': 20, 'driverD': 21}
+            'driverA': 18, 'driverB': 19, 'driverC': 20, 'driverD': 21,
+            # Not an effect of Modo's: each material row's specular amount, as a share of the most any row of its
+            # stack has, which sets the lobe (MoonRay's specular weight, as moonshine gives it).
+            '_specShare': 22}
 # Channels a material row does not set: the maps, the mask, and values only gradients read.
 UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD')
 # Channels whose constant rows can be worked out here instead of on the GPU, with the range the
@@ -794,6 +797,12 @@ class Compiler:
         from .material_groups import merged, supported
         from .material_settings import values as shader_controls
         stack = material.get('material_stack')
+        # The most a stack of standard rows reflects straight on, which sets its lobe; each row's own amount is then
+        # its share of that (the _specShare channel), as MoonRay weighs them.
+        from .moonshine import specular_ceiling
+        ceiling = specular_ceiling(material) if stack and supported(stack) and stack[-1].get('standard_material') else 0.0
+        # Rows that all reflect alike need no share of their own.
+        shares = bool(ceiling) and any(abs(max(0.0, min(.99, max(m.get('specular', [.04])))) - ceiling) > 1e-6 for m in stack)
         if stack and supported(stack):
             source = merged(stack)
         else:
@@ -901,6 +910,12 @@ class Compiler:
                 mask = masked(layer.get('identity'))
                 for effect_name, channel in CHANNELS.items():
                     if effect_name in UNSET_BY_ROWS:
+                        continue
+                    if effect_name == '_specShare':
+                        if not shares:
+                            continue
+                        mine = max(0.0, min(.99, max(layer['material'].get('specular', [.04]))))
+                        put(effect_name, channel, blend, BLENDS.get(blend, 0), mask, [min(1.0, mine / ceiling)] * 3, layer.get('opacity', 1), constant=True)
                         continue
                     value = triple(base[effect_name])
                     if layer.get('invert') and effect_name in textures.COLOR_EFFECTS:
@@ -1034,7 +1049,7 @@ class Compiler:
                 from .moonshine import fresnel_match
                 from .shading_models import principled_rise
                 principled = any(m.get('principled') for m in stack)
-                straight = max(0.0, min(.99, sum(source.get('specular', [.04] * 3)) / 3)) * (.08 if principled else 1.0)
+                straight = (ceiling or max(0.0, min(.99, sum(source.get('specular', [.04] * 3)) / 3))) * (.08 if principled else 1.0)
                 rise = max(principled_rise(m) for m in stack if m.get('principled')) if principled else max(0.0, min(1.0, max(m.get('specular_fresnel', 1.0) for m in stack)))
                 lobe = fresnel_match(straight, rise) if straight > 0 else 0.0
                 ior = (1 + math.sqrt(lobe)) / (1 - math.sqrt(lobe))
