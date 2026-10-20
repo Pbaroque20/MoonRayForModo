@@ -350,7 +350,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Displacement and Stencil layers | ![no](docs/images/feature-no.svg) | Coming next, checked against Modo's renders |
 | Other texture effects (Modo has 218) | ![partly](docs/images/feature-partly.svg) | The ones a standard or Principled material uses |
 | Group masks by material, Part and Selection Set | ![yes](docs/images/feature-yes.svg) | Checked against Modo's render |
-| Group masks by item | ![partly](docs/images/feature-partly.svg) | Read, not yet checked against Modo |
+| Group masks by item | ![yes](docs/images/feature-yes.svg) | Checked against Modo's render |
 | **Geometry** | | |
 | Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) |  |
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry |
