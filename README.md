@@ -252,7 +252,6 @@ The ones you are most likely to meet:
 - Hair in MoonLightIPR is close to MoonRay's but not exact.
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode; the plugin switches for you and says so.
 - Smart Render and Important Parts First work on MoonRay renders in the preview window, not on Render EXR or animations.
-- MoonLightIPR updates after you let go of a drag, not while you drag.
 - Now and then, a preview with glitter in the GPU (XPU) mode fails on the graphics card; it is rendered on the CPU instead, with a notice.
 
 Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
