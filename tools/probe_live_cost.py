@@ -67,6 +67,10 @@ def begin():
             held['submits'] += 1
             return submit(*a, **k)
         panel._live_tick, panel.renderer.submit = timed, counted
+        # The frames MoonLightIPR shows: what the drag is seen to be followed by, not only what was asked of it.
+        session = getattr(panel.renderer, 'moonlightipr', None)
+        if session is not None:
+            session.memory_image.connect(lambda packet: held.__setitem__('frames', held.get('frames', 0) + 1))
         consume = panel.changes.consume
 
         def told():
@@ -136,6 +140,7 @@ def phase(index):
         lx.eval('!app.quit')
         return
     held['ticks'], held['moves'], held['submits'], held['update_ticks'] = [], [], 0, []
+    held['frames'] = 0
     # Should Modo's thread stop answering, where every thread stands is written down.
     import faulthandler
     held['stuck'] = open(str(out / ('stuck_%d.txt' % index)), 'wb', 0)
@@ -188,7 +193,7 @@ def close(name):
     result['phases'].append({'phase': name, 'seconds': round(span, 2), 'ticks': len(ticks), 'in_ticks_seconds': round(sum(ticks), 3),
                              'share_of_modo_thread': round(sum(ticks) / span, 3), 'tick_median_ms': round(1000 * ticks[len(ticks) // 2], 1) if ticks else None,
                              'update_tick_median_ms': round(1000 * sorted(held['update_ticks'])[len(held['update_ticks'])//2], 1) if held.get('update_ticks') else None,
-                             'tick_longest_ms': round(1000 * ticks[-1], 1) if ticks else None, 'renders_asked': held['submits'],
+                             'tick_longest_ms': round(1000 * ticks[-1], 1) if ticks else None, 'renders_asked': held['submits'], 'frames_shown': held.get('frames', 0),
                              'moonray_passes_begun': held.pop('passes', 0), 'pass_begin_seconds': round(held.pop('pass_time', 0.0), 3), 'of_which_outside_ticks': round(held.pop('outside', 0.0), 3),
                              'whole_asked_by': held.pop('whole', [])[:12],
                              'told_of': held.pop('told', [])[:12], 'time_now': lx.service.Selection().GetTime(),

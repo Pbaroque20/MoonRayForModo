@@ -187,8 +187,10 @@ class Session(QtCore.QObject):
                 try:
                     from .shared_image import receive
                     packet = receive(line, self.process.processId())
-                    # A frame of a scene that has since been replaced is acknowledged but not shown.
-                    if not self.stopping and not self.closed and not self.latest and packet[0] == self.current: self.memory_image.emit(packet)
+                    # A frame of a scene that has since been replaced is acknowledged but not shown. One of the scene
+                    # last sent is shown even while a newer one waits its turn, as through a drag: each step's picture
+                    # is the newest there is until the next one's comes.
+                    if not self.stopping and not self.closed and packet[0] == self.current: self.memory_image.emit(packet)
                 except (ValueError, OSError) as exc: self.status.emit('MoonLightIPR frame skipped: ' + str(exc))
                 continue
             # What the session says of a scene: its textures made smaller to fit the card, or why it was rejected.
