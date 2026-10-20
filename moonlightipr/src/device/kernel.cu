@@ -1632,9 +1632,13 @@ extern "C" __global__ void __raygen__moonlightipr() {
         reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
         return;
     }
+    // A part of the picture already clean takes no more samples: it is left as it is (see Renderer::converge).
+    if (params.done && reinterpret_cast<const unsigned char*>(params.done)[(index.y / CLEAN_TILE) * params.doneColumns + index.x / CLEAN_TILE])
+        return;
     if (beyond) {
         // Outside the region being rendered there is no picture: black, as MoonRay leaves it.
         reinterpret_cast<float4*>(params.beauty)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        if (params.half) reinterpret_cast<float4*>(params.half)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
         reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
         reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
         return;
@@ -1655,6 +1659,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const float3 kept = lerp(make_float3(buffers[i]->x, buffers[i]->y, buffers[i]->z), vec(0.0f), weight);
             *buffers[i] = make_float4(kept.x, kept.y, kept.z, i < 2 ? 1.0f : 0.0f);
         }
+        if (params.half) reinterpret_cast<float4*>(params.half)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     }
     if (params.lensRadius > 0.0f && params.cameraProjection == 0) {
@@ -2418,6 +2423,12 @@ extern "C" __global__ void __raygen__moonlightipr() {
     *beauty = make_float4(b.x, b.y, b.z, 1.0f);
     *albedo = make_float4(a.x, a.y, a.z, 1.0f);
     *normal = make_float4(n.x, n.y, n.z, 0.0f);
+    if (params.half && !(params.sample & 1)) {
+        // The mean of the even samples alone: how far it is from the mean of them all tells how noisy that still is.
+        float4* half = reinterpret_cast<float4*>(params.half) + pixel;
+        const float3 h = lerp(make_float3(half->x, half->y, half->z), radiance, 1.0f / float(params.sample / 2 + 1));
+        *half = make_float4(h.x, h.y, h.z, 1.0f);
+    }
 }
 
 extern "C" __global__ void __miss__radiance() {}

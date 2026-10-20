@@ -291,11 +291,20 @@ struct DeviceFilter {
 const unsigned ALBEDO_STEPS = 16;
 const unsigned ALBEDO_TABLE = ALBEDO_STEPS * ALBEDO_STEPS + ALBEDO_STEPS;
 
+// The side of the square parts of the picture each judged clean on its own, in pixels.
+const unsigned CLEAN_TILE = 8;
+
 struct LaunchParams {
     // Running means over the accumulated samples, float[4] per pixel.
     DevicePtr beauty;
     DevicePtr albedo;
     DevicePtr normal;       // camera space, as the OptiX denoiser expects
+    // While the render stops once clean: the running mean of the even samples alone, float[4] per pixel, and a byte
+    // for each CLEAN_TILE square, doneColumns to a row, set once that square is clean. Both 0 otherwise.
+    DevicePtr half;
+    DevicePtr done;
+    unsigned doneColumns;
+    unsigned donePad;
 
     DevicePtr meshes;       // DeviceMesh, indexed by DeviceInstance::mesh
     DevicePtr instances;    // DeviceInstance, indexed by the OptiX instance id

@@ -11,7 +11,7 @@
 // Events leave on standard output, in the form the MoonRay session already uses:
 //   @@MODO_SESSION APPLIED <generation>    the scene is loaded
 //   @@MODO_SHARED <generation> beauty ...  a frame is waiting in shared memory
-//   @@MODO_SESSION DONE <generation>       the sample target was reached
+//   @@MODO_SESSION DONE <generation>       the picture is clean, or the sample target was reached
 //   @@MODO_SESSION FAILED <generation>     the scene was rejected; the reason is on standard error
 #include "moonlightipr/moonlightipr.h"
 #include "scene_loader.h"
@@ -155,7 +155,8 @@ int main(int argc, char** argv) {
             lastGeneration = generation;
 
             pixels.resize(size_t(settings.width) * settings.height * 3);
-            auto lastFrame = std::chrono::steady_clock::now();
+            const auto began = std::chrono::steady_clock::now();
+            auto lastFrame = began;
             uint32_t published = 0;
             auto publish = [&]() {
                 if (!sharedImage.ready()) return false;
@@ -165,13 +166,17 @@ int main(int argc, char** argv) {
                 if (sent) published = renderer.sampleCount();
                 return sent;
             };
-            while (renderer.sampleCount() < settings.targetSamples && !interrupted()) {
+            while (renderer.sampleCount() < settings.targetSamples && !renderer.converged() && !interrupted()) {
                 renderer.render();
                 // The other picture was asked for: it is sent at once, not at the next thirtieth of a second.
                 if (viewChanged) { viewChanged = false; published = 0; }
-                // Show the first sample at once, then at most 30 frames a second.
+                // Show the first sample at once, then at most 30 frames a second while an edit is fresh, and fewer as
+                // the picture settles (each frame shown is denoised and copied): 10 a second after the first one,
+                // 4 after four.
                 const auto now = std::chrono::steady_clock::now();
-                if (!published || now - lastFrame >= std::chrono::milliseconds(33)) {
+                const auto settled = now - began;
+                const auto interval = std::chrono::milliseconds(settled < std::chrono::seconds(1) ? 33 : settled < std::chrono::seconds(4) ? 100 : 250);
+                if (!published || now - lastFrame >= interval) {
                     if (publish()) lastFrame = std::chrono::steady_clock::now();
                 }
             }
@@ -181,6 +186,8 @@ int main(int argc, char** argv) {
             if (viewChanged) { viewChanged = false; published = 0; }
             while (published != renderer.sampleCount() && !interrupted() && !publish())
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            if (renderer.converged() && !interrupted())
+                std::cout << "MoonLightIPR clean at " << renderer.sampleCount() << " samples a pixel" << std::endl;
             if (!interrupted()) event("DONE", generation);
         }
     } catch (const std::exception& error) {

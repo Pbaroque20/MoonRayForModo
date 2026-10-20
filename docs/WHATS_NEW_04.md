@@ -10,6 +10,7 @@ Not released yet: on the MoonLightIPR branch.
 - **Anisotropy follows Modo's UV map, and its strength Modo's**: a material with Anisotropy but no UV map named for it renders a round highlight, as Modo draws it; with one, MoonRay's highlight stretches and spreads nearer Modo's (fitted against Modo's renders). A very strong anisotropy still draws a shorter streak than Modo's.
 - **Shader Tree masks checked against Modo**: material, Part and Selection Set masks colour the same surfaces in MoonRay as in Modo; a layer or group placed above the Base Shader, which Modo applies to nothing, is left out too, with a notice.
 - **Exporting RDLB writes only the RDLB**: the scene text MoonRay's converter reads goes through a temporary folder, rather than appearing beside the scene while it is converted.
+- **MoonLightIPR rests once the picture is clean**: it judges the noise of each small square of the picture as it renders; a square that is clean takes no more samples, and the render stops once all are, so a simple scene stops after a few dozen samples a pixel, not the hundreds of Pixel samples, which is now the most it takes. The picture is shown less often once a render has settled, and the processor sleeps while it waits on the graphics card. The graphics card and the processor draw much less power on simple scenes.
 
 ## New in 0.4.2.1
 
