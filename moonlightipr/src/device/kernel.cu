@@ -104,6 +104,14 @@ ML_INLINE float3 gridShadow(float3 origin, float3 direction, float distance, uns
     return through;
 }
 
+// Whether a light reaches what is in a light set (LaunchParams::lightSets): bit 0 is the lighting environment, then
+// each distant light, then each other light. Set 0 is every light.
+ML_INLINE bool reaches(unsigned set, unsigned bit) {
+    if (!set || !params.lightSets) return true;
+    const unsigned* words = reinterpret_cast<const unsigned*>(params.lightSets) + size_t(set) * params.lightSetWords;
+    return (words[bit >> 5] >> (bit & 31)) & 1u;
+}
+
 // thin scales what fog stops: MoonRay lets light that has already scattered in fog through more of it (its volume
 // attenuation factor), which stands for the light that would have found its way round.
 ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float distance = 1e16f, float thin = 1.0f) {
@@ -1187,12 +1195,13 @@ ML_INLINE float3 shadowFrom(const Surface& surface, float3 p, float3 lift, float
 // Next event estimation at one surface point: the environment, the distant lights, then the
 // local lights. weight is the path's weight on arriving at the surface.
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
-                             float3 p, float3 ng, float3 weight, bool lit, unsigned& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f)) {
+                             float3 p, float3 ng, float3 weight, bool lit, unsigned& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f),
+                             unsigned set = 0) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
     // With a portal in the scene the environment is sampled through it, as one of the lights.
-    if (!params.envPortal) {
+    if (!params.envPortal && reaches(set, 0)) {
         float lightPdf;
         const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
         if (lightPdf > 0.0f && (surface.passes || surface.smoothToon || dot(ng, toLight) > 0.0f)) {
@@ -1204,6 +1213,7 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         }
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
+        if (!reaches(set, 1 + i)) continue;
         const DeviceDistantLight& light = distantLights[i];
         const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
         if (!surface.passes && !surface.smoothToon && dot(ng, toSun) <= 0.0f) continue;
@@ -1216,6 +1226,7 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
     for (unsigned i = firstLight; i < lastLight; ++i) {
+        if (!reaches(set, 1 + params.distantLightCount + i)) continue;
         float3 toLamp, emitted;
         float distance, lampPdf;
         if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
@@ -1442,12 +1453,12 @@ ML_INLINE bool fibreSample(const Fibre& fibre, unsigned& seed, float3& wi) {
 }
 
 // Next event estimation on a fibre, which light reaches from every side.
-ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weight, bool lit, unsigned& seed) {
+ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weight, bool lit, unsigned& seed, unsigned set = 0) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
     float pdf;
-    if (!params.envPortal) {
+    if (!params.envPortal && reaches(set, 0)) {
         float lightPdf;
         const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
         if (lightPdf > 0.0f) {
@@ -1458,6 +1469,7 @@ ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weig
         }
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
+        if (!reaches(set, 1 + i)) continue;
         const DeviceDistantLight& light = distantLights[i];
         const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
         const float3 f = fibreEval(fibre, toSun, pdf);
@@ -1468,6 +1480,7 @@ ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weig
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
     for (unsigned i = firstLight; i < lastLight; ++i) {
+        if (!reaches(set, 1 + params.distantLightCount + i)) continue;
         float3 toLamp, emitted;
         float distance, lampPdf;
         if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
@@ -1711,6 +1724,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
     int medium = -1;
     unsigned crossings = 0;
 
+    // The light set of the surface the ray last left, which the lights it comes upon are held to.
+    unsigned fromSet = 0;
     for (unsigned depth = 0;; ++depth) {
         Hit hit;
         traceRadiance(origin, direction, hit, reach, seen);
@@ -1908,6 +1923,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
         }
         for (unsigned i = 0; !camera && !emerged && i < params.lightCount; ++i) {
+            if (!reaches(fromSet, 1 + params.distantLightCount + i)) continue;
             float pdf;
             float3 emitted;
             if (hitLight(lights[i], origin, direction, lightReach, pdf, emitted))
@@ -1919,10 +1935,12 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // later bounces share the lighting environment with light sampling.
             const float3 sky = camera ? envLookup(reinterpret_cast<const float4*>(params.envBackground), params.envBackgroundRotation, direction)
                              : params.envPortal ? vec(0.0f) : envRadiance(direction);
-            radiance += clampSample(throughput * lightWeight * sky * (sharp ? 1.0f : powerHeuristic(bsdfPdf, envPdf(direction))), clampFound);
+            if (camera || reaches(fromSet, 0))
+                radiance += clampSample(throughput * lightWeight * sky * (sharp ? 1.0f : powerHeuristic(bsdfPdf, envPdf(direction))), clampFound);
             if (camera) guideAlbedo = make_float3(fminf(sky.x, 1.0f), fminf(sky.y, 1.0f), fminf(sky.z, 1.0f));
             // Distant lights are found by scattered rays; the camera sees only the discs that ask to be seen, as a sun does.
             for (unsigned i = 0; i < params.distantLightCount; ++i) {
+                if (!camera && !reaches(fromSet, 1 + i)) continue;
                 const DeviceDistantLight& light = distantLights[i];
                 if (camera || (sharp && light.visible > 0.0f)) {
                     // The camera, and a mirror, see the disc they are told to: for a sun in a physical sky, not the one that
@@ -1966,7 +1984,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             guideNormal = -direction;
             break;
         }
-        if (!camera && !emerged && hit.light >= 0) {
+        if (!camera && !emerged && hit.light >= 0 && reaches(fromSet, 1 + params.distantLightCount + unsigned(hit.light))) {
             const DeviceLight& light = lights[hit.light];
             const float cosine = fabsf(dot(direction, hit.ng));
             if (cosine > 1e-6f) {
@@ -1976,6 +1994,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
         }
 
+        fromSet = reinterpret_cast<const DeviceInstance*>(params.instances)[hit.instance].lightSet;
         Surface surface = surfaceFrom(hit);
         if ((hit.flags & MATERIAL_NO_CAUSTICS) && diffuseDepth > 0) {
             // MoonRay's DwaBaseMaterial leaves its specular, outer specular, metallic and transmission parts out
@@ -2008,7 +2027,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 guideNormal = make_float3(dot(hit.ns, normalize(vec(params.cameraU))), dot(hit.ns, normalize(vec(params.cameraV))),
                                           -dot(hit.ns, normalize(vec(params.cameraW))));
             }
-            radiance += fibreLight(fibre, hit.p, hit.ng, throughput, roughDepth >= params.sampleClampDepth, seed);
+            radiance += fibreLight(fibre, hit.p, hit.ng, throughput, roughDepth >= params.sampleClampDepth, seed, fromSet);
             float3 wi;
             if (depth >= params.maxDepth || !fibreSample(fibre, seed, wi)) break;
             const float3 f = fibreEval(fibre, wi, bsdfPdf);
@@ -2110,7 +2129,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             lobes.specular = glossyBounces ? 1.0f : 0.0f;
         }
         const bool lit = roughDepth >= params.sampleClampDepth;   // this surface was reached by scattering off something rough
-        radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift);
+        radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift, fromSet);
 
         // The light that enters a transmissive surface goes through it rather than scattering.
         const float through = mayBounce ? transmitted(surface, wo) : 0.0f;

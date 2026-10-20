@@ -207,13 +207,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x49534c4d)
+    if (mark != 0x4a534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'I'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'J'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -696,6 +696,15 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             std::copy(pose + 9, pose + 12, light.direction);
         }
     }
+    // The light sets: which lights reach each instance, a bit for the environment, then each distant light and each
+    // other light. An instance names its set above the eight bits of its visibility; set 0 is every light.
+    const uint32_t setWords = in.value<uint32_t>(), setCount = in.value<uint32_t>();
+    if (!setCount || setWords != (1 + lights.size() + localLights.size() + 31) / 32)
+        throw std::runtime_error("MoonLightIPR scene's light sets do not match its lights");
+    std::vector<uint32_t> lightSets(size_t(setWords) * setCount);
+    for (uint32_t& word : lightSets) word = in.value<uint32_t>();
+    for (const Instance& instance : instances)
+        if ((instance.visibility >> 8) >= setCount) throw std::runtime_error("MoonLightIPR scene instance refers to a missing light set");
     if (!in.finished()) throw std::runtime_error("MoonLightIPR scene has trailing data");
 
     renderer.setMaterials(materials.data(), materials.size(), layers.data(), layers.size(), tiles.data(), tiles.size());
@@ -717,6 +726,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     renderer.setDistantLights(lights.data(), lights.size());
     renderer.setLights(localLights.data(), localLights.size());
     renderer.setLightMotion(closingDistant.data(), closingDistant.size(), closingLocal.data(), closingLocal.size());
+    renderer.setLightSets(lightSets.data(), setWords, setCount);
     renderer.setInstances(instances.data(), instances.size());
     for (auto entry = meshes.begin(); entry != meshes.end();) {
         if (generation - entry->second.lastUsed >= MESH_RETENTION) {

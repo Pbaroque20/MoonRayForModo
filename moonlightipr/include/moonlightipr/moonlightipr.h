@@ -209,7 +209,8 @@ struct Instance {
     float transform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     int32_t light = -1;     // the mesh light whose triangles are this instance's surface
     // Which rays find the instance, a bit for each kind: 1 the camera's, 2 light scattered diffusely, 4 reflections,
-    // 8 light passing through a surface, 16 shadows.
+    // 8 light passing through a surface, 16 shadows. Above those eight bits, the light set that lights it
+    // (setLightSets), 0 for every light.
     uint32_t visibility = 255;
     // Where the instance is when the shutter closes, if it moves.
     bool moves = false;
@@ -352,6 +353,9 @@ public:
     void setEnvironment(const Environment& environment);
     void setDistantLights(const DistantLight* lights, size_t count);
     void setLights(const Light* lights, size_t count);
+    // Which lights reach which instances: count sets of words each, a bit for the lighting environment, then each
+    // distant light and each other light in the order they were set. Set 0 is every light, whatever its words say.
+    void setLightSets(const uint32_t* sets, uint32_t words, size_t count);
     void setCamera(const Camera& camera);
     // Motion blur: the camera as it is when the shutter closes, or null if it holds still.
     // Each sample renders the whole scene at one moment between open and close, a different
