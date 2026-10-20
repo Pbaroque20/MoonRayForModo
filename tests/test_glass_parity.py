@@ -1,6 +1,7 @@
-"""Modo's Transmission Color through a glass solid: Modo tints once, MoonRay at each surface, so a Modo material's
-colour reaches MoonRay as its square root (plain or from the Shader Tree, through a gamma map); a thin surface and
-MoonRay's own materials keep it as it is."""
+"""Modo's glass in MoonRay: its Transmission Color through a solid (Modo tints once, MoonRay at each surface, so a
+Modo material's colour reaches MoonRay as its square root, plain or from the Shader Tree through a gamma map; a thin
+surface and MoonRay's own materials keep it as it is), and its refraction roughness through the curve fitted to Modo's
+renders, plain or through a ramp."""
 import pathlib
 import sys
 import unittest
@@ -23,6 +24,18 @@ class GlassTint(unittest.TestCase):
 
     def test_the_gamma_map_takes_the_square_root(self):
         self.assertEqual(moonshine.TINT_GAMMA, 2.0)
+
+
+class RefractionRoughness(unittest.TestCase):
+    def test_the_fitted_points(self):
+        for modo, moonray in ((0, 0), (.1, .4), (.3, .55), (.6, .6), (.9, .7)):
+            self.assertAlmostEqual(moonshine.refraction_through({'standard_material': True}, modo), moonray)
+
+    def test_between_points_straight(self):
+        self.assertAlmostEqual(moonshine.refraction_through({'standard_material': True}, .2), .475)
+
+    def test_moonray_materials_keep_theirs(self):
+        self.assertEqual(moonshine.refraction_through({'standard_material': False}, .3), .3)
 
 
 if __name__ == '__main__':
