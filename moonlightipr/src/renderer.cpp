@@ -271,6 +271,10 @@ struct Renderer::Impl {
     uint32_t nextCheck = 0;
     std::vector<uint8_t> tileDone, tilePassed;
     bool clean = false;
+    // The last sample sent to the graphics card: the next waits for it asleep, rather than in the copy of its
+    // settings, which would spin a core of the processor at full power the while. Loading a scene still waits as it did:
+    // its many small copies would each lose a moment waking up.
+    cudaEvent_t launched = nullptr;
 
     OptixDenoiser denoiser = nullptr;
     OptixDenoiserSizes denoiserSizes = {};
@@ -291,6 +295,7 @@ struct Renderer::Impl {
     unsigned kernelFeatures = FEATURE_ALL;
 
     ~Impl() {
+        if (launched) cudaEventDestroy(launched);
         if (denoiser) optixDenoiserDestroy(denoiser);
         destroyPipeline();
         if (context) optixDeviceContextDestroy(context);
@@ -797,8 +802,6 @@ struct Renderer::Impl {
 };
 
 Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
-    // Waiting on the graphics card, the processor sleeps rather than spinning a core at full power the while.
-    if (cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync) != cudaSuccess) cudaGetLastError();
     ML_CHECK(cudaFree(nullptr));    // creates the CUDA context OptiX attaches to
     if (optixInit() != OPTIX_SUCCESS)
         throw std::runtime_error("OptiX is unavailable; MoonLightIPR needs an NVIDIA RTX driver");
@@ -1707,9 +1710,12 @@ void Renderer::render() {
         impl->setTime((reversed + 0.5f) / 65536.0f);
     }
     impl->params.sample = impl->samples;
+    if (impl->launched) ML_CHECK(cudaEventSynchronize(impl->launched));
+    else ML_CHECK(cudaEventCreateWithFlags(&impl->launched, cudaEventBlockingSync | cudaEventDisableTiming));
     impl->paramsBuffer.upload(&impl->params, sizeof(LaunchParams));
     ML_CHECK(optixLaunch(impl->pipeline, nullptr, impl->paramsBuffer.ptr, sizeof(LaunchParams), &impl->sbt,
         impl->params.width, impl->params.height, 1));
+    ML_CHECK(cudaEventRecord(impl->launched, nullptr));
     ++impl->samples;
     if (impl->params.done && impl->samples == impl->nextCheck) {
         impl->converge();
