@@ -1583,6 +1583,19 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:return None
         return scene
 
+    def _camera_moved(self):
+        """The camera rendered through, as a set of its identity, where it has moved since last looked at; else empty."""
+        try:
+            import modo
+            from . import camera_choice
+            from .host import world_matrix
+            scene=modo.Scene()
+            identity=camera_choice.current(scene) or scene.renderCamera.id
+            seen=(identity,world_matrix(scene.item(identity)))
+        except Exception:return set()
+        before,self._camera_seen=getattr(self,'_camera_seen',None),seen
+        return {identity} if before is not None and before[0]==identity and before[1]!=seen[1] else set()
+
     def _drag_count(self,what):
         report=getattr(self,'_drag_steps',None)
         if report is not None:report[what]=report.get(what,0)+1
@@ -1625,6 +1638,9 @@ class Panel(Tools, QtWidgets.QWidget):
         try:
             import modo
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
+            # The camera looked through, moved by navigating a viewport that looks through it: Modo tells of that
+            # only once the mouse is let go, so where it stands is looked at here, and a move followed as any is.
+            if not full:items|=self._camera_moved()
             from .assets import signature
             # Periodic reconciliation covers host notifications omitted by some
             # procedural mesh providers. Normal idle ticks do not capture geometry.

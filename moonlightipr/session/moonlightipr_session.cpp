@@ -177,9 +177,9 @@ int main(int argc, char** argv) {
                 renderer.render();
                 // Paced: the samples are spread over about PACE, however quickly the graphics card could gather
                 // them, so that it is left room between them and an edit (a step of a drag) has it at once. The
-                // first come as soon as they are rendered; a scene the card cannot render that quickly is not slowed.
+                // first is shown as soon as it is rendered, with no wait; a scene the card cannot render that quickly is not slowed.
                 const auto due = began + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                    pace * (double(renderer.sampleCount()) / double(settings.targetSamples)));
+                    pace * (double(renderer.sampleCount() - 1) / double(settings.targetSamples)));
                 while (std::chrono::steady_clock::now() < due && !interrupted())
                     std::this_thread::sleep_for(std::min<std::chrono::steady_clock::duration>(due - std::chrono::steady_clock::now(), std::chrono::milliseconds(5)));
                 if (interrupted()) break;
