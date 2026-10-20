@@ -421,28 +421,19 @@ class Renderer(QtCore.QObject):
                                  denoise=self.moonlightipr_denoises,runtime=request['runtime'])
         self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key!='beauty')
 
-    def _moonlightipr_shown(self,packet):
-        """Whether a frame is for showing: of the scene last asked for, or, while newer edits wait their turn (a drag),
-        of one before it, never older than one already shown."""
-        return (not self.closed and not self.canceled and self.using_moonlightipr
-                and getattr(self,'moonlightipr_newest',0)<=packet[0]<=self.moonlightipr_serial)
-
     def _moonlightipr_memory(self,packet):
-        if not self._moonlightipr_shown(packet):return
+        if self.closed or self.canceled or not self.using_moonlightipr or packet[0]!=self.moonlightipr_serial:return
         self.moonlightipr_frame=packet
         self._moonlightipr_flush()
 
     def _moonlightipr_flush(self,*args):
         """Show the newest frame once the display is free, so the final one is never dropped."""
         packet=self.moonlightipr_frame
-        if packet is None or not self._moonlightipr_shown(packet):return
+        if packet is None or self.closed or self.canceled or not self.using_moonlightipr or packet[0]!=self.moonlightipr_serial:return
         if self.buffers.busy():return # retried when the conversion in flight reports back
         self.moonlightipr_frame=None
         serial,key,width,height,pixels=packet
-        self.moonlightipr_newest=serial
-        try:
-            self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
-            self.frames_shown=getattr(self,'frames_shown',0)+1
+        try:self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
 
     def _moonlightipr_ready(self,serial):

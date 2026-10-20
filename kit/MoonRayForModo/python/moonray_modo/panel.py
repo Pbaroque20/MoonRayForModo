@@ -1583,64 +1583,28 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:return None
         return scene
 
-    def _camera_moved(self):
-        """The camera rendered through, as a set of its identity, where it has moved since last looked at; else empty."""
-        try:
-            import modo
-            from . import camera_choice
-            from .host import world_matrix
-            scene=modo.Scene()
-            identity=camera_choice.current(scene) or scene.renderCamera.id
-            seen=(identity,world_matrix(scene.item(identity)))
-        except Exception:return set()
-        before,self._camera_seen=getattr(self,'_camera_seen',None),seen
-        return {identity} if before is not None and before[0]==identity and before[1]!=seen[1] else set()
-
-    def _drag_count(self,what):
-        report=getattr(self,'_drag_steps',None)
-        if report is not None:report[what]=report.get(what,0)+1
-
-    def _drag_report(self,held):
-        """What following a drag came to, said in the Render Log once the mouse is let go: how often it was looked at,
-        what was sent to be rendered, how many frames were shown, and what made it wait for the release."""
-        report=getattr(self,'_drag_steps',None)
-        if held and report is None:
-            import time as clock
-            self._drag_steps={'began':clock.monotonic(),'frames':getattr(self.renderer,'frames_shown',0)};return
-        if held:
-            self._drag_count('looked');return
-        if report is None:return
-        self._drag_steps=None
-        import time as clock
-        seconds=clock.monotonic()-report.pop('began');frames=getattr(self.renderer,'frames_shown',0)-report.pop('frames')
-        if seconds<0.15:return
-        from . import terminal
-        terminal.note('Preview','Drag of %.1f s (%s): %s; %d frames shown during it.'%(seconds,self._engine(),
-            ', '.join('%s %d'%(k,v) for k,v in sorted(report.items())) or 'nothing looked at',frames))
-
     def _live_tick(self):
         if self.disposed or not self._following:return
         from .interaction import dragging
         held=dragging()
-        self._drag_report(held)
         if self.disposed or self.preview_lock.isChecked() or self._output_busy():
             return
         # An animation playing in Modo is not followed frame by frame: the frame it stops on is rendered. A time
         # dragged by hand is another matter, and is followed as any drag is.
         if not self._time_settled() and not held:return
+        # MoonLightIPR renders an edit once the mouse is let go: following each step of a drag held Modo up more than
+        # it showed. What Modo tells of meanwhile waits in its queue for the release.
+        if held and self._engine()=='moonlightipr':
+            self.release_timer.start();return
         import time as clock
         began=clock.monotonic()
-        if began<getattr(self,'_live_rest',0.0):
-            self._drag_count('rested');return
+        if began<getattr(self,'_live_rest',0.0):return
         # Keep host reads from competing with the Python writer during a drag. Notices stay queued.
         if held and self.preview_engine.currentData()=='moonray_ls' and getattr(self.renderer,'writer',None) is not None:return
         if not held:self._live_drag_read=False
         try:
             import modo
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
-            # The camera looked through, moved by navigating a viewport that looks through it: Modo tells of that
-            # only once the mouse is let go, so where it stands is looked at here, and a move followed as any is.
-            if not full:items|=self._camera_moved()
             from .assets import signature
             # Periodic reconciliation covers host notifications omitted by some
             # procedural mesh providers. Normal idle ticks do not capture geometry.
@@ -1654,8 +1618,7 @@ class Panel(Tools, QtWidgets.QWidget):
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             settling=not held and getattr(self,'_live_digest_pending',False)
-            if not (full or items or changed or settling):
-                self._drag_count('nothing told');return
+            if not (full or items or changed or settling):return
             reuse=not full and not changed and bool(items or settling) and self._geometry_cache is not None
             if reuse:
                 from .incremental import classify
@@ -1677,7 +1640,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # material edits are followed live; reading meshes or the whole scene in the
                 # middle of a tool waits for the release.
                 self.changes.full=self.changes.full or full;self.changes.items.update(items)
-                self._drag_count('waited: the scene read whole');self.release_timer.start();return
+                self.release_timer.start();return
             # MoonLightIPR with motion blur: once an edit is let go, the scene is read at both ends of the shutter as well
             # (three readings in all). Only a material edit to a scene last found to hold nothing that moves skips that:
             # any other edit may have keyed something to move. While dragging, it is followed sharp, as fast as it can be.
@@ -1697,7 +1660,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
                 from .incremental import surroundings
                 if self._surroundings is not None and surroundings(scene)!=self._surroundings:
-                    self._drag_count('waited: what lights the scene from around');self.changes.items.update(items);self.release_timer.start();return
+                    self.changes.items.update(items);self.release_timer.start();return
             self._last_time=time;self._live_settings=settings
             if held and self.preview_engine.currentData()=='moonray_ls':
                 # Host notices already establish a drag edit. Hash once after release, not on every move.
@@ -1707,8 +1670,7 @@ class Panel(Tools, QtWidgets.QWidget):
             else:
                 digest=self._digest(scene)
                 self._live_digest_pending=False
-                if digest != self.last_digest:self._drag_count('sent');self._submit(scene,digest=digest)
-                else:self._drag_count('read, unchanged')
+                if digest != self.last_digest:self._submit(scene,digest=digest)
         except Exception as exc:
             self.changes.invalidate();self._failed(str(exc))
         finally:
