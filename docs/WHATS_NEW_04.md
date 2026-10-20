@@ -527,7 +527,6 @@ New since 0.3.51.3. 0.4 comes with a new runtime ZIP: install it together with t
 What you may run into:
 
 - **Time left:** an adaptive render often shows no time-left figure, only how many tiles have finished.
-- **MoonLightIPR** updates after you let go of a drag, not while you drag.
 - **Smart Render** and **Important Parts First** work on MoonRay renders in the preview window, not Render EXR, animations or MoonRay LS.
 - **Smart Render:** a picture full of fine texture may not read as clean and then renders to its end.
 - **Stop** takes a few seconds, since MoonRay finishes its tiles first.
