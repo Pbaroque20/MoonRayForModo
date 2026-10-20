@@ -265,6 +265,16 @@ struct Renderer::Impl {
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
+    // Stopping once clean (setConvergence): the even samples' mean, and which squares of the picture are done.
+    Buffer half, done;
+    float cleanBelow = 0.0f;
+    uint32_t nextCheck = 0;
+    std::vector<uint8_t> tileDone, tilePassed;
+    bool clean = false;
+    // The last sample sent to the graphics card: the next waits for it asleep, rather than in the copy of its
+    // settings, which would spin a core of the processor at full power the while. Loading a scene still waits as it did:
+    // its many small copies would each lose a moment waking up.
+    cudaEvent_t launched = nullptr;
 
     OptixDenoiser denoiser = nullptr;
     OptixDenoiserSizes denoiserSizes = {};
@@ -285,6 +295,7 @@ struct Renderer::Impl {
     unsigned kernelFeatures = FEATURE_ALL;
 
     ~Impl() {
+        if (launched) cudaEventDestroy(launched);
         if (denoiser) optixDenoiserDestroy(denoiser);
         destroyPipeline();
         if (context) optixDeviceContextDestroy(context);
@@ -662,6 +673,47 @@ struct Renderer::Impl {
     void restart() {
         samples = 0;
         validated = false;
+        clean = false;
+    }
+
+    // How a difference shows on the screen: the light squeezed into 0 to 1, then encoded as sRGB is, so that noise
+    // in the dark counts as much as the eye sees it there.
+    static float shown(float value) {
+        const float squeezed = std::max(value, 0.0f) / (1.0f + std::max(value, 0.0f));
+        return squeezed <= 0.0031308f ? 12.92f * squeezed : 1.055f * std::pow(squeezed, 1.0f / 2.4f) - 0.055f;
+    }
+
+    // Each square of the picture is judged by how far the mean of its even samples lies from the mean of them all,
+    // which is about how noisy the picture there still is. A square under cleanBelow at two checks running takes no
+    // more samples; once every square has, the picture is clean and the render can rest.
+    void converge() {
+        const uint32_t width = params.width, height = params.height;
+        const size_t count = size_t(width) * height;
+        std::vector<float> all(count * 4), even(count * 4);
+        ML_CHECK(cudaMemcpy(all.data(), reinterpret_cast<void*>(beauty.ptr), all.size() * sizeof(float), cudaMemcpyDeviceToHost));
+        ML_CHECK(cudaMemcpy(even.data(), reinterpret_cast<void*>(half.ptr), even.size() * sizeof(float), cudaMemcpyDeviceToHost));
+        const uint32_t columns = params.doneColumns, rows = (height + CLEAN_TILE - 1) / CLEAN_TILE;
+        bool everywhere = true;
+        for (uint32_t row = 0; row < rows; ++row)
+            for (uint32_t column = 0; column < columns; ++column) {
+                const size_t tile = size_t(row) * columns + column;
+                if (tileDone[tile]) continue;
+                float noise = 0.0f;
+                uint32_t pixels = 0;
+                for (uint32_t y = row * CLEAN_TILE; y < std::min(height, (row + 1) * CLEAN_TILE); ++y)
+                    for (uint32_t x = column * CLEAN_TILE; x < std::min(width, (column + 1) * CLEAN_TILE); ++x, ++pixels) {
+                        const size_t i = (size_t(y) * width + x) * 4;
+                        float apart = 0.0f;
+                        for (int c = 0; c < 3; ++c) apart = std::max(apart, std::fabs(shown(all[i + c]) - shown(even[i + c])));
+                        noise += apart;
+                    }
+                const bool passes = noise < cleanBelow * float(pixels);
+                if (passes && tilePassed[tile]) tileDone[tile] = 1;
+                tilePassed[tile] = passes ? 1 : 0;
+                everywhere = everywhere && tileDone[tile];
+            }
+        done.upload(tileDone);
+        clean = everywhere;
     }
 
     void download(const Buffer& source, float* rgb) {
@@ -1598,7 +1650,7 @@ void Renderer::setCamera(const Camera& camera) {
 void Renderer::resize(uint32_t width, uint32_t height) {
     if (!width || !height || width > 16384 || height > 16384) throw std::runtime_error("MoonLightIPR image size is invalid");
     const size_t bytes = size_t(width) * height * 4 * sizeof(float);
-    for (Buffer* buffer : {&impl->beauty, &impl->albedo, &impl->normal, &impl->denoised}) buffer->reserve(bytes);
+    for (Buffer* buffer : {&impl->beauty, &impl->albedo, &impl->normal, &impl->denoised, &impl->half}) buffer->reserve(bytes);
     impl->params.beauty = impl->beauty.ptr;
     impl->params.albedo = impl->albedo.ptr;
     impl->params.normal = impl->normal.ptr;
@@ -1635,6 +1687,21 @@ void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t g
 
 void Renderer::render() {
     impl->validate();
+    if (impl->samples == 0) {
+        // Stopping once clean, for a picture that is rendered (a draft's lines are as clean as they will be at once).
+        const bool judged = impl->cleanBelow > 0.0f && impl->params.draft == 0;
+        impl->params.half = judged ? impl->half.ptr : 0;
+        impl->params.done = 0;
+        impl->params.doneColumns = (impl->params.width + CLEAN_TILE - 1) / CLEAN_TILE;
+        if (judged) {
+            const size_t tiles = size_t(impl->params.doneColumns) * ((impl->params.height + CLEAN_TILE - 1) / CLEAN_TILE);
+            impl->tileDone.assign(tiles, 0);
+            impl->tilePassed.assign(tiles, 0);
+            impl->done.upload(impl->tileDone);
+            impl->params.done = impl->done.ptr;
+            impl->nextCheck = 16;
+        }
+    }
     if (impl->cameraMoves || impl->instancesMove || impl->meshesMove || impl->lightsMove) {
         // One moment per sample: the bits of the sample index reversed, which spreads any number
         // of samples evenly over the shutter.
@@ -1643,11 +1710,25 @@ void Renderer::render() {
         impl->setTime((reversed + 0.5f) / 65536.0f);
     }
     impl->params.sample = impl->samples;
+    if (impl->launched) ML_CHECK(cudaEventSynchronize(impl->launched));
+    else ML_CHECK(cudaEventCreateWithFlags(&impl->launched, cudaEventBlockingSync | cudaEventDisableTiming));
     impl->paramsBuffer.upload(&impl->params, sizeof(LaunchParams));
     ML_CHECK(optixLaunch(impl->pipeline, nullptr, impl->paramsBuffer.ptr, sizeof(LaunchParams), &impl->sbt,
         impl->params.width, impl->params.height, 1));
+    ML_CHECK(cudaEventRecord(impl->launched, nullptr));
     ++impl->samples;
+    if (impl->params.done && impl->samples == impl->nextCheck) {
+        impl->converge();
+        // Often at first, when a simple picture may already be clean, then every 256 samples.
+        impl->nextCheck = impl->nextCheck < 256 ? impl->nextCheck * 2 : impl->nextCheck + 256;
+    }
 }
+
+void Renderer::setConvergence(float noise) {
+    impl->cleanBelow = std::max(noise, 0.0f);
+}
+
+bool Renderer::converged() const { return impl->clean; }
 
 uint32_t Renderer::sampleCount() const { return impl->samples; }
 uint32_t Renderer::width() const { return impl->params.width; }

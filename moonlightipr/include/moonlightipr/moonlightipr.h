@@ -376,8 +376,12 @@ public:
     // presenceShadows: whether a surface that is partly absent casts a lighter shadow, or a whole one as MoonRay's does unless asked.
     void setMaxDepth(uint32_t bounces, uint32_t diffuseBounces = 2, uint32_t glossyBounces = 2, uint32_t volumeBounces = 1, bool presenceShadows = true);
 
-    // Adds one sample per pixel to the accumulated image.
+    // Adds one sample per pixel to the accumulated image, except where the picture is already clean.
     void render();
+    // Stop once clean: a part of the picture whose noise, as it shows on the screen, is under this takes no more
+    // samples, and converged() says when all of it is. 0 renders every sample everywhere. Read as a render starts.
+    void setConvergence(float noise);
+    bool converged() const;
     uint32_t sampleCount() const;
     uint32_t width() const;
     uint32_t height() const;

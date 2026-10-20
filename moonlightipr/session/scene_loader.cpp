@@ -223,6 +223,9 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     settings.targetSamples = in.value<uint32_t>();
     const uint32_t sceneFlags = in.value<uint32_t>();
     settings.denoise = (sceneFlags & SCENE_DENOISE) != 0;
+    // The render rests once the picture is clean: noise of about a step of an 8-bit screen's colour, or three where
+    // the denoiser takes away what is left, rather than gathering every sample of a scene that needs few.
+    renderer.setConvergence(settings.denoise ? 0.012f : 0.004f);
     const float sampleClamp = in.value<float>();
     const uint32_t sampleClampDepth = in.value<uint32_t>();
     float volumeFactors[3];

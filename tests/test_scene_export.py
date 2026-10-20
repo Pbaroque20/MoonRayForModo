@@ -75,5 +75,29 @@ Metadata("/m") {
             self.assertIn(r'"{\"Mesh (2)\":\"39766e7d\"}"},', text)
 
 
+@unittest.skipIf(scene_export is None, 'needs Qt')
+class Binary(unittest.TestCase):
+    def test_rdlb_leaves_only_the_rdlb_beside_the_scene(self):
+        from unittest import mock
+        read = []
+
+        def convert(command, **_):
+            source, output = Path(command[command.index('-i') + 1]), Path(command[command.index('-o') + 1])
+            read.append((source.parent, source.read_text(encoding='utf-8')))
+            output.write_bytes(b'rdlb')
+            return mock.Mock(returncode=0)
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            with mock.patch.object(scene_export, 'converter', return_value=Path('rdl2_convert.exe')), \
+                    mock.patch.object(scene_export.subprocess, 'run', convert), \
+                    mock.patch('moonray_modo.native.environment', return_value={}):
+                written = scene_export.write('SceneVariables {}', folder / 'scene.rdlb', 'rdlb', folder)
+            self.assertEqual(written, [folder / 'scene.rdlb'])
+            self.assertEqual(sorted(p.name for p in folder.iterdir()), ['scene.rdlb'])
+            self.assertEqual(read[0][1], 'SceneVariables {}')
+            self.assertNotEqual(read[0][0], folder)
+            self.assertFalse(read[0][0].exists())
+
+
 if __name__ == '__main__':
     unittest.main()
