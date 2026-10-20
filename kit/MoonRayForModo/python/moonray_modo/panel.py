@@ -1592,6 +1592,10 @@ class Panel(Tools, QtWidgets.QWidget):
         # An animation playing in Modo is not followed frame by frame: the frame it stops on is rendered. A time
         # dragged by hand is another matter, and is followed as any drag is.
         if not self._time_settled() and not held:return
+        # MoonLightIPR renders an edit once the mouse is let go: following each step of a drag held Modo up more than
+        # it showed. What Modo tells of meanwhile waits in its queue for the release.
+        if held and self._engine()=='moonlightipr':
+            self.release_timer.start();return
         import time as clock
         began=clock.monotonic()
         if began<getattr(self,'_live_rest',0.0):return

@@ -17,7 +17,9 @@
 #include "scene_loader.h"
 #include "modo_shared_image.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <condition_variable>
 #include <deque>
 #include <iostream>
@@ -84,6 +86,11 @@ int main(int argc, char** argv) {
         Commands commands;
         ModoSharedImage sharedImage;
         std::vector<float> pixels;
+
+        // How long a render is spread over at least (see the render loop). MOONLIGHTIPR_PACE, in seconds, chooses for
+        // experiments; 0 renders as fast as the graphics card can.
+        const char* paced = std::getenv("MOONLIGHTIPR_PACE");
+        const std::chrono::duration<double> pace(paced ? std::max(0.0, std::atof(paced)) : 8.0);
 
         // The scene last applied, for a finish to send as it stands.
         moonlightipr::SceneSettings lastSettings;
@@ -168,6 +175,14 @@ int main(int argc, char** argv) {
             };
             while (renderer.sampleCount() < settings.targetSamples && !renderer.converged() && !interrupted()) {
                 renderer.render();
+                // Paced: the samples are spread over about PACE, however quickly the graphics card could gather
+                // them, so that it is left room between them and an edit (a step of a drag) has it at once. The
+                // first is shown as soon as it is rendered, with no wait; a scene the card cannot render that quickly is not slowed.
+                const auto due = began + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                    pace * (double(renderer.sampleCount() - 1) / double(settings.targetSamples)));
+                while (std::chrono::steady_clock::now() < due && !interrupted())
+                    std::this_thread::sleep_for(std::min<std::chrono::steady_clock::duration>(due - std::chrono::steady_clock::now(), std::chrono::milliseconds(5)));
+                if (interrupted()) break;
                 // The other picture was asked for: it is sent at once, not at the next thirtieth of a second.
                 if (viewChanged) { viewChanged = false; published = 0; }
                 // Show the first sample at once, then at most 30 frames a second while an edit is fresh, and fewer as
