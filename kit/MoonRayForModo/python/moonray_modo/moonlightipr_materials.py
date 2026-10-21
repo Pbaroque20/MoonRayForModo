@@ -197,10 +197,45 @@ def color_space(source, authored, srgb):
 NATIVE_EXTRAS = (('show_glitter', 'glitter'),)
 
 
+def graph_displacement(material, note, runtime=None, with_layers=True):
+    """A node graph's displacement, as rdla gives it to MoonRay ahead of any Shader Tree displacement: of its
+    NormalDisplacement node, the layers its height input makes (with_layers), the height where nothing is wired to it,
+    its zero value and its height multiplier. None where no graph displaces the material, or where its displacement
+    node is of another kind, which is named."""
+    from . import nodes
+    for row in reversed(material.get('material_stack') or [material]):
+        held = row.get('node_graph') or {}
+        if not held.get('displacement'):
+            continue
+        try:
+            graph = nodes.effective(held)
+            node = graph['nodes'][graph['displacement']]
+        except (ValueError, KeyError, TypeError):
+            return None
+        if node.get('type') != 'NormalDisplacement':
+            note('a %s displacement node' % node.get('type'))
+            return None
+        values = node.get('parameters') or {}
+
+        def number(key, default):
+            try:
+                found = float(str(values.get(key, default)).rstrip('f'))
+            except ValueError:
+                return default
+            return found if math.isfinite(found) else default
+        wired = 'height' in (node.get('inputs') or {})
+        layers = graph_layers(row, note, runtime, displacement=True) if wired and with_layers else []
+        return layers, 0.0 if wired else number('height', 1.0), number('zero_value', 0.0), number('height_multiplier', 1.0)
+    return None
+
+
 def displacement(material):
-    """A material's Displacement Distance where Shader Tree layers displace it, as rdla gives MoonRay a NormalDisplacement
-    for it; None where nothing does."""
+    """A material's displacement distance, where its node graph or its Shader Tree layers displace it, as rdla gives
+    MoonRay a displacement for it; None where nothing does."""
     from . import textures
+    found = graph_displacement(material, lambda what: None, with_layers=False)
+    if found is not None:
+        return found[3] if found[3] and math.isfinite(found[3]) else None
     from .material_groups import merged, supported
     stack = material.get('material_stack')
     source = merged(stack) if stack and supported(stack) else material
@@ -565,13 +600,14 @@ def graph_expression(graph, identity, effect):
 MATH_NEUTRAL = {'multiply': 1.0, 'add': 0.0, 'subtract': 0.0}
 
 
-def graph_layers(source, note, runtime=None):
+def graph_layers(source, note, runtime=None, displacement=False):
     """What is wired into a native material's graph, as texture layers over its own values: an
-    image node as it is, and any other node that depends on the UVs alone as MoonRay bakes it."""
+    image node as it is, and any other node that depends on the UVs alone as MoonRay bakes it.
+    displacement reads the graph's displacement node instead: what is wired to its height, as displacement layers."""
     from . import nodes
     try:
         graph = nodes.effective(source['node_graph'])
-        root = graph['nodes'][graph['root']]
+        root = graph['nodes'][graph['displacement' if displacement else 'root']]
     except (ValueError, KeyError, TypeError):
         return []
     switches = source.get('native_parameters') or {}
@@ -580,7 +616,9 @@ def graph_layers(source, note, runtime=None):
         node = graph['nodes'].get(identity)
         if node is None:
             continue
-        effect = GRAPH_INPUTS.get(key)
+        if displacement and key != 'height':
+            continue
+        effect = 'displace' if displacement else GRAPH_INPUTS.get(key)
         if effect is None:
             from . import graph_bake
             # A metal is tinted by its base colour here; a metal colour that is the base colour, or what it is
@@ -851,6 +889,12 @@ class Compiler:
         elif source.get('node_graph') and not native:
             self.note('node graphs, shown with their base values', name)
             layers = []
+        # A node graph's displacement, which the displacement pass reads: its height layers here, its plain height and
+        # zero value in the rows put first and last (below).
+        from . import native as runtimes
+        drawn = graph_displacement(material, lambda what: self.note(what, name), self.runtime or runtimes.default_runtime())
+        if drawn is not None:
+            layers = list(layers) + drawn[0]
         if source.get('diffuse_roughness', 0):
             self.note('diffuse roughness', name)
         if source.get('opacity', 1) < 1:
@@ -858,8 +902,12 @@ class Compiler:
         effects = {textures.EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in layers}
 
         start = len(self.layers)
-        # A displaced material's height starts from its Displacement Value, as Modo's does, under its displacement layers.
-        if 'displace' in effects and float(source.get('displacement_value', 0)):
+        # A displaced material's height starts from its Displacement Value, as Modo's does, under its displacement layers;
+        # a node graph's, from its displacement node's height where nothing is wired to it.
+        if drawn is not None:
+            if drawn[1]:
+                self.layer(CHANNELS['displace'], value=[drawn[1]] * 3)
+        elif 'displace' in effects and float(source.get('displacement_value', 0)):
             self.layer(CHANNELS['displace'], value=[float(source.get('displacement_value', 0))] * 3)
         # A constant row blended over a constant is still a constant. Until a channel gets a row
         # that varies across the surface, its rows are folded into the value it starts from, which
@@ -1048,6 +1096,9 @@ class Compiler:
                        span * contrast * brightness, low + span * .5 * (1 - contrast) * brightness, gamma=float(corrections.get('gamma', 1)),
                        bias=float(layer.get('bias', .5)), gain_curve=float(layer.get('gain', .5)), **extra)
         enter([])
+        # A node graph's displacement is of the height above its zero value.
+        if drawn is not None and drawn[2]:
+            self.layer(CHANNELS['displace'], BLENDS['add'], value=[-drawn[2]] * 3)
         defaults = dict(defaults, **{effect: value if FOLDED[effect] is None else value[0] for effect, value in folded.items()})
 
         # What rdla.py renders through DwaBaseMaterial rather than UsdPreviewSurface.

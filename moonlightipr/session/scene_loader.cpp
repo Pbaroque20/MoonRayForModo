@@ -185,7 +185,8 @@ Image readImage(const std::string& path) {
 // its triangles and their materials, and the Displacement Distance of each material that displaces it.
 struct Displacing {
     uint32_t mesh = 0;
-    std::vector<float> positions, directions;
+    // As the shutter opens, and the way each vertex is moved; and as it closes, for a mesh that changes shape, or empty.
+    std::vector<float> positions, directions, closing, closingDirections;
     std::vector<uint32_t> indices, materialIds;
     uint32_t material = 0;
     std::vector<std::pair<uint32_t, float>> distances;
@@ -661,6 +662,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             }
             if (cached == meshes.end() && (flags & MESH_DISPLACE)) {
                 // Split finer, so that the displacement has vertices to move; moved once the materials are set.
+                const std::vector<uint32_t> coarse = closePositions.empty() ? std::vector<uint32_t>() : indices;
                 Triangles fine = split(Triangles{std::move(positions), std::move(indices), std::move(materialIds), std::move(uvSets)}, splits);
                 positions = std::move(fine.positions);
                 indices = std::move(fine.indices);
@@ -671,7 +673,12 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 for (uint32_t index : indices)
                     if (index >= vertexCount) throw std::runtime_error("MoonLightIPR scene mesh index is out of range");
                 normals = smoothNormals(positions, indices);
-                closePositions.clear();
+                // Where the mesh is as the shutter closes, split the same way: the splitting goes by the triangles
+                // alone, so the vertices it makes match those above one for one.
+                if (!closePositions.empty()) {
+                    closePositions = split(Triangles{std::move(closePositions), coarse, {}, {}}, splits).positions;
+                    if (closePositions.size() != positions.size()) throw std::runtime_error("MoonLightIPR scene's displaced mesh moves unevenly");
+                }
             }
             if (cached == meshes.end()) {
                 std::vector<const float*> uvPointers;
@@ -695,6 +702,10 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                     held.mesh = cached->second.index;
                     held.positions = std::move(positions);
                     held.directions = std::move(normals);
+                    if (!closePositions.empty()) {
+                        held.closingDirections = smoothNormals(closePositions, held.indices.empty() ? indices : held.indices);
+                        held.closing = std::move(closePositions);
+                    }
                     held.indices = std::move(indices);
                     held.materialIds = std::move(materialIds);
                     held.material = displacedMaterial;
@@ -800,9 +811,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 if (entry.first == material) distance = entry.second;
             const float moved = std::isfinite(heights[v]) ? heights[v] * distance : 0.0f;
             for (int axis = 0; axis < 3; ++axis) held.positions[v * 3 + axis] += held.directions[v * 3 + axis] * moved;
+            // As the shutter closes, the same height along where the surface then faces.
+            if (!held.closing.empty())
+                for (int axis = 0; axis < 3; ++axis) held.closing[v * 3 + axis] += held.closingDirections[v * 3 + axis] * moved;
         }
         const std::vector<float> shading = held.smooth ? smoothNormals(held.positions, held.indices) : std::vector<float>();
-        renderer.reshapeMesh(held.mesh, held.positions.data(), shading.empty() ? nullptr : shading.data());
+        renderer.reshapeMesh(held.mesh, held.positions.data(), shading.empty() ? nullptr : shading.data(),
+                             held.closing.empty() ? nullptr : held.closing.data());
     }
     // Lights before the instances that may be the surface of one.
     renderer.setDistantLights(lights.data(), lights.size());

@@ -361,8 +361,9 @@ public:
     // or material where the mesh names none per triangle. Call once the materials and the mesh's coordinate slots are set.
     void displacementHeights(uint32_t mesh, uint32_t material, const uint32_t* primitives, const float* barycentrics,
                              size_t count, float* heights);
-    // A mesh's vertices moved where they now are, and its normals (or none, for faceted shading); its structure is rebuilt.
-    void reshapeMesh(uint32_t mesh, const float* positions, const float* normals);
+    // A mesh's vertices moved where they now are, and its normals (or none, for faceted shading), and where they are as
+    // the shutter closes for a mesh that changes shape (or null); its structure is rebuilt.
+    void reshapeMesh(uint32_t mesh, const float* positions, const float* normals, const float* closePositions = nullptr);
     void setCamera(const Camera& camera);
     // Motion blur: the camera as it is when the shutter closes, or null if it holds still.
     // Each sample renders the whole scene at one moment between open and close, a different

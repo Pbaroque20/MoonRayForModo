@@ -516,8 +516,6 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings):
     levels = 0
     while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES:
         levels += 1
-    if flags & MESH_MOVES:
-        warnings.append('MoonLightIPR shows displaced mesh %s without its change of shape during the shutter.' % mesh['name'])
     trailer = struct.pack('<3I', levels, material_index.get(mesh.get('material', ''), material_index['']), len(distances))
     trailer += b''.join(struct.pack('<If', index, distance) for index, distance in distances)
     return hashlib.blake2b(key + trailer, digest_size=8).digest(), flags | MESH_DISPLACE, payload + trailer

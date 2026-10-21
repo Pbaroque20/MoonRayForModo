@@ -218,6 +218,21 @@ def textured(folder):
             # Over the sets the mesh has: the ground's own layer reads one of those, and without it each engine
             # draws the ground its own way.
             mesh['uv_sets'] = dict(mesh.get('uv_sets') or {}, **{key: list(mesh['uvs']) for key in keys})
+    # A node graph's displacement: the ball raised by a NormalDisplacement node whose height is the striped image, by 0.1
+    # of it above 0.2.
+    lifted = wired('ball', albedo=('colour', True))
+    lifted['node_graph']['nodes'].update(
+        heights={'type': 'image', 'parameters': {'file': images['stripes'], 'srgb': False}, 'inputs': {}},
+        lift={'type': 'NormalDisplacement', 'inputs': {'height': 'heights'}, 'parameters': {'height_multiplier': .1, 'zero_value': .2}})
+    lifted['node_graph']['displacement'] = 'lift'
+    graph_displaced = lobes(lifted, wired('cube', albedo=('colour', True)))
+    graph_displaced['meshes'] = [dict(mesh) for mesh in graph_displaced['meshes']]
+    for mesh in graph_displaced['meshes']:
+        keys = {graph_nodes.image_descriptor(node)['coordinate_key'] for material in graph_displaced['materials'].values()
+                for row_ in material.get('material_stack', [material]) if row_.get('node_graph')
+                for node in row_['node_graph']['nodes'].values() if node['type'] == 'image'}
+        if mesh.get('uvs'):
+            mesh['uv_sets'] = dict(mesh.get('uv_sets') or {}, **{key: list(mesh['uvs']) for key in keys})
     # Nodes that are not images, which MoonLightIPR has MoonRay bake: a ramp over the ball, and on
     # the cube a checker put through a colour correction.
     def node_graph(identity, extra, wires):
@@ -266,7 +281,11 @@ def textured(folder):
     # Displacement Distance; MoonRay tessellates them to its own measure, MoonLightIPR splits them evenly.
     displaced = lobes(row('ball', [.8, .8, .8], .4, [layer('d1', 'displace', 'stripes', False)], displacement_distance=.1),
                       row('cube', [.6, .6, .65], .4, [layer('d2', 'displace', 'roughness', False)], displacement_distance=.1))
-    return {'displaced': displaced, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    # The same, the displaced ball sliding sideways while the shutter is open: its shape is blurred, displaced at both ends.
+    moving = dict(displaced, motion_steps=[-.25, .25], meshes=[
+        dict(mesh, vertices_close=[[x + .4, y, z] for x, y, z in mesh['vertices']]) if mesh.get('identity') == 'ball' else mesh
+        for mesh in displaced['meshes']])
+    return {'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 

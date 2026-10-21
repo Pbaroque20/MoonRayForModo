@@ -1767,12 +1767,20 @@ void Renderer::displacementHeights(uint32_t mesh, uint32_t material, const uint3
     ML_CHECK(cudaMemcpy(heights, reinterpret_cast<void*>(found.ptr), count * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
-void Renderer::reshapeMesh(uint32_t index, const float* positions, const float* normals) {
+void Renderer::reshapeMesh(uint32_t index, const float* positions, const float* normals, const float* closePositions) {
     if (index >= impl->meshes.size() || !impl->meshes[index] || impl->meshes[index]->curves)
         throw std::runtime_error("MoonLightIPR reshape refers to a missing mesh");
     Mesh& mesh = *impl->meshes[index];
     ML_CHECK(cudaDeviceSynchronize());  // a queued launch may still read the mesh
     mesh.positions.upload(positions, mesh.vertexCount * 3 * sizeof(float));
+    // A mesh that changes shape is blended between these for each moment of the shutter.
+    if (closePositions) {
+        mesh.open.assign(positions, positions + mesh.vertexCount * 3);
+        mesh.close.assign(closePositions, closePositions + mesh.vertexCount * 3);
+    } else {
+        mesh.open.clear();
+        mesh.close.clear();
+    }
     if (normals) mesh.normals.upload(normals, mesh.vertexCount * 3 * sizeof(float));
     else mesh.normals.release();
     impl->buildMesh(mesh, mesh.vertexCount, mesh.triangleCount);
