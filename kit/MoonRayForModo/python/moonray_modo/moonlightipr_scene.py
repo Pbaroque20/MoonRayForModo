@@ -494,17 +494,18 @@ def cage_payload(mesh, material_index, slots, warnings):
 
 
 def displaced(mesh, key, flags, payload, materials, material_index, warnings):
-    """A mesh as the session displaces it, where Shader Tree layers displace one of its materials (form 'K'): after its
-    data, how many times to split each triangle into four, the material its instances give it, and each displaced
-    material's Displacement Distance. The key then names the displacement too, which a change to it makes again."""
+    """A mesh as the session displaces it, where one of its materials displaces it (form 'L'): after its data, how many
+    times to split each triangle into four, the material its instances give it, and each displacing material's
+    program (moonlightipr_materials.displacement_tree), as its count and its operations. The key then names the
+    displacement too, which a change to it makes again."""
     from .moonlightipr_materials import displacement
     tags = set(mesh.get('face_materials') or [mesh.get('material', '')])
     distances = []
     for tag in sorted(tags):
         held = materials.get(tag if tag in materials else '')
-        distance = displacement(held) if held else None
-        if distance is not None:
-            distances.append((material_index.get(tag, material_index['']), distance))
+        program = displacement(held) if held else None
+        if program:
+            distances.append((material_index.get(tag, material_index['']), program))
     if not distances:
         return key, flags, payload
     faces = mesh['faces']
@@ -517,7 +518,8 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings):
     while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES:
         levels += 1
     trailer = struct.pack('<3I', levels, material_index.get(mesh.get('material', ''), material_index['']), len(distances))
-    trailer += b''.join(struct.pack('<If', index, distance) for index, distance in distances)
+    for index, program in distances:
+        trailer += struct.pack('<2I', index, len(program)) + b''.join(struct.pack('<I2fI', code, a, b, c) for code, a, b, c in program)
     return hashlib.blake2b(key + trailer, digest_size=8).digest(), flags | MESH_DISPLACE, payload + trailer
 
 
@@ -807,7 +809,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSK', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSL', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),

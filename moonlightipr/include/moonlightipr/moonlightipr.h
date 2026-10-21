@@ -356,11 +356,12 @@ public:
     // Which lights reach which instances: count sets of words each, a bit for the lighting environment, then each
     // distant light and each other light in the order they were set. Set 0 is every light, whatever its words say.
     void setLightSets(const uint32_t* sets, uint32_t words, size_t count);
-    // Displacement. The height a mesh's materials' displacement layers give at each of count places on it, each a
-    // triangle and a place on it as OptiX's barycentrics (primitive, b1, b2 in turn), by the material of that triangle,
-    // or material where the mesh names none per triangle. Call once the materials and the mesh's coordinate slots are set.
-    void displacementHeights(uint32_t mesh, uint32_t material, const uint32_t* primitives, const float* barycentrics,
-                             size_t count, float* heights);
+    // Displacement. What a mesh's materials' displacement layers give at each of count places on it, each a triangle and
+    // a place on it as OptiX's barycentrics (primitive, b1, b2 in turn), by the material of that triangle, or material
+    // where the mesh names none per triangle: for each place, its four displacement channels' colours (12 floats). Call
+    // once the materials and the mesh's coordinate slots are set.
+    void displacementValues(uint32_t mesh, uint32_t material, const uint32_t* primitives, const float* barycentrics,
+                            size_t count, float* values);
     // A mesh's vertices moved where they now are, and its normals (or none, for faceted shading), and where they are as
     // the shutter closes for a mesh that changes shape (or null); its structure is rebuilt.
     void reshapeMesh(uint32_t mesh, const float* positions, const float* normals, const float* closePositions = nullptr);

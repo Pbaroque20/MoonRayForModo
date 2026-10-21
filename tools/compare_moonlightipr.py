@@ -225,14 +225,41 @@ def textured(folder):
         heights={'type': 'image', 'parameters': {'file': images['stripes'], 'srgb': False}, 'inputs': {}},
         lift={'type': 'NormalDisplacement', 'inputs': {'height': 'heights'}, 'parameters': {'height_multiplier': .1, 'zero_value': .2}})
     lifted['node_graph']['displacement'] = 'lift'
-    graph_displaced = lobes(lifted, wired('cube', albedo=('colour', True)))
-    graph_displaced['meshes'] = [dict(mesh) for mesh in graph_displaced['meshes']]
-    for mesh in graph_displaced['meshes']:
-        keys = {graph_nodes.image_descriptor(node)['coordinate_key'] for material in graph_displaced['materials'].values()
+    def with_uvs(made):
+        # The image nodes read the primary UVs, baked under the name each node asks for.
+        made['meshes'] = [dict(mesh) for mesh in made['meshes']]
+        keys = {graph_nodes.image_descriptor(node)['coordinate_key'] for material in made['materials'].values()
                 for row_ in material.get('material_stack', [material]) if row_.get('node_graph')
                 for node in row_['node_graph']['nodes'].values() if node['type'] == 'image'}
-        if mesh.get('uvs'):
-            mesh['uv_sets'] = dict(mesh.get('uv_sets') or {}, **{key: list(mesh['uvs']) for key in keys})
+        for mesh in made['meshes']:
+            if mesh.get('uvs'):
+                mesh['uv_sets'] = dict(mesh.get('uv_sets') or {}, **{key: list(mesh['uvs']) for key in keys})
+        return made
+    graph_displaced = with_uvs(lobes(lifted, wired('cube', albedo=('colour', True))))
+    # The other displacement nodes. The ball: the stripes along the normal combined with the bumpy normal map's colours
+    # taken as vectors in tangent space. The cube: a switch choosing the second of two heights.
+    def displaced_by(identity, extra, output):
+        made = wired(identity, albedo=('colour', True))
+        made['node_graph']['nodes'].update(extra)
+        made['node_graph']['displacement'] = output
+        return made
+    picture = lambda name: {'type': 'image', 'parameters': {'file': images[name], 'srgb': False}, 'inputs': {}}
+    combined = displaced_by('ball', {
+        'stripes_h': picture('stripes'), 'bumps_v': picture('normal'),
+        'up': {'type': 'NormalDisplacement', 'inputs': {'height': 'stripes_h'}, 'parameters': {'height_multiplier': .1, 'zero_value': .2}},
+        'push': {'type': 'VectorDisplacement', 'inputs': {'vector': 'bumps_v'}, 'parameters': {'factor': .05}},
+        'both': {'type': 'CombineDisplacement', 'inputs': {'input_1': 'up', 'input_2': 'push'}, 'parameters': {'operation': 0}}}, 'both')
+    switched = displaced_by('cube', {
+        'rough_h': picture('roughness'), 'stripes_h': picture('stripes'),
+        'first': {'type': 'NormalDisplacement', 'inputs': {'height': 'stripes_h'}, 'parameters': {'height_multiplier': .1}},
+        'second': {'type': 'NormalDisplacement', 'inputs': {'height': 'rough_h'}, 'parameters': {'height_multiplier': .08}},
+        'pick': {'type': 'SwitchDisplacement', 'inputs': {'displacement0': 'first', 'displacement1': 'second'}, 'parameters': {'choice': 1}}}, 'pick')
+    displacement_nodes = with_uvs(lobes(combined, switched))
+    # A vector in object space: the ball pushed by the bumpy map's colours as they are, less a half.
+    pushed = displaced_by('ball', {
+        'bumps_v': picture('normal'),
+        'push': {'type': 'VectorDisplacement', 'inputs': {'vector': 'bumps_v'}, 'parameters': {'factor': .08, 'source_space': 1}}}, 'push')
+    displacement_object = with_uvs(lobes(pushed, wired('cube', albedo=('colour', True))))
     # Nodes that are not images, which MoonLightIPR has MoonRay bake: a ramp over the ball, and on
     # the cube a checker put through a colour correction.
     def node_graph(identity, extra, wires):
@@ -285,7 +312,8 @@ def textured(folder):
     moving = dict(displaced, motion_steps=[-.25, .25], meshes=[
         dict(mesh, vertices_close=[[x + .4, y, z] for x, y, z in mesh['vertices']]) if mesh.get('identity') == 'ball' else mesh
         for mesh in displaced['meshes']])
-    return {'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    return {'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced,
+            'displacement_nodes': displacement_nodes, 'displacement_object': displacement_object, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 

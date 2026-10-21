@@ -1742,8 +1742,8 @@ void Renderer::setLightSets(const uint32_t* sets, uint32_t words, size_t count) 
     impl->restart();
 }
 
-void Renderer::displacementHeights(uint32_t mesh, uint32_t material, const uint32_t* primitives, const float* barycentrics,
-                                   size_t count, float* heights) {
+void Renderer::displacementValues(uint32_t mesh, uint32_t material, const uint32_t* primitives, const float* barycentrics,
+                                  size_t count, float* values) {
     if (!count) return;
     if (mesh >= impl->meshes.size() || !impl->meshes[mesh] || impl->meshes[mesh]->curves)
         throw std::runtime_error("MoonLightIPR displacement refers to a missing mesh");
@@ -1756,7 +1756,7 @@ void Renderer::displacementHeights(uint32_t mesh, uint32_t material, const uint3
     }
     Buffer place, found, settings;
     place.upload(points);
-    found.reserve(count * sizeof(float));
+    found.reserve(count * DISPLACE_SLOTS * 3 * sizeof(float));
     LaunchParams launch = impl->params;
     launch.displacePoints = place.ptr;
     launch.displaceHeights = found.ptr;
@@ -1764,7 +1764,7 @@ void Renderer::displacementHeights(uint32_t mesh, uint32_t material, const uint3
     launch.displaceMaterial = material;
     settings.upload(&launch, sizeof(launch));
     ML_CHECK(optixLaunch(impl->pipeline, nullptr, settings.ptr, sizeof(LaunchParams), &impl->displaceSbt, unsigned(count), 1, 1));
-    ML_CHECK(cudaMemcpy(heights, reinterpret_cast<void*>(found.ptr), count * sizeof(float), cudaMemcpyDeviceToHost));
+    ML_CHECK(cudaMemcpy(values, reinterpret_cast<void*>(found.ptr), count * DISPLACE_SLOTS * 3 * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
 void Renderer::reshapeMesh(uint32_t index, const float* positions, const float* normals, const float* closePositions) {
