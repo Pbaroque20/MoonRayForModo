@@ -2,7 +2,7 @@
 
 ## New in 0.4.3
 
-A performance update, with a new runtime ZIP: scenes load far faster before a render starts, and MoonLightIPR draws more of Modo's scenes for less power. Install the kit and the runtime together.
+A critical performance update, with a new runtime ZIP: scenes load far faster before a render starts, and MoonLightIPR draws more of Modo's scenes for less power. Install the kit and the runtime together.
 
 ### Faster to start a render
 
