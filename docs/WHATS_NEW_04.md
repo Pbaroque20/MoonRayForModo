@@ -1,8 +1,16 @@
-# What's new in 0.4, 0.4.1 and 0.4.2
+# What's new in 0.4, 0.4.1, 0.4.2 and 0.4.3
 
-## Coming next
+## New in 0.4.3
 
-Not released yet: on the MoonLightIPR branch.
+A performance update, with a new runtime ZIP: scenes load far faster before a render starts, and MoonLightIPR draws more of Modo's scenes for less power. Install the kit and the runtime together.
+
+### Faster to start a render
+
+- **Scenes load far faster before a render starts**, in MoonRay and in MoonLightIPR. A mesh's long lists (points, faces, normals, UVs, vertex maps) go to MoonRay in its own binary scene format beside the scene text, which MoonRay reads in a fraction of the time; the geometry adapter joins the many pieces Modo's render cache hands over into one per surface; and what was read of the scene is kept from one reading to the next. On a test interior, getting MoonRay ready went from about 107 seconds to 18, and MoonLightIPR's packing from 6.9 seconds to 2.3, with the same pictures. Preferences: **Load geometry as binary**, on.
+- **Low-latency rendering**: MoonRay runs below Modo's priority and leaves one processor thread free, so Modo stays quick to use while it renders. Preferences, on.
+- **MoonLightIPR is not sent the scene again for a change of frame alone**, in a scene where nothing moves.
+
+### MoonLightIPR and the rest
 
 - **Shader Tree Displacement and Stencil layers render in MoonRay**: displacement layers raise the surface by their value times the material's Displacement Distance, and a Stencil takes the surface away where it is white, as Modo's do.
 - **Principled sheen**: a Principled material's Sheen and Sheen Tint show in MoonRay, as a soft glow at grazing angles fitted to Modo's renders. Specular Tint and Flatness, which MoonRay's material has nothing like, are named in a notice.
@@ -39,6 +47,8 @@ Not released yet: on the MoonLightIPR branch.
 *Glass in Modo (left) and MoonRay (right): a tinted ball (top) and a rough one (bottom), each in front of a gradient. The tint and the blur now come out as Modo's.*
 
 - **MoonLightIPR rests once the picture is clean**: it judges the noise of each small square of the picture as it renders; a square that is clean takes no more samples, and the render stops once all are, so a simple scene stops after a few dozen samples a pixel, not the hundreds of Pixel samples, which is now the most it takes. A render is spread over about 8 seconds rather than run flat out, the first sample shown at once; the picture is shown less often once a render has settled; and the processor sleeps while it waits on the graphics card. The graphics card and the processor draw much less power, most on simple scenes.
+- **A light's picture that cannot be found is left out**, with a notice, rather than drawn in MoonRay's pink for a missing file.
+- **MoonRay's crest comes in once a Modo session**: a preview window opened after the first shows it at rest.
 
 ## New in 0.4.2.1
 
