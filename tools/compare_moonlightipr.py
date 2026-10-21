@@ -312,7 +312,10 @@ def textured(folder):
     moving = dict(displaced, motion_steps=[-.25, .25], meshes=[
         dict(mesh, vertices_close=[[x + .4, y, z] for x, y, z in mesh['vertices']]) if mesh.get('identity') == 'ball' else mesh
         for mesh in displaced['meshes']])
-    return {'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced,
+    # Shader Tree stencils: the surface taken away where the image is white, the ball by sharp stripes, the cube by soft ones.
+    stenciled = lobes(row('ball', [.8, .25, .1], .4, [layer('s1', 'stencil', 'roughness', False)]),
+                      row('cube', [.1, .3, .7], .4, [layer('s2', 'stencil', 'stripes', False)]))
+    return {'stenciled': stenciled, 'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced,
             'displacement_nodes': displacement_nodes, 'displacement_object': displacement_object, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}

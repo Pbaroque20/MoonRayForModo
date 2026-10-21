@@ -21,7 +21,8 @@ const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 
                CHANNEL_SPECULAR = 22,   // a stack row's specular amount, as a share of the most its stack has
                CHANNEL_DISPLACE = 23,   // DISPLACE_SLOTS channels the displacement pass alone reads, each a displacement
                                         // node's height or vector; the first is Shader Tree displacement's height
-               CHANNEL_COUNT = 27;
+               CHANNEL_STENCIL = 27,    // where Shader Tree stencil layers take the surface away, white taking it all
+               CHANNEL_COUNT = 28;
 const unsigned DISPLACE_SLOTS = 4;
 // Rows that are not a channel: the start and end of a group, whose rows are blended as one
 // over what was there before it, and a mask written to a register for a later row to use.

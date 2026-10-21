@@ -24,9 +24,12 @@ CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4,
             '_specShare': 22,
             # The displacement pass's channels (displacement_tree): the first is also where Shader Tree displacement
             # layers put their height.
-            'displace': 23, '_disp0': 23, '_disp1': 24, '_disp2': 25, '_disp3': 26}
+            'displace': 23, '_disp0': 23, '_disp1': 24, '_disp2': 25, '_disp3': 26,
+            # Shader Tree stencil layers: the surface is taken away where they are white, over any dissolve.
+            'stencil': 27}
 # Channels a material row does not set: the maps, the mask, and values only gradients read.
-UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD', 'displace', '_disp0', '_disp1', '_disp2', '_disp3')
+UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD', 'displace', '_disp0', '_disp1', '_disp2', '_disp3',
+                 'stencil')
 # Channels whose constant rows can be worked out here instead of on the GPU, with the range the
 # material record keeps a single number in (None for colours, which it keeps whole).
 FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'metallic': (0, 1), 'lumiCol': None,
@@ -1165,7 +1168,7 @@ class Compiler:
         defaults = dict(defaults, **{effect: value if FOLDED[effect] is None else value[0] for effect, value in folded.items()})
 
         # What rdla.py renders through DwaBaseMaterial rather than UsdPreviewSurface.
-        glass = source.get('transmission', 0) > 0 or source.get('presence', 1) < 1 or 'dissolve' in effects or any(
+        glass = source.get('transmission', 0) > 0 or source.get('presence', 1) < 1 or bool({'dissolve', 'stencil'} & effects) or any(
             e.startswith('tran') for e in effects)
         dwa = bool(stack) or glass or source.get('dispersion_abbe', 0) > 0 or source.get('shader') == 'DwaBaseMaterial' or bool(
             {'aniso', 'subsCol', 'subsAmt', 'normalCoat', 'coatBump', 'diffRough'} & effects) or source.get(

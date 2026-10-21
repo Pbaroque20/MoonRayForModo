@@ -2622,6 +2622,7 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     for (unsigned c = CHANNEL_DRIVER; c < CHANNEL_DRIVER + 4; ++c) channel[c] = vec(0.0f);
     channel[CHANNEL_SPECULAR] = vec(1.0f);
     for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) channel[CHANNEL_DISPLACE + slot] = vec(0.0f);
+    channel[CHANNEL_STENCIL] = vec(0.0f);
     MappedSlots slots;
     slots.normal = slots.bump = UV_SLOTS;
 
@@ -2736,11 +2737,15 @@ ML_INLINE void absent(const DeviceMaterial& material, const DeviceMesh& mesh, un
     if (params.opaqueShadows && (optixGetRayFlags() & OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT)) return;
     float3 channel[CHANNEL_COUNT];
     channel[CHANNEL_DISSOLVE] = vec(material.dissolve);
+    channel[CHANNEL_STENCIL] = vec(0.0f);
     if (material.layerCount) evalLayers(material, mesh, primitive, barycentrics, channel, make_float2(0.0f, 0.0f));
+    // What is there of the surface: what the dissolve leaves and the stencil leaves of that, as the plugin gives MoonRay
+    // its presence (graph.py).
+    const float kept = (1.0f - clamp(average(channel[CHANNEL_DISSOLVE]), 0.0f, 1.0f)) * (1.0f - clamp(average(channel[CHANNEL_STENCIL]), 0.0f, 1.0f));
     // The payload differs from ray to ray and the sample index from pass to pass.
     unsigned state = tea(optixGetPayload_1() ^ (primitive * 0x9e3779b9u) ^ (optixGetInstanceId() * 0x85ebca6bu),
                          optixGetPayload_0() ^ params.sample);
-    if (rnd(state) < clamp(average(channel[CHANNEL_DISSOLVE]), 0.0f, 1.0f)) optixIgnoreIntersection();
+    if (rnd(state) < 1.0f - kept) optixIgnoreIntersection();
 }
 extern "C" __global__ void __anyhit__presence() {
     const DeviceInstance& instance = reinterpret_cast<const DeviceInstance*>(params.instances)[optixGetInstanceId()];
