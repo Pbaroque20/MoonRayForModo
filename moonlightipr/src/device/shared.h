@@ -19,7 +19,8 @@ const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 
                CHANNEL_ANISOTROPY = 15, CHANNEL_SUBSURFACE = 16, CHANNEL_SUBSURFACE_COLOR = 17,
                CHANNEL_DRIVER = 18,     // four values that only gradient rows read
                CHANNEL_SPECULAR = 22,   // a stack row's specular amount, as a share of the most its stack has
-               CHANNEL_COUNT = 23;
+               CHANNEL_DISPLACE = 23,   // the height displacement layers give, read by the displacement pass alone
+               CHANNEL_COUNT = 24;
 // Rows that are not a channel: the start and end of a group, whose rows are blended as one
 // over what was there before it, and a mask written to a register for a later row to use.
 // The kinds of ray an instance can be hidden from, as bits of its visibility mask.
@@ -200,6 +201,13 @@ struct DeviceMesh {
                             // with 4 added they are lit as flat ribbons facing the ray, MoonRay's default
 };
 
+// A vertex of a displaced mesh, as a place on one triangle that has it (OptiX's barycentrics).
+struct DeviceDisplacePoint {
+    unsigned primitive;
+    float b1, b2;
+    unsigned pad;
+};
+
 struct DeviceInstance {
     unsigned mesh;
     unsigned material;
@@ -311,6 +319,12 @@ struct LaunchParams {
     DevicePtr lightSets;
     unsigned lightSetWords;
     unsigned lightSetPad;
+    // The displacement pass (__raygen__displace): where on the mesh each vertex is looked up, DeviceDisplacePoint per
+    // vertex, the heights it writes, float per vertex, the mesh, and the material where the mesh names none per triangle.
+    DevicePtr displacePoints;
+    DevicePtr displaceHeights;
+    unsigned displaceMesh;
+    unsigned displaceMaterial;
 
     DevicePtr meshes;       // DeviceMesh, indexed by DeviceInstance::mesh
     DevicePtr instances;    // DeviceInstance, indexed by the OptiX instance id

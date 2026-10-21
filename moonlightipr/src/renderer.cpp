@@ -245,10 +245,11 @@ DeviceHair toDeviceHair(const Material& m) {
 struct Renderer::Impl {
     OptixDeviceContext context = nullptr;
     OptixModule module = nullptr, curveModule = nullptr, linearModule = nullptr;
-    OptixProgramGroup groups[6] = {};
+    OptixProgramGroup groups[7] = {};       // the last, the displacement pass's ray generation
     OptixPipeline pipeline = nullptr;
     OptixShaderBindingTable sbt = {};
-    Buffer raygenRecord, missRecords, hitRecord;
+    Buffer raygenRecord, missRecords, hitRecord, displaceRecord;
+    OptixShaderBindingTable displaceSbt = {};
 
     std::vector<std::unique_ptr<Mesh>> meshes;
     std::vector<std::unique_ptr<Texture>> textures;
@@ -365,7 +366,7 @@ struct Renderer::Impl {
         curveOptions.curveEndcapFlags = OPTIX_CURVE_ENDCAP_DEFAULT;
         ML_CHECK(optixBuiltinISModuleGet(context, &moduleOptions, &pipelineOptions, &curveOptions, &linearModule));
 
-        OptixProgramGroupDesc descriptions[6] = {};
+        OptixProgramGroupDesc descriptions[7] = {};
         descriptions[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
         descriptions[0].raygen.module = module;
         descriptions[0].raygen.entryFunctionName = "__raygen__moonlightipr";
@@ -388,15 +389,18 @@ struct Renderer::Impl {
         descriptions[4].hitgroup.moduleIS = curveModule;
         descriptions[5] = descriptions[4];
         descriptions[5].hitgroup.moduleIS = linearModule;
+        descriptions[6].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+        descriptions[6].raygen.module = module;
+        descriptions[6].raygen.entryFunctionName = "__raygen__displace";
         OptixProgramGroupOptions groupOptions = {};
         logSize = sizeof(log);
-        ML_CHECK(optixProgramGroupCreate(context, descriptions, 6, &groupOptions, log, &logSize, groups));
+        ML_CHECK(optixProgramGroupCreate(context, descriptions, 7, &groupOptions, log, &logSize, groups));
 
         // Shading runs in the ray generation program, so traces never nest.
         OptixPipelineLinkOptions linkOptions = {};
         linkOptions.maxTraceDepth = 1;
         logSize = sizeof(log);
-        ML_CHECK(optixPipelineCreate(context, &pipelineOptions, &linkOptions, groups, 6, log, &logSize, &pipeline));
+        ML_CHECK(optixPipelineCreate(context, &pipelineOptions, &linkOptions, groups, 7, log, &logSize, &pipeline));
         OptixStackSizes stackSizes = {};
         for (OptixProgramGroup group : groups) ML_CHECK(optixUtilAccumulateStackSizes(group, &stackSizes));
         unsigned fromTraversal = 0, fromState = 0, continuation = 0;
@@ -421,6 +425,12 @@ struct Renderer::Impl {
         sbt.hitgroupRecordBase = hitRecord.ptr;
         sbt.hitgroupRecordStrideInBytes = sizeof(SbtRecord);
         sbt.hitgroupRecordCount = 3;
+        // The displacement pass runs with its own ray generation and the same records otherwise.
+        SbtRecord displace;
+        ML_CHECK(optixSbtRecordPackHeader(groups[6], &displace));
+        displaceRecord.upload(&displace, sizeof(displace));
+        displaceSbt = sbt;
+        displaceSbt.raygenRecord = displaceRecord.ptr;
     }
 
     // refit moves an existing structure to the vertices now in the mesh's buffer.
@@ -1729,6 +1739,44 @@ void Renderer::setLightSets(const uint32_t* sets, uint32_t words, size_t count) 
     impl->lightSetTable.upload(sets, size_t(words) * count * sizeof(uint32_t));
     impl->params.lightSets = impl->lightSetTable.ptr;
     impl->params.lightSetWords = words;
+    impl->restart();
+}
+
+void Renderer::displacementHeights(uint32_t mesh, uint32_t material, const uint32_t* primitives, const float* barycentrics,
+                                   size_t count, float* heights) {
+    if (!count) return;
+    if (mesh >= impl->meshes.size() || !impl->meshes[mesh] || impl->meshes[mesh]->curves)
+        throw std::runtime_error("MoonLightIPR displacement refers to a missing mesh");
+    if (!impl->meshes[mesh]->ownsMaterials && material >= impl->materialCount)
+        throw std::runtime_error("MoonLightIPR displacement refers to a missing material");
+    std::vector<DeviceDisplacePoint> points(count);
+    for (size_t i = 0; i < count; ++i) {
+        if (primitives[i] >= impl->meshes[mesh]->triangleCount) throw std::runtime_error("MoonLightIPR displacement refers to a missing triangle");
+        points[i] = {primitives[i], barycentrics[i * 2], barycentrics[i * 2 + 1], 0};
+    }
+    Buffer place, found, settings;
+    place.upload(points);
+    found.reserve(count * sizeof(float));
+    LaunchParams launch = impl->params;
+    launch.displacePoints = place.ptr;
+    launch.displaceHeights = found.ptr;
+    launch.displaceMesh = mesh;
+    launch.displaceMaterial = material;
+    settings.upload(&launch, sizeof(launch));
+    ML_CHECK(optixLaunch(impl->pipeline, nullptr, settings.ptr, sizeof(LaunchParams), &impl->displaceSbt, unsigned(count), 1, 1));
+    ML_CHECK(cudaMemcpy(heights, reinterpret_cast<void*>(found.ptr), count * sizeof(float), cudaMemcpyDeviceToHost));
+}
+
+void Renderer::reshapeMesh(uint32_t index, const float* positions, const float* normals) {
+    if (index >= impl->meshes.size() || !impl->meshes[index] || impl->meshes[index]->curves)
+        throw std::runtime_error("MoonLightIPR reshape refers to a missing mesh");
+    Mesh& mesh = *impl->meshes[index];
+    ML_CHECK(cudaDeviceSynchronize());  // a queued launch may still read the mesh
+    mesh.positions.upload(positions, mesh.vertexCount * 3 * sizeof(float));
+    if (normals) mesh.normals.upload(normals, mesh.vertexCount * 3 * sizeof(float));
+    else mesh.normals.release();
+    impl->buildMesh(mesh, mesh.vertexCount, mesh.triangleCount);
+    impl->uploadMeshTable();
     impl->restart();
 }
 

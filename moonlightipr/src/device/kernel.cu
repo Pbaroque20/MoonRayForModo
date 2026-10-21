@@ -2621,6 +2621,7 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     channel[CHANNEL_SUBSURFACE_COLOR] = vec(material.subsurfaceColor);
     for (unsigned c = CHANNEL_DRIVER; c < CHANNEL_DRIVER + 4; ++c) channel[c] = vec(0.0f);
     channel[CHANNEL_SPECULAR] = vec(1.0f);
+    channel[CHANNEL_DISPLACE] = vec(0.0f);
     MappedSlots slots;
     slots.normal = slots.bump = UV_SLOTS;
 
@@ -3055,4 +3056,21 @@ extern "C" __global__ void __closesthit__curve() {
     float3 channel[CHANNEL_COUNT];
     float anisotropy;
     resolveMaterial(hit, material, mesh, primitive, make_float2(0.0f, 0.0f), channel, anisotropy);
+}
+
+// The height a displaced mesh's layers give at each of its vertices (Renderer::displacementHeights): each vertex is
+// looked up on one triangle that has it, by the layers of that triangle's material, as they are for shading.
+extern "C" __global__ void __raygen__displace() {
+    const unsigned i = optixGetLaunchIndex().x;
+    const DeviceDisplacePoint point = reinterpret_cast<const DeviceDisplacePoint*>(params.displacePoints)[i];
+    const DeviceMesh& mesh = reinterpret_cast<const DeviceMesh*>(params.meshes)[params.displaceMesh];
+    const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[point.primitive] : params.displaceMaterial;
+    const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
+    float height = 0.0f;
+    if (material.layerCount) {
+        float3 channel[CHANNEL_COUNT];
+        evalLayers(material, mesh, point.primitive, make_float2(point.b1, point.b2), channel, make_float2(0.0f, 0.0f));
+        height = average(channel[CHANNEL_DISPLACE]);
+    }
+    reinterpret_cast<float*>(params.displaceHeights)[i] = height;
 }

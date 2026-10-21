@@ -21,9 +21,11 @@ CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4,
             'driverA': 18, 'driverB': 19, 'driverC': 20, 'driverD': 21,
             # Not an effect of Modo's: each material row's specular amount, as a share of the most any row of its
             # stack has, which sets the lobe (MoonRay's specular weight, as moonshine gives it).
-            '_specShare': 22}
+            '_specShare': 22,
+            # The height Shader Tree displacement layers give, which only the displacement pass reads (displacement).
+            'displace': 23}
 # Channels a material row does not set: the maps, the mask, and values only gradients read.
-UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD')
+UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD', 'displace')
 # Channels whose constant rows can be worked out here instead of on the GPU, with the range the
 # material record keeps a single number in (None for colours, which it keeps whole).
 FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'metallic': (0, 1), 'lumiCol': None,
@@ -193,6 +195,22 @@ def color_space(source, authored, srgb):
 
 # What each native shader's switched-on extras are called, for the lobes the uber-shader lacks.
 NATIVE_EXTRAS = (('show_glitter', 'glitter'),)
+
+
+def displacement(material):
+    """A material's Displacement Distance where Shader Tree layers displace it, as rdla gives MoonRay a NormalDisplacement
+    for it; None where nothing does."""
+    from . import textures
+    from .material_groups import merged, supported
+    stack = material.get('material_stack')
+    source = merged(stack) if stack and supported(stack) else material
+    layers = source.get('layers')
+    effects = {textures.EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in layers} if layers is not None else \
+        {textures.EFFECT_ALIASES.get(key, key) for key in source.get('textures', {})}
+    if 'displace' not in effects:
+        return None
+    distance = float(source.get('displacement_distance', .02))
+    return distance if distance and math.isfinite(distance) else None
 
 
 def native_surface(shader, parameters, note):
@@ -840,6 +858,9 @@ class Compiler:
         effects = {textures.EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in layers}
 
         start = len(self.layers)
+        # A displaced material's height starts from its Displacement Value, as Modo's does, under its displacement layers.
+        if 'displace' in effects and float(source.get('displacement_value', 0)):
+            self.layer(CHANNELS['displace'], value=[float(source.get('displacement_value', 0))] * 3)
         # A constant row blended over a constant is still a constant. Until a channel gets a row
         # that varies across the surface, its rows are folded into the value it starts from, which
         # leaves most materials with no layers for the GPU to run at each hit. Gradients read

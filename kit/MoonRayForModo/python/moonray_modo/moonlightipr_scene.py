@@ -14,6 +14,10 @@ from .scene_digest import flat
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # Layout flags; keep in step with moonlightipr/session/scene_loader.cpp.
 MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE, MESH_CURVES, MESH_LINEAR, MESH_RIBBON = 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
+# A mesh its materials displace: split finer in the session, then moved along its normals by their height (displaced).
+MESH_DISPLACE = 1024
+# The most triangles a displaced mesh is split into, to keep the preview quick.
+DISPLACED_TRIANGLES = 400000
 # A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
 SUBDIVISION_QUADS = 3000000
 SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS = 1, 2, 4, 8
@@ -489,6 +493,36 @@ def cage_payload(mesh, material_index, slots, warnings):
     return _packed[signature]
 
 
+def displaced(mesh, key, flags, payload, materials, material_index, warnings):
+    """A mesh as the session displaces it, where Shader Tree layers displace one of its materials (form 'K'): after its
+    data, how many times to split each triangle into four, the material its instances give it, and each displaced
+    material's Displacement Distance. The key then names the displacement too, which a change to it makes again."""
+    from .moonlightipr_materials import displacement
+    tags = set(mesh.get('face_materials') or [mesh.get('material', '')])
+    distances = []
+    for tag in sorted(tags):
+        held = materials.get(tag if tag in materials else '')
+        distance = displacement(held) if held else None
+        if distance is not None:
+            distances.append((material_index.get(tag, material_index['']), distance))
+    if not distances:
+        return key, flags, payload
+    faces = mesh['faces']
+    if mesh.get('subdivision'):
+        level = max(0, min(6, int(mesh.get('subdivision_level', 3))))
+        triangles = 2 * sum(map(len, faces)) * 4 ** max(0, level - 1) if level else sum(len(f) - 2 for f in faces)
+    else:
+        triangles = sum(len(f) - 2 for f in faces)
+    levels = 0
+    while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES:
+        levels += 1
+    if flags & MESH_MOVES:
+        warnings.append('MoonLightIPR shows displaced mesh %s without its change of shape during the shutter.' % mesh['name'])
+    trailer = struct.pack('<3I', levels, material_index.get(mesh.get('material', ''), material_index['']), len(distances))
+    trailer += b''.join(struct.pack('<If', index, distance) for index, distance in distances)
+    return hashlib.blake2b(key + trailer, digest_size=8).digest(), flags | MESH_DISPLACE, payload + trailer
+
+
 def _fan(size, _held={}):
     """A polygon of size corners as a fan of triangles, each corner as its place in the polygon: (0, 1, 2, 0, 2, 3, ...)."""
     held = _held.get(size)
@@ -775,7 +809,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSJ', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSK', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
@@ -860,6 +894,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
         else:
             key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots)
+        key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings)
         if key not in order:
             order[key] = len(meshes)
             # Send the data once per session; later scenes refer to it by key.

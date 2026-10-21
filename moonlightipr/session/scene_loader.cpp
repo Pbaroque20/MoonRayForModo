@@ -21,7 +21,8 @@ const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 
                MESH_SUBDIVIDE = 64,     // the data is a control cage to be subdivided here
                MESH_CURVES = 128,       // the data is curves: control points, their radii and each segment's first point
                MESH_LINEAR = 256,       // those curves' segments are straight, from one point to the next
-               MESH_RIBBON = 512;       // and they are lit as flat ribbons that face the ray
+               MESH_RIBBON = 512,       // and they are lit as flat ribbons that face the ray
+               MESH_DISPLACE = 1024;    // its materials displace it: split finer here, then moved by their height
 const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4, SCENE_PRESENCE_SHADOWS = 8;
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
@@ -180,6 +181,17 @@ Image readImage(const std::string& path) {
 }
 
 // Area-weighted vertex normals, the same default MoonRay's smooth_normal produces.
+// A mesh to be displaced once the materials are set: its vertices as split, the way each is moved (its smooth normal),
+// its triangles and their materials, and the Displacement Distance of each material that displaces it.
+struct Displacing {
+    uint32_t mesh = 0;
+    std::vector<float> positions, directions;
+    std::vector<uint32_t> indices, materialIds;
+    uint32_t material = 0;
+    std::vector<std::pair<uint32_t, float>> distances;
+    bool smooth = false;
+};
+
 std::vector<float> smoothNormals(const std::vector<float>& positions, const std::vector<uint32_t>& indices) {
     std::vector<float> normals(positions.size(), 0.0f);
     for (size_t t = 0; t + 2 < indices.size(); t += 3) {
@@ -207,13 +219,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x4a534c4d)
+    if (mark != 0x4b534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'J'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'K'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -561,6 +573,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     }
 
     // Load new meshes before replacing the instances that will refer to them.
+    std::vector<Displacing> displacing;
     std::vector<uint32_t> meshIndices(in.value<uint32_t>());
     std::vector<std::vector<int32_t>> meshSlots(meshIndices.size());
     for (size_t m = 0; m < meshIndices.size(); ++m) {
@@ -632,6 +645,34 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 for (std::vector<float>& set : uvSets) set = in.array<float>(size_t(triangleCount) * 6);
                 closePositions = in.array<float>(flags & MESH_MOVES ? size_t(vertexCount) * 3 : 0);
             }
+            // A displaced mesh: how often to split it, the material its instances give it, and each displacing
+            // material's Displacement Distance (form 'K').
+            uint32_t splits = 0, displacedMaterial = 0;
+            std::vector<std::pair<uint32_t, float>> distances;
+            if (flags & MESH_DISPLACE) {
+                splits = in.value<uint32_t>();
+                displacedMaterial = in.value<uint32_t>();
+                distances.resize(in.value<uint32_t>());
+                if (splits > 8 || distances.size() > 4096) throw std::runtime_error("MoonLightIPR scene displaces a mesh beyond its limits");
+                for (auto& entry : distances) {
+                    entry.first = in.value<uint32_t>();
+                    entry.second = in.value<float>();
+                }
+            }
+            if (cached == meshes.end() && (flags & MESH_DISPLACE)) {
+                // Split finer, so that the displacement has vertices to move; moved once the materials are set.
+                Triangles fine = split(Triangles{std::move(positions), std::move(indices), std::move(materialIds), std::move(uvSets)}, splits);
+                positions = std::move(fine.positions);
+                indices = std::move(fine.indices);
+                materialIds = std::move(fine.materialIds);
+                uvSets = std::move(fine.uvSets);
+                vertexCount = uint32_t(positions.size() / 3);
+                triangleCount = uint32_t(indices.size() / 3);
+                for (uint32_t index : indices)
+                    if (index >= vertexCount) throw std::runtime_error("MoonLightIPR scene mesh index is out of range");
+                normals = smoothNormals(positions, indices);
+                closePositions.clear();
+            }
             if (cached == meshes.end()) {
                 std::vector<const float*> uvPointers;
                 for (const std::vector<float>& set : uvSets) uvPointers.push_back(set.data());
@@ -649,6 +690,18 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 desc.uvSetCount = uvPointers.size();
                 desc.closePositions = closePositions.empty() ? nullptr : closePositions.data();
                 cached = meshes.emplace(key, CachedMesh{renderer.addMesh(desc), 0}).first;
+                if (flags & MESH_DISPLACE) {
+                    Displacing held;
+                    held.mesh = cached->second.index;
+                    held.positions = std::move(positions);
+                    held.directions = std::move(normals);
+                    held.indices = std::move(indices);
+                    held.materialIds = std::move(materialIds);
+                    held.material = displacedMaterial;
+                    held.distances = std::move(distances);
+                    held.smooth = (flags & MESH_SMOOTH) != 0;
+                    displacing.push_back(std::move(held));
+                }
             }
         }
         if (cached == meshes.end()) throw std::runtime_error("MoonLightIPR scene omits a mesh this session has not loaded");
@@ -722,6 +775,35 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         } else ++entry;
     }
     for (size_t m = 0; m < meshIndices.size(); ++m) renderer.setMeshUvSlots(meshIndices[m], meshSlots[m].data());
+    // Displaced meshes, now their materials can be read: each vertex is looked up on the first triangle that has it,
+    // and moved along its smooth normal by the height there times its material's Displacement Distance.
+    for (Displacing& held : displacing) {
+        const size_t vertexCount = held.positions.size() / 3, triangleCount = held.indices.size() / 3;
+        std::vector<uint32_t> primitives(vertexCount, 0xffffffffu);
+        std::vector<float> barycentrics(vertexCount * 2, 0.0f);
+        for (size_t t = 0; t < triangleCount; ++t)
+            for (int corner = 0; corner < 3; ++corner) {
+                const uint32_t v = held.indices[t * 3 + corner];
+                if (primitives[v] != 0xffffffffu) continue;
+                primitives[v] = uint32_t(t);
+                barycentrics[v * 2] = corner == 1 ? 1.0f : 0.0f;
+                barycentrics[v * 2 + 1] = corner == 2 ? 1.0f : 0.0f;
+            }
+        for (uint32_t& primitive : primitives)
+            if (primitive == 0xffffffffu) primitive = 0;    // a vertex no triangle uses stays where it is (its height is unused)
+        std::vector<float> heights(vertexCount, 0.0f);
+        renderer.displacementHeights(held.mesh, held.material, primitives.data(), barycentrics.data(), vertexCount, heights.data());
+        for (size_t v = 0; v < vertexCount; ++v) {
+            const uint32_t material = held.materialIds.empty() ? held.material : held.materialIds[primitives[v]];
+            float distance = 0.0f;
+            for (const auto& entry : held.distances)
+                if (entry.first == material) distance = entry.second;
+            const float moved = std::isfinite(heights[v]) ? heights[v] * distance : 0.0f;
+            for (int axis = 0; axis < 3; ++axis) held.positions[v * 3 + axis] += held.directions[v * 3 + axis] * moved;
+        }
+        const std::vector<float> shading = held.smooth ? smoothNormals(held.positions, held.indices) : std::vector<float>();
+        renderer.reshapeMesh(held.mesh, held.positions.data(), shading.empty() ? nullptr : shading.data());
+    }
     // Lights before the instances that may be the surface of one.
     renderer.setDistantLights(lights.data(), lights.size());
     renderer.setLights(localLights.data(), localLights.size());

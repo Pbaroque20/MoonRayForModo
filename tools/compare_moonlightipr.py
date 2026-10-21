@@ -262,7 +262,11 @@ def textured(folder):
     # A Blinn material whose roughness an image drives: the image goes through the curve measured for Blinn.
     blinn = dict(stacked, materials=dict(layered, ball={'material_stack': [row('ball', [.8, .8, .8], .36, [layer('b3', 'rough', 'roughness', False)],
                                                                               shading_model='blinn', raw_roughness=.35, _beckmann=True, _specular_strength=.52)]}))
-    return {'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
+    # Shader Tree displacement: the ball raised by a striped image and the cube by another, by 0.1 at most, as Modo's
+    # Displacement Distance; MoonRay tessellates them to its own measure, MoonLightIPR splits them evenly.
+    displaced = lobes(row('ball', [.8, .8, .8], .4, [layer('d1', 'displace', 'stripes', False)], displacement_distance=.1),
+                      row('cube', [.6, .6, .65], .4, [layer('d2', 'displace', 'roughness', False)], displacement_distance=.1))
+    return {'displaced': displaced, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
