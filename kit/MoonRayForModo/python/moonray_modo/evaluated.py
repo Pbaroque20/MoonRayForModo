@@ -225,6 +225,16 @@ def _unpack(data,held):
 
 
 def capture(time, path=None, displaced=True):
+    """Modo's evaluated meshes at a time. A piece Modo had not got ready (a mesh just added and being edited in its
+    tool's properties) is left out by the adapter and counted; the scene is read once more, and a piece still not
+    ready is counted in the reading's 'skipped' for a notice."""
+    data=_capture(time,path,displaced)
+    if data.get('skipped'):
+        data=_capture(time,path,displaced)
+    return data
+
+
+def _capture(time, path=None, displaced=True):
     global _bridge
     if _bridge is None:
         path = Path(path) if path else Path(__file__).resolve().parents[2] / 'bin/MoonRayGeometry.lx'
@@ -292,6 +302,8 @@ def casts_shadow(scene, layers, known):
 
 def meshes(data, materials, warnings, scene=None):
     """Group identical evaluated prototypes while retaining per-surface transforms."""
+    if data.get('skipped'):
+        warnings.append('Modo had %d mesh piece(s) not ready to read; they are left out until the next change.' % data['skipped'])
     groups = {}
     settings_cache = {}
     shadows = {}
