@@ -9,9 +9,9 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.4.3 — experimental development build.** A critical performance update: scenes load far faster before a render starts, MoonRay leaves Modo quick to use while it renders, and MoonLightIPR draws displacement, stencils and light links for less power. Install the new runtime with it. 0.4.2 brought MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
+**Current version: 0.4.3.1 — experimental development build.** It is 0.4.3 with MoonLightIPR mended for geometry added while it follows the scene, Modo's fur in evaluated geometry, and large scenes read faster. 0.4.3 is a critical performance update: scenes load far faster before a render starts, MoonRay leaves Modo quick to use while it renders, and MoonLightIPR draws displacement, stencils and light links for less power. Install the new runtime with it. 0.4.2 brought MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
 
-[Download 0.4.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.3) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 to 0.4.3](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
+[Download 0.4.3.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.3.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -42,6 +42,15 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.4.3.1
+
+A hotfix: the kit alone changed (with its geometry adapter); the 0.4.3 runtime is the same.
+
+- **Adding geometry while MoonLightIPR follows the scene no longer stops or freezes it.** Turning realtime on could wait on Modo without end (while Modo's colour picker was open, for one).
+- **Modo's fur renders with Modo evaluated geometry**, where it stopped the render with "Polygon indices failed". Under motion blur in the preview, fur that cannot be followed through the shutter is shown still, with a notice.
+- **Assign MoonRay Material on a whole mesh tags its polygons**, as Modo's Polygon Set Material does: its item mask slowed a large scene's preview to seconds an edit. Polygons made in the mesh later keep the tag they are made with.
+- **Large scenes read faster**: Modo's texture projections are worked out several times faster and kept between readings (a test scene with fur and a 324,706-face mesh, 45 s to 13 s, then under 2 s an edit), and moving an item with fur on it is followed at once.
 
 ## New in 0.4.3
 
@@ -254,7 +263,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.4.3
+## Known issues in 0.4.3.1
 
 The ones you are most likely to meet:
 
