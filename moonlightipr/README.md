@@ -252,6 +252,40 @@ windows level with MoonRay. A distant light set that way is not worked out and g
 The car paint's flakes are in its reflection, not its colour, so the denoiser softens them
 at low sample counts; they sharpen as the picture gathers samples.
 
+Later comparisons, October 20 and 21, 2026:
+
+| Scene | MoonLightIPR / MoonRay | Picture within 10% |
+|---|---|---|
+| Light links: two lights, each object lit by some of them, set in Object controls | 1.005 | 97% |
+| Light links from Modo's own groups (a light kept off the balls) | 0.964 | 94% |
+| A can's label: a dull print over shiny metal under a clear coat, on a ball | 1.006 | 94% |
+| Shader Tree displacement: a ball and a cube raised by images | 0.993 | 92% |
+| The same, the ball moving while the shutter is open | 0.994 | 92% |
+| A node graph's NormalDisplacement from an image | 1.006 | 99% |
+| Combine, Switch and Vector (tangent space) displacement nodes | 0.999 | 90% |
+| A Vector displacement node in object space | 1.008 | 83% |
+| Shader Tree stencils cutting a ball and a cube | 1.040 | 71% |
+
+![Light links, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-light-links.jpg)
+
+*Light links: the balls lit by a warm sphere light alone, the cube by a cool panel and the environment.*
+
+![Displacement, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-displacement.jpg)
+
+*Shader Tree displacement. A displaced mesh is split evenly into four, up to 400,000 triangles, and each vertex moved by
+the material's layers, read on the GPU as shading reads them. MoonRay tessellates a polygon cube coarsely, so its
+ridges barely show there; the balls agree.*
+
+![Displacement nodes, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-displacement-nodes.jpg)
+
+*A node graph's displacement: Normal and Vector nodes are read from up to four channels, and Combine and Switch nodes
+join them, at each vertex, as MoonRay's own nodes do.*
+
+![Stencils, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-stencil.jpg)
+
+*Stencils cut the same places. Seen through the cuts, the inside of a ball is lit more in MoonLightIPR than in MoonRay,
+which is most of the difference in brightness.*
+
 ## Using it in Modo
 
 With the release installed there is nothing to set up: choose **MoonLightIPR** in the preview
