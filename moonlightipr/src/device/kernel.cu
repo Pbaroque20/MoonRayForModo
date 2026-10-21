@@ -843,7 +843,7 @@ ML_INLINE float underCoat(const Surface& s, float3 wo) {
 // so on: MoonRay adds the series up, by the share of light the lobe beneath sends back.
 ML_INLINE float3 coatBounces(const Surface& s, float3 wo, float3 albedo) {
     if (!s.coatDims || s.coat <= 0.0f) return vec(1.0f);
-    const float reflected = dielectricFresnel(wo.z, s.ior);
+    const float reflected = dielectricFresnel(wo.z, COAT_IOR);
     return make_float3(1.0f / fmaxf(1.0f - reflected * albedo.x, 0.01f), 1.0f / fmaxf(1.0f - reflected * albedo.y, 0.01f),
                        1.0f / fmaxf(1.0f - reflected * albedo.z, 0.01f));
 }
@@ -2621,6 +2621,8 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     channel[CHANNEL_SUBSURFACE_COLOR] = vec(material.subsurfaceColor);
     for (unsigned c = CHANNEL_DRIVER; c < CHANNEL_DRIVER + 4; ++c) channel[c] = vec(0.0f);
     channel[CHANNEL_SPECULAR] = vec(1.0f);
+    for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) channel[CHANNEL_DISPLACE + slot] = vec(0.0f);
+    channel[CHANNEL_STENCIL] = vec(0.0f);
     MappedSlots slots;
     slots.normal = slots.bump = UV_SLOTS;
 
@@ -2735,11 +2737,15 @@ ML_INLINE void absent(const DeviceMaterial& material, const DeviceMesh& mesh, un
     if (params.opaqueShadows && (optixGetRayFlags() & OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT)) return;
     float3 channel[CHANNEL_COUNT];
     channel[CHANNEL_DISSOLVE] = vec(material.dissolve);
+    channel[CHANNEL_STENCIL] = vec(0.0f);
     if (material.layerCount) evalLayers(material, mesh, primitive, barycentrics, channel, make_float2(0.0f, 0.0f));
+    // What is there of the surface: what the dissolve leaves and the stencil leaves of that, as the plugin gives MoonRay
+    // its presence (graph.py).
+    const float kept = (1.0f - clamp(average(channel[CHANNEL_DISSOLVE]), 0.0f, 1.0f)) * (1.0f - clamp(average(channel[CHANNEL_STENCIL]), 0.0f, 1.0f));
     // The payload differs from ray to ray and the sample index from pass to pass.
     unsigned state = tea(optixGetPayload_1() ^ (primitive * 0x9e3779b9u) ^ (optixGetInstanceId() * 0x85ebca6bu),
                          optixGetPayload_0() ^ params.sample);
-    if (rnd(state) < clamp(average(channel[CHANNEL_DISSOLVE]), 0.0f, 1.0f)) optixIgnoreIntersection();
+    if (rnd(state) < 1.0f - kept) optixIgnoreIntersection();
 }
 extern "C" __global__ void __anyhit__presence() {
     const DeviceInstance& instance = reinterpret_cast<const DeviceInstance*>(params.instances)[optixGetInstanceId()];
@@ -3055,4 +3061,24 @@ extern "C" __global__ void __closesthit__curve() {
     float3 channel[CHANNEL_COUNT];
     float anisotropy;
     resolveMaterial(hit, material, mesh, primitive, make_float2(0.0f, 0.0f), channel, anisotropy);
+}
+
+// What a displaced mesh's layers give at each of its vertices (Renderer::displacementValues): each displacement channel,
+// looked up on one triangle that has the vertex, by the layers of that triangle's material, as they are for shading.
+extern "C" __global__ void __raygen__displace() {
+    const unsigned i = optixGetLaunchIndex().x;
+    const DeviceDisplacePoint point = reinterpret_cast<const DeviceDisplacePoint*>(params.displacePoints)[i];
+    const DeviceMesh& mesh = reinterpret_cast<const DeviceMesh*>(params.meshes)[params.displaceMesh];
+    const unsigned materialIndex = mesh.materialIds ? reinterpret_cast<const unsigned*>(mesh.materialIds)[point.primitive] : params.displaceMaterial;
+    const DeviceMaterial& material = reinterpret_cast<const DeviceMaterial*>(params.materials)[materialIndex];
+    float* found = reinterpret_cast<float*>(params.displaceHeights) + size_t(i) * DISPLACE_SLOTS * 3;
+    float3 channel[CHANNEL_COUNT];
+    for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) channel[CHANNEL_DISPLACE + slot] = vec(0.0f);
+    if (material.layerCount)
+        evalLayers(material, mesh, point.primitive, make_float2(point.b1, point.b2), channel, make_float2(0.0f, 0.0f));
+    for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) {
+        found[slot * 3] = channel[CHANNEL_DISPLACE + slot].x;
+        found[slot * 3 + 1] = channel[CHANNEL_DISPLACE + slot].y;
+        found[slot * 3 + 2] = channel[CHANNEL_DISPLACE + slot].z;
+    }
 }

@@ -34,4 +34,8 @@ struct Triangles {
 // lists do not agree.
 Triangles subdivide(Cage cage, uint32_t levels);
 
+// Splits each triangle into four at the middles of its edges, levels times, leaving the surface where it is: for a
+// displaced mesh, which needs vertices for its displacement to move. Texture coordinates and materials go with them.
+Triangles split(Triangles mesh, uint32_t levels);
+
 }

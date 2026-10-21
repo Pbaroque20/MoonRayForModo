@@ -212,4 +212,46 @@ Triangles subdivide(Cage cage, uint32_t levels) {
     return out;
 }
 
+Triangles split(Triangles mesh, uint32_t levels) {
+    for (uint32_t level = 0; level < levels; ++level) {
+        const size_t triangles = mesh.indices.size() / 3;
+        std::unordered_map<uint64_t, uint32_t> middles;
+        auto middle = [&](uint32_t a, uint32_t b) {
+            const uint64_t key = (uint64_t(std::min(a, b)) << 32) | std::max(a, b);
+            auto found = middles.find(key);
+            if (found != middles.end()) return found->second;
+            const uint32_t made = uint32_t(mesh.positions.size() / 3);
+            for (int axis = 0; axis < 3; ++axis)
+                mesh.positions.push_back(0.5f * (mesh.positions[size_t(a) * 3 + axis] + mesh.positions[size_t(b) * 3 + axis]));
+            middles.emplace(key, made);
+            return made;
+        };
+        std::vector<uint32_t> indices;
+        indices.reserve(triangles * 12);
+        std::vector<uint32_t> materials;
+        if (!mesh.materialIds.empty()) materials.reserve(triangles * 4);
+        std::vector<std::vector<float>> sets(mesh.uvSets.size());
+        for (std::vector<float>& set : sets) set.reserve(triangles * 24);
+        for (size_t t = 0; t < triangles; ++t) {
+            const uint32_t a = mesh.indices[t * 3], b = mesh.indices[t * 3 + 1], c = mesh.indices[t * 3 + 2];
+            const uint32_t ab = middle(a, b), bc = middle(b, c), ca = middle(c, a);
+            const uint32_t children[12] = {a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca};
+            indices.insert(indices.end(), children, children + 12);
+            if (!mesh.materialIds.empty()) materials.insert(materials.end(), 4, mesh.materialIds[t]);
+            for (size_t s = 0; s < sets.size(); ++s) {
+                const float* uv = &mesh.uvSets[s][t * 6];
+                const float ua[2] = {uv[0], uv[1]}, ub[2] = {uv[2], uv[3]}, uc[2] = {uv[4], uv[5]};
+                const float uab[2] = {0.5f * (ua[0] + ub[0]), 0.5f * (ua[1] + ub[1])}, ubc[2] = {0.5f * (ub[0] + uc[0]), 0.5f * (ub[1] + uc[1])},
+                            uca[2] = {0.5f * (uc[0] + ua[0]), 0.5f * (uc[1] + ua[1])};
+                const float* corners[12] = {ua, uab, uca, uab, ub, ubc, uca, ubc, uc, uab, ubc, uca};
+                for (const float* corner : corners) sets[s].insert(sets[s].end(), corner, corner + 2);
+            }
+        }
+        mesh.indices = std::move(indices);
+        mesh.materialIds = std::move(materials);
+        mesh.uvSets = std::move(sets);
+    }
+    return mesh;
+}
+
 }

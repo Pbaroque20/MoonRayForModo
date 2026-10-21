@@ -21,9 +21,15 @@ CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4,
             'driverA': 18, 'driverB': 19, 'driverC': 20, 'driverD': 21,
             # Not an effect of Modo's: each material row's specular amount, as a share of the most any row of its
             # stack has, which sets the lobe (MoonRay's specular weight, as moonshine gives it).
-            '_specShare': 22}
+            '_specShare': 22,
+            # The displacement pass's channels (displacement_tree): the first is also where Shader Tree displacement
+            # layers put their height.
+            'displace': 23, '_disp0': 23, '_disp1': 24, '_disp2': 25, '_disp3': 26,
+            # Shader Tree stencil layers: the surface is taken away where they are white, over any dissolve.
+            'stencil': 27}
 # Channels a material row does not set: the maps, the mask, and values only gradients read.
-UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD')
+UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD', 'displace', '_disp0', '_disp1', '_disp2', '_disp3',
+                 'stencil')
 # Channels whose constant rows can be worked out here instead of on the GPU, with the range the
 # material record keeps a single number in (None for colours, which it keeps whole).
 FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'metallic': (0, 1), 'lumiCol': None,
@@ -193,6 +199,120 @@ def color_space(source, authored, srgb):
 
 # What each native shader's switched-on extras are called, for the lobes the uber-shader lacks.
 NATIVE_EXTRAS = (('show_glitter', 'glitter'),)
+
+
+# A displacement as the session works it out at each vertex (displaced meshes): a little program of these, each
+# (code, a, b, c), run on a stack of vectors. A leaf reads one of the DISPLACEMENT_SLOTS channels the GPU fills.
+DISPLACEMENT_SLOTS = 4
+OP_NORMAL = 0       # push (the slot's mean - a, the zero value) * b, the height multiplier, along the normal; c the slot
+OP_VECTOR = 1       # push the slot's vector * a, the factor; c the slot, + 256 for object space, + 512 for TBN tangents
+OP_COMBINE = 2      # pop two, scale them by a and b, push their sum (c 0), the longer (1) or the shorter (2)
+OP_NOTHING = 3      # push no displacement
+
+
+def _number(values, key, default):
+    try:
+        found = float(str(values.get(key, default)).rstrip('f'))
+    except (TypeError, ValueError):
+        return default
+    return found if math.isfinite(found) else default
+
+
+def _vector(value):
+    """A Vec3 parameter, as a list or as MoonRay writes one ('Vec3f(0.0f, 1.0f, 0.0f)')."""
+    if isinstance(value, (list, tuple)) and len(value) == 3:
+        return [float(v) for v in value]
+    text = str(value or '')
+    text = text[text.index('(') + 1:] if '(' in text else text     # what is inside Vec3f(...), not the 3 of its name
+    found = re.findall(r'[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?', text)
+    return [float(v) for v in found[:3]] if len(found) >= 3 else [0.0, 0.0, 0.0]
+
+
+def displacement_tree(material, note, runtime=None, with_layers=True):
+    """A node graph's displacement, as rdla gives it to MoonRay ahead of any Shader Tree displacement, made a program
+    for the session (OP_*): Normal and Vector displacement nodes are its leaves, each filling one channel of the
+    GPU's displacement pass with what is wired to its height or vector (with_layers) over its own value; Combine and
+    Switch displacement nodes join them. Returns (leaves, program), each leaf (slot, its own value, its layers), or
+    None where no graph displaces the material."""
+    from . import nodes
+    for row in reversed(material.get('material_stack') or [material]):
+        held = row.get('node_graph') or {}
+        if not held.get('displacement'):
+            continue
+        try:
+            graph = nodes.effective(held)
+        except (ValueError, KeyError, TypeError):
+            return None
+        leaves, program = [], []
+
+        def visit(identity, depth):
+            node = graph['nodes'].get(identity) if identity else None
+            if node is None or depth > 32:
+                program.append((OP_NOTHING, 0.0, 0.0, 0))
+                return
+            kind, values, inputs = node.get('type'), node.get('parameters') or {}, node.get('inputs') or {}
+            if kind == 'SwitchDisplacement':
+                # MoonRay's choice, cycled through its sixteen inputs; one a map makes is taken at its own value.
+                if 'choice' in inputs:
+                    note('a displacement switch whose choice a map makes, at its own value')
+                choice = int(_number(values, 'choice', 0)) % 16
+                visit(inputs.get('displacement%d' % choice), depth + 1)
+                return
+            if kind == 'CombineDisplacement':
+                if 'scale_1' in inputs or 'scale_2' in inputs:
+                    note('displacement scales a map makes, at their own values')
+                visit(inputs.get('input_1'), depth + 1)
+                visit(inputs.get('input_2'), depth + 1)
+                program.append((OP_COMBINE, _number(values, 'scale_1', 1.0), _number(values, 'scale_2', 1.0),
+                                max(0, min(2, int(_number(values, 'operation', 0))))))
+                return
+            if kind not in ('NormalDisplacement', 'VectorDisplacement'):
+                note('a %s displacement node' % kind)
+                program.append((OP_NOTHING, 0.0, 0.0, 0))
+                return
+            if len(leaves) >= DISPLACEMENT_SLOTS:
+                note('more than %d displacement nodes in one graph' % DISPLACEMENT_SLOTS)
+                program.append((OP_NOTHING, 0.0, 0.0, 0))
+                return
+            slot = len(leaves)
+            wanted = 'height' if kind == 'NormalDisplacement' else 'vector'
+            wired = wanted in inputs
+            if kind == 'NormalDisplacement':
+                if 'height_multiplier' in inputs:
+                    note('a displacement height multiplier a map makes, at its own value')
+                own = [0.0 if wired else _number(values, 'height', 1.0)] * 3
+                program.append((OP_NORMAL, _number(values, 'zero_value', 0.0), _number(values, 'height_multiplier', 1.0), slot))
+            else:
+                own = [0.0] * 3 if wired else _vector(values.get('vector'))
+                space = 256 if int(_number(values, 'source_space', 0)) == 1 else 0
+                style = 512 if int(_number(values, 'tangent_space_style', 0)) == 1 else 0
+                program.append((OP_VECTOR, _number(values, 'factor', 1.0), 0.0, slot | space | style))
+            layers = graph_layers(row, note, runtime, displacement=identity, wanted=wanted, as_effect='_disp%d' % slot) \
+                if wired and with_layers else []
+            leaves.append((slot, own, layers))
+
+        visit(graph.get('displacement'), 0)
+        return leaves, program
+    return None
+
+
+def displacement(material):
+    """How a material displaces, as a program for the session (displacement_tree): its node graph's, else its Shader
+    Tree displacement layers' height along the normal by its Displacement Distance; None where nothing displaces it."""
+    from . import textures
+    found = displacement_tree(material, lambda what: None, with_layers=False)
+    if found is not None:
+        return found[1] if any(op[0] in (OP_NORMAL, OP_VECTOR) for op in found[1]) else None
+    from .material_groups import merged, supported
+    stack = material.get('material_stack')
+    source = merged(stack) if stack and supported(stack) else material
+    layers = source.get('layers')
+    effects = {textures.EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in layers} if layers is not None else \
+        {textures.EFFECT_ALIASES.get(key, key) for key in source.get('textures', {})}
+    if 'displace' not in effects:
+        return None
+    distance = float(source.get('displacement_distance', .02))
+    return [(OP_NORMAL, 0.0, distance, 0)] if distance and math.isfinite(distance) else None
 
 
 def native_surface(shader, parameters, note):
@@ -547,13 +667,15 @@ def graph_expression(graph, identity, effect):
 MATH_NEUTRAL = {'multiply': 1.0, 'add': 0.0, 'subtract': 0.0}
 
 
-def graph_layers(source, note, runtime=None):
+def graph_layers(source, note, runtime=None, displacement=None, wanted='height', as_effect='displace'):
     """What is wired into a native material's graph, as texture layers over its own values: an
-    image node as it is, and any other node that depends on the UVs alone as MoonRay bakes it."""
+    image node as it is, and any other node that depends on the UVs alone as MoonRay bakes it.
+    displacement, a displacement node's identity, reads that node instead: what is wired to its wanted input, as
+    layers of as_effect (displacement_tree)."""
     from . import nodes
     try:
         graph = nodes.effective(source['node_graph'])
-        root = graph['nodes'][graph['root']]
+        root = graph['nodes'][displacement if displacement else graph['root']]
     except (ValueError, KeyError, TypeError):
         return []
     switches = source.get('native_parameters') or {}
@@ -562,7 +684,9 @@ def graph_layers(source, note, runtime=None):
         node = graph['nodes'].get(identity)
         if node is None:
             continue
-        effect = GRAPH_INPUTS.get(key)
+        if displacement and key != wanted:
+            continue
+        effect = as_effect if displacement else GRAPH_INPUTS.get(key)
         if effect is None:
             from . import graph_bake
             # A metal is tinted by its base colour here; a metal colour that is the base colour, or what it is
@@ -833,6 +957,12 @@ class Compiler:
         elif source.get('node_graph') and not native:
             self.note('node graphs, shown with their base values', name)
             layers = []
+        # A node graph's displacement, which the displacement pass reads: what is wired to its leaves here, their own
+        # values in rows put first (below).
+        from . import native as runtimes
+        drawn = displacement_tree(material, lambda what: self.note(what, name), self.runtime or runtimes.default_runtime())
+        if drawn is not None:
+            layers = list(layers) + [layer for _, _, wired in drawn[0] for layer in wired]
         if source.get('diffuse_roughness', 0):
             self.note('diffuse roughness', name)
         if source.get('opacity', 1) < 1:
@@ -840,6 +970,14 @@ class Compiler:
         effects = {textures.EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in layers}
 
         start = len(self.layers)
+        # A displaced material's height starts from its Displacement Value, as Modo's does, under its displacement layers;
+        # a node graph's, from its displacement node's height where nothing is wired to it.
+        if drawn is not None:
+            for slot, own, _ in drawn[0]:
+                if any(own):
+                    self.layer(CHANNELS['_disp%d' % slot], value=own)
+        elif 'displace' in effects and float(source.get('displacement_value', 0)):
+            self.layer(CHANNELS['displace'], value=[float(source.get('displacement_value', 0))] * 3)
         # A constant row blended over a constant is still a constant. Until a channel gets a row
         # that varies across the surface, its rows are folded into the value it starts from, which
         # leaves most materials with no layers for the GPU to run at each hit. Gradients read
@@ -1030,7 +1168,7 @@ class Compiler:
         defaults = dict(defaults, **{effect: value if FOLDED[effect] is None else value[0] for effect, value in folded.items()})
 
         # What rdla.py renders through DwaBaseMaterial rather than UsdPreviewSurface.
-        glass = source.get('transmission', 0) > 0 or source.get('presence', 1) < 1 or 'dissolve' in effects or any(
+        glass = source.get('transmission', 0) > 0 or source.get('presence', 1) < 1 or bool({'dissolve', 'stencil'} & effects) or any(
             e.startswith('tran') for e in effects)
         dwa = bool(stack) or glass or source.get('dispersion_abbe', 0) > 0 or source.get('shader') == 'DwaBaseMaterial' or bool(
             {'aniso', 'subsCol', 'subsAmt', 'normalCoat', 'coatBump', 'diffRough'} & effects) or source.get(
