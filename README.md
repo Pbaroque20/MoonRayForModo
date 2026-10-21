@@ -9,7 +9,7 @@ The plugin includes CPU and XPU rendering, a dockable live preview with a second
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.4.3 — experimental development build.** A performance update: scenes load far faster before a render starts, MoonRay leaves Modo quick to use while it renders, and MoonLightIPR draws displacement, stencils and light links for less power. Install the new runtime with it. 0.4.2 brought MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
+**Current version: 0.4.3 — experimental development build.** A critical performance update: scenes load far faster before a render starts, MoonRay leaves Modo quick to use while it renders, and MoonLightIPR draws displacement, stencils and light links for less power. Install the new runtime with it. 0.4.2 brought MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
 
 [Download 0.4.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.3) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 to 0.4.3](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
@@ -45,7 +45,7 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 ## New in 0.4.3
 
-A performance update, with a new runtime ZIP: install both. The full list, with pictures, is in [What's new](docs/WHATS_NEW_04.md).
+A critical performance update, with a new runtime ZIP: install both. The full list, with pictures, is in [What's new](docs/WHATS_NEW_04.md).
 
 - **Scenes load far faster before a render starts**, in MoonRay and in MoonLightIPR: a mesh's long lists go to MoonRay in its own binary scene format, the geometry adapter joins the pieces Modo's render cache hands over into one per surface, and what was read of the scene is kept from one reading to the next. On a test interior, getting MoonRay ready went from about 107 seconds to 18.
 - **Low-latency rendering**: MoonRay runs below Modo's priority and leaves a processor thread free, so Modo stays quick to use while it renders.
