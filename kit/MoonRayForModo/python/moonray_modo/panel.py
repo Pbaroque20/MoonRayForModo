@@ -1252,7 +1252,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self._ipr_refine_scene=scene if not output else None
         values=self._settings_values();get=self.preferences.get
         width, height = self._dimensions(scene, bool(output))
-        original_digest=digest or self._digest(scene)
+        original_digest=digest or self._digest(scene,timeless=not output and self._engine()=='moonlightipr')
         if not output:scene=dict(scene,_clay_preview=self._clay())
         if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if (getattr(self,'_draft_hasty',False) and not self._following) else 12)
         if not output and self.draft.isChecked():
@@ -1328,8 +1328,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.buffers.forget()
         self.status.setText('The scene was closed: its render is cleared.')
 
-    def _digest(self, scene):
-        render_scene={key:value for key,value in scene.items() if key not in ('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')}
+    def _digest(self, scene, timeless=False):
+        """What a render of the scene depends on, hashed. timeless leaves out the frame the scene was read at, for
+        MoonLightIPR's previews: it draws nothing from the time itself, what an animation changes being in the rest of
+        the scene, so going to another frame of a scene that does not move gives it nothing new to draw."""
+        dropped=('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')+(('time','frame') if timeless else ())
+        render_scene={key:value for key,value in scene.items() if key not in dropped}
         stored=self._settings_values();get=self.preferences.get
         values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
@@ -1668,7 +1672,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 self.release_timer.start()
                 self._submit(scene,digest=('live-drag',object()))
             else:
-                digest=self._digest(scene)
+                digest=self._digest(scene,timeless=self._engine()=='moonlightipr')
                 self._live_digest_pending=False
                 if digest != self.last_digest:self._submit(scene,digest=digest)
         except Exception as exc:

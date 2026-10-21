@@ -18,7 +18,8 @@ const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 
                CHANNEL_COAT_ROUGHNESS = 11, CHANNEL_DISSOLVE = 12, CHANNEL_BUMP = 13, CHANNEL_GROUP_MASK = 14,
                CHANNEL_ANISOTROPY = 15, CHANNEL_SUBSURFACE = 16, CHANNEL_SUBSURFACE_COLOR = 17,
                CHANNEL_DRIVER = 18,     // four values that only gradient rows read
-               CHANNEL_COUNT = 22;
+               CHANNEL_SPECULAR = 22,   // a stack row's specular amount, as a share of the most its stack has
+               CHANNEL_COUNT = 23;
 // Rows that are not a channel: the start and end of a group, whose rows are blended as one
 // over what was there before it, and a mask written to a register for a later row to use.
 // The kinds of ray an instance can be hidden from, as bits of its visibility mask.

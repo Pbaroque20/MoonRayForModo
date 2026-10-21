@@ -830,9 +830,13 @@ ML_INLINE float3 specularFresnel(const Surface& s, float cosine) {
 // clearcoat_bending, on unless switched off), and what is under such a coat is dimmed twice: by what the coat reflects
 // of the light going in, in proportion to how much coat there is, and by what it turns back of the light coming out,
 // which is the whole of a dielectric's reflection as soon as there is any coat at all (UnderClearcoatBsdfLobe).
+// A clear coat's index of refraction: DwaBaseMaterial's clearcoat_refractive_index, which the plugin leaves at its
+// default. Not the specular's, which a stack sets for the most any of its rows reflects and may be far higher.
+#define COAT_IOR 1.5f
+
 ML_INLINE float underCoat(const Surface& s, float3 wo) {
     if (!s.coatDims) return 1.0f;
-    const float reflected = dielectricFresnel(wo.z, s.ior);
+    const float reflected = dielectricFresnel(wo.z, COAT_IOR);
     return (1.0f - s.coat * reflected) * (s.coat > 0.0f ? 1.0f - reflected : 1.0f);
 }
 // The light the coat turns back goes down to what is under it again, and some of that comes out at the next try, and
@@ -961,7 +965,7 @@ struct Lobes {
 };
 ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
     const float fuzz = underFuzz(s, wo);
-    const float coat = s.coat * dielectricFresnel(wo.z, s.ior) * fuzz;
+    const float coat = s.coat * dielectricFresnel(wo.z, COAT_IOR) * fuzz;
     const float specular = luminance(specularFresnel(s, wo.z)) * underCoat(s, wo) * fuzz;
     const float sheen = s.fuzz > 0.0f ? luminance(s.fuzzColor) * s.fuzz * velvetAlbedo(wo.z, s.fuzzRoughness) : 0.0f;
     const float front = luminance(diffuseColor(s, wo)) + sheen;
@@ -1084,7 +1088,7 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     }
     if (s.coat > 0.0f) {
         const float cd = ggxD(s.coatAlpha, h.z), cg1o = smithG1(s.coatAlpha, wo.z), cg1i = smithG1(s.coatAlpha, wi.z);
-        e.specular += vec(s.coat * dielectricFresnel(cosine, s.ior) * cd * cg1o * cg1i / (4.0f * wo.z));
+        e.specular += vec(s.coat * dielectricFresnel(cosine, COAT_IOR) * cd * cg1o * cg1i / (4.0f * wo.z));
         e.specularPdf += lobes.coat * cg1o * cd / (4.0f * wo.z);
     }
     // Diffuse light falls on the surface's own smoothed normal; only reflections use the bent one.
@@ -2615,7 +2619,8 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     channel[CHANNEL_ANISOTROPY] = vec(material.anisotropy);
     channel[CHANNEL_SUBSURFACE] = vec(material.subsurface);
     channel[CHANNEL_SUBSURFACE_COLOR] = vec(material.subsurfaceColor);
-    for (unsigned c = CHANNEL_DRIVER; c < CHANNEL_COUNT; ++c) channel[c] = vec(0.0f);
+    for (unsigned c = CHANNEL_DRIVER; c < CHANNEL_DRIVER + 4; ++c) channel[c] = vec(0.0f);
+    channel[CHANNEL_SPECULAR] = vec(1.0f);
     MappedSlots slots;
     slots.normal = slots.bump = UV_SLOTS;
 
@@ -2826,6 +2831,8 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     slots.normal = slots.bump = UV_SLOTS;
     if (material.layerCount) {
         slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f));
+        // A stack's highlight: the lobe set for the most any of its rows reflects, weighted by this point's share.
+        hit->specular = material.specular * clamp(average(channel[CHANNEL_SPECULAR]), 0.0f, 1.0f);
         // Scalars take the mean of a colour, as MoonRay does for a map bound to a float attribute.
         hit->albedo = channel[CHANNEL_COLOR] * channel[CHANNEL_COLOR_AMOUNT];
         hit->emission = channel[CHANNEL_EMISSION] * channel[CHANNEL_EMISSION_AMOUNT];
