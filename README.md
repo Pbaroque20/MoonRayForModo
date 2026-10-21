@@ -16,6 +16,8 @@ Not released yet: on the MoonLightIPR branch.
 - **Anisotropy follows Modo's UV map, and its strength Modo's**: a material with Anisotropy but no UV map named for it renders a round highlight, as Modo draws it; with one, MoonRay's highlight stretches and spreads nearer Modo's (fitted against Modo's renders). A very strong anisotropy still draws a shorter streak than Modo's.
 - **Shader Tree masks checked against Modo**: material, Part and Selection Set masks colour the same surfaces in MoonRay as in Modo; a layer or group placed above the Base Shader, which Modo applies to nothing, is left out too, with a notice.
 - **Exporting RDLB writes only the RDLB**: the scene text MoonRay's converter reads goes through a temporary folder, rather than appearing beside the scene while it is converted.
+- **Displacement in MoonLightIPR**: Shader Tree displacement layers raise the surface in the preview as in MoonRay, the mesh split finer for them; a displaced mesh takes a moment longer to load.
+- **MoonLightIPR draws a material stack's rows with their own shine**: a dull print over shiny metal, as a can's label, shows the metal where the print lets it through, and a clear coat over it no longer brightens or mirrors it.
 - **Light links in MoonLightIPR**: which lights reach each object, set in Object controls, a material's MoonRay links or Modo's own group light links, as MoonRay draws them (checked against MoonRay's renders). Shadows an object is set not to cast are still MoonRay's alone.
 - **Replicators render with motion blur**: a replicator whose copies Modo gives a moment from the frame in a different number no longer stops the render (MoonLightIPR, which renders with motion blur by default, showed nothing); a copy missing at an end of the shutter is held still, with a notice.
 - **Glass nearer Modo's**: a tinted glass solid takes Modo's colour once, as Modo does, rather than at each surface, which made it much darker; and a rough glass blurs as much as Modo's (its refraction roughness fitted to Modo's renders at four values). Checked on a glass ball against Modo's own renders.
@@ -334,7 +336,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Procedural textures | ![partly](docs/images/feature-partly.svg) | The patterns the plugin bakes for MoonRay, without their alpha |
 | Layer blend modes | ![yes](docs/images/feature-yes.svg) | All of them, with normal map blending |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
-| Displacement and Stencil layers | ![no](docs/images/feature-no.svg) | Named in Notices; shown in MoonRay |
+| Displacement and Stencil layers | ![partly](docs/images/feature-partly.svg) | Displacement layers raise the surface as MoonRay's do, a displaced mesh split evenly up to 400,000 triangles; Stencil layers are named in Notices and shown in MoonRay |
 | Other texture effects (Modo has 218) | ![partly](docs/images/feature-partly.svg) | The ones a standard or Principled material uses; others named in Notices |
 | Group masks by material, Part and Selection Set | ![yes](docs/images/feature-yes.svg) | As MoonRay draws them |
 | Group masks by item | ![yes](docs/images/feature-yes.svg) | As MoonRay draws them |
