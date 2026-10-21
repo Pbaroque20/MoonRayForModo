@@ -333,6 +333,9 @@ def stacked(base, path, tag):
     material = json.loads(pathlib.Path(path).read_text(encoding='utf-8'))['materials'][tag]
     rows = [dict(row, layers=[], textures={}) for row in material['material_stack']]
     rows[-1] = dict(rows[-1], raw_color=[.8, .1, .1], color=[.8 * rows[-1].get('diffuse_amount', 1), .1, .1])
+    # MOONLIGHTIPR_TEST_STACK_ROWS changes rows for an experiment: a JSON list, one object of values for each row.
+    for row, values in enumerate(json.loads(os.environ.get('MOONLIGHTIPR_TEST_STACK_ROWS', '[]'))):
+        rows[row] = dict(rows[row], **values)
     worn = dict(material, layers=[], textures={}, material_stack=rows)
     return dict(base, _environment=.6, lights=fixture.snapshot()['lights'],
                 materials=dict(base['materials'], stacked=worn),

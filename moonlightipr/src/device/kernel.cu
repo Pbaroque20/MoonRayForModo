@@ -843,7 +843,7 @@ ML_INLINE float underCoat(const Surface& s, float3 wo) {
 // so on: MoonRay adds the series up, by the share of light the lobe beneath sends back.
 ML_INLINE float3 coatBounces(const Surface& s, float3 wo, float3 albedo) {
     if (!s.coatDims || s.coat <= 0.0f) return vec(1.0f);
-    const float reflected = dielectricFresnel(wo.z, s.ior);
+    const float reflected = dielectricFresnel(wo.z, COAT_IOR);
     return make_float3(1.0f / fmaxf(1.0f - reflected * albedo.x, 0.01f), 1.0f / fmaxf(1.0f - reflected * albedo.y, 0.01f),
                        1.0f / fmaxf(1.0f - reflected * albedo.z, 0.01f));
 }
