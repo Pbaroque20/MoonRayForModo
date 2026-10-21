@@ -2,6 +2,7 @@
 #include <lx_item.hpp>
 #include <lx_rendercache.hpp>
 #include <lx_vertex.hpp>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -33,6 +34,14 @@ void text(std::ostream& out,const char* value) {
     }
     out<<'"';
 }
+// A segment Modo has not got ready (LXe_NOTAVAILABLE): seen for a mesh added while a render was going and edited
+// in its tool's properties. Such a segment is left out of the reading and counted, rather than the whole reading
+// failing; the plugin reads again (see evaluated.capture).
+bool ready(LxResult result,const char* operation) {
+    if(result==LXe_NOTAVAILABLE) return false;
+    check(result,operation);return true;
+}
+static int skippedSegments=0;
 template<class T> void number(std::ostream& out,T value) {
     if(!std::isfinite(double(value))) throw std::runtime_error("Non-finite evaluated geometry");
     out<<value;
@@ -139,12 +148,19 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
         const int corners=polygons*perFace;
         std::vector<std::array<float,3>> positions(vertices),normals(corners);
         std::vector<int> indices(corners);
-        if(vertices) check(segment.GetVertexFeature(LXiRENDERCACHE_GEOVERT_OPOS,positions.data(),vertices,0),"Positions");
-        if(corners) check(segment.GetPolygonVertexInds(indices.data(),corners,0),"Polygon indices");
+        if((vertices && !ready(segment.GetVertexFeature(LXiRENDERCACHE_GEOVERT_OPOS,positions.data(),vertices,0),"Positions")) ||
+           (corners && !ready(segment.GetPolygonVertexInds(indices.data(),corners,0),"Polygon indices"))) {
+            ++skippedSegments;spentFetching+=clockNow()-mark;continue;
+        }
         for(int index:indices) if(index<0 || index>=vertices) throw std::runtime_error("Evaluated polygon index out of bounds");
         if(merging && blob && perFace>=3 && polygons) {
             const bool held=corners && LXx_OK(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_ONRM,normals.data(),corners,0));
             int uvCount=0;segment.VertexFeatureCount(LXiRENDERCACHE_GEOVERT_UV,&uvCount);
+            std::vector<std::vector<std::array<float,2>>> uvs(std::max(uvCount,0),std::vector<std::array<float,2>>(corners));
+            bool fetched=true;
+            for(int u=0;u<uvCount && fetched;++u)
+                fetched=ready(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_UV+u,uvs[u].data(),corners,0),"UV coordinates");
+            if(!fetched) {++skippedSegments;spentFetching+=clockNow()-mark;continue;}
             Joined* kind=nullptr;
             for(auto& k:kinds) if(k.normals==held && k.uvCount==uvCount) {kind=&k;break;}
             if(!kind) {kinds.emplace_back();kind=&kinds.back();kind->normals=held;kind->uvCount=uvCount;kind->uvs.resize(uvCount);}
@@ -154,11 +170,7 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
             for(int index:indices) kind->corners.push_back(index+offset);
             kind->sizes.insert(kind->sizes.end(),std::size_t(polygons),perFace);
             if(held) kind->normalValues.insert(kind->normalValues.end(),normals.begin(),normals.end());
-            for(int u=0;u<uvCount;++u) {
-                std::vector<std::array<float,2>> values(corners);
-                check(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_UV+u,values.data(),corners,0),"UV coordinates");
-                kind->uvs[u].insert(kind->uvs[u].end(),values.begin(),values.end());
-            }
+            for(int u=0;u<uvCount;++u) kind->uvs[u].insert(kind->uvs[u].end(),uvs[u].begin(),uvs[u].end());
             spentFetching+=clockNow()-mark;
             continue;
         }
@@ -221,7 +233,7 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
 // kept between readings and left for Modo to keep up to date was tried: it was a moment behind each edit, and
 // failed to give its segments just after a mesh had changed shape.
 static void write_snapshot(std::ostream& out,double time,int displaced) {
-        blobAt=0;
+        blobAt=0;skippedSegments=0;
         const auto began=std::chrono::steady_clock::now();
         spentLoading=spentFetching=spentWriting=0;
         auto since=[&](){return std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();};
@@ -279,7 +291,7 @@ static void write_snapshot(std::ostream& out,double time,int displaced) {
             if(!first)out<<',';first=false;text(out,std::to_string(entry.first).c_str());out<<':';prototype(out,entry.second);
         }
 
-        out<<"},\"timing\":["<<evaluated<<','<<listed-evaluated<<','<<since()-listed<<"],\"handing\":["<<spentLoading<<','<<spentFetching<<','<<spentWriting<<"]}";
+        out<<"},\"timing\":["<<evaluated<<','<<listed-evaluated<<','<<since()-listed<<"],\"handing\":["<<spentLoading<<','<<spentFetching<<','<<spentWriting<<"],\"skipped\":"<<skippedSegments<<'}';
 }
 
 extern "C" __declspec(dllexport) const char* MR_geometry_snapshot(double time,int displaced) {
