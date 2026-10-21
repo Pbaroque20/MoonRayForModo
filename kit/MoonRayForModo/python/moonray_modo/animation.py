@@ -11,7 +11,7 @@ from . import host
 active = None
 
 
-def capture_frame(time, evaluated=False, motion=False, fps=24):
+def capture_frame(time, evaluated=False, motion=False, fps=24, preview=False):
     selection = lx.service.Selection()
     original = selection.GetTime()
     try:
@@ -50,7 +50,7 @@ def capture_frame(time, evaluated=False, motion=False, fps=24):
                         samples.append(sample)
                     else:
                         samples.append(capture())
-                apply_motion(snapshot, samples[0], samples[1], endpoints)
+                apply_motion(snapshot, samples[0], samples[1], endpoints, preview=preview)
                 snapshot['_external_motion_settings']=asset_controls
         return snapshot
     finally:
@@ -186,13 +186,13 @@ single_request=None
 single_result=None
 
 def capture_current(evaluated=False):
-    global single_request,single_result
+    """The scene now, with where things are at the shutter's ends. Read here and not through moonray.captureMotion:
+    Modo holds a command back while another is under way (its colour picker's, for one), and the preview waited on
+    it without end, Modo still answering (2026-10-21). capture_frame puts the time back as it found it."""
+    global single_request
     import modo
     if single_request is not None:raise ValueError('A motion capture is already running')
     moment=lx.service.Selection().GetTime();fps=float(modo.Scene().fps)
-    single_request=lambda:capture_frame(moment,evaluated,True,fps);single_result=None
-    try:
-        lx.eval('moonray.captureMotion')
-        if single_result is None:raise ValueError('Motion capture did not return a scene')
-        return single_result
-    finally:single_request=None;single_result=None
+    single_request=True
+    try:return capture_frame(moment,evaluated,True,fps,preview=True)
+    finally:single_request=None
