@@ -3,6 +3,10 @@ import math
 import re
 from functools import lru_cache
 from . import options, textures, outputs, __version__
+from . import rdlb, primitive_attributes
+from .serialization import array as _kept
+from array import array as numbers
+from itertools import chain
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -15,10 +19,10 @@ def number(value):
 
 
 def string(value):
-    return _string(str(value))
+    return _string(value if value.__class__ is str else str(value))
 
 
-@lru_cache(maxsize=65536)
+@lru_cache(maxsize=1 << 18)   # a scene from Modo can name a hundred thousand objects
 def _string(value):
     # RDLA is Lua, not JSON; escape UTF-8 bytes, not JSON unicode escapes. The same names are written at every
     # render of a scene, thousands of them, so each is worked out once.
@@ -42,9 +46,21 @@ def vector(values, kind='Vec3'):
     return '%s(%s)' % (kind, ', '.join(number(v) for v in values))
 
 
+_MAT4 = 'Mat4(' + ', '.join(['%.12g'] * 16) + ')'
+
+
 def matrix(values):
     if len(values) != 16:
         raise ValueError("Transform must contain 16 values")
+    # The sixteen at once (the same text as number() gives each), where all are finite: a scene from Modo has a
+    # transform for every one of its tens of thousands of meshes. Anything else goes number by number, which says
+    # what is wrong.
+    try:
+        held = tuple(map(float, values))
+        if math.isfinite(math.fsum(held)):
+            return _MAT4 % held
+    except (TypeError, ValueError, OverflowError):
+        pass
     return 'Mat4(%s)' % ', '.join(number(v) for v in values)
 
 
@@ -73,15 +89,54 @@ def many_vectors(values,kind):
 
 
 def vector_array(values,kind='Vec3'):
-    from .serialization import array as cached
+    cached = _kept
     def write():
         whole = many_vectors(values,kind) if len(values) > 1000 else None
         return whole if whole is not None else array(vector(v,kind) for v in values)
     return cached(kind,values,write)
 
+def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry', indent='    '):
+    """One heavy list of a mesh (or of its UserData): as text in the scene, or (while rdlb.collecting) in its binary
+    file instead."""
+    if kind == 'vec3' or kind == 'vec2':
+        size = 3 if kind == 'vec3' else 2
+        encode, value_type = (lambda: rdlb.float_list(source, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
+    elif kind == 'indices':
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', chain.from_iterable(source)))), rdlb.INT_VECTOR
+    elif kind == 'counts':
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', map(len, source)))), rdlb.INT_VECTOR
+    elif kind == 'rgb':
+        encode, value_type = (lambda: rdlb.float_list(source, 3)), rdlb.RGB_VECTOR
+    elif kind == 'float':
+        encode, value_type = (lambda: rdlb.float_list(numbers('f', (v[0] for v in source)))), rdlb.FLOAT_VECTOR
+    elif kind == 'string':
+        encode, value_type = (lambda: rdlb.string_list(str(v[0]) for v in source)), rdlb.STRING_VECTOR
+    elif kind == 'part_faces':
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', (f for v in source.values() for f in v)))), rdlb.INT_VECTOR
+    else:
+        raise ValueError('Unknown heavy list ' + kind)
+    # The list's text for a later change (scene_delta), from this list itself: the caller's `written` reads its loop's
+    # variables when it is called, by when they name the scene's last mesh.
+    fingerprint = rdlb.heavy(klass, name, attribute, value_type, source, kind, encode, '%s(%s)' % (klass, string(name)),
+                             lambda kind=kind, source=source: _list_text(kind, source))
+    if fingerprint is not None:
+        return ['%s-- rdlb ["%s"] %s' % (indent, attribute, fingerprint) if fingerprint else '%s-- rdlb ["%s"]' % (indent, attribute)]
+    return ['%s["%s"] = %s,' % (indent, attribute, written())]
+
+
+def _list_text(kind, source):
+    """The text of one heavy list, as the scene would hold it: None for the lists whose change is structural."""
+    if kind in ('vec3', 'vec2', 'rgb'):
+        return vector_array(source, {'vec3': 'Vec3', 'vec2': 'Vec2', 'rgb': 'Rgb'}[kind])
+    if kind == 'float':
+        return array(number(v[0]) for v in source)
+    if kind == 'string':
+        return array(string(str(v[0])) for v in source)
+    return None
+
+
 def mesh_array(values,counts=False):
-    from .serialization import array as cached
-    from itertools import chain
+    cached = _kept
     # map and chain run through a heavy mesh's faces without a step of Python for each corner.
     return cached('counts' if counts else 'indices',values,lambda:array(map(str,map(len,values))) if counts else array(map(str,chain.from_iterable(values))))
 
@@ -531,13 +586,18 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if not faces:
             continue
         def checked(faces=faces, vertices=vertices, mesh=mesh):
+            # All the corners at once where they are all whole numbers within the points: the usual case. Otherwise
+            # face by face, which says which mesh is wrong.
+            if min(map(len, faces)) >= 3:
+                corners = list(chain.from_iterable(faces))
+                if set(map(type, corners)) == {int} and min(corners) >= 0 and max(corners) < len(vertices):
+                    return ''
             for face in faces:
                 if len(face) < 3 or any(type(v) is not int or v < 0 or v >= len(vertices) for v in face):
                     raise ValueError('Invalid face in ' + mesh['name'])
             return ''
         # Looked over once for as long as the mesh's lists stay the same ones, as their text is written once.
-        from .serialization import array as kept
-        kept('checked:%d' % len(vertices), faces, checked)
+        _kept('checked:%d' % len(vertices), faces, checked)
         tag = mesh.get('material', '')
         if tag not in materials:
             tag = ''
@@ -571,7 +631,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lines += ['UserData(%s) {' % string(name),
                       '  ["vec2f_key"] = %s,' % string(uv_name),
                       '  ["rate"] = 6,',
-                      '  ["vec2f_values_0"] = %s,' % vector_array(values,'Vec2'), '}']
+                      *_heavy_line(name, 'vec2f_values_0', 'vec2', values, lambda: vector_array(values, 'Vec2'), 'UserData', '  '),
+                      '}']
             user_data.append('UserData(%s)' % string(name))
         # The mesh's weight and colour maps (vertex_maps), for its materials to read by their names: MoonRay's rate 4
         # for a value at each point, 6 for one at each corner of each face.
@@ -582,15 +643,17 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     raise ValueError('Vertex map %s of %s does not match its %s' % (map_name, mesh['name'], 'points' if rate == 4 else 'polygon corners'))
                 # A colour, a vector (a colour map holding one: vertex_maps.as_vectors), or a number.
                 word = {'color': 'color', 'vec2': 'vec2f', 'vec3': 'vec3f', 'string': 'string'}.get(held['kind'], 'float')
-                written = (vector_array(values, 'Rgb') if word == 'color' else vector_array(values, 'Vec2') if word == 'vec2f'
+                written = lambda values=values, word=word: (vector_array(values, 'Rgb') if word == 'color' else vector_array(values, 'Vec2') if word == 'vec2f'
                            else vector_array(values, 'Vec3') if word == 'vec3f' else array(string(str(v[0])) for v in values) if word == 'string'
                            else array(number(v[0]) for v in values))
                 name = '/modo/mesh/%d/map/%s/%d' % (index, source, map_index)
+                kind = {'color': 'rgb', 'vec2f': 'vec2', 'vec3f': 'vec3', 'string': 'string'}.get(word, 'float')
                 lines += ['UserData(%s) {' % string(name), '  [%s] = %s,' % (string(word + '_key'), string(map_name)),
                           # MoonRay's words are string_values, without the _0 the numbers have.
-                          '  ["rate"] = %d,' % rate, '  [%s] = %s,' % (string(word + ('_values' if word == 'string' else '_values_0')), written), '}']
+                          '  ["rate"] = %d,' % rate,
+                          *_heavy_line(name, word + ('_values' if word == 'string' else '_values_0'), kind, values, written, 'UserData', '  '),
+                          '}']
                 user_data.append('UserData(%s)' % string(name))
-        from . import primitive_attributes
         instance_values = []
         if mesh.get('instance_attributes') and len(mesh['instance_attributes']) == len(mesh.get('instances') or []):
             # One value for each instance, on the instancer.
@@ -599,9 +662,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             user_data += primitive_attributes.emit('/modo/mesh/%s/attribute' % index, [mesh['attributes']], lines)
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,
                   '    ["node_xform"] = %s,' % node_matrix(mesh),
-                  '    ["vertex_list_0"] = %s,' % vector_array(vertices),
-                  '    ["vertices_by_index"] = %s,' % mesh_array(faces),
-                  '    ["face_vertex_count"] = %s,' % mesh_array(faces,True),
+                  *_heavy_line('/modo/mesh/%s' % index, 'vertex_list_0', 'vec3', vertices, lambda: vector_array(vertices)),
+                  *_heavy_line('/modo/mesh/%s' % index, 'vertices_by_index', 'indices', faces, lambda: mesh_array(faces)),
+                  *_heavy_line('/modo/mesh/%s' % index, 'face_vertex_count', 'counts', faces, lambda: mesh_array(faces, True)),
                   '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
                   *(['    ["mesh_resolution"] = %d,' % min(mesh.get('mesh_resolution',2 ** level), resolution_cap or 2 ** 31)] if subdivision or displaced else []),
                   *(['    ["adaptive_error"] = %s,' % number(mesh['adaptive_error'])] if (subdivision or displaced) and 'adaptive_error' in mesh else []),
@@ -609,7 +672,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if 'vertices_close' in mesh:
             if len(mesh['vertices_close']) != len(vertices):
                 raise ValueError('Motion samples must have equal vertex counts')
-            lines.append('    ["vertex_list_1"] = %s,' % vector_array(mesh['vertices_close']))
+            lines += _heavy_line('/modo/mesh/%s' % index, 'vertex_list_1', 'vec3', mesh['vertices_close'],
+                                 lambda: vector_array(mesh['vertices_close']))
         if user_data:
             lines.append('    ["primitive_attributes"] = %s,' % array(user_data))
         creases = mesh.get('creases', [])
@@ -652,11 +716,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             if values:
                 if len(values) != sum(map(len, faces)):
                     raise ValueError('Face-varying %s must match the corner count' % source)
-                lines.append('    [%s] = %s,' % (string(attribute), vector_array(values,kind)))
+                lines += _heavy_line('/modo/mesh/%s' % index, attribute, kind.lower(), values,
+                                     lambda: vector_array(values, kind))
         if parts:
             lines += ['    ["part_list"] = %s,' % array(string('part%d' % i) for i in range(len(parts))),
                       '    ["part_face_count_list"] = %s,' % array(str(len(v)) for v in parts.values()),
-                      '    ["part_face_indices"] = %s,' % array(str(f) for v in parts.values() for f in v)]
+                      *_heavy_line('/modo/mesh/%s' % index, 'part_face_indices', 'part_faces', parts,
+                                   lambda: array(str(f) for v in parts.values() for f in v))]
         lines += ['  }']
         if scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{}).get('mesh_light'):
             # MoonRay refuses a MeshLight whose geometry is also in the layer, so the light gets its own copy.

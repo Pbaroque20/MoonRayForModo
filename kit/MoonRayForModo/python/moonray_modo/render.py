@@ -28,6 +28,14 @@ def scalar_only(snapshot):
     return None
 
 
+def binary_sessions(runtime):
+    """Whether this runtime's loaded MoonRay reloads a scene from its text and its geometry's binary file."""
+    try:
+        import json
+        return bool(json.loads((Path(runtime)/'modo-session.json').read_text(encoding='utf-8')).get('scene_files'))
+    except (OSError,ValueError,TypeError,AttributeError):return False
+
+
 def deep_beside(path):
     """Where the deep EXR of a render goes: beside it, under its name."""
     path=Path(path);return path.with_name(path.stem+'.deep.exr')
@@ -48,11 +56,30 @@ class SceneWriter(QtCore.QThread):
     @forgotten
     def run(self):
         try:
-            text = rdla.scene_text(*self.arguments)
             from .scene_delta import difference
-            delta = difference(self.applied['text'], text) if self.applied else None
+            if native.binary_geometry() and self.context and binary_sessions(self.context[0].get('runtime')):
+                # The loaded MoonRay takes a scene as its text and a binary file of its geometry's lists (rdlb.py),
+                # when it is started and when it reloads: the text in the binary file's place holds each list's
+                # fingerprint, so a changed list is a change to the text, and the change carries the list as text.
+                from . import rdlb
+                with rdlb.collecting() as sink:
+                    text = rdla.scene_text(*self.arguments)
+                delta = difference(self.applied['text'], text, sink.text_of) if self.applied else None
+                binary = sink.payload() if sink.objects else None
+            else:
+                text = rdla.scene_text(*self.arguments)
+                delta = difference(self.applied['text'], text) if self.applied else None
+                binary = None
             self.prepared = dict(base=self.applied, delta=delta, full_bytes=text.encode('utf-8'),
-                                 delta_bytes=delta.encode('utf-8') if delta is not None else None)
+                                 delta_bytes=delta.encode('utf-8') if delta is not None else None, binary=binary)
+            if binary is None and not self.applied and native.binary_geometry():
+                # A MoonRay that reloads from text alone still starts with the geometry as binary; later changes
+                # are found against the full text, as before.
+                from . import rdlb
+                with rdlb.collecting() as sink:
+                    split = rdla.scene_text(*self.arguments)
+                if sink.objects:
+                    self.prepared['split'] = (split.encode('utf-8'), sink.payload())
             self.path.write_bytes(self.prepared['full_bytes'])
             self.outcome = (text, '')
         except Exception as exc:
@@ -113,6 +140,7 @@ class Renderer(QtCore.QObject):
         for signal in (self.buffers.image_ready,self.buffers.image_object,self.buffers.notice):
             signal.connect(self._moonlightipr_flush)
         self.process = QtCore.QProcess(self)
+        self.process.started.connect(lambda: native.lower_priority(self.process.processId()))
         terminal.watch(self.process, lambda: 'Denoiser' if self.phase == 'denoise' else 'MoonRay')
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
@@ -536,8 +564,18 @@ class Renderer(QtCore.QObject):
                 self.writer.finished.connect(self._written)
                 self.writer.start()
                 return
-            text = rdla.scene_text(*arguments)
-            scene.write_text(text, encoding='utf-8')
+            if native.binary_geometry():
+                # The geometry's heavy lists go in a binary file beside the text (rdlb.py): MoonRay reads them as
+                # bytes, not as millions of numbers of text, and the picture is the same.
+                from . import rdlb
+                with rdlb.collecting(fingerprints=False) as sink:
+                    text = rdla.scene_text(*arguments)
+                scene.write_text(text, encoding='utf-8')
+                if sink.objects:
+                    sink.write(scene.with_suffix('.rdlb'))
+            else:
+                text = rdla.scene_text(*arguments)
+                scene.write_text(text, encoding='utf-8')
         except Exception as exc:
             self.failed.emit(str(exc));return
         self._pass_ready(request, snapshot, scene, mode, text)
@@ -584,6 +622,8 @@ class Renderer(QtCore.QObject):
             self.process.setWorkingDirectory(self.directory.name)
             self.process.setProgram(str(request['runtime'] / 'moonray.exe'))
             args=native.arguments(scene, self.image_path, request['threads'],mode)
+            if not self.using_session and Path(scene).with_suffix('.rdlb').is_file():
+                args[2:2]=['-in', str(Path(scene).with_suffix('.rdlb').resolve())]
             sampling=options.render_values(snapshot.get('render_settings',{}))
             if sampling['sampling_mode']==2 and '-info' not in args: args.append('-info')
             self.process.setArguments(args)

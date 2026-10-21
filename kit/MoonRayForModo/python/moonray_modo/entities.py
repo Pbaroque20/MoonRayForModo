@@ -401,7 +401,34 @@ def collect(scene, warnings):
                            'parameters': validate(name, settings.get(PARAMETERS_KEY, {}))})
         except (ValueError, LookupError, RuntimeError) as exc:
             warnings.append('MoonRay item %s: %s.' % (getattr(item, 'name', '?'), exc))
-    return result
+    return [located(entity, getattr(scene, 'filename', None), warnings) for entity in result]
+
+
+def located(entity, scene_filename, warnings):
+    """An item's files where they are on this machine. A scene brought from another machine names them where they
+    were there (a light's texture under the author's own folders, which Modo's packaging does not gather): one moved
+    along with the scene is found next to it, as images are (textures.resolve_scene_source), and one that is nowhere
+    is left out, said, as a material's missing texture is, rather than handed to MoonRay, which draws a light whose
+    texture it cannot open in its colour for a missing texture, pink."""
+    from .textures import resolve_scene_source, source_tiles
+    attributes = catalog()[entity['class']]['attributes']
+    parameters = dict(entity['parameters'])
+    for key, held in entity['parameters'].items():
+        if not attributes.get(key, {}).get('filename') or not isinstance(held, str) or not held.strip():
+            continue
+        try:
+            path, _ = resolve_scene_source(held, scene_filename)
+            found = bool(source_tiles(path))
+        except (OSError, ValueError):
+            path, found = held, False
+        if found:
+            parameters[key] = str(path).replace('\\', '/') if str(path) != held else held
+        else:
+            del parameters[key]
+            note = 'File not found, %s rendered without it: %s' % (entity['name'], held)
+            if note not in warnings:
+                warnings.append(note)
+    return dict(entity, parameters=parameters) if parameters != entity['parameters'] else entity
 
 
 def value(entity, key):

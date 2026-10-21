@@ -20,8 +20,8 @@ def descriptors(materials):
             for source in [child] + child.get('native_dependencies', []):
                 graph_layers=[]
                 if source.get('node_graph'):
-                    from .nodes import descriptors as graph_descriptors
-                    graph_layers=graph_descriptors(source['node_graph'])
+                    from . import nodes   # nodes imports this module: imported here, once it is loaded
+                    graph_layers=nodes.descriptors(source['node_graph'])
                 for layer in source.get('layers', [])+graph_layers:
                     if layer.get('coordinate_key'):
                         result[layer['coordinate_key']] = layer
@@ -103,11 +103,7 @@ def transform_uv(layer, values):
     rotation = layer.get('rotation', 0)
     cosine, sine = math.cos(rotation), math.sin(rotation)
     sx,sy = layer.get('scale', [1,1])
-    result = []
-    for u,v in values:
-        x,y = a*u+b*v+c, d*u+e*v+f
-        result.append([(x*cosine-y*sine)*sx, (x*sine+y*cosine)*sy])
-    return result
+    return [[((x := a*u+b*v+c)*cosine-(y := d*u+e*v+f)*sine)*sx, (x*sine+y*cosine)*sy] for u,v in values]
 
 
 def mesh_corners(layer, vertices, faces, uv, world_matrix):
@@ -115,6 +111,13 @@ def mesh_corners(layer, vertices, faces, uv, world_matrix):
     count = sum(len(polygon) for polygon in faces)
     if layer.get('projection','uv') == 'uv' and len(uv) != count:
         raise ValueError('Named UV count does not match mesh corners')
+    if layer.get('projection','uv') == 'uv':
+        # Each corner's own UV, moved as face() moves it: the same numbers, without a step for each polygon. Where
+        # the layer moves them not at all, the very list, by which what was worked out from it (and written of it) is
+        # kept.
+        if list(layer.get('uv_matrix', [1,0,0,0,1,0])) == [1,0,0,0,1,0] and not layer.get('rotation', 0) and list(layer.get('scale', [1,1])) == [1,1]:
+            return uv
+        return transform_uv(layer, uv)
     result = []
     offset = 0
     for polygon in faces:

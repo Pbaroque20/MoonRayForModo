@@ -53,9 +53,46 @@ def arguments(scene, output, threads=0, mode='vectorized'):
     args = ['-in', str(Path(scene).resolve()), '-out', str(Path(output).resolve()),
             '-exec_mode', mode]
     args.append('-info')
-    if int(threads) > 0:
-        args += ['-threads', str(int(threads))]
+    threads = render_threads(threads)
+    if threads > 0:
+        args += ['-threads', str(threads)]
     return args
+
+
+def low_latency():
+    """Whether renders leave Modo room to work (on by default): MoonRay runs below Modo's priority, and, where it is to
+    take all the processor, one thread is left over. Measured with a stand-in for Modo's own work beside a render on
+    12 threads: as before, it got 93 of its 600 frames in ten seconds, one in twenty over 120 ms late; with MoonRay
+    below normal priority, 597, one in twenty at most 11 ms."""
+    return _switch('low_latency', 'MOONRAY_MODO_LOW_LATENCY')
+
+
+def render_threads(threads):
+    """The threads MoonRay is told to use: as set, or all but one (low_latency) where it is to take all of them."""
+    threads = int(threads)
+    if threads > 0 or not low_latency():
+        return threads
+    cores = os.cpu_count() or 1
+    return cores - 1 if cores > 4 else 0
+
+
+def lower_priority(pid):
+    """A renderer the plugin started, below normal priority (low_latency), so that Modo comes first: a render then uses
+    what the processor has to spare. Windows only; True where it was lowered."""
+    if os.name != 'nt' or not pid or not low_latency():
+        return False
+    try:
+        import ctypes
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x0200, False, int(pid))   # PROCESS_SET_INFORMATION
+        if not handle:
+            return False
+        try:
+            return bool(kernel.SetPriorityClass(handle, 0x4000))   # BELOW_NORMAL_PRIORITY_CLASS
+        finally:
+            kernel.CloseHandle(handle)
+    except (OSError, AttributeError, ValueError):
+        return False
 
 
 def default_runtime():
@@ -232,6 +269,12 @@ def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
     return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once()) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu'))
+
+
+def binary_geometry():
+    """Whether scenes are handed to MoonRay with their geometry's heavy lists as binary (rdlb.py), on by default:
+    much quicker to load, the same picture."""
+    return _switch('binary_geometry', 'MOONRAY_MODO_BINARY_GEOMETRY')
 
 
 def drain_tiles():

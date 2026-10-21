@@ -8,7 +8,8 @@ import hashlib
 import math
 import struct
 from array import array
-from itertools import chain
+from itertools import chain, accumulate
+from .scene_digest import flat
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # Layout flags; keep in step with moonlightipr/session/scene_loader.cpp.
@@ -488,6 +489,35 @@ def cage_payload(mesh, material_index, slots, warnings):
     return _packed[signature]
 
 
+def _fan(size, _held={}):
+    """A polygon of size corners as a fan of triangles, each corner as its place in the polygon: (0, 1, 2, 0, 2, 3, ...)."""
+    held = _held.get(size)
+    if held is None:
+        held = _held[size] = tuple(v for i in range(1, size - 1) for v in (0, i, i + 1))
+    return held
+
+
+def _numbers(rows, width):
+    """Rows of width numbers each, flat: the array they were handed over in, where they were (scene_digest.flat)."""
+    held = flat(rows)
+    if held is not None and held[0].typecode == 'f' and len(held[0]) == width * len(rows):
+        return held[0]
+    return array('f', chain.from_iterable(rows))
+
+
+def _by_corner(rows, corners):
+    """Points (three numbers each) at each corner, flat. From the bytes they came in where they did: each point's
+    twelve bytes joined, twice as fast as gathering the lists' numbers."""
+    held = flat(rows)
+    if held is not None and held[0].typecode == 'f' and len(held[0]) == 3 * len(rows):
+        data = held[0].tobytes()
+        pieces = [data[i:i + 12] for i in range(0, len(data), 12)]
+        result = array('f')
+        result.frombytes(b''.join(map(pieces.__getitem__, corners)))
+        return result
+    return array('f', chain.from_iterable(map(rows.__getitem__, corners)))
+
+
 def mesh_payload(mesh, material_index, slots):
     """Triangulate one mesh; return (key, flags, payload, slot map), cached by the content of its lists.
 
@@ -520,49 +550,61 @@ def mesh_payload(mesh, material_index, slots):
         return cached
     if face_materials is not None and len(face_materials) != len(faces):
         raise ValueError('Face materials must match the face count')
-    try:
-        corners = array('I', chain.from_iterable(faces))
-    except (TypeError, OverflowError):
-        raise ValueError('Invalid face in ' + mesh['name'])
+    held = flat(faces)
+    if held is not None and held[0].typecode == 'i':
+        # The corners as they were handed over; one below zero reads as too high a point, and is refused below.
+        corners = array('I')
+        corners.frombytes(held[0].tobytes())
+    else:
+        try:
+            corners = array('I', chain.from_iterable(faces))
+        except (TypeError, OverflowError):
+            raise ValueError('Invalid face in ' + mesh['name'])
+    widest = max(map(len, faces))
     if min(map(len, faces)) < 3 or max(corners) >= len(vertices):
         raise ValueError('Invalid face in ' + mesh['name'])
+    # Modo's render cache gives triangles: then each corner is a triangle corner, as it is.
+    triangles = widest == 3
     if normals and len(normals) != len(corners):
         raise ValueError('Face-varying normals must match the corner count')
-    quads = all(len(face) == 4 for face in faces)
+    quads = not triangles and all(len(face) == 4 for face in faces)
     fan = None      # each triangle corner as an index into the polygon corners
     if normals or sets:
-        if quads:
+        if triangles:
+            fan = array('I', range(len(corners)))
+        elif quads:
             fan = array('I', [o + k for o in range(0, len(corners), 4) for k in (0, 1, 2, 0, 2, 3)])
         else:
-            fan, offset = array('I'), 0
-            for face in faces:
-                fan.extend([v for i in range(1, len(face) - 1) for v in (offset, offset + i, offset + i + 1)])
-                offset += len(face)
+            # The same triangles as polygon by polygon, in one pass: each polygon's fan, moved to where its corners start.
+            sizes = list(map(len, faces))
+            fan = array('I', [start + k for start, size in zip(accumulate([0] + sizes[:-1]), sizes) for k in _fan(size)])
     if closing is not None and len(closing) != len(vertices):
         raise ValueError('Motion samples of %s must have equal vertex counts' % mesh['name'])
     moved = array('f')
     if normals:
         # With per-corner normals every corner is its own vertex.
         indices = fan
-        positions = array('f', chain.from_iterable(map(vertices.__getitem__, corners)))
-        shading = array('f', chain.from_iterable(normals))
+        positions = _by_corner(vertices, corners)
+        shading = _numbers(normals, 3)
         if closing is not None:
-            moved = array('f', chain.from_iterable(map(closing.__getitem__, corners)))
+            moved = _by_corner(closing, corners)
     else:
         if closing is not None:
-            moved = array('f', chain.from_iterable(closing))
-        if quads:
+            moved = _numbers(closing, 3)
+        if triangles:
+            indices = corners
+        elif quads:
             indices = array('I', [face[k] for face in faces for k in (0, 1, 2, 0, 2, 3)])
         else:
-            indices = array('I', [v for face in faces for i in range(1, len(face) - 1) for v in (face[0], face[i], face[i + 1])])
-        positions, shading = array('f', chain.from_iterable(vertices)), array('f')
+            indices = array('I', [face[k] for face in faces for k in _fan(len(face))])
+        positions, shading = _numbers(vertices, 3), array('f')
     # A sum is finite only if every term is.
     if not math.isfinite(sum(positions)) or not math.isfinite(sum(shading)) or not math.isfinite(sum(moved)):
         raise ValueError('Mesh %s contains a non-finite number' % mesh['name'])
     material_ids = array('I')
     if face_materials is not None:
         default = material_index['']
-        material_ids = array('I', [index for tag, face in zip(face_materials, faces)
+        material_ids = array('I', [material_index.get(tag, default) for tag in face_materials]) if triangles else             array('I', [index for tag, face in zip(face_materials, faces)
                                    for index in [material_index.get(tag, default)] * (len(face) - 2)])
     # Texture coordinates go per triangle corner, whichever way the vertices are shared.
     uvs, slot_map = [], [-1] * UV_SLOTS
@@ -570,7 +612,7 @@ def mesh_payload(mesh, material_index, slots):
         if len(values) != len(corners):
             raise ValueError('Texture coordinates of %s must match its polygon corners' % mesh['name'])
         slot_map[slot] = len(uvs)
-        uvs.append(array('f', chain.from_iterable(map(values.__getitem__, fan))))
+        uvs.append(_numbers(values, 2) if triangles else array('f', chain.from_iterable(map(values.__getitem__, fan))))
         if len(uvs[-1]) != len(fan) * 2 or not math.isfinite(sum(uvs[-1])):
             raise ValueError('Mesh %s has invalid texture coordinates' % mesh['name'])
     flags = ((MESH_HAS_NORMALS if normals else MESH_SMOOTH if smooth else 0) | (MESH_HAS_MATERIAL_IDS if face_materials is not None else 0)

@@ -90,6 +90,70 @@ def transform_targets(scene,identities):
     except (RuntimeError,LookupError,AttributeError):return None
 
 
+# Items that neither bend a mesh nor make one come and go as time passes: meshes, lights, the camera, locators and
+# their transforms, groups, the Shader Tree and MoonRay's own items and materials (read again at each moment in any case).
+STEADY={'mesh','locator','groupLocator','translation','rotation','scale','transform','txtrLocator','mask','shaderFolder',
+        'defaultShader','renderOutput','polyRender','render','actionclip','group','scene','videoStill'}|LIGHTS|MATERIALS
+
+
+def stands_with_items(scene,snapshot):
+    """Whether each mesh of a snapshot read as Modo evaluates it stands where its item does: then where its item now
+    stands is where it is to be drawn. Not so for copies Modo generates, which are no item's."""
+    from .host import world_matrix
+    try:
+        if scene.items('replicator',superType=False) or scene.items('meshInst',superType=False):return False
+        if snapshot.get('extra_geometry'):return False
+        where={}
+        for mesh in snapshot['meshes']:
+            if 'instances' in mesh:return False
+            identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
+            if identity not in where:where[identity]=world_matrix(scene.item(identity))
+            held=mesh.get('matrix')
+            if not held or len(held)!=16 or any(abs(a-b)>1e-5*max(1.0,abs(b)) for a,b in zip(held,where[identity])):return False
+        return bool(where)
+    except Exception:return False
+
+
+def rigid(scene,snapshot):
+    """Whether the meshes of a snapshot hold at any other moment, only moved with their items: nothing in the scene
+    deforms a mesh, simulates, generates or copies one, or drives a channel (every item is of a STEADY kind), no
+    texture is projected from where a mesh stands, and each mesh stands where its item does. A reading at another
+    moment, for the ends of the shutter, is then a matter of asking where the items stand (refresh_transforms), as when
+    an item is moved: not of reading every mesh again. Where Modo cannot be asked, it is taken not to be so."""
+    try:
+        import lx
+        service=lx.service.Scene()
+        kinds=[service.ItemTypeLookup(name) for name in ('light','textureLayer')]
+        if deformers(scene):return False
+        for item in scene.iterItems():
+            kind=item.type
+            if kind in STEADY or kind.startswith(('material.','moonray.')) or any(item.TestType(each) for each in kinds):continue
+            return False
+        from .coordinates import descriptors
+        if any(d.get('projection','uv')!='uv' for d in descriptors(snapshot.get('materials') or {}).values()):return False
+        return stands_with_items(scene,snapshot)
+    except Exception:return False
+
+
+def item_matrices(scene,snapshot):
+    """Where the items of a snapshot's meshes now stand, by item."""
+    from .host import world_matrix
+    where={}
+    for mesh in snapshot['meshes']:
+        identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
+        if identity not in where:where[identity]=world_matrix(scene.item(identity))
+    return where
+
+
+def follow_items(scene,snapshot,before):
+    """A rigid snapshot (rigid) at another moment: each mesh where its item then stands. One whose item stands where
+    it did (before: item_matrices then) keeps the matrix it was read with, as reading it again would give it."""
+    now=item_matrices(scene,snapshot)
+    for mesh in snapshot['meshes']:
+        identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
+        if now[identity]!=before.get(identity):mesh['matrix']=now[identity]
+
+
 def refresh_transforms(scene,snapshot,identities=None):
     from .host import world_matrix
     targets=transform_targets(scene,identities)

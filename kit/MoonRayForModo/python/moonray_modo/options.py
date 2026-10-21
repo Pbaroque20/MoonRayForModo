@@ -167,7 +167,25 @@ def render_values(values):
     return result
 
 
+# Worked out once for each set of values: a scene from Modo asks for every one of its meshes, most with none set.
+_OBJECT_VALUES = {}
+
+
 def object_values(values):
+    try:
+        key = (tuple(values.items()), tuple(map(type, values.values())))   # True is not 1 here
+        held = _OBJECT_VALUES.get(key)
+    except TypeError:
+        return _object_values(values)
+    if held is None:
+        held = _object_values(values)
+        if len(_OBJECT_VALUES) > 4096:
+            _OBJECT_VALUES.clear()
+        _OBJECT_VALUES[key] = held
+    return dict(held)
+
+
+def _object_values(values):
     result = {key: values.get(key, default) for key, (default, _) in OBJECT.items()}
     for key in ('override', 'subdivision', 'smooth', 'normal_override', 'angular_tessellation', 'share_instances', 'dynamic_tessellation', 'curves', 'curve_uv', 'curve_round', 'hair', 'hair_guides'):
         if type(result[key]) is not bool:

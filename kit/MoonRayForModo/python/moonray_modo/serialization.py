@@ -10,12 +10,16 @@ _active=ContextVar('moonray_serialization_revision',default=None)
 _revision=None
 _cache=OrderedDict()
 _bytes=0
-LIMIT=64*1024*1024
+# Enough for a heavy scene's geometry as binary (rdlb.py), so that a render of it again finds it all kept.
+LIMIT=512*1024*1024
 
 @contextmanager
 def revision(value):
-    global _revision,_bytes
-    if value!=_revision:_cache.clear();_bytes=0;_revision=value
+    # Kept from one reading of the scene to the next: an entry is used only for the very list it was made from (it
+    # holds the list, so no other can take its place), and a mesh that has not changed comes back as the same lists
+    # (evaluated._row). What is no longer asked for goes as the cache fills.
+    global _revision
+    _revision=value
     token=_active.set(value)
     try:yield
     finally:_active.reset(token)
@@ -25,7 +29,7 @@ def array(kind,source,encode):
     if _active.get() is None:return encode()
     key=(kind,id(source));entry=_cache.get(key)
     if entry is not None and entry[0] is source:_cache.move_to_end(key);return entry[1]
-    text=encode();size=len(text)*2
+    text=encode();size=len(text) if isinstance(text,(bytes,bytearray)) else len(text)*2
     if size<=LIMIT:
         while _cache and _bytes+size>LIMIT:
             _,old=_cache.popitem(last=False);_bytes-=old[2]
