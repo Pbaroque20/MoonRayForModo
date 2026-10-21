@@ -33,6 +33,10 @@ KEYS = {
     'crypto_once': (True, bool),
     # A render stopped by hand or by Smart Render finishes the tiles in hand (native.drain_tiles).
     'drain_tiles': (True, bool),
+    # Geometry handed to MoonRay as binary beside the scene text (native.binary_geometry).
+    'binary_geometry': (True, bool),
+    # Renders below Modo's priority, with a processor thread left over (native.low_latency).
+    'low_latency': (True, bool),
     # The four of tools/port_source_switches.py (native.usd_specular and the rest).
     'usd_specular': (True, bool),
     'opaque_alpha': (True, bool),

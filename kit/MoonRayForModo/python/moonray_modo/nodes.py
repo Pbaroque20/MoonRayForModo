@@ -241,7 +241,24 @@ def space_descriptor(node):
     return layer
 
 
+# A graph's coordinate layers, by its content: every mesh wearing a material asks for its graph's (thousands on a
+# scene from Modo), and checking the graph (validate) is the slow part.
+_DESCRIPTORS={}
+
+
 def descriptors(graph):
+    import json
+    try:key=json.dumps(graph,sort_keys=True)
+    except (TypeError,ValueError):return _descriptors(graph)
+    held=_DESCRIPTORS.get(key)
+    if held is None:
+        held=_descriptors(graph)
+        if len(_DESCRIPTORS)>4096:_DESCRIPTORS.clear()
+        _DESCRIPTORS[key]=held
+    return copy.deepcopy(held)
+
+
+def _descriptors(graph):
     g=validate(graph)
     result=[image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
     result+=[layer for layer in (space_descriptor(node) for node in g['nodes'].values()) if layer]

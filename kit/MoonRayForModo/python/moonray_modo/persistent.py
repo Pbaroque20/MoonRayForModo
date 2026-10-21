@@ -61,6 +61,7 @@ class Session(QtCore.QObject):
     def __init__(self,parent=None):
         super().__init__(parent)
         self.process=QtCore.QProcess(self)
+        self.process.started.connect(lambda:native.lower_priority(self.process.processId()))
         terminal.watch(self.process,'MoonRay session',resident=True)
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
@@ -144,7 +145,14 @@ class Session(QtCore.QObject):
         self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'])+native.source_switches()
         metadata=json.loads((request['runtime']/'modo-session.json').read_text(encoding='utf-8'))
         self.scene_memory=metadata.get('scene_memory',False)
-        scene=self._write_scene(request,'full',request['text'],(request.get('prepared') or {}).get('full_bytes'))
+        prepared=request.get('prepared') or {}
+        split=prepared.get('split') or ((prepared['full_bytes'],prepared['binary']) if prepared.get('binary') else None)
+        if split:
+            # Its first scene with the geometry as binary (rdlb.py): the text, then the binary file it sets.
+            scene=self._write_scene(request,'full',None,split[0])
+            binary=self.root/('%d.full.rdlb'%request['id']);binary.write_bytes(split[1])
+        else:
+            scene=self._write_scene(request,'full',request['text'],(request.get('prepared') or {}).get('full_bytes'));binary=None
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(request['runtime']).items():env.insert(key,value)
         env.insert('MOONRAY_MODO_BUCKETS','1')
@@ -162,6 +170,7 @@ class Session(QtCore.QObject):
         self.process.setProgram(str(request['runtime']/'moonray.exe'))
         args=native.arguments(self.root/'bootstrap.rdla',self.root/'main.exr',request['threads'],request['mode'])
         args[args.index('-in')+1]=str(scene)
+        if binary:args[2:2]=['-in',str(binary)]
         self.process.setArguments(args)
         self.status.emit('Starting persistent MoonRay session')
         self.process.start()
@@ -175,6 +184,10 @@ class Session(QtCore.QObject):
             delta=prepared['delta'] if prepared['base'] is self.applied else None
         else:delta=difference(self.applied['text'],request['text']) if self.applied else None
         full=self._write_scene(request,'full',request['text'],(prepared or {}).get('full_bytes'))
+        if (prepared or {}).get('binary'):
+            # Its geometry's binary file, read after the text when MoonRay reloads (rdlb.py).
+            binary=self.root/('%d.full.rdlb'%request['id']);binary.write_bytes(prepared['binary'])
+            full='%s|%s'%(full,binary)
         path=self._write_scene(request,'delta',delta,(prepared or {}).get('delta_bytes')) if delta is not None else full
         mode='delta' if delta is not None else 'full'
         staged=self.root/'command.tmp'

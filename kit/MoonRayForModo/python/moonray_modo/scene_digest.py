@@ -12,16 +12,31 @@ import threading
 # Per-mesh lists that scale with polygon count.
 HEAVY = ('vertices', 'vertices_close', 'faces', 'uvs', 'normals', 'face_materials', 'creases')
 _remembered = {}
+# Where lists were made from rows of numbers handed over whole (evaluated registers itself), what each was made from:
+# a function giving a list's numbers flat, as an array, and a digest of their bytes; None for any other list.
+FLAT = []
 # A scene is made ready for MoonLightIPR on a thread of its own, which asks for these hashes too.
 _lock = threading.RLock()
+
+
+def flat(value):
+    """A list's numbers flat, as the array they were handed over in, and a digest of them; None where it was not."""
+    for source in FLAT:
+        held = source(value)
+        if held is not None:
+            return held
+    return None
 
 
 def content(value):
     """A stable hash of one large list; equal values hash equally within a session."""
     entry = _remembered.get(id(value))
     if entry is None or entry[0] is not value:
-        # marshal walks nested lists of numbers and strings in C; version 2 writes floats exactly.
-        entry = (value, hashlib.blake2b(marshal.dumps(value, 2), digest_size=16).hexdigest())
+        held = flat(value)
+        # A list made from a row handed over is known by that row's bytes, which were hashed as they came: the
+        # numbers of a large scene's meshes are not walked again. Else marshal walks nested lists of numbers and
+        # strings in C; version 2 writes floats exactly.
+        entry = (value, held[1] if held is not None else hashlib.blake2b(marshal.dumps(value, 2), digest_size=16).hexdigest())
         with _lock:
             if len(_remembered) > 8192:
                 _remembered.clear()     # only digest() prunes; bound callers that never use it

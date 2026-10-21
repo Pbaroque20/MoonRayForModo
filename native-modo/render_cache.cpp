@@ -61,6 +61,39 @@ template<std::size_t N> void vectors(std::ostream& out,const std::vector<std::ar
     }
     out<<']';
 }
+// MR_geometry_snapshot_merged: a surface's polygon segments are handed over joined, one for each kind (with or
+// without normals, the number of UV sets), as the plugin joins them (evaluated._merged_segments): Modo's render
+// cache cuts a mesh into many segments (41,940 for the 16 surfaces of one test scene), and handing over each one,
+// and the plugin turning each into lists of its own, was most of a reading. The faces come as one row of corners
+// and one of each face's corner count. Segments of curves and points (fewer than three corners) are as before.
+bool merging=false;
+struct Joined {
+    bool normals=false;int uvCount=0;
+    std::vector<std::array<float,3>> positions,normalValues;
+    std::vector<int> corners,sizes;
+    std::vector<std::vector<std::array<float,2>>> uvs;
+};
+void finite(const float* values,std::size_t count) {
+    for(std::size_t i=0;i<count;++i) if(!std::isfinite(double(values[i]))) throw std::runtime_error("Non-finite evaluated geometry");
+}
+void joined(std::ostream& out,Joined& kind) {
+    finite(kind.positions.empty()?nullptr:kind.positions[0].data(),kind.positions.size()*3);
+    out<<"{\"face_varying\":true,\"joined\":true,\"vertices\":";
+    row(out,kind.positions.empty()?nullptr:kind.positions[0].data(),kind.positions.size(),3,false);
+    out<<",\"faces\":";row(out,kind.corners.data(),kind.corners.size(),1,true);
+    out<<",\"sizes\":";row(out,kind.sizes.data(),kind.sizes.size(),1,true);
+    out<<",\"radii\":[],\"velocities\":[],\"normals\":";
+    if(kind.normals){finite(kind.normalValues.empty()?nullptr:kind.normalValues[0].data(),kind.normalValues.size()*3);
+        row(out,kind.normalValues.empty()?nullptr:kind.normalValues[0].data(),kind.normalValues.size(),3,false);}
+    else out<<"[]";
+    out<<",\"uv_sets\":[";
+    for(int u=0;u<kind.uvCount;++u) {
+        if(u)out<<',';
+        auto& values=kind.uvs[u];finite(values.empty()?nullptr:values[0].data(),values.size()*2);
+        row(out,values.empty()?nullptr:values[0].data(),values.size(),2,false);
+    }
+    out<<"]}";
+}
 void transform(std::ostream& out,CLxLoc_GeoCacheSurface& surface,int endpoint) {
     LXtVector position,scale; LXtMatrix rotation;
     check(surface.GetXfrm(position,rotation,scale,endpoint),"Surface transform");
@@ -94,6 +127,7 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
     }
     out<<"],\"segments\":[";
     int count=0;surface.SegmentCount(&count);
+    std::vector<Joined> kinds;bool written=false;
     for(int s=0;s<count;++s) {
         mark=clockNow();
         void* object=nullptr;check(surface.SegmentAt(s,&object),"Geometry segment");
@@ -108,8 +142,28 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
         if(vertices) check(segment.GetVertexFeature(LXiRENDERCACHE_GEOVERT_OPOS,positions.data(),vertices,0),"Positions");
         if(corners) check(segment.GetPolygonVertexInds(indices.data(),corners,0),"Polygon indices");
         for(int index:indices) if(index<0 || index>=vertices) throw std::runtime_error("Evaluated polygon index out of bounds");
+        if(merging && blob && perFace>=3 && polygons) {
+            const bool held=corners && LXx_OK(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_ONRM,normals.data(),corners,0));
+            int uvCount=0;segment.VertexFeatureCount(LXiRENDERCACHE_GEOVERT_UV,&uvCount);
+            Joined* kind=nullptr;
+            for(auto& k:kinds) if(k.normals==held && k.uvCount==uvCount) {kind=&k;break;}
+            if(!kind) {kinds.emplace_back();kind=&kinds.back();kind->normals=held;kind->uvCount=uvCount;kind->uvs.resize(uvCount);}
+            const int offset=int(kind->positions.size());
+            if(offset>2147483647-vertices) throw std::runtime_error("Evaluated mesh too large");
+            kind->positions.insert(kind->positions.end(),positions.begin(),positions.end());
+            for(int index:indices) kind->corners.push_back(index+offset);
+            kind->sizes.insert(kind->sizes.end(),std::size_t(polygons),perFace);
+            if(held) kind->normalValues.insert(kind->normalValues.end(),normals.begin(),normals.end());
+            for(int u=0;u<uvCount;++u) {
+                std::vector<std::array<float,2>> values(corners);
+                check(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_UV+u,values.data(),corners,0),"UV coordinates");
+                kind->uvs[u].insert(kind->uvs[u].end(),values.begin(),values.end());
+            }
+            spentFetching+=clockNow()-mark;
+            continue;
+        }
         spentFetching+=clockNow()-mark;mark=clockNow();
-        if(s)out<<',';
+        if(written)out<<',';written=true;
         out<<"{\"face_varying\":true,\"vertices\":";vectors(out,positions);
         if(blob) {
             out<<",\"faces\":";row(out,indices.data(),std::size_t(polygons),std::size_t(perFace),true);
@@ -155,6 +209,9 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
         out<<"]}";
         spentWriting+=clockNow()-mark;
     }
+    mark=clockNow();
+    for(auto& kind:kinds) {if(written)out<<',';written=true;joined(out,kind);}
+    spentWriting+=clockNow()-mark;
     out<<"]}";
     surface.UnloadSegments();
 }
@@ -271,4 +328,10 @@ extern "C" __declspec(dllexport) const char* MR_geometry_snapshot_binary(double 
     } catch(const std::exception& failure) { error=failure.what(); }
       catch(...) { error="Unknown render cache file error"; }
     return error.c_str();
+}
+
+// As MR_geometry_snapshot_binary, with each surface's polygon segments joined (see merging).
+extern "C" __declspec(dllexport) const char* MR_geometry_snapshot_merged(double time,int displaced,const char* path,const char* rows) {
+    struct Join { Join(){merging=true;} ~Join(){merging=false;} } join;
+    return MR_geometry_snapshot_binary(time,displaced,path,rows);
 }

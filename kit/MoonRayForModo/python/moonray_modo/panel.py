@@ -1124,19 +1124,8 @@ class Panel(Tools, QtWidgets.QWidget):
         return configured
 
     def _stand_with_items(self,document,scene):
-        from .host import world_matrix
-        try:
-            if document.items('replicator',superType=False) or document.items('meshInst',superType=False):return False
-            if scene.get('extra_geometry'):return False
-            where={}
-            for mesh in scene['meshes']:
-                if 'instances' in mesh:return False
-                identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
-                if identity not in where:where[identity]=world_matrix(document.item(identity))
-                held=mesh.get('matrix')
-                if not held or len(held)!=16 or any(abs(a-b)>1e-5*max(1.0,abs(b)) for a,b in zip(held,where[identity])):return False
-            return bool(where)
-        except Exception:return False
+        from .incremental import stands_with_items
+        return stands_with_items(document,scene)
 
     def _capture_output(self):
         values=self._settings_values()
