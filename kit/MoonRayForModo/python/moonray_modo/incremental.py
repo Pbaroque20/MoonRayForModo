@@ -98,13 +98,16 @@ STEADY={'mesh','locator','groupLocator','translation','rotation','scale','transf
 
 def stands_with_items(scene,snapshot):
     """Whether each mesh of a snapshot read as Modo evaluates it stands where its item does: then where its item now
-    stands is where it is to be drawn. Not so for copies Modo generates, which are no item's."""
+    stands is where it is to be drawn. Not so for copies Modo generates, which are no item's. A fur's strands, grown
+    from their mesh, stand with it as well, and are moved with it (refresh_transforms); other extra geometry is not
+    taken to."""
     from .host import world_matrix
     try:
         if scene.items('replicator',superType=False) or scene.items('meshInst',superType=False):return False
-        if snapshot.get('extra_geometry'):return False
+        extra=snapshot.get('extra_geometry') or []
+        if any(item.get('kind') not in ('curves','points') or not item.get('source_item') for item in extra):return False
         where={}
-        for mesh in snapshot['meshes']:
+        for mesh in list(snapshot['meshes'])+list(extra):
             if 'instances' in mesh:return False
             identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
             if identity not in where:where[identity]=world_matrix(scene.item(identity))

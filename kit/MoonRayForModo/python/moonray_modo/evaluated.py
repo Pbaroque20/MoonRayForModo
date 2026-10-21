@@ -225,16 +225,6 @@ def _unpack(data,held):
 
 
 def capture(time, path=None, displaced=True):
-    """Modo's evaluated meshes at a time. A piece Modo had not got ready (a mesh just added and being edited in its
-    tool's properties) is left out by the adapter and counted; the scene is read once more, and a piece still not
-    ready is counted in the reading's 'skipped' for a notice."""
-    data=_capture(time,path,displaced)
-    if data.get('skipped'):
-        data=_capture(time,path,displaced)
-    return data
-
-
-def _capture(time, path=None, displaced=True):
     global _bridge
     if _bridge is None:
         path = Path(path) if path else Path(__file__).resolve().parents[2] / 'bin/MoonRayGeometry.lx'
@@ -303,7 +293,7 @@ def casts_shadow(scene, layers, known):
 def meshes(data, materials, warnings, scene=None):
     """Group identical evaluated prototypes while retaining per-surface transforms."""
     if data.get('skipped'):
-        warnings.append('Modo had %d mesh piece(s) not ready to read; they are left out until the next change.' % data['skipped'])
+        warnings.append('Modo gave %d piece(s) of geometry the adapter could not read; they are left out.' % data['skipped'])
     groups = {}
     settings_cache = {}
     shadows = {}
@@ -394,8 +384,13 @@ def meshes(data, materials, warnings, scene=None):
                     value['identity'] = surface['source_item']+'|'+str(surface.get('instance_index',0))+'|'+tag+'|'+str(segment_index)
                     for key,descriptor in descriptors.items():
                         if descriptor.get('projection','uv') != 'uv':
-                            value['uv_sets'][key] = coordinates.mesh_corners(descriptor,
-                                vertices,segment['faces'],[],value['matrix'])
+                            # A projection's corners hold from one reading to the next while the mesh's points and
+                            # faces are the same lists, the projection the same (its key names it) and, in the
+                            # world's space, the mesh stands where it stood.
+                            where = None if descriptor.get('object_space') else repr(list(value['matrix']))
+                            value['uv_sets'][key] = _derived('projected:%s:%s' % (key, where), (vertices, segment['faces']),
+                                lambda descriptor=descriptor, matrix=value['matrix']: coordinates.mesh_corners(descriptor,
+                                    vertices,segment['faces'],[],matrix))
                 elif len(surfaces) > 1 or any(s.get('instanced') for s in surfaces):
                     value['instances'] = [s['matrix'] for s in surfaces]
                     value['instance_ids'] = [s['source_item']+'|'+str(s.get('instance_index',0)) for s in surfaces]

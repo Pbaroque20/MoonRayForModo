@@ -6,6 +6,13 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.4.3](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.3). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## Coming next
+
+- **Adding geometry while MoonLightIPR follows the scene no longer stops or freezes it.** Turning realtime on could wait on Modo without end (while Modo's colour picker was open, for one); it no longer goes through a Modo command to read the scene.
+- **Modo's fur renders with Modo evaluated geometry**, where it stopped the render with "Polygon indices failed". Under motion blur in the preview, fur that cannot be followed through the shutter is shown still, with a notice, rather than the render refused.
+- **Assign MoonRay Material on a whole mesh tags its polygons**, as Modo's Polygon Set Material does. Its item mask had every reading of the scene go through Modo's render cache: one material on one sphere slowed a large scene's preview to seconds an edit. Polygons made in the mesh later keep the tag they are made with.
+- **Large scenes read faster**: planar, cubic, cylindrical and spherical texture projections are worked out several times faster and kept between readings while a mesh is unchanged (a test scene with fur and a 324,706-face mesh, 45 s to 13 s, then under 2 s an edit), and moving an item with fur on it is followed without reading the scene again.
+
 ## New in 0.4.3
 
 A critical performance update, with a new runtime ZIP: scenes load far faster before a render starts, and MoonLightIPR draws more of Modo's scenes for less power. Install the kit and the runtime together.

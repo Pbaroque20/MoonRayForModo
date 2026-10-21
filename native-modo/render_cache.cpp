@@ -34,14 +34,28 @@ void text(std::ostream& out,const char* value) {
     }
     out<<'"';
 }
-// A segment Modo has not got ready (LXe_NOTAVAILABLE): seen for a mesh added while a render was going and edited
-// in its tool's properties. Such a segment is left out of the reading and counted, rather than the whole reading
-// failing; the plugin reads again (see evaluated.capture).
+// A segment Modo does not give (LXe_NOTAVAILABLE), as for a fur's strands where they cannot be made from their
+// points (see strands): left out of the reading and counted, rather than the whole reading failing.
 bool ready(LxResult result,const char* operation) {
     if(result==LXe_NOTAVAILABLE) return false;
     check(result,operation);return true;
 }
-static int skippedSegments=0;
+// Modo gives no corner indices for its fur's strands (LXe_NOTAVAILABLE), only each point's strand and how far along
+// it the point is (LXiRENDERCACHE_GEOVERT_FUR: u, v along the strand, strand id). The strands' pieces are made from
+// those: a strand's points in order along it, each with the next. False where they do not come to the segment's
+// count of pieces.
+bool strands(CLxLoc_GeoCacheSegment& segment,int vertices,int polygons,std::vector<int>& indices) {
+    int held=0;segment.VertexFeatureCount(LXiRENDERCACHE_GEOVERT_FUR,&held);
+    if(!held || !vertices) return false;
+    std::vector<std::array<float,3>> fur(vertices);
+    if(LXx_FAIL(segment.GetVertexFeature(LXiRENDERCACHE_GEOVERT_FUR,fur.data(),vertices,0))) return false;
+    // The id is not a strand's own (strands share it); a strand's points come one after another, from its root
+    // (v 0) to its tip (v 1), so a point joins the one before it unless it starts a strand again.
+    indices.clear();
+    for(int v=1;v<vertices;++v) if(fur[v][2]==fur[v-1][2] && fur[v][1]>fur[v-1][1]) {indices.push_back(v-1);indices.push_back(v);}
+    return int(indices.size())==polygons*2;
+}
+static int skippedSegments=0;static std::ostringstream skippedWhere;
 template<class T> void number(std::ostream& out,T value) {
     if(!std::isfinite(double(value))) throw std::runtime_error("Non-finite evaluated geometry");
     out<<value;
@@ -149,8 +163,9 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
         std::vector<std::array<float,3>> positions(vertices),normals(corners);
         std::vector<int> indices(corners);
         if((vertices && !ready(segment.GetVertexFeature(LXiRENDERCACHE_GEOVERT_OPOS,positions.data(),vertices,0),"Positions")) ||
-           (corners && !ready(segment.GetPolygonVertexInds(indices.data(),corners,0),"Polygon indices"))) {
-            ++skippedSegments;spentFetching+=clockNow()-mark;continue;
+           (corners && !ready(segment.GetPolygonVertexInds(indices.data(),corners,0),"Polygon indices") &&
+            !(perFace==2 && strands(segment,vertices,polygons,indices)))) {
+            ++skippedSegments;skippedWhere<<(skippedWhere.tellp()>0?",":"")<<"["<<surface.ID()<<','<<vertices<<','<<polygons<<','<<perFace<<']';spentFetching+=clockNow()-mark;continue;
         }
         for(int index:indices) if(index<0 || index>=vertices) throw std::runtime_error("Evaluated polygon index out of bounds");
         if(merging && blob && perFace>=3 && polygons) {
@@ -160,7 +175,7 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
             bool fetched=true;
             for(int u=0;u<uvCount && fetched;++u)
                 fetched=ready(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_UV+u,uvs[u].data(),corners,0),"UV coordinates");
-            if(!fetched) {++skippedSegments;spentFetching+=clockNow()-mark;continue;}
+            if(!fetched) {++skippedSegments;skippedWhere<<(skippedWhere.tellp()>0?",":"")<<"["<<surface.ID()<<','<<vertices<<','<<polygons<<','<<perFace<<']';spentFetching+=clockNow()-mark;continue;}
             Joined* kind=nullptr;
             for(auto& k:kinds) if(k.normals==held && k.uvCount==uvCount) {kind=&k;break;}
             if(!kind) {kinds.emplace_back();kind=&kinds.back();kind->normals=held;kind->uvCount=uvCount;kind->uvs.resize(uvCount);}
@@ -213,11 +228,22 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
         else out<<"[]";
         out<<",\"uv_sets\":[";
         int uvCount=0;segment.VertexFeatureCount(LXiRENDERCACHE_GEOVERT_UV,&uvCount);
+        std::vector<std::vector<std::array<float,2>>> uvs;
         for(int u=0;u<uvCount;++u) {
             std::vector<std::array<float,2>> values(corners);
-            check(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_UV+u,values.data(),corners,0),"UV coordinates");
-            if(u)out<<',';vectors(out,values);
+            if(perFace>=3) check(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_UV+u,values.data(),corners,0),"UV coordinates");
+            else {
+                // Fur's strands give theirs per point, not per corner; a strand left without them where Modo gives
+                // none at all.
+                std::vector<std::array<float,2>> points(vertices);
+                if(LXx_FAIL(segment.GetPolygonVertexFeature(LXiRENDERCACHE_GEOVERT_UV+u,values.data(),corners,0))) {
+                    if(LXx_FAIL(segment.GetVertexFeature(LXiRENDERCACHE_GEOVERT_UV+u,points.data(),vertices,0))) {uvs.clear();break;}
+                    for(int c=0;c<corners;++c) values[c]=points[indices[c]];
+                }
+            }
+            uvs.push_back(std::move(values));
         }
+        for(std::size_t u=0;u<uvs.size();++u) {if(u)out<<',';vectors(out,uvs[u]);}
         out<<"]}";
         spentWriting+=clockNow()-mark;
     }
@@ -233,7 +259,7 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
 // kept between readings and left for Modo to keep up to date was tried: it was a moment behind each edit, and
 // failed to give its segments just after a mesh had changed shape.
 static void write_snapshot(std::ostream& out,double time,int displaced) {
-        blobAt=0;skippedSegments=0;
+        blobAt=0;skippedSegments=0;skippedWhere.str("");skippedWhere.clear();
         const auto began=std::chrono::steady_clock::now();
         spentLoading=spentFetching=spentWriting=0;
         auto since=[&](){return std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();};
@@ -291,7 +317,7 @@ static void write_snapshot(std::ostream& out,double time,int displaced) {
             if(!first)out<<',';first=false;text(out,std::to_string(entry.first).c_str());out<<':';prototype(out,entry.second);
         }
 
-        out<<"},\"timing\":["<<evaluated<<','<<listed-evaluated<<','<<since()-listed<<"],\"handing\":["<<spentLoading<<','<<spentFetching<<','<<spentWriting<<"],\"skipped\":"<<skippedSegments<<'}';
+        out<<"},\"timing\":["<<evaluated<<','<<listed-evaluated<<','<<since()-listed<<"],\"handing\":["<<spentLoading<<','<<spentFetching<<','<<spentWriting<<"],\"skipped\":"<<skippedSegments<<",\"skipped_where\":["<<skippedWhere.str()<<"]}";
 }
 
 extern "C" __declspec(dllexport) const char* MR_geometry_snapshot(double time,int displaced) {

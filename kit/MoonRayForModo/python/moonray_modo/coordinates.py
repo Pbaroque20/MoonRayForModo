@@ -118,15 +118,50 @@ def mesh_corners(layer, vertices, faces, uv, world_matrix):
         if list(layer.get('uv_matrix', [1,0,0,0,1,0])) == [1,0,0,0,1,0] and not layer.get('rotation', 0) and list(layer.get('scale', [1,1])) == [1,1]:
             return uv
         return transform_uv(layer, uv)
-    result = []
-    offset = 0
+    # As face() for each polygon, with the locator's inverse found once and each point put into the locator's space
+    # once, not at every corner: the same numbers, in a small part of the time (a 324,706-face mesh took 53 s).
+    projection = layer['projection']
+    if projection not in ('planar','cubic','cylindrical','spherical'):
+        raise ValueError('Unsupported texture projection: ' + projection)
+    inv = inverse(layer['locator_matrix'])
+    axis = layer.get('axis', 'z')
+    def placed(p):
+        p = transform(p, inv) if layer.get('object_space') else transform(transform(p, world_matrix), inv)
+        return (p[1],p[2],p[0]) if axis in ('x',0) else (p[0],p[2],p[1]) if axis in ('y',1) else p
+    points = [placed(p) for p in vertices]
+    atan2, asin, sqrt, tau, pi = math.atan2, math.asin, math.sqrt, 2*math.pi, math.pi
+    values = []
     for polygon in faces:
         if not polygon:
             continue
-        size = len(polygon)
-        result.extend(face(layer,[vertices[i] for i in polygon],uv[offset:offset+size],world_matrix))
-        offset += size
-    return result
+        corners = [points[i] for i in polygon]
+        if projection == 'planar':
+            values.extend((x+.5, y+.5) for x,y,z in corners)
+            continue
+        if projection == 'cubic':
+            if len(corners)<3:
+                raise ValueError('Cubic projection requires a polygon')
+            normal=[0.,0.,0.]
+            for p,q in zip(corners,corners[1:]+corners[:1]):
+                normal[0]+=(p[1]-q[1])*(p[2]+q[2])
+                normal[1]+=(p[2]-q[2])*(p[0]+q[0])
+                normal[2]+=(p[0]-q[0])*(p[1]+q[1])
+            dominant=max(range(3),key=lambda i:abs(normal[i]))
+            if abs(normal[dominant])<1e-12:
+                raise ValueError('Cubic projection cannot map a degenerate polygon')
+            sign=1 if normal[dominant]>=0 else -1
+            if dominant==0: values.extend((-sign*z+.5,y+.5) for x,y,z in corners)
+            elif dominant==1: values.extend((x+.5,-sign*z+.5) for x,y,z in corners)
+            else: values.extend((sign*x+.5,y+.5) for x,y,z in corners)
+            continue
+        if projection == 'cylindrical':
+            own = [(.5+atan2(x,z)/tau, y+.5) for x,y,z in corners]
+        else:
+            own = [(.5+atan2(x,z)/tau, .5+asin(max(-1,min(1,y/max(1e-12, sqrt(x*x+y*y+z*z)))))/pi) for x,y,z in corners]
+        if max(v[0] for v in own)-min(v[0] for v in own) > .5:
+            own = [(u+1 if u < .5 else u,v) for u,v in own]
+        values.extend(own)
+    return transform_uv(layer, values)
 
 
 def affine(layer):

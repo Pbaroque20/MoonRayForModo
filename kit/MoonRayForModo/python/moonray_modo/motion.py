@@ -35,7 +35,9 @@ def moves(scene):
     return False
 
 
-def apply_motion(scene, start, end, endpoints):
+def apply_motion(scene, start, end, endpoints, preview=False):
+    """preview: strands or points that cannot be followed through the shutter (no IDs to match them by, as with Modo's
+    fur) are shown still, where they are at the frame, with a notice, rather than the render refused."""
     if len(endpoints)!=2 or not all(math.isfinite(float(value)) for value in endpoints) or endpoints[0]>=endpoints[1]:
         raise ValueError('Motion blur requires two finite, increasing shutter endpoints')
     # Work on copies so an incompatible sample cannot leave half-mutated state.
@@ -147,7 +149,12 @@ def apply_motion(scene, start, end, endpoints):
             value=dict(original,vertices=points(endpoints[0]),vertices_close=points(endpoints[1]));value.pop('velocities',None);extras.append(value);continue
         if policy=='freeze':extras.append(dict(original));continue
         from .geometry_ids import align
-        a,b=align(original,a),align(original,b)
+        try:a,b=align(original,a),align(original,b)
+        except ValueError:
+            if not preview:raise
+            warning='Strands or points of '+str(original.get('name',identity))+' have no IDs to follow through the shutter; the preview shows them still.'
+            if warning not in warnings:warnings.append(warning)
+            extras.append(dict(original));continue
         if len(a['vertices'])!=len(original['vertices']) or len(b['vertices'])!=len(original['vertices']) or a.get('counts')!=b.get('counts'):raise ValueError('Motion blur requires stable curve/point topology')
         node=dict(original,matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY),vertices=a['vertices'],vertices_close=b['vertices'])
         extras.append(node)
