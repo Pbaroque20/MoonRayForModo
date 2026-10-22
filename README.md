@@ -411,7 +411,7 @@ a subdivided one (left); with the override, both are smooth (right).*
 - Modo 17.1 on Windows, then macOS.
 - Broader validation: other GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.
 
-Each of these, and what MoonRay documents that the plugin has no control for yet (display filters, Alembic and USD procedurals, Arras and more), is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues).
+Each of these, and what MoonRay documents that the plugin has no control for yet (Alembic and USD procedurals, Arras and more), is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues).
 
 **Production readiness:** this is an experimental development build, not a production-certified release. Some users have confirmed it works. Each release note says what was and was not checked.
 
