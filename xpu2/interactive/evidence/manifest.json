@@ -1,0 +1,27 @@
+{
+  "interactive-ray-hit-benchmark-20261022.json": {
+    "original_local_report_sha256": "842a2b54234dbc17936b4c3c2dbde086fdcb41c2f42a23bd4c1b3ba92de56448",
+    "published_redacted_sha256": "5d69012249bb091576055c309ec5d39c35254e389e134f3e413505016986035c",
+    "redaction": "Workstation path prefixes only; numerical values, failures and image hashes unchanged."
+  },
+  "interactive-ray-hit-images-shared-20261022.json": {
+    "original_local_report_sha256": "664753fc4cc8762a41da4a21a72a454b130ce2176a0f28e78aa79164026af5a7",
+    "published_redacted_sha256": "925db9a0adaf6374103c079bcf198f8a6ad3c91c978eda5e5f2e72da62fb1235",
+    "redaction": "Workstation path prefixes only; numerical values, failures and image hashes unchanged."
+  },
+  "interactive-residency-ownership-20261022.json": {
+    "original_local_report_sha256": "32a8776d6907be32d1a28882d1c4729a74a847178e8d7edf4462b68b2bd2acc2",
+    "published_redacted_sha256": "d71ecb689f059e8a84a482b32175bef30cc84b0e07c463eded303417dd49d03d",
+    "redaction": "Workstation path prefixes only; numerical values, failures and image hashes unchanged."
+  },
+  "interactive-shader-qualification-20261022.json": {
+    "original_local_report_sha256": "2622d52903acb569e0903dcd6afc82f460eb14b7e4e08a927dd6a7e531b9e256",
+    "published_redacted_sha256": "53fa093e1cfcddbc40a95796d41e4303dca21587613bb8b525377ea1328f9553",
+    "redaction": "Workstation path prefixes only; numerical values, failures and image hashes unchanged."
+  },
+  "interactive-shader-recovery-20261022.json": {
+    "original_local_report_sha256": "d3af0bf48f3b51fa113b35c3123b0867205dcbd04d652d8160d52c10c4004817",
+    "published_redacted_sha256": "f1800667bea1f67a4d51503c5e6b199d5a92df9d4114dcd74a2e7d2d80346672",
+    "redaction": "Workstation path prefixes only; numerical values, failures and image hashes unchanged."
+  }
+}

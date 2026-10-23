@@ -1,0 +1,2200 @@
+{
+  "status": "passed",
+  "production_qualified": false,
+  "protocol": {
+    "samples": 64,
+    "threads": [
+      1,
+      12
+    ],
+    "repetitions": 4,
+    "warmup_discarded": 1,
+    "native_cpu_gpu_abs_bound": 0.002,
+    "high_spp_channel": 0.08,
+    "high_spp_block_mean": 0.015,
+    "alpha": 0.015,
+    "heldout_seeds": [
+      17,
+      47,
+      101,
+      151
+    ],
+    "high_samples": 1024,
+    "native": "50/50 checkerboard, fine texture refill, 33 ms publication, 2 ms windows",
+    "original": "fresh pinned XPU, actual execution checked, four separate processes per thread count",
+    "timing": "native render-window wall time vs original MCRT; preparation, cold render and process wall reported separately",
+    "quality_target": "unchanged relative MSE targets and 1024-sample original images from frozen larger-scene protocol",
+    "scope": "static triangles, diffuse/emissive textured materials, direct constant environment; no production qualification"
+  },
+  "cases": {
+    "gallery-dense": {
+      "target": 0.0046951102294747315,
+      "native": {
+        "1": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 33554400,
+          "canonical_and_plan_seconds": 0.5573355,
+          "cpu_jobs_collected": 56528,
+          "cpu_jobs_submitted": 56528,
+          "embree_seconds": 0.0381351,
+          "gpu_prepare_seconds": 0.435271,
+          "height": 288,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 62665472,
+          "peak_pinned_bytes": 33917024,
+          "prepare_seconds": 1.0898354,
+          "publish_ms": 33,
+          "read_seconds": 0.0523086,
+          "refill_fine": true,
+          "resident_texture_bytes": 8388576,
+          "resident_texture_pages": 720,
+          "runs": [
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 15.5579225,
+              "first_partial_seconds": 0.0515594,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 415,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\candidate-t1\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 15.5579225,
+              "texture_misses_to_cpu": 0,
+              "windows": 6199,
+              "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+              "error": {
+                "relative_mse": 0.004238006035297858,
+                "max_pixel": 0.06119684875011444,
+                "max_block_mean": 0.004585225833579898,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 14.4169828,
+              "first_partial_seconds": 0.0111968,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 0,
+              "index": 1,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 390,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\candidate-t1\\run-1.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 14.4169828,
+              "texture_misses_to_cpu": 0,
+              "windows": 5924,
+              "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+              "error": {
+                "relative_mse": 0.004238006035297858,
+                "max_pixel": 0.06119684875011444,
+                "max_block_mean": 0.004585225833579898,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 14.7167509,
+              "first_partial_seconds": 0.0104365,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 0,
+              "index": 2,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 396,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\candidate-t1\\run-2.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 14.7167509,
+              "texture_misses_to_cpu": 0,
+              "windows": 6007,
+              "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+              "error": {
+                "relative_mse": 0.004238006035297858,
+                "max_pixel": 0.06119684875011444,
+                "max_block_mean": 0.004585225833579898,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 14.3630847,
+              "first_partial_seconds": 0.0163965,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 0,
+              "index": 3,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 388,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\candidate-t1\\run-3.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 14.3630847,
+              "texture_misses_to_cpu": 0,
+              "windows": 5931,
+              "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+              "error": {
+                "relative_mse": 0.004238006035297858,
+                "max_pixel": 0.06119684875011444,
+                "max_block_mean": 0.004585225833579898,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 3034297317,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 1,
+          "width": 384,
+          "window_ms": 2,
+          "workers_created": 1,
+          "workers_joined": 1,
+          "wall_seconds": 60.368423299863935,
+          "sampling_seconds": {
+            "median": 14.4169828,
+            "min": 14.3630847,
+            "max": 14.7167509,
+            "values": [
+              14.4169828,
+              14.7167509,
+              14.3630847
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        },
+        "12": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 33554400,
+          "canonical_and_plan_seconds": 0.5563215,
+          "cpu_jobs_collected": 84491,
+          "cpu_jobs_submitted": 84491,
+          "embree_seconds": 0.0354824,
+          "gpu_prepare_seconds": 0.4439535,
+          "height": 288,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 62665472,
+          "peak_pinned_bytes": 33917024,
+          "prepare_seconds": 1.1037211,
+          "publish_ms": 33,
+          "read_seconds": 0.0609786,
+          "refill_fine": true,
+          "resident_texture_bytes": 8388576,
+          "resident_texture_pages": 720,
+          "runs": [
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 2.9304109,
+              "first_partial_seconds": 0.0114633,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 79,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\candidate-t12\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 2.9348703,
+              "texture_misses_to_cpu": 0,
+              "windows": 1103,
+              "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+              "error": {
+                "relative_mse": 0.004238006035297858,
+                "max_pixel": 0.06119684875011444,
+                "max_block_mean": 0.004585225833579898,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 2.756802,
+              "first_partial_seconds": 0.0110538,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 0,
+              "index": 1,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 74,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\candidate-t12\\run-1.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 2.7625601,
+              "texture_misses_to_cpu": 0,
+              "windows": 1063,
+              "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+              "error": {
+                "relative_mse": 0.004238006035297858,
+                "max_pixel": 0.06119684875011444,
+                "max_block_mean": 0.004585225833579898,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 4.2701253,
+              "first_partial_seconds": 0.010717,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 0,
+              "index": 2,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 111,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\candidate-t12\\run-2.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 4.2922273,
+              "texture_misses_to_cpu": 0,
+              "windows": 1478,
+              "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+              "error": {
+                "relative_mse": 0.004238006035297858,
+                "max_pixel": 0.06119684875011444,
+                "max_block_mean": 0.004585225833579898,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 2.6949634,
+              "first_partial_seconds": 0.0109487,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 0,
+              "index": 3,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 72,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\candidate-t12\\run-3.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 2.7013586,
+              "texture_misses_to_cpu": 0,
+              "windows": 1048,
+              "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+              "error": {
+                "relative_mse": 0.004238006035297858,
+                "max_pixel": 0.06119684875011444,
+                "max_block_mean": 0.004585225833579898,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 3034297317,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 384,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 14.011376899899915,
+          "sampling_seconds": {
+            "median": 2.7625601,
+            "min": 2.7013586,
+            "max": 4.2922273,
+            "values": [
+              2.7625601,
+              4.2922273,
+              2.7013586
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        }
+      },
+      "original": {
+        "1": {
+          "runs": [
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\gallery-dense\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-0\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "1",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-0\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 1,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 27.999430500203744,
+              "stats": {
+                "Thread(s)": 1.0,
+                "Render prep (s)": 0.99534,
+                "Mcrt time (s)": 25.96644,
+                "Total time (s)": 27.06096
+              },
+              "raw_sha256": "0edec01ac603b097f67c82f7c5d59ce8fc9f97881f64de9a07aeb82bb00ef7ae",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-0",
+              "sampling_seconds": 25.96644
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\gallery-dense\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-1\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "1",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-1\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 1,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 28.65231980010867,
+              "stats": {
+                "Thread(s)": 1.0,
+                "Render prep (s)": 0.96093,
+                "Mcrt time (s)": 26.74815,
+                "Total time (s)": 27.77063
+              },
+              "raw_sha256": "5ea7087a54339c0c52015135e9aeb28674145be3513ef5dfcfef9f37f3f37cd8",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-1",
+              "sampling_seconds": 26.74815
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\gallery-dense\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-2\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "1",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-2\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 1,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 28.015571299940348,
+              "stats": {
+                "Thread(s)": 1.0,
+                "Render prep (s)": 0.99035,
+                "Mcrt time (s)": 26.04219,
+                "Total time (s)": 27.11428
+              },
+              "raw_sha256": "e0f25d1d4be7941542d9a1ce07b3856e4efbc21d43f4e8ec357c956e580ee54c",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-2",
+              "sampling_seconds": 26.04219
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\gallery-dense\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-3\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "1",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-3\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 1,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 27.91590530006215,
+              "stats": {
+                "Thread(s)": 1.0,
+                "Render prep (s)": 0.99293,
+                "Mcrt time (s)": 25.95691,
+                "Total time (s)": 27.04447
+              },
+              "raw_sha256": "2befa9b16aa08370f57dc9eff977739fd481fc9a8183c2bb3f0a29c3b67150d5",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t1-3",
+              "sampling_seconds": 25.95691
+            }
+          ],
+          "sampling_seconds": {
+            "median": 26.04219,
+            "min": 25.95691,
+            "max": 26.74815,
+            "values": [
+              26.74815,
+              26.04219,
+              25.95691
+            ]
+          },
+          "run_to_run_abs": 1.043081283569336e-07
+        },
+        "12": {
+          "runs": [
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\gallery-dense\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-0\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "12",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-0\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 12,
+                "gpu_intersection_percent": 99.77,
+                "passed": true
+              },
+              "wall_seconds": 5.5941208999138325,
+              "stats": {
+                "Thread(s)": 12.0,
+                "Render prep (s)": 0.53846,
+                "Mcrt time (s)": 4.08795,
+                "Total time (s)": 4.67532
+              },
+              "raw_sha256": "c391c767f7600ca575e82fcc142e08d081e6ffb23eb412961f3f6e03b5a7bc8c",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-0",
+              "sampling_seconds": 4.08795
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\gallery-dense\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-1\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "12",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-1\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 12,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 5.616709100082517,
+              "stats": {
+                "Thread(s)": 12.0,
+                "Render prep (s)": 0.53106,
+                "Mcrt time (s)": 4.06077,
+                "Total time (s)": 4.66539
+              },
+              "raw_sha256": "bb0a96e25221d6cc9e36378c246f980a3171d5ba354504ea6f08418b72429fc6",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-1",
+              "sampling_seconds": 4.06077
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\gallery-dense\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-2\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "12",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-2\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 12,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 5.74039960000664,
+              "stats": {
+                "Thread(s)": 12.0,
+                "Render prep (s)": 0.52524,
+                "Mcrt time (s)": 4.09532,
+                "Total time (s)": 4.73955
+              },
+              "raw_sha256": "79fbb40cc96d9e15957fda73690bdb069e834abd4ff0a4e97e7311f34d618d2b",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-2",
+              "sampling_seconds": 4.09532
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\gallery-dense\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-3\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "12",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-3\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 12,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 5.668882100144401,
+              "stats": {
+                "Thread(s)": 12.0,
+                "Render prep (s)": 0.51337,
+                "Mcrt time (s)": 4.1105,
+                "Total time (s)": 4.71053
+              },
+              "raw_sha256": "218a7c87505980759b3597503852ccde0b913fc905a44aee516b126d6105b71f",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\xpu-t12-3",
+              "sampling_seconds": 4.1105
+            }
+          ],
+          "sampling_seconds": {
+            "median": 4.09532,
+            "min": 4.06077,
+            "max": 4.1105,
+            "values": [
+              4.06077,
+              4.09532,
+              4.1105
+            ]
+          },
+          "run_to_run_abs": 0.0001491755247116089
+        }
+      },
+      "seeds": {
+        "17": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 33554400,
+          "canonical_and_plan_seconds": 0.5570404,
+          "cpu_jobs_collected": 21695,
+          "cpu_jobs_submitted": 21695,
+          "embree_seconds": 0.03486,
+          "gpu_prepare_seconds": 0.3993927,
+          "height": 288,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 62665472,
+          "peak_pinned_bytes": 33917024,
+          "prepare_seconds": 1.0508797,
+          "publish_ms": 33,
+          "read_seconds": 0.0526415,
+          "refill_fine": true,
+          "resident_texture_bytes": 8388576,
+          "resident_texture_pages": 720,
+          "runs": [
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 2.8016212,
+              "first_partial_seconds": 0.0112013,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 74,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\seed-17\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 2.8016212,
+              "texture_misses_to_cpu": 0,
+              "windows": 1063,
+              "raw_sha256": "0e28d972e8f10883478a94a932fd3082d17fcb7d223ba9561e164290c73de1aa",
+              "error": {
+                "relative_mse": 0.004269302072284428,
+                "max_pixel": 0.061339959502220154,
+                "max_block_mean": 0.005428681615740061,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 17,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 384,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 4.059768300037831,
+          "sampling_seconds": {
+            "median": 2.8016212,
+            "min": 2.8016212,
+            "max": 2.8016212,
+            "values": [
+              2.8016212
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        },
+        "47": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 33554400,
+          "canonical_and_plan_seconds": 0.5523175,
+          "cpu_jobs_collected": 21879,
+          "cpu_jobs_submitted": 21879,
+          "embree_seconds": 0.0345559,
+          "gpu_prepare_seconds": 0.4013076,
+          "height": 288,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 62665472,
+          "peak_pinned_bytes": 33917024,
+          "prepare_seconds": 1.0476626,
+          "publish_ms": 33,
+          "read_seconds": 0.0529017,
+          "refill_fine": true,
+          "resident_texture_bytes": 8388576,
+          "resident_texture_pages": 720,
+          "runs": [
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 2.910405,
+              "first_partial_seconds": 0.0539138,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 77,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\seed-47\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 2.9235968,
+              "texture_misses_to_cpu": 0,
+              "windows": 1113,
+              "raw_sha256": "644c07277009cc3fc4e15e30d30b280fc23673ecb0c5b580723f9fc4f1e7f3aa",
+              "error": {
+                "relative_mse": 0.004265803781183169,
+                "max_pixel": 0.06374919414520264,
+                "max_block_mean": 0.004190337145701051,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 47,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 384,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 4.178401800105348,
+          "sampling_seconds": {
+            "median": 2.9235968,
+            "min": 2.9235968,
+            "max": 2.9235968,
+            "values": [
+              2.9235968
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        },
+        "101": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 33554400,
+          "canonical_and_plan_seconds": 0.5671691,
+          "cpu_jobs_collected": 21921,
+          "cpu_jobs_submitted": 21921,
+          "embree_seconds": 0.0362819,
+          "gpu_prepare_seconds": 0.4088106,
+          "height": 288,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 62665472,
+          "peak_pinned_bytes": 33917024,
+          "prepare_seconds": 1.0713187,
+          "publish_ms": 33,
+          "read_seconds": 0.0526862,
+          "refill_fine": true,
+          "resident_texture_bytes": 8388576,
+          "resident_texture_pages": 720,
+          "runs": [
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 2.8507266,
+              "first_partial_seconds": 0.0110892,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 76,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\seed-101\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 2.8761323,
+              "texture_misses_to_cpu": 0,
+              "windows": 1093,
+              "raw_sha256": "120387330e8c5c1808647259bf9984a8478a8ab8af492b5c78bd87e56906e1db",
+              "error": {
+                "relative_mse": 0.004273118445297073,
+                "max_pixel": 0.05704192817211151,
+                "max_block_mean": 0.00479413935681805,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 101,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 384,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 4.155097600072622,
+          "sampling_seconds": {
+            "median": 2.8761323,
+            "min": 2.8761323,
+            "max": 2.8761323,
+            "values": [
+              2.8761323
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        },
+        "151": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 33554400,
+          "canonical_and_plan_seconds": 0.5447971,
+          "cpu_jobs_collected": 21422,
+          "cpu_jobs_submitted": 21422,
+          "embree_seconds": 0.036893,
+          "gpu_prepare_seconds": 0.4043879,
+          "height": 288,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 62665472,
+          "peak_pinned_bytes": 33917024,
+          "prepare_seconds": 1.0462511,
+          "publish_ms": 33,
+          "read_seconds": 0.0535604,
+          "refill_fine": true,
+          "resident_texture_bytes": 8388576,
+          "resident_texture_pages": 720,
+          "runs": [
+            {
+              "cpu_committed_samples": 3538944,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 2.8126057,
+              "first_partial_seconds": 0.0505013,
+              "gpu_committed_samples": 3538944,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 73,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\seed-151\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 2.8126057,
+              "texture_misses_to_cpu": 0,
+              "windows": 1073,
+              "raw_sha256": "3cc812a8bb0458523051a78e66c71b4e98fed15a5f66722a4a491cb7cb262629",
+              "error": {
+                "relative_mse": 0.004233318472067818,
+                "max_pixel": 0.06643964350223541,
+                "max_block_mean": 0.005513325682841241,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 151,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 384,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 4.086539600044489,
+          "sampling_seconds": {
+            "median": 2.8126057,
+            "min": 2.8126057,
+            "max": 2.8126057,
+            "values": [
+              2.8126057
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        }
+      },
+      "ownership_max_delta": {
+        "1": 2.9802322387695312e-08,
+        "2": 2.9802322387695312e-08
+      },
+      "worker_count_byte_identical": true,
+      "coarse-migration": {
+        "active_missing_pages": 2048,
+        "active_texture_bytes": 8388576,
+        "canonical_and_plan_seconds": 0.5594015,
+        "cpu_jobs_collected": 40369,
+        "cpu_jobs_submitted": 40369,
+        "embree_seconds": 0.0336633,
+        "gpu_prepare_seconds": 0.4020475,
+        "height": 288,
+        "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+        "peak_device_bytes": 48565568,
+        "peak_pinned_bytes": 19427904,
+        "prepare_seconds": 1.0554553,
+        "publish_ms": 33,
+        "read_seconds": 0.0538279,
+        "refill_fine": false,
+        "resident_texture_bytes": 8388576,
+        "resident_texture_pages": 720,
+        "runs": [
+          {
+            "cpu_committed_samples": 6924366,
+            "fine_refills": 0,
+            "first_full_coverage_seconds": 4.5438886,
+            "first_partial_seconds": 0.010947,
+            "gpu_committed_samples": 153522,
+            "gpu_texture_retries": 0,
+            "index": 0,
+            "migrated_paths": 55296,
+            "pending_paths": 0,
+            "previews": 120,
+            "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\coarse-migration\\run-0.rgba",
+            "render_allocations": 0,
+            "sampling_seconds": 4.5438886,
+            "texture_misses_to_cpu": 30111,
+            "windows": 1766,
+            "raw_sha256": "1bb2c90e625be6a3cf9ec1287d05ff8ccdc58fa7203cad3a088be92669fa053a",
+            "error": {
+              "relative_mse": 0.004238006035295102,
+              "max_pixel": 0.06119684875011444,
+              "max_block_mean": 0.004585225833579898,
+              "alpha": 0.0
+            }
+          }
+        ],
+        "sampling_policy": 3,
+        "seed": 3034297317,
+        "spp": 64,
+        "status": "passed",
+        "steady_gpu_allocations": 0,
+        "steady_gpu_synchronizations": 0,
+        "threads": 12,
+        "width": 384,
+        "window_ms": 2,
+        "workers_created": 12,
+        "workers_joined": 12,
+        "wall_seconds": 5.806511300150305,
+        "sampling_seconds": {
+          "median": 4.5438886,
+          "min": 4.5438886,
+          "max": 4.5438886,
+          "values": [
+            4.5438886
+          ]
+        },
+        "meets_target": true,
+        "repeats_identical": true,
+        "ownership_delta": 2.9802322387695312e-08
+      },
+      "publish-every-window": {
+        "active_missing_pages": 0,
+        "active_texture_bytes": 33554400,
+        "canonical_and_plan_seconds": 0.5607235,
+        "cpu_jobs_collected": 21623,
+        "cpu_jobs_submitted": 21623,
+        "embree_seconds": 0.0414552,
+        "gpu_prepare_seconds": 0.4447096,
+        "height": 288,
+        "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+        "peak_device_bytes": 62665472,
+        "peak_pinned_bytes": 33917024,
+        "prepare_seconds": 1.1102776,
+        "publish_ms": 0,
+        "read_seconds": 0.0559522,
+        "refill_fine": true,
+        "resident_texture_bytes": 8388576,
+        "resident_texture_pages": 720,
+        "runs": [
+          {
+            "cpu_committed_samples": 3538944,
+            "fine_refills": 1,
+            "first_full_coverage_seconds": 5.7491118,
+            "first_partial_seconds": 0.0115347,
+            "gpu_committed_samples": 3538944,
+            "gpu_texture_retries": 4,
+            "index": 0,
+            "migrated_paths": 0,
+            "pending_paths": 0,
+            "previews": 968,
+            "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\publish-every-window\\run-0.rgba",
+            "render_allocations": 52,
+            "sampling_seconds": 5.7817988,
+            "texture_misses_to_cpu": 0,
+            "windows": 975,
+            "raw_sha256": "2f3e4f7ed42593f2732187d2d6227453e7db1ecc9fcd68a0f4dd722203ea6249",
+            "error": {
+              "relative_mse": 0.004238006035297858,
+              "max_pixel": 0.06119684875011444,
+              "max_block_mean": 0.004585225833579898,
+              "alpha": 0.0
+            }
+          }
+        ],
+        "sampling_policy": 3,
+        "seed": 3034297317,
+        "spp": 64,
+        "status": "passed",
+        "steady_gpu_allocations": 52,
+        "steady_gpu_synchronizations": 0,
+        "threads": 12,
+        "width": 384,
+        "window_ms": 2,
+        "workers_created": 12,
+        "workers_joined": 12,
+        "wall_seconds": 7.105934099992737,
+        "sampling_seconds": {
+          "median": 5.7817988,
+          "min": 5.7817988,
+          "max": 5.7817988,
+          "values": [
+            5.7817988
+          ]
+        },
+        "meets_target": true,
+        "repeats_identical": true,
+        "ownership_delta": 0.0
+      },
+      "high_spp": {
+        "active_missing_pages": 0,
+        "active_texture_bytes": 33554400,
+        "canonical_and_plan_seconds": 0.548979,
+        "cpu_jobs_collected": 350565,
+        "cpu_jobs_submitted": 350565,
+        "embree_seconds": 0.0341333,
+        "gpu_prepare_seconds": 0.433886,
+        "height": 288,
+        "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+        "peak_device_bytes": 62665472,
+        "peak_pinned_bytes": 33917024,
+        "prepare_seconds": 1.0764953,
+        "publish_ms": 33,
+        "read_seconds": 0.0531243,
+        "refill_fine": true,
+        "resident_texture_bytes": 8388576,
+        "resident_texture_pages": 720,
+        "runs": [
+          {
+            "cpu_committed_samples": 56623104,
+            "fine_refills": 1,
+            "first_full_coverage_seconds": 41.6127295,
+            "first_partial_seconds": 0.0112821,
+            "gpu_committed_samples": 56623104,
+            "gpu_texture_retries": 4,
+            "index": 0,
+            "migrated_paths": 0,
+            "pending_paths": 0,
+            "previews": 1114,
+            "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\gallery-dense\\high-1024\\run-0.rgba",
+            "render_allocations": 52,
+            "sampling_seconds": 42.1015467,
+            "texture_misses_to_cpu": 0,
+            "windows": 16250,
+            "raw_sha256": "4df4f0b22a26bffb90769bd81982417ab49abf4cbd50424eabab83c9e7aa4555",
+            "error": {
+              "relative_mse": 0.0002492836444101745,
+              "max_pixel": 0.013893842697143555,
+              "max_block_mean": 0.0011545189190655947,
+              "alpha": 0.0
+            }
+          }
+        ],
+        "sampling_policy": 3,
+        "seed": 3034297317,
+        "spp": 1024,
+        "status": "passed",
+        "steady_gpu_allocations": 52,
+        "steady_gpu_synchronizations": 0,
+        "threads": 12,
+        "width": 384,
+        "window_ms": 2,
+        "workers_created": 12,
+        "workers_joined": 12,
+        "wall_seconds": 43.386392400134355,
+        "sampling_seconds": {
+          "median": 42.1015467,
+          "min": 42.1015467,
+          "max": 42.1015467,
+          "values": [
+            42.1015467
+          ]
+        },
+        "meets_target": true,
+        "repeats_identical": true,
+        "conformance_passed": true
+      },
+      "all_gates_passed": true,
+      "warm_time_reduction_vs_xpu": {
+        "1": 0.44639898564598446,
+        "12": 0.3254348622329879
+      }
+    },
+    "workshop-detail": {
+      "target": 0.003965947358964805,
+      "native": {
+        "1": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 58720224,
+          "canonical_and_plan_seconds": 0.6832821,
+          "cpu_jobs_collected": 85952,
+          "cpu_jobs_submitted": 85952,
+          "embree_seconds": 0.0157197,
+          "gpu_prepare_seconds": 0.416163,
+          "height": 384,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 81943904,
+          "peak_pinned_bytes": 59104512,
+          "prepare_seconds": 1.1739762,
+          "publish_ms": 33,
+          "read_seconds": 0.0517067,
+          "refill_fine": true,
+          "resident_texture_bytes": 14680032,
+          "resident_texture_pages": 1232,
+          "runs": [
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 26.9506959,
+              "first_partial_seconds": 0.0861428,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 664,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\candidate-t1\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 26.9506959,
+              "texture_misses_to_cpu": 0,
+              "windows": 8953,
+              "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+              "error": {
+                "relative_mse": 0.003932951677448149,
+                "max_pixel": 0.078476682305336,
+                "max_block_mean": 0.005896504910197109,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 26.5069849,
+              "first_partial_seconds": 0.0174658,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 0,
+              "index": 1,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 652,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\candidate-t1\\run-1.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 26.5069849,
+              "texture_misses_to_cpu": 0,
+              "windows": 8815,
+              "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+              "error": {
+                "relative_mse": 0.003932951677448149,
+                "max_pixel": 0.078476682305336,
+                "max_block_mean": 0.005896504910197109,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 26.7949278,
+              "first_partial_seconds": 0.0168378,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 0,
+              "index": 2,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 659,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\candidate-t1\\run-2.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 26.8107109,
+              "texture_misses_to_cpu": 0,
+              "windows": 8909,
+              "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+              "error": {
+                "relative_mse": 0.003932951677448149,
+                "max_pixel": 0.078476682305336,
+                "max_block_mean": 0.005896504910197109,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 26.5283446,
+              "first_partial_seconds": 0.0168397,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 0,
+              "index": 3,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 651,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\candidate-t1\\run-3.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 26.5283446,
+              "texture_misses_to_cpu": 0,
+              "windows": 8922,
+              "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+              "error": {
+                "relative_mse": 0.003932951677448149,
+                "max_pixel": 0.078476682305336,
+                "max_block_mean": 0.005896504910197109,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 3034297317,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 1,
+          "width": 512,
+          "window_ms": 2,
+          "workers_created": 1,
+          "workers_joined": 1,
+          "wall_seconds": 108.21076150005683,
+          "sampling_seconds": {
+            "median": 26.5283446,
+            "min": 26.5069849,
+            "max": 26.8107109,
+            "values": [
+              26.5069849,
+              26.8107109,
+              26.5283446
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        },
+        "12": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 58720224,
+          "canonical_and_plan_seconds": 0.6612564,
+          "cpu_jobs_collected": 132091,
+          "cpu_jobs_submitted": 132091,
+          "embree_seconds": 0.0156875,
+          "gpu_prepare_seconds": 0.4358138,
+          "height": 384,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 81943904,
+          "peak_pinned_bytes": 59104512,
+          "prepare_seconds": 1.1700393,
+          "publish_ms": 33,
+          "read_seconds": 0.0507814,
+          "refill_fine": true,
+          "resident_texture_bytes": 14680032,
+          "resident_texture_pages": 1232,
+          "runs": [
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 4.772994,
+              "first_partial_seconds": 0.0928294,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 114,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\candidate-t12\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 4.772994,
+              "texture_misses_to_cpu": 0,
+              "windows": 1453,
+              "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+              "error": {
+                "relative_mse": 0.003932951677448149,
+                "max_pixel": 0.078476682305336,
+                "max_block_mean": 0.005896504910197109,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 4.6046424,
+              "first_partial_seconds": 0.017434,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 0,
+              "index": 1,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 112,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\candidate-t12\\run-1.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 4.6046424,
+              "texture_misses_to_cpu": 0,
+              "windows": 1437,
+              "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+              "error": {
+                "relative_mse": 0.003932951677448149,
+                "max_pixel": 0.078476682305336,
+                "max_block_mean": 0.005896504910197109,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 4.6198917,
+              "first_partial_seconds": 0.0173045,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 0,
+              "index": 2,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 113,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\candidate-t12\\run-2.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 4.6321137,
+              "texture_misses_to_cpu": 0,
+              "windows": 1443,
+              "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+              "error": {
+                "relative_mse": 0.003932951677448149,
+                "max_pixel": 0.078476682305336,
+                "max_block_mean": 0.005896504910197109,
+                "alpha": 0.0
+              }
+            },
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 0,
+              "first_full_coverage_seconds": 4.5835652,
+              "first_partial_seconds": 0.0172841,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 0,
+              "index": 3,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 111,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\candidate-t12\\run-3.rgba",
+              "render_allocations": 0,
+              "sampling_seconds": 4.5835652,
+              "texture_misses_to_cpu": 0,
+              "windows": 1433,
+              "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+              "error": {
+                "relative_mse": 0.003932951677448149,
+                "max_pixel": 0.078476682305336,
+                "max_block_mean": 0.005896504910197109,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 3034297317,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 512,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 19.99580330005847,
+          "sampling_seconds": {
+            "median": 4.6046424,
+            "min": 4.5835652,
+            "max": 4.6321137,
+            "values": [
+              4.6046424,
+              4.6321137,
+              4.5835652
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        }
+      },
+      "original": {
+        "1": {
+          "runs": [
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\workshop-detail\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-0\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "1",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-0\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 1,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 46.06685469998047,
+              "stats": {
+                "Thread(s)": 1.0,
+                "Render prep (s)": 0.64959,
+                "Mcrt time (s)": 44.44703,
+                "Total time (s)": 45.15757
+              },
+              "raw_sha256": "3208af232e96bbbb8eb52e4f7f41cad322728f7001916a4a34457590b012a425",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-0",
+              "sampling_seconds": 44.44703
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\workshop-detail\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-1\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "1",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-1\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 1,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 46.19132159999572,
+              "stats": {
+                "Thread(s)": 1.0,
+                "Render prep (s)": 0.72808,
+                "Mcrt time (s)": 44.451,
+                "Total time (s)": 45.2301
+              },
+              "raw_sha256": "c74235ea1027bd4e14b4a6778ced0da00a6f6c93d41c377b866702e9d28a4c81",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-1",
+              "sampling_seconds": 44.451
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\workshop-detail\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-2\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "1",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-2\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 1,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 45.44055319996551,
+              "stats": {
+                "Thread(s)": 1.0,
+                "Render prep (s)": 0.67217,
+                "Mcrt time (s)": 43.79233,
+                "Total time (s)": 44.48766
+              },
+              "raw_sha256": "513bf05e03be71b6e8da80a657648c8d513396c2a6ec8f6ea73047ecbb2154ed",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-2",
+              "sampling_seconds": 43.79233
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\workshop-detail\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-3\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "1",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-3\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 1,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 46.41694390005432,
+              "stats": {
+                "Thread(s)": 1.0,
+                "Render prep (s)": 0.70267,
+                "Mcrt time (s)": 44.75593,
+                "Total time (s)": 45.48881
+              },
+              "raw_sha256": "878364fa811207a92237f134f54bf15668a8156b51e239f32e78d1c298117520",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t1-3",
+              "sampling_seconds": 44.75593
+            }
+          ],
+          "sampling_seconds": {
+            "median": 44.451,
+            "min": 43.79233,
+            "max": 44.75593,
+            "values": [
+              44.451,
+              43.79233,
+              44.75593
+            ]
+          },
+          "run_to_run_abs": 1.1920928955078125e-07
+        },
+        "12": {
+          "runs": [
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\workshop-detail\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-0\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "12",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-0\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 12,
+                "gpu_intersection_percent": 99.87,
+                "passed": true
+              },
+              "wall_seconds": 8.337582000065595,
+              "stats": {
+                "Thread(s)": 12.0,
+                "Render prep (s)": 0.48452,
+                "Mcrt time (s)": 6.75146,
+                "Total time (s)": 7.34885
+              },
+              "raw_sha256": "797a7b5c563db87030d97f08abc61bb7ddae7f107125978ef2f01b2638e0e66b",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-0",
+              "sampling_seconds": 6.75146
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\workshop-detail\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-1\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "12",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-1\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 12,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 8.420221999986097,
+              "stats": {
+                "Thread(s)": 12.0,
+                "Render prep (s)": 0.48366,
+                "Mcrt time (s)": 6.75656,
+                "Total time (s)": 7.32239
+              },
+              "raw_sha256": "1828a5fd6d5f2e6a7add247c91ce6c5c8469f370c4bab3ef6da61613bb2733b6",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-1",
+              "sampling_seconds": 6.75656
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\workshop-detail\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-2\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "12",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-2\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 12,
+                "gpu_intersection_percent": 99.87,
+                "passed": true
+              },
+              "wall_seconds": 8.731372100068256,
+              "stats": {
+                "Thread(s)": 12.0,
+                "Render prep (s)": 0.50093,
+                "Mcrt time (s)": 7.10187,
+                "Total time (s)": 7.72514
+              },
+              "raw_sha256": "2384e146ebfd61eeae08b0b0d4757aa3ad4907e0c1f93bd382b1982fdda7f507",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-2",
+              "sampling_seconds": 7.10187
+            },
+            {
+              "command": [
+                "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\moonray.exe",
+                "-in",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-large-scenes-20261022\\workshop-detail\\grid-8\\frozen\\scene.rdlb",
+                "-out",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-3\\beauty.exr",
+                "-exec_mode",
+                "xpu",
+                "-threads",
+                "12",
+                "-info",
+                "-stats",
+                "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-3\\stats.csv"
+              ],
+              "execution": {
+                "requested_mode": "xpu",
+                "actual_mode": "xpu",
+                "threads": 12,
+                "gpu_intersection_percent": 100.0,
+                "passed": true
+              },
+              "wall_seconds": 8.503163399873301,
+              "stats": {
+                "Thread(s)": 12.0,
+                "Render prep (s)": 0.49483,
+                "Mcrt time (s)": 6.88182,
+                "Total time (s)": 7.4802
+              },
+              "raw_sha256": "3f220e9dc2f3e1541bf966255c56f13e40bb3e1db61be9070e784b072a519489",
+              "folder": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\xpu-t12-3",
+              "sampling_seconds": 6.88182
+            }
+          ],
+          "sampling_seconds": {
+            "median": 6.88182,
+            "min": 6.75656,
+            "max": 7.10187,
+            "values": [
+              6.75656,
+              7.10187,
+              6.88182
+            ]
+          },
+          "run_to_run_abs": 0.00015012919902801514
+        }
+      },
+      "seeds": {
+        "17": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 58720224,
+          "canonical_and_plan_seconds": 0.6495648,
+          "cpu_jobs_collected": 33525,
+          "cpu_jobs_submitted": 33525,
+          "embree_seconds": 0.0143399,
+          "gpu_prepare_seconds": 0.4060447,
+          "height": 384,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 81943904,
+          "peak_pinned_bytes": 59104512,
+          "prepare_seconds": 1.1276438,
+          "publish_ms": 33,
+          "read_seconds": 0.0513611,
+          "refill_fine": true,
+          "resident_texture_bytes": 14680032,
+          "resident_texture_pages": 1232,
+          "runs": [
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 4.9663056,
+              "first_partial_seconds": 0.0918496,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 120,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\seed-17\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 4.9809424,
+              "texture_misses_to_cpu": 0,
+              "windows": 1510,
+              "raw_sha256": "5a0590fa60ce9b6bbc1d130cccd42866f82c387061a9724c4453fcadddc46fc3",
+              "error": {
+                "relative_mse": 0.0038887267998624683,
+                "max_pixel": 0.07696224004030228,
+                "max_block_mean": 0.005951787927187979,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 17,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 512,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 6.337168599944562,
+          "sampling_seconds": {
+            "median": 4.9809424,
+            "min": 4.9809424,
+            "max": 4.9809424,
+            "values": [
+              4.9809424
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        },
+        "47": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 58720224,
+          "canonical_and_plan_seconds": 0.6638664,
+          "cpu_jobs_collected": 33502,
+          "cpu_jobs_submitted": 33502,
+          "embree_seconds": 0.0151664,
+          "gpu_prepare_seconds": 0.3933079,
+          "height": 384,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 81943904,
+          "peak_pinned_bytes": 59104512,
+          "prepare_seconds": 1.1296739,
+          "publish_ms": 33,
+          "read_seconds": 0.0509334,
+          "refill_fine": true,
+          "resident_texture_bytes": 14680032,
+          "resident_texture_pages": 1232,
+          "runs": [
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 4.8949014,
+              "first_partial_seconds": 0.0885729,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 118,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\seed-47\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 4.9109529,
+              "texture_misses_to_cpu": 0,
+              "windows": 1489,
+              "raw_sha256": "7680d18f0da390afc5e60553860aefd77f720329893a77a5115b98d37509e354",
+              "error": {
+                "relative_mse": 0.0038781665878721353,
+                "max_pixel": 0.07195814698934555,
+                "max_block_mean": 0.006126566557213664,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 47,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 512,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 6.257534999866039,
+          "sampling_seconds": {
+            "median": 4.9109529,
+            "min": 4.9109529,
+            "max": 4.9109529,
+            "values": [
+              4.9109529
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        },
+        "101": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 58720224,
+          "canonical_and_plan_seconds": 0.6663019,
+          "cpu_jobs_collected": 33633,
+          "cpu_jobs_submitted": 33633,
+          "embree_seconds": 0.015323,
+          "gpu_prepare_seconds": 0.385609,
+          "height": 384,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 81943904,
+          "peak_pinned_bytes": 59104512,
+          "prepare_seconds": 1.1240636,
+          "publish_ms": 33,
+          "read_seconds": 0.0501247,
+          "refill_fine": true,
+          "resident_texture_bytes": 14680032,
+          "resident_texture_pages": 1232,
+          "runs": [
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 5.2051472,
+              "first_partial_seconds": 0.0846372,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 125,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\seed-101\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 5.2051472,
+              "texture_misses_to_cpu": 0,
+              "windows": 1566,
+              "raw_sha256": "55d8d787b5f1e3475c6542d2a8dce4863a336636c3f19c11024002b7a9f5a489",
+              "error": {
+                "relative_mse": 0.00392027019438591,
+                "max_pixel": 0.0668492466211319,
+                "max_block_mean": 0.006236073444597423,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 101,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 512,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 6.552413200028241,
+          "sampling_seconds": {
+            "median": 5.2051472,
+            "min": 5.2051472,
+            "max": 5.2051472,
+            "values": [
+              5.2051472
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        },
+        "151": {
+          "active_missing_pages": 0,
+          "active_texture_bytes": 58720224,
+          "canonical_and_plan_seconds": 0.666096,
+          "cpu_jobs_collected": 33268,
+          "cpu_jobs_submitted": 33268,
+          "embree_seconds": 0.0152408,
+          "gpu_prepare_seconds": 0.388818,
+          "height": 384,
+          "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+          "peak_device_bytes": 81943904,
+          "peak_pinned_bytes": 59104512,
+          "prepare_seconds": 1.1321802,
+          "publish_ms": 33,
+          "read_seconds": 0.0549128,
+          "refill_fine": true,
+          "resident_texture_bytes": 14680032,
+          "resident_texture_pages": 1232,
+          "runs": [
+            {
+              "cpu_committed_samples": 6291456,
+              "fine_refills": 1,
+              "first_full_coverage_seconds": 4.8415584,
+              "first_partial_seconds": 0.0878107,
+              "gpu_committed_samples": 6291456,
+              "gpu_texture_retries": 4,
+              "index": 0,
+              "migrated_paths": 0,
+              "pending_paths": 0,
+              "previews": 117,
+              "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\seed-151\\run-0.rgba",
+              "render_allocations": 52,
+              "sampling_seconds": 4.8600783,
+              "texture_misses_to_cpu": 0,
+              "windows": 1478,
+              "raw_sha256": "1c4c470b4ee1ef2b31f6c35d2194ccff0ab8667510e269ff38fc1dc4b93badf3",
+              "error": {
+                "relative_mse": 0.003894261841147628,
+                "max_pixel": 0.07332612574100494,
+                "max_block_mean": 0.006709738285280764,
+                "alpha": 0.0
+              }
+            }
+          ],
+          "sampling_policy": 3,
+          "seed": 151,
+          "spp": 64,
+          "status": "passed",
+          "steady_gpu_allocations": 52,
+          "steady_gpu_synchronizations": 0,
+          "threads": 12,
+          "width": 512,
+          "window_ms": 2,
+          "workers_created": 12,
+          "workers_joined": 12,
+          "wall_seconds": 6.212446599965915,
+          "sampling_seconds": {
+            "median": 4.8600783,
+            "min": 4.8600783,
+            "max": 4.8600783,
+            "values": [
+              4.8600783
+            ]
+          },
+          "meets_target": true,
+          "repeats_identical": true
+        }
+      },
+      "ownership_max_delta": {
+        "1": 4.470348358154297e-08,
+        "2": 4.470348358154297e-08
+      },
+      "worker_count_byte_identical": true,
+      "coarse-migration": {
+        "active_missing_pages": 3584,
+        "active_texture_bytes": 14680032,
+        "canonical_and_plan_seconds": 0.6596759,
+        "cpu_jobs_collected": 64071,
+        "cpu_jobs_submitted": 64071,
+        "embree_seconds": 0.0143019,
+        "gpu_prepare_seconds": 0.4145923,
+        "height": 384,
+        "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+        "peak_device_bytes": 30958848,
+        "peak_pinned_bytes": 19211008,
+        "prepare_seconds": 1.1455195,
+        "publish_ms": 33,
+        "read_seconds": 0.0502963,
+        "refill_fine": false,
+        "resident_texture_bytes": 14680032,
+        "resident_texture_pages": 1232,
+        "runs": [
+          {
+            "cpu_committed_samples": 12400859,
+            "fine_refills": 0,
+            "first_full_coverage_seconds": 8.6500861,
+            "first_partial_seconds": 0.0176977,
+            "gpu_committed_samples": 182053,
+            "gpu_texture_retries": 0,
+            "index": 0,
+            "migrated_paths": 98304,
+            "pending_paths": 0,
+            "previews": 212,
+            "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\coarse-migration\\run-0.rgba",
+            "render_allocations": 0,
+            "sampling_seconds": 8.660849,
+            "texture_misses_to_cpu": 68544,
+            "windows": 2726,
+            "raw_sha256": "7260acebc113e0d0e274219565b9e011c6dc384fe70d8f537567f35bfac8e5dd",
+            "error": {
+              "relative_mse": 0.003932951676843845,
+              "max_pixel": 0.078476682305336,
+              "max_block_mean": 0.005896504910197109,
+              "alpha": 0.0
+            }
+          }
+        ],
+        "sampling_policy": 3,
+        "seed": 3034297317,
+        "spp": 64,
+        "status": "passed",
+        "steady_gpu_allocations": 0,
+        "steady_gpu_synchronizations": 0,
+        "threads": 12,
+        "width": 512,
+        "window_ms": 2,
+        "workers_created": 12,
+        "workers_joined": 12,
+        "wall_seconds": 10.031777299940586,
+        "sampling_seconds": {
+          "median": 8.660849,
+          "min": 8.660849,
+          "max": 8.660849,
+          "values": [
+            8.660849
+          ]
+        },
+        "meets_target": true,
+        "repeats_identical": true,
+        "ownership_delta": 4.470348358154297e-08
+      },
+      "publish-every-window": {
+        "active_missing_pages": 0,
+        "active_texture_bytes": 58720224,
+        "canonical_and_plan_seconds": 0.6647289,
+        "cpu_jobs_collected": 34128,
+        "cpu_jobs_submitted": 34128,
+        "embree_seconds": 0.0150778,
+        "gpu_prepare_seconds": 0.4207042,
+        "height": 384,
+        "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+        "peak_device_bytes": 81943904,
+        "peak_pinned_bytes": 59104512,
+        "prepare_seconds": 1.1604245,
+        "publish_ms": 0,
+        "read_seconds": 0.0532611,
+        "refill_fine": true,
+        "resident_texture_bytes": 14680032,
+        "resident_texture_pages": 1232,
+        "runs": [
+          {
+            "cpu_committed_samples": 6291456,
+            "fine_refills": 1,
+            "first_full_coverage_seconds": 13.9445151,
+            "first_partial_seconds": 0.086935,
+            "gpu_committed_samples": 6291456,
+            "gpu_texture_retries": 4,
+            "index": 0,
+            "migrated_paths": 0,
+            "pending_paths": 0,
+            "previews": 1481,
+            "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\publish-every-window\\run-0.rgba",
+            "render_allocations": 52,
+            "sampling_seconds": 13.9931779,
+            "texture_misses_to_cpu": 0,
+            "windows": 1485,
+            "raw_sha256": "0215d36fbf79f71c32851f2ecd86b7c9b8f4ed851ee6aa92ed9e14df0f923f0f",
+            "error": {
+              "relative_mse": 0.003932951677448149,
+              "max_pixel": 0.078476682305336,
+              "max_block_mean": 0.005896504910197109,
+              "alpha": 0.0
+            }
+          }
+        ],
+        "sampling_policy": 3,
+        "seed": 3034297317,
+        "spp": 64,
+        "status": "passed",
+        "steady_gpu_allocations": 52,
+        "steady_gpu_synchronizations": 0,
+        "threads": 12,
+        "width": 512,
+        "window_ms": 2,
+        "workers_created": 12,
+        "workers_joined": 12,
+        "wall_seconds": 15.381789699895307,
+        "sampling_seconds": {
+          "median": 13.9931779,
+          "min": 13.9931779,
+          "max": 13.9931779,
+          "values": [
+            13.9931779
+          ]
+        },
+        "meets_target": true,
+        "repeats_identical": true,
+        "ownership_delta": 0.0
+      },
+      "high_spp": {
+        "active_missing_pages": 0,
+        "active_texture_bytes": 58720224,
+        "canonical_and_plan_seconds": 0.6438568,
+        "cpu_jobs_collected": 538848,
+        "cpu_jobs_submitted": 538848,
+        "embree_seconds": 0.0150875,
+        "gpu_prepare_seconds": 0.414315,
+        "height": 384,
+        "mode": "unchanged progressive renderWindows; no custom throughput implementation",
+        "peak_device_bytes": 81943904,
+        "peak_pinned_bytes": 59104512,
+        "prepare_seconds": 1.1301532,
+        "publish_ms": 33,
+        "read_seconds": 0.05069,
+        "refill_fine": true,
+        "resident_texture_bytes": 14680032,
+        "resident_texture_pages": 1232,
+        "runs": [
+          {
+            "cpu_committed_samples": 100663296,
+            "fine_refills": 1,
+            "first_full_coverage_seconds": 79.3294448,
+            "first_partial_seconds": 0.0881831,
+            "gpu_committed_samples": 100663296,
+            "gpu_texture_retries": 4,
+            "index": 0,
+            "migrated_paths": 0,
+            "pending_paths": 0,
+            "previews": 1940,
+            "raw_file": "<LOCAL_WORKTREE>\\test-results\\interactive-ray-hit-benchmark-20261022\\workshop-detail\\high-1024\\run-0.rgba",
+            "render_allocations": 52,
+            "sampling_seconds": 79.7479698,
+            "texture_misses_to_cpu": 0,
+            "windows": 24424,
+            "raw_sha256": "1d9bfa15049af1c556082d7ee2ab81b2aea550352bd2bf6f716fd7e1f0101bd4",
+            "error": {
+              "relative_mse": 0.00022707535563156348,
+              "max_pixel": 0.01692962646484375,
+              "max_block_mean": 0.0014436664059758186,
+              "alpha": 0.0
+            }
+          }
+        ],
+        "sampling_policy": 3,
+        "seed": 3034297317,
+        "spp": 1024,
+        "status": "passed",
+        "steady_gpu_allocations": 52,
+        "steady_gpu_synchronizations": 0,
+        "threads": 12,
+        "width": 512,
+        "window_ms": 2,
+        "workers_created": 12,
+        "workers_joined": 12,
+        "wall_seconds": 81.10493699996732,
+        "sampling_seconds": {
+          "median": 79.7479698,
+          "min": 79.7479698,
+          "max": 79.7479698,
+          "values": [
+            79.7479698
+          ]
+        },
+        "meets_target": true,
+        "repeats_identical": true,
+        "conformance_passed": true
+      },
+      "all_gates_passed": true,
+      "warm_time_reduction_vs_xpu": {
+        "1": 0.4032002744595172,
+        "12": 0.33089758232560573
+      }
+    }
+  },
+  "source_hashes": {
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\canonical_session.h": "39e564278ee2214a26a86bbe6e9de70ac9e498cfc2ffba2f1da48d79785b6007",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_jobs.h": "51b2448b759c3bfb28acdc48ff5fd94d7a6f28f826f7a86effd6d62c8efb6b56",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_lane.h": "0d9eef7d60066546286fd344844a93f9389bc9795b0421ce368e859453df9a7d",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_pool.h": "fc14077f2bba5cb7227e42d6a5b353d6477f9e61805c0eadf5112b7ea921e9e1",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_scene.h": "bac0595285b7069dfffccde9ea0b58a119cd9c9900740c7ce702e4da3d56302f",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_service.h": "9ee6351406c5a244fa5c6b70644809243c793670b069911716b7442520ae6374",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\deadline_pipeline.h": "540b0a18be9222623296b0323a4aa0cb0c145dc8ef9efcfc6de79e89a89ebc96",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_jobs.h": "3589a2873b80c366989eb0dc33a2c290f798541c4600ef1aed3e19fc23c5862a",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_lane.h": "03f34a0d168c6515849a949c3060057bfa9aade0ca712cf7789d1646e6226e11",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\host_texture.h": "e703bc14c08a2d32d16652d57a9711aa97f04725e37ba4c2c9f9d74f439ce71e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\mixed_pipeline.h": "11944e7f4dd219f0a6b80716856d1f1171739f6098e31b9d50bc62be0a1c7d1e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\mixed_service.h": "aae68c088be11aa550dda74d94f7c77fd14acc05fa4fa3cabe510c7f68913fcd",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\path_stage.h": "117d77569563c45712456ed28978b3944bb455b732b8dcf4bb55c61f0daa7b77",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\progressive.h": "861fc729f0d911f353dc6cea3e59b200b81b76d573e53c1e50d5e638b7f6d80e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\qmc_fixture.h": "8a93520e458e72ef1ab0d4801e5877a56fc3617acfebeb456249a82ab541865b",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\resume_core.h": "ae2b12d3acc5918e026672a9d0a4600bc63f95699f229ab71f0afe6a4f6925d4",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\routing_index.h": "4ede676f233acaba06b938149c01017cdc1507bbc5575affe680ce421e7110dc",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_fixture.h": "496f59e9c8ef631d56e8bb87a90bcdf15c0c0ff06b37bdef8825beea120a21e9",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_stream.h": "e6559995c09ad4ace2a672f8d1002d475e13a7f8ce33c2ba5ee997cc13f37ab9",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_tree.h": "0987b268b8b314d85180134116aad804c452c4d9d7e802de79f3a1902af4fb92",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\snapshot_budget.h": "3e71d3f311e27bd5055441b25ec1403a0089074eeaf6f1f028215a6b6fac4889",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\spsc_ring.h": "0134391df4780286a34ba94b478342264531297c2c8c1dfec92ecd7b65d18ee4",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\surface_core.h": "51c437dbd482716edc9d49cb7c6ec36e27613b0632b2801bcada2484d25fcdc9",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\surface_fixture.h": "2cc6a9f2874ea2f605164b100dd9a33acfe918d8df698e34c35746f299a5ce69",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\texture_core.h": "e43b1856c74fd7640d138cba79685db4c615dd6dd0d9dd307f10980d6f6a3771",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\triangle_hit.h": "03bdee7d6eb9b8cac5c0d038de1502753cee1f76d30fac57e6ec27027a66a5e1",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\ray_hit_image_probe.cc": "ef54ca2a11aa9f736b696a557150d2a195a7ecc445b383e59b38a575d3e345cc",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\native_build.py": "f90368d1a81b2dc7f09fd739d6c68ba3e3379ebf34d06d84466921bc55f89cfa",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_trace.cu": "1300b7732413a4d8e898bf089a614aa51fcf18dc086cd0c9b76081cdc5f9b86a",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\run_ray_hit_benchmark.py": "7ae4c2e58e76c49541b5cd9bda926a0019093a3f0b808fea617aa6dce4109f9f"
+  },
+  "cpu_build_sha256": "d50e06d859e79e8dc32657d52c176f1141a240e45b44ab75e939351a5b5a555f",
+  "gpu_build_sha256": "de1983d68832f427f3e5a3071087a20a772e4d23c0688d035f4063968e936a90",
+  "runtime_identity": "c88338c6c81d05851e97f2381c2c089a73c726060e763f784352966124a48e47"
+}

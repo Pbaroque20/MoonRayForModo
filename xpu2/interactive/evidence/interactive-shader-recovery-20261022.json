@@ -1,0 +1,635 @@
+{
+  "status": "passed",
+  "checks": {
+    "sampler": {
+      "tuples_compared": 16777216,
+      "mismatches": 0,
+      "cpu_check_mask": 0,
+      "gpu_check_mask": 0,
+      "billion_tuple_qualification": false
+    },
+    "planar": {
+      "cancelled_prefix_audit": true,
+      "cancelled_runs": 1,
+      "cpu_jobs_collected": 264,
+      "cpu_jobs_submitted": 264,
+      "cpu_passes": 44,
+      "cpu_peak_outstanding": 6,
+      "cpu_samples": 393216,
+      "cpu_worker_joins_at_shutdown": 12,
+      "discarded_packets": 3,
+      "failure_after_partial_retired": true,
+      "final_samples_per_pixel": 256,
+      "gpu_samples": 393216,
+      "idle_workers_parked": 12,
+      "partial_images_consumed": 5,
+      "persistent_cpu_workers": 12,
+      "progressive_published": 18,
+      "progressive_snapshots_skipped": 21,
+      "status": "passed",
+      "textured_cpu_route": false
+    },
+    "spatial": {
+      "f0-d0": {
+        "probe": {
+          "analytical_four_surface_chain": true,
+          "batch_bytes": 69688,
+          "checkerboard_matches_owned_device": true,
+          "cpu_workers": 12,
+          "exact_resumption_by_device": true,
+          "mode0-t1": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 2747
+          },
+          "mode0-t12": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 2285
+          },
+          "mode1-t12": {
+            "completed": 3145728,
+            "cpu_samples": 0,
+            "gpu_samples": 3145728,
+            "slices": 972
+          },
+          "mode2-t1": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 1865
+          },
+          "mode2-t12": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 1472
+          },
+          "no_per_slice_gpu_allocation_or_sync": true,
+          "rejected": {
+            "bounce budget": true,
+            "singular transform": true,
+            "smooth normals": true
+          },
+          "resident_geometry": true,
+          "secondary_epoch_cancel": true,
+          "state_bytes": 272,
+          "status": "passed",
+          "surface_limit": 1
+        },
+        "byte_identical_to_baseline": true
+      },
+      "f0-d2": {
+        "probe": {
+          "analytical_four_surface_chain": true,
+          "batch_bytes": 69688,
+          "checkerboard_matches_owned_device": true,
+          "cpu_workers": 12,
+          "exact_resumption_by_device": true,
+          "mode0-t1": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 4611
+          },
+          "mode0-t12": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 4501
+          },
+          "mode1-t12": {
+            "completed": 3145728,
+            "cpu_samples": 0,
+            "gpu_samples": 3145728,
+            "slices": 1589
+          },
+          "mode2-t1": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 3173
+          },
+          "mode2-t12": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 2405
+          },
+          "no_per_slice_gpu_allocation_or_sync": true,
+          "rejected": {
+            "bounce budget": true,
+            "singular transform": true,
+            "smooth normals": true
+          },
+          "resident_geometry": true,
+          "secondary_epoch_cancel": true,
+          "state_bytes": 272,
+          "status": "passed",
+          "surface_limit": 3
+        },
+        "byte_identical_to_baseline": true
+      },
+      "f17-d2": {
+        "probe": {
+          "analytical_four_surface_chain": true,
+          "batch_bytes": 69688,
+          "checkerboard_matches_owned_device": true,
+          "cpu_workers": 12,
+          "exact_resumption_by_device": true,
+          "mode0-t1": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 4584
+          },
+          "mode0-t12": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 4487
+          },
+          "mode1-t12": {
+            "completed": 3145728,
+            "cpu_samples": 0,
+            "gpu_samples": 3145728,
+            "slices": 1588
+          },
+          "mode2-t1": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 3148
+          },
+          "mode2-t12": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 2392
+          },
+          "no_per_slice_gpu_allocation_or_sync": true,
+          "rejected": {
+            "bounce budget": true,
+            "singular transform": true,
+            "smooth normals": true
+          },
+          "resident_geometry": true,
+          "secondary_epoch_cancel": true,
+          "state_bytes": 272,
+          "status": "passed",
+          "surface_limit": 3
+        },
+        "byte_identical_to_baseline": true
+      },
+      "f59-d2": {
+        "probe": {
+          "analytical_four_surface_chain": true,
+          "batch_bytes": 69688,
+          "checkerboard_matches_owned_device": true,
+          "cpu_workers": 12,
+          "exact_resumption_by_device": true,
+          "mode0-t1": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 4510
+          },
+          "mode0-t12": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 4511
+          },
+          "mode1-t12": {
+            "completed": 3145728,
+            "cpu_samples": 0,
+            "gpu_samples": 3145728,
+            "slices": 1588
+          },
+          "mode2-t1": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 3123
+          },
+          "mode2-t12": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 2398
+          },
+          "no_per_slice_gpu_allocation_or_sync": true,
+          "rejected": {
+            "bounce budget": true,
+            "singular transform": true,
+            "smooth normals": true
+          },
+          "resident_geometry": true,
+          "secondary_epoch_cancel": true,
+          "state_bytes": 272,
+          "status": "passed",
+          "surface_limit": 3
+        },
+        "byte_identical_to_baseline": true
+      },
+      "f0-d2-zero-plane": {
+        "probe": {
+          "analytical_four_surface_chain": true,
+          "batch_bytes": 69688,
+          "checkerboard_matches_owned_device": true,
+          "cpu_workers": 12,
+          "exact_resumption_by_device": true,
+          "mode0-t1": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 4532
+          },
+          "mode0-t12": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 4554
+          },
+          "mode1-t12": {
+            "completed": 3145728,
+            "cpu_samples": 0,
+            "gpu_samples": 3145728,
+            "slices": 1589
+          },
+          "mode2-t1": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 3181
+          },
+          "mode2-t12": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 2393
+          },
+          "no_per_slice_gpu_allocation_or_sync": true,
+          "rejected": {
+            "bounce budget": true,
+            "singular transform": true,
+            "smooth normals": true
+          },
+          "resident_geometry": true,
+          "secondary_epoch_cancel": true,
+          "state_bytes": 272,
+          "status": "passed",
+          "surface_limit": 3
+        },
+        "byte_identical_to_baseline": true
+      },
+      "f59-d7-emission": {
+        "probe": {
+          "analytical_four_surface_chain": true,
+          "batch_bytes": 69688,
+          "checkerboard_matches_owned_device": true,
+          "cpu_workers": 12,
+          "exact_resumption_by_device": true,
+          "mode0-t1": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 7368
+          },
+          "mode0-t12": {
+            "completed": 3145728,
+            "cpu_samples": 3145728,
+            "gpu_samples": 0,
+            "slices": 6739
+          },
+          "mode1-t12": {
+            "completed": 3145728,
+            "cpu_samples": 0,
+            "gpu_samples": 3145728,
+            "slices": 2480
+          },
+          "mode2-t1": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 5099
+          },
+          "mode2-t12": {
+            "completed": 3145728,
+            "cpu_samples": 1572864,
+            "gpu_samples": 1572864,
+            "slices": 3707
+          },
+          "no_per_slice_gpu_allocation_or_sync": true,
+          "rejected": {
+            "bounce budget": true,
+            "singular transform": true,
+            "smooth normals": true
+          },
+          "resident_geometry": true,
+          "secondary_epoch_cancel": true,
+          "state_bytes": 272,
+          "status": "passed",
+          "surface_limit": 8
+        },
+        "byte_identical_to_baseline": true
+      }
+    },
+    "residency": {
+      "status": "passed",
+      "scope": "changed sampler in complete vs suspended CPU/GPU jobs, 1/12 workers, forced texture misses, stale/corrupt continuation rejection, cancellation and recovery",
+      "cases": {
+        "room-close": {
+          "probe": {
+            "active_missing_pages": 0,
+            "active_texture_bytes": 1048572,
+            "batch_bytes": 69688,
+            "cancel_safe": true,
+            "fine_level_zero_upload": true,
+            "gpu-seeded-1": {
+              "cpu_samples": 0,
+              "fine_refills": 1,
+              "gpu_samples": 786432,
+              "gpu_texture_retries": 3,
+              "migrated_batches": 0,
+              "migrated_paths": 0,
+              "peak_cpu_batches": 0,
+              "peak_gpu_batches": 4,
+              "texture_misses": 0
+            },
+            "gpu-seeded-12": {
+              "cpu_samples": 0,
+              "fine_refills": 0,
+              "gpu_samples": 786432,
+              "gpu_texture_retries": 0,
+              "migrated_batches": 0,
+              "migrated_paths": 0,
+              "peak_cpu_batches": 0,
+              "peak_gpu_batches": 4,
+              "texture_misses": 0
+            },
+            "gpu_texture_bytes": 262140,
+            "handoff_validation": true,
+            "malformed_result_invalidates_epoch": true,
+            "mixed-1": {
+              "cpu_samples": 393216,
+              "fine_refills": 0,
+              "gpu_samples": 393216,
+              "gpu_texture_retries": 0,
+              "migrated_batches": 0,
+              "migrated_paths": 0,
+              "peak_cpu_batches": 2,
+              "peak_gpu_batches": 4,
+              "texture_misses": 0
+            },
+            "mixed-12": {
+              "cpu_samples": 393216,
+              "fine_refills": 0,
+              "gpu_samples": 393216,
+              "gpu_texture_retries": 0,
+              "migrated_batches": 0,
+              "migrated_paths": 0,
+              "peak_cpu_batches": 24,
+              "peak_gpu_batches": 4,
+              "texture_misses": 0
+            },
+            "no_warm_gpu_allocation_or_sync": true,
+            "oiio_lookup_max_error": 0.0,
+            "oiio_lookups": 176000,
+            "peak_device_bytes": 3374732,
+            "peak_pinned_bytes": 1655196,
+            "pressure": {
+              "cpu_samples": 786432,
+              "fine_refills": 1,
+              "gpu_samples": 0,
+              "gpu_texture_retries": 48,
+              "migrated_batches": 48,
+              "migrated_paths": 12288,
+              "peak_cpu_batches": 28,
+              "peak_gpu_batches": 4,
+              "texture_misses": 12288
+            },
+            "pressure_texture_bytes": 60,
+            "recovered": {
+              "cpu_samples": 393216,
+              "fine_refills": 0,
+              "gpu_samples": 393216,
+              "gpu_texture_retries": 0,
+              "migrated_batches": 0,
+              "migrated_paths": 0,
+              "peak_cpu_batches": 24,
+              "peak_gpu_batches": 4,
+              "texture_misses": 0
+            },
+            "refill-recovered": {
+              "cpu_samples": 393216,
+              "fine_refills": 0,
+              "gpu_samples": 393216,
+              "gpu_texture_retries": 0,
+              "migrated_batches": 0,
+              "migrated_paths": 0,
+              "peak_cpu_batches": 24,
+              "peak_gpu_batches": 4,
+              "texture_misses": 0
+            },
+            "refill_cancel_safe": true,
+            "resident_pages": 26,
+            "state_bytes": 272,
+            "status": "passed",
+            "textures_reused": 1,
+            "warm": {
+              "cpu_samples": 393216,
+              "fine_refills": 0,
+              "gpu_samples": 393216,
+              "gpu_texture_retries": 0,
+              "migrated_batches": 0,
+              "migrated_paths": 0,
+              "peak_cpu_batches": 24,
+              "peak_gpu_batches": 4,
+              "texture_misses": 0
+            }
+          },
+          "image_errors": {
+            "software": 0.0,
+            "gpu-seeded-1": 1.1175870895385742e-07,
+            "gpu-seeded-12": 1.1175870895385742e-07,
+            "mixed-1": 1.1175870895385742e-07,
+            "mixed-12": 1.1175870895385742e-07,
+            "pressure": 0.0,
+            "recovered": 1.1175870895385742e-07,
+            "warm": 1.1175870895385742e-07,
+            "refill-recovered": 1.1175870895385742e-07
+          }
+        }
+      },
+      "native_image_abs": 0.002,
+      "worker_count_identical": true,
+      "source_hashes": {
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\canonical_session.h": "39e564278ee2214a26a86bbe6e9de70ac9e498cfc2ffba2f1da48d79785b6007",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_jobs.h": "51b2448b759c3bfb28acdc48ff5fd94d7a6f28f826f7a86effd6d62c8efb6b56",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_lane.h": "534e1e57c630fe6573237f9604f32e5438704bc742ef9fb9ba1a963fab7128ce",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_pool.h": "fc14077f2bba5cb7227e42d6a5b353d6477f9e61805c0eadf5112b7ea921e9e1",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_scene.h": "cd9b90debea454d8d3221f797c91c8ad7dd7e598d8234a615a081fc2dde9849f",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_service.h": "9ee6351406c5a244fa5c6b70644809243c793670b069911716b7442520ae6374",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\deadline_pipeline.h": "540b0a18be9222623296b0323a4aa0cb0c145dc8ef9efcfc6de79e89a89ebc96",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_jobs.h": "3589a2873b80c366989eb0dc33a2c290f798541c4600ef1aed3e19fc23c5862a",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_lane.h": "dd0f7ffdb85f007780628051656a998ee724db9b671171b48bf094811b8980ad",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\host_texture.h": "e703bc14c08a2d32d16652d57a9711aa97f04725e37ba4c2c9f9d74f439ce71e",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\mixed_pipeline.h": "11944e7f4dd219f0a6b80716856d1f1171739f6098e31b9d50bc62be0a1c7d1e",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\mixed_service.h": "aca32adfc6b749f90903ff0a72f0f726c2ded4093d2c14bb8a7c59e8ee45160f",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\path_stage.h": "117d77569563c45712456ed28978b3944bb455b732b8dcf4bb55c61f0daa7b77",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\progressive.h": "861fc729f0d911f353dc6cea3e59b200b81b76d573e53c1e50d5e638b7f6d80e",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\qmc_fixture.h": "8a93520e458e72ef1ab0d4801e5877a56fc3617acfebeb456249a82ab541865b",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\resume_core.h": "ae2b12d3acc5918e026672a9d0a4600bc63f95699f229ab71f0afe6a4f6925d4",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\routing_index.h": "4ede676f233acaba06b938149c01017cdc1507bbc5575affe680ce421e7110dc",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_fixture.h": "496f59e9c8ef631d56e8bb87a90bcdf15c0c0ff06b37bdef8825beea120a21e9",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_stream.h": "6498dbd6c20cd08b48f28b097a5eec39b9f293daff4369877860daaa82df8b24",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_tree.h": "0987b268b8b314d85180134116aad804c452c4d9d7e802de79f3a1902af4fb92",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\snapshot_budget.h": "3e71d3f311e27bd5055441b25ec1403a0089074eeaf6f1f028215a6b6fac4889",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\spsc_ring.h": "0134391df4780286a34ba94b478342264531297c2c8c1dfec92ecd7b65d18ee4",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\surface_core.h": "51c437dbd482716edc9d49cb7c6ec36e27613b0632b2801bcada2484d25fcdc9",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\surface_fixture.h": "2cc6a9f2874ea2f605164b100dd9a33acfe918d8df698e34c35746f299a5ce69",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\texture_core.h": "e43b1856c74fd7640d138cba79685db4c615dd6dd0d9dd307f10980d6f6a3771",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\triangle_hit.h": "03bdee7d6eb9b8cac5c0d038de1502753cee1f76d30fac57e6ec27027a66a5e1",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\residency_recovery_probe.cc": "088cf387f52d5cfe29b02cdc9b353c30a73a06a8d8e514080496b2537e919201",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\run_residency_recovery.py": "344d6d85c093cad4c9793742d92e4b07a56f2216f8db2ac120a58dc2d5509b4d",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\native_build.py": "f90368d1a81b2dc7f09fd739d6c68ba3e3379ebf34d06d84466921bc55f89cfa"
+      },
+      "native_build": {
+        "libraries": {
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\scene\\rdl2\\libscene_rdl2.dll.a": "2f39cffbdca3bfee7685264a8e2f0d57c5d84e18a6bce0da8706402de79caca2",
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\fb_util\\libcommon_fb_util.dll.a": "e6eb72278ccc11588b16f8d5473936938937daf57bcf32ff79647cef2a4f4cfc",
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\fb_util\\ispc\\libfb_util_ispc.dll.a": "0fd39989f537c5a58bf9925af1c16adf1fbf58b3e6d8459b6b464a65f74f5454",
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\render\\util\\librender_util.dll.a": "4b5d01f9c418ca20261dd15993c8a29dca7b6997381b7a32d5fdb9f401f598d1",
+          "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libjsoncpp.a": "4fdb57167763eb5a596021db17b765d6c19802757b19f112025682160554be5a",
+          "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\liblua.dll.a": "d9923aa6d352cfc91c9af6337f3f8c0a4246b0bba7c8bb5649a8ce9fabd75803",
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\math\\libcommon_math.dll.a": "5b27a78473888fbd3b81da724f053cb55cb67d7a9ff2e8d3823c9c6569a8baff",
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\math\\ispc\\libmath_ispc.dll.a": "7c0afdb5d8a885ca7b8a82025603c898f06df5a124aae2288839e4747adfc4cd",
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\platform\\libcommon_platform.dll.a": "2a2bfeebc19110fdbd89e1c596254e287346271121e1bbebf2550037d86d321f",
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\render\\logging\\librender_logging.dll.a": "9c45c6afdb5b6403445ecf2bd625db4736d7bfdf445bff8beeb2b041f3bab453",
+          "<LOCAL_TOOLCHAIN>\\build\\native-avx\\log4cplus\\src\\liblog4cplus.dll.a": "2fa657408c53a14b503aacf9c846d20db7cfcde097b6142eb08c7f06c755fe4f",
+          "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libtbb12.dll.a": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1",
+          "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+          "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+          "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\libembree4.dll": "62f9b4b0c5f97a7189333008776124aab6f0e8ca861c36bdcc27c9f395ee5f29"
+        },
+        "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+        "preprocessed_sha256": "8e4a0aa41625f697003a54cca630e0dc0a9fdf6cb59ce7ef0e880ddd2958b083",
+        "executable_sha256": "3436a191a278cf3e91fc410090a726f5d01eee54d4f60e87c742675d59eec3a4"
+      }
+    },
+    "controller": {
+      "status": "passed",
+      "scope": "current controller startup, preview, failure fallback, raw decode and unqualified tags; not reference-repeatability or speed qualification",
+      "earlier_full_sequence_review": "partial",
+      "source_hashes": {
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\prototype_service.py": "c9a09a851cd2e6015e20f734ba5d09ba2a0d573a3927e90b00b0eaf0fcfbd4ff",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\prototype_wire.py": "2b177ddd6d32b6f9348e109c73ab10c66753c425c7c8f44c0a36c97755419214",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\run_residency_controller.py": "183528f22269fdead71286e5b8d4fb5d3b7e2629cb7bf5e88891c52c656e6138",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\run_prototype.py": "899b8291230e3d3cf595f9ec9f5e3ba3cdc4411cfe7fe43f3357fb75ad78cb04",
+        "<LOCAL_WORKTREE>\\xpu2\\interactive\\prototype_preview.py": "8704f7db697136ca1f701f2d70d922109174f54480cdd24f3132ea720da5547f"
+      },
+      "progressive_native": {
+        "partials_seen": 47,
+        "windows": 138,
+        "raw_sha256": "9bf3c38d068481bece6cb3e310b7a570115ac6caa91080bb841b4b712672f2b3",
+        "qualified": false,
+        "gpu_samples": 393216,
+        "cpu_samples": 393216,
+        "fine_refills": 1,
+        "migrated_paths": 0
+      },
+      "second_request_fine_cache_preserved": true,
+      "option_off_legacy_migration": true,
+      "fallback": {
+        "reason": "Invalid native completion; entire epoch requires reference fallback",
+        "tier": "F",
+        "qualified": false,
+        "exact_owned_reference_pixels": true
+      }
+    }
+  },
+  "build": "<LOCAL_WORKTREE>\\test-results\\interactive-prototype-build-20261022shader\\build.json",
+  "source_hashes": {
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\canonical_session.h": "39e564278ee2214a26a86bbe6e9de70ac9e498cfc2ffba2f1da48d79785b6007",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_jobs.h": "51b2448b759c3bfb28acdc48ff5fd94d7a6f28f826f7a86effd6d62c8efb6b56",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_lane.h": "534e1e57c630fe6573237f9604f32e5438704bc742ef9fb9ba1a963fab7128ce",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_pool.h": "fc14077f2bba5cb7227e42d6a5b353d6477f9e61805c0eadf5112b7ea921e9e1",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_scene.h": "cd9b90debea454d8d3221f797c91c8ad7dd7e598d8234a615a081fc2dde9849f",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_service.h": "9ee6351406c5a244fa5c6b70644809243c793670b069911716b7442520ae6374",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\deadline_pipeline.h": "540b0a18be9222623296b0323a4aa0cb0c145dc8ef9efcfc6de79e89a89ebc96",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_jobs.h": "3589a2873b80c366989eb0dc33a2c290f798541c4600ef1aed3e19fc23c5862a",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_lane.h": "dd0f7ffdb85f007780628051656a998ee724db9b671171b48bf094811b8980ad",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\host_texture.h": "e703bc14c08a2d32d16652d57a9711aa97f04725e37ba4c2c9f9d74f439ce71e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\mixed_pipeline.h": "11944e7f4dd219f0a6b80716856d1f1171739f6098e31b9d50bc62be0a1c7d1e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\mixed_service.h": "aca32adfc6b749f90903ff0a72f0f726c2ded4093d2c14bb8a7c59e8ee45160f",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\path_stage.h": "117d77569563c45712456ed28978b3944bb455b732b8dcf4bb55c61f0daa7b77",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\progressive.h": "861fc729f0d911f353dc6cea3e59b200b81b76d573e53c1e50d5e638b7f6d80e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\qmc_fixture.h": "8a93520e458e72ef1ab0d4801e5877a56fc3617acfebeb456249a82ab541865b",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\resume_core.h": "ae2b12d3acc5918e026672a9d0a4600bc63f95699f229ab71f0afe6a4f6925d4",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\routing_index.h": "4ede676f233acaba06b938149c01017cdc1507bbc5575affe680ce421e7110dc",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_fixture.h": "496f59e9c8ef631d56e8bb87a90bcdf15c0c0ff06b37bdef8825beea120a21e9",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_stream.h": "6498dbd6c20cd08b48f28b097a5eec39b9f293daff4369877860daaa82df8b24",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_tree.h": "0987b268b8b314d85180134116aad804c452c4d9d7e802de79f3a1902af4fb92",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\snapshot_budget.h": "3e71d3f311e27bd5055441b25ec1403a0089074eeaf6f1f028215a6b6fac4889",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\spsc_ring.h": "0134391df4780286a34ba94b478342264531297c2c8c1dfec92ecd7b65d18ee4",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\surface_core.h": "51c437dbd482716edc9d49cb7c6ec36e27613b0632b2801bcada2484d25fcdc9",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\surface_fixture.h": "2cc6a9f2874ea2f605164b100dd9a33acfe918d8df698e34c35746f299a5ce69",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\texture_core.h": "e43b1856c74fd7640d138cba79685db4c615dd6dd0d9dd307f10980d6f6a3771",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\triangle_hit.h": "03bdee7d6eb9b8cac5c0d038de1502753cee1f76d30fac57e6ec27027a66a5e1",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\prototype_worker.cc": "766844120d5a56f56d789f2d4ee678297c0090a2215059947c09a09443aff2bb",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_trace.cu": "6b9ef61752d70b3b5dbda5a475ad0fb10b1ce5794ea7b5c3e881dc2c16adb6d0",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_build.py": "f2391a963d1185af35a3d975b8cea7eebbf1daee7a803036324a6b611cea4ab2",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\native_build.py": "f90368d1a81b2dc7f09fd739d6c68ba3e3379ebf34d06d84466921bc55f89cfa",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\build_prototype.py": "4cec9fb113aa7c5b4d3dbd0aacba56ea96884c8abeae956d79b031e37035a820",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\asset_scene.cc": "dc1a0e09f80dd35ab279a7f9c182c6fc68d9fa1d9661164e9debf0e847cfae82"
+  },
+  "builds": {
+    "planar-build": {
+      "libraries": {
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\scene\\rdl2\\libscene_rdl2.dll.a": "2f39cffbdca3bfee7685264a8e2f0d57c5d84e18a6bce0da8706402de79caca2",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\fb_util\\libcommon_fb_util.dll.a": "e6eb72278ccc11588b16f8d5473936938937daf57bcf32ff79647cef2a4f4cfc",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\fb_util\\ispc\\libfb_util_ispc.dll.a": "0fd39989f537c5a58bf9925af1c16adf1fbf58b3e6d8459b6b464a65f74f5454",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\render\\util\\librender_util.dll.a": "4b5d01f9c418ca20261dd15993c8a29dca7b6997381b7a32d5fdb9f401f598d1",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libjsoncpp.a": "4fdb57167763eb5a596021db17b765d6c19802757b19f112025682160554be5a",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\liblua.dll.a": "d9923aa6d352cfc91c9af6337f3f8c0a4246b0bba7c8bb5649a8ce9fabd75803",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\math\\libcommon_math.dll.a": "5b27a78473888fbd3b81da724f053cb55cb67d7a9ff2e8d3823c9c6569a8baff",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\math\\ispc\\libmath_ispc.dll.a": "7c0afdb5d8a885ca7b8a82025603c898f06df5a124aae2288839e4747adfc4cd",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\platform\\libcommon_platform.dll.a": "2a2bfeebc19110fdbd89e1c596254e287346271121e1bbebf2550037d86d321f",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\render\\logging\\librender_logging.dll.a": "9c45c6afdb5b6403445ecf2bd625db4736d7bfdf445bff8beeb2b041f3bab453",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\log4cplus\\src\\liblog4cplus.dll.a": "2fa657408c53a14b503aacf9c846d20db7cfcde097b6142eb08c7f06c755fe4f",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libtbb12.dll.a": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+        "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\libembree4.dll": "62f9b4b0c5f97a7189333008776124aab6f0e8ca861c36bdcc27c9f395ee5f29"
+      },
+      "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+      "preprocessed_sha256": "c4889df5ce2b4d98304b215d46915922e282ed71d7a83b75c0f53468e3de9e3f",
+      "executable_sha256": "8780cce76bd7101a23a929a0b9c50d9934eda462c7694f0bd570c65048f7fd81"
+    },
+    "spatial-build": {
+      "libraries": {
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\scene\\rdl2\\libscene_rdl2.dll.a": "2f39cffbdca3bfee7685264a8e2f0d57c5d84e18a6bce0da8706402de79caca2",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\fb_util\\libcommon_fb_util.dll.a": "e6eb72278ccc11588b16f8d5473936938937daf57bcf32ff79647cef2a4f4cfc",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\fb_util\\ispc\\libfb_util_ispc.dll.a": "0fd39989f537c5a58bf9925af1c16adf1fbf58b3e6d8459b6b464a65f74f5454",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\render\\util\\librender_util.dll.a": "4b5d01f9c418ca20261dd15993c8a29dca7b6997381b7a32d5fdb9f401f598d1",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libjsoncpp.a": "4fdb57167763eb5a596021db17b765d6c19802757b19f112025682160554be5a",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\liblua.dll.a": "d9923aa6d352cfc91c9af6337f3f8c0a4246b0bba7c8bb5649a8ce9fabd75803",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\math\\libcommon_math.dll.a": "5b27a78473888fbd3b81da724f053cb55cb67d7a9ff2e8d3823c9c6569a8baff",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\math\\ispc\\libmath_ispc.dll.a": "7c0afdb5d8a885ca7b8a82025603c898f06df5a124aae2288839e4747adfc4cd",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\platform\\libcommon_platform.dll.a": "2a2bfeebc19110fdbd89e1c596254e287346271121e1bbebf2550037d86d321f",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\render\\logging\\librender_logging.dll.a": "9c45c6afdb5b6403445ecf2bd625db4736d7bfdf445bff8beeb2b041f3bab453",
+        "<LOCAL_TOOLCHAIN>\\build\\native-avx\\log4cplus\\src\\liblog4cplus.dll.a": "2fa657408c53a14b503aacf9c846d20db7cfcde097b6142eb08c7f06c755fe4f",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libtbb12.dll.a": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+        "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+        "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\libembree4.dll": "62f9b4b0c5f97a7189333008776124aab6f0e8ca861c36bdcc27c9f395ee5f29"
+      },
+      "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+      "preprocessed_sha256": "939afc4cad4d539cd370b813f55f4a83918a07fdd2f8f6b255f855d7fffc7920",
+      "executable_sha256": "8a8c12e87e8ad68bc071fec3d3b1b37998b72cda698d6fbc625afd63dd5a750d"
+    }
+  }
+}
