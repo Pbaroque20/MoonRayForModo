@@ -24,11 +24,13 @@ struct StartupTimes {double driver=0,context=0,module=0,groups=0,pipeline=0,buff
 struct Driver {
  double startupSeconds=0;
  HMODULE library=nullptr;CUcontext context=nullptr,previous=nullptr;
- size_t deviceBytes=0,pinnedBytes=0,peakDevice=0,peakPinned=0;unsigned synchronizations=0;uint64_t allocations=0,frees=0;std::thread::id owner=std::this_thread::get_id();
+ // Allocation caps guard against runaway use; the asynchronous lane raises them for its tile cache.
+ size_t deviceBytes=0,pinnedBytes=0,peakDevice=0,peakPinned=0,deviceCap=256ull<<20,pinnedCap=64ull<<20;unsigned synchronizations=0;uint64_t allocations=0,frees=0;std::thread::id owner=std::this_thread::get_id();
 #define API(n) decltype(&n) n##_p=nullptr;
  API(cuInit) API(cuDeviceGet) API(cuDeviceGetName) API(cuCtxGetCurrent) API(cuCtxSetCurrent) API(cuCtxCreate_v2) API(cuCtxDestroy_v2) API(cuCtxSynchronize)
  API(cuMemAlloc_v2) API(cuMemFree_v2) API(cuMemAllocHost_v2) API(cuMemFreeHost) API(cuMemcpyHtoDAsync_v2) API(cuMemcpyDtoHAsync_v2)
  API(cuStreamCreate) API(cuStreamDestroy_v2) API(cuStreamWaitEvent) API(cuEventCreate) API(cuEventRecord) API(cuEventQuery) API(cuEventDestroy_v2)
+ API(cuMemsetD8Async) API(cuMemsetD32Async) API(cuDeviceGetAttribute) API(cuEventElapsedTime)
 #undef API
  static void check(CUresult e){if(e!=CUDA_SUCCESS)throw std::runtime_error("CUDA error "+std::to_string(e));}
  void thread()const{cpu::need(std::this_thread::get_id()==owner,"GPU context requires feeder owner");}
@@ -38,6 +40,7 @@ struct Driver {
  LOAD(cuInit) LOAD(cuDeviceGet) LOAD(cuDeviceGetName) LOAD(cuCtxGetCurrent) LOAD(cuCtxSetCurrent) LOAD(cuCtxCreate_v2) LOAD(cuCtxDestroy_v2) LOAD(cuCtxSynchronize)
  LOAD(cuMemAlloc_v2) LOAD(cuMemFree_v2) LOAD(cuMemAllocHost_v2) LOAD(cuMemFreeHost) LOAD(cuMemcpyHtoDAsync_v2) LOAD(cuMemcpyDtoHAsync_v2)
  LOAD(cuStreamCreate) LOAD(cuStreamDestroy_v2) LOAD(cuStreamWaitEvent) LOAD(cuEventCreate) LOAD(cuEventRecord) LOAD(cuEventQuery) LOAD(cuEventDestroy_v2)
+ LOAD(cuMemsetD8Async) LOAD(cuMemsetD32Async) LOAD(cuDeviceGetAttribute) LOAD(cuEventElapsedTime)
 #undef LOAD
   check(cuInit_p(0));CUdevice dev;check(cuDeviceGet_p(&dev,0));check(cuCtxGetCurrent_p(&previous));check(cuCtxCreate_v2_p(&context,0,dev));startupSeconds=startLap(start);
  }catch(...){if(context)cuCtxDestroy_v2_p(context);if(library)FreeLibrary(library);throw;}}
@@ -47,7 +50,7 @@ struct Driver {
 };
 struct Buffer {
  Driver& d;size_t bytes;bool pinned;CUdeviceptr pointer=0;
- Buffer(Driver& owner,size_t n,bool host=false):d(owner),bytes(n),pinned(host){d.thread();cpu::need(n>0,"Empty allocation");auto& used=host?d.pinnedBytes:d.deviceBytes;size_t cap=host?(64ull<<20):(256ull<<20);cpu::need(n<=cap-used,"GPU staging/residency budget");if(host){void* p=nullptr;Driver::check(d.cuMemAllocHost_v2_p(&p,n));pointer=reinterpret_cast<CUdeviceptr>(p);}else Driver::check(d.cuMemAlloc_v2_p(&pointer,n));used+=n;++d.allocations;d.peakPinned=std::max(d.peakPinned,d.pinnedBytes);d.peakDevice=std::max(d.peakDevice,d.deviceBytes);}
+ Buffer(Driver& owner,size_t n,bool host=false):d(owner),bytes(n),pinned(host){d.thread();cpu::need(n>0,"Empty allocation");auto& used=host?d.pinnedBytes:d.deviceBytes;size_t cap=host?d.pinnedCap:d.deviceCap;cpu::need(n<=cap-used,"GPU staging/residency budget");if(host){void* p=nullptr;Driver::check(d.cuMemAllocHost_v2_p(&p,n));pointer=reinterpret_cast<CUdeviceptr>(p);}else Driver::check(d.cuMemAlloc_v2_p(&pointer,n));used+=n;++d.allocations;d.peakPinned=std::max(d.peakPinned,d.pinnedBytes);d.peakDevice=std::max(d.peakDevice,d.deviceBytes);}
  void* host()const{return reinterpret_cast<void*>(pointer);}
  void release(){if(pointer){if(pinned)d.cuMemFreeHost_p(host());else d.cuMemFree_v2_p(pointer);(pinned?d.pinnedBytes:d.deviceBytes)-=bytes;pointer=0;++d.frees;}}
  ~Buffer(){release();}
