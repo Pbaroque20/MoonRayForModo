@@ -2,6 +2,7 @@
 // Prints one JSON line; exits non-zero on the first failed check.
 #include "async_grid.h"
 #include <cstdio>
+#include <atomic>
 #include <set>
 #include <thread>
 using namespace xpu2::interactive::async;
@@ -57,7 +58,59 @@ static void exactlyOnce(U32 width, U32 height, U32 spp, GridOptions options, uns
     check(full, "every pixel gets exactly spp samples");
 }
 
+// Adaptive frames: the coordinator appends passes to an empty grid while the
+// workers claim. Every appended chunk is claimed exactly once, across the
+// queues' block boundaries.
+static void appendWhileClaiming(unsigned workers) {
+    const U32 width = 384, height = 288, tilesX = width / TileSize, tiles = tilesX * (height / TileSize);
+    Grid grid(width, height, 1024, {64, 4, 0}, nullptr, true);
+    std::atomic<bool> done{false};
+    std::vector<std::vector<Chunk>> claimed(workers);
+    std::vector<std::thread> threads;
+    for (unsigned w = 0; w < workers; ++w)
+        threads.emplace_back([&, w] {
+            U32 cell = grid.seed(Device::Cpu, w, workers);
+            for (;;) {
+                const U32 next = grid.choose(Device::Cpu, cell, w);
+                if (next == ~0u) {
+                    if (done.load(std::memory_order_acquire) && grid.empty()) break;
+                    std::this_thread::yield();
+                    continue;
+                }
+                cell = next;
+                Chunk c;
+                if (grid.claim(cell, 1, &c)) claimed[w].push_back(c);
+            }
+        });
+    U64 appended = 0;
+    for (U32 pass = 0; pass < 40; ++pass) {  // about 10,000 chunks a cell: past two 4,096-chunk blocks
+        std::vector<std::vector<Chunk>> perCell(grid.cellCount());
+        for (U32 tile = (pass * 7) % 3; tile < tiles; tile += 1 + pass % 3)
+            for (U32 off = 0; off < 32; off += 4)
+                perCell[grid.cellOf(tile)].push_back({tile, (pass << PassShift) | off, 4, grid.cellOf(tile)});
+        for (U32 c = 0; c < perCell.size(); ++c)
+            if (!perCell[c].empty()) {
+                grid.append(c, perCell[c].data(), U32(perCell[c].size()));
+                appended += perCell[c].size();
+            }
+        if (pass % 8 == 0) std::this_thread::yield();
+    }
+    done.store(true, std::memory_order_release);
+    for (auto& t : threads) t.join();
+    std::set<std::pair<U32, U32>> seen;
+    U64 chunks = 0;
+    bool unique = true;
+    for (auto& list : claimed)
+        for (const Chunk& c : list) {
+            ++chunks;
+            unique &= seen.insert({c.tile, c.first}).second;
+        }
+    check(unique, "no appended chunk is claimed twice");
+    check(chunks == appended && chunks == grid.totalChunks(), "every appended chunk is claimed");
+}
+
 int main() {
+    appendWhileClaiming(12);
     exactlyOnce(384, 288, 64, {}, 12);
     exactlyOnce(1920, 1080, 16, {64, 4, 2}, 12);
     exactlyOnce(100, 37, 9, {32, 4, 2}, 5);  // ragged edges, a partial last chunk

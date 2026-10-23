@@ -111,41 +111,80 @@ struct CpuBackend {
 };
 
 // Per-pixel sums and sample counts in double precision (ACC-06). A chunk covers
-// one tile, so a lock per tile serialises only workers on the same tile.
+// one tile, so a lock per tile serialises only workers on the same tile. Sums of
+// the odd-index samples are kept beside the totals, for the adaptive error
+// measure (MoonRay's Beauty Odd buffer).
 class HostFilm {
 public:
     HostFilm(U32 width, U32 height)
-        : width_(width), height_(height), sums_(size_t(width) * height * 4, 0.0), counts_(size_t(width) * height, 0),
+        : width_(width), height_(height), sums_(size_t(width) * height * 4, 0.0), odd_(size_t(width) * height * 4, 0.0),
+          counts_(size_t(width) * height, 0),
           locks_(((width + TileSize - 1) / TileSize) * ((height + TileSize - 1) / TileSize)) {}
-    void add(U32 tile, const U32* pixels, const double (*sums)[4], const U32* counts) {
+    void add(U32 tile, const U32* pixels, const double (*sums)[4], const double (*odd)[4], const U32* counts) {
         auto& lock = locks_[tile].flag;
         while (lock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
         for (U32 i = 0; i < TilePixels; ++i) {
             if (pixels[i] == ~0u || !counts[i]) continue;
-            for (int c = 0; c < 4; ++c) sums_[size_t(pixels[i]) * 4 + c] += sums[i][c];
+            for (int c = 0; c < 4; ++c) {
+                sums_[size_t(pixels[i]) * 4 + c] += sums[i][c];
+                odd_[size_t(pixels[i]) * 4 + c] += odd[i][c];
+            }
             counts_[pixels[i]] += counts[i];
         }
         lock.clear(std::memory_order_release);
     }
-    void addOne(U32 pixel, const Radiance& r) {
+    void addOne(U32 pixel, U32 index, const Radiance& r) {
         const U32 tilesX = (width_ + TileSize - 1) / TileSize;
         const U32 tile = (pixel / width_ / TileSize) * tilesX + (pixel % width_) / TileSize;
         auto& lock = locks_[tile].flag;
         while (lock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
-        for (int c = 0; c < 3; ++c) sums_[size_t(pixel) * 4 + c] += r.rgb[c];
-        sums_[size_t(pixel) * 4 + 3] += r.alpha;
+        const double v[4] = {r.rgb[0], r.rgb[1], r.rgb[2], r.alpha};
+        for (int c = 0; c < 4; ++c) {
+            sums_[size_t(pixel) * 4 + c] += v[c];
+            if (index & 1) odd_[size_t(pixel) * 4 + c] += v[c];
+        }
         ++counts_[pixel];
         lock.clear(std::memory_order_release);
     }
+    // A copy that is consistent tile by tile, taken while workers keep adding.
+    void snapshot(std::vector<double>& sums, std::vector<double>& odd, std::vector<U32>& counts) {
+        sums.resize(sums_.size());
+        odd.resize(odd_.size());
+        counts.resize(counts_.size());
+        for (U32 tile = 0; tile < locks_.size(); ++tile) {
+            auto& lock = locks_[tile].flag;
+            while (lock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+            for (U32 p = 0; p < TilePixels; ++p) {
+                const U32 pixel = tilePixel(tile, p, width_, height_);
+                if (pixel == ~0u) continue;
+                for (int c = 0; c < 4; ++c) {
+                    sums[size_t(pixel) * 4 + c] = sums_[size_t(pixel) * 4 + c];
+                    odd[size_t(pixel) * 4 + c] = odd_[size_t(pixel) * 4 + c];
+                }
+                counts[pixel] = counts_[pixel];
+            }
+            lock.clear(std::memory_order_release);
+        }
+    }
     const std::vector<double>& sums() const { return sums_; }
+    const std::vector<double>& odd() const { return odd_; }
     const std::vector<U32>& counts() const { return counts_; }
 
 private:
     struct Lock { std::atomic_flag flag = ATOMIC_FLAG_INIT; };
     U32 width_, height_;
-    std::vector<double> sums_;
+    std::vector<double> sums_, odd_;
     std::vector<U32> counts_;
     std::vector<Lock> locks_;
+};
+
+// An adaptive frame's pass tables, host side: for each pass slot, the active-pixel
+// mask of every tile and the sample-index base of every pixel; and the samples
+// each pass has completed on the CPU.
+struct PassTables {
+    std::vector<std::uint64_t> masks[PassSlots];
+    std::vector<U32> bases[PassSlots];
+    std::atomic<U64> cpuDone[MaxPasses] = {};
 };
 
 // One sample handed back by the GPU after a texture miss (spec MEM-05, M1).
@@ -186,30 +225,48 @@ struct CpuCounters {
     std::atomic<U64> busyMicros{0}, slowestChunkMicros{0}, firstClaimMicros{~0ull}, lastClaimMicros{0};
 };
 
-// Renders one claimed chunk on the CPU into the host film.
-inline void renderChunk(const CpuScene& scene, const mixed::Config& config, const Chunk& chunk, HostFilm& film,
-                        CpuCounters& counters) {
+// Renders one claimed chunk on the CPU into the host film and returns the samples
+// rendered. With pass tables (adaptive frames) only the tile's active pixels are
+// rendered, each from its own sample-index base.
+inline U64 renderChunk(const CpuScene& scene, const mixed::Config& config, const Chunk& chunk, HostFilm& film,
+                       CpuCounters& counters, PassTables* tables = nullptr) {
     CpuBackend backend{scene};
-    U32 pixels[TilePixels], counts[TilePixels] = {};
-    double sums[TilePixels][4] = {};
-    for (U32 p = 0; p < TilePixels; ++p) pixels[p] = tilePixel(chunk.tile, p, config.width, config.height);
+    U32 pixels[TilePixels], counts[TilePixels] = {}, base[TilePixels] = {};
+    double sums[TilePixels][4] = {}, odd[TilePixels][4] = {};
+    U32 first = chunk.first;
+    std::uint64_t mask = ~0ull;
+    if (tables) {
+        const U32 slot = chunkPass(chunk) % PassSlots;
+        mask = tables->masks[slot][chunk.tile];
+        first = chunkOffset(chunk);
+    }
+    for (U32 p = 0; p < TilePixels; ++p) {
+        pixels[p] = (mask >> p & 1) ? tilePixel(chunk.tile, p, config.width, config.height) : ~0u;
+        if (tables && pixels[p] != ~0u) base[p] = tables->bases[chunkPass(chunk) % PassSlots][pixels[p]];
+    }
     for (U32 s = 0; s < chunk.count; ++s)
         for (U32 p = 0; p < TilePixels; ++p) {
             if (pixels[p] == ~0u) continue;
             Radiance r;
-            if (integrate(config, pixels[p], chunk.first + s, backend, r) != SampleStatus::Done) {
+            const U32 index = base[p] + first + s;
+            if (integrate(config, pixels[p], index, backend, r) != SampleStatus::Done) {
                 counters.failures.fetch_add(1, std::memory_order_relaxed);
                 continue;
             }
-            for (int c = 0; c < 3; ++c) sums[p][c] += r.rgb[c];
-            sums[p][3] += r.alpha;
+            const double v[4] = {r.rgb[0], r.rgb[1], r.rgb[2], r.alpha};
+            for (int c = 0; c < 4; ++c) {
+                sums[p][c] += v[c];
+                if (index & 1) odd[p][c] += v[c];
+            }
             ++counts[p];
         }
-    film.add(chunk.tile, pixels, sums, counts);
+    film.add(chunk.tile, pixels, sums, odd, counts);
     U64 done = 0;
     for (U32 p = 0; p < TilePixels; ++p) done += counts[p];
     counters.samples.fetch_add(done, std::memory_order_relaxed);
     counters.chunks.fetch_add(1, std::memory_order_relaxed);
+    if (tables) tables->cpuDone[chunkPass(chunk)].fetch_add(done, std::memory_order_relaxed);
+    return done;
 }
 
 // CPU lane workers. They persist across frames (created and pinned once) and
@@ -241,7 +298,7 @@ public:
     CpuLane(const CpuLane&) = delete;
 
     // Starts a frame. Workers from the last frame are parked first.
-    void begin(const mixed::Config& config, Grid& grid, HostFilm& film, RetryQueue& retries) {
+    void begin(const mixed::Config& config, Grid& grid, HostFilm& film, RetryQueue& retries, PassTables* tables = nullptr) {
         while (parked_.load(std::memory_order_acquire) != workers_.size()) std::this_thread::yield();
         counters.samples = counters.chunks = counters.retried = counters.steals = counters.moves = counters.idleSpins = 0;
         counters.failures = 0;
@@ -253,6 +310,7 @@ public:
             grid_ = &grid;
             film_ = &film;
             retries_ = &retries;
+            tables_ = tables;
             idle_.store(unsigned(workers_.size()), std::memory_order_release);
             closing_.store(false, std::memory_order_release);
             cancelled_.store(false, std::memory_order_release);
@@ -320,7 +378,7 @@ private:
                             counters.failures.fetch_add(1, std::memory_order_relaxed);
                             continue;
                         }
-                        film.addOne(retry[i].pixel, r);
+                        film.addOne(retry[i].pixel, retry[i].index, r);
                     }
                     counters.samples.fetch_add(n, std::memory_order_relaxed);
                     counters.retried.fetch_add(n, std::memory_order_relaxed);
@@ -353,13 +411,10 @@ private:
             const U64 claimed = U64(std::chrono::duration_cast<std::chrono::microseconds>(begun - started_).count());
             for (U64 v = counters.firstClaimMicros.load(); claimed < v && !counters.firstClaimMicros.compare_exchange_weak(v, claimed);) {}
             for (U64 v = counters.lastClaimMicros.load(); claimed > v && !counters.lastClaimMicros.compare_exchange_weak(v, claimed);) {}
-            renderChunk(scene_, config_, chunk, film, counters);
+            const U64 samples = renderChunk(scene_, config_, chunk, film, counters, tables_);
             const U64 took = U64(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begun).count());
             counters.busyMicros.fetch_add(took, std::memory_order_relaxed);
             for (U64 v = counters.slowestChunkMicros.load(); took > v && !counters.slowestChunkMicros.compare_exchange_weak(v, took);) {}
-            U64 samples = 0;
-            for (U32 p = 0; p < TilePixels; ++p)
-                samples += tilePixel(chunk.tile, p, config_.width, config_.height) != ~0u ? chunk.count : 0;
             grid.rendered(chunk.cell, Device::Cpu, samples);
         }
         setIdle(true);
@@ -375,6 +430,7 @@ private:
     Grid* grid_ = nullptr;
     HostFilm* film_ = nullptr;
     RetryQueue* retries_ = nullptr;
+    PassTables* tables_ = nullptr;
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::atomic<bool> closing_{false}, cancelled_{false};
     std::atomic<unsigned> idle_{0}, parked_{0};

@@ -16,7 +16,8 @@ build: exact shared triangle arithmetic, fixed ownership and byte-repeatable ima
 - **GPU lane** (`async_gpu.h`, `async_gpu.cu`, §10). Fixed-size OptiX launches (65,536 threads) over hardware
   triangles. Every thread claims one sample at a time from its launch's range with one atomic; neighbouring claims
   are neighbouring pixels of the same sample, so warps trace coherent rays. Results accumulate in a device film in
-  double precision.
+  double precision. The program is built twice, for uniform and for adaptive frames: OptiX links a pipeline's programs
+  into one kernel, and the adaptive paths cost a uniform frame a third of its GPU rate in registers.
 - **Mailbox and broker** (`async_render.h`, §8-9). The feeder thread, pinned to its own core, is the GPU's broker: it
   claims chunks for the GPU (its own cells first, then the CPU's hottest) and hands them over through a ring in
   device memory, with ownership passing at publication. It keeps two launches queued, so the GPU never waits for
@@ -35,6 +36,32 @@ build: exact shared triangle arithmetic, fixed ownership and byte-repeatable ima
   operation. A started sample is never dropped (ACC-03). At quiescence the two films merge and every pixel's sample
   count is audited (ACC-07).
 
+## Adaptive sampling
+
+A scene with `sampling_mode` 2 renders with MoonRay's adaptive sampler (`async_adaptive.h`, adapted from MoonRay's
+`rndr/adaptive`): the same error measure (the luma of the difference between the even- and odd-index half-images,
+over the square root of the pixel's luma, plus the alpha difference), the same 4×4 overlapping regions, each with
+its error tree (Dammertz et al.'s hierarchical stopping condition), and the same pass schedule: one sample, then 4,
+6, 8, … more. Passes below `min_adaptive_samples` render every pixel; each later pass renders only the pixels its
+trees still find unconverged, filled to their bounding rectangle in each 8×8 tile.
+
+- **It fits the work grid.** A pass is chunks over the tiles that still have active pixels, each carrying its tile's
+  mask, appended to the tiles' cells; unconverged cells are the ones under pressure. A pixel's sample indices stay
+  contiguous from pass to pass, as MoonRay keeps them, so its identities do not depend on which pass or device ran it.
+- **Fresh trees for every pass.** Each pass's masks come from trees that have seen every pass before it, as each of
+  MoonRay's tiles reads trees its region rebuilt on finishing the pass before. That makes a frame a chain of about 30
+  dependent passes, so it is bound by the chain's latency, not by sample throughput.
+- **The chain is kept short.** The GPU works out every pixel's error itself, in a launch queued behind the pass, and
+  only the errors (four bytes a pixel) cross to the host. The 16 region trees rebuild at once on a small pool, from a
+  summed-area table, with split points found by bisection. Each pixel's sample-index base is made on the device. A
+  pass goes out as soon as it exists, whole. A pass with no samples ends the frame, since nothing can change after it.
+- **Who samples.** With a GPU, the GPU takes every sample of an adaptive frame and the CPU rebuilds the trees: a CPU
+  chunk would sit on the chain. Without one, the CPU lane samples and the host works the errors out from its film.
+
+The same target need not give the same error as MoonRay's: the trees are MoonRay's, but the estimate reads XPU2's
+own samples (Sobol camera and first-bounce dimensions, against MoonRay's PMJ02 and Poisson-disk tables), which split
+into even and odd halves differently. Per sample, the two renderers' noise is the same.
+
 ## Results
 
 See [ASYNC_RESULTS.md](ASYNC_RESULTS.md).
@@ -44,12 +71,17 @@ See [ASYNC_RESULTS.md](ASYNC_RESULTS.md).
 ```powershell
 python xpu2/interactive/build_async.py --source $toolchainRoot --runtime $referenceRoot --output test-results/my-async-build
 python xpu2/interactive/run_async_benchmark.py --build test-results/my-async-build/build.json --output test-results/my-async-benchmark
+python xpu2/interactive/run_async_adaptive_benchmark.py --build test-results/my-async-build/build.json --output test-results/my-async-adaptive
 ```
 
 `async_grid_test.cc` checks the scheduler's invariants (VER-5): every chunk claimed exactly once under 12 workers and
 the broker, every pixel given exactly its samples, the cellular rules, the checkerboard and the flip limits.
 
 ## Not done yet
+
+- **The adaptive chain on the GPU alone.** An adaptive frame spends most of its time in about 30 round trips between
+  the GPU and the host's trees, about a millisecond each. Building the trees and the next pass's masks on the GPU would
+  let the host queue the whole chain at once.
 
 - **Interactive frame mode** (§15): deadlines, progressive publication of the merged film, reprojection, denoising
   and display. The renderer runs in throughput mode (THR), the mode the success gate (VER-11) is measured in.

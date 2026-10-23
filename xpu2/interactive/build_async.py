@@ -29,7 +29,11 @@ def build_all(source, runtime, out):
     held = {str(p): sha(p) for p in files}
     report = {'status': 'incomplete', 'source_hashes': held}
     try:
-        ptx, report['cuda_build'] = compile_ptx(source, out, 'async_gpu.cu', HEADERS, FAST_FLAGS)
+        # One program for uniform frames, one for adaptive frames (async_gpu.cu).
+        ptx, report['cuda_build'] = compile_ptx(source, out, 'async_gpu.cu', HEADERS, FAST_FLAGS + ['-DXPU2_ADAPTIVE=0'])
+        (out / 'adaptive').mkdir()
+        adaptive, report['cuda_build_adaptive'] = compile_ptx(source, out / 'adaptive', 'async_gpu.cu', HEADERS,
+                                                              FAST_FLAGS + ['-DXPU2_ADAPTIVE=1'])
         include = [source / 'toolchain/xpu/optix-dev/include',
                    source / 'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include']
         exe, report['native_build'] = build(source, HERE / 'async_probe.cc', out / 'native',
@@ -37,7 +41,8 @@ def build_all(source, runtime, out):
                                             ['-I' + str(v) for v in include])
         if any(sha(Path(k)) != v for k, v in held.items()):
             raise RuntimeError('Build source drift')
-        report.update(status='passed', exe=str(exe), ptx=str(ptx), binary_hashes={'exe': sha(exe), 'ptx': sha(ptx)})
+        report.update(status='passed', exe=str(exe), ptx=str(ptx), ptx_adaptive=str(adaptive),
+                      binary_hashes={'exe': sha(exe), 'ptx': sha(ptx), 'ptx_adaptive': sha(adaptive)})
     except Exception as error:
         report.update(status='failed', error=str(error))
     (out / 'build.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

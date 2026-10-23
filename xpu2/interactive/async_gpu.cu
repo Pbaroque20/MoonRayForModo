@@ -11,6 +11,12 @@
 #include <optix.h>
 #include <optix_device.h>
 #include "async_gpu_abi.h"
+// Two programs come from this file: XPU2_ADAPTIVE 0 for uniform frames, 1 for
+// adaptive ones. OptiX links a pipeline's programs into one kernel, so the
+// adaptive paths would otherwise cost every uniform frame registers.
+#ifndef XPU2_ADAPTIVE
+#define XPU2_ADAPTIVE 1
+#endif
 using namespace xpu2::interactive;
 using namespace xpu2::interactive::async;
 
@@ -96,7 +102,7 @@ struct GpuBackend {
     }
 };
 
-static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries) {
+static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries, U32 pass) {
     Radiance r;
     const SampleStatus status = integrate(*params.config, pixel, index, backend, r);
     if (status == SampleStatus::Done) {
@@ -106,10 +112,22 @@ static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries)
         atomicAdd(s + 2, r.rgb[2]);
         atomicAdd(s + 3, r.alpha);
         atomicAdd(params.counts + pixel, 1u);
+#if XPU2_ADAPTIVE
+        {
+            if (index & 1) {  // MoonRay's Beauty Odd: the odd-index samples
+                double* o = params.odd + size_t(pixel) * 4;
+                atomicAdd(o + 0, r.rgb[0]);
+                atomicAdd(o + 1, r.rgb[1]);
+                atomicAdd(o + 2, r.rgb[2]);
+                atomicAdd(o + 3, r.alpha);
+            }
+            atomicAdd(&params.state->passDone[pass], 1u);
+        }
+#endif
     } else if (status == SampleStatus::Miss) {
         // Park it; the host sized this launch so the queue cannot overflow.
         const U64L at = atomicAdd(&params.state->parkedTail, 1ull);
-        params.parked[at % params.parkedCapacity] = {pixel, index, tries, 0};
+        params.parked[at % params.parkedCapacity] = {pixel, index, tries, pass};
     } else {
         atomicAdd(&params.state->errors, 1u);
     }
@@ -124,17 +142,32 @@ static __device__ void commit() {
     params.tileState[u.tile] = u.slot == NoSlot ? 0u : 2u;
 }
 
+#if XPU2_ADAPTIVE
+// The film's per-pixel adaptive errors, read by the host's error trees.
+static __device__ void errors() {
+    const unsigned i = optixGetLaunchIndex().x;
+    if (i >= params.pixels) return;
+    params.errors[i] = pixelError(params.sums + size_t(i) * 4, params.odd + size_t(i) * 4, params.counts[i]);
+}
+#endif
+
 extern "C" __global__ void __raygen__async() {
     if (params.mode == 1) {
         commit();
         return;
     }
+#if XPU2_ADAPTIVE
+    if (params.mode == 2) {
+        errors();
+        return;
+    }
+#endif
     GpuBackend backend;
     for (;;) {  // parked samples first: they started before anything else here
         const U64L k = params.parkedBegin + atomicAdd(&params.state->unparked[params.slot], 1u);
         if (k >= params.parkedEnd) break;
         const Parked p = params.parked[k % params.parkedCapacity];
-        run(backend, p.pixel, p.index, p.tries + 1);
+        run(backend, p.pixel, p.index, p.tries + 1, p.pass);
     }
     const auto& c = *params.config;
     for (;;) {
@@ -143,10 +176,17 @@ extern "C" __global__ void __raygen__async() {
         const U64L chunkIndex = item / params.itemsPerChunk;
         const U32 offset = U32(item - chunkIndex * params.itemsPerChunk);
         const Chunk chunk = params.ring[chunkIndex % params.ringCapacity];
-        const U32 s = offset / TilePixels;
+        const U32 s = offset / TilePixels, position = offset % TilePixels;
         if (s >= chunk.count) continue;
-        const U32 pixel = tilePixel(chunk.tile, offset % TilePixels, c.width, c.height);
+        const U32 pixel = tilePixel(chunk.tile, position, c.width, c.height);
         if (pixel == ~0u) continue;
-        run(backend, pixel, chunk.first + s, 0);
+#if XPU2_ADAPTIVE
+        // Only the tile's active pixels, each from its own sample-index base.
+        const U32 slot = chunkPass(chunk) % PassSlots;
+        if (!(params.passMask[slot][chunk.tile] >> position & 1)) continue;
+        run(backend, pixel, params.passBase[slot][pixel] + chunkOffset(chunk) + s, 0, chunkPass(chunk));
+#else
+        run(backend, pixel, chunk.first + s, 0, 0);
+#endif
     }
 }

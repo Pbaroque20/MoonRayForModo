@@ -47,64 +47,20 @@ class GpuLane {
 public:
     gpu::Driver driver;
 
-    explicit GpuLane(const std::string& ptx, GpuOptions options = {}) : options_(options) {
+    // ptx renders uniform frames; adaptivePtx, the same source built with
+    // XPU2_ADAPTIVE, renders adaptive ones (none: adaptive frames are refused).
+    explicit GpuLane(const std::string& ptx, const std::string& adaptivePtx = {}, GpuOptions options = {})
+        : options_(options) {
         driver.deviceCap = 20ull << 30;
         driver.pinnedCap = 2ull << 30;
         try {
             ox(optixInit());
             OptixDeviceContextOptions context{};
             ox(optixDeviceContextCreate(driver.context, &context, &optix_));
-            OptixModuleCompileOptions mo{};
-            mo.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
-            mo.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
-            mo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-            OptixPipelineCompileOptions po{};
-            po.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-            po.numPayloadValues = 2;
-            po.numAttributeValues = 2;
-            po.pipelineLaunchParamsVariableName = "params";
-            po.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
-            char log[8192];
-            size_t length = sizeof(log);
-            if (optixModuleCreateFromPTX(optix_, &mo, &po, ptx.data(), ptx.size(), log, &length, &module_) !=
-                OPTIX_SUCCESS)
-                throw std::runtime_error("OptiX module: " + std::string(log, std::min(length, sizeof(log))));
-            OptixProgramGroupDesc desc[4] = {};
-            desc[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-            desc[0].raygen = {module_, "__raygen__async"};
-            desc[1].kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
-            desc[1].miss = {module_, "__miss__radiance"};
-            desc[2].kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
-            desc[2].miss = {module_, "__miss__shadow"};
-            desc[3].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-            desc[3].hitgroup.moduleCH = module_;
-            desc[3].hitgroup.entryFunctionNameCH = "__closesthit__triangle";
-            OptixProgramGroupOptions options{};
-            length = sizeof(log);
-            ox(optixProgramGroupCreate(optix_, desc, 4, &options, log, &length, groups_));
-            OptixPipelineLinkOptions link{};
-            link.maxTraceDepth = 1;
-            link.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-            length = sizeof(log);
-            ox(optixPipelineCreate(optix_, &po, &link, groups_, 4, log, &length, &pipeline_));
-            OptixStackSizes stacks{};
-            for (auto g : groups_) ox(optixUtilAccumulateStackSizes(g, &stacks));
-            unsigned a, b, c;
-            ox(optixUtilComputeStackSizes(&stacks, 1, 0, 0, &a, &b, &c));
-            ox(optixPipelineSetStackSize(pipeline_, a, b, c, 2));
+            programs_[0].create(*this, ptx);
+            if (!adaptivePtx.empty()) programs_[1].create(*this, adaptivePtx);
+            program_ = &programs_[0];
             gpu::Driver::check(driver.cuStreamCreate_p(&stream_, CU_STREAM_NON_BLOCKING));
-
-            auto records = pinned(sizeof(Record) * 4);
-            for (int i = 0; i < 4; ++i) ox(optixSbtRecordPackHeader(groups_[i], static_cast<Record*>(records->host()) + i));
-            records_ = device(sizeof(Record) * 4);
-            copyIn(records_, records->host(), records->bytes);
-            sbt_.raygenRecord = records_->pointer;
-            sbt_.missRecordBase = records_->pointer + sizeof(Record);
-            sbt_.missRecordStrideInBytes = sizeof(Record);
-            sbt_.missRecordCount = 2;
-            sbt_.hitgroupRecordBase = records_->pointer + 3 * sizeof(Record);
-            sbt_.hitgroupRecordStrideInBytes = sizeof(Record);
-            sbt_.hitgroupRecordCount = 1;
 
             for (auto& p : params_) {
                 p.host = pinned(sizeof(LaunchParams));
@@ -181,20 +137,39 @@ public:
         if (cpu::gpuTextures(plan->domain)) prepareTextures(*plan);
         const size_t pixels = size_t(plan->width) * plan->height;
         scene_.sums = device(pixels * 4 * sizeof(double));
+        scene_.odd = device(pixels * 4 * sizeof(double));
         scene_.counts = device(pixels * sizeof(U32));
         scene_.hostSums = pinned(pixels * 4 * sizeof(double));
+        scene_.hostOdd = pinned(pixels * 4 * sizeof(double));
         scene_.hostCounts = pinned(pixels * sizeof(U32));
         scene_.filmDone = std::make_shared<gpu::Event>(driver);
+        const U32 tiles = ((plan->width + TileSize - 1) / TileSize) * ((plan->height + TileSize - 1) / TileSize);
+        for (U32 s = 0; s < PassSlots; ++s) {
+            scene_.passMask[s] = device(size_t(tiles) * sizeof(U64L));
+            scene_.passBase[s] = device(pixels * sizeof(U32));
+            scene_.passStaging[s] = pinned(size_t(tiles) * sizeof(U64L));
+        }
+        if (plan->adaptive) {
+            scene_.errors = device(pixels * sizeof(float));
+            scene_.hostErrors = pinned(pixels * sizeof(float));
+            scene_.errorsDone = std::make_shared<gpu::Event>(driver);
+        }
+        passDone_.assign(MaxPasses, 0u);
         driver.drain();  // startup only: everything above has landed
         uploads_.clear();
     }
 
     // Starts a frame: an empty film and empty queues.
-    void begin(U32 samplesPerChunk) {
+    void begin(U32 samplesPerChunk, bool adaptive = false) {
         cpu::need(plan_ && inFlight_.empty(), "GPU frame overlap");
+        cpu::need(!adaptive || programs_[1].pipeline, "No adaptive GPU program");
+        program_ = &programs_[adaptive ? 1 : 0];
         itemsPerChunk_ = samplesPerChunk * TilePixels;
+        adaptive_ = adaptive;
         const size_t pixels = size_t(plan_->width) * plan_->height;
         memset32(scene_.sums->pointer, 0, pixels * 8);
+        memset32(scene_.odd->pointer, 0, pixels * 8);
+        std::fill(passDone_.begin(), passDone_.end(), 0u);
         memset32(scene_.counts->pointer, 0, pixels);
         memset32(state_->pointer, 0, sizeof(DeviceState) / 4);
         published_ = 0;
@@ -256,7 +231,8 @@ public:
             r.ended = std::make_shared<TimingEvent>(driver);
         }
         gpu::Driver::check(driver.cuEventRecord_p(r.begun->value, stream_));
-        ox(optixLaunch(pipeline_, stream_, slot.device->pointer, sizeof(LaunchParams), &sbt_, options_.launchThreads, 1, 1));
+        ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt,
+                       options_.launchThreads, 1, 1));
         gpu::Driver::check(driver.cuEventRecord_p(r.ended->value, stream_));
 
         // Read back what the host needs, then clear the touch marks.
@@ -292,6 +268,7 @@ public:
         gpu::Driver::check(driver.cuEventElapsedTime_p(&ms, f.readback->begun->value, f.readback->ended->value));
         out.deviceSeconds = ms / 1000.0;
         parkedTail_ = state.parkedTail;
+        if (adaptive_) std::copy(state.passDone, state.passDone + MaxPasses, passDone_.begin());
         // Samples parked by this launch may run once their tiles are committed,
         // which the next launch does before it starts (commitTiles).
         if (fine_.tiles) {
@@ -313,11 +290,47 @@ public:
         const size_t pixels = size_t(plan_->width) * plan_->height;
         copyOut(scene_.hostSums, scene_.sums, pixels * 4 * sizeof(double));
         copyOut(scene_.hostCounts, scene_.counts, pixels * sizeof(U32));
+        if (adaptive_) copyOut(scene_.hostOdd, scene_.odd, pixels * 4 * sizeof(double));
         gpu::Driver::check(driver.cuEventRecord_p(scene_.filmDone->value, stream_));
     }
     bool filmReady() { return scene_.filmDone->ready(); }
     const double* sums() const { return static_cast<const double*>(scene_.hostSums->host()); }
+    const double* odd() const { return static_cast<const double*>(scene_.hostOdd->host()); }
     const U32* counts() const { return static_cast<const U32*>(scene_.hostCounts->host()); }
+
+    // Adaptive frames. Every pixel's error, worked out on the device behind the
+    // launches already queued (they finish first, on the same stream); only the
+    // errors cross to the host, for its error trees.
+    void requestErrors() {
+        LaunchParams p = baseParams();
+        p.mode = 2;
+        auto& slot = takeParams(p);
+        ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt, p.pixels, 1, 1));
+        copyOut(scene_.hostErrors, scene_.errors, size_t(p.pixels) * sizeof(float));
+        gpu::Driver::check(driver.cuEventRecord_p(scene_.errorsDone->value, stream_));
+        slot.done = scene_.errorsDone;
+    }
+    bool errorsReady() { return scene_.errorsDone->ready(); }
+    const float* errors() const { return static_cast<const float*>(scene_.hostErrors->host()); }
+    // A pass's tables, ahead of any launch that reads them: its tile masks, and
+    // each pixel's sample-index base, made on the device. A pass of the uniform
+    // stage gives every pixel the same base (NoSlot: none); a later pass starts
+    // from the device's counts, which hold every earlier pass once they have all
+    // completed. A slot's staging is reused only once its earlier pass has
+    // completed, so its upload has.
+    void uploadPass(U32 slot, const std::vector<std::uint64_t>& masks, U32 uniformBase) {
+        void* staging = scene_.passStaging[slot]->host();
+        const size_t maskBytes = masks.size() * sizeof(U64L), pixels = size_t(plan_->width) * plan_->height;
+        std::memcpy(staging, masks.data(), maskBytes);
+        copyIn(scene_.passMask[slot], staging, maskBytes);
+        if (uniformBase != NoSlot) memset32(scene_.passBase[slot]->pointer, uniformBase, pixels);
+        else gpu::Driver::check(driver.cuMemcpyDtoDAsync_v2_p(scene_.passBase[slot]->pointer, scene_.counts->pointer,
+                                                               pixels * sizeof(U32), stream_));
+    }
+    // Launches queued so far, render or otherwise.
+    U64 launchCount() const { return launches_; }
+    // Samples each pass has completed on the GPU, as of the last collected launch.
+    const std::vector<U32>& passDone() const { return passDone_; }
 
     size_t fineTiles() const { return fine_.tiles; }
     size_t fineLoaded() const { return fine_.loaded; }
@@ -327,6 +340,77 @@ public:
 private:
     using B = gpu::B;
     struct alignas(OPTIX_SBT_RECORD_ALIGNMENT) Record { char header[OPTIX_SBT_RECORD_HEADER_SIZE]; };
+    // One OptiX program: its module, programs, pipeline and binding table.
+    struct Program {
+        OptixModule module = nullptr;
+        OptixProgramGroup groups[4]{};
+        OptixPipeline pipeline = nullptr;
+        B records;
+        OptixShaderBindingTable sbt{};
+
+        void create(GpuLane& lane, const std::string& ptx) {
+            OptixModuleCompileOptions mo{};
+            mo.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
+            mo.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
+            mo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+            OptixPipelineCompileOptions po{};
+            po.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+            po.numPayloadValues = 2;
+            po.numAttributeValues = 2;
+            po.pipelineLaunchParamsVariableName = "params";
+            po.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
+            char log[8192];
+            size_t length = sizeof(log);
+            if (optixModuleCreateFromPTX(lane.optix_, &mo, &po, ptx.data(), ptx.size(), log, &length, &module) !=
+                OPTIX_SUCCESS)
+                throw std::runtime_error("OptiX module: " + std::string(log, std::min(length, sizeof(log))));
+            OptixProgramGroupDesc desc[4] = {};
+            desc[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+            desc[0].raygen = {module, "__raygen__async"};
+            desc[1].kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
+            desc[1].miss = {module, "__miss__radiance"};
+            desc[2].kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
+            desc[2].miss = {module, "__miss__shadow"};
+            desc[3].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+            desc[3].hitgroup.moduleCH = module;
+            desc[3].hitgroup.entryFunctionNameCH = "__closesthit__triangle";
+            OptixProgramGroupOptions options{};
+            length = sizeof(log);
+            ox(optixProgramGroupCreate(lane.optix_, desc, 4, &options, log, &length, groups));
+            OptixPipelineLinkOptions link{};
+            link.maxTraceDepth = 1;
+            link.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+            length = sizeof(log);
+            ox(optixPipelineCreate(lane.optix_, &po, &link, groups, 4, log, &length, &pipeline));
+            OptixStackSizes stacks{};
+            for (auto g : groups) ox(optixUtilAccumulateStackSizes(g, &stacks));
+            unsigned a, b, c;
+            ox(optixUtilComputeStackSizes(&stacks, 1, 0, 0, &a, &b, &c));
+            ox(optixPipelineSetStackSize(pipeline, a, b, c, 2));
+            auto host = lane.pinned(sizeof(Record) * 4);
+            for (int i = 0; i < 4; ++i) ox(optixSbtRecordPackHeader(groups[i], static_cast<Record*>(host->host()) + i));
+            records = lane.device(sizeof(Record) * 4);
+            gpu::Driver::check(lane.driver.cuMemcpyHtoDAsync_v2_p(records->pointer, host->host(), host->bytes, nullptr));
+            lane.driver.drain();
+            sbt.raygenRecord = records->pointer;
+            sbt.missRecordBase = records->pointer + sizeof(Record);
+            sbt.missRecordStrideInBytes = sizeof(Record);
+            sbt.missRecordCount = 2;
+            sbt.hitgroupRecordBase = records->pointer + 3 * sizeof(Record);
+            sbt.hitgroupRecordStrideInBytes = sizeof(Record);
+            sbt.hitgroupRecordCount = 1;
+        }
+        void destroy() noexcept {
+            if (pipeline) optixPipelineDestroy(pipeline);
+            for (auto& g : groups)
+                if (g) optixProgramGroupDestroy(g);
+            if (module) optixModuleDestroy(module);
+            pipeline = nullptr;
+            module = nullptr;
+            for (auto& g : groups) g = nullptr;
+            records.reset();
+        }
+    };
     struct ParamSlot { B host, device; std::shared_ptr<gpu::Event> done; };
     struct Readback { B state, requests, touched; std::shared_ptr<gpu::Event> done; std::shared_ptr<TimingEvent> begun, ended; };
     struct Flight {
@@ -339,8 +423,9 @@ private:
     struct Scene {
         std::vector<B> keep;
         U64 traversable = 0;
-        B geometry, materials, config, maps, sums, counts, hostSums, hostCounts;
-        std::shared_ptr<gpu::Event> filmDone;
+        B geometry, materials, config, maps, sums, odd, counts, hostSums, hostOdd, hostCounts;
+        B passMask[PassSlots], passBase[PassSlots], passStaging[PassSlots], errors, hostErrors;
+        std::shared_ptr<gpu::Event> filmDone, errorsDone;
         size_t mipBytes = 0;
     };
     // The fine-detail cache: every level-0 tile of the scene's textures has an
@@ -552,7 +637,8 @@ private:
             p.updates = reinterpret_cast<const TileUpdate*>(deviceList->pointer);
             p.updateCount = U32(updates.size());
             auto& slot = takeParams(p);
-            ox(optixLaunch(pipeline_, stream_, slot.device->pointer, sizeof(LaunchParams), &sbt_, p.updateCount, 1, 1));
+            ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt,
+                           p.updateCount, 1, 1));
             auto done = std::make_shared<gpu::Event>(driver);
             gpu::Driver::check(driver.cuEventRecord_p(done->value, stream_));
             slot.done = done;
@@ -577,6 +663,14 @@ private:
         p.state = reinterpret_cast<DeviceState*>(state_->pointer);
         p.sums = reinterpret_cast<double*>(scene_.sums->pointer);
         p.counts = reinterpret_cast<U32*>(scene_.counts->pointer);
+        p.adaptive = adaptive_ ? 1u : 0u;
+        p.pixels = plan_->width * plan_->height;
+        p.odd = reinterpret_cast<double*>(scene_.odd->pointer);
+        p.errors = scene_.errors ? reinterpret_cast<float*>(scene_.errors->pointer) : nullptr;
+        for (U32 s = 0; s < PassSlots; ++s) {
+            p.passMask[s] = reinterpret_cast<const U64L*>(scene_.passMask[s]->pointer);
+            p.passBase[s] = reinterpret_cast<const U32*>(scene_.passBase[s]->pointer);
+        }
         if (fine_.tiles) {
             p.tileState = reinterpret_cast<U32*>(fine_.tileState->pointer);
             p.requests = reinterpret_cast<U32*>(fine_.requests->pointer);
@@ -628,28 +722,19 @@ private:
         ring_.reset();
         state_.reset();
         parked_.reset();
-        records_.reset();
         if (stream_) driver.cuStreamDestroy_v2_p(stream_);
         stream_ = nullptr;
-        if (pipeline_) optixPipelineDestroy(pipeline_);
-        for (auto& g : groups_)
-            if (g) optixProgramGroupDestroy(g);
-        if (module_) optixModuleDestroy(module_);
+        for (auto& p : programs_) p.destroy();
         if (optix_) optixDeviceContextDestroy(optix_);
-        pipeline_ = nullptr;
-        module_ = nullptr;
         optix_ = nullptr;
-        for (auto& g : groups_) g = nullptr;
     }
 
     GpuOptions options_;
     OptixDeviceContext optix_ = nullptr;
-    OptixModule module_ = nullptr;
-    OptixPipeline pipeline_ = nullptr;
-    OptixProgramGroup groups_[4]{};
-    OptixShaderBindingTable sbt_{};
+    Program programs_[2];  // uniform, adaptive
+    Program* program_ = &programs_[0];
     CUstream stream_ = nullptr;
-    B records_, ring_, state_, parked_;
+    B ring_, state_, parked_;
     std::array<ParamSlot, 8> params_;
     std::array<Readback, 4> readbacks_;
     std::array<B, 4> staging_;
@@ -660,6 +745,8 @@ private:
     Scene scene_;
     Fine fine_;
     U32 itemsPerChunk_ = 0, parkedCapacity_ = 0;
+    bool adaptive_ = false;
+    std::vector<U32> passDone_;
     U64 published_ = 0, launches_ = 0;
     U64 parkedTail_ = 0, parkedIssued_ = 0;
     Completion completed_;

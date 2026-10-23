@@ -14,7 +14,7 @@ constexpr U32 Slots = 4;  // launches whose claim counters may be live at once
 // A sample parked by a texture miss in the GPU's bounded queue (TEXWAIT). It
 // runs again on the GPU once its tile is resident, with the same identity.
 struct Parked {
-    U32 pixel, index, tries, pad;
+    U32 pixel, index, tries, pass;
 };
 static_assert(sizeof(Parked) == 16, "Parked samples are 16 bytes");
 
@@ -32,9 +32,11 @@ struct DeviceState {
     U64L requestTail;         // tile requests ever made (a monotonic ring position)
     U32 errors;
     U32 pad;
+    U32 passDone[MaxPasses];  // adaptive frames: samples completed per pass
 };
 
-// Launch parameters. mode 0 renders; mode 1 applies tile-cache updates.
+// Launch parameters. mode 0 renders; mode 1 applies tile-cache updates; mode 2
+// works out every pixel's adaptive error from the film.
 struct LaunchParams {
     const mixed::Config* config;
     const surface::Lambert* materials;
@@ -67,6 +69,14 @@ struct LaunchParams {
     const U64L* pageEntry;  // address of each tile's page-table entry
     const surface::V3* slab;
     U32 slabTileTexels, mode;
+
+    // Adaptive frames: the pass tables (async_integrator.h), the odd-index sums,
+    // and the per-pixel errors the trees are built from.
+    U32 adaptive, pixels;
+    const U64L* passMask[PassSlots];
+    const U32* passBase[PassSlots];
+    double* odd;
+    float* errors;
 };
 
 }  // namespace xpu2::interactive::async

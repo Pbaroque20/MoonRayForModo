@@ -8,8 +8,10 @@
 // never waits on the GPU; it polls. At quiescence (CA-16) the two films merge
 // and every pixel's sample count is audited (ACC-07).
 #pragma once
+#include "async_adaptive.h"
 #include "async_cpu.h"
 #include "async_gpu.h"
+#include <functional>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -27,6 +29,7 @@ struct RenderOptions {
     // With both devices, one of the threads is the GPU feeder's own core (spec §4
     // reserves cores for the coordinator and feeder): it polls without sleeping.
     bool reserveFeederCore = true;
+    unsigned treeThreads = ~0u;  // adaptive frames: pool threads besides the feeder for the error trees (~0u: one per region)
 };
 
 // When things happened in a frame, in seconds from its start (TEL-01).
@@ -34,16 +37,111 @@ struct Timeline {
     double firstLaunch = -1, gridEmpty = -1, lastGpuCompletion = -1, cpuDone = -1, filmLanded = -1;
 };
 
+// One GPU launch: when it was queued and collected, in seconds from the frame's
+// start, its chunks and parked samples, and its own duration on the device.
+struct LaunchTrace {
+    double queued = -1, collected = -1, deviceSeconds = 0;
+    double claimSeconds = 0, accountSeconds = 0, launchSeconds = 0;  // the feeder's time to claim, account and queue it
+    U64 chunks = 0, parked = 0;
+};
+
+// One adaptive pass: its samples, and when it went out, completed, and when the
+// errors after it were asked for, arrived and became trees (-1: did not happen).
+struct PassTrace {
+    U64 samples = 0;
+    double generated = -1, launched = -1, completed = -1, asked = -1, errors = -1, trees = -1;
+};
+
 struct RenderResult {
     std::vector<float> rgba;
+    std::vector<U32> counts;  // samples each pixel received
+    std::vector<float> odd;   // adaptive frames: odd-index sums over all samples (MoonRay's beauty aux)
     U64 cpuSamples = 0, gpuSamples = 0, parkedRun = 0, launches = 0, cpuSteals = 0, cpuMoves = 0,
         gpuStolenChunks = 0, fineLoaded = 0, fineEvicted = 0;
     double seconds = 0, gpuItemsPerSecond = 0, cpuSamplesPerSecond = 0;
     unsigned cpuWorkers = 0;
     Timeline timeline;
+    // Adaptive frames: passes generated, tree updates, and samples a pixel on average.
+    U32 adaptivePasses = 0, treeUpdates = 0;
+    double meanSamples = 0;
+    double treeSeconds = 0, errorSeconds = 0;  // rebuilding the trees; from asking for errors to having them
+    std::vector<PassTrace> passes;
+    std::vector<LaunchTrace> launchTrace;
     double cpuBusySeconds = 0, cpuSlowestChunk = 0, cpuFirstClaim = 0, cpuLastClaim = 0;
     bool failed = false;
     std::string error;
+};
+
+// Persistent threads for the adaptive error trees: run(n, f) calls f(0) .. f(n - 1)
+// across them and the calling thread, and returns once every call has.
+class Pool {
+public:
+    explicit Pool(unsigned threads) {
+        for (unsigned i = 0; i < threads; ++i) threads_.emplace_back([this] { loop(); });
+    }
+    ~Pool() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_ = true;
+        }
+        wake_.notify_all();
+        for (auto& t : threads_) t.join();
+    }
+    unsigned size() const { return unsigned(threads_.size()); }
+    void run(unsigned n, const std::function<void(unsigned)>& f) {
+        {
+            // A worker still inside the last run would take this one's indices.
+            std::unique_lock<std::mutex> lock(mutex_);
+            left_.wait(lock, [&] { return active_ == 0; });
+            task_ = &f;
+            count_ = n;
+            next_.store(0);
+            ++generation_;
+        }
+        wake_.notify_all();
+        work(f, n);
+        std::unique_lock<std::mutex> lock(mutex_);
+        left_.wait(lock, [&] { return active_ == 0 && finished_ == n; });
+        finished_ = 0;
+        task_ = nullptr;
+    }
+
+private:
+    void work(const std::function<void(unsigned)>& f, unsigned n) {
+        unsigned done = 0;
+        for (unsigned i; (i = next_.fetch_add(1)) < n; ++done) f(i);
+        std::lock_guard<std::mutex> lock(mutex_);
+        finished_ += done;
+        left_.notify_all();
+    }
+    void loop() {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+        unsigned seen = 0;
+        for (;;) {
+            const std::function<void(unsigned)>* task;
+            unsigned n;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                wake_.wait(lock, [&] { return stop_ || (task_ && generation_ != seen); });
+                if (stop_) return;
+                seen = generation_;
+                task = task_;
+                n = count_;
+                ++active_;
+            }
+            work(*task, n);
+            std::lock_guard<std::mutex> lock(mutex_);
+            --active_;
+            left_.notify_all();
+        }
+    }
+    std::mutex mutex_;
+    std::condition_variable wake_, left_;
+    const std::function<void(unsigned)>* task_ = nullptr;
+    unsigned count_ = 0, generation_ = 0, active_ = 0, finished_ = 0;
+    std::atomic<unsigned> next_{0};
+    bool stop_ = false;
+    std::vector<std::thread> threads_;
 };
 
 class Renderer {
@@ -58,18 +156,29 @@ public:
         using Clock = std::chrono::steady_clock;
         RenderResult result;
         const auto config = mixed::config(plan_);
-        const bool useGpu = o.mode != 0, useCpu = o.mode != 1;
+        const bool adaptive = plan_->adaptive;
+        // In an adaptive frame with a GPU, the CPU rebuilds the error trees and the
+        // GPU takes every sample: the chain of passes, each waiting on the trees,
+        // bounds the frame, and a CPU chunk would sit on that chain.
+        const bool useGpu = o.mode != 0, useCpu = o.mode != 1 && !(adaptive && useGpu);
         cpu::need(!useGpu || gpu_, "GPU lane required");
         GridOptions gridOptions = o.grid;
-        gridOptions.mode = o.mode;
+        gridOptions.mode = useCpu ? (useGpu ? 2 : 0) : 1;
         // Ownership carried over from earlier frames of the same grid (GRD-03).
         const U32 cells = ((plan_->width + gridOptions.cellSize - 1) / gridOptions.cellSize) *
                           ((plan_->height + gridOptions.cellSize - 1) / gridOptions.cellSize);
-        Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, ownership_.owners(cells));
+        Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, ownership_.owners(cells), adaptive);
         HostFilm film(plan_->width, plan_->height);
         RetryQueue retries;
         const U32 itemsPerChunk = gridOptions.samplesPerChunk * TilePixels;
-        if (useGpu) gpu_->begin(gridOptions.samplesPerChunk);
+        if (useGpu) gpu_->begin(gridOptions.samplesPerChunk, adaptive);
+        Adaptive state(*plan_, gridOptions.samplesPerChunk);
+        if (adaptive) {
+            const unsigned trees = o.treeThreads != ~0u ? o.treeThreads : std::max(1u, std::min(o.threads, 16u) - 1);
+            if (!pool_ || pool_->size() != trees) pool_ = std::make_unique<Pool>(trees);
+            state.start = Clock::now();
+            state.generateReady(grid, useGpu ? gpu_ : nullptr);
+        }
 
         // The feeder runs above the CPU lane's workers, so a busy CPU never starves
         // the GPU of work (spec §4: the GPU feeder runs at high priority).
@@ -104,11 +213,12 @@ public:
         CpuLane& cpuLane = *cpu_;
         const auto start = Clock::now();
         auto at = [&] { return std::chrono::duration<double>(Clock::now() - start).count(); };
-        cpuLane.begin(config, grid, film, retries);
+        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr);
 
         double gpuRate = 0;  // chunk items a second, timed on the device, smoothed
         U64 queuedItems = 0, gpuItems = 0, stalls = 0, lastParked = 0;
         std::vector<Chunk> claim;
+        std::vector<U64> cellSamples(grid.cellCount(), 0);  // the GPU's claims, for the ownership accounting
         std::string failure;
         while (failure.empty()) {
             if (useGpu) {
@@ -123,10 +233,17 @@ public:
                     }
                     if (c.errors) failure = "GPU sample failure; whole epoch must use fallback";
                     result.timeline.lastGpuCompletion = at();
+                    if (result.launches < result.launchTrace.size()) {
+                        auto& l = result.launchTrace[result.launches];
+                        l.collected = at();
+                        l.deviceSeconds = c.deviceSeconds;
+                        l.parked = c.parkedRun;
+                    }
                     ++result.launches;
                     result.parkedRun += c.parkedRun;
                 }
                 while (failure.empty() && gpu_->ready()) {
+                    const double claimStart = at();
                     const U32 want = launchSize(o, grid, gpuRate, cpuLane, itemsPerChunk, queuedItems, start);
                     claim.resize(want);
                     U32 got = 0;
@@ -142,14 +259,26 @@ public:
                                 got += n;
                             }
                     }
+                    const double accountStart = at();
+                    // Each chunk's samples: its tile's pixels in the image (an adaptive
+                    // pass's mask holds only those) times its sample count.
                     for (U32 i = 0; i < got; ++i) {
-                        U64 samples = 0;
-                        for (U32 p = 0; p < TilePixels; ++p)
-                            samples += tilePixel(claim[i].tile, p, config.width, config.height) != ~0u ? claim[i].count : 0;
-                        grid.rendered(claim[i].cell, Device::Gpu, samples);
+                        const Chunk& k = claim[i];
+                        const U64 pixels = adaptive ? U64(__builtin_popcountll(state.tables.masks[chunkPass(k) % PassSlots][k.tile]))
+                                                    : grid.tilePixels(k.tile);
+                        cellSamples[k.cell] += pixels * k.count;
                     }
+                    for (U32 c = 0; c < cellSamples.size(); ++c)
+                        if (cellSamples[c]) {
+                            grid.rendered(c, Device::Gpu, cellSamples[c]);
+                            cellSamples[c] = 0;
+                        }
+                    const double launchStart = at();
                     if (!gpu_->launch(claim.data(), got)) break;
                     if (result.timeline.firstLaunch < 0) result.timeline.firstLaunch = at();
+                    result.launchTrace.push_back({at(), -1, 0, accountStart - claimStart, launchStart - accountStart,
+                                                  at() - launchStart, got, 0});
+                    if (adaptive && got && grid.empty()) state.trace[state.generated - 1].launched = state.at();
                     queuedItems += U64(got) * itemsPerChunk;
                     // A parked queue that does not shrink across many launches means
                     // the cache cannot hold what the samples need.
@@ -159,7 +288,8 @@ public:
                 }
             }
             if (cpuLane.counters.failures.load()) failure = "CPU sample failure; whole epoch must use fallback";
-            const bool empty = grid.empty();
+            if (adaptive) state.advance(grid, film, useGpu ? gpu_ : nullptr, *pool_);
+            const bool empty = grid.empty() && (!adaptive || state.finished(useGpu ? gpu_ : nullptr));
             if (empty && result.timeline.gridEmpty < 0) result.timeline.gridEmpty = at();
             const bool cpuQuiet = cpuLane.idle() == cpuLane.threads() && !retries.size();
             if (empty && cpuQuiet && result.timeline.cpuDone < 0) result.timeline.cpuDone = at();
@@ -184,14 +314,21 @@ public:
         }
         result.seconds = std::chrono::duration<double>(Clock::now() - start).count();
 
-        // Merge and audit: every pixel has exactly spp samples (ACC-07).
+        // Merge and audit: every pixel has exactly the samples planned for it, spp
+        // in a uniform frame (ACC-07).
         const size_t pixels = size_t(plan_->width) * plan_->height;
         result.rgba.resize(pixels * 4);
+        result.counts.resize(pixels);
+        if (adaptive) result.odd.resize(pixels * 4);
         const auto& hs = film.sums();
         const auto& hc = film.counts();
+        U64 planned = 0;
         for (size_t i = 0; i < pixels; ++i) {
             const U32 gc = useGpu ? gpu_->counts()[i] : 0, count = hc[i] + gc;
-            if (count != plan_->spp) {
+            const U32 expected = adaptive ? state.planned[i] : plan_->spp;
+            result.counts[i] = count;
+            planned += expected;
+            if (count != expected || !count) {
                 result.failed = true;
                 result.error = "Sample audit failure at pixel " + std::to_string(i) + ": " + std::to_string(count);
                 return result;
@@ -199,6 +336,8 @@ public:
             for (int c = 0; c < 4; ++c) {
                 const double sum = hs[i * 4 + c] + (useGpu ? gpu_->sums()[i * 4 + c] : 0.0);
                 result.rgba[i * 4 + c] = float(sum / count);
+                if (adaptive)
+                    result.odd[i * 4 + c] = float((film.odd()[i * 4 + c] + (useGpu ? gpu_->odd()[i * 4 + c] : 0.0)) / count);
             }
             result.cpuSamples += hc[i];
             result.gpuSamples += gc;
@@ -215,11 +354,178 @@ public:
             result.fineLoaded = gpu_->fineLoaded();
             result.fineEvicted = gpu_->fineEvicted();
         }
+        result.adaptivePasses = state.generated;
+        result.treeUpdates = state.treeUpdates;
+        result.treeSeconds = state.treeSeconds;
+        result.passes = state.trace;
+        result.errorSeconds = state.errorSeconds;
+        result.meanSamples = double(planned) / double(pixels);
         ownership_.finished(grid);
         return result;
     }
 
 private:
+    // An adaptive frame's passes (async_adaptive.h). Passes below the minimum sample
+    // count render every pixel and go out together, as table slots free. Each
+    // later pass goes out once the trees have seen every pass before it, as each of
+    // MoonRay's tiles reads trees its region rebuilt on finishing the pass before.
+    // With a GPU, the errors are worked out on the device behind its last launch
+    // and only they cross to the host; without one, the host works them out from
+    // its film. The region trees then rebuild at once on the pool.
+    struct Adaptive {
+        using Clock = std::chrono::steady_clock;
+        const cpu::Plan& plan;
+        U32 samplesPerChunk, tiles, tilesX;
+        std::vector<adaptive::Pass> passes;
+        adaptive::Regions regions;
+        PassTables tables;
+        std::vector<U32> planned;    // samples each pixel will have once generated passes finish
+        std::vector<U64> expected;   // samples of each generated pass
+        std::vector<std::uint64_t> inImage;  // the tile positions inside the image
+        // generated: passes sent out; retired: leading passes completed (their table
+        // slots are free); evaluated: passes the trees have seen.
+        U32 generated = 0, retired = 0, evaluated = 0, treeUpdates = 0;
+        bool asked = false;  // errors asked of the GPU for every pass generated
+        U64 askedLaunch = 0;  // the GPU's launch count when they were
+        bool stop = false;   // the trees have converged: no more adaptive passes
+        Clock::time_point start, askedAt;
+        double treeSeconds = 0, errorSeconds = 0;
+        std::vector<PassTrace> trace;
+        double at() const { return std::chrono::duration<double>(Clock::now() - start).count(); }
+        std::vector<double> sums, odd;  // frames without a GPU: the host film's copy
+        std::vector<U32> counts;
+        std::vector<float> errors;
+
+        Adaptive(const cpu::Plan& p, U32 spc)
+            : plan(p), samplesPerChunk(spc), tiles(((p.width + 7) / 8) * ((p.height + 7) / 8)), tilesX((p.width + 7) / 8),
+              passes(p.adaptive ? adaptive::schedule(p.maxSamples) : std::vector<adaptive::Pass>{}),
+              regions(int(p.width), int(p.height), p.adaptive ? p.targetError : 1.f),
+              planned(p.adaptive ? size_t(p.width) * p.height : 0, 0u) {
+            if (!p.adaptive) return;
+            cpu::need(passes.size() <= MaxPasses, "Adaptive pass budget");
+            inImage.assign(tiles, 0);
+            for (U32 tile = 0; tile < tiles; ++tile)
+                for (U32 q = 0; q < TilePixels; ++q)
+                    if (tilePixel(tile, q, p.width, p.height) != ~0u) inImage[tile] |= 1ull << q;
+            for (U32 s = 0; s < PassSlots; ++s) {
+                tables.masks[s].assign(tiles, 0);
+                tables.bases[s].assign(planned.size(), 0);
+            }
+        }
+        U64 done(U32 pass, GpuLane* gpu) const {
+            return tables.cpuDone[pass].load(std::memory_order_relaxed) + (gpu ? gpu->passDone()[pass] : 0);
+        }
+        bool complete(U32 pass, GpuLane* gpu) const { return done(pass, gpu) == expected[pass]; }
+
+        bool uniformStage(U32 j) const { return passes[j].start < plan.minSamples; }
+        // Whether pass j may go out: a free table slot, and either the uniform stage
+        // or trees that have seen every pass before it.
+        bool ready(U32 j) const {
+            return j < passes.size() && j < retired + PassSlots && (uniformStage(j) || (!stop && evaluated == j));
+        }
+        // One pass at a time, so the feeder launches each as soon as it exists.
+        void generateReady(Grid& grid, GpuLane* gpu) {
+            if (ready(generated)) generate(grid, gpu);
+        }
+        void generate(Grid& grid, GpuLane* gpu) {
+            const U32 j = generated, slot = j % PassSlots, size = passes[j].end - passes[j].start;
+            const bool uniform = uniformStage(j);
+            auto& masks = tables.masks[slot];
+            auto& bases = tables.bases[slot];
+            if (!gpu) bases = planned;  // the CPU lane's; the GPU makes its own
+            U64 samples = 0;
+            std::vector<std::vector<Chunk>> perCell(grid.cellCount());
+            for (U32 tile = 0; tile < tiles; ++tile) {
+                std::uint64_t active = inImage[tile];
+                if (!uniform && passes[j].start < plan.maxSamples)
+                    active &= regions.sampleArea(int(tile % tilesX) * 8, int(tile / tilesX) * 8);
+                else if (!uniform)
+                    active = 0;
+                masks[tile] = active;
+                if (!active) continue;
+                for (U32 q = 0; q < TilePixels; ++q)
+                    if (active >> q & 1) {
+                        planned[tilePixel(tile, q, plan.width, plan.height)] += size;
+                        samples += size;
+                    }
+                auto& list = perCell[grid.cellOf(tile)];
+                for (U32 off = 0; off < size; off += samplesPerChunk)
+                    list.push_back({tile, (j << PassShift) | off, std::min(samplesPerChunk, size - off), grid.cellOf(tile)});
+            }
+            expected.push_back(samples);
+            tables.cpuDone[j].store(0, std::memory_order_relaxed);
+            trace.push_back({samples, at()});
+            ++generated;
+            // A pass with no samples leaves the film, so the trees and every later
+            // pass's masks, as they are: the frame has converged.
+            if (!samples) {
+                stop = true;
+                return;
+            }
+            // On the stream ahead of any launch that reads it; an adaptive pass goes
+            // out only once every earlier one has completed.
+            if (gpu) gpu->uploadPass(slot, masks, uniform ? passes[j].start : NoSlot);
+            for (U32 c = 0; c < perCell.size(); ++c)
+                if (!perCell[c].empty()) grid.append(c, perCell[c].data(), U32(perCell[c].size()));
+        }
+
+        // Moves the frame on: once the next pass needs the trees, gets the errors
+        // after every pass sent out and rebuilds the trees, then sends out what that
+        // allows. Waits only for the trees, which nothing else needs.
+        //
+        // The GPU is asked as soon as the last chunk has gone out, so its error
+        // launch queues behind the passes. They count only if no launch went out
+        // after them (a parked sample's rerun) and every pass has completed;
+        // otherwise they are asked for again.
+        void advance(Grid& grid, HostFilm& film, GpuLane* gpu, Pool& pool) {
+            while (retired < generated && complete(retired, gpu)) trace[retired++].completed = at();
+            const bool needTrees = !stop && generated < passes.size() && !uniformStage(generated) && evaluated < generated;
+            if (needTrees && gpu) {
+                if (!asked && grid.empty() && !gpu->parkedOutstanding()) {
+                    gpu->requestErrors();
+                    asked = true;
+                    askedLaunch = gpu->launchCount();
+                    askedAt = Clock::now();
+                    trace[generated - 1].asked = at();
+                } else if (asked && gpu->errorsReady()) {
+                    if (gpu->launchCount() != askedLaunch) {
+                        asked = false;
+                    } else if (retired == generated) {  // else its launches are still to be collected
+                        errorSeconds += std::chrono::duration<double>(Clock::now() - askedAt).count();
+                        trace[generated - 1].errors = at();
+                        asked = false;
+                        rebuild(gpu->errors(), pool);
+                    }
+                }
+            } else if (needTrees && retired == generated) {  // no GPU: the host film
+                film.snapshot(sums, odd, counts);
+                errors.resize(counts.size());
+                const unsigned n = pool.size() + 1;
+                pool.run(n, [&](unsigned part) {
+                    for (size_t i = part; i < counts.size(); i += n)
+                        errors[i] = pixelError(&sums[i * 4], &odd[i * 4], counts[i]);
+                });
+                rebuild(errors.data(), pool);
+            }
+            generateReady(grid, gpu);
+        }
+        void rebuild(const float* e, Pool& pool) {
+            const auto began = Clock::now();
+            pool.run(unsigned(regions.count()), [&](unsigned i) { regions.update(i, e); });
+            treeSeconds += std::chrono::duration<double>(Clock::now() - began).count();
+            trace[generated - 1].trees = at();
+            evaluated = generated;
+            ++treeUpdates;
+            stop = regions.done();
+        }
+        // Every pass that will run has gone out and completed.
+        bool finished(GpuLane* gpu) const {
+            for (U32 j = retired; j < generated; ++j)
+                if (!complete(j, gpu)) return false;
+            return generated == passes.size() || (!uniformStage(generated) && stop);
+        }
+    };
+
     // How many chunks the next GPU launch takes: about one window of the GPU's
     // measured work; near the end, the share that lets both devices finish at
     // the same moment, given what the GPU already has queued.
@@ -229,6 +535,8 @@ private:
         for (U32 i = 0; i < grid.cellCount(); ++i) remainingChunks += grid.remaining(i);
         if (!remainingChunks) return 0;
         const U64 cap = gpu_->maxChunksPerLaunch();
+        // An adaptive pass is on the frame's critical path: it goes out whole.
+        if (plan_->adaptive) return U32(std::min<U64>(cap, remainingChunks));
         if (!gpuRate) return U32(std::min<U64>({cap, remainingChunks, o.firstChunks}));
         U64 want = U64(gpuRate * o.windowMs / 1000.0 / itemsPerChunk);
         want = std::max<U64>(want, 16);
@@ -250,6 +558,7 @@ private:
     Ownership ownership_;
     std::unique_ptr<CpuLane> cpu_;  // persistent workers (spec §4)
     DWORD_PTR cpuAffinity_ = 0;
+    std::unique_ptr<Pool> pool_;  // the adaptive error trees
 };
 
 }  // namespace xpu2::interactive::async

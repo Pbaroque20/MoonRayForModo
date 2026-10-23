@@ -26,6 +26,58 @@ namespace xpu2::interactive::async {
 
 enum class Device : U32 { Cpu = 0, Gpu = 1 };
 
+// A cell's queue of chunks. It only grows: the coordinator appends a pass's chunks
+// while workers claim, so chunks live in fixed blocks that never move, and a claim
+// never passes the published count (single writer, many claimants).
+class ChunkQueue {
+public:
+    static constexpr U32 BlockSize = 4096, MaxBlocks = 2048;
+    ChunkQueue() : blocks_(new std::atomic<Chunk*>[MaxBlocks]) {
+        for (U32 i = 0; i < MaxBlocks; ++i) blocks_[i].store(nullptr, std::memory_order_relaxed);
+    }
+    ~ChunkQueue() {
+        for (U32 i = 0; i < MaxBlocks; ++i) delete[] blocks_[i].load(std::memory_order_relaxed);
+    }
+    ChunkQueue(const ChunkQueue&) = delete;
+
+    // Coordinator only.
+    void append(const Chunk* chunks, U32 n) {
+        U32 at = published_.load(std::memory_order_relaxed);
+        if (U64(at) + n > U64(BlockSize) * MaxBlocks) throw std::length_error("Cell chunk queue full");
+        for (U32 i = 0; i < n; ++i, ++at) {
+            auto& block = blocks_[at / BlockSize];
+            Chunk* b = block.load(std::memory_order_relaxed);
+            if (!b) {
+                b = new Chunk[BlockSize];
+                block.store(b, std::memory_order_relaxed);
+            }
+            b[at % BlockSize] = chunks[i];
+        }
+        published_.store(at, std::memory_order_release);
+    }
+    U32 published() const { return published_.load(std::memory_order_acquire); }
+    U32 remaining() const {
+        const U32 end = published(), taken = next_.load(std::memory_order_acquire);
+        return taken >= end ? 0 : end - taken;
+    }
+    U32 claim(U32 n, Chunk* out) {
+        const U32 end = published();
+        U32 start = next_.load(std::memory_order_relaxed);
+        do {
+            if (start >= end) return 0;
+        } while (!next_.compare_exchange_weak(start, std::min(end, start + n), std::memory_order_acq_rel,
+                                              std::memory_order_relaxed));
+        const U32 got = std::min(end, start + n) - start;
+        for (U32 i = 0; i < got; ++i) out[i] = blocks_[(start + i) / BlockSize].load(std::memory_order_relaxed)[(start + i) % BlockSize];
+        return got;
+    }
+
+private:
+    std::unique_ptr<std::atomic<Chunk*>[]> blocks_;
+    alignas(64) std::atomic<U32> published_{0};
+    alignas(64) std::atomic<U32> next_{0};
+};
+
 struct GridOptions {
     U32 cellSize = 64;        // pixels; a multiple of 8 (GRD-01)
     U32 samplesPerChunk = 4;  // sample indices per chunk
@@ -37,12 +89,14 @@ public:
     struct Cell {
         U32 x = 0, y = 0;
         Device owner = Device::Cpu;
-        std::vector<Chunk> chunks;
-        alignas(64) std::atomic<U32> next{0};
+        ChunkQueue queue;
         std::atomic<U64> samples[2] = {};  // rendered per device, for ownership flips
     };
 
-    Grid(U32 width, U32 height, U32 spp, GridOptions options, const std::vector<Device>* owners = nullptr)
+    // A uniform frame: every chunk of every sample range is published at once. With
+    // empty = true the cells start empty, for passes appended later (adaptive).
+    Grid(U32 width, U32 height, U32 spp, GridOptions options, const std::vector<Device>* owners = nullptr,
+         bool empty = false)
         : width_(width), height_(height), spp_(spp), options_(options) {
         if (!width || !height || !spp || !options.cellSize || options.cellSize % TileSize ||
             !options.samplesPerChunk || options.mode < 0 || options.mode > 2)
@@ -63,12 +117,14 @@ public:
                              : options.mode == 1 ? Device::Gpu
                              : owners            ? (*owners)[index]
                                                  : ((cx + cy) % 2 == 0 ? Device::Gpu : Device::Cpu);  // GRD-02
+                if (empty) continue;
+                std::vector<Chunk> chunks;
                 for (U32 first = 0; first < spp; first += options.samplesPerChunk)
                     for (U32 ty = cy * tilesPerCell; ty < std::min(tilesY, (cy + 1) * tilesPerCell); ++ty)
                         for (U32 tx = cx * tilesPerCell; tx < std::min(tilesX, (cx + 1) * tilesPerCell); ++tx)
-                            cell.chunks.push_back({ty * tilesX + tx, first,
-                                                   std::min(options.samplesPerChunk, spp - first), index});
-                total_ += cell.chunks.size();
+                            chunks.push_back({ty * tilesX + tx, first, std::min(options.samplesPerChunk, spp - first), index});
+                cell.queue.append(chunks.data(), U32(chunks.size()));
+                total_ += chunks.size();
             }
     }
     Grid(const Grid&) = delete;
@@ -81,10 +137,22 @@ public:
     const Cell& cell(U32 index) const { return cells_[index]; }
     Device owner(U32 index) const { return cells_[index].owner; }
 
-    U32 remaining(U32 index) const {
-        const Cell& c = cells_[index];
-        const U32 taken = c.next.load(std::memory_order_acquire);
-        return taken >= c.chunks.size() ? 0 : U32(c.chunks.size()) - taken;
+    U32 remaining(U32 index) const { return cells_[index].queue.remaining(); }
+    // Coordinator only: publishes more chunks of one cell.
+    void append(U32 index, const Chunk* chunks, U32 n) {
+        cells_[index].queue.append(chunks, n);
+        total_ += n;
+    }
+    // The cell holding a tile.
+    U32 cellOf(U32 tile) const {
+        const U32 tilesX = (width_ + TileSize - 1) / TileSize, perCell = options_.cellSize / TileSize;
+        return ((tile / tilesX) / perCell) * cellsX_ + (tile % tilesX) / perCell;
+    }
+    // A tile's pixels inside the image.
+    U32 tilePixels(U32 tile) const {
+        const U32 tilesX = (width_ + TileSize - 1) / TileSize;
+        const U32 x = (tile % tilesX) * TileSize, y = (tile / tilesX) * TileSize;
+        return std::min(TileSize, width_ - x) * std::min(TileSize, height_ - y);
     }
     bool empty() const {
         for (U32 i = 0; i < cells_.size(); ++i)
@@ -93,18 +161,7 @@ public:
     }
 
     // Claims up to n chunks of one cell. Returns how many were claimed.
-    U32 claim(U32 index, U32 n, Chunk* out) {
-        Cell& c = cells_[index];
-        const U32 size = U32(c.chunks.size());
-        U32 start = c.next.load(std::memory_order_relaxed);
-        do {
-            if (start >= size) return 0;
-        } while (!c.next.compare_exchange_weak(start, std::min(size, start + n), std::memory_order_acq_rel,
-                                               std::memory_order_relaxed));
-        const U32 got = std::min(size, start + n) - start;
-        std::copy_n(c.chunks.begin() + start, got, out);
-        return got;
-    }
+    U32 claim(U32 index, U32 n, Chunk* out) { return cells_[index].queue.claim(n, out); }
 
     void rendered(U32 index, Device device, U64 samples) {
         cells_[index].samples[U32(device)].fetch_add(samples, std::memory_order_relaxed);
@@ -181,7 +238,7 @@ private:
     U32 width_, height_, spp_, cellsX_ = 0, cellsY_ = 0;
     GridOptions options_;
     std::vector<Cell> cells_;
-    U64 total_ = 0;
+    std::atomic<U64> total_{0};
 };
 
 // Cell ownership that persists from frame to frame (GRD-03) and flips towards

@@ -27,6 +27,9 @@ struct Plan {
     size_t bytes=0,reusedMeshes=0,preparedMeshes=0;
     // No production route changes merely because preparation succeeds.
     bool qualified=false;
+    // MoonRay adaptive sampling (sampling_mode 2), admitted only where the caller
+    // renders it (the asynchronous renderer); spp is then the maximum.
+    bool adaptive=false;unsigned minSamples=0,maxSamples=0;float targetError=0;
 };
 using PlanView=std::shared_ptr<const Plan>;
 struct Limits {size_t vertices=1000000,triangles=1000000,bytes=64ull<<20,objects=4096,pixels=1048576;};
@@ -82,7 +85,7 @@ inline std::vector<std::shared_ptr<const ix::Buffer>> signature(const rdl::Scene
  auto entity=frame->routing->scene->entities.at(ri::objectId(o.getName()));std::vector<std::shared_ptr<const ix::Buffer>> value;
  for(auto& id:entity->dependencies){auto attr=frame->routing->scene->entities.at(id);for(auto& pair:attr->buffers)value.push_back(pair.second);}return value;
 }
-inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar){
+inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false){
  need(bool(frame),"Missing canonical snapshot");
  const Limits hard{};
  need(limits.vertices>0&&limits.vertices<=hard.vertices&&limits.triangles>0&&limits.triangles<=hard.triangles&&
@@ -99,10 +102,18 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   }
  }
  need(verts*sizeof(V3)+tris*sizeof(Tri)<=limits.bytes,"Prepared geometry byte budget");
- attributes(sv,{"camera","layer","image_width","image_height","pixel_samples","sampling_mode","frame","lock_frame_noise","pixel_filter","pixel_filter_width","bsdf_samples","light_samples","max_depth","max_diffuse_depth","enable_dof","enable_motion_blur","sample_clamping_value","shadow_terminator_fix","two_stage_output","russian_roulette_threshold","lights_visible_in_camera"});
+ attributes(sv,{"camera","layer","image_width","image_height","pixel_samples","sampling_mode","min_adaptive_samples","max_adaptive_samples","target_adaptive_error","frame","lock_frame_noise","pixel_filter","pixel_filter_width","bsdf_samples","light_samples","max_depth","max_diffuse_depth","enable_dof","enable_motion_blur","sample_clamping_value","shadow_terminator_fix","two_stage_output","russian_roulette_threshold","lights_visible_in_camera"});
  int width=get<rdl::Int>(sv,"image_width"),height=get<rdl::Int>(sv,"image_height"),grid=get<rdl::Int>(sv,"pixel_samples");
  need(width>0&&height>0&&size_t(width)*height<=limits.pixels,"Image budget");need(grid>0&&grid<=64,"Sample budget");plan->width=width;plan->height=height;plan->spp=unsigned(grid*grid);
- need(get<rdl::Int>(sv,"sampling_mode")==0,"Adaptive sampling unsupported");
+ int samplingMode=get<rdl::Int>(sv,"sampling_mode");need(samplingMode==0||(samplingMode==2&&allowAdaptive),"Adaptive sampling unsupported");
+ if(samplingMode==2){
+  // The same clamping as MoonRay's RenderContext: at least 2 samples, a maximum no
+  // lower than the minimum, and the target error divided by 10,000.
+  plan->adaptive=true;plan->minSamples=unsigned(std::max(2,get<rdl::Int>(sv,"min_adaptive_samples")));
+  plan->maxSamples=unsigned(std::max(int(plan->minSamples),get<rdl::Int>(sv,"max_adaptive_samples")));
+  plan->targetError=std::max(0.000001f,get<rdl::Float>(sv,"target_adaptive_error")/10000.0f);
+  need(plan->maxSamples<=16384,"Adaptive sample budget");plan->spp=plan->maxSamples;
+ }
  need(!get<rdl::Bool>(sv,"enable_motion_blur")&&!get<rdl::Bool>(sv,"enable_dof"),"Motion/DOF unsupported");
  need(get<rdl::Int>(sv,"bsdf_samples")==1&&get<rdl::Int>(sv,"light_samples")==1,"Primary splitting unsupported");
  int depth=get<rdl::Int>(sv,"max_depth"),diffuse=get<rdl::Int>(sv,"max_diffuse_depth");
@@ -199,7 +210,7 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
  }
  need(plan->bytes<=limits.bytes,"Prepared geometry budget");return plan;
 }
-inline PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar){
- return session.inspectPrepared(frame,[&](const rdl::SceneContext& context,CanonicalView exact){return prepare(context,exact,previous,limits,assetRoot,domain);});
+inline PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false){
+ return session.inspectPrepared(frame,[&](const rdl::SceneContext& context,CanonicalView exact){return prepare(context,exact,previous,limits,assetRoot,domain,allowAdaptive);});
 }
 }
