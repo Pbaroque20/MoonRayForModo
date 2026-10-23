@@ -17,9 +17,12 @@ need not give the same error. When it does not, the target is lowered in
 tenths until the asynchronous renderer's error is at or below XPU's lowest,
 and that render's time is reported as the time to XPU's quality. A CPU-only
 adaptive render checks the host path: its image must agree with the GPU's
-within the device-split gate."""
+within the device-split gate. The GPU makes its passes on the device (the pass
+chain); one render with the passes made on the host instead must give every
+pixel exactly the same samples."""
 import argparse
 import json
+import os
 import statistics
 import subprocess
 from pathlib import Path
@@ -87,12 +90,22 @@ def xpu(runtime, scene, settings, folder, threads, decoder, weights=None):
     return row
 
 
-def probe(build, scene, runtime, out, threads, repeats, mode, settings, seed='-'):
+def probe(build, scene, runtime, out, threads, repeats, mode, settings, seed='-', host_passes=False):
     out.mkdir(parents=True)
     args = [build['exe'], scene, runtime, build['ptx'], scene.parent / 'assets', out, threads, repeats, mode,
             64, 4, 10, seed, '-', settings]
     guard()
-    row = json.loads(call(args, runtime, out, 'async', timeout=1800))
+    if host_passes:  # XPU2_ASYNC_HOST_PASSES: the passes made on the host between the GPU's renders
+        env = environment(runtime, out)
+        env['XPU2_ASYNC_HOST_PASSES'] = '1'
+        r = subprocess.run(list(map(str, args)), cwd=out, env=env, capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=1800, creationflags=subprocess.CREATE_NO_WINDOW)
+        (out / 'async.log').write_text(r.stdout + r.stderr, encoding='utf-8')
+        if r.returncode:
+            raise RuntimeError('async failed: ' + r.stderr[-1400:])
+        row = json.loads(r.stdout)
+    else:
+        row = json.loads(call(args, runtime, out, 'async', timeout=1800))
     guard()
     if row.get('status') != 'passed':
         raise RuntimeError('Asynchronous render failed: ' + str(row))
@@ -180,6 +193,14 @@ def main():
                         matched['mean_samples'], 100 * matched['time_saved']), flush=True)
                 else:
                     print(name, t, 'no target down to %g met XPU quality' % (a.target * STEPS[-1]), flush=True)
+            # The pass chain: passes made on the device give every pixel the samples
+            # passes made on the host do.
+            host = probe(build, scene, runtime, d / 'host-passes', 12, 1, 2, settings, host_passes=True)
+            same = (Path(host['runs'][0]['raw_file']).with_suffix('.counts').read_bytes() ==
+                    Path(native['runs'][0]['raw_file']).with_suffix('.counts').read_bytes())
+            case['chain_matches_host_passes'] = same
+            case['host_passes_seconds'] = host['runs'][0]['sampling_seconds']
+            print(name, 'device passes give the same samples as host passes:', same, flush=True)
             # The host path: a CPU-only adaptive frame agrees with the GPU's.
             cpu = probe(build, scene, runtime, d / 'split-cpu', 12, 1, 0, settings)
             gpu = probe(build, scene, runtime, d / 'split-gpu', 12, 1, 1, settings)
@@ -190,7 +211,8 @@ def main():
                                     'cpu_mean_samples': cpu['runs'][0]['mean_samples'], 'gpu_mean_samples': gpu['runs'][0]['mean_samples'],
                                     'cpu_vs_gpu': between,
                                     'agree': between['max_block_mean'] <= GATES['high_spp_max_8x8_block_mean'] and between['alpha'] <= GATES['alpha_max']}
-            case['all_gates_passed'] = all(v['quality_matched'] is not None for v in case['timing'].values()) and case['device_split']['agree']
+            case['all_gates_passed'] = (all(v['quality_matched'] is not None for v in case['timing'].values()) and
+                                        case['device_split']['agree'] and case['chain_matches_host_passes'])
             save(out / 'report.json', report)
             print(name, 'device split agree', case['device_split']['agree'], 'cpu %.3f s gpu %.3f s' % (
                 case['device_split']['cpu_seconds'], case['device_split']['gpu_seconds']), '-> all gates', case['all_gates_passed'], flush=True)

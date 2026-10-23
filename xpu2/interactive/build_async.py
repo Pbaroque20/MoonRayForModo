@@ -14,7 +14,7 @@ from native_build import build
 from reference_runtime import sha, verify
 
 HERE = Path(__file__).resolve().parent
-HEADERS = ('async_gpu_abi.h', 'async_integrator.h', 'gpu_jobs.h', 'resume_core.h', 'triangle_hit.h',
+HEADERS = ('async_gpu_abi.h', 'async_adaptive_core.h', 'async_integrator.h', 'gpu_jobs.h', 'resume_core.h', 'triangle_hit.h',
            'texture_core.h', 'surface_core.h', 'sample_stream.h', 'path_stage.h')
 FAST_FLAGS = ['--std=c++17', '--gpu-architecture=compute_75', '--fmad=true', '--prec-div=true',
               '--prec-sqrt=true', '--ftz=false']
@@ -24,7 +24,7 @@ def build_all(source, runtime, out):
     source, runtime, out = (Path(p).resolve() for p in (source, runtime, out))
     out.mkdir(parents=True, exist_ok=False)
     verify(runtime, json.loads((HERE / 'reference-lock.json').read_text()))
-    files = list(HERE.glob('*.h')) + [HERE / n for n in ('async_probe.cc', 'async_gpu.cu', 'build_async.py',
+    files = list(HERE.glob('*.h')) + [HERE / n for n in ('async_probe.cc', 'async_gpu.cu', 'async_adaptive.cu', 'build_async.py',
                                                          'gpu_build.py', 'native_build.py')]
     held = {str(p): sha(p) for p in files}
     report = {'status': 'incomplete', 'source_hashes': held}
@@ -34,6 +34,8 @@ def build_all(source, runtime, out):
         (out / 'adaptive').mkdir()
         adaptive, report['cuda_build_adaptive'] = compile_ptx(source, out / 'adaptive', 'async_gpu.cu', HEADERS,
                                                               FAST_FLAGS + ['-DXPU2_ADAPTIVE=1'])
+        # The adaptive pass chain's CUDA kernels, beside the adaptive program.
+        chain, report['cuda_build_chain'] = compile_ptx(source, out / 'adaptive', 'async_adaptive.cu', HEADERS, FAST_FLAGS)
         include = [source / 'toolchain/xpu/optix-dev/include',
                    source / 'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include']
         exe, report['native_build'] = build(source, HERE / 'async_probe.cc', out / 'native',
@@ -41,8 +43,8 @@ def build_all(source, runtime, out):
                                             ['-I' + str(v) for v in include])
         if any(sha(Path(k)) != v for k, v in held.items()):
             raise RuntimeError('Build source drift')
-        report.update(status='passed', exe=str(exe), ptx=str(ptx), ptx_adaptive=str(adaptive),
-                      binary_hashes={'exe': sha(exe), 'ptx': sha(ptx), 'ptx_adaptive': sha(adaptive)})
+        report.update(status='passed', exe=str(exe), ptx=str(ptx), ptx_adaptive=str(adaptive), ptx_chain=str(chain),
+                      binary_hashes={'exe': sha(exe), 'ptx': sha(ptx), 'ptx_adaptive': sha(adaptive), 'ptx_chain': sha(chain)})
     except Exception as error:
         report.update(status='failed', error=str(error))
     (out / 'build.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

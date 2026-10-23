@@ -4,7 +4,8 @@
 //             [cellSize samplesPerChunk windowMs seed sampling override]
 // seed and sampling may be "-" for the scene's own; override is an .rdla read
 // over the scene (such as adaptive sampling settings), or "-". The adaptive GPU
-// program is read from adaptive/ beside the given one.
+// program and the pass chain's kernels are read from adaptive/ beside the given
+// program. XPU2_ASYNC_HOST_PASSES=1 makes adaptive passes on the host instead.
 // mode: 0 CPU only, 1 GPU only, 2 both. Writes run-<i>.rgba (raw float32 RGBA)
 // into output and prints one JSON report.
 #include "async_render.h"
@@ -33,14 +34,17 @@ int main(int argc, char** argv) {
         if (argc > 11) options.windowMs = std::stod(argv[11]);
         if (const char* v = std::getenv("XPU2_ASYNC_NO_RESERVE")) options.reserveFeederCore = std::string(v) != "1";
         if (const char* v = std::getenv("XPU2_ASYNC_TREE_THREADS")) options.treeThreads = unsigned(std::stoul(v));
+        if (const char* v = std::getenv("XPU2_ASYNC_HOST_PASSES")) options.deviceChain = std::string(v) != "1";
 
         std::ifstream file(argv[3], std::ios::binary);
         cpu::need(bool(file), "PTX read");
         const std::string ptx((std::istreambuf_iterator<char>(file)), {});
         // The adaptive program sits beside it, in adaptive/ (build_async.py).
-        std::string adaptivePtx;
+        std::string adaptivePtx, chainPtx;
         if (std::ifstream a{fs::path(argv[3]).parent_path() / "adaptive" / fs::path(argv[3]).filename(), std::ios::binary})
             adaptivePtx.assign(std::istreambuf_iterator<char>(a), {});
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "adaptive" / "async_adaptive.ptx", std::ios::binary})
+            chainPtx.assign(std::istreambuf_iterator<char>(a), {});
 
         auto stamp = Clock::now();
         rdl::SceneContext source;
@@ -71,7 +75,9 @@ int main(int argc, char** argv) {
         stamp = Clock::now();
         std::unique_ptr<async::GpuLane> gpu;
         if (mode != 0) {
-            gpu = std::make_unique<async::GpuLane>(ptx, adaptivePtx);
+            async::GpuOptions gpuOptions;
+            if (const char* v = std::getenv("XPU2_ASYNC_PROFILE_CHAIN")) gpuOptions.profileChain = std::string(v) == "1";
+            gpu = std::make_unique<async::GpuLane>(ptx, adaptivePtx, chainPtx, gpuOptions);
             gpu->prepare(plan);
         }
         const double gpuSeconds = since(stamp);
@@ -139,6 +145,13 @@ int main(int argc, char** argv) {
             row["mean_samples"] = r.meanSamples;
             row["tree_seconds"] = r.treeSeconds;
             row["error_seconds"] = r.errorSeconds;
+            row["chain_stalls"] = r.chainStalls;
+            Json::Value stages(Json::arrayValue);
+            for (double v : r.chainStages) stages.append(v);
+            row["chain_stages"] = stages;
+            Json::Value renders(Json::arrayValue);
+            for (double v : r.chainRenders) renders.append(v);
+            row["chain_renders"] = renders;
             Json::Value passes(Json::arrayValue);
             for (const auto& t : r.passes) {
                 Json::Value p(Json::arrayValue);

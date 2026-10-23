@@ -51,12 +51,21 @@ trees still find unconverged, filled to their bounding rectangle in each 8×8 ti
 - **Fresh trees for every pass.** Each pass's masks come from trees that have seen every pass before it, as each of
   MoonRay's tiles reads trees its region rebuilt on finishing the pass before. That makes a frame a chain of about 30
   dependent passes, so it is bound by the chain's latency, not by sample throughput.
-- **The chain is kept short.** The GPU works out every pixel's error itself, in a launch queued behind the pass, and
-  only the errors (four bytes a pixel) cross to the host. The 16 region trees rebuild at once on a small pool, from a
-  summed-area table, with split points found by bisection. Each pixel's sample-index base is made on the device. A
-  pass goes out as soon as it exists, whole. A pass with no samples ends the frame, since nothing can change after it.
-- **Who samples.** With a GPU, the GPU takes every sample of an adaptive frame and the CPU rebuilds the trees: a CPU
-  chunk would sit on the chain. Without one, the CPU lane samples and the host works the errors out from its film.
+- **The chain runs on the GPU** (`async_adaptive.cu`, `GpuLane::launchChain`). The host queues a whole frame at once:
+  the uniform stage as one render, then for every adaptive pass four CUDA kernels and an OptiX render, in stream order.
+  The kernels work out every pixel's error from the device film; rebuild the region trees, one block a region, from a
+  summed-area table, a level of nodes at a time, with split points found by bisection; give every tile its mask and
+  every active pixel its sample-index base; and list the active tiles in the work grid's cell order. The render then
+  runs those tiles' pixels. Once the trees converge, or a pass comes out empty, the rest of the chain does nothing.
+- **The same trees on both sides.** The host and the GPU share the tree arithmetic (`async_adaptive_core.h`), with
+  every product and sum the CUDA compiler could fuse into one multiply-add written out rounded, so from the same
+  errors both build the same trees. Passes made on the host (`RenderOptions::deviceChain` false) give every pixel
+  exactly the samples the chain does; the adaptive benchmark checks this.
+- **Texture misses.** A chain render that parks a sample stalls the chain: its later steps do nothing, the host lands
+  the tiles and reruns the parked samples by ordinary launches, then queues the chain again after that step. It
+  happens on a session's first frame, which loads its fine-detail tiles.
+- **Who samples.** With a GPU, the GPU takes every sample of an adaptive frame: a CPU chunk would sit on the chain.
+  Without one, the CPU lane samples and the host works the errors out from its film and rebuilds the trees on a pool.
 
 The same target need not give the same error as MoonRay's: the trees are MoonRay's, but the estimate reads XPU2's
 own samples (Sobol camera and first-bounce dimensions, against MoonRay's PMJ02 and Poisson-disk tables), which split
@@ -79,9 +88,9 @@ the broker, every pixel given exactly its samples, the cellular rules, the check
 
 ## Not done yet
 
-- **The adaptive chain on the GPU alone.** An adaptive frame spends most of its time in about 30 round trips between
-  the GPU and the host's trees, about a millisecond each. Building the trees and the next pass's masks on the GPU would
-  let the host queue the whole chain at once.
+- **The adaptive chain as one CUDA graph.** A small adaptive pass now costs about 0.3 ms on the GPU, most of it the
+  latency of one sample's path and of four bookkeeping kernels. A captured graph would trim the launch gaps; the
+  passes themselves stay in order, as MoonRay's trees require.
 
 - **Interactive frame mode** (§15): deadlines, progressive publication of the merged film, reprojection, denoising
   and display. The renderer runs in throughput mode (THR), the mode the success gate (VER-11) is measured in.

@@ -1,6 +1,7 @@
 // Data shared by the asynchronous GPU lane's host side (async_gpu.h) and its
 // OptiX program (async_gpu.cu).
 #pragma once
+#include "async_adaptive_core.h"
 #include "async_integrator.h"
 #if !defined(__CUDACC_RTC__)
 #include <optix_types.h>
@@ -33,10 +34,48 @@ struct DeviceState {
     U32 errors;
     U32 pad;
     U32 passDone[MaxPasses];  // adaptive frames: samples completed per pass
+
+    // The adaptive pass chain (async_adaptive.cu). chainStop: the trees have
+    // converged or a pass came out empty; chainStall: a chain render parked a
+    // sample, so the chain waits for the host. chainPass is the pass the chain
+    // made last, which only its own render runs.
+    U32 chainStop, chainStall, chainPass, activeTiles;
+    U32 chainPasses;     // passes the chain made, an empty last one too
+    U32 treeUpdates;
+    U64L chainClaimed;   // the chain render's claim counter
+    U64L chainSamples;   // samples the chain planned
+};
+constexpr U32 NoPass = ~0u;
+
+// What the chain's CUDA kernels work on, passed by value to each.
+struct ChainArgs {
+    DeviceState* state;
+    const double* sums;
+    const double* odd;
+    const U32* counts;
+    float* errors;
+    const adaptive::IBox* regions;  // each region's bounds, with their overlap
+    adaptive::Node* nodes;          // each region's tree at nodeOffset[r], nodeCapacity[r] nodes
+    const U32* nodeOffset;
+    const U32* nodeCapacity;
+    double* sat;                    // each region's summed-area table at satOffset[r]
+    const U64L* satOffset;
+    U32* regionDone;
+    U64L* tileMask;                 // every tile's active pixels for the pass being made
+    const U64L* inImage;            // every tile's pixels inside the image
+    const U32* tileOrder;           // the tiles cell by cell, as the work grid holds them
+    U32* activeTiles;               // the pass's tiles with active pixels, in that order
+    U64L* activeMasks;
+    U32* planned;                   // samples each pixel will have once the pass has run
+    U32* base;                      // each active pixel's first sample index in the pass
+    U32 width, height, tiles, tilesX, regionCount;
+    float target;
+    adaptive::Layout layout;
 };
 
 // Launch parameters. mode 0 renders; mode 1 applies tile-cache updates; mode 2
-// works out every pixel's adaptive error from the film.
+// works out every pixel's adaptive error from the film; mode 3 renders a pass
+// the chain made on the device.
 struct LaunchParams {
     const mixed::Config* config;
     const surface::Lambert* materials;
@@ -77,6 +116,12 @@ struct LaunchParams {
     const U32* passBase[PassSlots];
     double* odd;
     float* errors;
+
+    // mode 3: the chain's pass (its active tiles, masks and bases) and its size.
+    const U32* activeTiles;
+    const U64L* activeMasks;
+    const U32* chainBase;
+    U32 chainPass, chainSize;
 };
 
 }  // namespace xpu2::interactive::async

@@ -31,6 +31,7 @@ struct Driver {
  API(cuMemAlloc_v2) API(cuMemFree_v2) API(cuMemAllocHost_v2) API(cuMemFreeHost) API(cuMemcpyHtoDAsync_v2) API(cuMemcpyDtoHAsync_v2)
  API(cuStreamCreate) API(cuStreamDestroy_v2) API(cuStreamWaitEvent) API(cuEventCreate) API(cuEventRecord) API(cuEventQuery) API(cuEventDestroy_v2)
  API(cuMemsetD8Async) API(cuMemsetD32Async) API(cuDeviceGetAttribute) API(cuEventElapsedTime) API(cuMemcpyDtoDAsync_v2)
+ API(cuModuleLoadData) API(cuModuleGetFunction) API(cuModuleUnload) API(cuLaunchKernel)
 #undef API
  static void check(CUresult e){if(e!=CUDA_SUCCESS)throw std::runtime_error("CUDA error "+std::to_string(e));}
  void thread()const{cpu::need(std::this_thread::get_id()==owner,"GPU context requires feeder owner");}
@@ -41,6 +42,7 @@ struct Driver {
  LOAD(cuMemAlloc_v2) LOAD(cuMemFree_v2) LOAD(cuMemAllocHost_v2) LOAD(cuMemFreeHost) LOAD(cuMemcpyHtoDAsync_v2) LOAD(cuMemcpyDtoHAsync_v2)
  LOAD(cuStreamCreate) LOAD(cuStreamDestroy_v2) LOAD(cuStreamWaitEvent) LOAD(cuEventCreate) LOAD(cuEventRecord) LOAD(cuEventQuery) LOAD(cuEventDestroy_v2)
  LOAD(cuMemsetD8Async) LOAD(cuMemsetD32Async) LOAD(cuDeviceGetAttribute) LOAD(cuEventElapsedTime) LOAD(cuMemcpyDtoDAsync_v2)
+ LOAD(cuModuleLoadData) LOAD(cuModuleGetFunction) LOAD(cuModuleUnload) LOAD(cuLaunchKernel)
 #undef LOAD
   check(cuInit_p(0));CUdevice dev;check(cuDeviceGet_p(&dev,0));check(cuCtxGetCurrent_p(&previous));check(cuCtxCreate_v2_p(&context,0,dev));startupSeconds=startLap(start);
  }catch(...){if(context)cuCtxDestroy_v2_p(context);if(library)FreeLibrary(library);throw;}}

@@ -102,7 +102,7 @@ struct GpuBackend {
     }
 };
 
-static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries, U32 pass) {
+static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries, U32 pass, bool chain = false) {
     Radiance r;
     const SampleStatus status = integrate(*params.config, pixel, index, backend, r);
     if (status == SampleStatus::Done) {
@@ -128,6 +128,7 @@ static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries,
         // Park it; the host sized this launch so the queue cannot overflow.
         const U64L at = atomicAdd(&params.state->parkedTail, 1ull);
         params.parked[at % params.parkedCapacity] = {pixel, index, tries, pass};
+        if (chain) params.state->chainStall = 1;  // the chain waits for the host to land its tile
     } else {
         atomicAdd(&params.state->errors, 1u);
     }
@@ -151,6 +152,28 @@ static __device__ void errors() {
 }
 #endif
 
+#if XPU2_ADAPTIVE
+// A pass the chain made on the device (async_adaptive.cu). It runs only if its
+// own compaction ran: after a stall or once the frame has converged, the chain's
+// later renders find another pass there and do nothing. Threads claim items one
+// at a time, as in every render, so slow samples do not hold up a thread's share.
+static __device__ void chainRender(GpuBackend& backend) {
+    DeviceState* s = params.state;
+    if (*reinterpret_cast<volatile U32*>(&s->chainPass) != params.chainPass) return;
+    const U64L perTile = U64L(params.chainSize) * TilePixels, items = U64L(s->activeTiles) * perTile;
+    const auto& c = *params.config;
+    for (;;) {
+        const U64L item = atomicAdd(&s->chainClaimed, 1ull);
+        if (item >= items) break;
+        const U32 t = U32(item / perTile), rest = U32(item % perTile);
+        const U32 sample = rest / TilePixels, position = rest % TilePixels;
+        if (!(params.activeMasks[t] >> position & 1)) continue;
+        const U32 pixel = tilePixel(params.activeTiles[t], position, c.width, c.height);
+        run(backend, pixel, params.chainBase[pixel] + sample, 0, params.chainPass, true);
+    }
+}
+#endif
+
 extern "C" __global__ void __raygen__async() {
     if (params.mode == 1) {
         commit();
@@ -163,6 +186,12 @@ extern "C" __global__ void __raygen__async() {
     }
 #endif
     GpuBackend backend;
+#if XPU2_ADAPTIVE
+    if (params.mode == 3) {
+        chainRender(backend);
+        return;
+    }
+#endif
     for (;;) {  // parked samples first: they started before anything else here
         const U64L k = params.parkedBegin + atomicAdd(&params.state->unparked[params.slot], 1u);
         if (k >= params.parkedEnd) break;

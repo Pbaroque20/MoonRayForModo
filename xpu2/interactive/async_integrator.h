@@ -114,11 +114,29 @@ constexpr U32 MaxPasses = 160, PassSlots = 4, PassShift = 16;
 X2_HD inline U32 chunkPass(const Chunk& c) { return c.first >> PassShift; }
 X2_HD inline U32 chunkOffset(const Chunk& c) { return c.first & ((1u << PassShift) - 1); }
 
+// A rounded product and sum that the CUDA compiler may not fuse into one
+// multiply-add, so the host (built without contraction) and the GPU work a value
+// out alike.
+X2_HD inline float mulRn(float a, float b) {
+#if defined(__CUDA_ARCH__)
+    return __fmul_rn(a, b);
+#else
+    return a * b;
+#endif
+}
+X2_HD inline float addRn(float a, float b) {
+#if defined(__CUDA_ARCH__)
+    return __fadd_rn(a, b);
+#else
+    return a + b;
+#endif
+}
+
 // One pixel's adaptive error from its sums, its odd-index sums and its sample
-// count, on either device (MoonRay's estimatePixelErrorInternal): the luma of the
-// difference between the even and odd half-images, over the square root of the
-// pixel's luma, plus the alpha difference. ErrorNotReady until both halves have
-// a sample.
+// count, on either device and alike on both (MoonRay's
+// estimatePixelErrorInternal): the luma of the difference between the even and
+// odd half-images, over the square root of the pixel's luma, plus the alpha
+// difference. ErrorNotReady until both halves have a sample.
 constexpr float ErrorNotReady = -1.f;
 X2_HD inline float pixelError(const double total[4], const double odd[4], U32 samples) {
     const float n = float(samples), nOdd = float(samples / 2), nEven = n - nOdd;
@@ -127,13 +145,15 @@ X2_HD inline float pixelError(const double total[4], const double odd[4], U32 sa
     for (int c = 0; c < 4; ++c) {
         const float t = float(total[c]), o = float(odd[c]);
         if (t != t || o != o) return 0.f;
-        diff[c] = fabsf((t * nOdd - o * n) / (nOdd * nEven));
+        diff[c] = fabsf(addRn(mulRn(t, nOdd), -mulRn(o, n)) / mulRn(nOdd, nEven));
         if (c < 3) avg[c] = t / n;
     }
-    const float lumDiff = 0.299f * diff[0] + 0.587f * diff[1] + 0.114f * diff[2];
-    const float lumAvg = 0.299f * avg[0] + 0.587f * avg[1] + 0.114f * avg[2];
+    auto luma = [](const float v[3]) {
+        return addRn(addRn(mulRn(0.299f, v[0]), mulRn(0.587f, v[1])), mulRn(0.114f, v[2]));
+    };
+    const float lumDiff = luma(diff), lumAvg = luma(avg);
     if (lumAvg <= 0) return diff[3];
-    return lumDiff / sqrtf(lumAvg) + diff[3];
+    return addRn(lumDiff / sqrtf(lumAvg), diff[3]);
 }
 
 // Pixel of the i-th position of a tile, or ~0u when it lies outside the image.

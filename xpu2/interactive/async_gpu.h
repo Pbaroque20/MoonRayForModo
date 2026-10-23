@@ -12,6 +12,7 @@
 // parks in the GPU's bounded queue, its tile is requested once, and a later
 // launch runs it again on the GPU after the tile has landed (MEM-04, MEM-05).
 #pragma once
+#include "async_adaptive.h"
 #include "async_gpu_abi.h"
 #include "gpu_lane.h"
 #include <deque>
@@ -20,6 +21,7 @@
 namespace xpu2::interactive::async {
 
 struct GpuOptions {
+    bool profileChain = false;         // time the pass chain's stages on the device (a diagnostic)
     size_t fineBudget = 512ull << 20;  // VRAM for fine-detail tiles
     U32 launchThreads = 1u << 16;      // fixed grid size of every render launch
     U32 maxChunksPerLaunch = 16384;
@@ -48,8 +50,11 @@ public:
     gpu::Driver driver;
 
     // ptx renders uniform frames; adaptivePtx, the same source built with
-    // XPU2_ADAPTIVE, renders adaptive ones (none: adaptive frames are refused).
-    explicit GpuLane(const std::string& ptx, const std::string& adaptivePtx = {}, GpuOptions options = {})
+    // XPU2_ADAPTIVE, renders adaptive ones (none: adaptive frames are refused);
+    // chainPtx holds the adaptive pass chain's CUDA kernels (async_adaptive.cu;
+    // none: adaptive passes are made on the host).
+    explicit GpuLane(const std::string& ptx, const std::string& adaptivePtx = {}, const std::string& chainPtx = {},
+                     GpuOptions options = {})
         : options_(options) {
         driver.deviceCap = 20ull << 30;
         driver.pinnedCap = 2ull << 30;
@@ -60,6 +65,13 @@ public:
             programs_[0].create(*this, ptx);
             if (!adaptivePtx.empty()) programs_[1].create(*this, adaptivePtx);
             program_ = &programs_[0];
+            if (!chainPtx.empty()) {
+                gpu::Driver::check(driver.cuModuleLoadData_p(&chain_.module, chainPtx.c_str()));
+                gpu::Driver::check(driver.cuModuleGetFunction_p(&chain_.errors, chain_.module, "chainErrors"));
+                gpu::Driver::check(driver.cuModuleGetFunction_p(&chain_.trees, chain_.module, "chainTrees"));
+                gpu::Driver::check(driver.cuModuleGetFunction_p(&chain_.masks, chain_.module, "chainMasks"));
+                gpu::Driver::check(driver.cuModuleGetFunction_p(&chain_.compact, chain_.module, "chainCompact"));
+            }
             gpu::Driver::check(driver.cuStreamCreate_p(&stream_, CU_STREAM_NON_BLOCKING));
 
             for (auto& p : params_) {
@@ -235,17 +247,7 @@ public:
                        options_.launchThreads, 1, 1));
         gpu::Driver::check(driver.cuEventRecord_p(r.ended->value, stream_));
 
-        // Read back what the host needs, then clear the touch marks.
-        copyOut(r.state, state_, sizeof(DeviceState));
-        if (fine_.tiles) {
-            ensure(r.requests, fine_.requestBytes());
-            ensure(r.touched, fine_.tiles + 1);
-            copyOut(r.requests, fine_.requests, fine_.requestBytes());
-            copyOut(r.touched, fine_.touched, fine_.tiles + 1);
-            gpu::Driver::check(driver.cuMemsetD8Async_p(fine_.touched->pointer, 0, fine_.tiles + 1, stream_));
-        }
-        if (!r.done) r.done = std::make_shared<gpu::Event>(driver);
-        gpu::Driver::check(driver.cuEventRecord_p(r.done->value, stream_));
+        readBack(r);
         slot.done = r.done;
         inFlight_.push_back({launches_, published_, count, parkedEnd - parkedBegin, items, gpu::StartClock::now(), &r});
         published_ += count;
@@ -269,6 +271,17 @@ public:
         out.deviceSeconds = ms / 1000.0;
         parkedTail_ = state.parkedTail;
         if (adaptive_) std::copy(state.passDone, state.passDone + MaxPasses, passDone_.begin());
+        if (f.chain) {
+            chainState_ = state;
+            ++chainsCollected_;
+            // Seconds in each stage of the chain, summed over its steps.
+            for (size_t i = 1; i < chain_.marks.size(); ++i) {
+                float stage = 0;
+                gpu::Driver::check(driver.cuEventElapsedTime_p(&stage, chain_.marks[i - 1]->value, chain_.marks[i]->value));
+                chainStages_[(i - 1) % 4] += stage / 1000.0;
+                if ((i - 1) % 4 == 3) chainRenders_.push_back(stage / 1000.0);
+            }
+        }
         // Samples parked by this launch may run once their tiles are committed,
         // which the next launch does before it starts (commitTiles).
         if (fine_.tiles) {
@@ -291,6 +304,7 @@ public:
         copyOut(scene_.hostSums, scene_.sums, pixels * 4 * sizeof(double));
         copyOut(scene_.hostCounts, scene_.counts, pixels * sizeof(U32));
         if (adaptive_) copyOut(scene_.hostOdd, scene_.odd, pixels * 4 * sizeof(double));
+        if (chainsLaunched_) copyOut(chain_.hostPlanned, chain_.planned, pixels * sizeof(U32));
         gpu::Driver::check(driver.cuEventRecord_p(scene_.filmDone->value, stream_));
     }
     bool filmReady() { return scene_.filmDone->ready(); }
@@ -329,6 +343,177 @@ public:
     }
     // Launches queued so far, render or otherwise.
     U64 launchCount() const { return launches_; }
+
+    // The adaptive pass chain (async_adaptive.cu): a frame's passes queued at
+    // once, each made on the device from the trees of the passes before it.
+    struct ChainStep {
+        U32 pass, size;  // the pass's index in the schedule and its samples a pixel
+        bool uniform;    // every pixel, no trees: the passes below the minimum sample count
+    };
+    bool hasChain() const { return chain_.module != nullptr; }
+    // Sets up a frame's chain: the region trees' bounds and room, the tiles in the
+    // work grid's cell order, and empty planned counts. After begin().
+    void beginChain(const adaptive::Regions& regions, const std::vector<std::uint64_t>& inImage,
+                    const std::vector<U32>& tileOrder) {
+        cpu::need(hasChain() && programs_[1].pipeline, "No GPU pass chain");
+        const size_t pixels = size_t(plan_->width) * plan_->height, tiles = inImage.size(), n = regions.count();
+        std::vector<adaptive::IBox> bounds(n);
+        std::vector<U32> nodeOffset(n), nodeCapacity(n);
+        std::vector<U64L> satOffset(n);
+        U64 nodes = 0, sat = 0;
+        for (size_t r = 0; r < n; ++r) {
+            const auto b = regions.tree(r).root();
+            bounds[r] = b;
+            nodeOffset[r] = U32(nodes);
+            nodeCapacity[r] = U32(std::max(1, adaptive::maxNodes(b)));
+            satOffset[r] = sat;
+            nodes += nodeCapacity[r];
+            sat += U64(b.x1 - b.x0 + 1) * U64(b.y1 - b.y0 + 1);
+        }
+        auto fit = [&](B& b, size_t bytes) {
+            if (!b || b->bytes < bytes) b = device(std::max<size_t>(bytes, 16));
+        };
+        fit(chain_.regions, n * sizeof(adaptive::IBox));
+        fit(chain_.nodes, nodes * sizeof(adaptive::Node));
+        fit(chain_.nodeOffset, n * sizeof(U32));
+        fit(chain_.nodeCapacity, n * sizeof(U32));
+        fit(chain_.sat, sat * sizeof(double));
+        fit(chain_.satOffset, n * sizeof(U64L));
+        fit(chain_.regionDone, n * sizeof(U32));
+        fit(chain_.tileMask, tiles * sizeof(U64L));
+        fit(chain_.inImage, tiles * sizeof(U64L));
+        fit(chain_.tileOrder, tiles * sizeof(U32));
+        fit(chain_.activeTiles, tiles * sizeof(U32));
+        fit(chain_.activeMasks, tiles * sizeof(U64L));
+        fit(chain_.planned, pixels * sizeof(U32));
+        fit(chain_.base, pixels * sizeof(U32));
+        fit(chain_.params, MaxPasses * sizeof(LaunchParams));
+        if (!chain_.hostPlanned || chain_.hostPlanned->bytes < pixels * sizeof(U32)) chain_.hostPlanned = pinned(pixels * sizeof(U32));
+        if (!chain_.params_staging) chain_.params_staging = pinned(MaxPasses * sizeof(LaunchParams));
+        // The frame's small tables, staged together; the last frame's chain has
+        // completed, so its staging is free.
+        const size_t layout = n * (sizeof(adaptive::IBox) + 2 * sizeof(U32) + sizeof(U64L)) + tiles * (sizeof(U64L) + sizeof(U32));
+        if (!chain_.staging || chain_.staging->bytes < layout) chain_.staging = pinned(layout);
+        char* at = static_cast<char*>(chain_.staging->host());
+        auto stage = [&](const B& to, const void* from, size_t bytes) {
+            std::memcpy(at, from, bytes);
+            copyIn(to, at, bytes);
+            at += bytes;
+        };
+        stage(chain_.regions, bounds.data(), n * sizeof(adaptive::IBox));
+        stage(chain_.nodeOffset, nodeOffset.data(), n * sizeof(U32));
+        stage(chain_.nodeCapacity, nodeCapacity.data(), n * sizeof(U32));
+        stage(chain_.satOffset, satOffset.data(), n * sizeof(U64L));
+        stage(chain_.inImage, inImage.data(), tiles * sizeof(U64L));
+        stage(chain_.tileOrder, tileOrder.data(), tiles * sizeof(U32));
+        memset32(chain_.planned->pointer, 0, pixels);
+        memset32(chain_.regionDone->pointer, 0, n);
+        memset32(state_->pointer + offsetof(DeviceState, chainPass), NoPass, 1);
+
+        ChainArgs& a = chain_.args;
+        a = {};
+        a.state = reinterpret_cast<DeviceState*>(state_->pointer);
+        a.sums = reinterpret_cast<const double*>(scene_.sums->pointer);
+        a.odd = reinterpret_cast<const double*>(scene_.odd->pointer);
+        a.counts = reinterpret_cast<const U32*>(scene_.counts->pointer);
+        a.errors = reinterpret_cast<float*>(scene_.errors->pointer);
+        a.regions = reinterpret_cast<const adaptive::IBox*>(chain_.regions->pointer);
+        a.nodes = reinterpret_cast<adaptive::Node*>(chain_.nodes->pointer);
+        a.nodeOffset = reinterpret_cast<const U32*>(chain_.nodeOffset->pointer);
+        a.nodeCapacity = reinterpret_cast<const U32*>(chain_.nodeCapacity->pointer);
+        a.sat = reinterpret_cast<double*>(chain_.sat->pointer);
+        a.satOffset = reinterpret_cast<const U64L*>(chain_.satOffset->pointer);
+        a.regionDone = reinterpret_cast<U32*>(chain_.regionDone->pointer);
+        a.tileMask = reinterpret_cast<U64L*>(chain_.tileMask->pointer);
+        a.inImage = reinterpret_cast<const U64L*>(chain_.inImage->pointer);
+        a.tileOrder = reinterpret_cast<const U32*>(chain_.tileOrder->pointer);
+        a.activeTiles = reinterpret_cast<U32*>(chain_.activeTiles->pointer);
+        a.activeMasks = reinterpret_cast<U64L*>(chain_.activeMasks->pointer);
+        a.planned = reinterpret_cast<U32*>(chain_.planned->pointer);
+        a.base = reinterpret_cast<U32*>(chain_.base->pointer);
+        a.width = plan_->width;
+        a.height = plan_->height;
+        a.tiles = U32(tiles);
+        a.tilesX = (plan_->width + TileSize - 1) / TileSize;
+        a.regionCount = U32(n);
+        a.target = regions.target();
+        a.layout = regions.layout();
+        chain_.maxStep = 0;
+        for (double& s : chainStages_) s = 0;
+        chainRenders_.clear();
+        chainsLaunched_ = 0;
+        chainsCollected_ = 0;
+        chainState_ = {};
+    }
+    // Queues steps of the chain, then one readback: the whole lot is one flight.
+    // A step's render that parks a sample stalls the chain; the host lands the
+    // tiles, reruns the parked samples by ordinary launches, then resumes the chain
+    // after that step.
+    bool launchChain(const std::vector<ChainStep>& steps) {
+        cpu::need(ready() && !steps.empty() && steps.size() <= MaxPasses, "GPU chain backpressure");
+        commitTiles();  // tiles asked for so far land first
+        U64 most = 0;  // the most samples one step could park; a stall stops the chain after it
+        for (const auto& s : steps) most = std::max<U64>(most, U64(s.size) * TilePixels * chain_.args.tiles);
+        cpu::need(parkedBound() - parkedIssued_ + most <= parkedCapacity_, "Parked-sample queue would overflow");
+        memset32(state_->pointer + offsetof(DeviceState, chainStall), 0, 1);
+        auto* staged = static_cast<LaunchParams*>(chain_.params_staging->host());
+        for (size_t k = 0; k < steps.size(); ++k) {
+            LaunchParams p = baseParams();
+            p.mode = 3;
+            p.chainPass = steps[k].pass;
+            p.chainSize = steps[k].size;
+            p.activeTiles = reinterpret_cast<const U32*>(chain_.activeTiles->pointer);
+            p.activeMasks = reinterpret_cast<const U64L*>(chain_.activeMasks->pointer);
+            p.chainBase = reinterpret_cast<const U32*>(chain_.base->pointer);
+            staged[k] = p;
+        }
+        copyIn(chain_.params, staged, steps.size() * sizeof(LaunchParams));
+        auto& r = readbacks_[launches_ % readbacks_.size()];
+        if (!r.begun) {
+            r.begun = std::make_shared<TimingEvent>(driver);
+            r.ended = std::make_shared<TimingEvent>(driver);
+        }
+        const U32 pixels = plan_->width * plan_->height;
+        gpu::Driver::check(driver.cuEventRecord_p(r.begun->value, stream_));
+        // With profiling, an event after each stage: errors, trees, masks with
+        // compaction, render.
+        auto mark = [&] {
+            if (!options_.profileChain) return;
+            chain_.marks.push_back(std::make_shared<TimingEvent>(driver));
+            gpu::Driver::check(driver.cuEventRecord_p(chain_.marks.back()->value, stream_));
+        };
+        chain_.marks.clear();
+        mark();
+        for (size_t k = 0; k < steps.size(); ++k) {
+            const auto& s = steps[k];
+            if (!s.uniform) kernel(chain_.errors, (pixels + 255) / 256, 256);
+            mark();
+            if (!s.uniform) kernel(chain_.trees, chain_.args.regionCount, 512);
+            mark();
+            U32 uniform = s.uniform ? 1u : 0u, size = s.size, pass = s.pass;
+            kernel(chain_.masks, (chain_.args.tiles + 255) / 256, 256, uniform, size);
+            kernel(chain_.compact, 1, 1024, pass, size);
+            mark();
+            ox(optixLaunch(program_->pipeline, stream_, chain_.params->pointer + k * sizeof(LaunchParams),
+                           sizeof(LaunchParams), &program_->sbt, options_.launchThreads, 1, 1));
+            mark();
+        }
+        gpu::Driver::check(driver.cuEventRecord_p(r.ended->value, stream_));
+        readBack(r);
+        inFlight_.push_back({launches_, published_, 0, 0, most, gpu::StartClock::now(), &r, true});
+        ++launches_;
+        ++chainsLaunched_;
+        return true;
+    }
+    // With GpuOptions::profileChain: the frame's seconds in the chain's errors,
+    // trees, masks (with compaction) and renders.
+    const double* chainStages() const { return chainStages_; }
+    const std::vector<double>& chainRenders() const { return chainRenders_; }  // each step's render
+    // Chains collected so far this frame, and the device's state after the last.
+    U64 chainsCollected() const { return chainsCollected_; }
+    const DeviceState& chainState() const { return chainState_; }
+    // Each pixel's planned samples after the frame's chain, once the film has landed.
+    const U32* chainPlanned() const { return static_cast<const U32*>(chain_.hostPlanned->host()); }
     // Samples each pass has completed on the GPU, as of the last collected launch.
     const std::vector<U32>& passDone() const { return passDone_; }
 
@@ -419,7 +604,37 @@ private:
         U64 parked, mayPark;
         gpu::StartClock::time_point started;
         Readback* readback;
+        bool chain = false;
     };
+    // The pass chain's kernels and buffers (beginChain).
+    struct Chain {
+        CUmodule module = nullptr;
+        CUfunction errors = nullptr, trees = nullptr, masks = nullptr, compact = nullptr;
+        B regions, nodes, nodeOffset, nodeCapacity, sat, satOffset, regionDone, tileMask, inImage, tileOrder,
+            activeTiles, activeMasks, planned, base, params, hostPlanned, params_staging, staging;
+        ChainArgs args{};
+        U32 maxStep = 0;
+        std::vector<std::shared_ptr<TimingEvent>> marks;
+    };
+    // Queues one of the chain's CUDA kernels with the chain's arguments first.
+    template <class... A>
+    void kernel(CUfunction f, U32 blocks, U32 threads, A&... extra) {
+        void* args[] = {&chain_.args, &extra...};
+        gpu::Driver::check(driver.cuLaunchKernel_p(f, blocks, 1, 1, threads, 1, 1, 0, stream_, args, nullptr));
+    }
+    // Reads back what the host needs after a launch, then clears the touch marks.
+    void readBack(Readback& r) {
+        copyOut(r.state, state_, sizeof(DeviceState));
+        if (fine_.tiles) {
+            ensure(r.requests, fine_.requestBytes());
+            ensure(r.touched, fine_.tiles + 1);
+            copyOut(r.requests, fine_.requests, fine_.requestBytes());
+            copyOut(r.touched, fine_.touched, fine_.tiles + 1);
+            gpu::Driver::check(driver.cuMemsetD8Async_p(fine_.touched->pointer, 0, fine_.tiles + 1, stream_));
+        }
+        if (!r.done) r.done = std::make_shared<gpu::Event>(driver);
+        gpu::Driver::check(driver.cuEventRecord_p(r.done->value, stream_));
+    }
     struct Scene {
         std::vector<B> keep;
         U64 traversable = 0;
@@ -724,6 +939,8 @@ private:
         parked_.reset();
         if (stream_) driver.cuStreamDestroy_v2_p(stream_);
         stream_ = nullptr;
+        if (chain_.module) driver.cuModuleUnload_p(chain_.module);
+        chain_ = {};
         for (auto& p : programs_) p.destroy();
         if (optix_) optixDeviceContextDestroy(optix_);
         optix_ = nullptr;
@@ -733,6 +950,11 @@ private:
     OptixDeviceContext optix_ = nullptr;
     Program programs_[2];  // uniform, adaptive
     Program* program_ = &programs_[0];
+    Chain chain_;
+    DeviceState chainState_{};
+    double chainStages_[4] = {};
+    std::vector<double> chainRenders_;
+    U64 chainsLaunched_ = 0, chainsCollected_ = 0;
     CUstream stream_ = nullptr;
     B ring_, state_, parked_;
     std::array<ParamSlot, 8> params_;

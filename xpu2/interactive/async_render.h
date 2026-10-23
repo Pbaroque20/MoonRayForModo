@@ -30,6 +30,9 @@ struct RenderOptions {
     // reserves cores for the coordinator and feeder): it polls without sleeping.
     bool reserveFeederCore = true;
     unsigned treeThreads = ~0u;  // adaptive frames: pool threads besides the feeder for the error trees (~0u: one per region)
+    // Adaptive frames with a GPU: make every pass on the device (the pass chain),
+    // or, false, on the host between the GPU's passes.
+    bool deviceChain = true;
 };
 
 // When things happened in a frame, in seconds from its start (TEL-01).
@@ -65,6 +68,9 @@ struct RenderResult {
     U32 adaptivePasses = 0, treeUpdates = 0;
     double meanSamples = 0;
     double treeSeconds = 0, errorSeconds = 0;  // rebuilding the trees; from asking for errors to having them
+    U32 chainStalls = 0;  // times the GPU's pass chain waited for texture tiles
+    double chainStages[4] = {};  // profiled chains: seconds in errors, trees, masks, renders
+    std::vector<double> chainRenders;  // profiled chains: each step's render
     std::vector<PassTrace> passes;
     std::vector<LaunchTrace> launchTrace;
     double cpuBusySeconds = 0, cpuSlowestChunk = 0, cpuFirstClaim = 0, cpuLastClaim = 0;
@@ -177,7 +183,8 @@ public:
             const unsigned trees = o.treeThreads != ~0u ? o.treeThreads : std::max(1u, std::min(o.threads, 16u) - 1);
             if (!pool_ || pool_->size() != trees) pool_ = std::make_unique<Pool>(trees);
             state.start = Clock::now();
-            state.generateReady(grid, useGpu ? gpu_ : nullptr);
+            if (useGpu && o.deviceChain && gpu_->hasChain()) state.startChain(*gpu_, tileOrder(gridOptions.cellSize));
+            else state.generateReady(grid, useGpu ? gpu_ : nullptr);
         }
 
         // The feeder runs above the CPU lane's workers, so a busy CPU never starves
@@ -288,7 +295,14 @@ public:
                 }
             }
             if (cpuLane.counters.failures.load()) failure = "CPU sample failure; whole epoch must use fallback";
-            if (adaptive) state.advance(grid, film, useGpu ? gpu_ : nullptr, *pool_);
+            if (adaptive) {
+                const U64 before = useGpu ? gpu_->launchCount() : 0;
+                state.advance(grid, film, useGpu ? gpu_ : nullptr, *pool_);
+                if (state.chain && gpu_->launchCount() > before) {  // the pass chain went out: one flight
+                    if (result.timeline.firstLaunch < 0) result.timeline.firstLaunch = at();
+                    result.launchTrace.push_back({at(), -1, 0, 0, 0, 0, 0, 0});
+                }
+            }
             const bool empty = grid.empty() && (!adaptive || state.finished(useGpu ? gpu_ : nullptr));
             if (empty && result.timeline.gridEmpty < 0) result.timeline.gridEmpty = at();
             const bool cpuQuiet = cpuLane.idle() == cpuLane.threads() && !retries.size();
@@ -325,7 +339,7 @@ public:
         U64 planned = 0;
         for (size_t i = 0; i < pixels; ++i) {
             const U32 gc = useGpu ? gpu_->counts()[i] : 0, count = hc[i] + gc;
-            const U32 expected = adaptive ? state.planned[i] : plan_->spp;
+            const U32 expected = !adaptive ? plan_->spp : state.chain ? gpu_->chainPlanned()[i] : state.planned[i];
             result.counts[i] = count;
             planned += expected;
             if (count != expected || !count) {
@@ -356,6 +370,14 @@ public:
         }
         result.adaptivePasses = state.generated;
         result.treeUpdates = state.treeUpdates;
+        if (state.chain) {
+            const auto& s = gpu_->chainState();
+            result.adaptivePasses = state.uniformEnd + (s.chainPasses ? s.chainPasses - 1 : 0);
+            result.treeUpdates = s.treeUpdates;
+            result.chainStalls = state.stalls;
+            std::copy(gpu_->chainStages(), gpu_->chainStages() + 4, result.chainStages);
+            result.chainRenders = gpu_->chainRenders();
+        }
         result.treeSeconds = state.treeSeconds;
         result.passes = state.trace;
         result.errorSeconds = state.errorSeconds;
@@ -469,6 +491,50 @@ private:
                 if (!perCell[c].empty()) grid.append(c, perCell[c].data(), U32(perCell[c].size()));
         }
 
+        // The GPU's pass chain (GpuLane::launchChain): the frame's steps, the uniform
+        // stage as one, then each adaptive pass; the first step still to queue; and
+        // whether the frame is done.
+        bool chain = false, chainOut = false, chainDone = false;
+        std::vector<GpuLane::ChainStep> steps;
+        size_t resume = 0;
+        U64 chainsOut = 0;
+        U32 uniformEnd = 0, stalls = 0;
+
+        void startChain(GpuLane& gpu, const std::vector<U32>& tileOrder) {
+            chain = true;
+            while (uniformEnd < passes.size() && uniformStage(uniformEnd)) ++uniformEnd;
+            steps.push_back({0, uniformEnd < passes.size() ? passes[uniformEnd].start : passes.back().end, true});
+            for (U32 j = uniformEnd; j < passes.size(); ++j) steps.push_back({j, passes[j].end - passes[j].start, false});
+            gpu.beginChain(regions, inImage, tileOrder);
+        }
+        // Queues the chain, and once it has come back either ends the frame or, if
+        // a render parked samples, waits for the feeder to rerun them and resumes
+        // the chain after that step.
+        void advanceChain(GpuLane& gpu) {
+            if (chainDone) return;
+            if (!chainOut) {
+                if (!gpu.ready()) return;
+                gpu.launchChain({steps.begin() + std::ptrdiff_t(resume), steps.end()});
+                chainOut = true;
+                ++chainsOut;
+                return;
+            }
+            if (gpu.chainsCollected() < chainsOut) return;
+            const DeviceState& s = gpu.chainState();
+            if (!s.chainStall) {
+                chainDone = true;
+                return;
+            }
+            if (gpu.inFlight() || gpu.parkedOutstanding()) return;
+            size_t k = resume;
+            while (k < steps.size() && steps[k].pass != s.chainPass) ++k;
+            cpu::need(k < steps.size(), "GPU pass chain stalled outside its steps");
+            resume = k + 1;
+            ++stalls;
+            chainOut = false;
+            if (resume == steps.size()) chainDone = true;
+        }
+
         // Moves the frame on: once the next pass needs the trees, gets the errors
         // after every pass sent out and rebuilds the trees, then sends out what that
         // allows. Waits only for the trees, which nothing else needs.
@@ -478,6 +544,10 @@ private:
         // after them (a parked sample's rerun) and every pass has completed;
         // otherwise they are asked for again.
         void advance(Grid& grid, HostFilm& film, GpuLane* gpu, Pool& pool) {
+            if (chain) {
+                advanceChain(*gpu);
+                return;
+            }
             while (retired < generated && complete(retired, gpu)) trace[retired++].completed = at();
             const bool needTrees = !stop && generated < passes.size() && !uniformStage(generated) && evaluated < generated;
             if (needTrees && gpu) {
@@ -520,11 +590,25 @@ private:
         }
         // Every pass that will run has gone out and completed.
         bool finished(GpuLane* gpu) const {
+            if (chain) return chainDone;
             for (U32 j = retired; j < generated; ++j)
                 if (!complete(j, gpu)) return false;
             return generated == passes.size() || (!uniformStage(generated) && stop);
         }
     };
+
+    // The image's tiles cell by cell, each cell's row by row, as the work grid holds them.
+    std::vector<U32> tileOrder(U32 cellSize) const {
+        const U32 tilesX = (plan_->width + TileSize - 1) / TileSize, tilesY = (plan_->height + TileSize - 1) / TileSize;
+        const U32 per = cellSize / TileSize;
+        std::vector<U32> order;
+        order.reserve(size_t(tilesX) * tilesY);
+        for (U32 cy = 0; cy * per < tilesY; ++cy)
+            for (U32 cx = 0; cx * per < tilesX; ++cx)
+                for (U32 ty = cy * per; ty < std::min(tilesY, (cy + 1) * per); ++ty)
+                    for (U32 tx = cx * per; tx < std::min(tilesX, (cx + 1) * per); ++tx) order.push_back(ty * tilesX + tx);
+        return order;
+    }
 
     // How many chunks the next GPU launch takes: about one window of the GPU's
     // measured work; near the end, the share that lets both devices finish at
