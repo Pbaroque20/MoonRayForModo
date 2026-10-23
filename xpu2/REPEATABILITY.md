@@ -1,4 +1,4 @@
-# XPU reference repeatability â€” October 16, 2026
+# XPU reference repeatability — October 16, 2026
 
 This investigation extends the XPU2 foundation in PR #130. No production runtime,
 Modo kit, user scene or shared source checkout was modified.

@@ -1002,10 +1002,11 @@
     },
     "summarize_residency.py": {
       "validated_local_sha256": "933c9b2cd533ad37f9e25529ffb067ccecce463d9187aaff7501bdbbc81f02e6",
-      "published_sha256": "fb6e8cd65cbb43f52bb61db3da19bd66d1d7e366b41fad9037dd5281a014fe52",
+      "published_sha256": "cf136462676852d6df5d63baaa25f9ba34eda5b1a9cd8bb38bf080b7435c1173",
       "changes": [
         "UTF-8/LF text normalization only.",
-        "Trailing whitespace cleanup only."
+        "Trailing whitespace cleanup only.",
+        "Corrected mojibake in generated report punctuation; no calculation changes."
       ]
     },
     "surface_core.h": {

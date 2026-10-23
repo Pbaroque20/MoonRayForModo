@@ -1,4 +1,4 @@
-# XPU2 â€” experimental runtime extension
+# XPU2 — experimental runtime extension
 
 Status: **experimental native GPU shading and queue validation; no installable
 or selectable XPU2 renderer yet**.
@@ -152,7 +152,7 @@ differ). It does not certify deep images, Cryptomatte metadata, AOV suites,
 working-space equivalence or general renderer parity. Numerical tolerances are
 mandatory arguments; none has been adopted as the production criterion.
 
-## Initial evidence â€” October 16, 2026
+## Initial evidence — October 16, 2026
 
 29 control/reference checks passed. Two small and two denser native XPU renders
 completed normally with GPU intersection utilization above 97%, no CPU fallback,

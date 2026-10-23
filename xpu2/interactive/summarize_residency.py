@@ -10,7 +10,7 @@ P=Path(__file__).resolve().parent;TR=P.parents[1]/'test-results'
 
 r=json.loads((TR/'interactive-residency-benchmark-20261022/report.json').read_text());a=json.loads((TR/'interactive-estimator-ablation-20261022/report.json').read_text());e=json.loads((TR/'interactive-reference-padded-20261022/report.json').read_text())
 
-lines=['# Private XPU2 texture residency and larger-scene evidence â€” 2026-10-22','',
+lines=['# Private XPU2 texture residency and larger-scene evidence — 2026-10-22','',
 
 'All changes, sources, images and reports remain local and ignored. No kit installation, reference-runtime modification, public commit, push or production default change.', '',
 
@@ -32,7 +32,7 @@ for name,c in r['cases'].items():
 
  for t in (1,12):
 
-  n=ar['t%d-r1-p33'%t];o=c['original'][str(t)]['sampling_seconds'];s=n['sampling_seconds'];lines.append('- %d threads: original XPU %.3f s; updated XPU2 %.3f s (%.3fâ€“%.3f), %.1f%% lower warm median.'%(t,o['median'],s['median'],s['min'],s['max'],100*c['warm_savings_vs_xpu'][str(t)]))
+  n=ar['t%d-r1-p33'%t];o=c['original'][str(t)]['sampling_seconds'];s=n['sampling_seconds'];lines.append('- %d threads: original XPU %.3f s; updated XPU2 %.3f s (%.3f–%.3f), %.1f%% lower warm median.'%(t,o['median'],s['median'],s['min'],s['max'],100*c['warm_savings_vs_xpu'][str(t)]))
 
  lines.append('- 12-thread factorial: unchanged %.3f s; display cadence only %.3f s; fine residency only %.3f s; both %.3f s.'%tuple(ar[k]['sampling_seconds']['median'] for k in ('t12-r0-p0','t12-r0-p33','t12-r1-p0','t12-r1-p33')))
 
@@ -52,7 +52,7 @@ for name,c in a.get('cases',{}).items():
 
  lines.append('- '+name+': median relative MSE '+', '.join(k+'='+format(v,'.7g') for k,v in c['median_relative_mse'].items())+'.')
 
-lines+=['', '## Strict ownership check', '', 'The .002 internal maximum-channel check does not pass on these larger scenes: gallery has 8 outlier pixels (maximum .00418563), workshop 6 (maximum .00735882). The benchmark reportâ€™s all_quality_gates_passed field covers statistical reference targets and high-spp image gates only; qualification-addendum.json records the missing stricter check explicitly. Native qualification is false. Display-cadence changes and 1/12 worker counts are byte-identical within a fixed ownership mode. The selected-path diagnostic shows differing primary hit triangles or shadow-ray origins; continuing the GPU shading state through CPU visibility reproduces its GPU result on all sampled outliers. This does not justify changing the bound. Robust-traversal diagnostics are separate from the timed candidate.', '', '## Reference envelope', '',
+lines+=['', '## Strict ownership check', '', 'The .002 internal maximum-channel check does not pass on these larger scenes: gallery has 8 outlier pixels (maximum .00418563), workshop 6 (maximum .00735882). The benchmark report’s all_quality_gates_passed field covers statistical reference targets and high-spp image gates only; qualification-addendum.json records the missing stricter check explicitly. Native qualification is false. Display-cadence changes and 1/12 worker counts are byte-identical within a fixed ownership mode. The selected-path diagnostic shows differing primary hit triangles or shadow-ray origins; continuing the GPU shading state through CPU visibility reproduces its GPU result on all sampled outliers. This does not justify changing the bound. Robust-traversal diagnostics are separate from the timed candidate.', '', '## Reference envelope', '',
 
 'Original XPU accumulation was not patched. A new explicitly empirical guardband uses max(2 times reference-only channel range, 8 float32 epsilon times max(1, reference peak)); all bounds were frozen before fresh held-out tests. Historical failed originals/fallbacks are explicitly calibration now, not reused as new held-out evidence. Native quality gates remain unchanged.', '', 'New reference-only guardband status: '+e['status']+'.']
 
@@ -64,7 +64,7 @@ lines+=['', 'This is a tested-fixture rounding allowance, not a proof of a unive
 
 'Recovery tests exercise GPU-only and mixed ownership at 1/12 threads, warm cache reuse, tiny-cache retry/fallback, cancellation on first refill, stale/corrupt/replayed handoff rejection, invalid result rejection, and recovery. Maximum CPU-oracle image delta was below 2e-6 against the unchanged .002 internal gate. Worker-count pairs were byte-identical. A first harness attempt wrongly expected a fine-cache refill from a scene that never requested one; that failed report is retained, and the corrected miss fixture passed.', '',
 
-'These synthetic tests admit flat triangle geometry, diffuse/emission USD Preview materials, ImageMaps and a constant environment, with direct illumination only. They do not establish arbitrary Modo/material/lighting parity, secondary textured derivatives, production reliability, scene-load improvement, or general 30â€“50% speedup. Native output remains tier D and unqualified. CPU/GPU donation, demand-selected pages, shared-page eviction and wider material/light coverage remain future work.', '',
+'These synthetic tests admit flat triangle geometry, diffuse/emission USD Preview materials, ImageMaps and a constant environment, with direct illumination only. They do not establish arbitrary Modo/material/lighting parity, secondary textured derivatives, production reliability, scene-load improvement, or general 30–50% speedup. Native output remains tier D and unqualified. CPU/GPU donation, demand-selected pages, shared-page eviction and wider material/light coverage remain future work.', '',
 
 '## Evidence', '',
 

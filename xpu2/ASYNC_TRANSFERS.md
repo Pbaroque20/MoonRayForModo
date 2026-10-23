@@ -54,7 +54,7 @@ all 26,271 packets. Async runs record 2,919 completed GPU batches; synchronous
 controls record no async batches. The partial four/four/one case completes 8,757.
 
 Synchronous windows took 1.544 / 1.556 seconds of Mcrt time. Async windows took
-1.376 / 1.366 seconds, about 11â€“12% less on this run. Original XPU took
+1.376 / 1.366 seconds, about 11–12% less on this run. Original XPU took
 0.370 / 0.376 seconds and remains faster. Full logging with async transfers took
 2.856 seconds. These are instrumented single-worker observations with uncontrolled
 caches/load, not a production performance guarantee.
