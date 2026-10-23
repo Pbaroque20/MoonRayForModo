@@ -1,5 +1,7 @@
 # Texture-ready work dispatch
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 `texture_work.h` connects indexed texture identities, background decoding and
 cache leases at an **owned-work boundary**. It can claim ready jobs while an older
 job waits for a page. This is validated through native RDL metadata and an actual

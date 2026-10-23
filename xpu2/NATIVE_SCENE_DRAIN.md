@@ -1,5 +1,7 @@
 # Native scene lifetime: delayed OptiX work and drains
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Status: **tested inside the native renderer's persistent lifecycle**. This is an
 isolated diagnostic build. It does not enable an installed XPU2 renderer or add
 worker-produced contributions to the image.

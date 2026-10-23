@@ -1,5 +1,7 @@
 # Background texture decoding
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 `texture_async.h` adds a bounded native decode worker and a polling bridge into
 `Cache::acquire`. The coordinator submits exact texture/revision/mip/tile keys;
 the worker performs file reads and decoding, and the coordinator consumes ready

@@ -1,5 +1,7 @@
 # Native sampler reference
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Status: native CPU/ISPC sampler validation only. No CUDA sampler, GPU shading,
 scene render, kit installation or XPU2 engine activation.
 

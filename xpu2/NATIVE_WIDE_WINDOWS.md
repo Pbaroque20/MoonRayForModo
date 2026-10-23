@@ -1,5 +1,7 @@
 # Bounded native shading windows and chunk size
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Experimental work on draft PR #130. Original XPU and the installed kit are unchanged.
 All flags are opt-in. GPU shading support is unchanged; this is a scheduling experiment.
 

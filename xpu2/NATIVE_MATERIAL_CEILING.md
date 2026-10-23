@@ -1,5 +1,7 @@
 # Native material frame-cost ceilings
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 GPU shading remained disabled throughout this study. The new pre-shading material job is **not implemented or qualified** by these results. Original XPU remains the reference and fallback. No installed kit, production default or merge was changed.
 
 ## Frame-time ceilings

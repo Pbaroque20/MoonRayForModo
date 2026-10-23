@@ -1,5 +1,7 @@
 # Correlated native sampler and Lambert state
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 The diagnostic now captures the native ISPC BSDF sample and its nested Lambert
 call together. This closes the earlier gap where the surface payload and shader
 packet came from unrelated captures. It is still not a native path continuation.

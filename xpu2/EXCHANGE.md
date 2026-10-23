@@ -1,5 +1,7 @@
 # Native CPU / CUDA sampler handoffs
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This milestone validates movement of sampler state between the real native AVX8
 sampler and the CUDA boundary kernel. Original XPU, installed runtimes and Modo
 engine selection are unchanged. XPU2 remains experimental.

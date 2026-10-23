@@ -1,5 +1,7 @@
 # Indexed scene resources and Morton convergence checkpoints
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 **Follow-up:** [native RDL adapter and retained metadata](NATIVE_SCENE_INDEX.md)
 adds actual SceneContext conversion and removes the whole-metadata-map copy
 described below. This page records the earlier b01f841 milestone.

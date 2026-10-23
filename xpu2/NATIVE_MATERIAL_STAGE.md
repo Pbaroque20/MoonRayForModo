@@ -1,5 +1,7 @@
 # Split native material sampling stage
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This experimental runtime moves supported GPU sample dispatch out of the native
 BSDF-consumption loop. XPU remains unchanged and the candidate is not installed.
 This is a step toward asynchronous material shading, not full arbitrary-material

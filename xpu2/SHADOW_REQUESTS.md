@@ -1,5 +1,7 @@
 # Owned shadow requests and native visibility
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Status: **request transfer validated; CPU/GPU traversal interchangeability blocked**.
 This remains an isolated XPU2 diagnostic, not a selectable or installed renderer.
 

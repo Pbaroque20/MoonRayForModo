@@ -1,5 +1,7 @@
 # Exclusive bridge-stage cost diagnostic
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 The bridge-enabled frame now has exclusive host stages: nested scopes pause their
 parent, and each thread's stage sum equals its covered time. GPU upload, kernel
 and readback intervals are separate. This fixes double-counting within a thread;

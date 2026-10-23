@@ -1,5 +1,7 @@
 # Native terminal-radiance suspension and film resumption
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This opt-in diagnostic moves **completed beauty contributions** across an owned
 queue and resumes them through MoonRay's original film handler. It does not yet
 suspend a path during shading, texture lookup, light evaluation or traversal.

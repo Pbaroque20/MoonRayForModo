@@ -1,5 +1,7 @@
 # Native XPU shading integration diagnostic
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 On October 17, 2026, a live CUDA Lambert operation was connected to the native
 MoonRay XPU integrator in an isolated diagnostic build. The normal replacement
 runs reproduce all 36,864 pixels of the reference image bit-for-bit. This advances

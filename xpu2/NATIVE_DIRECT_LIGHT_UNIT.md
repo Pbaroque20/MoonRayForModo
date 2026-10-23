@@ -1,5 +1,7 @@
 # Larger GPU direct-light unit
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This experiment qualifies a larger numerical operation for the next native XPU2
 handoff: diffuse BSDF evaluation, its PDF, multiple-importance weight, and the
 unshadowed light contribution. It uses the original native material/light inputs,

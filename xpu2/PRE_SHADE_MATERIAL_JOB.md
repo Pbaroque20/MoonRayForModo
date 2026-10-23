@@ -1,5 +1,7 @@
 # Bounded pre-shading material job: scope and gates
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This is the next native integration target, not an implemented or qualified GPU
 material backend. The first prerequisite is the measured frame-cost ceiling in
 NATIVE_MATERIAL_CEILING.md. The current sampler handoff remains after material

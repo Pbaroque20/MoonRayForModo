@@ -1,5 +1,7 @@
 # Native CPU shading cost versus bridge cost
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Diagnostic measurements on an RTX 3090 / i7-4930K, with one native worker.
 This adds isolated profiling builds and reproducible fixtures; it changes no
 installed runtime, production defaults, GPU shading policy or material behavior.

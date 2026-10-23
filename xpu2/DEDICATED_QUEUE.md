@@ -1,5 +1,7 @@
 # Dedicated native GPU queue during active rendering
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Status: **validated in an isolated native stress build**. XPU2 now has a
 separately reserved OptiX queue slot for this diagnostic while original native
 workers continue rendering. This does not enable an installable XPU2 engine or

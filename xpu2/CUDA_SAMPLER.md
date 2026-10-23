@@ -1,5 +1,7 @@
 # CUDA sampler subset: first real GPU validation
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 XPU remains unchanged and independently available. XPU2 is an additional
 architecture being developed in isolation, not a replacement. Nothing in this
 experiment installs or enables an XPU2 rendering mode.

@@ -1,5 +1,7 @@
 # Opportunistic no-wait GPU shading
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Step 1 is implemented as the experimental `XPU2_NO_WAIT=1` policy. Original XPU,
 production defaults and the installed kit are unchanged. Explicit `0` disables
 both the policy and its new held-flight test flag.

@@ -1,5 +1,7 @@
 # Native queued Lambert shading diagnostic
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 The isolated XPU2 candidate now routes native AVX8 Lambert requests through a
 bounded CUDA worker queue. Four native producers can split between CPU and GPU
 roles, allowing CPU shading to continue while the GPU worker processes requests.

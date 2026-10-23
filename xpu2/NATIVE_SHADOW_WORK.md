@@ -1,5 +1,7 @@
 # Native shadow work during GPU material waits
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 XPU2 remains an isolated experiment alongside XPU. This candidate is opt-in,
 not installed, and is not full asynchronous arbitrary-material shading.
 

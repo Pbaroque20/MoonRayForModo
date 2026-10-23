@@ -1,5 +1,7 @@
 # Experimental CUDA sampler notices
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Hash/float-conversion routines and experimental Lambert evaluation/sampling,
 hemisphere and reference-frame math derive from OpenMoonRay / scene_rdl2,
 Copyright 2023-2024 DreamWorks Animation LLC, licensed under Apache-2.0.

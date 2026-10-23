@@ -1,5 +1,7 @@
 # Alternating CPU/GPU workers
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This is a standalone **native Lambert shading-stage experiment**, not an XPU2
 path renderer or image-speed benchmark. CPU workers invoke the original AVX8 ISPC
 Lambert sampler. The GPU invokes the previously validated matching CUDA sampler.

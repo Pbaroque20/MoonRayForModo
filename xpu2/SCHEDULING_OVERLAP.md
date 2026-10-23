@@ -1,5 +1,7 @@
 # Independent CPU work during GPU dispatch
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This is a **standalone scheduling feasibility test**, not a native MoonRay render
 benchmark. It uses the current packed, pinned asynchronous CUDA queue with full
 shader auditing enabled. No runtime, installed kit, or original XPU behavior changes.

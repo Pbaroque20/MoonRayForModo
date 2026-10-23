@@ -1,5 +1,7 @@
 # Nonblocking GPU queue tickets
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 The experimental queue can now accept a shader packet and return a ticket before
 GPU completion. This is the next step toward CPU workers continuing other paths
 while GPU shading runs. It is not yet connected to MoonRay path continuations.

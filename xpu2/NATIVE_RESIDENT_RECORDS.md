@@ -1,5 +1,7 @@
 # Per-flight resident GPU shading records
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Historical experiment at commit 6c86ffd. For the current transactional tags,
 descriptor-only host path and shared builder, see [review fixes](NATIVE_RESIDENT_REVIEW.md).
 The optimistic-tag and full-copy descriptions below describe that older experiment.

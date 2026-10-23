@@ -1,5 +1,7 @@
 # Native input preparation experiment
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This opt-in candidate builds on the bounded four-block material window. It keeps
 original XPU and the installed Modo runtime unchanged.
 

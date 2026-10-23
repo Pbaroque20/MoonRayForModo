@@ -6,6 +6,7 @@ The prototype combines supported GPU traversal and shading with CPU rendering, r
 
 **Limits:** static flat triangles; diffuse/emissive materials; supported image maps and a constant environment. Textured scenes are direct-only; untextured transport supports up to eight surfaces. General materials/lights, full Modo integration, dynamic device work sharing, demand-paged textures and production qualification remain unfinished.
 
+- [Documentation guide: current prototype versus historical first attempt](xpu2/README.md)
 - [Prototype, features and limitations](xpu2/interactive/README.md)
 - [Build requirements and run instructions](xpu2/interactive/BUILDING.md)
 - [Measurements and validation evidence](xpu2/interactive/VALIDATION.md)

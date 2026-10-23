@@ -1,5 +1,7 @@
 # Native neighbor scheduling and render timing
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Experimental, opt-in candidate only. Existing XPU and the installed kit are
 unchanged. This connects screen-space locality to the native early diffuse
 queue; it does not implement whole-path CPU/GPU ownership or arbitrary

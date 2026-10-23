@@ -1,5 +1,7 @@
 # Native shading overhead measurements
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 The optional `--profile` build instruments the bounded Lambert diagnostic.
 The normal build and installed runtime remain unchanged. `XPU2_PROFILE_FILE`
 enables aggregate counters and nanosecond wall spans; `XPU2_PROFILE_QUIET=1`

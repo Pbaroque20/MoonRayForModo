@@ -1,5 +1,7 @@
 # Bounded RAM / VRAM texture-tile cache
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 The native cache foundation is implemented in `texture_cache.h`, with an isolated
 CUDA transfer backend in `texture_cuda_backend.h`. It is read-only, backed by a
 loader, and is not connected to native MoonRay shading or the installed kit yet.

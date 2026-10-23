@@ -1,5 +1,7 @@
 # Ray-traced shading migration fixture
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 The October 17, 2026 check passes on the RTX 3090 and the retained native AVX8
 build. A custom reference path tracer now exercises real native/CUDA sampling
 and Lambert shading against geometric hits, throughput and an accumulated image.

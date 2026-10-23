@@ -1,5 +1,7 @@
 # Native transfer efficiency and independent CPU shading
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This isolated experiment derives from the guarded batch transport candidate.
 It is opt-in, does not install a kit, and does not replace XPU. The existing CUDA
 shading PTX is unchanged.

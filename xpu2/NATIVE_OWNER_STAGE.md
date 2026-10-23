@@ -1,5 +1,7 @@
 # Rolling owner-scoped shading queue
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This tests the smallest safe queue-stage change after [no-wait fallback](NATIVE_NO_WAIT.md).
 It is experimental and opt-in (`XPU2_OWNER_STAGE=1` with `XPU2_NO_WAIT=1`).
 Original XPU, the installed runtime and production defaults are unchanged.

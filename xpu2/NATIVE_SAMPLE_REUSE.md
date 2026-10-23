@@ -1,5 +1,7 @@
 # Resume sample-coordinate reuse
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 This isolated opt-in XPU2 experiment reuses random coordinates already produced
 for the same material continuation. CPU-ahead samples retain them in
 `BsdfSample.sample`; a GPU request retains them in its immutable input packet.

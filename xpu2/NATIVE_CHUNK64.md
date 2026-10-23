@@ -1,5 +1,7 @@
 # Exact-image 64-ray native chunk qualification
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 Follow-up to [wider native windows](NATIVE_WIDE_WINDOWS.md), 2026-10-18. This uses
 the same isolated candidate DLL and unchanged shading PTX; no rebuild, installation,
 or change to original XPU. All native changes remain opt-in.

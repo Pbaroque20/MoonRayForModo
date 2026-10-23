@@ -1,5 +1,7 @@
 # AVX8-compatible Lambert sampling
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 The separate experimental CUDA vector-math profile reproduces the original
 retained AVX8 Lambert sampler exactly on the expanded 67,584-case corpus. All
 473,088 direction/RGB/PDF components and 67,584 geometric-validity flags match

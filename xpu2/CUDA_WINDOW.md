@@ -1,5 +1,7 @@
 # CUDA cache-boundary validation
 
+> **Historical first attempt.** This report belongs to the native-bridge research that began with the October 16, 2026 tests. It does not describe the newer standalone prototype. See the [current prototype](interactive/README.md), [current validation](interactive/VALIDATION.md), or [historical research index](RESEARCH_INDEX.md).
+
 XPU2 remains an additional experimental architecture. Original XPU and installed
 runtimes are unchanged. The version-1 CUDA sampler is unchanged; the new kernel
 is a separate version-2 diagnostic entry point.
