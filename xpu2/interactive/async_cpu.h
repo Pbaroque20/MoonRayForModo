@@ -16,41 +16,137 @@
 
 namespace xpu2::interactive::async {
 
+// Curves on the CPU: an Embree user geometry whose spans run MoonRay XPU's GPU programs (curve_core.h), so the CPU
+// finds what the GPU finds.
+inline void curveBounds(const RTCBoundsFunctionArguments* args) {
+    const auto& c = *static_cast<const curves::Set*>(args->geometryUserPtr);
+    float lower[3], upper[3];
+    curves::spanBounds(c, args->primID, lower, upper);
+    args->bounds_o->lower_x = lower[0];
+    args->bounds_o->lower_y = lower[1];
+    args->bounds_o->lower_z = lower[2];
+    args->bounds_o->upper_x = upper[0];
+    args->bounds_o->upper_y = upper[1];
+    args->bounds_o->upper_z = upper[2];
+}
+inline void curveIntersect(const RTCIntersectFunctionNArguments* args) {
+    if (args->N != 1 || !args->valid[0]) return;
+    const auto& c = *static_cast<const curves::Set*>(args->geometryUserPtr);
+    auto* rh = reinterpret_cast<RTCRayHit*>(args->rayhit);
+    curves::Hit h;
+    if (!curves::intersectSpan(c, args->primID, {rh->ray.org_x, rh->ray.org_y, rh->ray.org_z}, {rh->ray.dir_x, rh->ray.dir_y, rh->ray.dir_z},
+                               rh->ray.tnear, rh->ray.tfar, h))
+        return;
+    rh->ray.tfar = h.t;
+    rh->hit.u = h.u;
+    rh->hit.v = h.v;
+    rh->hit.Ng_x = h.Ng.x;
+    rh->hit.Ng_y = h.Ng.y;
+    rh->hit.Ng_z = h.Ng.z;
+    rh->hit.primID = args->primID;
+    rh->hit.geomID = args->geomID;
+    rh->hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+}
+inline void curveOccluded(const RTCOccludedFunctionNArguments* args) {
+    if (args->N != 1 || !args->valid[0]) return;
+    const auto& c = *static_cast<const curves::Set*>(args->geometryUserPtr);
+    auto* ray = reinterpret_cast<RTCRay*>(args->ray);
+    curves::Hit h;
+    if (curves::intersectSpan(c, args->primID, {ray->org_x, ray->org_y, ray->org_z}, {ray->dir_x, ray->dir_y, ray->dir_z}, ray->tnear,
+                              ray->tfar, h))
+        ray->tfar = -INFINITY;
+}
+// A curve hit worked out again from its span, as the GPU lane does: its distance, coordinates and normal, the
+// point rays leave from, and the epsilon they skip (LineSegments and CubicSpline: 1.5 times the radius there).
+inline bool curveHit(const curves::Set& c, const surface::Ray& ray, resume::Hit& out) {
+    curves::Hit h;
+    if (!curves::intersectSpan(c, out.prim, ray.origin, ray.direction, ray.nearT, ray.farT, h)) return false;
+    out.t = h.t;
+    out.u = h.u;
+    out.v = h.v;
+    out.point = shade::V3{ray.origin.x + ray.direction.x * h.t, ray.origin.y + ray.direction.y * h.t, ray.origin.z + ray.direction.z * h.t};
+    out.origin = out.below = out.point;
+    const bool roundCubic = c.round && c.basis == curves::BasisBspline;
+    out.normal = roundCubic ? h.Ng : shade::normalize(-ray.direction);
+    const U32 first = curves::spanVertex(c, out.prim);
+    float radius;
+    if (c.basis == curves::BasisLinear) {
+        radius = curves::point(c, first).w * (1.0f - h.u) + curves::point(c, first + 1).w * h.u;
+    } else {
+        float w[4];
+        curves::cubicWeights(c.basis, h.u, w);
+        radius = w[0] * curves::point(c, first).w + w[1] * curves::point(c, first + 1).w + w[2] * curves::point(c, first + 2).w +
+                 w[3] * curves::point(c, first + 3).w;
+    }
+    out.epsilon = 1.5f * radius;
+    return shade::finite3(out.point) && out.epsilon > 0.0f;
+}
+
 // Embree scene for the fast lanes. Mesh i is geometry i, as in the plan.
 struct CpuScene {
     std::shared_ptr<cpu::Device> device;
     RTCScene scene = nullptr;
+    RTCScene volumes = nullptr;  // the meshes that bound volumes (volume_core.h), for their crossings
     cpu::PlanView plan;
+    std::vector<curves::Set> curveSets;  // a set a mesh (the user geometries' data)
     explicit CpuScene(cpu::PlanView p) : device(std::make_shared<cpu::Device>()), plan(std::move(p)) {
         cpu::need(plan && cpu::isSpatial(plan->domain), "Asynchronous renderer requires a spatial plan");
         scene = rtcNewScene(device->handle);
         cpu::need(scene, "Embree scene failure");
         rtcSetSceneFlags(scene, RTC_SCENE_FLAG_ROBUST);
         rtcSetSceneBuildQuality(scene, RTC_BUILD_QUALITY_HIGH);
+        curveSets.resize(plan->meshes.size());
         for (unsigned i = 0; i < plan->meshes.size(); ++i) {
             const auto& m = *plan->meshes[i].data;
-            RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
-            cpu::need(g, "Embree geometry failure");
-            auto* v = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, sizeof(surface::V3),
-                                              m.positions.size());
-            auto* t = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, sizeof(cpu::Tri),
-                                              m.triangles.size());
-            if (!v || !t) {
+            if (m.curveBasis) {
+                curveSets[i] = cpu::curveSet(m);
+                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_USER);
+                cpu::need(g, "Embree geometry failure");
+                rtcSetGeometryUserPrimitiveCount(g, curveSets[i].spanCount);
+                rtcSetGeometryUserData(g, &curveSets[i]);
+                rtcSetGeometryBoundsFunction(g, curveBounds, nullptr);
+                rtcSetGeometryIntersectFunction(g, curveIntersect);
+                rtcSetGeometryOccludedFunction(g, curveOccluded);
+                rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
+                rtcCommitGeometry(g);
+                rtcAttachGeometryByID(scene, g, i);
                 rtcReleaseGeometry(g);
-                throw cpu::Unsupported("Embree allocation failure");
+                continue;
             }
-            std::memcpy(v, m.positions.data(), m.positions.size() * sizeof(surface::V3));
-            std::memcpy(t, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
-            rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
-            rtcCommitGeometry(g);
-            rtcAttachGeometryByID(scene, g, i);
-            rtcReleaseGeometry(g);
+            // A mesh with no material bounds a volume only: it is in the volumes' scene, not the surfaces'.
+            const bool surface = plan->meshes[i].material != ~0u, bounds = plan->meshes[i].volume >= 0;
+            for (int pass = 0; pass < 2; ++pass) {
+                if (pass == 0 ? !surface : !bounds) continue;
+                if (pass == 1 && !volumes) {
+                    volumes = rtcNewScene(device->handle);
+                    cpu::need(volumes, "Embree scene failure");
+                    rtcSetSceneFlags(volumes, RTC_SCENE_FLAG_ROBUST);
+                }
+                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
+                cpu::need(g, "Embree geometry failure");
+                auto* v = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, sizeof(surface::V3),
+                                                  m.positions.size());
+                auto* t = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, sizeof(cpu::Tri),
+                                                  m.triangles.size());
+                if (!v || !t) {
+                    rtcReleaseGeometry(g);
+                    throw cpu::Unsupported("Embree allocation failure");
+                }
+                std::memcpy(v, m.positions.data(), m.positions.size() * sizeof(surface::V3));
+                std::memcpy(t, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
+                rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
+                rtcCommitGeometry(g);
+                rtcAttachGeometryByID(pass == 0 ? scene : volumes, g, i);
+                rtcReleaseGeometry(g);
+            }
         }
         rtcCommitScene(scene);
+        if (volumes) rtcCommitScene(volumes);
         device->check();
     }
     ~CpuScene() {
         if (scene) rtcReleaseScene(scene);
+        if (volumes) rtcReleaseScene(volumes);
     }
     CpuScene(const CpuScene&) = delete;
 };
@@ -77,6 +173,10 @@ struct CpuBackend {
         out.geom = h.hit.geomID;
         out.prim = h.hit.primID;
         const auto& mesh = *s.plan->meshes[out.geom].data;
+        if (mesh.curveBasis) {
+            if (!curveHit(s.curveSets[out.geom], ray, out)) return resume::Hit{};
+            return out;
+        }
         const auto t = mesh.triangles[out.prim];
         // Shared reconstruction of distance, coordinates and the offset origin.
         if (!resume::geometryHit(out, ray, mesh.positions[t.a], mesh.positions[t.b], mesh.positions[t.c]))
@@ -93,7 +193,114 @@ struct CpuBackend {
         out = mixed::material(s.plan, hit, ray);
         return tex::Ready;
     }
-    bool visible(surface::V3 o, surface::V3 d) const {
+    // A mesh's material identity (its record's pool offset).
+    U32 materialId(U32 geom) const {
+        const auto& plan = *s.plan;
+        const U32 m = plan.meshes[geom].material;
+        return m < plan.materialRecords.size() ? plan.materialRecords[m].offset : ~0u;
+    }
+    // The first hit on a mesh of the given material (MoonRay's subsurface probe rays skip the others).
+    resume::Hit traceMaterial(surface::Ray ray, U32 material) const {
+        for (int k = 0; k < 64; ++k) {
+            const resume::Hit h = trace(ray);
+            if (h.geom == ~0u || materialId(h.geom) == material) return h;
+            ray.nearT = h.t + fmaxf(1e-6f, h.t * 1e-6f);
+            if (!(ray.nearT < ray.farT)) break;
+        }
+        return resume::Hit{};
+    }
+    // A hit's geometric shading state and differentials, its material not run.
+    bool surfaceState(const resume::Hit& h, const surface::Ray& ray, shade::State& st) const {
+        const auto& plan = *s.plan;
+        const auto& data = *plan.meshes[h.geom].data;
+        if (data.curveBasis) {
+            const shade::MeshAttributes attributes = curveAttributes(data, h.geom);
+            if (!shade::curveState(attributes, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return false;
+            st.geom = h.geom;
+            shade::curveDifferentials(attributes, ray, plan.spp, st);
+            return true;
+        }
+        const auto t = data.triangles[h.prim];
+        shade::MeshAttributes attributes;
+        attributes.normals = data.normals.empty() ? nullptr : data.normals.data();
+        attributes.uvs = data.uvs.empty() ? nullptr : data.uvs.data();
+        attributes.normalRate = data.normalRate;
+        attributes.uvRate = data.uvRate;
+        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], h.u,
+                             h.v, h.point, ray.direction, st))
+            return false;
+        st.geom = h.geom;
+        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], ray,
+                                plan.spp, st);
+        return true;
+    }
+    // The path tracer's hit: its shading state, and its material's Bsdf (shade_material.h).
+    // A curve mesh's shading attributes (its primitive attributes and curve set).
+    shade::MeshAttributes curveAttributes(const cpu::MeshData& data, U32 geom) const {
+        shade::MeshAttributes attributes;
+        for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = data.worldToObject[k];
+        attributes.prims = data.prims.empty() ? nullptr : data.prims.data();
+        attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
+        attributes.primCount = unsigned(data.prims.size());
+        attributes.curve = s.curveSets[geom];
+        return attributes;
+    }
+    unsigned shade(const resume::Hit& h, const surface::Ray& ray, shade::State& st, shade::Bsdf& bsdf, float& presence) const {
+        const auto& plan = *s.plan;
+        const auto& mesh = plan.meshes[h.geom];
+        const auto& data = *mesh.data;
+        if (data.curveBasis) {
+            const shade::MeshAttributes attributes = curveAttributes(data, h.geom);
+            if (!shade::curveState(attributes, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return tex::Invalid;
+            st.geom = h.geom;
+            st.worldToRender = plan.worldToRender;
+            st.worldToObject = data.worldToObject;
+            if (mesh.material >= plan.materialRecords.size()) return tex::Invalid;
+            shade::curveDifferentials(attributes, ray, plan.spp, st);
+            const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
+            return shade::shadeMaterial(plan.materialRecords[mesh.material], plan.materialPool.data(), st, textures, bsdf, presence,
+                                        scratch().dwaSlots, &scratch().glitter);
+        }
+        const auto t = data.triangles[h.prim];
+        shade::MeshAttributes attributes;
+        attributes.normals = data.normals.empty() ? nullptr : data.normals.data();
+        attributes.uvs = data.uvs.empty() ? nullptr : data.uvs.data();
+        attributes.normalRate = data.normalRate;
+        attributes.uvRate = data.uvRate;
+        for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = data.worldToObject[k];
+        attributes.prims = data.prims.empty() ? nullptr : data.prims.data();
+        attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
+        attributes.primCount = unsigned(data.prims.size());
+        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], h.u,
+                             h.v, h.point, ray.direction, st))
+            return tex::Invalid;
+        st.geom = h.geom;
+        st.worldToRender = plan.worldToRender;
+        st.worldToObject = data.worldToObject;
+        if (mesh.material >= plan.materialRecords.size()) return tex::Invalid;
+        const auto& record = plan.materialRecords[mesh.material];
+        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], ray,
+                                plan.spp, st);
+        // Host RAM holds every level of every texture, so the CPU never misses.
+        const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
+        return shade::shadeMaterial(record, plan.materialPool.data(), st, textures, bsdf, presence, scratch().dwaSlots,
+                                    &scratch().glitter);
+    }
+    // The scene's textures for the maps (shade_mapnodes.h).
+    struct HostTextures {
+        const tex::Image* const* images;
+        unsigned count;
+        unsigned lookup(unsigned texture, tex::Binding b, const tex::Footprint& f, surface::V3& out) const {
+            if (texture >= count || !images[texture]) return tex::Invalid;
+            b.image = images[texture];
+            return tex::lookup(b, f, out);
+        }
+    };
+    bool visible(surface::V3 o, surface::V3 d) const { return visible(o, d, INFINITY); }
+    // Unoccluded up to distance (a shadow ray toward a light).
+    bool visible(surface::V3 o, surface::V3 d, float distance) const { return visible(o, d, 0.0f, distance); }
+    // Unoccluded between near and far (a shadow ray from a curve skips its epsilon).
+    bool visible(surface::V3 o, surface::V3 d, float near, float distance) const {
         RTCRay ray{};
         ray.org_x = o.x;
         ray.org_y = o.y;
@@ -101,12 +308,61 @@ struct CpuBackend {
         ray.dir_x = d.x;
         ray.dir_y = d.y;
         ray.dir_z = d.z;
-        ray.tfar = INFINITY;
+        ray.tnear = near;
+        ray.tfar = distance;
         ray.mask = ~0u;
         RTCOccludedArguments args;
         rtcInitOccludedArguments(&args);
         rtcOccluded1(s.scene, &ray, &args);
         return ray.tfar >= 0;
+    }
+    // The path tracer's Bsdf and pending rays, one set per worker thread.
+    struct Scratch {
+        shade::Bsdf bsdf;
+        paths::Pending pending[paths::MaxPending];
+        shade::DwaParams dwaSlots[shade::DwaMaxSlots];
+        shade::GlitterScratch glitter;
+    };
+    static Scratch& scratch() {
+        static thread_local std::unique_ptr<Scratch> s;
+        if (!s) s = std::make_unique<Scratch>();
+        return *s;
+    }
+    shade::Bsdf& bsdf() const { return scratch().bsdf; }
+    paths::Pending* pending() const { return scratch().pending; }
+    const lights::Light& light(U32 i) const { return s.plan->lights[i]; }
+    U32 lightMask(U32 geom) const { return s.plan->meshLights[geom]; }
+    // The volumes (volume_core.h), and a ray's crossings of their meshes past tnear, nearest first (Scene::
+    // intersectVolumes over the whole ray): whether each enters (the ray against the mesh's geometric normal) or
+    // leaves; repeats at the same distance dropped, as MoonRay's interval filter drops Embree's.
+    const volume::Shader* volumes() const { return s.plan->volumes.data(); }
+    U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max) const {
+        if (!s.volumes) return 0;
+        U32 n = 0;
+        float t = tnear;
+        for (U32 k = 0; k < 4 * max && n < max; ++k) {
+            RTCRayHit h{};
+            h.ray.org_x = o.x;
+            h.ray.org_y = o.y;
+            h.ray.org_z = o.z;
+            h.ray.dir_x = d.x;
+            h.ray.dir_y = d.y;
+            h.ray.dir_z = d.z;
+            h.ray.tnear = t;
+            h.ray.tfar = INFINITY;
+            h.ray.mask = ~0u;
+            h.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+            RTCIntersectArguments args;
+            rtcInitIntersectArguments(&args);
+            rtcIntersect1(s.volumes, &h, &args);
+            if (h.hit.geomID == RTC_INVALID_GEOMETRY_ID) break;
+            const float th = h.ray.tfar;
+            const U32 v = U32(s.plan->meshes[h.hit.geomID].volume);
+            const U32 flags = d.x * h.hit.Ng_x + d.y * h.hit.Ng_y + d.z * h.hit.Ng_z < 0.0f ? volume::Entry : volume::Exit;
+            if (!(n > 0 && x[n - 1].t == th && x[n - 1].volume == v && x[n - 1].flags == flags)) x[n++] = volume::Crossing{th, v, flags};
+            t = th + fmaxf(1e-6f, th * 1e-6f);
+        }
+        return n;
     }
 };
 

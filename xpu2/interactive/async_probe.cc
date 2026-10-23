@@ -58,7 +58,8 @@ int main(int argc, char** argv) {
         stamp = Clock::now();
         CanonicalSession canonical(argv[2], {3301, 0, 0, 0});
         auto frame = canonical.prepare(source, out / "canonical", {3301, 1, 1, 1});
-        auto plan = cpu::prepare(canonical, frame, {}, cpu::Limits{}, argv[4], cpu::Domain::SurfaceTextures, true);
+        // MoonRay's path tracer (PATH_TRACER.md).
+        auto plan = cpu::prepare(canonical, frame, {}, cpu::Limits{}, argv[4], cpu::Domain::SurfaceTextures, true, true);
         auto chosen = std::make_shared<cpu::Plan>(*plan);
         // "-" keeps the scene's own seed and the default sampling policy.
         if (argc > 12 && std::string(argv[12]) != "-") chosen->seed = unsigned(std::stoul(argv[12]));

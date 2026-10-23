@@ -15,7 +15,12 @@
 #include "async_adaptive.h"
 #include "async_gpu_abi.h"
 #include "gpu_lane.h"
+#include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
 #include <deque>
+#include <mutex>
+#include <thread>
 #include <unordered_map>
 
 namespace xpu2::interactive::async {
@@ -62,8 +67,10 @@ public:
             ox(optixInit());
             OptixDeviceContextOptions context{};
             ox(optixDeviceContextCreate(driver.context, &context, &optix_));
-            programs_[0].create(*this, ptx);
-            if (!adaptivePtx.empty()) programs_[1].create(*this, adaptivePtx);
+            OptixModule modules[2]{};
+            compileModules(ptx, adaptivePtx, modules);
+            programs_[0].create(*this, modules[0]);
+            if (modules[1]) programs_[1].create(*this, modules[1]);
             program_ = &programs_[0];
             if (!chainPtx.empty()) {
                 gpu::Driver::check(driver.cuModuleLoadData_p(&chain_.module, chainPtx.c_str()));
@@ -95,17 +102,82 @@ public:
     ~GpuLane() { cleanup(); }
     GpuLane(const GpuLane&) = delete;
 
+    // Bytes of scratch per launch thread: a Bsdf, the pending rays and the DwaBase parameter slots
+    // the scene's material trees need (GpuBackend::bsdf, pending, dwaSlots).
+    // A glitter scratch (shade_glitter.h) follows when a material has glitter (glitterOffset).
+    static size_t scratchStride(unsigned dwaSlots, bool glitter = false) {
+        return glitterOffset(dwaSlots) + (glitter ? (sizeof(shade::GlitterScratch) + 15) & ~size_t(15) : 0);
+    }
+    static size_t glitterOffset(unsigned dwaSlots) {
+        return ((sizeof(shade::Bsdf) + 15) & ~size_t(15)) + ((sizeof(paths::Pending) * paths::MaxPending + 15) & ~size_t(15)) +
+               dwaSlots * ((sizeof(shade::DwaParams) + 15) & ~size_t(15));
+    }
     // Uploads a scene: acceleration structures, geometry, materials, the
     // resident mip levels and an empty fine-detail cache. Startup work.
     void prepare(const cpu::PlanView& plan) {
         cpu::need(plan && cpu::isSpatial(plan->domain), "Asynchronous GPU lane requires a spatial plan");
+        cpu::need(plan->paths, "The GPU programs carry the path tracer only");
         plan_ = plan;
         scene_ = {};
         std::vector<OptixInstance> instances(plan->meshes.size());
         std::vector<mixed::Geometry> geometry;
         std::vector<surface::Lambert> materials;
+        std::vector<shade::MaterialRecord> meshMaterials;
+        std::vector<shade::MeshAttributes> meshAttributes;
         for (unsigned i = 0; i < plan->meshes.size(); ++i) {
             const auto& m = *plan->meshes[i].data;
+            if (m.curveBasis) {
+                // Curves: a custom primitive a span, its box as OptixGPUCurve::getPrimitiveAabbs makes it; the curve
+                // hit group's program (async_gpu.cu) runs MoonRay XPU's curve programs (curve_core.h).
+                const curves::Set host = cpu::curveSet(m);
+                std::vector<OptixAabb> boxes(host.spanCount);
+                for (U32 k = 0; k < host.spanCount; ++k) {
+                    float lower[3], upper[3];
+                    curves::spanBounds(host, k, lower, upper);
+                    boxes[k] = {lower[0], lower[1], lower[2], upper[0], upper[1], upper[2]};
+                }
+                auto aabbs = upload(boxes.data(), boxes.size() * sizeof(OptixAabb));
+                auto points = upload(m.curvePoints.data(), m.curvePoints.size() * sizeof(float));
+                auto spans = upload(m.curveSpans.data(), m.curveSpans.size() * sizeof(unsigned));
+                auto counts = upload(m.curveSpanCounts.data(), m.curveSpanCounts.size() * sizeof(unsigned));
+                OptixBuildInput input{};
+                unsigned flag = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+                input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
+                auto& custom = input.customPrimitiveArray;
+                custom.aabbBuffers = &aabbs->pointer;
+                custom.numPrimitives = host.spanCount;
+                custom.strideInBytes = sizeof(OptixAabb);
+                custom.flags = &flag;
+                custom.numSbtRecords = 1;
+                auto gas = build(input);
+                auto& inst = instances[i];
+                inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
+                inst.instanceId = i;
+                inst.sbtOffset = 1;  // the curve hit group
+                inst.visibilityMask = 1;  // surfaces
+                inst.traversableHandle = gas.second;
+                geometry.push_back({nullptr, nullptr, 0, 0});
+                materials.push_back(plan->materials.at(plan->meshes[i].material));
+                meshMaterials.push_back(plan->materialRecords.at(plan->meshes[i].material));
+                shade::MeshAttributes attributes;
+                for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = m.worldToObject[k];
+                if (!m.prims.empty()) {
+                    auto prims = upload(m.prims.data(), m.prims.size() * sizeof(shade::PrimAttr));
+                    auto data = upload(m.primData.data(), std::max<size_t>(m.primData.size(), 1) * sizeof(float));
+                    attributes.prims = reinterpret_cast<const shade::PrimAttr*>(prims->pointer);
+                    attributes.primData = reinterpret_cast<const float*>(data->pointer);
+                    attributes.primCount = U32(m.prims.size());
+                    scene_.keep.push_back(prims);
+                    scene_.keep.push_back(data);
+                }
+                attributes.curve = host;
+                attributes.curve.points = reinterpret_cast<const float*>(points->pointer);
+                attributes.curve.spans = reinterpret_cast<const U32*>(spans->pointer);
+                attributes.curve.curveSpans = reinterpret_cast<const U32*>(counts->pointer);
+                meshAttributes.push_back(attributes);
+                scene_.keep.insert(scene_.keep.end(), {aabbs, points, spans, counts, gas.first});
+                continue;
+            }
             auto vertices = upload(m.positions.data(), m.positions.size() * sizeof(surface::V3));
             auto indices = upload(m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
             OptixBuildInput input{};
@@ -126,12 +198,40 @@ public:
             auto& inst = instances[i];
             inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
             inst.instanceId = i;
-            inst.visibilityMask = 255;
+            // Visibility: 1 for a surface (the path tracer's rays), 2 for a volume's bounds (its crossings); a mesh
+            // with no material is a volume's bounds alone.
+            const bool surface = plan->meshes[i].material != ~0u;
+            inst.visibilityMask = (surface ? 1u : 0u) | (plan->meshes[i].volume >= 0 ? 2u : 0u);
             inst.traversableHandle = gas.second;
             geometry.push_back({reinterpret_cast<const surface::V3*>(vertices->pointer),
                                 reinterpret_cast<const surface::Triangle*>(indices->pointer),
                                 unsigned(m.positions.size()), unsigned(m.triangles.size())});
-            materials.push_back(plan->materials.at(plan->meshes[i].material));
+            materials.push_back(surface ? plan->materials.at(plan->meshes[i].material) : surface::Lambert{});
+            meshMaterials.push_back(surface ? plan->materialRecords.at(plan->meshes[i].material) : shade::MaterialRecord{});
+            shade::MeshAttributes attributes;
+            for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = m.worldToObject[k];
+            if (!m.prims.empty()) {
+                auto prims = upload(m.prims.data(), m.prims.size() * sizeof(shade::PrimAttr));
+                auto data = upload(m.primData.data(), std::max<size_t>(m.primData.size(), 1) * sizeof(float));
+                attributes.prims = reinterpret_cast<const shade::PrimAttr*>(prims->pointer);
+                attributes.primData = reinterpret_cast<const float*>(data->pointer);
+                attributes.primCount = U32(m.prims.size());
+                scene_.keep.push_back(prims);
+                scene_.keep.push_back(data);
+            }
+            if (!m.normals.empty()) {
+                auto normals = upload(m.normals.data(), m.normals.size() * sizeof(surface::V3));
+                attributes.normals = reinterpret_cast<const surface::V3*>(normals->pointer);
+                attributes.normalRate = m.normalRate;
+                scene_.keep.push_back(normals);
+            }
+            if (!m.uvs.empty()) {
+                auto uvs = upload(m.uvs.data(), m.uvs.size() * sizeof(float));
+                attributes.uvs = reinterpret_cast<const float*>(uvs->pointer);
+                attributes.uvRate = m.uvRate;
+                scene_.keep.push_back(uvs);
+            }
+            meshAttributes.push_back(attributes);
             scene_.keep.insert(scene_.keep.end(), {vertices, indices, gas.first});
         }
         auto instanceBuffer = upload(instances.data(), instances.size() * sizeof(OptixInstance));
@@ -144,6 +244,21 @@ public:
         scene_.keep.insert(scene_.keep.end(), {instanceBuffer, top.first});
         scene_.geometry = upload(geometry.data(), geometry.size() * sizeof(mixed::Geometry));
         scene_.materials = upload(materials.data(), materials.size() * sizeof(surface::Lambert));
+        if (plan->paths) {
+            scene_.lights = upload(plan->lights.data(), plan->lights.size() * sizeof(lights::Light));
+            scene_.meshLights = upload(plan->meshLights.data(), plan->meshLights.size() * sizeof(U32));
+            if (!plan->volumes.empty()) {
+                scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
+                std::vector<int> meshVolumes;
+                for (const auto& mesh : plan->meshes) meshVolumes.push_back(mesh.volume);
+                scene_.meshVolumes = upload(meshVolumes.data(), meshVolumes.size() * sizeof(int));
+            }
+            scene_.meshMaterials = upload(meshMaterials.data(), meshMaterials.size() * sizeof(shade::MaterialRecord));
+            scene_.meshAttributes = upload(meshAttributes.data(), meshAttributes.size() * sizeof(shade::MeshAttributes));
+            const std::vector<float> pool = plan->materialPool.empty() ? std::vector<float>{0.0f} : plan->materialPool;
+            scene_.materialPool = upload(pool.data(), pool.size() * sizeof(float));
+            scene_.scratch = device(size_t(options_.launchThreads) * scratchStride(plan->dwaSlots, plan->glitter));
+        }
         const auto config = mixed::config(plan);
         scene_.config = upload(&config, sizeof(config));
         if (cpu::gpuTextures(plan->domain)) prepareTextures(*plan);
@@ -525,31 +640,115 @@ public:
 private:
     using B = gpu::B;
     struct alignas(OPTIX_SBT_RECORD_ALIGNMENT) Record { char header[OPTIX_SBT_RECORD_HEADER_SIZE]; };
+    static OptixPipelineCompileOptions pipelineOptions() {
+        OptixPipelineCompileOptions po{};
+        po.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+        po.numPayloadValues = 2;
+        po.numAttributeValues = 2;
+        po.pipelineLaunchParamsVariableName = "params";
+        po.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE | OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM;
+        return po;
+    }
+    // The program modules (the adaptive one if any), compiled together on a pool of threads through OptiX's
+    // compile tasks: one thread compiling the shading library took minutes. OptiX's disk cache still serves
+    // a module it has compiled before (no tasks then).
+    void compileModules(const std::string& ptx, const std::string& adaptivePtx, OptixModule (&modules)[2]) {
+        OptixModuleCompileOptions mo{};
+        mo.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
+        mo.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
+        mo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+        const OptixPipelineCompileOptions po = pipelineOptions();
+        std::mutex mutex;
+        std::condition_variable wake;
+        std::deque<OptixTask> tasks;
+        const std::string* sources[2] = {&ptx, &adaptivePtx};
+        // The tasks write their feedback here until the modules complete or fail.
+        static thread_local char logs[2][8192];
+        size_t lengths[2] = {sizeof(logs[0]), sizeof(logs[1])};
+        for (int i = 0; i < 2; ++i) {
+            if (sources[i]->empty()) continue;
+            OptixTask first = nullptr;
+            if (optixModuleCreateFromPTXWithTasks(optix_, &mo, &po, sources[i]->data(), sources[i]->size(), logs[i], &lengths[i],
+                                                  &modules[i], &first) != OPTIX_SUCCESS)
+                throw std::runtime_error("OptiX module: " + std::string(logs[i], std::min(lengths[i], sizeof(logs[i]))));
+            if (first) tasks.push_back(first);
+        }
+        unsigned active = 0;
+        bool done = tasks.empty();
+        OptixResult error = OPTIX_SUCCESS;
+        auto work = [&] {
+            for (;;) {
+                OptixTask task;
+                {
+                    std::unique_lock<std::mutex> lock(mutex);
+                    wake.wait(lock, [&] { return done || !tasks.empty(); });
+                    if (done) return;
+                    task = tasks.front();
+                    tasks.pop_front();
+                    ++active;
+                }
+                OptixTask additional[16]{};
+                unsigned count = 0;
+                const OptixResult status = optixTaskExecute(task, additional, 16, &count);
+                std::lock_guard<std::mutex> lock(mutex);
+                --active;
+                if (status != OPTIX_SUCCESS && error == OPTIX_SUCCESS) error = status;
+                if (error == OPTIX_SUCCESS)
+                    for (unsigned i = 0; i < count; ++i) tasks.push_back(additional[i]);
+                else
+                    tasks.clear();
+                if (tasks.empty() && active == 0) done = true;
+                wake.notify_all();
+            }
+        };
+        const unsigned threads = std::max(1u, std::min(16u, std::thread::hardware_concurrency()));
+        std::vector<std::thread> workers;
+        try {
+            for (unsigned i = 1; i < threads; ++i) workers.emplace_back(work);
+            work();
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                done = true;
+                wake.notify_all();
+            }
+            for (auto& w : workers) w.join();
+            throw;
+        }
+        for (auto& w : workers) w.join();
+        // A module the tasks did not complete is compiled again on one thread, for OptiX's log.
+        for (int i = 0; i < 2; ++i) {
+            if (!modules[i]) continue;
+            OptixModuleCompileState state = OPTIX_MODULE_COMPILE_STATE_FAILED;
+            if (optixModuleGetCompilationState(modules[i], &state) == OPTIX_SUCCESS && state == OPTIX_MODULE_COMPILE_STATE_COMPLETED &&
+                error == OPTIX_SUCCESS)
+                continue;
+            std::fprintf(stderr, "OptiX compile tasks: module %d state %x, result %d; compiling on one thread\n%.*s\n", i,
+                         unsigned(state), int(error), int(std::min(lengths[i], sizeof(logs[i]))), logs[i]);
+            optixModuleDestroy(modules[i]);
+            modules[i] = nullptr;
+            char log[8192];
+            size_t length = sizeof(log);
+            if (optixModuleCreateFromPTX(optix_, &mo, &po, sources[i]->data(), sources[i]->size(), log, &length, &modules[i]) !=
+                OPTIX_SUCCESS)
+                throw std::runtime_error("OptiX module: " + std::string(log, std::min(length, sizeof(log))));
+        }
+    }
     // One OptiX program: its module, programs, pipeline and binding table.
     struct Program {
         OptixModule module = nullptr;
-        OptixProgramGroup groups[4]{};
+        OptixProgramGroup groups[5]{};
         OptixPipeline pipeline = nullptr;
         B records;
         OptixShaderBindingTable sbt{};
 
-        void create(GpuLane& lane, const std::string& ptx) {
-            OptixModuleCompileOptions mo{};
-            mo.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
-            mo.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
-            mo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-            OptixPipelineCompileOptions po{};
-            po.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-            po.numPayloadValues = 2;
-            po.numAttributeValues = 2;
-            po.pipelineLaunchParamsVariableName = "params";
-            po.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
+        // Takes the compiled module (compileModules) and makes its programs and pipeline.
+        void create(GpuLane& lane, OptixModule compiled) {
+            module = compiled;
+            const OptixPipelineCompileOptions po = pipelineOptions();
             char log[8192];
             size_t length = sizeof(log);
-            if (optixModuleCreateFromPTX(lane.optix_, &mo, &po, ptx.data(), ptx.size(), log, &length, &module) !=
-                OPTIX_SUCCESS)
-                throw std::runtime_error("OptiX module: " + std::string(log, std::min(length, sizeof(log))));
-            OptixProgramGroupDesc desc[4] = {};
+            OptixProgramGroupDesc desc[5] = {};
             desc[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
             desc[0].raygen = {module, "__raygen__async"};
             desc[1].kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
@@ -559,22 +758,30 @@ private:
             desc[3].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
             desc[3].hitgroup.moduleCH = module;
             desc[3].hitgroup.entryFunctionNameCH = "__closesthit__triangle";
+            // Curves: their spans' own intersection program, the same closest hit.
+            desc[4].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+            desc[4].hitgroup.moduleCH = module;
+            desc[4].hitgroup.entryFunctionNameCH = "__closesthit__triangle";
+            desc[4].hitgroup.moduleIS = module;
+            desc[4].hitgroup.entryFunctionNameIS = "__intersection__curve";
             OptixProgramGroupOptions options{};
             length = sizeof(log);
-            ox(optixProgramGroupCreate(lane.optix_, desc, 4, &options, log, &length, groups));
+            ox(optixProgramGroupCreate(lane.optix_, desc, 5, &options, log, &length, groups));
             OptixPipelineLinkOptions link{};
             link.maxTraceDepth = 1;
             link.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
             length = sizeof(log);
-            ox(optixPipelineCreate(lane.optix_, &po, &link, groups, 4, log, &length, &pipeline));
+            ox(optixPipelineCreate(lane.optix_, &po, &link, groups, 5, log, &length, &pipeline));
             OptixStackSizes stacks{};
             for (auto g : groups) ox(optixUtilAccumulateStackSizes(g, &stacks));
+            if (std::getenv("XPU2_ASYNC_STACKS"))  // a diagnostic: the raygen's stack shows state spilled across traces
+                std::fprintf(stderr, "stacks: cssRG %u cssMS %u cssCH %u dssDC %u\n", stacks.cssRG, stacks.cssMS, stacks.cssCH, stacks.dssDC);
             unsigned a, b, c;
             ox(optixUtilComputeStackSizes(&stacks, 1, 0, 0, &a, &b, &c));
             ox(optixPipelineSetStackSize(pipeline, a, b, c, 2));
-            auto host = lane.pinned(sizeof(Record) * 4);
-            for (int i = 0; i < 4; ++i) ox(optixSbtRecordPackHeader(groups[i], static_cast<Record*>(host->host()) + i));
-            records = lane.device(sizeof(Record) * 4);
+            auto host = lane.pinned(sizeof(Record) * 5);
+            for (int i = 0; i < 5; ++i) ox(optixSbtRecordPackHeader(groups[i], static_cast<Record*>(host->host()) + i));
+            records = lane.device(sizeof(Record) * 5);
             gpu::Driver::check(lane.driver.cuMemcpyHtoDAsync_v2_p(records->pointer, host->host(), host->bytes, nullptr));
             lane.driver.drain();
             sbt.raygenRecord = records->pointer;
@@ -583,7 +790,7 @@ private:
             sbt.missRecordCount = 2;
             sbt.hitgroupRecordBase = records->pointer + 3 * sizeof(Record);
             sbt.hitgroupRecordStrideInBytes = sizeof(Record);
-            sbt.hitgroupRecordCount = 1;
+            sbt.hitgroupRecordCount = 2;
         }
         void destroy() noexcept {
             if (pipeline) optixPipelineDestroy(pipeline);
@@ -638,7 +845,9 @@ private:
     struct Scene {
         std::vector<B> keep;
         U64 traversable = 0;
-        B geometry, materials, config, maps, sums, odd, counts, hostSums, hostOdd, hostCounts;
+        B geometry, materials, lights, meshLights, volumes, meshVolumes, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
+            hostSums,
+            hostOdd, hostCounts;
         B passMask[PassSlots], passBase[PassSlots], passStaging[PassSlots], errors, hostErrors;
         std::shared_ptr<gpu::Event> filmDone, errorsDone;
         size_t mipBytes = 0;
@@ -700,6 +909,8 @@ private:
         for (auto* bindings : {&plan.diffuseMaps, &plan.emissionMaps})
             for (auto& pair : *bindings)
                 if (std::find(files.begin(), files.end(), pair.second.file) == files.end()) files.push_back(pair.second.file);
+        for (auto& file : plan.textures)
+            if (std::find(files.begin(), files.end(), file) == files.end()) files.push_back(file);
         fine_ = {};
         fine_.sources.push_back({nullptr, 0});  // id 0 is untracked
         std::vector<std::pair<std::shared_ptr<texture::File>, B>> images;
@@ -755,7 +966,8 @@ private:
         fine_.tiles = U32(fine_.sources.size() - 1);
         fine_.requestCapacity = fine_.tiles + 1;
         const size_t tileBytes = size_t(tex::Tile) * tex::Tile * sizeof(surface::V3);
-        fine_.slots = U32(std::min<size_t>(options_.fineBudget / tileBytes, fine_.tiles));
+        // A scene without textures keeps one unused slot, so the buffers below are never empty.
+        fine_.slots = U32(std::min<size_t>(options_.fineBudget / tileBytes, std::max<U32>(fine_.tiles, 1)));
         cpu::need(fine_.slots > 0, "Fine-detail cache budget");
         fine_.tileState = device((fine_.tiles + 1) * sizeof(U32));
         fine_.touched = device(fine_.tiles + 1);
@@ -791,6 +1003,18 @@ private:
             maps.push_back(pair);
         }
         scene_.maps = upload(maps.data(), maps.size() * sizeof(tex::Maps));
+        // The maps' texture table, in the plan's order (shade_mapnodes.h).
+        if (!plan.textures.empty()) {
+            std::vector<const tex::Image*> table;
+            for (auto& file : plan.textures) {
+                const tex::Image* image = nullptr;
+                for (auto& entry : images)
+                    if (entry.first == file) image = reinterpret_cast<const tex::Image*>(entry.second->pointer);
+                if (!image) throw std::runtime_error("Unmapped texture residency");
+                table.push_back(image);
+            }
+            scene_.textures = upload(table.data(), table.size() * sizeof(table[0]));
+        }
         for (auto& image : images) scene_.keep.push_back(image.second);
     }
 
@@ -866,9 +1090,21 @@ private:
         LaunchParams p{};
         p.config = reinterpret_cast<const mixed::Config*>(scene_.config->pointer);
         p.materials = reinterpret_cast<const surface::Lambert*>(scene_.materials->pointer);
+        p.lights = scene_.lights ? reinterpret_cast<const lights::Light*>(scene_.lights->pointer) : nullptr;
+        p.meshLights = scene_.meshLights ? reinterpret_cast<const U32*>(scene_.meshLights->pointer) : nullptr;
+        p.volumes = scene_.volumes ? reinterpret_cast<const volume::Shader*>(scene_.volumes->pointer) : nullptr;
+        p.meshVolumes = scene_.meshVolumes ? reinterpret_cast<const int*>(scene_.meshVolumes->pointer) : nullptr;
+        p.meshMaterials = scene_.meshMaterials ? reinterpret_cast<const shade::MaterialRecord*>(scene_.meshMaterials->pointer) : nullptr;
+        p.meshAttributes = scene_.meshAttributes ? reinterpret_cast<const shade::MeshAttributes*>(scene_.meshAttributes->pointer) : nullptr;
+        p.materialPool = scene_.materialPool ? reinterpret_cast<const float*>(scene_.materialPool->pointer) : nullptr;
+        p.scratch = scene_.scratch ? reinterpret_cast<unsigned char*>(scene_.scratch->pointer) : nullptr;
+        p.scratchStride = scratchStride(plan_->dwaSlots, plan_->glitter);
+        p.glitterOffset = plan_->glitter ? glitterOffset(plan_->dwaSlots) : 0;
         p.traversable = scene_.traversable;
         p.geometry = reinterpret_cast<const mixed::Geometry*>(scene_.geometry->pointer);
         p.maps = scene_.maps ? reinterpret_cast<const tex::Maps*>(scene_.maps->pointer) : nullptr;
+        p.textures = scene_.textures ? reinterpret_cast<const tex::Image* const*>(scene_.textures->pointer) : nullptr;
+        p.textureCount = scene_.textures ? U32(plan_->textures.size()) : 0;
         p.ring = reinterpret_cast<const Chunk*>(ring_->pointer);
         p.ringCapacity = options_.ringChunks;
         p.itemsPerChunk = itemsPerChunk_;

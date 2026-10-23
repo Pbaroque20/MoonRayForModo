@@ -15,7 +15,9 @@ struct Mip {unsigned width=0,height=0;const V3* const* pages=nullptr;unsigned ti
 // that is read (for the fine-detail cache's eviction order). NoSink ignores both.
 struct NoSink {X2_HD void operator()(unsigned) const {} X2_HD void touch(unsigned) const {}};
 struct Image {unsigned count=0;Mip levels[MaxLevels]{};};
-struct Binding {const Image* image=nullptr;float sx=1,sy=1,ox=0,oy=0,bias=0;unsigned wrap=1,gamma=0;};
+// mode: 0 anisotropic (MoonRay's primary paths), 1 trilinear mips of the closest texels (glossy and mirror
+// paths), 2 one mip level's closest texel (diffuse paths).
+struct Binding {const Image* image=nullptr;float sx=1,sy=1,ox=0,oy=0,bias=0;unsigned wrap=1,gamma=0,mode=0;};
 struct Maps {Binding diffuse,emission;};
 struct Footprint {float u,v,dudx,dvdx,dudy,dvdy;};
 X2_HD inline float clamp(float x,float lo,float hi){return fminf(fmaxf(x,lo),hi);}
@@ -36,6 +38,27 @@ template<class Sink>X2_HD inline Status bilinear(const Mip& m,float u,float v,bo
  if((q=fetch(m,x,y,wrap,a,sink))!=Ready||(q=fetch(m,x+1,y,wrap,b,sink))!=Ready||(q=fetch(m,x,y+1,wrap,c,sink))!=Ready||(q=fetch(m,x+1,y+1,wrap,d,sink))!=Ready)return q;
  out=surface::add(surface::mul(surface::add(surface::mul(a,1-s),surface::mul(b,s)),1-t),surface::mul(surface::add(surface::mul(c,1-s),surface::mul(d,s)),t));return Ready;
 }
+// sample_closest: the texel nearest (s, t); an exact half-texel tie takes the lower one.
+template<class Sink>X2_HD inline Status closest(const Mip& m,float u,float v,bool wrap,V3& out,Sink& sink){
+ float s=u*m.width-.5f,t=v*m.height-.5f;if(!surface::finite(s)||!surface::finite(t)||fabsf(s)>1.e8f||fabsf(t)>1.e8f)return Invalid;
+ int x=int(floorf(s)),y=int(floorf(t));if(s-x>.5f)++x;if(t-y>.5f)++y;return fetch(m,x,y,wrap,out,sink);
+}
+// texture_lookup_trilinear_mipmap with closest texels: adjust_width's clamp of degenerate derivatives, the
+// conservative filter width (the larger of s's and t's), compute_miplevels (one level for MipModeOneLevel).
+template<class Sink>X2_HD inline Status trilinear(const Binding& b,float s,float t,float dx,float tx,float dy,float ty,V3& out,Sink& sink){
+ const float eps=1.0e-8f,eps2=eps*eps;float dxlen2=dx*dx+tx*tx,dylen2=dy*dy+ty*ty;
+ if(dxlen2<eps2){if(dylen2<eps2){dx=eps;dy=0;tx=0;ty=eps;}else{float sc=eps/sqrtf(dylen2);dx=ty*sc;tx=-dy*sc;}}
+ else if(dylen2<eps2){float sc=eps/sqrtf(dxlen2);dy=-tx*sc;ty=dx*sc;}
+ const float filt=fmaxf(fmaxf(fabsf(dx),fabsf(dy)),fmaxf(fabsf(tx),fabsf(ty)));
+ const auto& image=*b.image;int levels[2]={-1,-1};float lw[2]={0,0};
+ for(unsigned m=0;m<image.count;++m){auto mip=image.levels[m];float w=filt*(mip.width<mip.height?mip.width:mip.height);if(w<=1){levels[0]=int(m)-1;levels[1]=m;lw[1]=clamp(2*w-1,0,1);lw[0]=1-lw[1];break;}}
+ if(levels[1]<0){levels[0]=levels[1]=int(image.count)-1;lw[0]=1;lw[1]=0;}
+ else if(levels[0]<0){levels[0]=levels[1]=0;lw[0]=1;lw[1]=0;}
+ else if(b.mode==2){levels[0]=levels[1];lw[0]=1;lw[1]=0;}
+ V3 result{};for(int k=0;k<2;++k){if(lw[k]==0)continue;V3 value;auto status=closest(image.levels[levels[k]],s,t,b.wrap!=0,value,sink);if(status!=Ready)return status;result=surface::add(result,surface::mul(value,lw[k]));}
+ if(b.gamma)result={powf(fmaxf(result.x,0),2.2f),powf(fmaxf(result.y,0),2.2f),powf(fmaxf(result.z,0),2.2f)};
+ if(!surface::finite(result))return Invalid;out=result;return Ready;
+}
 // Admitted subset: stored 2D RGB mips, anisotropy 4, bilinear, zero blur,
 // periodic/clamp, deterministic mip blending, explicit scale/offset/gamma.
 template<class Sink>X2_HD inline Status lookup(const Binding& b,Footprint f,V3& out,Sink& sink){
@@ -43,6 +66,7 @@ template<class Sink>X2_HD inline Status lookup(const Binding& b,Footprint f,V3& 
  float s=b.sx*f.u+b.ox,t=1-(b.sy*f.v+b.oy),bias=1+b.bias;
  float dx=f.dudx*b.sx*bias,tx=-f.dvdx*b.sx*bias,dy=f.dudy*b.sy*bias,ty=-f.dvdy*b.sy*bias;
  if(!surface::finite(s)||!surface::finite(t)||fabsf(s)>1024||fabsf(t)>1024||!surface::finite(dx)||!surface::finite(tx)||!surface::finite(dy)||!surface::finite(ty))return Invalid;
+ if(b.mode)return trilinear(b,s,t,dx,tx,dy,ty,out,sink);
  double A=tx*tx+ty*ty,B=-2.0*(dx*tx+dy*ty),C=dx*dx+dy*dy,root=hypot(A-C,B);
  float major=fminf(sqrtf(fmaxf(float((A+C+root)*.5),0.f)),1000.f),minor=fminf(sqrtf(fmaxf(float((A+C-root)*.5),0.f)),1000.f);
  float theta=atan(float(B),float(A-C))*.5f+surface::Pi*.5f;

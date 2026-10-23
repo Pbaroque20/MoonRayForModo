@@ -5,7 +5,12 @@
 namespace xpu2::interactive::resume {
 using mixed::U32;using mixed::U64;
 enum Phase:U32 {Camera,Trace,Shade,Shadow,Finish,Complete,Error,TextureWait};
-struct Hit {U32 geom=~0u,prim=0;float t=0,u=0,v=0;surface::V3 normal{},origin{};};
+// origin is offset to the side the ray came from; below, to the other side (refracted and
+// transmitted rays start there).
+// epsilon: a curve hit's ray epsilon hint (1.5 times the curve's radius there; zero for a triangle). Rays leave a
+// curve from the hit point itself and skip what is nearer than it (normal: a round cubic's geometric normal, else
+// the reversed ray).
+struct Hit {U32 geom=~0u,prim=0;float t=0,u=0,v=0;surface::V3 normal{},origin{},below{},point{};float epsilon=0;};
 // Interpolate the hit from resident triangle vertices. Offset by a conservative
 // float arithmetic bound along the facing geometric normal, then round outward.
 // This is a restricted triangle prototype, not a proof for displacement/curves.
@@ -24,6 +29,7 @@ X2_HD inline bool geometryHit(Hit& h,const surface::Ray& ray,surface::V3 a,surfa
  V3 p={float(double(a.x)+((double(b.x)-a.x)*precise.u+(double(c.x)-a.x)*precise.v)),
        float(double(a.y)+((double(b.y)-a.y)*precise.u+(double(c.y)-a.y)*precise.v)),
        float(double(a.z)+((double(b.z)-a.z)*precise.u+(double(c.z)-a.z)*precise.v))};
+ h.point=p;
  V3 error{fabsf(a.x)+fabsf(e1.x)+fabsf(e2.x),fabsf(a.y)+fabsf(e1.y)+fabsf(e2.y),fabsf(a.z)+fabsf(e1.z)+fabsf(e2.z)};
  // Include primitive extent even for an axis plane through the origin: its
  // normal component has zero coordinate error but traversal can still self-hit.
@@ -33,7 +39,11 @@ X2_HD inline bool geometryHit(Hit& h,const surface::Ray& ray,surface::V3 a,surfa
  if(h.normal.x!=0)h.origin.x=nextafterf(h.origin.x,h.normal.x>0?3.402823466e38f:-3.402823466e38f);
  if(h.normal.y!=0)h.origin.y=nextafterf(h.origin.y,h.normal.y>0?3.402823466e38f:-3.402823466e38f);
  if(h.normal.z!=0)h.origin.z=nextafterf(h.origin.z,h.normal.z>0?3.402823466e38f:-3.402823466e38f);
- return finite(h.origin);
+ h.below=add(p,mul(h.normal,-d));
+ if(h.normal.x!=0)h.below.x=nextafterf(h.below.x,h.normal.x>0?-3.402823466e38f:3.402823466e38f);
+ if(h.normal.y!=0)h.below.y=nextafterf(h.below.y,h.normal.y>0?-3.402823466e38f:3.402823466e38f);
+ if(h.normal.z!=0)h.below.z=nextafterf(h.below.z,h.normal.z>0?-3.402823466e38f:3.402823466e38f);
+ return finite(h.origin)&&finite(h.below);
 }
 struct State {
  mixed::Pixel film;surface::Ray ray{};Hit hit{};surface::Sample bsdf{};

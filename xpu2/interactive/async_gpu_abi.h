@@ -79,9 +79,25 @@ struct ChainArgs {
 struct LaunchParams {
     const mixed::Config* config;
     const surface::Lambert* materials;
+    const lights::Light* lights;  // the path tracer's lights, and each mesh's mask over them
+    const U32* meshLights;
+    const volume::Shader* volumes;  // the volumes bound to meshes (volume_core.h), and each mesh's (-1: none)
+    const int* meshVolumes;
+    // The path tracer's materials: each mesh's material record and shading attributes, and the
+    // records' parameter pool (shade_material.h).
+    const shade::MaterialRecord* meshMaterials;
+    const shade::MeshAttributes* meshAttributes;
+    const float* materialPool;
+    // Per launch thread: the path tracer's Bsdf and pending rays (async_integrator.h).
+    unsigned char* scratch;
+    U64L scratchStride;
+    U64L glitterOffset;  // the glitter scratch's place in a thread's scratch (0: the scene has no glitter)
     U64L traversable;  // OptixTraversableHandle
     const mixed::Geometry* geometry;
     const tex::Maps* maps;
+    // The scene's textures, as the maps index them (cpu::Plan::textures).
+    const tex::Image* const* textures;
+    U32 textureCount;
 
     // Work: chunk items [itemBegin, itemEnd); item = chunk * itemsPerChunk + offset,
     // offset = sample * 64 + position in the tile, so neighbouring threads take

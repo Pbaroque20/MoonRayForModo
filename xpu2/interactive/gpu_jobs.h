@@ -7,7 +7,17 @@ namespace xpu2::interactive::resume {struct Batch;}
 namespace xpu2::interactive::mixed {
 using sample::U32;using sample::U64;
 constexpr U32 Capacity=256;
-struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 width,height,seed,meshes;surface::Filter filter;float filterWidth;U32 spatial=0,surfaceLimit=1,spp=1,textures=0,sampling=3;};
+struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 width,height,seed,meshes;surface::Filter filter;float filterWidth;U32 spatial=0,surfaceLimit=1,spp=1,textures=0,sampling=3;
+    // The asynchronous renderer's path tracer (async_integrator.h, PATH_TRACER.md); 0 keeps the prototype's estimator.
+    U32 paths=0,lightCount=0,bsdfSamples=1,lightSamples=1,maxDepth=0,maxDiffuseDepth=0,clampDepth=1;float rrThreshold=0,clampValue=0;
+    // The rest of MoonRay's integrator settings for the materials' lobes (PathIntegrator::update).
+    U32 maxGlossyDepth=0,maxMirrorDepth=0,maxHairDepth=0,maxPresenceDepth=0,shadowTerminatorFix=0;float roughnessClamping=0,transparencyThreshold=1;
+    U32 bssrdfSamples=4,maxSubsurfacePerPath=1,enableSss=1;
+    // World to MoonRay's render space (the camera's), 3x4 rows: the maps' render space.
+    float worldToRender[12]={1,0,0,0,0,1,0,0,0,0,1,0};
+    // Volumes (volume_core.h; PathIntegrator::update's volume settings): how many, and MoonRay's volume scene variables.
+    U32 volumeCount=0,maxVolumeDepth=1,volumeIlluminationSamples=4,volumeOverlapMode=0;
+    float volumeTransmittanceThreshold=0.005f,volumeAttenuationFactor=0.65f,volumeContributionFactor=0.65f,volumePhaseAttenuationFactor=0.5f;};
 struct Job {path::Epoch epoch{};U64 sequence=0;U32 count=0,first=0,samples=0,fault=0;U64 delay=0;U32 pixels[Capacity]{};};
 struct Pixel {double sum[4]{};U32 count=0,status=0,pixel=0,pad=0;};
 struct Result {path::Epoch epoch{};U64 sequence=0;U32 count=0,pad=0;Pixel pixels[Capacity]{};};
