@@ -241,6 +241,25 @@ CASES = {
         'BlendMap("/mix") { ["color_A"]=bind(NoiseWorleyMap_v3("/worley"),Rgb(1,1,1)), ["color_B"]=bind(NoiseWorleyMap_v2("/cells"),Rgb(1,1,1)) }',
         'DwaBaseMaterial("/s2") { ["albedo"]=bind(BlendMap("/mix"),Rgb(1,1,1)) }',
     ],
+    # ColorCorrectLegacyMap over a noise: brightness, contrast, hue, saturation; inverted monochrome with a mask and a
+    # clamp; the maximum after a negative hue shift.
+    'map-cc-legacy': [
+        mat('NoiseMap_v2', 'perlin', space=2, frequency_multiplier=3.0, max_level=4.5, color_A=(0.1, 0.2, 0.5),
+            color_B=(0.9, 0.8, 0.6)),
+        mat('ColorCorrectLegacyMap', 'cc0', brightness=20.0, contrast=40.0, hue=90.0, saturation=-30.0),
+        mat('ColorCorrectLegacyMap', 'cc1', contrast=-50.0, invert=True, monochrome=1, multiplier=(0.9, 0.6, 0.3), clamp=True,
+            mask=0.7),
+        mat('ColorCorrectLegacyMap', 'cc2', saturation=60.0, monochrome=4, hue=-200.0),
+        dwa('s0', albedo=(1.0, 1.0, 1.0), roughness=0.4),
+        dwa('s1', albedo=(1.0, 1.0, 1.0), roughness=0.35),
+        dwa('s2', albedo=(1.0, 1.0, 1.0), roughness=0.5),
+        'ColorCorrectLegacyMap("/cc0") { ["input"]=bind(NoiseMap_v2("/perlin"),Rgb(1,1,1)) }',
+        'ColorCorrectLegacyMap("/cc1") { ["input"]=bind(NoiseMap_v2("/perlin"),Rgb(1,1,1)) }',
+        'ColorCorrectLegacyMap("/cc2") { ["input"]=bind(NoiseMap_v2("/perlin"),Rgb(1,1,1)) }',
+        'DwaBaseMaterial("/s0") { ["albedo"]=bind(ColorCorrectLegacyMap("/cc0"),Rgb(1,1,1)) }',
+        'DwaBaseMaterial("/s1") { ["albedo"]=bind(ColorCorrectLegacyMap("/cc1"),Rgb(1,1,1)) }',
+        'DwaBaseMaterial("/s2") { ["albedo"]=bind(ColorCorrectLegacyMap("/cc2"),Rgb(1,1,1)) }',
+    ],
     'dwa-sss': [
         dwa('s0', albedo=(0.9, 0.75, 0.65), scattering_color=(0.95, 0.45, 0.3), scattering_radius=0.25, specular=0.5,
             roughness=0.4),
@@ -378,6 +397,101 @@ TEXTURED['map-projection'] = lambda t: [
     'DwaBaseMaterial("/s0") { ["albedo"]=bind(ImageMap("/via_planar"),Rgb(1,1,1)) }',
     'DwaBaseMaterial("/s1") { ["albedo"]=bind(ImageMap("/via_spherical"),Rgb(1,1,1)) }',
     'UsdPreviewSurface("/s2") { ["diffuseColor"]=bind(ImageMap("/via_udim"),Rgb(1,1,1)) }',
+]
+
+
+# Triplanar projection (ProjectTriplanarMap_v2): three textures with a narrow transition; six with random rotation, offset
+# and flip and per-face transforms; one, its S inverted and S and T swapped, with the widest transition.
+TEXTURED['map-triplanar'] = lambda t: [
+    mat('ProjectTriplanarMap_v2', 'tri3', projection_mode=2, scale=Raw('Vec3(0.6,0.6,0.6)'), translate=Raw('Vec3(-1.6,0.7,0)'),
+        number_of_textures=3, transition_width=0.3, positive_x_texture=path_value(t['checker']),
+        positive_y_texture=path_value(t['stripes']), positive_z_texture=path_value(t['checker'])),
+    mat('ProjectTriplanarMap_v2', 'tri6', projection_mode=2, translate=Raw('Vec3(0,0.7,0)'), rotate=Raw('Vec3(0,25,10)'),
+        number_of_textures=6, randomize_rotation=True, randomize_offset=True, randomize_flip=True, random_seed=5,
+        positive_x_texture=path_value(t['checker']), positive_y_texture=path_value(t['stripes']),
+        positive_z_texture=path_value(t['checker']), negative_x_texture=path_value(t['stripes']),
+        negative_y_texture=path_value(t['checker']), negative_z_texture=path_value(t['stripes']),
+        positive_x_rotation=30.0, positive_x_rotation_center=Raw('Vec2(0.2,0.1)'), negative_y_scale=Raw('Vec2(0.5,0.7)'),
+        negative_z_offset=Raw('Vec2(0.3,0.1)'), positive_y_active=False, negative_x_wrap_around=False),
+    mat('ProjectTriplanarMap_v2', 'tri1', projection_mode=2, translate=Raw('Vec3(1.6,0.7,0)'), number_of_textures=1,
+        transition_width=1.0, positive_x_texture=path_value(t['stripes']), positive_x_invert_s=True, positive_x_swap_st=True),
+    dwa('s0', albedo=(1.0, 1.0, 1.0), roughness=0.45),
+    dwa('s1', albedo=(1.0, 1.0, 1.0), roughness=0.4),
+    usd('s2', diffuseColor=(1.0, 1.0, 1.0), roughness=0.5),
+    'DwaBaseMaterial("/s0") { ["albedo"]=bind(ProjectTriplanarMap_v2("/tri3"),Rgb(1,1,1)) }',
+    'DwaBaseMaterial("/s1") { ["albedo"]=bind(ProjectTriplanarMap_v2("/tri6"),Rgb(1,1,1)) }',
+    'UsdPreviewSurface("/s2") { ["diffuseColor"]=bind(ProjectTriplanarMap_v2("/tri1"),Rgb(1,1,1)) }',
+]
+
+
+# Camera projection (ProjectCameraMap_v2) from a second camera: the checker in front only, black outside; the stripes
+# on back faces too, beyond the frame, with a custom aspect ratio; the bump as ProjectCameraNormalMap.
+TEXTURED['map-camera'] = lambda t: [
+    'PerspectiveCamera("/projector") { ["node_xform"]=Mat4(0.965926,0,-0.258819,0, 0,1,0,0, 0.258819,0,0.965926,0, 0.8,1.0,3.5,1),'
+    ' ["focal"]=30.0, ["film_width_aperture"]=24.0, ["near"]=0.1, ["far"]=100.0 }',
+    mat('ProjectCameraMap_v2', 'camproj', projector=Raw('PerspectiveCamera("/projector")'), texture=path_value(t['checker'])),
+    mat('ProjectCameraMap_v2', 'camproj2', projector=Raw('PerspectiveCamera("/projector")'), texture=path_value(t['stripes']),
+        project_on_back_faces=True, black_outside_projection=False, aspect_ratio_source=1, custom_aspect_ratio=0.75),
+    dwa('s0', albedo=(1.0, 1.0, 1.0), roughness=0.45),
+    dwa('s1', albedo=(1.0, 1.0, 1.0), roughness=0.4),
+    mat('ProjectCameraNormalMap', 'camnorm', projector=Raw('PerspectiveCamera("/projector")'), texture=path_value(t['bump'])),
+    dwa('s2', albedo=(0.6, 0.65, 0.7), roughness=0.3, specular=1.0, input_normal=Raw('ProjectCameraNormalMap("/camnorm")')),
+    'DwaBaseMaterial("/s0") { ["albedo"]=bind(ProjectCameraMap_v2("/camproj"),Rgb(1,1,1)) }',
+    'DwaBaseMaterial("/s1") { ["albedo"]=bind(ProjectCameraMap_v2("/camproj2"),Rgb(1,1,1)) }',
+]
+
+
+# Normal maps that combine others: two tangent-space bumps (one scaled and turned) joined by CombineNormalMap, a
+# SwitchNormalMap choosing the combination, and a constant normal from RgbToNormalMap.
+TEXTURED['map-normals'] = lambda t: [
+    mat('ImageNormalMap', 'nm_a', tangent_space_normal_texture=path_value(t['bump'])),
+    mat('ImageNormalMap', 'nm_b', tangent_space_normal_texture=path_value(t['bump']), scale=Raw('Vec2(2.5,1.5)'), rotation_angle=40.0),
+    mat('CombineNormalMap', 'comb', input_1=Raw('ImageNormalMap("/nm_a")'), input_2=Raw('ImageNormalMap("/nm_b")'),
+        normal_map_2_dial=0.6),
+    mat('SwitchNormalMap', 'sw', choice=1.0, input0=Raw('ImageNormalMap("/nm_a")'), input1=Raw('CombineNormalMap("/comb")')),
+    mat('RgbToNormalMap', 'rgbn', input=(0.3, 0.8, 0.5)),
+    dwa('s0', albedo=(0.8, 0.5, 0.3), roughness=0.3, specular=1.0, input_normal=Raw('CombineNormalMap("/comb")')),
+    dwa('s1', albedo=(0.4, 0.6, 0.8), roughness=0.25, specular=1.0, input_normal=Raw('SwitchNormalMap("/sw")')),
+    dwa('s2', albedo=(0.5, 0.7, 0.4), roughness=0.4, specular=1.0, input_normal=Raw('RgbToNormalMap("/rgbn")'), input_normal_dial=0.5),
+]
+
+
+# Projected normal maps: ProjectTriplanarNormalMap_v2 with the bump texture on three axes, and on six with random
+# turns; ProjectPlanarNormalMap, clamped.
+TEXTURED['map-triplanar-normal'] = lambda t: [
+    mat('ProjectTriplanarNormalMap_v2', 'tn3', projection_mode=2, scale=Raw('Vec3(0.5,0.5,0.5)'), translate=Raw('Vec3(-1.6,0.7,0)'),
+        number_of_textures=3, positive_x_texture=path_value(t['bump']), positive_y_texture=path_value(t['bump']),
+        positive_z_texture=path_value(t['bump'])),
+    mat('ProjectTriplanarNormalMap_v2', 'tn6', projection_mode=2, translate=Raw('Vec3(0,0.7,0)'), number_of_textures=6,
+        randomize_rotation=True, random_seed=11, transition_width=0.8,
+        **{f + '_texture': path_value(t['bump']) for f in ('positive_x', 'positive_y', 'positive_z', 'negative_x', 'negative_y', 'negative_z')}),
+    dwa('s0', albedo=(0.8, 0.5, 0.3), roughness=0.3, specular=1.0, input_normal=Raw('ProjectTriplanarNormalMap_v2("/tn3")')),
+    dwa('s1', albedo=(0.4, 0.6, 0.8), roughness=0.25, specular=1.0, input_normal=Raw('ProjectTriplanarNormalMap_v2("/tn6")'),
+        input_normal_dial=0.7),
+    mat('ProjectPlanarNormalMap', 'pn', projection_mode=2, scale=Raw('Vec3(0.8,0.8,0.8)'), translate=Raw('Vec3(1.6,0.7,0)'),
+        rotate=Raw('Vec3(0,20,0)'), texture=path_value(t['bump']), wrap_around=False),
+    dwa('s2', albedo=(0.5, 0.7, 0.4), roughness=0.3, specular=1.0, input_normal=Raw('ProjectPlanarNormalMap("/pn")')),
+]
+
+
+# UVTransformMap feeding ImageMap's texture coordinates: texture space turned about its centre and scaled; world space
+# turned about an axis; render space scaled and offset.
+TEXTURED['map-uvtransform'] = lambda t: [
+    mat('UVTransformMap', 'uv_tex', rotation_angle=35.0, scale=Raw('Vec2(3,2)'), offset=Raw('Vec2(0.1,0.2)')),
+    mat('UVTransformMap', 'uv_world', space=2, rotation_angle=30.0, rotation_axis=Raw('Vec3(0.3,1,0.2)'), scale=Raw('Vec2(1.5,1.5)')),
+    mat('UVTransformMap', 'uv_render', space=0, scale=Raw('Vec2(0.8,0.8)'), offset=Raw('Vec2(0.5,0.25)')),
+    mat('ImageMap', 'via_tex', texture=path_value(t['checker']), texture_coordinates=2),
+    mat('ImageMap', 'via_world', texture=path_value(t['stripes']), texture_coordinates=2),
+    mat('ImageMap', 'via_render', texture=path_value(t['checker']), texture_coordinates=2),
+    dwa('s0', albedo=(1.0, 1.0, 1.0), roughness=0.45),
+    dwa('s1', albedo=(1.0, 1.0, 1.0), roughness=0.4),
+    usd('s2', diffuseColor=(1.0, 1.0, 1.0), roughness=0.5),
+    'ImageMap("/via_tex") { ["input_texture_coordinates"]=bind(UVTransformMap("/uv_tex"),Vec3(0,0,0)) }',
+    'ImageMap("/via_world") { ["input_texture_coordinates"]=bind(UVTransformMap("/uv_world"),Vec3(0,0,0)) }',
+    'ImageMap("/via_render") { ["input_texture_coordinates"]=bind(UVTransformMap("/uv_render"),Vec3(0,0,0)) }',
+    'DwaBaseMaterial("/s0") { ["albedo"]=bind(ImageMap("/via_tex"),Rgb(1,1,1)) }',
+    'DwaBaseMaterial("/s1") { ["albedo"]=bind(ImageMap("/via_world"),Rgb(1,1,1)) }',
+    'UsdPreviewSurface("/s2") { ["diffuseColor"]=bind(ImageMap("/via_render"),Rgb(1,1,1)) }',
 ]
 
 

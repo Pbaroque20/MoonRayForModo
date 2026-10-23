@@ -43,7 +43,8 @@ template<class Sink>X2_HD inline Status closest(const Mip& m,float u,float v,boo
  float s=u*m.width-.5f,t=v*m.height-.5f;if(!surface::finite(s)||!surface::finite(t)||fabsf(s)>1.e8f||fabsf(t)>1.e8f)return Invalid;
  int x=int(floorf(s)),y=int(floorf(t));if(s-x>.5f)++x;if(t-y>.5f)++y;return fetch(m,x,y,wrap,out,sink);
 }
-// texture_lookup_trilinear_mipmap with closest texels: adjust_width's clamp of degenerate derivatives, the
+// texture_lookup_trilinear_mipmap with closest texels (bilinear ones in mode 3, MoonRay's TrilinearIsotropic for
+// displacement): adjust_width's clamp of degenerate derivatives, the
 // conservative filter width (the larger of s's and t's), compute_miplevels (one level for MipModeOneLevel).
 template<class Sink>X2_HD inline Status trilinear(const Binding& b,float s,float t,float dx,float tx,float dy,float ty,V3& out,Sink& sink){
  const float eps=1.0e-8f,eps2=eps*eps;float dxlen2=dx*dx+tx*tx,dylen2=dy*dy+ty*ty;
@@ -55,7 +56,7 @@ template<class Sink>X2_HD inline Status trilinear(const Binding& b,float s,float
  if(levels[1]<0){levels[0]=levels[1]=int(image.count)-1;lw[0]=1;lw[1]=0;}
  else if(levels[0]<0){levels[0]=levels[1]=0;lw[0]=1;lw[1]=0;}
  else if(b.mode==2){levels[0]=levels[1];lw[0]=1;lw[1]=0;}
- V3 result{};for(int k=0;k<2;++k){if(lw[k]==0)continue;V3 value;auto status=closest(image.levels[levels[k]],s,t,b.wrap!=0,value,sink);if(status!=Ready)return status;result=surface::add(result,surface::mul(value,lw[k]));}
+ V3 result{};for(int k=0;k<2;++k){if(lw[k]==0)continue;V3 value;auto status=b.mode==3?bilinear(image.levels[levels[k]],s,t,b.wrap!=0,value,sink):closest(image.levels[levels[k]],s,t,b.wrap!=0,value,sink);if(status!=Ready)return status;result=surface::add(result,surface::mul(value,lw[k]));}
  if(b.gamma)result={powf(fmaxf(result.x,0),2.2f),powf(fmaxf(result.y,0),2.2f),powf(fmaxf(result.z,0),2.2f)};
  if(!surface::finite(result))return Invalid;out=result;return Ready;
 }

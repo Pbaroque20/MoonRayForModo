@@ -1208,7 +1208,7 @@ struct DwaTreeBuilder {
 };
 // The material record of a DwaBase-family material or combinator; slots grows to what its tree needs.
 inline shade::MaterialRecord admitDwaTree(const rdl::SceneObject& o, std::vector<float>& pool, unsigned& slots,
-                                          TextureContext& textures, bool* glitter = nullptr) {
+                                          TextureContext& textures, bool* glitter = nullptr, bool* randomWalk = nullptr) {
     DwaTreeBuilder b{pool, MapProgramBuilder{pool, textures}};
     shade::DwaTree tree{};
     unsigned needed = 0;
@@ -1227,6 +1227,7 @@ inline shade::MaterialRecord admitDwaTree(const rdl::SceneObject& o, std::vector
     pool.insert(pool.end(), f, f + shade::DwaTreeFloats);
     rec.maps = b.maps.finish();
     if (glitter && b.glitter) *glitter = true;
+    if (randomWalk && tree.up.subsurface == shade::SubsurfaceRandomWalk) *randomWalk = true;
     return rec;
 }
 }

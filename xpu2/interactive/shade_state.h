@@ -46,6 +46,7 @@ struct State {
     U32 geom = 0, prim = 0, pathType = PathPrimary;
     float u = 0, v = 0;                      // barycentrics of the hit triangle
     bool entering = true, causticPath = false, subsurfaceAllowed = true, useAdaptNormal = true;
+    bool displacement = false;  // a displacement shader's state (Intersection::initDisplacement)
     // Shading spaces (3x4 row-major, null for identity): MoonRay's render space is the camera's space
     // at the first motion step; object space is the hit geometry's.
     const float* worldToRender = nullptr;

@@ -233,6 +233,7 @@ struct GpuBackend {
     // The volumes, and a ray's crossings of their meshes past tnear, nearest first (the instances of visibility 2),
     // each entering or leaving by the triangle's geometric normal; repeats at one distance dropped.
     __device__ const volume::Shader* volumes() const { return params.volumes; }
+    __device__ const float* walkSequences() const { return params.walkSequences; }
     __device__ U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max) {
         U32 n = 0;
         float t = tnear;

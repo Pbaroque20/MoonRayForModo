@@ -118,6 +118,9 @@ bound to closed meshes, with or without a surface material (a mesh with no mater
   lights and distance samples, with MIS; the light sample's shadow ray goes through the volumes' transmittance. With
   `max_volume_depth` above one, Wrenninge's multiple scattering approximation with the attenuation, contribution and
   phase attenuation factors. Surface light samples and lights met by BSDF samples go through the transmittance too.
+- The volume depth goes up by one at every BSDF bounce as well as after a ray's own scattering (MoonRay's
+  multi-sampler sets a child's to its parent's plus one), so with the default `max_volume_depth` of one only camera
+  rays gather in-scattered light; later rays only take the transmittance.
 - Refused: heterogeneous volumes (bound attributes; MoonRay bakes them), emissive volumes, other volume shaders
   (VDB, amorphous), `volume_indirect_samples` above zero, more than 32 volumes.
 
@@ -138,6 +141,20 @@ when the scene is prepared; the renderers get an ordinary mesh:
   with `smooth_normal` and no normals of its own gets the same smoothing undisplaced.
 - Refused: adaptive tessellation (`adaptive_error` above zero needs the camera's frustum), subdivision meshes,
   object-space VectorDisplacement, CombineDisplacement and SwitchDisplacement, `mesh_resolution` above 64.
+
+## Maps
+
+`shade_mapnodes.h` runs a material's maps as a program (`map_admission.h` builds it): ImageMap (with UDIM sets),
+UsdUVTexture, UsdTransform2d and UsdPrimvarReader, AttributeMap, the projections (ProjectPlanarMap,
+ProjectSphericalMap, ProjectCylindricalMap, ProjectTriplanarMap_v2 with its random per-face transforms,
+ProjectCameraMap_v2 from a perspective or orthographic camera), UVTransformMap, NoiseMap_v2, NoiseWorleyMap_v2 and
+_v3, GradientMap, RampMap, the colour corrects (ColorCorrect, Contrast, GainOffset, Gamma, Hsv, HueShift, Saturation,
+TMI and Legacy), BlendMap, ClampMap, RemapMap, OpMap, the conversions, Switch maps, TwoSidedMap and LODMap; the normal
+maps ImageNormalMap, ProjectPlanarNormalMap, ProjectTriplanarNormalMap_v2, ProjectCameraNormalMap, CombineNormalMap,
+SwitchNormalMap and RgbToNormalMap; and the kit's ModoTextureMap and ModoNormalMap. Projections read P and N
+(reference space, ref_P and ref_N, is refused); textures must be complete stored mip pyramids. Not ported:
+ProjectTriplanarUdimMap, DistortNormalMap, RandomNormalMap, the hair and toon maps, RandomMap, CurvatureMap,
+DirectionalMap, WireframeMap; nor HairLayerMaterial and HairColorCorrectMaterial among the materials.
 
 ## Gates
 

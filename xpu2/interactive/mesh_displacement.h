@@ -461,6 +461,7 @@ inline std::shared_ptr<MeshData> displaceMesh(const MeshData& base, int edgeVert
         s.P = p[vid];
         s.N = s.Ng = normal;
         s.wo = V3{0, 0, 0};
+        s.displacement = true;
         s.s = st[at][0];
         s.t = st[at][1];
         s.dsdx = 0.5f * (st[1][0] - st[0][0]);

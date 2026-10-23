@@ -13,6 +13,7 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <mutex>
 namespace xpu2::interactive::cpu {
 namespace rdl=scene_rdl2::rdl2;
 using surface::V3;
@@ -68,12 +69,15 @@ struct Plan {
     // The DwaBase parameter slots the deepest material tree needs (shade_dwalayer.h); whether a material has glitter
     // (the shading threads then need a glitter scratch, shade_glitter.h).
     unsigned dwaSlots=0;bool glitter=false;
+    // A random-walk subsurface material, and then MoonRay's integrator sequences its walk draws from (walkSequences).
+    bool randomWalk=false;std::shared_ptr<const std::vector<float>> walkSequences;
     // The textures the path tracer's maps read (shade_mapnodes.h): each file once, and its host mip pyramid.
     std::vector<std::shared_ptr<texture::File>> textures;std::vector<const tex::Image*> textureImages;
 };
 using PlanView=std::shared_ptr<const Plan>;
 struct Limits {size_t vertices=1000000,triangles=1000000,bytes=64ull<<20,objects=4096,pixels=1048576;};
 template<class T>inline T get(const rdl::SceneObject& o,const char* name){return o.get<T>(name);}
+template<class T>inline T get(const rdl::SceneObject& o,const std::string& name){return o.get<T>(name);}
 struct State {bool isDefault,stationary;};
 template<class T>inline bool equal(const T& a,const T& b){return a==b;}
 inline bool equal(const rdl::SceneObjectIndexable& a,const rdl::SceneObjectIndexable& b){return a.size()==b.size()&&std::equal(a.begin(),a.end(),b.begin());}
@@ -384,6 +388,21 @@ inline void admitCurves(const rdl::SceneObject& o,const rdl::Mat4d& transform,Me
  need(m.curveSpans.size()/3<(1u<<30),o.getName()+": too many curve spans");
 }
 
+// Where MoonRay's sampler tables are (beside the GPU program in a build), and the tables a random walk draws from:
+// pbr/sampler's bc_1D integrator sequences (4096 of 1024 floats) then its ppd_2D ones (4096 of 1024 pairs), loaded
+// once and shared.
+inline fs::path& sequenceDirectory(){static fs::path p;return p;}
+inline std::shared_ptr<const std::vector<float>> walkSequences(){
+ static std::mutex m;static std::weak_ptr<const std::vector<float>> cache;std::lock_guard<std::mutex> lock(m);
+ if(auto p=cache.lock())return p;
+ auto v=std::make_shared<std::vector<float>>(size_t(4096)*1024*3);
+ auto read=[&](const char* name,float* dst,size_t n){std::ifstream f(sequenceDirectory()/name,std::ios::binary);
+  need(bool(f),std::string("Missing MoonRay sampler table ")+name);f.read(reinterpret_cast<char*>(dst),std::streamsize(n*sizeof(float)));
+  need(size_t(f.gcount())==n*sizeof(float),std::string("Short MoonRay sampler table ")+name);};
+ read("bc_1D_integrator_points_4096_sequences_of_1024.bin",v->data(),size_t(4096)*1024);
+ read("ppd_2D_integrator_points_4096_sequences_of_1024.bin",v->data()+size_t(4096)*1024,size_t(4096)*1024*2);
+ cache=v;return v;
+}
 inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false){
  need(bool(frame),"Missing canonical snapshot");
  const Limits hard{};
@@ -535,7 +554,7 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   }else if(paths&&(dwaClass(cls)||dwaCombinator(cls))){
    // The DwaBase family and its combinators (shade_dwabase.h, shade_dwalayer.h, dwa_admission.h): each material its
    // own tree, its inputs' trees inside it.
-   shade::MaterialRecord rec=admitDwaTree(o,plan->materialPool,plan->dwaSlots,textureContext,&plan->glitter);
+   shade::MaterialRecord rec=admitDwaTree(o,plan->materialPool,plan->dwaSlots,textureContext,&plan->glitter,&plan->randomWalk);
    materialIds[o.getName()]=unsigned(plan->materials.size());plan->materials.push_back({V3{0,0,0},V3{0,0,0}});plan->materialRecords.push_back(rec);
   }else if(cls=="UsdPreviewSurface"){
    attributes(o,{"diffuseColor","useSpecularWorkflow","specularColor","emissiveColor"},{"diffuseColor","emissiveColor"});
@@ -556,6 +575,8 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   }else if(cls=="LightSet")attributes(o,{"lights"});
   else if(cls=="RenderOutput"){
    attributes(o,{"file_name","result","channel_format","compression"});int result=get<rdl::Int>(o,"result");need(result==0||result==1,"Unsupported AOV");need(get<rdl::Int>(o,"channel_format")==0,"Only float32 outputs supported");++outputCount;(result?alpha:beauty)=true;
+  }else if(paths&&(cls=="PerspectiveCamera"||cls=="OrthographicCamera")){
+   // Another camera: a projector, read by the maps that name it (ProjectCameraMap_v2).
   }else if(paths&&cls=="BaseVolume"){
    // Admitted with the assignment that binds it (admitVolume).
   }else if(paths&&cls=="UserData"){
@@ -667,6 +688,7 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   for(auto* set:{&plan->diffuseMaps,&plan->emissionMaps})for(auto& pair:*set){auto& file=*pair.second.file;if(!files.insert(&file).second)continue;total+=file.decodedBytes;need(total<=64ull<<20,"Aggregate host texture budget");if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());}
   for(auto& f:plan->textures){auto& file=*f;if(files.insert(&file).second){total+=file.decodedBytes;need(total<=64ull<<20,"Aggregate host texture budget");}if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());plan->textureImages.push_back(&file.pyramid->image);}
  }
+ if(plan->paths&&plan->randomWalk)plan->walkSequences=walkSequences();
  // The displaced meshes (mesh_displacement.h), their maps' textures read.
  if(!displaced.empty()){const displace::Textures textures{plan->textureImages.data(),unsigned(plan->textureImages.size())};
   for(auto& d:displaced){auto& mesh=plan->meshes[d.mesh];const MeshData& base=*mesh.data;

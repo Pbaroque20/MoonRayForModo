@@ -336,6 +336,8 @@ struct CpuBackend {
     // intersectVolumes over the whole ray): whether each enters (the ray against the mesh's geometric normal) or
     // leaves; repeats at the same distance dropped, as MoonRay's interval filter drops Embree's.
     const volume::Shader* volumes() const { return s.plan->volumes.data(); }
+    // MoonRay's integrator sequences for the random walk (cpu_scene.h walkSequences), null when not loaded.
+    const float* walkSequences() const { return s.plan->walkSequences ? s.plan->walkSequences->data() : nullptr; }
     U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max) const {
         if (!s.volumes) return 0;
         U32 n = 0;

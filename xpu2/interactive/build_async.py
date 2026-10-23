@@ -7,6 +7,7 @@ pipeline's program keeps its exact flags (gpu_build.PARITY_FLAGS). Never install
 or publishes anything."""
 import argparse
 import json
+import shutil
 from pathlib import Path
 
 from gpu_build import compile_ptx
@@ -44,6 +45,10 @@ def build_all(source, runtime, out):
         exe, report['native_build'] = build(source, HERE / 'async_probe.cc', out / 'native',
                                             [runtime / 'libembree4.dll', '-lcfgmgr32', '-lwinmm'],
                                             ['-I' + str(v) for v in include])
+        # MoonRay's sampler tables (a random walk's sequences) beside the GPU program.
+        sampler = source / 'upstream/openmoonray/moonray/moonray/lib/rendering/pbr/sampler'
+        for name in ('bc_1D_integrator_points_4096_sequences_of_1024.bin', 'ppd_2D_integrator_points_4096_sequences_of_1024.bin'):
+            shutil.copyfile(sampler / name, out / name)
         if any(sha(Path(k)) != v for k, v in held.items()):
             raise RuntimeError('Build source drift')
         report.update(status='passed', exe=str(exe), ptx=str(ptx), ptx_adaptive=str(adaptive), ptx_chain=str(chain),

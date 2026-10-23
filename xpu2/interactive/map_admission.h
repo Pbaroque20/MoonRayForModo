@@ -39,6 +39,15 @@ inline const MapClass* mapClass(const std::string& cls) {
         }
         m.emplace("SwitchColorMap", sc);
         m.emplace("SwitchFloatMap", sf);
+        m.emplace("ProjectTriplanarMap_v2", MapClass{shade::MapProjectTriplanar, {}});
+        m.emplace("ProjectCameraMap_v2", MapClass{shade::MapProjectCamera, {}});
+        m.emplace("ProjectTriplanarNormalMap_v2", MapClass{shade::MapProjectTriplanarNormal, {}});
+        m.emplace("ProjectPlanarNormalMap", MapClass{shade::MapProjectPlanarNormal, {}});
+        m.emplace("ProjectCameraNormalMap", MapClass{shade::MapProjectCameraNormal, {}});
+        m.emplace("RgbToNormalMap", MapClass{shade::MapRgbToNormal, {{"input", shade::MapAttrRgb}}});
+        m.emplace("SwitchNormalMap", MapClass{shade::MapSwitchNormal, {{"choice", shade::MapAttrFloat}}});
+        m.emplace("CombineNormalMap",
+                  MapClass{shade::MapCombineNormal, {{"normal_map_1_dial", shade::MapAttrFloat}, {"normal_map_2_dial", shade::MapAttrFloat}}});
         return m;
     }();
 #undef X2_MAP_ENTRY
@@ -420,6 +429,12 @@ struct MapProgramBuilder {
                          get<rdl::Int>(m, "cell_id") >= 0 && get<rdl::Int>(m, "cell_id") <= 3,
                      m.getName() + ": invalid Worley setting");
         }
+        if (c->kind == shade::MapSwitchNormal)
+            for (int i = 0; i < 64; ++i) listed.insert("input" + std::to_string(i));
+        if (c->kind == shade::MapCombineNormal) listed.insert({"input_1", "input_2"});
+        if (c->kind == shade::MapProjectTriplanar || c->kind == shade::MapProjectTriplanarNormal || c->kind == shade::MapProjectCamera ||
+            c->kind == shade::MapProjectPlanarNormal || c->kind == shade::MapProjectCameraNormal)
+            for (auto i = m.getSceneClass().beginAttributes(); i != m.getSceneClass().endAttributes(); ++i) listed.insert((*i)->getName());
         const bool projection =
             c->kind == shade::MapProjectPlanar || c->kind == shade::MapProjectSpherical || c->kind == shade::MapProjectCylindrical;
         if (projection) {
@@ -556,6 +571,82 @@ struct MapProgramBuilder {
             }
             params.insert(params.end(), rows, rows + 24);
         }
+        if (c->kind == shade::MapProjectTriplanar || c->kind == shade::MapProjectTriplanarNormal) params = triplanarParams(m, h);
+        // SwitchNormalMap's 64 inputs and CombineNormalMap's two: the registers of the normal maps they name (-1: none).
+        if (c->kind == shade::MapSwitchNormal || c->kind == shade::MapCombineNormal) {
+            const int n = c->kind == shade::MapSwitchNormal ? 64 : 2;
+            std::vector<float> regs;
+            for (int i = 0; i < n; ++i) {
+                const std::string name = c->kind == shade::MapSwitchNormal ? "input" + std::to_string(i) : "input_" + std::to_string(i + 1);
+                const rdl::SceneObject* input = get<rdl::SceneObject*>(m, name);
+                float r = -1.0f;
+                if (input && input->isA<rdl::NormalMap>()) r = float(reg(*input));
+                else need(!input || c->kind == shade::MapCombineNormal, m.getName() + ": " + name + " is not a normal map");
+                regs.push_back(r);
+            }
+            // CombineNormalMap's verifyInputs: both must be normal maps, else neither is read.
+            if (c->kind == shade::MapCombineNormal && (regs[0] < 0.0f || regs[1] < 0.0f)) regs[0] = regs[1] = -1.0f;
+            params.insert(params.end(), regs.begin(), regs.end());
+            need(get<rdl::Float>(m, c->kind == shade::MapSwitchNormal ? "choice" : "normal_map_1_dial") >= 0.0f ||
+                     c->kind == shade::MapCombineNormal || bound.count("choice"),
+                 m.getName() + ": negative choice");
+        }
+        if (c->kind == shade::MapProjectCamera || c->kind == shade::MapProjectCameraNormal) params = projectCameraParams(m, h);
+        if (c->kind == shade::MapUVTransform) {
+            // UVTransformMap::update's rotation: about the axis in world, object and reference space, else about the
+            // centre in the plane. Screen and reference spaces are not shaded yet.
+            namespace sm = scene_rdl2::math;
+            const int space = get<rdl::Int>(m, "space");
+            need(space == 0 || space == 1 || space == 2 || space == 4 || space == 6, m.getName() + ": screen and reference spaces are not shaded yet");
+            const float theta = sm::deg2rad(get<rdl::Float>(m, "rotation_angle"));
+            sm::Xform3f x(sm::one);
+            if (!sm::isZero(theta)) {
+                if (space == 2 || space == 4) {
+                    const auto a = get<rdl::Vec3f>(m, "rotation_axis");
+                    x = x.rotate(sm::Vec3f(a.x, a.y, a.z), theta);
+                } else {
+                    const auto c = get<rdl::Vec2f>(m, "rotation_center");
+                    const sm::Vec3f c3(c.x, c.y, 0.f);
+                    sm::Xform3f t1(sm::one), r(sm::one), t2(sm::one);
+                    t1 = t1.translate(c3);
+                    r = r.rotate(sm::Vec3f(0.f, 0.f, 1.f), theta);
+                    t2 = t2.translate(-c3);
+                    x = t2 * (r * t1);
+                }
+            }
+            const float rows[12] = {x.l.vx.x, x.l.vx.y, x.l.vx.z, x.l.vy.x, x.l.vy.y, x.l.vy.z, x.l.vz.x, x.l.vz.y, x.l.vz.z, x.p.x, x.p.y, x.p.z};
+            for (float v : rows) need(std::isfinite(v), m.getName() + ": invalid rotation");
+            params.insert(params.end(), rows, rows + 12);
+        }
+        if (c->kind == shade::MapProjectPlanarNormal) {
+            // ProjectPlanarNormalMap::update: its texture linear, wrapped or clamped; transition width 0.5; P and N only.
+            need(!get<rdl::Bool>(m, "use_reference_space"), m.getName() + ": reference space (ref_P) is not shaded yet");
+            const int encoding = get<rdl::Int>(m, "normal_encoding");
+            need(encoding == 0 || encoding == 1, m.getName() + ": invalid normal encoding");
+            h.texture = textureIndex(m);
+            need(h.texture != shade::MapNoTexture, m.getName() + ": a planar normal map without a texture");
+            h.wrap = get<rdl::Bool>(m, "wrap_around") ? 1 : 0;
+            h.gamma = 0;
+            shade::MapProjectPlanarNormalParams q{};
+            float twp = 1.0f - 0.5f;
+            twp = twp * twp * twp * twp * twp;
+            twp = 0.025f + (twp * 0.975f);
+            q.transitionWidthPower = twp * 100.0f;
+            q.normalEncoding = float(encoding);
+            q.wrap = float(h.wrap);
+            rdl::Mat4d M;
+            if (projectorMatrix(m, M)) {
+                const auto w = M.inverse();
+                for (int i = 0; i < 3; ++i) {
+                    for (int j = 0; j < 4; ++j) q.toObject[4 * i + j] = float(w[j][i]);
+                    for (int j = 0; j < 3; ++j) q.normalToObject[4 * i + j] = float(M[i][j]);
+                }
+                for (float v : q.toObject) need(std::isfinite(v), m.getName() + ": its projector cannot be inverted");
+                h.object = 1;
+            }
+            const float* f = reinterpret_cast<const float*>(&q);
+            params.assign(f, f + sizeof(q) / sizeof(float));
+        }
         if (worley) {
             namespace sm = scene_rdl2::math;
             // NoiseWorleyMap::update: the transform, the object's world-to-object, the Worley tables.
@@ -649,6 +740,175 @@ struct MapProgramBuilder {
         visiting.erase(&m);
         registers[&m] = h.reg;
         return h.reg;
+    }
+    // ProjectTriplanarMap_v2's prepared data (projection::updateTriplanarMap, TriplanarTexture's composeTransform2D
+    // with its random seed, calculateTransitionWidthPower, fillTriplanarTextureIndices). Positions from P and N only.
+    std::vector<float> triplanarParams(const rdl::SceneObject& m, shade::MapNodeHeader& h) {
+        namespace sm = scene_rdl2::math;
+        need(get<rdl::Int>(m, "input_position_source") == 0, m.getName() + ": ref_P and input positions are not shaded yet");
+        const bool normalMap = m.getSceneClass().getName() == "ProjectTriplanarNormalMap_v2";
+        // A normal map reads its textures linear (TEXTURE_GAMMA_OFF), as ImageNormalMap does.
+        const int count = get<rdl::Int>(m, "number_of_textures"), gamma = normalMap ? 0 : get<rdl::Int>(m, "gamma");
+        need(count == 1 || count == 3 || count == 6, m.getName() + ": invalid number of textures");
+        need(gamma >= 0 && gamma <= 2, m.getName() + ": invalid gamma mode");
+        shade::MapTriplanarParams q{};
+        if (normalMap) {
+            const int encoding = get<rdl::Int>(m, "normal_encoding");
+            need(encoding == 0 || encoding == 1, m.getName() + ": invalid normal encoding");
+            q.normalEncoding = float(encoding);
+        }
+        static const char* faces[6] = {"positive_x", "positive_y", "positive_z", "negative_x", "negative_y", "negative_z"};
+        scene_rdl2::util::Random rand(get<rdl::Int>(m, "random_seed"));
+        const bool randomFlip = get<rdl::Bool>(m, "randomize_flip"), randomOffset = get<rdl::Bool>(m, "randomize_offset"),
+                   randomRotation = get<rdl::Bool>(m, "randomize_rotation");
+        for (int i = 0; i < count; ++i) {
+            const std::string f = faces[i];
+            const std::string path = get<rdl::String>(m, f + "_texture");
+            need(!path.empty(), m.getName() + ": a triplanar texture without a file");
+            need(path.find("<UDIM>") == std::string::npos && path.find("<udim>") == std::string::npos,
+                 m.getName() + ": UDIM textures are read by ImageMap only");
+            const unsigned index = fileIndex(m, path);
+            shade::MapTriplanarTexture& t = q.textures[i];
+            t.texture = float(index);
+            t.active = get<rdl::Bool>(m, f + "_active") ? 1.0f : 0.0f;
+            t.wrap = get<rdl::Bool>(m, f + "_wrap_around") ? 1.0f : 0.0f;
+            // As ImageMap's validated subset: linearise 8-bit data when gamma is on or auto.
+            t.gamma = (gamma != 0 && (*textures.textures)[index]->eightBit) ? 1.0f : 0.0f;
+            // composeTransform2D (its swap adds 90 to the angle in radians, as MoonRay's does).
+            const auto sc = get<rdl::Vec2f>(m, f + "_scale");
+            const auto of = get<rdl::Vec2f>(m, f + "_offset");
+            const auto rc = get<rdl::Vec2f>(m, f + "_rotation_center");
+            sm::Vec2f scale(sc.x, sc.y), offset(of.x, of.y);
+            scale.x = 1.0f / sm::max(scale.x, sm::sEpsilon) * (get<rdl::Bool>(m, f + "_invert_s") ? -1.0f : 1.0f);
+            scale.y = 1.0f / sm::max(scale.y, sm::sEpsilon) * (get<rdl::Bool>(m, f + "_invert_t") ? -1.0f : 1.0f);
+            if (randomFlip) {
+                scale.x *= ((rand.getNextFloat() > 0.5f) ? -1 : 1);
+                scale.y *= ((rand.getNextFloat() > 0.5f) ? -1 : 1);
+            }
+            offset.x *= -1.0f;
+            if (randomOffset) {
+                offset.x += (rand.getNextFloat() - 0.5f);
+                offset.y += (rand.getNextFloat() - 0.5f);
+            }
+            float rotation = -1.0f * sm::deg2rad(get<rdl::Float>(m, f + "_rotation")) + (get<rdl::Bool>(m, f + "_swap_st") ? 90.0f : 0.0f);
+            if (randomRotation) rotation += rand.getNextFloat() * sm::sTwoPi - sm::sPi;
+            sm::Xform3f x(sm::one);
+            x = x * sm::Xform3f::translate(sm::Vec3f(-rc.x, -rc.y, 0.0f));
+            x = x * sm::Xform3f::rotate(sm::Vec3f(0.0f, 0.0f, 1.0f), rotation);
+            x = x * sm::Xform3f::translate(sm::Vec3f(rc.x, rc.y, 0.0f));
+            x = x * sm::Xform3f::scale(sm::Vec3f(scale.x, scale.y, 0.0f));
+            x = x * sm::Xform3f::translate(sm::Vec3f(offset.x, offset.y, 0.0f));
+            const float rows[12] = {x.l.vx.x, x.l.vx.y, x.l.vx.z, x.l.vy.x, x.l.vy.y, x.l.vy.z,
+                                    x.l.vz.x, x.l.vz.y, x.l.vz.z, x.p.x, x.p.y, x.p.z};
+            for (int k = 0; k < 12; ++k) {
+                need(std::isfinite(rows[k]), m.getName() + ": invalid texture transform");
+                t.xform[k] = rows[k];
+            }
+        }
+        for (int f = 0; f < 6; ++f) q.indices[f] = float(count == 1 ? 0 : count == 3 ? f % 3 : f);
+        // calculateTransitionWidthPower
+        float twp = 1.0f - sm::clamp(get<rdl::Float>(m, "transition_width"), 0.0f, 1.0f);
+        twp = twp * twp * twp * twp * twp;
+        twp = 0.025f + (twp * 0.975f);
+        q.transitionWidthPower = twp * 100.0f;
+        rdl::Mat4d M;
+        if (projectorMatrix(m, M)) {
+            const auto w = M.inverse();
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 4; ++j) q.toObject[4 * i + j] = float(w[j][i]);
+                for (int j = 0; j < 3; ++j) q.normalToObject[4 * i + j] = float(M[i][j]);
+            }
+            for (float v : q.toObject) need(std::isfinite(v), m.getName() + ": its projector cannot be inverted");
+            h.object = 1;
+        }
+        const float* p = reinterpret_cast<const float*>(&q);
+        return std::vector<float>(p, p + sizeof(q) / sizeof(float));
+    }
+    // ProjectCameraMap_v2's prepared data (its update and shading::Xform's render-to-screen): the window from the
+    // texture's aspect ratio (its pixels' and their own) or a custom one, the projector's perspective or orthographic
+    // projection (computeProjectionMatrix, no stereo), its texture clamped. P and N only (no reference space).
+    std::vector<float> projectCameraParams(const rdl::SceneObject& m, shade::MapNodeHeader& h) {
+        namespace sm = scene_rdl2::math;
+        need(!get<rdl::Bool>(m, "use_reference_space"), m.getName() + ": reference space (ref_P) is not shaded yet");
+        // ProjectCameraNormalMap: always black outside, its texture linear, its normal encoding.
+        const bool normalMap = m.getSceneClass().getName() == "ProjectCameraNormalMap";
+        need(normalMap || (!get<rdl::Bool>(m, "alpha_only") && !get<rdl::Bool>(m, "unpremultiply")),
+             m.getName() + ": alpha lookups are not shaded yet");
+        const int gamma = normalMap ? 0 : get<rdl::Int>(m, "gamma");
+        need(gamma >= 0 && gamma <= 2, m.getName() + ": invalid gamma mode");
+        h.texture = textureIndex(m);
+        need(h.texture != shade::MapNoTexture, m.getName() + ": a camera projection without a texture");
+        const auto& file = *(*textures.textures)[h.texture];
+        h.gamma = (gamma != 0 && file.eightBit) ? 1 : 0;
+        h.wrap = 0;
+        shade::MapProjectCameraParams q{};
+        q.projectOnBackFaces = get<rdl::Bool>(m, "project_on_back_faces") ? 1.0f : 0.0f;
+        q.blackOutsideProjection = normalMap || get<rdl::Bool>(m, "black_outside_projection") ? 1.0f : 0.0f;
+        if (normalMap) {
+            const int encoding = get<rdl::Int>(m, "normal_encoding");
+            need(encoding == 0 || encoding == 1, m.getName() + ": invalid normal encoding");
+            q.normalEncoding = float(encoding);
+        }
+        const rdl::SceneObject* projector = get<rdl::SceneObject*>(m, "projector");
+        if (projector) {
+            const std::string cls = projector->getSceneClass().getName();
+            need(cls == "PerspectiveCamera" || cls == "OrthographicCamera", m.getName() + ": its projector is not a perspective or orthographic camera");
+            float aspect;
+            if (get<rdl::Int>(m, "aspect_ratio_source") == 0) {
+                OIIO::ImageSpec spec;
+                need(file.system->get_imagespec(file.name, spec), m.getName() + ": its texture's size is unknown");
+                aspect = float(spec.width) / float(spec.height) * spec.get_float_attribute("PixelAspectRatio", 1.0f);
+            } else {
+                aspect = get<rdl::Float>(m, "custom_aspect_ratio");
+            }
+            float window[4];
+            if (aspect >= 1.0f) {
+                aspect = 1.0f / aspect;
+                window[0] = -1.0f; window[1] = aspect; window[2] = 1.0f; window[3] = -aspect;
+            } else {
+                window[0] = -aspect; window[1] = 1.0f; window[2] = aspect; window[3] = -1.0f;
+            }
+            // computeProjectionMatrix (interocular offset 0)
+            const bool perspective = cls == "PerspectiveCamera";
+            const float minimum = perspective ? 0.00001f : 0.01f;
+            const float focal = perspective ? sm::max(get<rdl::Float>(*projector, "focal"), 0.00001f) : 1.0f;
+            const float halfFilmWidth = sm::max(get<rdl::Float>(*projector, "film_width_aperture"), minimum) * 0.5f;
+            const float near = sm::max(get<rdl::Float>(*projector, "near"), minimum), far = sm::max(get<rdl::Float>(*projector, "far"), minimum);
+            const float offsetX = get<rdl::Float>(*projector, "horizontal_film_offset"), offsetY = get<rdl::Float>(*projector, "vertical_film_offset");
+            float par = get<rdl::Float>(*projector, "pixel_aspect_ratio");
+            if (sm::isEqual(par, 0.0f)) par = 1.0f;
+            const float factor = perspective ? near / focal : 1.0f;
+            const float w0 = (window[0] * halfFilmWidth + offsetX) * factor, w1 = (window[1] * halfFilmWidth + offsetY) * factor / par,
+                        w2 = (window[2] * halfFilmWidth + offsetX) * factor, w3 = (window[3] * halfFilmWidth + offsetY) * factor / par;
+            sm::Mat4f c2s(sm::zero);
+            if (perspective) {
+                c2s[0][0] = (2.0f * near) / (w2 - w0);
+                c2s[1][1] = (2.0f * near) / (w3 - w1);
+                c2s[2][0] = (w2 + w0) / (w2 - w0);
+                c2s[2][1] = (w3 + w1) / (w3 - w1);
+                c2s[2][2] = -(far + near) / (far - near);
+                c2s[2][3] = -1.0f;
+                c2s[3][2] = -(2.0f * far * near) / (far - near);
+            } else {
+                c2s[0][0] = 2.0f / (w2 - w0);
+                c2s[1][1] = 2.0f / (w3 - w1);
+                c2s[2][2] = -2.0f / (far - near);
+                c2s[3][0] = -(w2 + w0) / (w2 - w0);
+                c2s[3][1] = -(w3 + w1) / (w3 - w1);
+                c2s[3][2] = -(far + near) / (far - near);
+                c2s[3][3] = 1.0f;
+            }
+            const rdl::Mat4d c2w = get<rdl::Mat4d>(*projector, "node_xform");
+            const sm::Mat4f w2s = sm::toFloat(c2w.inverse()) * c2s;
+            for (int i = 0; i < 4; ++i)
+                for (int j = 0; j < 4; ++j) q.worldToScreen[4 * i + j] = w2s[i][j];
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j) q.normalToCamera[4 * i + j] = float(c2w[i][j]);
+            for (float v : q.worldToScreen) need(std::isfinite(v), m.getName() + ": its projector cannot be inverted");
+            h.object = 1;
+        }
+        const float* p = reinterpret_cast<const float*>(&q);
+        return std::vector<float>(p, p + sizeof(q) / sizeof(float));
     }
     // The program: {count, node offsets...}; NoMapProgram with no maps.
     unsigned finish() {

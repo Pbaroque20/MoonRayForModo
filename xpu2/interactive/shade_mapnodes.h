@@ -61,6 +61,8 @@ enum MapAttrType : U32 { MapAttrBool, MapAttrInt, MapAttrFloat, MapAttrRgb, MapA
     F(Rgb, input) F(Bool, on) F(Float, mix) F(Float, saturation) F(Bool, use_per_channel_saturation) F(Float, saturation_r)           \
     F(Float, saturation_g) F(Float, saturation_b)
 #define X2_MAP_CC_TMI(F) F(Rgb, input) F(Bool, on) F(Float, mix) F(Rgb, TMI)
+#define X2_MAP_UV_TRANSFORM(F)     F(Int, space) F(Vec2f, offset) F(Vec2f, scale) F(Float, rotation_angle) F(Vec2f, rotation_center) F(Vec3f, rotation_axis)
+#define X2_MAP_CC_LEGACY(F)                                                                                                         F(Rgb, input) F(Bool, on) F(Float, mask) F(Float, brightness) F(Float, contrast) F(Float, hue) F(Float, saturation) F(Bool, invert)     F(Int, monochrome) F(Rgb, multiplier) F(Bool, clamp)
 #define X2_MAP_IMAGE(F)                                                                                                              \
     F(Bool, use_default_color_when_missing) F(Rgb, default_color) F(Int, texture_coordinates) F(Bool, alpha_only)                     \
     F(Vec3f, input_texture_coordinates) F(Float, mip_bias) F(Vec2f, offset) F(Vec2f, scale) F(Float, rotation_angle)                 \
@@ -170,10 +172,12 @@ enum MapAttrType : U32 { MapAttrBool, MapAttrInt, MapAttrFloat, MapAttrRgb, MapA
     X(MapProjectCylindrical, "ProjectCylindricalMap", X2_MAP_PROJECT_CYLINDRICAL) \
     X(MapNoise, "NoiseMap_v2", X2_MAP_NOISE) \
     X(MapWorley2, "NoiseWorleyMap_v2", X2_MAP_WORLEY) \
-    X(MapWorley3, "NoiseWorleyMap_v3", X2_MAP_WORLEY)
+    X(MapWorley3, "NoiseWorleyMap_v3", X2_MAP_WORLEY)     X(MapColorCorrectLegacy, "ColorCorrectLegacyMap", X2_MAP_CC_LEGACY)     X(MapUVTransform, "UVTransformMap", X2_MAP_UV_TRANSFORM)
 
 #define X2_MAP_KIND(kind, cls, list) kind,
-enum MapKind : U32 { X2_MAPS(X2_MAP_KIND) MapSwitchColor, MapSwitchFloat, MapKindCount };
+enum MapKind : U32 { X2_MAPS(X2_MAP_KIND) MapSwitchColor, MapSwitchFloat, MapProjectTriplanar, MapProjectCamera, MapRgbToNormal, MapSwitchNormal,
+                     MapCombineNormal, MapProjectTriplanarNormal, MapProjectPlanarNormal,
+                     MapProjectCameraNormal, MapKindCount };
 #undef X2_MAP_KIND
 #define X2_MAP_STRUCT(kind, cls, list) struct kind##Params { list(X2_MAP_FIELD) };
 X2_MAPS(X2_MAP_STRUCT)
@@ -186,6 +190,33 @@ struct MapSwitchColorParams {
 struct MapSwitchFloatParams {
     float choice;
     float input[64];
+};
+// ProjectTriplanarMap_v2, prepared on the host (moonshine projection::updateTriplanarMap): the projector's
+// world-to-object and normal transform, the transition width power, each cube face's texture, and the textures
+// (one, three or six): the scene's texture index (-1: it did not load, MoonRay's fatal colour), whether active,
+// wrapped and linearised, and its 2D transform (Xform3f rows vx, vy, vz, p).
+struct MapTriplanarTexture {
+    float texture, active, wrap, gamma;
+    float xform[12];
+};
+// ProjectCameraMap_v2, prepared on the host: world to the projector camera's screen (4x4, row vectors, its window
+// from the texture's or a custom aspect ratio), the world normal into its camera space, and its switches. Its
+// texture is the header's (clamped).
+struct MapProjectCameraParams {
+    float worldToScreen[16], normalToCamera[12];
+    float projectOnBackFaces, blackOutsideProjection, normalEncoding, pad;  // ProjectCameraNormalMap: always black outside
+};
+// ProjectPlanarNormalMap, prepared on the host: the projector's world-to-object and normal transform, the
+// transition width power (of 0.5), the normal encoding and wrap. Its texture is the header's (read linear).
+struct MapProjectPlanarNormalParams {
+    float toObject[12], normalToObject[12];
+    float transitionWidthPower, normalEncoding, wrap, pad;
+};
+struct MapTriplanarParams {
+    float toObject[12], normalToObject[12];
+    float transitionWidthPower, normalEncoding, pad0[2];  // ProjectTriplanarNormalMap_v2: 0 [0, 1], 1 [-1, 1]
+    float indices[6], pad1[2];
+    MapTriplanarTexture textures[6];
 };
 
 // A map in the pool: this header, its parameters, then its bindings.
@@ -238,9 +269,14 @@ struct MapParams {
 //----------------------------------------------------------------------------
 // The maps' sample functions.
 
-// getTextureOptionIndex: anisotropic on primary paths, trilinear closest texels on mirror and glossy ones, one
-// level's closest texel on diffuse ones.
+// State::getdPdx and getdPdy: the position's screen derivatives as the texture derivatives give them (so scaled as
+// they are), not the ray differentials.
+X2_HD inline V3 statedPdx(const State& st) { return st.dPds * st.dsdx + st.dPdt * st.dtdx; }
+X2_HD inline V3 statedPdy(const State& st) { return st.dPds * st.dsdy + st.dPdt * st.dtdy; }
+// getTextureOptionIndex: trilinear isotropic for displacement, anisotropic on primary paths, trilinear closest texels
+// on mirror and glossy ones, one level's closest texel on diffuse ones.
 X2_HD inline U32 textureMode(const State& st) {
+    if (st.displacement) return 3u;
     return st.pathType == PathIndirectDiffuse ? 2u : st.pathType == PathPrimary ? 0u : 1u;
 }
 X2_HD inline float colorAverage(Color c) { return (c.x + c.y + c.z) / 3.0f; }
@@ -916,6 +952,291 @@ X2_HD inline Color sampleProjection(const MapNodeHeader& h, const MapParams& P, 
     return r;
 }
 
+// ProjectTriplanarMap_v2's sample (PROJECTION_fillTriplanarTextures): the hit and its differentials in the
+// projector's space; per cube face whose axis weighs at least BLEND_EPSILON, the position swizzled onto the face
+// through its texture's 2D transform, centred, and looked up as BasicTexture does (no T flip, the derivatives as
+// given); the faces the normal looks along blended by the weights. ProjectTriplanarNormalMap_v2
+// (PROJECTION_fillTriplanarNormalTextures) reads each face's texel as a tangent-space normal in the frame of the
+// projector-space normal and the face's tangent, blends them and their lengths, and returns the blend in render space
+// at the blended length (N without a projector).
+template <class Tex>
+X2_CALL U32 sampleTriplanar(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    const MapTriplanarParams& q = *reinterpret_cast<const MapTriplanarParams*>(P.p);
+    const Color fatal{1.0f, 0.0f, 1.0f};
+    const bool normalMap = h.kind == MapProjectTriplanarNormal;
+    if (!h.object) {
+        out = normalMap ? st.N : fatal;
+        return tex::Ready;
+    }
+    const V3 pos = xformPoint(q.toObject, st.P);
+    const V3 pdx = xformPoint(q.toObject, st.P + statedPdx(st)) - pos, pdy = xformPoint(q.toObject, st.P + statedPdy(st)) - pos;
+    const V3 n = normalize(xformVector(q.normalToObject, st.N));
+    const float twp = q.transitionWidthPower;
+    V3 blend{powf(fabsf(n.x), twp), powf(fabsf(n.y), twp), powf(fabsf(n.z), twp)};
+    blend = blend / (blend.x + blend.y + blend.z);
+    Color tx[6];
+    bool read[6];
+    for (U32 f = 0; f < 6; ++f) {
+        tx[f] = rgb(0.0f);
+        const float w = f % 3 == 0 ? blend.x : f % 3 == 1 ? blend.y : blend.z;
+        read[f] = !(w < 0.0005f);
+        if (!read[f]) continue;
+        V3 U, dx, dy;
+        switch (f) {  // swizzleTriplanarFace
+        case 0: U = V3{-pos.z, -pos.y, -pos.x}; dx = V3{-pdx.z, pdx.y, -pdx.x}; dy = V3{-pdy.z, pdy.y, -pdy.x}; break;
+        case 1: U = V3{pos.x, pos.z, -pos.y}; dx = V3{pdx.x, -pdx.z, -pdx.y}; dy = V3{pdy.x, -pdy.z, -pdy.y}; break;
+        case 2: U = V3{pos.x, -pos.y, -pos.z}; dx = V3{pdx.x, pdx.y, -pdx.z}; dy = V3{pdy.x, pdy.y, -pdy.z}; break;
+        case 3: U = V3{pos.z, -pos.y, pos.x}; dx = V3{pdx.z, pdx.y, pdx.x}; dy = V3{pdy.z, pdy.y, pdy.x}; break;
+        case 4: U = V3{pos.x, -pos.z, pos.y}; dx = V3{pdx.x, pdx.z, pdx.y}; dy = V3{pdy.x, pdy.z, pdy.y}; break;
+        default: U = V3{-pos.x, -pos.y, pos.z}; dx = V3{-pdx.x, pdx.y, pdx.z}; dy = V3{-pdy.x, pdy.y, pdy.z}; break;
+        }
+        const MapTriplanarTexture& t = q.textures[U32(q.indices[f])];
+        if (t.texture < 0.0f) {
+            tx[f] = fatal;
+            continue;
+        }
+        if (t.active == 0.0f) continue;
+        const float* m = t.xform;
+        // transformPoint / transformVector (row vectors: x vx + y vy + z vz, then p), then centred at (0.5, 0.5)
+        const float s = (U.x * m[0] + (U.y * m[3] + U.z * m[6])) + m[9] + 0.5f;
+        const float tt = (U.x * m[1] + (U.y * m[4] + U.z * m[7])) + m[10] + 0.5f;
+        const float dsdx = dx.x * m[0] + (dx.y * m[3] + dx.z * m[6]), dtdx = dx.x * m[1] + (dx.y * m[4] + dx.z * m[7]);
+        const float dsdy = dy.x * m[0] + (dy.y * m[3] + dy.z * m[6]), dtdy = dy.x * m[1] + (dy.y * m[4] + dy.z * m[7]);
+        // tex::lookup flips T and negates the T derivatives as ImageMap does; BasicTexture does neither.
+        const tex::Binding b{nullptr, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, U32(t.wrap), U32(t.gamma), textureMode(st)};
+        const tex::Footprint fp{s, 1.0f - tt, dsdx, -dtdx, dsdy, -dtdy};
+        V3 texel;
+        const U32 status = tex.lookup(U32(t.texture), b, fp, texel);
+        if (status != tex::Ready) return status;
+        tx[f] = Color{texel.x, texel.y, texel.z};
+    }
+    if (!normalMap) {
+        out = (n.x > 0.0f ? tx[0] : tx[3]) * blend.x + (n.y > 0.0f ? tx[1] : tx[4]) * blend.y + (n.z > 0.0f ? tx[2] : tx[5]) * blend.z;
+        return tex::Ready;
+    }
+    V3 normals[6];
+    float lengths[6];
+    // each face's tangent in the projector's space
+    const V3 tangents[6] = {{0.f, 0.f, -1.f}, {1.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, 0.f, 1.f}, {1.f, 0.f, 0.f}, {-1.f, 0.f, 0.f}};
+    for (U32 f = 0; f < 6; ++f) {
+        normals[f] = n;
+        lengths[f] = 1.0f;
+        if (!read[f]) continue;
+        V3 t = tx[f];
+        lengths[f] = length(t);
+        if (q.normalEncoding == 0.0f) {
+            t = 2.0f * t - rgb(1.0f);
+            lengths[f] = length(t);
+            t = t / lengths[f];
+        }
+        normals[f] = localToGlobal(frame(n, tangents[f]), t);
+    }
+    const V3 b = (n.x > 0.0f ? normals[0] : normals[3]) * blend.x + (n.y > 0.0f ? normals[1] : normals[4]) * blend.y +
+                 (n.z > 0.0f ? normals[2] : normals[5]) * blend.z;
+    const float bl = (n.x > 0.0f ? lengths[0] : lengths[3]) * blend.x + (n.y > 0.0f ? lengths[1] : lengths[4]) * blend.y +
+                     (n.z > 0.0f ? lengths[2] : lengths[5]) * blend.z;
+    // transformNormal from the projector's space: its world-to-object transposed
+    const float* m = q.toObject;
+    const V3 r{m[0] * b.x + m[4] * b.y + m[8] * b.z, m[1] * b.x + m[5] * b.y + m[9] * b.z, m[2] * b.x + m[6] * b.y + m[10] * b.z};
+    out = normalize(r) * bl;
+    return tex::Ready;
+}
+
+// ProjectPlanarNormalMap's sampleNormal: the texel at the hit on the projector's +Z face (N outside it unless it
+// wraps), as a tangent-space normal in each cube face's frame about the projector-space normal (X flipped on faces 0,
+// 4 and 5), blended as triplanar, in render space at the texel's length times the weights' sum.
+template <class Tex>
+X2_CALL U32 sampleProjectPlanarNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    const MapProjectPlanarNormalParams& q = *reinterpret_cast<const MapProjectPlanarNormalParams*>(P.p);
+    out = st.N;
+    if (!h.object || h.texture == MapNoTexture) return tex::Ready;
+    const V3 pos = xformPoint(q.toObject, st.P);
+    const V3 pdx = xformPoint(q.toObject, st.P + statedPdx(st)) - pos, pdy = xformPoint(q.toObject, st.P + statedPdy(st)) - pos;
+    const V3 n = normalize(xformVector(q.normalToObject, st.N));
+    // swizzleTriplanarFace onto face 2 (+Z)
+    const V3 U{pos.x, -pos.y, -pos.z}, dx{pdx.x, pdx.y, -pdx.z}, dy{pdy.x, pdy.y, -pdy.z};
+    const float s = U.x + 0.5f, t = U.y + 0.5f;
+    if (q.wrap == 0.0f && (s < 0.0f || s > 1.0f || t < 0.0f || t > 1.0f)) return tex::Ready;
+    const tex::Binding b{nullptr, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, h.wrap, 0u, textureMode(st)};
+    const tex::Footprint fp{s, 1.0f - t, dx.x, -dx.y, dy.x, -dy.y};
+    V3 texel;
+    const U32 status = tex.lookup(h.texture, b, fp, texel);
+    if (status != tex::Ready) return status;
+    V3 tn = texel;
+    float len = length(tn);
+    if (q.normalEncoding == 0.0f) {
+        tn = 2.0f * tn - rgb(1.0f);
+        len = length(tn);
+        tn = tn / len;
+    }
+    const V3 flipped{-tn.x, tn.y, tn.z};
+    const float twp = q.transitionWidthPower;
+    V3 blend{powf(fabsf(n.x), twp), powf(fabsf(n.y), twp), powf(fabsf(n.z), twp)};
+    blend = blend / (blend.x + blend.y + blend.z);
+    const V3 tangents[6] = {{0.f, 0.f, -1.f}, {1.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, 0.f, 1.f}, {1.f, 0.f, 0.f}, {-1.f, 0.f, 0.f}};
+    V3 o[6];
+    for (U32 f = 0; f < 6; ++f) {
+        o[f] = n;
+        const V3 c = cross(n, tangents[f]);
+        if (isZero(c.x) && isZero(c.y) && isZero(c.z)) continue;
+        o[f] = localToGlobal(frame(n, tangents[f]), (f == 0 || f == 4 || f == 5) ? flipped : tn);
+    }
+    const V3 bn = (n.x > 0.0f ? o[0] : o[3]) * blend.x + (n.y > 0.0f ? o[1] : o[4]) * blend.y + (n.z > 0.0f ? o[2] : o[5]) * blend.z;
+    const float* m = q.toObject;  // transformNormal from the projector's space: its world-to-object transposed
+    const V3 r{m[0] * bn.x + m[4] * bn.y + m[8] * bn.z, m[1] * bn.x + m[5] * bn.y + m[9] * bn.z, m[2] * bn.x + m[6] * bn.y + m[10] * bn.z};
+    out = normalize(r) * (len * (blend.x + blend.y + blend.z));
+    return tex::Ready;
+}
+
+// ProjectCameraMap_v2's sample: the hit in the projector's screen space; black outside [-1, 1] when asked, or on a
+// face turned from the projector unless back faces take it; else its texture at the screen position mapped to
+// [0, 1], as BasicTexture looks it up.
+template <class Tex>
+X2_CALL U32 sampleProjectCamera(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    const MapProjectCameraParams& q = *reinterpret_cast<const MapProjectCameraParams*>(P.p);
+    const bool normalMap = h.kind == MapProjectCameraNormal;
+    out = normalMap ? st.N : rgb(0.0f);
+    if (!h.object) return tex::Ready;
+    const float* m = q.worldToScreen;
+    auto screen = [m](V3 p) {  // transformH
+        const float x = p.x * m[0] + p.y * m[4] + p.z * m[8] + m[12], y = p.x * m[1] + p.y * m[5] + p.z * m[9] + m[13],
+                    z = p.x * m[2] + p.y * m[6] + p.z * m[10] + m[14], w = p.x * m[3] + p.y * m[7] + p.z * m[11] + m[15];
+        return V3{x / w, y / w, z / w};
+    };
+    const V3 ps = screen(st.P), dx = screen(st.P + statedPdx(st)) - ps, dy = screen(st.P + statedPdy(st)) - ps;
+    if (q.blackOutsideProjection != 0.0f && (ps.x < -1.f || ps.x > 1.f || ps.y < -1.f || ps.y > 1.f)) return tex::Ready;
+    V3 nc{0.0f, 0.0f, -1.0f};
+    if (q.projectOnBackFaces == 0.0f) nc = normalize(xformVector(q.normalToCamera, st.N));
+    if (normalMap) {
+        // ProjectCameraNormalMap: the texel (N on a face turned away), decoded and taken in the frame of N and dPds.
+        V3 normal = st.N;
+        if (q.projectOnBackFaces != 0.0f || nc.z > 0.0f) {
+            const float s = ps.x * 0.5f + 0.5f, t = ps.y * 0.5f + 0.5f;
+            const tex::Binding b{nullptr, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0u, 0u, textureMode(st)};
+            const tex::Footprint fp{s, 1.0f - t, dx.x * 0.5f, -(dx.y * 0.5f), dy.x * 0.5f, -(dy.y * 0.5f)};
+            const U32 status = tex.lookup(h.texture, b, fp, normal);
+            if (status != tex::Ready) return status;
+        }
+        if (!finite3(normal) || (isZero(normal.x) && isZero(normal.y) && isZero(normal.z))) {
+            out = st.N;
+            return tex::Ready;
+        }
+        if (q.normalEncoding == 0.0f) normal = 2.0f * normal - rgb(1.0f);
+        out = localToGlobal(frame(st.N, normalize(st.dPds)), normal);
+        return tex::Ready;
+    }
+    if (q.projectOnBackFaces == 0.0f && !(nc.z > 0.0f)) return tex::Ready;
+    if (h.texture == MapNoTexture) return tex::Ready;
+    // s2uv: [-1, 1] to [0, 1]
+    const float s = ps.x * 0.5f + 0.5f, t = ps.y * 0.5f + 0.5f;
+    const tex::Binding b{nullptr, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0u, h.gamma, textureMode(st)};
+    const tex::Footprint fp{s, 1.0f - t, dx.x * 0.5f, -(dx.y * 0.5f), dy.x * 0.5f, -(dy.y * 0.5f)};
+    V3 texel;
+    const U32 status = tex.lookup(h.texture, b, fp, texel);
+    if (status != tex::Ready) return status;
+    out = Color{texel.x, texel.y, texel.z};
+    return tex::Ready;
+}
+
+// UVTransformMap's sample: the hit's texture coordinates, or P in world, render (also camera: MoonRay's render
+// space is the camera's) or its object's space; turned by the prepared rotation (about the centre in the plane, about
+// the axis in 3D spaces) when the angle is not zero; then scaled and offset.
+X2_HD inline Color sampleUVTransform(const MapParams& P, const State& st) {
+    using Q = MapUVTransformParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const float* rot = P.p + sizeof(Q) / sizeof(float);  // Xform3f rows vx, vy, vz, p
+    const int space = int(q.space);
+    V3 pos;
+    if (space == 6) pos = V3{st.s, st.t, 0.0f};
+    else if (space == 2) pos = st.P;
+    else if (space == 4) pos = st.worldToObject ? xformPoint(st.worldToObject, st.P) : st.P;
+    else pos = st.worldToRender ? xformPoint(st.worldToRender, st.P) : st.P;
+    if (!isZero(q.rotation_angle))
+        pos = V3{pos.x * rot[0] + (pos.y * rot[3] + pos.z * rot[6]) + rot[9], pos.x * rot[1] + (pos.y * rot[4] + pos.z * rot[7]) + rot[10],
+                 pos.x * rot[2] + (pos.y * rot[5] + pos.z * rot[8]) + rot[11]};
+    float scale[2], offset[2];
+    P.v2(X2_OFF(Q, scale), scale);
+    P.v2(X2_OFF(Q, offset), offset);
+    return Color{scale[0] * pos.x + offset[0], scale[1] * pos.y + offset[1], 0.0f};
+}
+
+// ColorCorrectLegacyMap's sample: brightness, contrast about mid grey, hue shift, saturation by the legacy luminance,
+// inversion, monochrome, the multiplier and a clamp, then the input mixed back by the mask.
+X2_HD inline Color sampleColorCorrectLegacy(const MapParams& P) {
+    using Q = MapColorCorrectLegacyParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    Color r = input;
+    if (q.on == 0 || !(P.f(X2_OFF(Q, mask)) > 0.0f)) return r;
+    auto lum = [](Color c) { return 0.3f * c.x + 0.59f * c.y + 0.11f * c.z; };
+    if (!isZero(q.brightness)) r = r + rgb(q.brightness / 255.0f);
+    if (!isZero(q.contrast)) {
+        float contrast = q.contrast / 100.0f;
+        const Color mid = rgb(0.5f);
+        if (contrast < 0) {
+            contrast *= -1.0f;
+            r = lerp(r, mid, contrast);
+        } else {
+            if (isEqual(contrast, 1.0f)) contrast = 0.999f;
+            contrast = 1.0f / (1.0f - contrast);
+            r = ((r - mid) * contrast) + mid;
+        }
+    }
+    if (!isZero(q.hue)) {
+        Color hsv = rgbToHsv(r);
+        hsv.x = fmodf(hsv.x + (q.hue / 360.0f), 1.0f);
+        r = hsvToRgb(hsv);
+    }
+    if (!isZero(q.saturation)) r = lerp(rgb(lum(r)), r, (q.saturation + 100.0f) / 100.0f);
+    if (q.invert != 0) r = Color{1.0f - r.x, 1.0f - r.y, 1.0f - r.z};
+    switch (int(q.monochrome)) {
+    case 1: r = rgb(lum(r)); break;
+    case 2: r = rgb((r.x + r.y + r.z) / 3.0f); break;
+    case 3: r = rgb(fminf(r.x, fminf(r.y, r.z))); break;
+    case 4: r = rgb(fmaxf(r.x, fmaxf(r.y, r.z))); break;
+    case 5: r = rgb(r.x); break;
+    case 6: r = rgb(r.y); break;
+    case 7: r = rgb(r.z); break;
+    default: break;
+    }
+    r = r * q.multiplier;
+    if (q.clamp != 0) r = Color{saturate(r.x), saturate(r.y), saturate(r.z)};
+    return lerp(r, input, 1.0f - P.f(X2_OFF(Q, mask)));
+}
+
+// CombineNormalMap's conditionNormal: a render-space normal into the frame's tangent space, its length eased toward
+// one by the dial and the direction toward the unbent normal.
+X2_HD inline V3 conditionNormal(V3 input, float dial, const Frame& frame, float& length) {
+    const V3 N{0.0f, 0.0f, 1.0f};
+    dial = clampf(dial, 0.0f, 1.0f);
+    V3 n = globalToLocal(frame, input);
+    length = (1.0f - dial) * 1.0f + dial * shade::length(n);
+    if (isZero(length)) {
+        length = 1.0f;
+        return N;
+    }
+    n = n / length;
+    if (!isOne(dial)) n = normalize(N + (n - N) * dial);
+    return n;
+}
+// CombineNormalMap's sampleNormal: its two normal maps conditioned in the frame of N and dPds, joined by reoriented
+// normal mapping at their mean length, kept above the unbent hemisphere. Without both inputs, two zero normals.
+X2_HD inline Color sampleCombineNormal(const MapParams& P, const State& st) {
+    const float r1 = P.p[2], r2 = P.p[3];
+    const bool valid = r1 >= 0.0f && r2 >= 0.0f;
+    const V3 s1 = valid ? P.regs[U32(r1)] : V3{0, 0, 0}, s2 = valid ? P.regs[U32(r2)] : V3{0, 0, 0};
+    const Frame frame = shade::frame(st.N, normalize(st.dPds));
+    float l1, l2;
+    const V3 n1 = conditionNormal(s1, P.f(0), frame, l1), n2 = conditionNormal(s2, P.f(1), frame, l2);
+    const V3 t{n1.x, n1.y, n1.z + 1.0f}, u{-1.0f * n2.x, -1.0f * n2.y, n2.z};
+    V3 result = normalize(t * dot(t, u) - u * t.z) * ((l1 + l2) * 0.5f);
+    if (result.z <= 0.0f) {
+        result.z = Epsilon;
+        result = normalize(result);
+    }
+    return localToGlobal(frame, result);
+}
+
 // NoiseMap_v2's sample: P in its space, scaled by the frequency and transformed; distorted by a 3D noise; then a
 // fractal Perlin or simplex noise per channel, remapped to [0, 1], biased, gained, inverted, smoothstepped, scaled.
 X2_HD inline NoiseTable noiseTableAt(const float* p, const float* prep, int slot) {
@@ -1311,6 +1632,22 @@ X2_CALL U32 sampleMap(const MapNodeHeader& h, const MapParams& P, const State& s
         return tex::Ready;
     }
     case MapImage: return sampleImageMap(h, P, st, tex, out);
+    case MapProjectTriplanar:
+    case MapProjectTriplanarNormal: return sampleTriplanar(h, P, st, tex, out);
+    case MapProjectCamera:
+    case MapProjectCameraNormal: return sampleProjectCamera(h, P, st, tex, out);
+    case MapProjectPlanarNormal: return sampleProjectPlanarNormal(h, P, st, tex, out);
+    case MapRgbToNormal: out = P.c(0); return tex::Ready;
+    case MapColorCorrectLegacy: out = sampleColorCorrectLegacy(P); return tex::Ready;
+    case MapUVTransform: out = sampleUVTransform(P, st); return tex::Ready;
+    case MapSwitchNormal: {  // the chosen input's normal, N where there is none
+        int choice = int(P.f(0));
+        if (choice < 0) choice = 0;
+        const float r = P.p[1 + U32(choice % 64)];
+        out = r >= 0.0f ? P.regs[U32(r)] : st.N;
+        return tex::Ready;
+    }
+    case MapCombineNormal: out = sampleCombineNormal(P, st); return tex::Ready;
     case MapImageNormal: return sampleImageNormalMap(h, P, st, tex, out);
     case MapModoTexture: out = sampleModoTexture(P, st, nullptr); return tex::Ready;
     case MapOp: out = sampleOpMap(P); return tex::Ready;

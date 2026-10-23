@@ -59,6 +59,8 @@ int main(int argc, char** argv) {
         CanonicalSession canonical(argv[2], {3301, 0, 0, 0});
         auto frame = canonical.prepare(source, out / "canonical", {3301, 1, 1, 1});
         // MoonRay's path tracer (PATH_TRACER.md).
+        // MoonRay's sampler tables (a random walk's sequences) sit beside the GPU program in a build.
+        cpu::sequenceDirectory() = fs::path(argv[3]).parent_path();
         auto plan = cpu::prepare(canonical, frame, {}, cpu::Limits{}, argv[4], cpu::Domain::SurfaceTextures, true, true);
         auto chosen = std::make_shared<cpu::Plan>(*plan);
         // "-" keeps the scene's own seed and the default sampling policy.

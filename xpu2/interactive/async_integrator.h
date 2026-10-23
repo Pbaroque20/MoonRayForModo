@@ -594,7 +594,11 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
 // its exit as a white Lambertian; the sum is scaled up for the samples that never left. MoonRay draws the walk's
 // distances and its backward-or-forward choices from two copies of one sequence (distanceSamples and
 // dwivediDirectionSamples share their SequenceIDIntegrator), so each scatter event's choice is the distance draw
-// before the one that led to it; the walk here keeps that pairing, as it changes what the walk converges to.
+// before the one that led to it; the walk here keeps that pairing. In the first three non-mirror bounces MoonRay's
+// sequences are its integrator tables (IntegratorSample: consecutive points of a bc_1D sequence for the distances
+// and choices, another for the channels, a ppd_2D sequence for the directions, each chosen and Cranley-Patterson
+// rotated by the sample's identity); the walk's estimate depends on that ordering, so the walk here draws from the
+// same tables, the sequences and rotations chosen at random, and independent numbers after them.
 template <class Backend>
 X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 mask,
                                    const paths::Pending& pv, U32 subsurfaceDepth, const shade::State& st, const resume::Hit& hit,
@@ -619,7 +623,38 @@ X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& ro
         Stream rs(id, pv.depth, 0);
         Color pt = b.scale * pv.T * fresnel * (1.0f / float(n));
         if (shade::isBlack(pt)) continue;
-        float u0 = rs.next(), u1 = rs.next();
+        // The walk's three sequences (MoonRay's tables up to sample 1015, as partitioned1D/2D use them).
+        const float* tables = pv.nonMirrorDepth < 3 ? backend.walkSequences() : nullptr;
+        U32 distanceBase = 0, channelBase = 0, directionBase = 0, kDistance = 0, kChannel = 0, kDirection = 0;
+        float distanceShift = 0.0f, channelShift = 0.0f, directionShift[2] = {0.0f, 0.0f};
+        if (tables) {
+            auto sequence = [&]() { return U32(fminf(rs.next() * 4096.0f, 4095.0f)); };
+            distanceBase = sequence() * 1024u;
+            distanceShift = rs.next();
+            channelBase = sequence() * 1024u;
+            channelShift = rs.next();
+            directionBase = 4096u * 1024u + sequence() * 2048u;
+            directionShift[0] = rs.next();
+            directionShift[1] = rs.next();
+        }
+        auto rotate = [](float x, float shift) {
+            const float r = x + shift;
+            return r >= 1.0f ? r - 1.0f : r;
+        };
+        auto nextDistance = [&]() { return tables && kDistance < 1016 ? rotate(tables[distanceBase + kDistance++], distanceShift) : rs.next(); };
+        auto nextChannel = [&]() { return tables && kChannel < 1016 ? rotate(tables[channelBase + kChannel++], channelShift) : rs.next(); };
+        auto nextDirection = [&](float& a, float& b2) {
+            if (tables && kDirection < 1016) {
+                a = rotate(tables[directionBase + 2 * kDirection], directionShift[0]);
+                b2 = rotate(tables[directionBase + 2 * kDirection + 1], directionShift[1]);
+                ++kDirection;
+            } else {
+                a = rs.next();
+                b2 = rs.next();
+            }
+        };
+        float u0, u1;
+        nextDirection(u0, u1);
         V3 dir = -shade::localToGlobal(frame, shade::sampleLocalHemisphereCosine(u0, u1));
         // Below the surface: the hit's far-side origin.
         V3 org = shade::dot(dir, hit.normal) >= 0.0f ? hit.origin : hit.below;
@@ -636,7 +671,7 @@ X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& ro
         };
         // Zero scatter.
         {
-            const float uChannel = rs.next(), uDistance = rs.next();
+            const float uChannel = nextChannel(), uDistance = nextDistance();
             previousDistanceU = uDistance;
             const float recip = 1.0f / (pt.x + pt.y + pt.z);
             const int ch = uChannel < pt.x * recip ? 0 : uChannel < (pt.x + pt.y) * recip ? 1 : 2;
@@ -659,12 +694,12 @@ X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& ro
                 if (shade::isBlack(pt)) break;
                 const float phaseSamplingWeight = nScatter > 1 ? 0.1f : 1.0f;
                 // sampleChannel
-                const float uChannel = rs.next();
+                const float uChannel = nextChannel();
                 const float norm = 1.0f / (pt.x + pt.y + pt.z);
                 const Color channelWeights = norm * pt;
                 const int ch = uChannel < channelWeights.x ? 0 : uChannel < channelWeights.x + channelWeights.y ? 1 : 2;
                 // sampleDistanceMultiScatter
-                const float uDistance = rs.next(), backward = previousDistanceU;
+                const float uDistance = nextDistance(), backward = previousDistanceU;
                 previousDistanceU = uDistance;
                 float NdotDir = shade::dot(dir, frame.z);
                 // Dwivedi distances: longer steps back toward the normal (the choice is the previous direction's).
@@ -692,7 +727,8 @@ X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& ro
                 hadScatterEvent = true;
                 org = org + distance * dir;
                 pt = pt * tr * sigmaS * shade::OneOverFourPi;
-                const float d0 = rs.next(), d1 = rs.next();
+                float d0, d1;
+                nextDirection(d0, d1);
                 // sampleDirection
                 if (d0 < phaseSamplingWeight) {
                     choseDwivedi = false;
@@ -1129,7 +1165,9 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 child.subsurfaceDepth = subsurfaceDepth;
                 child.farT = 3.402823466e+38f;
                 child.nearT = start;
-                child.volumeDepth = pv.volumeDepth;
+                // Every bounce counts toward the volume depth (PathIntegratorMultiSampler: parent's + 1), so with
+                // max_volume_depth one only camera rays gather volume scattering.
+                child.volumeDepth = pv.volumeDepth + 1;
                 child.accumOpacity = opacity;
                 // computeMinRoughness: the path's roughness floor for later hair lobes.
                 child.minRoughness[0] = child.minRoughness[1] = 0.0f;

@@ -83,6 +83,7 @@ struct LaunchParams {
     const U32* meshLights;
     const volume::Shader* volumes;  // the volumes bound to meshes (volume_core.h), and each mesh's (-1: none)
     const int* meshVolumes;
+    const float* walkSequences;  // MoonRay's integrator sequences for the random walk (cpu_scene.h), or null
     // The path tracer's materials: each mesh's material record and shading attributes, and the
     // records' parameter pool (shade_material.h).
     const shade::MaterialRecord* meshMaterials;

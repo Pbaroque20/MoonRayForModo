@@ -253,6 +253,8 @@ public:
                 for (const auto& mesh : plan->meshes) meshVolumes.push_back(mesh.volume);
                 scene_.meshVolumes = upload(meshVolumes.data(), meshVolumes.size() * sizeof(int));
             }
+            if (plan->walkSequences)
+                scene_.walkSequences = upload(plan->walkSequences->data(), plan->walkSequences->size() * sizeof(float));
             scene_.meshMaterials = upload(meshMaterials.data(), meshMaterials.size() * sizeof(shade::MaterialRecord));
             scene_.meshAttributes = upload(meshAttributes.data(), meshAttributes.size() * sizeof(shade::MeshAttributes));
             const std::vector<float> pool = plan->materialPool.empty() ? std::vector<float>{0.0f} : plan->materialPool;
@@ -845,7 +847,7 @@ private:
     struct Scene {
         std::vector<B> keep;
         U64 traversable = 0;
-        B geometry, materials, lights, meshLights, volumes, meshVolumes, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
+        B geometry, materials, lights, meshLights, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
             hostSums,
             hostOdd, hostCounts;
         B passMask[PassSlots], passBase[PassSlots], passStaging[PassSlots], errors, hostErrors;
@@ -1094,6 +1096,7 @@ private:
         p.meshLights = scene_.meshLights ? reinterpret_cast<const U32*>(scene_.meshLights->pointer) : nullptr;
         p.volumes = scene_.volumes ? reinterpret_cast<const volume::Shader*>(scene_.volumes->pointer) : nullptr;
         p.meshVolumes = scene_.meshVolumes ? reinterpret_cast<const int*>(scene_.meshVolumes->pointer) : nullptr;
+        p.walkSequences = scene_.walkSequences ? reinterpret_cast<const float*>(scene_.walkSequences->pointer) : nullptr;
         p.meshMaterials = scene_.meshMaterials ? reinterpret_cast<const shade::MaterialRecord*>(scene_.meshMaterials->pointer) : nullptr;
         p.meshAttributes = scene_.meshAttributes ? reinterpret_cast<const shade::MeshAttributes*>(scene_.meshAttributes->pointer) : nullptr;
         p.materialPool = scene_.materialPool ? reinterpret_cast<const float*>(scene_.materialPool->pointer) : nullptr;
