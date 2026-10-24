@@ -100,7 +100,10 @@ fatal colour. Flake textures and glitter on both inputs of a layer (the layer's 
 
 MoonRay's vector mode (and so XPU) cannot render glitter on Windows: `StochasticFlakesBsdfLobe_eval` keeps two
 reflection caches of 2,000 varying entries on the stack (1.4 MB at eight lanes) and overflows a worker thread's stack
-(exit 0xC00000FD). Scalar mode renders it; glitter's fixtures are measured against scalar MoonRay.
+(exit 0xC00000FD). Scalar mode renders it; glitter's fixtures are measured against scalar MoonRay. The two differ
+where one macro flake covers the whole footprint: the ISPC `createMacroFlakes` (which XPU runs, and which XPU2
+follows) weighs that flake's lobe by its coverage weight, which can exceed one, while the C++ one keeps one. Those
+flakes' glints are brighter in XPU2 than in scalar MoonRay (one glint 1.85 times in `dwa-glitter`); the means agree.
 
 ## Volumes
 
@@ -172,3 +175,77 @@ passing.
 3. Materials: DwaBase and its family, the combinators, UsdPreviewSurface.
 4. Maps and normal maps.
 5. Subsurface, hair, glitter, toon, volumes, displacement.
+
+## Results
+
+Build 60, the 50 fixtures of `make_material_scenes.py` at 320×240 (`run_material_benchmark.py`, tabled by
+`summarize_material_benchmark.py`). MoonRay's time is XPU's (scalar mode for glitter) at 64 samples a pixel, XPU2's
+the same; "Error vs MoonRay" is XPU2's 64-sample relative MSE over XPU's own (1.00 is XPU's noise); at 1024 samples
+the largest pixel difference (with XPU2's own noise between two seeds) and the largest 8×8 block mean.
+
+| Case | MoonRay (s) | XPU2 (s) | Error vs MoonRay | 1024 max pixel (XPU2 noise) | 1024 8x8 block | Gates |
+|---|---:|---:|---:|---:|---:|---|
+| usd-dielectric | 9.13 | 0.710 | 0.91 | 0.012 (0.010) | 0.0014 | all |
+| usd-metal | 9.22 | 0.696 | 0.98 | 0.026 (0.031) | 0.0023 | all |
+| usd-mirror | 9.24 | 0.753 | 1.02 | 0.019 (0.019) | 0.0019 | 64 spp error missed |
+| usd-glass | 10.54 | 1.373 | 1.00 | 0.058 (0.055) | 0.0026 | all |
+| usd-clearcoat | 9.36 | 0.805 | 0.93 | 0.018 (0.014) | 0.0025 | all |
+| usd-mixed | 9.16 | 0.730 | 0.93 | 0.010 (0.009) | 0.0025 | all |
+| dwa-base | 8.97 | 0.713 | 0.93 | 0.012 (0.012) | 0.0019 | all |
+| dwa-family | 9.38 | 0.920 | 0.96 | 0.048 (0.019) | 0.0019 | all |
+| dwa-fabric | 9.01 | 0.690 | 0.89 | 0.019 (0.021) | 0.0009 | all |
+| dwa-iridescence | 8.78 | 0.667 | 0.93 | 0.017 (0.012) | 0.0024 | all |
+| dwa-layer | 9.21 | 0.784 | 0.89 | 0.012 (0.010) | 0.0018 | all |
+| dwa-adjust | 9.02 | 0.683 | 0.85 | 0.014 (0.014) | 0.0015 | all |
+| map-procedural | 9.11 | 0.737 | 0.84 | 0.012 (0.020) | 0.0009 | all |
+| map-modo | 9.06 | 0.745 | 0.86 | 0.051 (0.048) | 0.0014 | all |
+| dwa-toon | 9.03 | 0.706 | 0.80 | 0.022 (0.017) | 0.0011 | all |
+| map-noise | 9.33 | 0.781 | 0.87 | 0.012 (0.009) | 0.0011 | all |
+| map-cc-legacy | 9.29 | 0.736 | 0.86 | 0.007 (0.008) | 0.0009 | all |
+| dwa-sss | 9.99 | 0.932 | 1.76 | 0.055 (0.061) | 0.0142 | 64 spp error missed |
+| dwa-sss-rw | 10.32 | 1.445 | 1.03 | 0.150 (0.160) | 0.0129 | 64 spp error missed |
+| dwa-twosided | 9.39 | 1.024 | 0.94 | 0.009 (0.008) | 0.0014 | all |
+| map-image | 4.49 | 0.178 | 1.02 | 0.390 (0.258) | 0.0036 | 64 spp error, convergence missed |
+| map-image-bounce | 8.99 | 0.711 | 1.08 | 0.390 (0.257) | 0.0036 | 64 spp error, convergence missed |
+| map-projection | 9.14 | 0.740 | 0.87 | 0.014 (0.013) | 0.0011 | all |
+| map-triplanar | 9.29 | 0.753 | 1.18 | 0.174 (0.008) | 0.0047 | 64 spp error, convergence missed |
+| map-camera | 9.06 | 0.709 | 1.26 | 0.170 (0.009) | 0.0490 | 64 spp error, convergence missed |
+| map-normals | 9.08 | 0.724 | 2.21 | 0.151 (0.024) | 0.0629 | 64 spp error, convergence missed |
+| map-triplanar-normal | 9.29 | 0.738 | 0.99 | 0.138 (0.035) | 0.0084 | convergence missed |
+| map-uvtransform | 9.11 | 0.742 | 0.85 | 0.013 (0.014) | 0.0014 | all |
+| curve-linear | 9.13 | 0.719 | 0.89 | 0.009 (0.012) | 0.0015 | all |
+| curve-linear-round | 9.13 | 0.721 | 0.89 | 0.009 (0.012) | 0.0015 | all |
+| curve-bezier | 9.11 | 0.742 | 0.89 | 0.009 (0.012) | 0.0015 | all |
+| curve-bspline | 9.29 | 0.771 | 0.89 | 0.009 (0.012) | 0.0015 | all |
+| curve-bspline-round | 9.13 | 0.804 | 0.89 | 0.009 (0.012) | 0.0015 | all |
+| curve-hair | 9.12 | 0.719 | 0.89 | 0.010 (0.012) | 0.0015 | all |
+| curve-hair-separate | 9.08 | 0.725 | 0.89 | 0.010 (0.012) | 0.0015 | all |
+| curve-hair-round | 9.06 | 0.737 | 0.89 | 0.010 (0.012) | 0.0015 | all |
+| curve-hair-bspline | 9.12 | 0.772 | 0.89 | 0.009 (0.012) | 0.0015 | all |
+| curve-hair-diffuse | 9.16 | 0.722 | 0.89 | 0.009 (0.012) | 0.0015 | all |
+| curve-hair-glint | 10.19 | 0.739 | 0.89 | 0.010 (0.012) | 0.0015 | all |
+| curve-hair-toon | 10.36 | 1.058 | 1.16 | 0.028 (0.022) | 0.0046 | 64 spp error missed |
+| curve-hair-toon-hair | 9.54 | 0.847 | 1.19 | 0.024 (0.031) | 0.0033 | 64 spp error missed |
+| volume-absorption | 10.49 | 1.512 | 0.91 | 0.008 (0.007) | 0.0012 | all |
+| volume-fog | 18.65 | 2.839 | 1.06 | 0.008 (0.009) | 0.0014 | 64 spp error missed |
+| volume-fog-multi | 26.08 | 7.399 | 1.04 | 0.102 (0.018) | 0.0106 | 64 spp error, convergence missed |
+| volume-ramp | 10.61 | 1.613 | 0.91 | 0.007 (0.008) | 0.0011 | all |
+| disp-noise | 9.54 | 0.793 | 0.85 | 0.043 (0.038) | 0.0051 | all |
+| disp-image | 4.75 | 0.221 | 0.55 | 0.028 (0.021) | 0.0036 | all |
+| dwa-glitter (scalar MoonRay) | 11.48 | 0.926 | 4.11 | 5.228 (1.294) | 0.1397 | 64 spp error, convergence missed |
+| dwa-glitter-micro (scalar MoonRay) | 12.44 | 1.382 | 1.07 | 0.388 (0.104) | 0.0086 | 64 spp error, convergence missed |
+| dwa-glitter-ref (scalar MoonRay) | 12.34 | 1.180 | 1.62 | 0.695 (0.522) | 0.0384 | 64 spp error, convergence missed |
+
+XPU2 takes 91.9% less time at the median (71.6% to 96.0%). 34 cases pass every gate. Six converge to MoonRay's
+image but are noisier at 64 samples: `usd-mirror`, `dwa-sss-rw` and `volume-fog` within a few per cent, the HairToon
+cases by 16–19% (cause not found), `dwa-sss` (dipole) by 76%. The rest:
+
+- `map-image`, `map-image-bounce`: specular fireflies, MoonRay's and XPU2's alike; the blocks agree.
+- `map-triplanar`: the edges of the red stripes, where the per-face random transforms meet; the blocks agree.
+- `map-camera`: a thin line on the projector's silhouette in ProjectCameraNormalMap.
+- `map-normals`: RgbToNormalMap's ball 2% darker where its specular lobe is.
+- `map-triplanar-normal`: single edge pixels; the blocks agree.
+- `volume-fog-multi`: differences the size of MoonRay's own 1024-sample noise there.
+- Glitter, against scalar MoonRay (XPU cannot render it): the image means agree within 0.05%, but the glints of
+  macro flakes that cover their footprint are brighter, as ISPC weighs them (see Glitter); `dwa-glitter-micro`'s
+  64-sample error is within 7% of scalar MoonRay's.
