@@ -108,6 +108,7 @@ def stands_with_items(scene,snapshot):
         if any(item.get('kind') not in ('curves','points') or not item.get('source_item') for item in extra):return False
         where={}
         for mesh in list(snapshot['meshes'])+list(extra):
+            if mesh.get('volumetric'):continue
             if 'instances' in mesh:return False
             identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
             if identity not in where:where[identity]=world_matrix(scene.item(identity))
@@ -143,6 +144,8 @@ def item_matrices(scene,snapshot):
     from .host import world_matrix
     where={}
     for mesh in snapshot['meshes']:
+        # Volumetric fog is placed anew at every reading (volumetrics.capture), where its light and the camera stand.
+        if mesh.get('volumetric'):continue
         identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
         if identity not in where:where[identity]=world_matrix(scene.item(identity))
     return where
@@ -153,6 +156,7 @@ def follow_items(scene,snapshot,before):
     it did (before: item_matrices then) keeps the matrix it was read with, as reading it again would give it."""
     now=item_matrices(scene,snapshot)
     for mesh in snapshot['meshes']:
+        if mesh.get('volumetric'):continue
         identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
         if now[identity]!=before.get(identity):mesh['matrix']=now[identity]
 
@@ -161,6 +165,7 @@ def refresh_transforms(scene,snapshot,identities=None):
     from .host import world_matrix
     targets=transform_targets(scene,identities)
     for mesh in snapshot['meshes']:
+        if mesh.get('volumetric'):continue
         if 'instances' in mesh:
             mesh['instances']=[world_matrix(scene.item(identity)) for identity in mesh['instance_ids']]
         else:

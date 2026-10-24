@@ -6,6 +6,11 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.3.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## Coming next
+
+- **Display filters no longer come out pink for want of an input.** Each starts on every picture MoonRay needs it to have (a Toon filter on Albedo, Camera depth, Direct diffuse, Direct glossy and Shading normal; Depth of Field on Camera depth; Over on Alpha). One left empty in a scene takes that picture, with a notice, and one that cannot be given what it needs is left out, said, rather than drawn pink.
+- **Modo's light volumetrics and environment fog render**, in MoonRay and in MoonLightIPR. A point light with Volumetrics on lights a sphere of fog, a spot light its cone and a directional light a cylinder, sized by the light's volumetric Radius, Height and Base, and thick as its light material's Density, Scattering, Scattering Color, Attenuation and Shift say; only that light lights it. The Environment Material's fog is fog around the camera, lit by the environment: Exponential at its density, Linear from Fog Start and thick by Fog End, Layered up to its height. Not yet compared with Modo's own renders.
+
 ## New in 0.4.3.1
 
 A hotfix: the kit alone changed (with its geometry adapter); the 0.4.3 runtime is the same.
@@ -359,7 +364,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Within about 1% of MoonRay's brightness |
 | Cylinder, dome and photometric (IES) lights | ![no](docs/images/feature-no.svg) | Left out by the plugin for MoonRay too; MoonRay's own cylinder and environment lights are drawn |
 | Light linking (Modo's groups, include or exclude) | ![partly](docs/images/feature-partly.svg) | Which lights reach each object, from Object controls, a material's links or Modo's groups, compared with MoonRay at 0.96 to 1.01 of its brightness. Objects set not to cast some shadows, or not onto some objects, cast them all; said in Notices |
-| Light volumetrics, and fog | ![no](docs/images/feature-no.svg) | MoonRay's volume items are drawn: even fog and VDB clouds |
+| Light volumetrics, and fog | ![partly](docs/images/feature-partly.svg) | Point, spot and directional lights' volumetrics as fog lit by that light alone; the Environment Material's fog (Linear and Layered approximated); not yet compared with Modo's renders. Area, cylinder and dome lights' volumetrics and the Shader's fog are named in Notices |
 | **Environment** |  |  |
 | Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | Layered environments and physical skies at 256 x 128; a third environment image shows as grey |
 | **Cameras** |  |  |

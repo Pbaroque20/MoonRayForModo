@@ -875,6 +875,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
             result['materials'].setdefault(tag, native_shape_materials[tag])
     from .native_light_links import capture as capture_light_links
     result['native_light_links']=capture_light_links(scene,result,warnings)
+    # Modo's light volumetrics and environment fog, as meshes of MoonRay fog: made anew at every reading, meshes kept
+    # from an earlier one included, where the lights and the camera now stand.
+    from .volumetrics import capture as capture_volumetrics
+    capture_volumetrics(scene,result,warnings)
     if smoothed_whole:
         warnings.append("Smoothed all over rather than within their material's smoothing angle, having more than %d polygons: %s. "
                         'Set a smoothing angle in the MoonRay material settings to hold it.'
