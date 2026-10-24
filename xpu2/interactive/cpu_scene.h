@@ -509,6 +509,28 @@ inline PolygonSplit splitPolygons(const rdl::Vec3fVector& v,const rdl::IntVector
  }
  return out;
 }
+// A mesh's parts (RdlMeshGeometry's part_list): each face takes its part's assignment and a face in no part the
+// mesh's own, the "" part (createPerFaceAssignmentId); a face with none is not rendered. Parts whose lists do not add
+// up are ignored, as MoonRay warns and ignores them. One piece an assignment, its faces marked (none: every face).
+struct Piece{int id;std::string suffix;std::vector<unsigned char> faces;};
+inline std::vector<Piece> meshPieces(const rdl::SceneObject& o,const rdl::Geometry& geom,const rdl::Layer& layer){
+ const int whole=layer.getAssignmentId(&geom,"");
+ if(o.getSceneClass().getName()!="RdlMeshGeometry"||get<rdl::StringVector>(o,"part_list").empty())return {{whole,"",{}}};
+ const auto& parts=get<rdl::StringVector>(o,"part_list");const auto& counts=get<rdl::IntVector>(o,"part_face_count_list");
+ const auto& indices=get<rdl::IntVector>(o,"part_face_indices");const size_t faces=get<rdl::IntVector>(o,"face_vertex_count").size();
+ size_t expected=0;for(int c:counts)expected+=size_t(std::max(c,0));
+ if(parts.size()!=counts.size()||expected!=indices.size())return {{whole,"",{}}};
+ std::vector<int> faceId(faces,whole);size_t at=0;
+ for(size_t i=0;i<parts.size();++i){const int id=layer.getAssignmentId(&geom,parts[i]);
+  for(int k=0;k<counts[i];++k,++at){const int f=indices[at];need(f>=0&&size_t(f)<faces,o.getName()+": part face index out of bounds");faceId[size_t(f)]=id;}}
+ std::vector<Piece> out;std::map<int,size_t> slot;
+ for(size_t f=0;f<faces;++f){const int a=faceId[f];if(a<0)continue;auto it=slot.find(a);
+  if(it==slot.end()){it=slot.emplace(a,out.size()).first;out.push_back({a,"#"+std::to_string(a),std::vector<unsigned char>(faces,0)});}
+  out[it->second].faces[f]=1;}
+ // Every face the mesh's own: the mesh as it is.
+ if(out.size()==1&&out[0].id==whole&&std::find(faceId.begin(),faceId.end(),-1)==faceId.end())out[0]={whole,"",{}};
+ return out;
+}
 inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false){
  need(bool(frame),"Missing canonical snapshot");
  const Limits hard{};
@@ -532,7 +554,9 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   "enable_subsurface_scattering","max_volume_depth","volume_quality","volume_shadow_quality","volume_illumination_samples",
   "volume_opacity_threshold","volume_overlap_mode","volume_attenuation_factor","volume_contribution_factor","volume_phase_attenuation_factor",
   // What changes only MoonRay's scheduling, its texture cache's size, or motion blur, which is refused unless off.
-  "progressive_tile_order","checkpoint_tile_order","batch_tile_order","texture_cache_size","fps","motion_steps","max_geometry_resolution"});
+  "progressive_tile_order","checkpoint_tile_order","batch_tile_order","texture_cache_size","fps","motion_steps","max_geometry_resolution",
+  // What only deep outputs read, which are refused.
+  "deep_id_attribute_names","deep_format","deep_curvature_tolerance","deep_z_tolerance","deep_vol_compression_res","deep_max_layers","deep_layer_bias"});
  int width=get<rdl::Int>(sv,"image_width"),height=get<rdl::Int>(sv,"image_height"),grid=get<rdl::Int>(sv,"pixel_samples");
  need(width>0&&height>0&&size_t(width)*height<=limits.pixels,"Image budget");need(grid>0&&grid<=64,"Sample budget");plan->width=width;plan->height=height;plan->spp=unsigned(grid*grid);
  int samplingMode=get<rdl::Int>(sv,"sampling_mode");need(samplingMode==0||(samplingMode==2&&allowAdaptive),"Adaptive sampling unsupported");
@@ -630,9 +654,19 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   need(std::isfinite(scale.x)&&std::isfinite(scale.y)&&std::abs(scale.x)<=256&&std::abs(scale.y)<=256&&std::isfinite(offset.x)&&std::isfinite(offset.y)&&std::abs(offset.x)<=256&&std::abs(offset.y)<=256&&std::isfinite(binding.mipBias)&&binding.mipBias>=-1&&binding.mipBias<=32,"Texture transform/bias budget");maps.emplace(&o,std::move(binding));
  }
 
+ // The materials the layer's assignments reach, through layered and switched materials: the only ones shaded, as
+ // MoonRay shades only what is assigned (a material left in the scene unassigned is not looked at).
+ std::set<const rdl::SceneObject*> usedMaterials;
+ if(paths){std::vector<const rdl::SceneObject*> todo;
+  for(int id=0;id<int(layer.getAssignmentCount());++id)if(const rdl::SceneObject* m=layer.lookupMaterial(id))todo.push_back(m);
+  while(!todo.empty()){const rdl::SceneObject* m=todo.back();todo.pop_back();if(!m||!usedMaterials.insert(m).second)continue;
+   for(auto i=m->getSceneClass().beginAttributes();i!=m->getSceneClass().endAttributes();++i){const rdl::Attribute& a=**i;
+    if(a.getType()==rdl::TYPE_SCENE_OBJECT){const rdl::SceneObject* s=m->get(rdl::AttributeKey<rdl::SceneObject*>(a));if(s&&s->isA<rdl::Material>())todo.push_back(s);}
+    else if(a.getType()==rdl::TYPE_SCENE_OBJECT_VECTOR){for(const rdl::SceneObject* s:m->get(rdl::AttributeKey<rdl::SceneObjectVector>(a)))if(s&&s->isA<rdl::Material>())todo.push_back(s);}}}}
  std::vector<const rdl::SceneObject*> switches;
  for(auto& pair:sorted){auto& o=*pair.second;auto cls=o.getSceneClass().getName();
   if(cls=="SceneVariables"||&o==camera||maps.count(&o))continue;
+  if(paths&&o.isA<rdl::Material>()&&!usedMaterials.count(&o))continue;
   // On the path tracer a map is admitted where a material is bound to it (map_admission.h).
   if(paths&&(o.isA<rdl::Map>()||o.isA<rdl::NormalMap>()))continue;
   // A displacement is admitted with the assignment that binds it (admitDisplacement).
@@ -720,9 +754,11 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   for(auto* s:switches)fill(s);}
  // The path tracer's caller writes the outputs it asks for: a beauty, an alpha, or both.
  need((paths||sky)&&(paths?outputCount>=1:outputCount==2&&beauty&&alpha),"One environment and beauty/alpha outputs required");need(allGeometry==setGeometry&&!allGeometry.empty(),"Geometry sets must contain exactly the rendered meshes");
- need(size_t(layer.getAssignmentCount())==allGeometry.size(),"Only one whole-mesh assignment supported");
  for(auto& pair:sorted){auto& o=*pair.second;if(!allGeometry.count(&o))continue;
-  auto* geom=o.asA<rdl::Geometry>();int id=layer.getAssignmentId(geom,"");need(id>=0,"Part-specific assignment unsupported");
+  auto* geom=o.asA<rdl::Geometry>();
+  const auto pieces=meshPieces(o,*geom,layer);need(!pieces.empty(),o.getName()+": no assignment in the layer");
+  for(const auto& piece:pieces){const int id=piece.id;need(id>=0,o.getName()+": no assignment in the layer");
+  const std::vector<unsigned char>* faceMask=piece.faces.empty()?nullptr:&piece.faces;const std::string meshName=o.getName()+piece.suffix;
   auto* mat=layer.lookupMaterial(id);auto* lights=layer.lookupLightSet(id);
   // A volume shader: the mesh bounds a volume (with or without a surface of its own).
   const rdl::SceneObject* volumeShader=paths?layer.lookupVolumeShader(id):nullptr;
@@ -753,21 +789,23 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;
   // The fur file can change under the same name: fur is read again each time.
   const bool curveGeometry=isCurves(o.getSceneClass().getName());
-  if(previous&&previous->domain==domain&&o.getSceneClass().getName()!="ModoFurGeometry"&&!displacementShader)for(auto& old:previous->meshes)if(old.data->name==o.getName()&&old.data->signature==sig){data=old.data;++plan->reusedMeshes;break;}
-  if(!data&&curveGeometry){auto m=std::make_shared<MeshData>();m->name=o.getName();m->signature=std::move(sig);const auto transform=affine(o);
+  if(previous&&previous->domain==domain&&o.getSceneClass().getName()!="ModoFurGeometry"&&!displacementShader)for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig){data=old.data;++plan->reusedMeshes;break;}
+  if(!data&&curveGeometry){auto m=std::make_shared<MeshData>();m->name=meshName;m->signature=std::move(sig);const auto transform=affine(o);
    {const auto w=transform.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
     for(int i=0;i<12;++i)m->worldToObject[i]=float(rows[i]);}
    admitCurves(o,transform,*m);data=std::move(m);++plan->preparedMeshes;}
   // All geometry attribute/binding identities match before validation is reused.
   // Material/light assignments are checked above for EVERY epoch.
   if(!data){
-  if(paths)attributes(o,{"vertex_list_0","face_vertex_count","vertices_by_index","is_subd","node_xform","smooth_normal","normal_list","uv_list","primitive_attributes","mesh_resolution","adaptive_error"});
+  if(paths)attributes(o,{"vertex_list_0","face_vertex_count","vertices_by_index","is_subd","node_xform","smooth_normal","normal_list","uv_list","primitive_attributes","mesh_resolution","adaptive_error",
+   "part_list","part_face_count_list","part_face_indices"});
   else attributes(o,{"vertex_list_0","face_vertex_count","vertices_by_index","is_subd","node_xform","smooth_normal"});
   need(!get<rdl::Bool>(o,"is_subd"),o.getName()+": subdivision unsupported");
   // Supplied normals are the shading normals; on the path tracer a mesh without them smooths its own (PolyMeshCalcNv).
   if(spatial)need(!get<rdl::Bool>(o,"smooth_normal")||paths,"Spatial smooth normals unsupported");
   auto transform=spatial?affine(o):translation(o);if(!spatial)need(transform[3][2]==0,o.getName()+": only coplanar geometry supported");
-   auto m=std::make_shared<MeshData>();m->name=o.getName();m->signature=std::move(sig);
+   need(paths||!faceMask,o.getName()+": parts are rendered by the path tracer only");
+   auto m=std::make_shared<MeshData>();m->name=meshName;m->signature=std::move(sig);
    {const auto w=transform.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
     for(int i=0;i<12;++i)m->worldToObject[i]=float(rows[i]);}
    const auto& v=o.get<rdl::Vec3fVector>("vertex_list");const auto& counts=o.get<rdl::IntVector>("face_vertex_count");const auto& indices=o.get<rdl::IntVector>("vertices_by_index");need(!v.empty()&&!counts.empty(),"Empty mesh unsupported");
@@ -779,10 +817,11 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    if(paths){split=splitPolygons(v,counts,indices,o.getName());
     // MoonRay's QuadMesh hands polygon maps four polyvertices; a displaced mesh is tessellated from its faces.
     need(!split.quads||!mat||!(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices),o.getName()+": polygon maps on a quad mesh are not rendered yet");
-    need(!displacementShader||(!split.quads&&split.faceOf.size()==counts.size()),o.getName()+": a displacement on a mesh with faces of more than three vertices is not rendered yet");}
+    need(!displacementShader||(!split.quads&&split.faceOf.size()==counts.size()),o.getName()+": a displacement on a mesh with faces of more than three vertices is not rendered yet");
+    need(!displacementShader||!faceMask,o.getName()+": a displacement on a mesh with parts is not rendered yet");}
    else for(size_t i=0;i<counts.size();++i){need(counts[i]==3,"Non-triangle mesh");split.corners.insert(split.corners.end(),{unsigned(i*3),unsigned(i*3+1),unsigned(i*3+2)});split.faceOf.push_back(unsigned(i));}
    std::vector<unsigned> kept;  // the split's triangles kept, in order
-   for(size_t i=0;i<split.faceOf.size();++i){unsigned ids[3];for(int j=0;j<3;++j){auto k=indices[split.corners[i*3+size_t(j)]];need(k>=0&&size_t(k)<v.size(),"Vertex index out of bounds");ids[j]=unsigned(k);}
+   for(size_t i=0;i<split.faceOf.size();++i){if(faceMask&&!(*faceMask)[split.faceOf[i]])continue;unsigned ids[3];for(int j=0;j<3;++j){auto k=indices[split.corners[i*3+size_t(j)]];need(k>=0&&size_t(k)<v.size(),"Vertex index out of bounds");ids[j]=unsigned(k);}
     auto a=m->positions[ids[0]],b=m->positions[ids[1]],c=m->positions[ids[2]];double area=(double(b.x)-a.x)*(double(c.y)-a.y)-(double(b.y)-a.y)*(double(c.x)-a.x);
     if(spatial){V3 n;const bool some=surface::normalize(surface::cross(surface::add(b,surface::mul(a,-1)),surface::add(c,surface::mul(a,-1))),n);
      if(!some&&paths)continue;need(some,"Degenerate triangle");}
@@ -801,8 +840,9 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
     // A QuadMesh sums each quad's normal (QuadMeshCalcNv), a TriMesh each triangle's.
     if(nl.empty()&&get<rdl::Bool>(o,"smooth_normal")){
      if(split.quads)m->normals=displace::smoothNormals(m->positions,split.quadVertices,4);
-     else{std::vector<int> faces;faces.reserve(m->triangles.size()*3);
-      for(auto& t:m->triangles)faces.insert(faces.end(),{int(t.a),int(t.b),int(t.c)});
+     // Over the whole mesh, whatever its parts (MoonRay's normals are the mesh's own).
+     else{std::vector<int> faces;faces.reserve(split.corners.size());
+      for(unsigned c:split.corners)faces.push_back(indices[c]);
       m->normals=displace::smoothNormals(m->positions,faces,3);}
      m->normalRate=shade::RateVertex;}
     if(!nl.empty()){
@@ -844,6 +884,7 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   }
   plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);plan->meshes.push_back({data,mat?materialIds.at(mat->getName()):~0u,volumeIndex});
   if(displacementShader)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
+  }
  }
  if(gpuTextures(domain)){uint64_t total=0;std::set<texture::File*> files;
   for(auto* set:{&plan->diffuseMaps,&plan->emissionMaps})for(auto& pair:*set){auto& file=*pair.second.file;if(!files.insert(&file).second)continue;total+=file.decodedBytes;need(total<=(4ull<<30),"Aggregate host texture budget");if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());}

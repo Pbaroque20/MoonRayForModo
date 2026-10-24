@@ -12,10 +12,10 @@
 //
 // Where XPU2 does not render a scene (PATH_TRACER.md says what it renders), its GPU programs are not compiled yet,
 // or the GPU fails, the session prints "@@MODO_XPU2 FALLBACK <reason>" and ends: the kit then starts MoonRay in its
-// place. The picture goes out through shared memory with its rows in MoonRay's film order, and the outlines of the work as @@MODO_TILES (snapped to the bucket size) and @@MODO_WORKERS: each CPU worker's
-// 8-pixel tile, and the work grid's cells that the GPU's queued launches hold.
+// place. The picture goes out through shared memory with its rows in MoonRay's film order, and the outlines of
+// the work as @@MODO_TILES, the work grid's cells being rendered (its cellular rules move the CPU's workers from cell
+// to cell), and @@MODO_WORKERS: each CPU worker's 8-pixel tile and the cells the GPU's queued launches hold.
 #include "async_render.h"
-#include "../../native-port/modo_bucket_size.h"
 #include "../../native-port/modo_protocol_line.h"
 #include "../../native-port/modo_scene_memory.h"
 #include "../../native-port/modo_shared_image.h"
@@ -308,12 +308,17 @@ private:
             if (workers.size() >= 512) break;
             workers.push_back(rect(c % cellsX * cellSize, c / cellsX * cellSize, cellSize));
         }
-        const U32 size = modoBucketSize(width_, height_);
+        // The buckets are the work grid's cells (the cellular rules move workers between them): those the CPU's
+        // workers are in, and those the GPU's queued launches hold.
         std::set<Rect> buckets;
-        for (const Rect& r : workers)
-            for (U32 y = r.y0 / size * size; y < r.y1 && buckets.size() < 512; y += size)
-                for (U32 x = r.x0 / size * size; x < r.x1 && buckets.size() < 512; x += size)
-                    buckets.insert({x, y, std::min(x + size, width_), std::min(y + size, height_)});
+        for (U32 t : tiles) {
+            const U32 x = t % tilesX * TileSize / cellSize * cellSize, y = t / tilesX * TileSize / cellSize * cellSize;
+            buckets.insert(rect(x, y, cellSize));
+        }
+        for (U32 c : cells) {
+            if (buckets.size() >= 512) break;
+            buckets.insert(rect(c % cellsX * cellSize, c / cellsX * cellSize, cellSize));
+        }
         auto line = [&](const char* kind, auto begin, auto end) {
             std::ostringstream s;
             s << kind << " " << id_ << " " << width_ << " " << height_;
