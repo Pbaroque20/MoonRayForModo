@@ -91,8 +91,6 @@ def collect(scene, warnings):
                         # The solar disc is the sun light itself, seen by the camera; see host.solar_discs.
                         entry.update(sun_identity=sun.id,solar_disc=max(0.0,float(channel(layer,'disc',1))),
                                      inscatter=min(1.0,max(0.0,float(channel(layer,'inscatter',0)))))
-                    if channel(layer,'fogType','none') != 'none':
-                        warnings.append('Environment fog is not translated: '+layer.name)
                 elif layer.type=='gradient':
                     from .gradients import capture
                     data=capture(layer,channel,effect=='envColor')
