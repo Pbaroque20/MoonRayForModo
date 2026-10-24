@@ -24,15 +24,17 @@ inline void admittedPath(const std::filesystem::path& path,const std::filesystem
  auto rel=std::filesystem::weakly_canonical(path).lexically_relative(std::filesystem::canonical(root));
  need(!rel.empty()&&!rel.is_absolute()&&*rel.begin()!="..","Texture outside frozen asset root");
 }
+// alpha: the texture's alpha as each texel's three channels (ImageMap's alpha_only; 1 where the file has none).
 struct Pyramid {
  tex::Image image;std::vector<std::vector<surface::V3>> tiles;
  std::vector<std::vector<const surface::V3*>> pages;uint64_t bytes=0;
- explicit Pyramid(const std::string& name){auto in=OIIO::ImageInput::open(name);need(bool(in),"Pyramid read");pages.reserve(tex::MaxLevels);
+ explicit Pyramid(const std::string& name,bool alpha=false){auto in=OIIO::ImageInput::open(name);need(bool(in),"Pyramid read");pages.reserve(tex::MaxLevels);
   for(unsigned level=0;level<tex::MaxLevels&&in->seek_subimage(0,level);++level){auto spec=in->spec();need(spec.get_int_attribute("sampleborder",0)==0&&spec.get_int_attribute("oiio:sampleborder",0)==0,"Border-sampled TX unsupported");
    unsigned w=spec.width,h=spec.height,nx=(w+tex::Tile-1)/tex::Tile,ny=(h+tex::Tile-1)/tex::Tile;std::vector<float> decoded(size_t(w)*h*spec.nchannels);
    need(in->read_image(0,int(level),0,spec.nchannels,OIIO::TypeDesc::FLOAT,decoded.data()),"Stored mip decode");pages.emplace_back(nx*ny,nullptr);auto& page=pages.back();
    for(unsigned y=0;y<ny;++y)for(unsigned x=0;x<nx;++x){unsigned tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);tiles.emplace_back(tw*th);auto& tile=tiles.back();
-    for(unsigned j=0;j<th;++j)for(unsigned i=0;i<tw;++i){size_t idx=(size_t(y*tex::Tile+j)*w+x*tex::Tile+i)*spec.nchannels;surface::V3 c{decoded[idx],decoded[idx+1],decoded[idx+2]};need(surface::finite(c)&&c.x>=0&&c.y>=0&&c.z>=0,"Invalid TX sample");tile[j*tw+i]=c;}
+    for(unsigned j=0;j<th;++j)for(unsigned i=0;i<tw;++i){size_t idx=(size_t(y*tex::Tile+j)*w+x*tex::Tile+i)*spec.nchannels;surface::V3 c{decoded[idx],decoded[idx+1],decoded[idx+2]};
+     if(alpha){const float a=spec.nchannels>3?decoded[idx+3]:1.0f;c={a,a,a};}need(surface::finite(c)&&c.x>=0&&c.y>=0&&c.z>=0,"Invalid TX sample");tile[j*tw+i]=c;}
     page[y*nx+x]=tile.data();bytes+=tile.size()*sizeof(surface::V3);
    }image.levels[level]={w,h,page.data()};++image.count;
   }need(image.count&&image.levels[image.count-1].width==1&&image.levels[image.count-1].height==1,"Software mip level bound");
@@ -40,7 +42,8 @@ struct Pyramid {
 };
 struct File {
  std::shared_ptr<OIIO::TextureSystem> system;OIIO::ustring name;HANDLE lock=INVALID_HANDLE_VALUE;bool eightBit=false;unsigned levels=0;uint64_t decodedBytes=0;std::shared_ptr<const Pyramid> pyramid;
- File(const std::filesystem::path& path,const std::filesystem::path& root,std::shared_ptr<OIIO::TextureSystem> s):system(std::move(s)),name(path.string()){
+ bool alpha=false;  // its alpha as its colour (ImageMap's alpha_only), a texture of its own beside the file's colour
+ File(const std::filesystem::path& path,const std::filesystem::path& root,std::shared_ptr<OIIO::TextureSystem> s,bool alphaOnly=false):system(std::move(s)),name(path.string()),alpha(alphaOnly){
   admittedPath(path,root);
   // Retain a read lease: no writer or delete can change the file under OIIO's cache.
   lock=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);

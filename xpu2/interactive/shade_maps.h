@@ -17,7 +17,10 @@
 #endif
 namespace xpu2 { namespace interactive { namespace shade {
 
-constexpr U32 MapMaxRegisters = 48, MapNoRegister = 0xffffffffu, NoMapProgram = 0xffffffffu;
+// A material's map results, one register a map: room for the map trees Modo's shader trees make (a layer is a few
+// maps). The register file is indexed by value, so it sits in local memory however large it is; only what a material
+// uses is touched.
+constexpr U32 MapMaxRegisters = 256, MapNoRegister = 0xffffffffu, NoMapProgram = 0xffffffffu;
 
 // EvalAttribute.isph: how a bound attribute takes its map's result.
 enum BindRule : U32 {

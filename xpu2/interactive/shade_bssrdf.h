@@ -12,6 +12,7 @@ enum BssrdfType : U32 { BssrdfNormalizedDiffusion = 0, BssrdfDipole = 1, BssrdfR
 // A Bsdf's one Bssrdf: its profile's parameters, scale and transmission Fresnel.
 struct BssrdfRecord {
     U32 type = BssrdfNone;
+    U32 label = 0;  // its AOV label ids (shade_lobes.h encodedLabel)
     V3 N;
     Color scale;
     U32 fresnel;  // the multiple-transmission Fresnel of the layers above (NoIndex: none)
@@ -25,6 +26,7 @@ struct BssrdfRecord {
     // random walk (VolumeSubsurface): the volume's albedo and extinction, Dwivedi sampling's v0 and pdf
     // normalisation, the zero-scatter extinction, and whether exits must leave the surface
     Color rwAlbedo, sigmaT, dwivediV0, dwivediNormPdf, zeroScatterSigmaT;
+    Color rwColor, rwRadius;  // VolumeSubsurface's mScatteringColor and mScatteringRadius (its material AOV properties)
     U32 resolveSelfIntersections;
 };
 // VolumeSubsurface_init (Chiang et al., "Practical and Controllable Subsurface Scattering for Production Path
@@ -34,6 +36,8 @@ X2_HD inline void initRandomWalk(BssrdfRecord& b, V3 N, Color trlColor, Color tr
     b.N = N;
     const Color A{fmaxf(0.001f, trlColor.x), fmaxf(0.001f, trlColor.y), fmaxf(0.001f, trlColor.z)};
     const Color d{fmaxf(0.001f, trlRadius.x * 0.3333f), fmaxf(0.001f, trlRadius.y * 0.3333f), fmaxf(0.001f, trlRadius.z * 0.3333f)};
+    b.rwColor = A;
+    b.rwRadius = d;
     b.resolveSelfIntersections = resolveSelfIntersections ? 1u : 0u;
     const Color e = -3.25172f * A * A * A + 1.2166f * A * A - 4.75914f * A;
     b.rwAlbedo = rgb(1) - Color{expf(e.x), expf(e.y), expf(e.z)};
@@ -112,6 +116,7 @@ X2_HD inline float dipoleRd(float r2, float zr, float zv, float alphaP, float si
 X2_HD inline void initDipole(BssrdfRecord& b, V3 N, Color translucentColor, Color radius) {
     b.type = BssrdfDipole;
     b.N = N;
+    b.albedo = translucentColor;  // mAlbedo, its PBR validity's
     const float fdr = diffuseFresnelReflectance(1.0f);
     b.A = (1.0f + fdr) / (1.0f - fdr);
     const Color r{fmaxf(radius.x, 0.001f), fmaxf(radius.y, 0.001f), fmaxf(radius.z, 0.001f)};

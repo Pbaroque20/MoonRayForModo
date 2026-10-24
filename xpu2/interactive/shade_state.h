@@ -42,13 +42,18 @@ struct State {
     // computeIntersectCurvature: the shading normal's St partials from the triangle's vertex normals (zero without
     // normals and on curves; MoonRay does not flip them with N); and the hit triangle's corners (its polyvertices).
     V3 dNds{0, 0, 0}, dNdt{0, 0, 0};
-    V3 pa{0, 0, 0}, pb{0, 0, 0}, pc{0, 0, 0};
+    V3 pa{0, 0, 0}, pb{0, 0, 0}, pc{0, 0, 0}, pd{0, 0, 0};
+    U32 polyCount = 3;  // the polyvertices: a QuadMesh face's four (pa to pd), else a triangle's three
     RayDiff incoming;        // the ray's differentials (set before shading; a camera ray's are its own)
     bool diffValid = false;  // whether dPdx and dPdy came from differentials
     float minRoughness[2] = {0, 0};
     float mediumIor = 1.0f;
     U32 geom = 0, prim = 0, pathType = PathPrimary;
     U32 rayLobe = 0;  // the type of the lobe whose sample the ray is (0 for a camera ray): RaySwitchMaterial's choice
+    // Intersection::transferAndComputeDerivatives' textureDiffScale: the texture derivatives' factor (texture_blur).
+    float textureDiffScale = 1.0f;
+    // The pixel's own sample count under a pixel sample map (0: the frame's), which scales a camera ray's differentials.
+    U32 pixelSamples = 0;
     float u = 0, v = 0;                      // barycentrics of the hit triangle
     bool entering = true, causticPath = false, subsurfaceAllowed = true, useAdaptNormal = true;
     bool displacement = false;  // a displacement shader's state (Intersection::initDisplacement)

@@ -398,8 +398,8 @@ X2_CALL void addStochasticFlakesBRDF(Builder& me, V3 N, U32 flakeCount, float ro
     finishLobe(me, lobe, label);
     accumulateAttenuation(me);
 }
-X2_HD inline void addGlitterGGX(Builder& bb, V3 N, Color color, float randomness, float weight, U32 behavior) {
-    addMicrofacetIsotropicBRDF(bb, microfacetConductor(N, color, color, randomness, GGXDistribution), weight, behavior, 0);
+X2_HD inline void addGlitterGGX(Builder& bb, V3 N, Color color, float randomness, float weight, U32 behavior, U32 label) {
+    addMicrofacetIsotropicBRDF(bb, microfacetConductor(N, color, color, randomness, GGXDistribution), weight, behavior, label);
 }
 
 // The flakes about the shading point: none when the search finds none.
@@ -519,7 +519,7 @@ X2_CALL void glitterDebugLobes(Builder& bb, const State& st, const GlitterParame
 // flakes as one stochastic flakes lobe blended toward a GGX lobe of their average colour as they grow dense; far
 // away (or on secondary rays) that GGX lobe alone. All adjacent: glitter manages its own energy.
 X2_CALL bool createGlitterLobes(Builder& bb, const State& st, const GlitterParameters& g, float glitterMask, const float* pool,
-                                GlitterScratch* scratch) {
+                                GlitterScratch* scratch, U32 label) {
     if (isZero(glitterMask)) return true;
     if (g.tables == GlitterNone) return true;  // no Glitter object: no glitter lobes
     if (!scratch) return false;
@@ -537,7 +537,7 @@ X2_CALL bool createGlitterLobes(Builder& bb, const State& st, const GlitterParam
         const bool hifi = glitterHifi(st);
         if ((!hifi && g.approximateForSecRays) || isOne(s.microfacetBlend)) {
             const Color avg = glitterAverageFlakeColor(glitterAverageBaseColor(g), g.hsvVariation, coverageFactor);
-            addGlitterGGX(bb, N, avg, g.flakeRandomness, coverageFactor * glitterMask, Physical);
+            addGlitterGGX(bb, N, avg, g.flakeRandomness, coverageFactor * glitterMask, Physical, label);
         } else {
             const U32 behavior = hifi && g.layeringMode == GlitterLayeringAdditive ? Additive : Physical;
             GlitterFlakes f;
@@ -563,7 +563,7 @@ X2_CALL bool createGlitterLobes(Builder& bb, const State& st, const GlitterParam
                         flakeWeight = m.weight;
                     }
                     if (!isBlack(current)) {
-                        addGlitterFlakeBRDF(bb, glitterFlake(N, normal, current, current, roughness), glitterMask * flakeWeight, behavior, 0);
+                        addGlitterFlakeBRDF(bb, glitterFlake(N, normal, current, current, roughness), glitterMask * flakeWeight, behavior, label);
                     } else {
                         single = false;
                         const float oneOverMacroVis = 1.0f / macroVis;
@@ -575,7 +575,7 @@ X2_CALL bool createGlitterLobes(Builder& bb, const State& st, const GlitterParam
                             scale *= flakeCount > macroCount ? coverageFactor : 1.0f;
                             if (macroVis >= OneMinusEpsilon) scale *= oneOverMacroVis;
                             if (!isBlack(color)) {
-                                addGlitterFlakeBRDF(bb, glitterFlake(N, n, color, color, f.roughness[i]), scale * glitterMask, behavior, 0);
+                                addGlitterFlakeBRDF(bb, glitterFlake(N, n, color, color, f.roughness[i]), scale * glitterMask, behavior, label);
                                 macroAvg = macroAvg + color;
                             }
                         }
@@ -589,7 +589,7 @@ X2_CALL bool createGlitterLobes(Builder& bb, const State& st, const GlitterParam
                         if (microCount > 0) {
                             macroAvg = macroAvg * (1.0f / float(macroCount));
                             if (macroVis < 0.99f && !isBlack(macroAvg))
-                                addGlitterGGX(bb, N, macroAvg, g.flakeRandomness, (1.0f - macroVis) * coverageFactor * glitterMask, behavior);
+                                addGlitterGGX(bb, N, macroAvg, g.flakeRandomness, (1.0f - macroVis) * coverageFactor * glitterMask, behavior, label);
                         }
                     } else {
                         // createMicroFlake
@@ -605,11 +605,11 @@ X2_CALL bool createGlitterLobes(Builder& bb, const State& st, const GlitterParam
                             set.macroCount = macroCount;
                             for (U32 i = 0; i < microCount; ++i) avg = avg + flakeSetColor(set, i);
                             addStochasticFlakesBRDF(bb, N, microCount, g.flakeRoughness[0], g.flakeRandomness,
-                                                    microFlakeVis * coverageFactor * glitterMask, behavior, 0);
+                                                    microFlakeVis * coverageFactor * glitterMask, behavior, label);
                         }
                         avg = avg * (1.0f / float(microCount));
                         if (microFacetVis > 0.0f && !isBlack(avg))
-                            addGlitterGGX(bb, N, avg, g.flakeRandomness, microFacetVis * coverageFactor * glitterMask, behavior);
+                            addGlitterGGX(bb, N, avg, g.flakeRandomness, microFacetVis * coverageFactor * glitterMask, behavior, label);
                     }
                 }
             }

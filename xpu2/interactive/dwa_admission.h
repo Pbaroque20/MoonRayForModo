@@ -257,6 +257,7 @@ inline int dwaInputOffset(unsigned k) {
     case KDiffuseTransmission: return X2_IN(diffuseTransmission);
     case KDiffuseTransmissionColor: return X2_IN(diffuseTransmissionColor);
     case KEmission: return X2_IN(emission);
+    case KPresence: return X2_IN(presence);
     case KInputNormalDial: return X2_IN(inputNormalDial);
     case KToonTerminatorShift: return X2_IN(toonTerminatorShift);
     case KToonFlatness: return X2_IN(toonFlatness);
@@ -855,10 +856,8 @@ inline shade::DwaRecord admitDwa(const rdl::SceneObject& o, const DwaClass& c, M
                  std::isfinite(in.toonSpecRampMultipliers[i]) && std::isfinite(in.toonSpecRampOffsets[i]),
              o.getName() + ": invalid toon ramp multiplier or offset");
     }
-    // Partial presence needs MoonRay's presence continuation with a weight; cut outs (0) and solids (1) only.
-    const float presence = shade::saturate(in.presence);
-    // A cut out (presence 0) would need shadow rays that pass it: only solids for now.
-    need(presence == 1.0f && !bound(KPresence), o.getName() + ": presence below one unsupported");
+    // Presence (dwaTreePresence): the integrator's presence continuation takes what is not present.
+    need(std::isfinite(in.presence), o.getName() + ": invalid presence");
     return r;
 }
 //----------------------------------------------------------------------------

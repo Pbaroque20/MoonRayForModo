@@ -28,7 +28,7 @@ def build(source,unit,out,extra_libraries=(),extra_flags=()):
     pre,exe=out/'probe.ii',out/'probe.exe'
     for name,cmd in [('preprocess',['-E',str(unit),'-o',str(pre)]),('compile',[str(pre),'-o',str(exe),*libs])]:
         r=subprocess.run([str(compiler),*flags,*cmd],env=environment(compiler.parent,out),capture_output=True,
-                         text=True,timeout=180,creationflags=subprocess.CREATE_NO_WINDOW)
+                         text=True,timeout=900,creationflags=subprocess.CREATE_NO_WINDOW)
         (out/(name+'.log')).write_text(r.stdout+r.stderr,encoding='utf-8')
         if r.returncode:raise RuntimeError(name+' failed: '+r.stderr[-500:])
     if any(sha(Path(p))!=v for p,v in held.items()):raise RuntimeError('Link library drift')

@@ -9,6 +9,7 @@
 #pragma once
 #include "async_grid.h"
 #include "cpu_jobs.h"
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -82,14 +83,32 @@ inline bool curveHit(const curves::Set& c, const surface::Ray& ray, resume::Hit&
     return shade::finite3(out.point) && out.epsilon > 0.0f;
 }
 
-// Embree scene for the fast lanes. Mesh i is geometry i, as in the plan.
+// MoonRay's backFaceCullingFilter for single-sided meshes: a hit the ray meets along the geometric normal is no hit.
+inline void backFaceCullingFilter(const RTCFilterFunctionNArguments* args) {
+    int* valid = args->valid;
+    for (unsigned i = 0; i < args->N; ++i) {
+        if (!valid[i]) continue;
+        const float d = RTCRayN_dir_x(args->ray, args->N, i) * RTCHitN_Ng_x(args->hit, args->N, i) +
+                        RTCRayN_dir_y(args->ray, args->N, i) * RTCHitN_Ng_y(args->hit, args->N, i) +
+                        RTCRayN_dir_z(args->ray, args->N, i) * RTCHitN_Ng_z(args->hit, args->N, i);
+        if (d >= 0.0f) valid[i] = 0;
+    }
+}
+
+// Embree scene for the fast lanes. Mesh i is geometry i, as in the plan. Each geometry's mask is its visibility.
 struct CpuScene {
     std::shared_ptr<cpu::Device> device;
     RTCScene scene = nullptr;
     RTCScene volumes = nullptr;  // the meshes that bound volumes (volume_core.h), for their crossings
     cpu::PlanView plan;
     std::vector<curves::Set> curveSets;  // a set a mesh (the user geometries' data)
+    aov::Tables aovTables;               // the render outputs' AOV schema (aov_plan.h), none when they have none
     explicit CpuScene(cpu::PlanView p) : device(std::make_shared<cpu::Device>()), plan(std::move(p)) {
+        if (plan && plan->aovs) {
+            aovTables = plan->aovs->tables();
+            aovTables.primKeys = plan->aovPrimKeys.data();
+            aovTables.primCount = unsigned(plan->aovPrimKeys.size());
+        }
         cpu::need(plan && cpu::isSpatial(plan->domain), "Asynchronous renderer requires a spatial plan");
         scene = rtcNewScene(device->handle);
         cpu::need(scene, "Embree scene failure");
@@ -107,6 +126,7 @@ struct CpuScene {
                 rtcSetGeometryBoundsFunction(g, curveBounds, nullptr);
                 rtcSetGeometryIntersectFunction(g, curveIntersect);
                 rtcSetGeometryOccludedFunction(g, curveOccluded);
+                rtcSetGeometryMask(g, plan->meshes[i].visibility);
                 rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
                 rtcCommitGeometry(g);
                 rtcAttachGeometryByID(scene, g, i);
@@ -134,6 +154,11 @@ struct CpuScene {
                 }
                 std::memcpy(v, m.positions.data(), m.positions.size() * sizeof(surface::V3));
                 std::memcpy(t, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
+                rtcSetGeometryMask(g, plan->meshes[i].visibility);
+                if (pass == 0 && plan->meshes[i].singleSided) {
+                    rtcSetGeometryIntersectFilterFunction(g, backFaceCullingFilter);
+                    rtcSetGeometryOccludedFilterFunction(g, backFaceCullingFilter);
+                }
                 rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
                 rtcCommitGeometry(g);
                 rtcAttachGeometryByID(pass == 0 ? scene : volumes, g, i);
@@ -163,7 +188,7 @@ struct CpuBackend {
         h.ray.dir_z = ray.direction.z;
         h.ray.tnear = ray.nearT;
         h.ray.tfar = ray.farT;
-        h.ray.mask = ~0u;
+        h.ray.mask = ray.mask;
         h.hit.geomID = RTC_INVALID_GEOMETRY_ID;
         RTCIntersectArguments args;
         rtcInitIntersectArguments(&args);
@@ -217,7 +242,7 @@ struct CpuBackend {
             const shade::MeshAttributes attributes = curveAttributes(data, h.geom);
             if (!shade::curveState(attributes, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return false;
             st.geom = h.geom;
-            shade::curveDifferentials(attributes, ray, plan.spp, st);
+            shade::curveDifferentials(attributes, ray, st.pixelSamples ? st.pixelSamples : plan.spp, st);
             return true;
         }
         const auto t = data.triangles[h.prim];
@@ -231,7 +256,7 @@ struct CpuBackend {
             return false;
         st.geom = h.geom;
         shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], ray,
-                                plan.spp, st);
+                                st.pixelSamples ? st.pixelSamples : plan.spp, st);
         return true;
     }
     // The path tracer's hit: its shading state, and its material's Bsdf (shade_material.h).
@@ -245,6 +270,42 @@ struct CpuBackend {
         attributes.curve = s.curveSets[geom];
         return attributes;
     }
+    // A shadow ray's hit: its material's presence alone (presence shadows). Host RAM holds every texture: no misses.
+    unsigned presenceAt(const resume::Hit& h, const surface::Ray& ray, float& presence) const {
+        const auto& plan = *s.plan;
+        const auto& mesh = plan.meshes[h.geom];
+        const auto& data = *mesh.data;
+        presence = 1.0f;
+        if (mesh.material >= plan.materialRecords.size()) return tex::Ready;
+        shade::State st;
+        if (data.curveBasis) {
+            const shade::MeshAttributes attributes = curveAttributes(data, h.geom);
+            if (!shade::curveState(attributes, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return tex::Ready;
+        } else {
+            const auto t = data.triangles[h.prim];
+            shade::MeshAttributes attributes;
+            attributes.normals = data.normals.empty() ? nullptr : data.normals.data();
+            attributes.uvs = data.uvs.empty() ? nullptr : data.uvs.data();
+            attributes.normalRate = data.normalRate;
+            attributes.uvRate = data.uvRate;
+            for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = data.worldToObject[k];
+            attributes.prims = data.prims.empty() ? nullptr : data.prims.data();
+            attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
+            attributes.primCount = unsigned(data.prims.size());
+            if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], h.u,
+                                 h.v, h.point, ray.direction, st))
+                return tex::Ready;
+        }
+        st.geom = h.geom;
+        st.worldToRender = plan.worldToRender;
+        st.worldToObject = data.worldToObject;
+        const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
+        return shade::materialPresence(plan.materialRecords[mesh.material], plan.materialPool.data(), st, textures, presence);
+    }
+    bool textureMissed() const { return false; }
+    // The render outputs' AOV schema, and a mesh's geometry label among the material AOVs'.
+    const aov::Tables& aovs() const { return s.aovTables; }
+    int geomLabel(U32 geom) const { return s.plan->meshes[geom].geomLabel; }
     unsigned shade(const resume::Hit& h, const surface::Ray& ray, shade::State& st, shade::Bsdf& bsdf, float& presence) const {
         const auto& plan = *s.plan;
         const auto& mesh = plan.meshes[h.geom];
@@ -256,7 +317,7 @@ struct CpuBackend {
             st.worldToRender = plan.worldToRender;
             st.worldToObject = data.worldToObject;
             if (mesh.material >= plan.materialRecords.size()) return tex::Invalid;
-            shade::curveDifferentials(attributes, ray, plan.spp, st);
+            shade::curveDifferentials(attributes, ray, st.pixelSamples ? st.pixelSamples : plan.spp, st);
             const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
             return shade::shadeMaterial(plan.materialRecords[mesh.material], plan.materialPool.data(), st, textures, bsdf, presence,
                                         scratch().dwaSlots, &scratch().glitter);
@@ -271,6 +332,8 @@ struct CpuBackend {
         attributes.prims = data.prims.empty() ? nullptr : data.prims.data();
         attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
         attributes.primCount = unsigned(data.prims.size());
+        attributes.polyVertices = data.polyVertices.empty() ? nullptr : data.polyVertices.data();
+        attributes.positions = data.positions.data();
         if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], h.u,
                              h.v, h.point, ray.direction, st))
             return tex::Invalid;
@@ -280,7 +343,7 @@ struct CpuBackend {
         if (mesh.material >= plan.materialRecords.size()) return tex::Invalid;
         const auto& record = plan.materialRecords[mesh.material];
         shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], ray,
-                                plan.spp, st);
+                                st.pixelSamples ? st.pixelSamples : plan.spp, st);
         // Host RAM holds every level of every texture, so the CPU never misses.
         const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
         return shade::shadeMaterial(record, plan.materialPool.data(), st, textures, bsdf, presence, scratch().dwaSlots,
@@ -311,7 +374,7 @@ struct CpuBackend {
         ray.dir_z = d.z;
         ray.tnear = near;
         ray.tfar = distance;
-        ray.mask = ~0u;
+        ray.mask = 2u;  // SHADOW
         RTCOccludedArguments args;
         rtcInitOccludedArguments(&args);
         rtcOccluded1(s.scene, &ray, &args);
@@ -332,14 +395,17 @@ struct CpuBackend {
     shade::Bsdf& bsdf() const { return scratch().bsdf; }
     paths::Pending* pending() const { return scratch().pending; }
     const lights::Light& light(U32 i) const { return s.plan->lights[i]; }
-    U32 lightMask(U32 geom) const { return s.plan->meshLights[geom]; }
+    U32 lightSet(U32 geom) const { return s.plan->meshLights[geom]; }
+    const lights::TreeNode* treeNodes() const { return s.plan->lightTree.data(); }
+    int treeRoot(U32 set) const { return set < s.plan->lightTreeRoots.size() ? s.plan->lightTreeRoots[set] : -1; }
+    bool inSet(U32 set, U32 i) const { return (s.plan->lightSetBits[size_t(set) * s.plan->lightSetWords + (i >> 5)] >> (i & 31) & 1u) != 0; }
     // The volumes (volume_core.h), and a ray's crossings of their meshes past tnear, nearest first (Scene::
     // intersectVolumes over the whole ray): whether each enters (the ray against the mesh's geometric normal) or
     // leaves; repeats at the same distance dropped, as MoonRay's interval filter drops Embree's.
     const volume::Shader* volumes() const { return s.plan->volumes.data(); }
     // MoonRay's integrator sequences for the random walk (cpu_scene.h walkSequences), null when not loaded.
     const float* walkSequences() const { return s.plan->walkSequences ? s.plan->walkSequences->data() : nullptr; }
-    U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max) const {
+    U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max, U32 mask) const {
         if (!s.volumes) return 0;
         U32 n = 0;
         float t = tnear;
@@ -353,7 +419,7 @@ struct CpuBackend {
             h.ray.dir_z = d.z;
             h.ray.tnear = t;
             h.ray.tfar = INFINITY;
-            h.ray.mask = ~0u;
+            h.ray.mask = mask;
             h.hit.geomID = RTC_INVALID_GEOMETRY_ID;
             RTCIntersectArguments args;
             rtcInitIntersectArguments(&args);
@@ -369,19 +435,89 @@ struct CpuBackend {
     }
 };
 
+// The film's math filters (Film.cc addFilteredAovSampleBundleHandler, atomicMathFilter): a value into an entry's
+// accumulator. Averages and sums add; min and max keep the least and greatest; the closest keeps the nearer value. The
+// force-consistent-sampling filter keeps nothing, as MoonRay's vector film's switch has no case for it.
+template <class T>
+inline void mergeAov(const aov::Entry& e, double* dst, float* dstDepth, const T* src, float srcDepth) {
+    switch (e.filter) {
+    case aov::FilterAvg:
+    case aov::FilterSum:
+        for (U32 c = 0; c < e.channels; ++c) dst[c] += double(src[c]);
+        break;
+    case aov::FilterMin:
+        for (U32 c = 0; c < e.channels; ++c)
+            if (double(src[c]) < dst[c]) dst[c] = double(src[c]);
+        break;
+    case aov::FilterMax:
+        for (U32 c = 0; c < e.channels; ++c)
+            if (double(src[c]) > dst[c]) dst[c] = double(src[c]);
+        break;
+    case aov::FilterClosest:
+        if (srcDepth < *dstDepth) {
+            *dstDepth = srcDepth;
+            for (U32 c = 0; c < e.channels; ++c) dst[c] = double(src[c]);
+        }
+        break;
+    default: break;
+    }
+}
+// An accumulator's initial value (the film's cleared AOV buffers).
+inline double aovInitial(const aov::Entry& e) {
+    return e.filter == aov::FilterMin ? double(aov::infinity()) : e.filter == aov::FilterMax ? -double(aov::infinity()) : 0.0;
+}
+// A pixel's accumulators: initialised for the schema.
+inline void initAovPixel(const aov::Tables& t, double* acc, float* depths) {
+    for (U32 i = 0; i < t.count; ++i)
+        for (U32 c = 0; c < t.entries[i].channels; ++c) acc[t.entries[i].offset + c] = aovInitial(t.entries[i]);
+    for (U32 i = 0; i < t.closestCount; ++i) depths[i] = aov::infinity();
+}
+// One sample's (or tile's) AOV values into a pixel's accumulators.
+template <class T>
+inline void mergeAovPixel(const aov::Tables& t, double* acc, float* accDepths, const T* values, const float* depths) {
+    for (U32 i = 0; i < t.count; ++i) {
+        const aov::Entry& e = t.entries[i];
+        mergeAov(e, acc + e.offset, e.closest != aov::None ? accDepths + e.closest : nullptr, values + e.offset,
+                 e.closest != aov::None ? depths[e.closest] : 0.0f);
+    }
+}
+
 // Per-pixel sums and sample counts in double precision (ACC-06). A chunk covers
 // one tile, so a lock per tile serialises only workers on the same tile. Sums of
 // the odd-index samples are kept beside the totals, for the adaptive error
-// measure (MoonRay's Beauty Odd buffer).
+// measure (MoonRay's Beauty Odd buffer). The AOVs' accumulators and each pixel's
+// render time beside them, where the outputs ask for them.
 class HostFilm {
 public:
     HostFilm(U32 width, U32 height)
         : width_(width), height_(height), sums_(size_t(width) * height * 4, 0.0), odd_(size_t(width) * height * 4, 0.0),
           counts_(size_t(width) * height, 0),
           locks_(((width + TileSize - 1) / TileSize) * ((height + TileSize - 1) / TileSize)) {}
-    void add(U32 tile, const U32* pixels, const double (*sums)[4], const double (*odd)[4], const U32* counts) {
+    // The AOV schema the film accumulates (none: empty), and whether it times its pixels.
+    void initAovs(const aov::Tables& t, bool heat) {
+        aovTables_ = t;
+        const size_t pixels = size_t(width_) * height_;
+        aov_.assign(pixels * t.channels, 0.0);
+        aovDepth_.assign(pixels * t.closestCount, 0.0f);
+        for (size_t p = 0; p < pixels; ++p) initAovPixel(t, aov_.data() + p * t.channels, aovDepth_.data() + p * t.closestCount);
+        if (heat) heat_.assign(pixels, 0.0);
+    }
+    const aov::Tables& aovTables() const { return aovTables_; }
+    // Cryptomatte's fragments (aov_crypto.h), when an output asks for them.
+    void initCrypto(const aov::Plan* plan) {
+        if (plan && plan->cryptomatte) crypto_.init(width_, height_, plan->cryptoCategories, plan->cryptoMultiPresence);
+    }
+    aov::CryptoBuffer& crypto() { return crypto_; }
+    // A sample's events into its pixel's fragments: those that reach the film.
+    void addCrypto(U32 pixel, const aov::CryptoEvent& e) {
+        if (!crypto_.empty() && e.used && (e.increment || e.credit)) crypto_.add(pixel, e);
+    }
+    void add(U32 tile, const U32* pixels, const double (*sums)[4], const double (*odd)[4], const U32* counts, const double* aovs = nullptr,
+             const float* aovDepths = nullptr, const double* heat = nullptr,
+             const std::vector<std::pair<U32, aov::CryptoEvent>>* cryptoEvents = nullptr) {
         auto& lock = locks_[tile].flag;
         while (lock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+        const U32 C = aovTables_.channels, K = aovTables_.closestCount;
         for (U32 i = 0; i < TilePixels; ++i) {
             if (pixels[i] == ~0u || !counts[i]) continue;
             for (int c = 0; c < 4; ++c) {
@@ -389,10 +525,16 @@ public:
                 odd_[size_t(pixels[i]) * 4 + c] += odd[i][c];
             }
             counts_[pixels[i]] += counts[i];
+            if (aovs && C)
+                mergeAovPixel(aovTables_, aov_.data() + size_t(pixels[i]) * C, aovDepth_.data() + size_t(pixels[i]) * K, aovs + size_t(i) * C,
+                              aovDepths + size_t(i) * K);
+            if (heat && !heat_.empty()) heat_[pixels[i]] += heat[i];
         }
+        if (cryptoEvents)
+            for (const auto& pe : *cryptoEvents) addCrypto(pe.first, pe.second);
         lock.clear(std::memory_order_release);
     }
-    void addOne(U32 pixel, U32 index, const Radiance& r) {
+    void addOne(U32 pixel, U32 index, const Radiance& r, double seconds = 0.0) {
         const U32 tilesX = (width_ + TileSize - 1) / TileSize;
         const U32 tile = (pixel / width_ / TileSize) * tilesX + (pixel % width_) / TileSize;
         auto& lock = locks_[tile].flag;
@@ -403,6 +545,11 @@ public:
             if (index & 1) odd_[size_t(pixel) * 4 + c] += v[c];
         }
         ++counts_[pixel];
+        if (r.aov && aovTables_.channels)
+            mergeAovPixel(aovTables_, aov_.data() + size_t(pixel) * aovTables_.channels, aovDepth_.data() + size_t(pixel) * aovTables_.closestCount,
+                          r.aov, r.aovDepth);
+        if (!heat_.empty()) heat_[pixel] += seconds;
+        for (U32 k = 0; r.crypto && k < r.cryptoCount; ++k) addCrypto(pixel, r.crypto[k]);
         lock.clear(std::memory_order_release);
     }
     // A copy that is consistent tile by tile, taken while workers keep adding.
@@ -445,9 +592,41 @@ public:
         }
         return seen;
     }
+    // A copy of the film, consistent tile by tile, for a preview of an AOV: sums, counts, odd sums, the AOV
+    // accumulators and closest depths, and the seconds each pixel took.
+    void snapshot(std::vector<double>& sums, std::vector<U32>& counts, std::vector<double>& odd, std::vector<double>& aov,
+                  std::vector<float>& depths, std::vector<double>& heat) {
+        sums.resize(sums_.size());
+        counts.resize(counts_.size());
+        odd.resize(odd_.size());
+        aov.resize(aov_.size());
+        depths.resize(aovDepth_.size());
+        heat.resize(heat_.size());
+        const U32 C = aovTables_.channels, K = aovTables_.closestCount;
+        for (U32 tile = 0; tile < locks_.size(); ++tile) {
+            auto& lock = locks_[tile].flag;
+            while (lock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+            for (U32 p = 0; p < TilePixels; ++p) {
+                const U32 pixel = tilePixel(tile, p, width_, height_);
+                if (pixel == ~0u) continue;
+                for (int c = 0; c < 4; ++c) {
+                    sums[size_t(pixel) * 4 + c] = sums_[size_t(pixel) * 4 + c];
+                    odd[size_t(pixel) * 4 + c] = odd_[size_t(pixel) * 4 + c];
+                }
+                counts[pixel] = counts_[pixel];
+                for (U32 c = 0; c < C; ++c) aov[size_t(pixel) * C + c] = aov_[size_t(pixel) * C + c];
+                for (U32 k = 0; k < K; ++k) depths[size_t(pixel) * K + k] = aovDepth_[size_t(pixel) * K + k];
+                if (!heat_.empty()) heat[pixel] = heat_[pixel];
+            }
+            lock.clear(std::memory_order_release);
+        }
+    }
     const std::vector<double>& sums() const { return sums_; }
     const std::vector<double>& odd() const { return odd_; }
     const std::vector<U32>& counts() const { return counts_; }
+    const std::vector<double>& aovs() const { return aov_; }
+    const std::vector<float>& aovDepths() const { return aovDepth_; }
+    const std::vector<double>& heat() const { return heat_; }
 
 private:
     struct Lock { std::atomic_flag flag = ATOMIC_FLAG_INIT; };
@@ -455,6 +634,11 @@ private:
     std::vector<double> sums_, odd_;
     std::vector<U32> counts_;
     std::vector<Lock> locks_;
+    aov::Tables aovTables_;
+    std::vector<double> aov_;
+    std::vector<float> aovDepth_;
+    std::vector<double> heat_;
+    aov::CryptoBuffer crypto_;
 };
 
 // An adaptive frame's pass tables, host side: for each pass slot, the active-pixel
@@ -512,6 +696,27 @@ inline U64 renderChunk(const CpuScene& scene, const mixed::Config& config, const
     CpuBackend backend{scene};
     U32 pixels[TilePixels], counts[TilePixels] = {}, base[TilePixels] = {};
     double sums[TilePixels][4] = {}, odd[TilePixels][4] = {};
+    // The tile's AOV accumulators and each sample's values (aov_core.h), and each pixel's render time.
+    const aov::Tables& at = film.aovTables();
+    const U32 C = at.channels, K = at.closestCount;
+    thread_local std::vector<double> tileAov;
+    thread_local std::vector<float> tileDepth, sampleAov, sampleDepth, sampleBackup;
+    // Cryptomatte: a sample's events, and the tile's that reach the film.
+    thread_local std::vector<aov::CryptoEvent> sampleCrypto;
+    thread_local std::vector<std::pair<U32, aov::CryptoEvent>> tileCrypto;
+    const bool crypto = !film.crypto().empty();
+    if (crypto) sampleCrypto.resize(aov::CryptoMaxEvents);
+    tileCrypto.clear();
+    double heat[TilePixels] = {};
+    const bool timing = !film.heat().empty();
+    if (C) {
+        tileAov.resize(size_t(TilePixels) * C);
+        tileDepth.resize(size_t(TilePixels) * K);
+        sampleAov.resize(C);
+        sampleDepth.resize(K);
+        sampleBackup.resize(C);
+        for (U32 p = 0; p < TilePixels; ++p) initAovPixel(at, tileAov.data() + size_t(p) * C, tileDepth.data() + size_t(p) * K);
+    }
     U32 first = chunk.first;
     std::uint64_t mask = ~0ull;
     if (tables) {
@@ -520,27 +725,48 @@ inline U64 renderChunk(const CpuScene& scene, const mixed::Config& config, const
         first = chunkOffset(chunk);
     }
     for (U32 p = 0; p < TilePixels; ++p) {
-        pixels[p] = (mask >> p & 1) ? tilePixel(chunk.tile, p, config.width, config.height) : ~0u;
+        pixels[p] = (mask >> p & 1) ? tilePixel(chunk.tile, p, config.width, config.height, config.viewport) : ~0u;
         if (tables && pixels[p] != ~0u) base[p] = tables->bases[chunkPass(chunk) % PassSlots][pixels[p]];
     }
+    U64 skipped = 0;
     for (U32 s = 0; s < chunk.count; ++s)
         for (U32 p = 0; p < TilePixels; ++p) {
             if (pixels[p] == ~0u) continue;
             Radiance r;
+            if (C) {
+                r.aov = sampleAov.data();
+                r.aovDepth = sampleDepth.data();
+                r.aovBackup = sampleBackup.data();
+            }
+            if (crypto) {
+                r.crypto = sampleCrypto.data();
+                r.cryptoCapacity = aov::CryptoMaxEvents;
+            }
             const U32 index = base[p] + first + s;
-            if (integrate(config, pixels[p], index, backend, r) != SampleStatus::Done) {
+            const auto began = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+            const SampleStatus status = integrate(config, pixels[p], index, backend, r);
+            if (status == SampleStatus::Skip) {  // no camera ray: taken, nothing added
+                ++skipped;
+                continue;
+            }
+            if (status != SampleStatus::Done) {
                 counters.failures.fetch_add(1, std::memory_order_relaxed);
                 continue;
             }
+            if (timing) heat[p] += std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
             const double v[4] = {r.rgb[0], r.rgb[1], r.rgb[2], r.alpha};
             for (int c = 0; c < 4; ++c) {
                 sums[p][c] += v[c];
                 if (index & 1) odd[p][c] += v[c];
             }
+            if (C) mergeAovPixel(at, tileAov.data() + size_t(p) * C, tileDepth.data() + size_t(p) * K, sampleAov.data(), sampleDepth.data());
+            for (U32 k = 0; k < r.cryptoCount; ++k)
+                if (r.crypto[k].used && (r.crypto[k].increment || r.crypto[k].credit)) tileCrypto.push_back({pixels[p], r.crypto[k]});
             ++counts[p];
         }
-    film.add(chunk.tile, pixels, sums, odd, counts);
-    U64 done = 0;
+    film.add(chunk.tile, pixels, sums, odd, counts, C ? tileAov.data() : nullptr, C ? tileDepth.data() : nullptr, timing ? heat : nullptr,
+             crypto ? &tileCrypto : nullptr);
+    U64 done = skipped;
     for (U32 p = 0; p < TilePixels; ++p) done += counts[p];
     counters.samples.fetch_add(done, std::memory_order_relaxed);
     counters.chunks.fetch_add(1, std::memory_order_relaxed);
@@ -657,7 +883,24 @@ private:
                     CpuBackend backend{scene_};
                     for (size_t i = 0; i < n; ++i) {
                         Radiance r;
-                        if (integrate(config_, retry[i].pixel, retry[i].index, backend, r) != SampleStatus::Done) {
+                        thread_local std::vector<float> retryAov, retryDepth, retryBackup;
+                        thread_local std::vector<aov::CryptoEvent> retryCrypto;
+                        if (!film.crypto().empty()) {
+                            retryCrypto.resize(aov::CryptoMaxEvents);
+                            r.crypto = retryCrypto.data();
+                            r.cryptoCapacity = aov::CryptoMaxEvents;
+                        }
+                        if (film.aovTables().channels) {
+                            retryAov.resize(film.aovTables().channels);
+                            retryDepth.resize(film.aovTables().closestCount);
+                            retryBackup.resize(film.aovTables().channels);
+                            r.aov = retryAov.data();
+                            r.aovDepth = retryDepth.data();
+                            r.aovBackup = retryBackup.data();
+                        }
+                        const SampleStatus status = integrate(config_, retry[i].pixel, retry[i].index, backend, r);
+                        if (status == SampleStatus::Skip) continue;
+                        if (status != SampleStatus::Done) {
                             counters.failures.fetch_add(1, std::memory_order_relaxed);
                             continue;
                         }

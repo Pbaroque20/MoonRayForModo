@@ -95,9 +95,12 @@ public:
 
     // A uniform frame: every chunk of every sample range is published at once. With
     // empty = true the cells start empty, for passes appended later (adaptive).
+    // viewport: the pixels rendered (min x, min y, max x, max y, half open; null: all), whose tiles alone take chunks.
     Grid(U32 width, U32 height, U32 spp, GridOptions options, const std::vector<Device>* owners = nullptr,
-         bool empty = false)
+         bool empty = false, const int* viewport = nullptr)
         : width_(width), height_(height), spp_(spp), options_(options) {
+        if (viewport)
+            for (int i = 0; i < 4; ++i) viewport_[i] = viewport[i];
         if (!width || !height || !spp || !options.cellSize || options.cellSize % TileSize ||
             !options.samplesPerChunk || options.mode < 0 || options.mode > 2)
             throw std::invalid_argument("Invalid work grid");
@@ -122,7 +125,8 @@ public:
                 for (U32 first = 0; first < spp; first += options.samplesPerChunk)
                     for (U32 ty = cy * tilesPerCell; ty < std::min(tilesY, (cy + 1) * tilesPerCell); ++ty)
                         for (U32 tx = cx * tilesPerCell; tx < std::min(tilesX, (cx + 1) * tilesPerCell); ++tx)
-                            chunks.push_back({ty * tilesX + tx, first, std::min(options.samplesPerChunk, spp - first), index});
+                            if (tilePixels(ty * tilesX + tx))
+                                chunks.push_back({ty * tilesX + tx, first, std::min(options.samplesPerChunk, spp - first), index});
                 cell.queue.append(chunks.data(), U32(chunks.size()));
                 total_ += chunks.size();
             }
@@ -151,8 +155,10 @@ public:
     // A tile's pixels inside the image.
     U32 tilePixels(U32 tile) const {
         const U32 tilesX = (width_ + TileSize - 1) / TileSize;
-        const U32 x = (tile % tilesX) * TileSize, y = (tile / tilesX) * TileSize;
-        return std::min(TileSize, width_ - x) * std::min(TileSize, height_ - y);
+        const int x = int((tile % tilesX) * TileSize), y = int((tile / tilesX) * TileSize);
+        const int x0 = std::max(x, viewport_[0]), y0 = std::max(y, viewport_[1]);
+        const int x1 = std::min({x + int(TileSize), int(width_), viewport_[2]}), y1 = std::min({y + int(TileSize), int(height_), viewport_[3]});
+        return x1 > x0 && y1 > y0 ? U32(x1 - x0) * U32(y1 - y0) : 0u;
     }
     bool empty() const {
         for (U32 i = 0; i < cells_.size(); ++i)
@@ -236,6 +242,7 @@ private:
     }
 
     U32 width_, height_, spp_, cellsX_ = 0, cellsY_ = 0;
+    int viewport_[4] = {0, 0, 0x7fffffff, 0x7fffffff};
     GridOptions options_;
     std::vector<Cell> cells_;
     std::atomic<U64> total_{0};

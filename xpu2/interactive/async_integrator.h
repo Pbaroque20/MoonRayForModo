@@ -12,9 +12,14 @@
 #pragma once
 #include "gpu_jobs.h"
 #include "light_core.h"
+#include "light_tree.h"
 #include "resume_core.h"
 #include "shade_material.h"
 #include "volume_core.h"
+#include "aov_material.h"
+#include "aov_crypto.h"
+#include "aov_state.h"
+#include "camera_core.h"
 
 namespace xpu2::interactive::async {
 
@@ -22,19 +27,29 @@ using sample::U32;
 using sample::U64;
 using surface::V3;
 
-enum class SampleStatus : U32 { Done = 0, Miss = 1, Error = 2 };
+// Skip: the camera made no ray (MoonRay's invalid ray, camera_core.h): the sample adds nothing to the pixel, not even
+// its weight, and counts as taken.
+enum class SampleStatus : U32 { Done = 0, Miss = 1, Error = 2, Skip = 3 };
 
-// Radiance and alpha (primary-hit coverage) of one sample.
+// Radiance and alpha (primary-hit coverage) of one sample, and its AOV values (aov_core.h) where the caller asks for
+// them: aov the schema's channels, aovDepth the closest filter's depths.
 struct Radiance {
     double rgb[3] = {0, 0, 0};
     double alpha = 0;
+    float* aov = nullptr;
+    float* aovDepth = nullptr;
+    float* aovBackup = nullptr;  // as many floats as aov: the random walk's backup (randomWalkRadiance)
+    // Cryptomatte's events (aov_crypto.h): room for cryptoCapacity, cryptoCount made.
+    aov::CryptoEvent* crypto = nullptr;
+    U32 cryptoCapacity = 0, cryptoCount = 0;
 };
 
 // Backend: trace(ray) -> resume::Hit (geom == ~0u on a miss),
 //          material(hit, ray, Lambert&) -> tex::Status,
 //          visible(origin, direction) -> bool,
 // and for the path tracer: visible(origin, direction, distance) -> bool,
-//          light(i) -> const lights::Light&, lightMask(geom) -> U32.
+//          light(i) -> const lights::Light&, lightSet(geom) -> U32 (the mesh's light set), inSet(set, i) -> bool,
+//          treeNodes() -> const lights::TreeNode*, treeRoot(set) -> int (adaptive light sampling's tree, -1: none).
 template <class Backend>
 X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 index, Backend& backend, Radiance& out);
 
@@ -188,12 +203,28 @@ struct Pending {
     float nearT = 0.0f;             // a ray from a curve skips what is nearer than this
     U32 volumeDepth = 0;            // the volume scattering it has been through (PathVertex::volumeDepth)
     U32 lobeType = 0;               // the type of the lobe it is a sample of, 0 for a camera ray (PathVertex::lobeType)
+    // PathVertex::pathPixelWeight (one for a camera ray, scaled by presence; zero for an indirect ray, as MoonRay's
+    // vector integrator has it) and totalPresence.
+    float pixelWeight = 1.0f, totalPresence = 0.0f;
+    // PathVertex::aovPathPixelWeight (an indirect ray's its parent's pixel weight) and lpeStateId (aov_core.h).
+    float aovPixelWeight = 1.0f;
+    int lpe = -1;
+    int crypto = -2;  // its Cryptomatte role (aov::CryptoInherit: its parent's, given as it is pushed)
 };
 constexpr U32 MaxPending = 32;
+// A ray's mask (rdl2 VisibilityType): CAMERA for a camera ray and its presence continuations (lobe type 0), else the
+// mask of the lobe it samples (lobeTypeToRayMask).
+X2_HD inline U32 rayMask(U32 lobeType) { return lobeType == 0 ? 1u : lights::lobeRayMask(lobeType); }
 // A child's address in the sample's tree: a 64-bit mix of its parent's, the
 // lobe and the sample (collisions within one sample's tree have probability
 // about 2^-64 a pair; the radix tree of sample_stream.h cannot hold the
 // multi-sampler's branching).
+// A ray's direction footprint (Ray_getDirFootprint): log2 of the geometric mean of its direction differentials'
+// lengths, which picks a textured light's mip level.
+X2_HD inline float dirFootprint(V3 dDx, V3 dDy) {
+    const float lx = sqrtf(surface::dot(dDx, dDx)), ly = sqrtf(surface::dot(dDy, dDy));
+    return 0.5f / logf(2.0f) * logf(lx * ly);
+}
 X2_HD inline U64 childBranch(U64 parent, U32 a, U32 b) {
     U64 z = parent + 0x9e3779b97f4a7c15ull * (U64(a) * 0x10001u + U64(b) + 1);
     z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
@@ -202,13 +233,119 @@ X2_HD inline U64 childBranch(U64 parent, U32 a, U32 b) {
 }
 }  // namespace paths
 
+
+namespace paths {
+// A shadow ray toward a light (prepareOcclusionTestRays): its start raised to the light's min shadow distance, its
+// end short of the light by its clear radius (not with a falloff, which fades occluded light instead) and capped
+// by its max shadow distance.
+X2_HD inline void lightShadowSpan(const lights::Light& L, float distance, float& near, float& far) {
+    const float clear = L.clearRadiusFalloff > 0.0f ? 0.0f : L.clearRadius;
+    near = fmaxf(near, L.minShadowDistance);
+    far = fmaxf((distance - clear) * lights::HitEpsilonEnd, 2.0f * near);
+    if (L.maxShadowDistance > 0.0f) far = fminf(far, L.maxShadowDistance);
+}
+// PathIntegrator::isRayOccluded, the volumes' and subsurface's shadow rays: the end, already short of the light, is
+// shortened by the clear radius.
+X2_HD inline void lightShadowSpanScalar(const lights::Light& L, float& near, float& far) {
+    near = fmaxf(near, L.minShadowDistance);
+    const float clear = L.clearRadiusFalloff > 0.0f ? 0.0f : L.clearRadius;
+    far = fmaxf(far - clear, near);
+    if (L.maxShadowDistance > 0.0f) far = fminf(far, L.maxShadowDistance);
+}
+// accumulateRayPresence: the presence of each surface a shadow ray passes on its way, gathered (or, below the
+// presence quality's throughput, drawn as all or nothing) until it reaches presence_threshold or the ray's depth
+// (the path's, counting on from it) reaches max_presence_depth. A texture not yet resident ends it (textureMissed).
+template <class Backend>
+X2_HD inline float rayPresence(const mixed::Config& c, Backend& backend, V3 org, V3 dir, float near, float far, U32 depth, bool stochastic,
+                               Stream& s) {
+    float total = 0.0f, t0 = near;
+    for (;; ++depth) {
+        const surface::Ray r{org, dir, V3{0, 0, 0}, V3{0, 0, 0}, t0, far, 2u};  // SHADOW
+        const resume::Hit h = backend.trace(r);
+        if (h.geom == ~0u) return total;
+        float p = 1.0f;
+        if (backend.presenceAt(h, r, p) != tex::Ready) return total;
+        if (stochastic) {
+            if (s.next() < p) return 1.0f;
+        } else {
+            total += (1.0f - total) * p;
+        }
+        if (!(depth < c.maxPresenceDepth && total < c.presenceThreshold)) return total;
+        t0 = h.t + 1e-4f * fmaxf(h.t, 1.0f);
+        if (t0 >= far) return total;
+    }
+}
+
+// PathIntegrator::isRayOccluded (subsurface and volume shadow rays): with presence shadows, occluded past the presence
+// threshold, else the light less the presence it passes.
+template <class Backend>
+X2_HD inline float scalarShadowKeep(const mixed::Config& c, Backend& backend, const lights::Light& L, V3 org, V3 dir, float near, float far,
+                                    U32 depth, bool stochastic, Stream& s) {
+    if (!L.presenceShadows) return backend.visible(org, dir, near, far) ? 1.0f : 0.0f;
+    const float p = rayPresence(c, backend, org, dir, near, far, depth, stochastic, s);
+    return p > c.presenceThreshold ? 0.0f : 1.0f - p;
+}
+
+// RayHandlers' calculateShadowFalloff: what an occluded shadow ray keeps of its light when it ends within the clear
+// radius and its falloff (all of it within the radius, none beyond the falloff).
+X2_HD inline float lightShadowKept(const lights::Light& L, float far) {
+    if (L.clearRadiusFalloff == 0.0f || !(far < L.clearRadius + L.clearRadiusFalloff)) return 0.0f;
+    if (far <= L.clearRadius) return 1.0f;
+    const float t = (far - L.clearRadius) / L.clearRadiusFalloff;
+    float w;
+    switch (L.clearRadiusInterpolation) {
+    case 0: w = t; break;
+    case 1: w = t * t; break;
+    case 2: w = 1.0f - (1.0f - t) * (1.0f - t); break;
+    case 3: w = t * t * (3.0f - 2.0f * t); break;
+    default: return 0.0f;
+    }
+    return 1.0f - w;
+}
+
+// The lights the camera sees (Scene::intersectVisibleLight on a miss, LightSet_intersect over the visible light set
+// in PathIntegratorBundled on a hit): bounded lights, then distant ones, then environments, as MoonRay orders them;
+// one of those the ray meets chosen uniformly, its radiance times their number. A miss meets them from the ray's
+// origin (MoonRay's C++ lights); a hit from render space's origin, the camera, as far as the hit (the ISPC lights).
+X2_HD inline U32 visiblePass(const lights::Light& l) { return l.type == lights::Env ? 2u : l.type == lights::Distant ? 1u : 0u; }
+template <class Backend>
+X2_HD inline V3 visibleLightRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, V3 origin, V3 dir,
+                                     float maxDistance, bool missed, float footprint, U32 segment, U32* hitLight = nullptr) {
+    U32 hits = 0;
+    for (U32 pass = 0; pass < 3; ++pass)
+        for (U32 j = 0; j < c.lightCount; ++j) {
+            const lights::Light& L = backend.light(j);
+            lights::Hit lh;
+            if (L.visibleInCamera && visiblePass(L) == pass && lights::intersect(L, origin, nullptr, dir, maxDistance, lh, missed, true)) ++hits;
+        }
+    if (!hits) return V3{0, 0, 0};
+    sample::Identity id = root;
+    id.branch = childBranch(0x5649534c49474854ull, segment, 0);
+    Stream s(id, 0, 0);
+    const float choice = s.next();
+    const U32 chosen = U32(choice * float(hits)) < hits ? U32(choice * float(hits)) : hits - 1;
+    for (U32 pass = 0, seen = 0; pass < 3; ++pass)
+        for (U32 j = 0; j < c.lightCount; ++j) {
+            const lights::Light& L = backend.light(j);
+            lights::Hit lh;
+            if (!L.visibleInCamera || visiblePass(L) != pass || !lights::intersect(L, origin, nullptr, dir, maxDistance, lh, missed, true)) continue;
+            if (seen++ != chosen) continue;
+            float pdf;
+            const V3 Li = lights::eval(L, origin, dir, lh, pdf, footprint, true);
+            if (hitLight) *hitLight = j;
+            return shade::finite3(Li) ? Li * float(hits) : V3{0, 0, 0};
+        }
+    return V3{0, 0, 0};
+}
+}  // namespace paths
+
 //----------------------------------------------------------------------------
 // Volumes (PathIntegratorVolume.cc) over homogeneous BaseVolumes bound to closed meshes (volume_core.h).
 namespace paths {
 // collectVolumeIntervals: a ray's crossings past its start, in order, and the regions it starts in.
 template <class Backend>
-X2_HD inline U32 volumeIntervals(Backend& backend, V3 org, V3 dir, float tnear, volume::Crossing* x, U32& regions) {
-    U32 n = backend.volumeCrossings(org, dir, tnear, x, volume::MaxCrossings);
+X2_HD inline U32 volumeIntervals(Backend& backend, V3 org, V3 dir, float tnear, volume::Crossing* x, U32& regions, U32 mask) {
+    U32 n = backend.volumeCrossings(org, dir, tnear, x, volume::MaxCrossings, mask);
     regions = volume::interiority(x, n);
     return n;
 }
@@ -221,7 +358,7 @@ X2_CALL V3 volumeTransmittance(const mixed::Config& c, Backend& backend, paths::
                                float scale) {
     volume::Crossing x[volume::MaxCrossings];
     U32 regions;
-    const U32 n = paths::volumeIntervals(backend, org, dir, tnear, x, regions);
+    const U32 n = paths::volumeIntervals(backend, org, dir, tnear, x, regions, 2u);  // SHADOW
     V3 tr{1, 1, 1};
     if (n == 0 && regions == 0) return tr;
     float tStart = tnear;
@@ -257,11 +394,13 @@ X2_CALL V3 volumeSourceTerm(const mixed::Config& c, Backend& backend, paths::Str
     float pdfL;
     const V3 Li = lights::eval(L, P, wi, lh, pdfL);
     if (shade::isSampleInvalid(Li, pdfL) || !volume::finitef(pdfL)) return V3{0, 0, 0};
-    const float far = lights::HitEpsilonEnd * lh.distance;
-    if (!backend.visible(P, wi, volume::HitEpsilonStart, far)) return V3{0, 0, 0};
+    float near = volume::HitEpsilonStart, far = lights::HitEpsilonEnd * lh.distance;
+    paths::lightShadowSpanScalar(L, near, far);
+    const float keep = paths::scalarShadowKeep(c, backend, L, P, wi, near, far, 0, false, s);
+    if (keep <= 0.0f) return V3{0, 0, 0};
     const V3 tr = volumeTransmittance(c, backend, s, P, wi, 0.0f, far, scale);
     const float ph = volume::phaseEval(g, V3{-rayDir.x, -rayDir.y, -rayDir.z}, wi);
-    return volume::scaled(volume::times(tr, Li), ph / pdfL);
+    return volume::scaled(volume::times(tr, Li), ph / pdfL * keep);
 }
 
 // computeRadianceVolume over [tnear, tfar] of a ray: its homogeneous stretches (decoupledRayMarching), their single
@@ -275,7 +414,8 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
     V3 radiance{0, 0, 0};
     volume::Crossing x[volume::MaxCrossings];
     U32 regions;
-    const U32 n = volumeIntervals(backend, org, dir, tnear, x, regions);
+    const U32 rayMask = paths::rayMask(pv.lobeType);
+    const U32 n = volumeIntervals(backend, org, dir, tnear, x, regions, rayMask);
     if (n == 0 && regions == 0) return radiance;
     const volume::Shader* shaders = backend.volumes();
     const U64 volumeBranch = childBranch(pv.branch, 0xfffc, pv.volumeDepth);
@@ -290,7 +430,7 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
         if (!regions || t1 >= volume::FarLimit || count + 1 >= volume::MaxSteps) return;
         const float rnd = c.volumeOverlapMode == volume::OverlapRnd ? marching.next() : 0.0f;
         const volume::Coefficients k = volume::evalShaders(shaders, regions, c.volumeOverlapMode, rnd, t1 - t0);
-        steps[count++] = volume::Step{k.sigmaT, k.sigmaS, vt, k.g, t0, t1 - t0, k.lightMask};
+        steps[count++] = volume::Step{k.sigmaT, k.sigmaS, vt, k.g, t0, t1 - t0, k.lightSet};
         vt = volume::times(vt, volume::expNeg(k.sigmaT, t1 - t0));
     };
     for (U32 i = 0; i < n; ++i) {
@@ -343,7 +483,7 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                                 U32 k = 0;  // findInterval: the last step starting at or before tePrime
                                 while (k + 1 < count && steps[k + 1].tStart <= tePrime) ++k;
                                 const volume::Step& vp = steps[k];
-                                if (!volume::black(vp.sigmaS) && (vp.lightMask >> li & 1)) {
+                                if (!volume::black(vp.sigmaS) && backend.inSet(vp.lightSet, li)) {
                                     const V3 trScatter = volume::times(vp.tr, volume::expNeg(vp.sigmaT, tePrime - vp.tStart));
                                     float mis = 1.0f;
                                     const float pdfTd = volume::pdfDiscrete(dist, k) *
@@ -364,7 +504,7 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                         const U32 k = volume::sampleDiscrete(dist, ud, pdfDensity, udRemapped);
                         if (pdfDensity == 0.0f) continue;
                         const volume::Step& vp = steps[k];
-                        if (volume::black(vp.sigmaS) || !(vp.lightMask >> li & 1)) continue;
+                        if (volume::black(vp.sigmaS) || !backend.inSet(vp.lightSet, li)) continue;
                         const float sigmaT = volume::lum(vp.sigmaT), t0 = vp.tStart, t1 = vp.tStart + vp.delta;
                         const float td = volume::sampleDistanceExponential(udRemapped, sigmaT, t0, t1);
                         const float pdfTd = pdfDensity * volume::pdfDistanceExponential(td, sigmaT, t0, t1);
@@ -412,7 +552,7 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                     const float tFreePath = -logf(1.0f - ms.next()) / sigmaT;
                     volume::Crossing y[volume::MaxCrossings];
                     U32 here;
-                    const U32 m = volumeIntervals(backend, scatterPoint, scatterDir, volume::Epsilon, y, here);
+                    const U32 m = volumeIntervals(backend, scatterPoint, scatterDir, volume::Epsilon, y, here, rayMask);
                     for (U32 j = 0; j < m && y[j].t <= tFreePath; ++j) volume::apply(here, y[j]);
                     const V3 rayDir = scatterDir;
                     scatterPoint = surface::add(scatterPoint, surface::mul(scatterDir, tFreePath));
@@ -425,10 +565,10 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                     throughput = volume::scaled(volume::times(throughput, kk.sigmaS), 1.0f / sigmaT);
                     U32 firstVolume = 0;  // the light set of the first volume here
                     while (!(here >> firstVolume & 1)) ++firstVolume;
-                    const U32 lightMask = shaders[firstVolume].lightMask;
+                    const U32 lightSet = shaders[firstVolume].lightSet;
                     for (U32 li = 0; li < c.lightCount; ++li) {
                         const float usl[3] = {ms.next(), ms.next(), ms.next()};
-                        if (!(lightMask >> li & 1)) continue;
+                        if (!backend.inSet(lightSet, li)) continue;
                         const V3 Ls = volumeSourceTerm(c, backend, ms, backend.light(li), scatterPoint, rayDir, g, usl, ai);
                         radiance = volume::plus(radiance, volume::scaled(volume::times(throughput, Ls), invN * bi));
                     }
@@ -464,18 +604,30 @@ X2_HD inline shade::Color exitLambert(const mixed::Config& c, const ExitPoint& x
 // clamping or roulette), its bounces pushed from the entry point as MoonRay's parent ray starts there.
 // At the first hit (strat) a pixel's exits draw their light and Lambertian samples from one stratified set, as
 // MoonRay's one sequence a pixel: Sobol index strat * split + s, keyed by the exit kind (stratAddress).
+// The light path expressions at a subsurface's exits (computeRadianceSubsurfaceSample): the sample's AOVs, the
+// state after the subsurface event (subsurfaceEventTransition, the exit's own Lambertian lobe ignored, MOONRAY-1957),
+// and the sample's AOV backup for the random walk's scaling.
+struct SubsurfaceLpe {
+    const aov::Tables* t = nullptr;
+    float* aovs = nullptr;
+    float* depths = nullptr;
+    float* backup = nullptr;
+    int state = -1;
+};
 template <class Backend>
-X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 mask,
+X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 lightSet,
                                        const paths::Pending& pv, U32 depthAdd, U32 subsurfaceDepth, const shade::State& entry,
                                        const resume::Hit& entryHit, const paths::ExitPoint& x, shade::Color pt, U32 split, U64 branch,
                                        bool doIndirect, paths::Pending* stack, U32& top, SampleStatus& status,
-                                       bool stratified = false, U64 strat = 0, U64 stratAddress = 0) {
+                                       bool stratified = false, U64 strat = 0, U64 stratAddress = 0, const SubsurfaceLpe* lpe = nullptr) {
+    const bool lpeOn = lpe && lpe->aovs && lpe->state >= 0;
     using namespace paths;
     V3 radiance{0, 0, 0};
     pt = pt * (1.0f / float(split));
     for (U32 i = 0; i < c.lightCount; ++i) {
-        if (!(mask >> i & 1)) continue;
+        if (!backend.inSet(lightSet, i)) continue;
         const lights::Light& L = backend.light(i);
+        if (!(L.visibilityMask & lights::VisibleDiffuseReflection)) continue;
         for (U32 s = 0; s < split; ++s) {
             sample::Identity id = root;
             id.branch = childBranch(branch, i, s);
@@ -491,20 +643,39 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
             if (!lights::sample(L, x.P, &x.N, r, wi, lh)) continue;
             float pdfL;
             const V3 Li = lights::eval(L, x.P, wi, lh, pdfL);
-            if (shade::isExactlyZero(Li) || !(pdfL > 0) || !shade::finite3(Li)) continue;
+            if (shade::isSampleInvalid(Li, pdfL) || !(fabsf(pdfL) < 3.4e38f) || !shade::finite3(Li)) continue;  // isSampleInvalid: a pdf of 0 alone
             float pdf;
             const shade::Color f = exitLambert(c, x, entry.wo, wi, pdf);
             if (shade::isSampleInvalid(f, pdf) || shade::dot(x.N, wi) < shade::Epsilon) continue;
             const shade::Color t = pt * Li * f * (1.0f / pdfL) * lights::powerHeuristic(pdfL, pdf);
-            if (shade::finite3(t) && backend.visible(exitOrigin(x, wi), wi, lh.distance * lights::HitEpsilonEnd)) {
-                shade::Color tv = t;
+            float near = 0.0f, far = lh.distance * lights::HitEpsilonEnd;
+            lightShadowSpanScalar(L, near, far);
+            Stream ps(id, pv.depth, 0);
+            const float keep = shade::finite3(t) ? scalarShadowKeep(c, backend, L, exitOrigin(x, wi), wi, near, far, pv.depth,
+                                                                     shade::luminance(pv.T) < 1.0f - c.presenceQuality, ps) : 0.0f;
+            shade::Color tr{1, 1, 1};
+            if (keep > 0.0f) {
+                shade::Color tv = t * keep;
                 if (c.volumeCount) {
                     sample::Identity tid = id;
                     tid.branch = childBranch(id.branch, 0xfffb, 0);
                     Stream vs(tid, pv.depth, 0);
-                    tv = tv * volumeTransmittance(c, backend, vs, exitOrigin(x, wi), wi, 0.0f, lh.distance * lights::HitEpsilonEnd, 1.0f);
+                    tr = volumeTransmittance(c, backend, vs, exitOrigin(x, wi), wi, near, far, 1.0f);
+                    tv = tv * tr;
                 }
                 radiance += tv;
+                // LPE: reached, to every expression as it arrives, the unoccluded ones too (MoonRay's subsurface
+                // light samples), and to the visibility AOVs whatever the depth.
+                if (lpeOn) {
+                    const int state = aov::lpeNext(*lpe->t, lpe->state, aov::LpeLight, L.lpeLabel);
+                    aov::light(*lpe->t, lpe->aovs, lpe->depths, tv, nullptr, 0, state);
+                    aov::visibility(*lpe->t, lpe->aovs, keep * (tr.x + tr.y + tr.z) / 3.0f, 1.0f, state);
+                }
+            } else if (lpeOn && shade::finite3(t)) {
+                // Occluded: to the unoccluded expressions alone, and a miss.
+                const int state = aov::lpeNext(*lpe->t, lpe->state, aov::LpeLight, L.lpeLabel);
+                aov::light(*lpe->t, lpe->aovs, lpe->depths, t, nullptr, aov::PrefixUnoccluded, state);
+                aov::visibility(*lpe->t, lpe->aovs, 0.0f, 1.0f, state);
             }
         }
     }
@@ -526,20 +697,26 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
         U32 hits = 0;
         for (U32 j = 0; j < c.lightCount; ++j) {
             lights::Hit lh;
-            if ((mask >> j & 1) && lights::intersect(backend.light(j), x.P, &x.N, wi, 3.4028234663852886e+38f, lh)) ++hits;
+            if (backend.inSet(lightSet, j) && (backend.light(j).visibilityMask & lights::VisibleDiffuseReflection) &&
+                lights::intersect(backend.light(j), x.P, &x.N, wi, 3.4028234663852886e+38f, lh))
+                ++hits;
         }
         V3 Li{0, 0, 0};
         float pdfL = 0.0f, lightDistance = 0.0f;
         bool lightHit = false;
+        U32 lightIndex = 0;
         if (hits) {
             const U32 chosen = U32(choice * float(hits)) < hits ? U32(choice * float(hits)) : hits - 1;
             for (U32 j = 0, seen = 0; j < c.lightCount; ++j) {
                 lights::Hit lh;
-                if (!(mask >> j & 1) || !lights::intersect(backend.light(j), x.P, &x.N, wi, 3.4028234663852886e+38f, lh)) continue;
+                if (!backend.inSet(lightSet, j) || !(backend.light(j).visibilityMask & lights::VisibleDiffuseReflection) ||
+                    !lights::intersect(backend.light(j), x.P, &x.N, wi, 3.4028234663852886e+38f, lh))
+                    continue;
                 if (seen++ != chosen) continue;
                 Li = lights::eval(backend.light(j), x.P, wi, lh, pdfL) * float(hits);
-                lightHit = !shade::isExactlyZero(Li) && pdfL > 0 && shade::finite3(Li);
+                lightHit = !shade::isSampleInvalid(Li, pdfL) && fabsf(pdfL) < 3.4e38f && shade::finite3(Li);
                 lightDistance = lh.distance;
+                lightIndex = j;
                 break;
             }
         }
@@ -550,6 +727,7 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
                 return radiance;
             }
             Pending child;
+            child.pixelWeight = 0.0f;
             child.volumeDepth = pv.volumeDepth;
             child.origin = shade::dot(wi, entryHit.normal) >= 0.0f ? entryHit.origin : entryHit.below;
             child.dir = wi;
@@ -565,6 +743,8 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
             child.subsurfaceDepth = subsurfaceDepth;
             child.accumOpacity = pv.accumOpacity;
             child.lobeType = shade::Diffuse | shade::Reflection;  // the exit's Lambertian lobe
+            child.lpe = lpeOn ? lpe->state : -1;
+            child.aovPixelWeight = pv.pixelWeight;
             child.farT = lightHit ? lightDistance * lights::HitEpsilonEnd : 3.402823466e+38f;
             // computeMinRoughness of a Lambertian lobe (roughness one).
             child.minRoughness[0] = shade::clampf(c.roughnessClamping, pv.minRoughness[0], 1.0f);
@@ -589,13 +769,31 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
         }
         if (lightHit) {
             const shade::Color t = throughput * Li * lights::powerHeuristic(pdf, pdfL);
-            if (shade::finite3(t) && backend.visible(exitOrigin(x, wi), wi, lightDistance * lights::HitEpsilonEnd)) {
-                shade::Color tv = t;
+            float near = 0.0f, far = lightDistance * lights::HitEpsilonEnd;
+            lightShadowSpanScalar(backend.light(lightIndex), near, far);
+            Stream ps(id, pv.depth, 0);
+            const float keep = shade::finite3(t) ? scalarShadowKeep(c, backend, backend.light(lightIndex), exitOrigin(x, wi), wi, near, far, pv.depth,
+                                                                     shade::luminance(pv.T) < 1.0f - c.presenceQuality, ps) : 0.0f;
+            const int lightState = lpeOn ? aov::lpeNext(*lpe->t, lpe->state, aov::LpeLight, backend.light(lightIndex).lpeLabel) : -1;
+            if (keep <= 0.0f && lpeOn && shade::finite3(t)) {
+                // Occluded: a miss, and the unoccluded expressions as if it had arrived.
+                aov::visibility(*lpe->t, lpe->aovs, 0.0f, 1.0f, lightState);
+                aov::light(*lpe->t, lpe->aovs, lpe->depths, t, nullptr, aov::PrefixUnoccluded, lightState);
+            }
+            if (keep > 0.0f) {
+                shade::Color tv = t * keep;
+                shade::Color tr{1, 1, 1};
                 if (c.volumeCount) {
                     sample::Identity tid = id;
                     tid.branch = childBranch(id.branch, 0xfffb, 1);
                     Stream vs(tid, pv.depth, 0);
-                    tv = tv * volumeTransmittance(c, backend, vs, exitOrigin(x, wi), wi, 0.0f, lightDistance * lights::HitEpsilonEnd, 1.0f);
+                    tr = volumeTransmittance(c, backend, vs, exitOrigin(x, wi), wi, near, far, 1.0f);
+                    tv = tv * tr;
+                }
+                // LPE: the unoccluded expressions as it left the exit, the rest as it arrived.
+                if (lpeOn) {
+                    aov::visibility(*lpe->t, lpe->aovs, keep * (tr.x + tr.y + tr.z) / 3.0f, 1.0f, lightState);
+                    aov::light(*lpe->t, lpe->aovs, lpe->depths, t, &tv, aov::PrefixUnoccluded, lightState);
                 }
                 radiance += tv;
             }
@@ -616,12 +814,23 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
 // rotated by the sample's identity); the walk's estimate depends on that ordering, so the walk here draws from the
 // same tables, the sequences and rotations chosen at random, and independent numbers after them.
 template <class Backend>
-X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 mask,
+X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 lightSet,
                                    const paths::Pending& pv, U32 subsurfaceDepth, const shade::State& st, const resume::Hit& hit,
-                                   const shade::Bsdf& bsdf, bool doIndirect, paths::Pending* stack, U32& top, SampleStatus& status) {
+                                   const shade::Bsdf& bsdf, bool doIndirect, paths::Pending* stack, U32& top, SampleStatus& status,
+                                   const SubsurfaceLpe* lpe = nullptr, shade::Color* ssAov = nullptr) {
     using namespace paths;
     using shade::Color;
     V3 radiance{0, 0, 0};
+    Color ss{0, 0, 0};  // the exits' throughput, the subsurface's material AOV albedo
+    const U32 firstChild = top;  // the bounces this walk pushes, scaled with it
+    // The light and visibility AOVs as they stood (MOONRAY-3352): the walk's own share is scaled with its radiance.
+    const aov::Tables* at = lpe && lpe->aovs && lpe->backup ? lpe->t : nullptr;
+    if (at)
+        for (U32 i = 0; i < at->count; ++i) {
+            const aov::Entry& e = at->entries[i];
+            if (e.type != aov::TypeLight && e.type != aov::TypeVisibility) continue;
+            for (U32 k = 0; k < e.channels; ++k) lpe->backup[e.offset + k] = lpe->aovs[e.offset + k];
+        }
     const shade::BssrdfRecord& b = bsdf.bssrdf;
     const Color albedo = b.rwAlbedo, sigmaT = b.sigmaT, sigmaS = sigmaT * albedo, v0 = b.dwivediV0;
     const U32 n = pv.nonMirrorDepth == 0 ? c.bssrdfSamples : 1u;
@@ -779,11 +988,27 @@ X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& ro
         // The exit: lit as a white Lambertian facing out of the object.
         const V3 nOut = -exitState.N;
         const ExitPoint x{exitState.P, nOut, nOut, exitHit.normal, exitHit.origin, exitHit.below};
-        radiance += subsurfaceExitRadiance(c, root, backend, mask, pv, 1, subsurfaceDepth, st, hit, x, pt, 1, childBranch(branch, 2, s),
-                                           doIndirect, stack, top, status);
+        ss = ss + pt;
+        radiance += subsurfaceExitRadiance(c, root, backend, lightSet, pv, 1, subsurfaceDepth, st, hit, x, pt, 1, childBranch(branch, 2, s),
+                                           doIndirect, stack, top, status, false, 0, 0, lpe);
         if (status != SampleStatus::Done) return radiance;
     }
-    if (evaluated > 0 && evaluated < n) radiance = radiance * (float(n) / float(evaluated));
+    if (evaluated > 0 && evaluated < n) {
+        const float scale = float(n) / float(evaluated);
+        radiance = radiance * scale;
+        ss = ss * scale;
+        for (U32 k = firstChild; k < top; ++k) stack[k].T = stack[k].T * scale;
+        if (at)
+            for (U32 i = 0; i < at->count; ++i) {
+                const aov::Entry& e = at->entries[i];
+                if (e.type != aov::TypeLight && e.type != aov::TypeVisibility) continue;
+                for (U32 k = 0; k < e.channels; ++k) {
+                    const float before = lpe->backup[e.offset + k];
+                    lpe->aovs[e.offset + k] = before + scale * (lpe->aovs[e.offset + k] - before);
+                }
+            }
+    }
+    if (ssAov) *ssAov = *ssAov + ss;
     return radiance;
 }
 
@@ -791,16 +1016,17 @@ X2_CALL V3 randomWalkRadiance(const mixed::Config& c, const sample::Identity& ro
 // axes, area compensation) or, when the ray's footprint is wider than the profile, the entry point lit as
 // Lambertian; then computeDiffusionForwardScattering's samples through the object.
 template <class Backend>
-X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 mask,
+X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 lightSet,
                                    const paths::Pending& pv, U32 subsurfaceDepth, const shade::State& st, const resume::Hit& hit,
                                    V3 rayDir, const shade::Bsdf& bsdf, bool doIndirect, paths::Pending* stack, U32& top,
-                                   SampleStatus& status) {
+                                   SampleStatus& status, const SubsurfaceLpe* lpe = nullptr, shade::Color* ssAov = nullptr) {
     using namespace paths;
     V3 radiance{0, 0, 0};
     if (!c.enableSss || c.bssrdfSamples < 1) return radiance;
     const shade::BssrdfRecord& b = bsdf.bssrdf;
     if (b.type == shade::BssrdfRandomWalk)
-        return randomWalkRadiance(c, root, backend, mask, pv, subsurfaceDepth, st, hit, bsdf, doIndirect, stack, top, status);
+        return randomWalkRadiance(c, root, backend, lightSet, pv, subsurfaceDepth, st, hit, bsdf, doIndirect, stack, top, status, lpe,
+                                  ssAov);
     const float maxRadius = b.maxRadius, minRadius = maxRadius * 0.1f;
     const V3 P = st.P, N = st.N;
     const shade::Frame localF = shade::frame(N);
@@ -819,9 +1045,9 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
     if (footprint / (maxRadius * maxRadius) > 0.85f) {
         const U32 lambertSplit = pv.nonMirrorDepth > 0 ? 1u : c.bsdfSamples;
         const shade::Color throughput = pv.T * shade::bssrdfDiffuseReflectance(b) * scaleFresnelWo;
-        radiance += subsurfaceExitRadiance(c, root, backend, mask, pv, 1, subsurfaceDepth, st, hit, entryPoint, throughput, lambertSplit,
+        radiance += subsurfaceExitRadiance(c, root, backend, lightSet, pv, 1, subsurfaceDepth, st, hit, entryPoint, throughput, lambertSplit,
                                            childBranch(sssBranch, 1, 0), doIndirect, stack, top, status, stratified, root.index,
-                                           childBranch(sssBranch, 1, 1));
+                                           childBranch(sssBranch, 1, 1), lpe);
         split = 1;
     } else {
         split = pv.nonMirrorDepth > 0 ? 2u : c.bssrdfSamples;
@@ -870,10 +1096,12 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
         }
         measured = measured * (1.0f / float(split));
         const shade::Color compensation = shade::bssrdfAreaCompensation(measured, shade::bssrdfDiffuseReflectance(b));
+        if (ssAov)
+            for (U32 k = 0; k < n; ++k) *ssAov = *ssAov + pts[k] * compensation;
         for (U32 k = 0; k < n; ++k) {
-            radiance += subsurfaceExitRadiance(c, root, backend, mask, pv, 1, subsurfaceDepth, st, hit, exits[k], pts[k] * compensation, 1,
+            radiance += subsurfaceExitRadiance(c, root, backend, lightSet, pv, 1, subsurfaceDepth, st, hit, exits[k], pts[k] * compensation, 1,
                                                childBranch(sssBranch, 3, k), doIndirect, stack, top, status, stratified,
-                                               U64(root.index) * split + drawn[k], childBranch(sssBranch, 3, 0xfff0));
+                                               U64(root.index) * split + drawn[k], childBranch(sssBranch, 3, 0xfff0), lpe);
             if (status != SampleStatus::Done) return radiance;
         }
     }
@@ -909,10 +1137,11 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
         const float jacobian = r * r / fmaxf(cosTheta, 0.05f);
         const shade::Color pt = ptSubsurface * shade::bssrdfEval(b, r) * (jacobian / pdf) * scaleFresnelWo;
         if (!shade::finite3(pt)) continue;
+        if (ssAov) *ssAov = *ssAov + pt;
         const ExitPoint x{bs.P, Ni, -bs.Ng, bh.normal, bh.origin, bh.below};
-        radiance += subsurfaceExitRadiance(c, root, backend, mask, pv, 2, subsurfaceDepth, st, hit, x, pt, 1, childBranch(sssBranch, 5, i),
+        radiance += subsurfaceExitRadiance(c, root, backend, lightSet, pv, 2, subsurfaceDepth, st, hit, x, pt, 1, childBranch(sssBranch, 5, i),
                                            doIndirect, stack, top, status, stratified, U64(root.index) * split + i,
-                                           childBranch(sssBranch, 5, 0xfff0));
+                                           childBranch(sssBranch, 5, 0xfff0), lpe);
         if (status != SampleStatus::Done) return radiance;
     }
     return radiance;
@@ -922,16 +1151,24 @@ template <class Backend>
 X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 index, Backend& backend, Radiance& out) {
     using namespace paths;
     using shade::Color;
-    if (pixel >= c.width * c.height || c.bsdfSamples == 0 || c.bsdfSamples > 64 || c.lightSamples == 0 || c.lightSamples > 64 ||
-        c.lightCount > 32)
+    if (pixel >= c.width * c.height || c.bsdfSamples == 0 || c.bsdfSamples > 64 || c.lightSamples == 0 || c.lightSamples > 64)
         return SampleStatus::Error;
+    // A pixel sample map gives each pixel its own count: its samples past it are not taken (computeTotalNumSamples).
+    const U32 pixelSpp = c.pixelSamples ? c.pixelSamples[pixel] : c.spp;
+    if (c.pixelSamples && index >= pixelSpp) return SampleStatus::Skip;
     const sample::Identity root{pixel, index, c.seed, 0};
     float x, y;
     surface::Ray camera;
     if (!surface::filter(c.filter, c.filterWidth, sample::draw(root, 0, c.sampling), x) ||
-        !surface::filter(c.filter, c.filterWidth, sample::draw(root, 1, c.sampling), y) ||
-        !surface::cameraRay(c.camera, float(pixel % c.width) + x, float(pixel / c.width) + y, camera))
+        !surface::filter(c.filter, c.filterWidth, sample::draw(root, 1, c.sampling), y))
         return SampleStatus::Error;
+    {
+        // Camera::createRay with the sample's lens point (Sampler::fillPrimary draws one with depth of field alone).
+        const float lensU = c.camera.dof ? sample::draw(root, 2, c.sampling) : 0.0f, lensV = c.camera.dof ? sample::draw(root, 3, c.sampling) : 0.0f;
+        const surface::CameraResult made = surface::cameraSample(c.camera, float(pixel % c.width) + x, float(pixel / c.width) + y, lensU, lensV, camera);
+        if (made == surface::CameraResult::None) return SampleStatus::Skip;
+        if (made != surface::CameraResult::Made) return SampleStatus::Error;
+    }
 
     // The pending rays and the hit's Bsdf live in the backend's per-thread scratch: on the GPU,
     // global memory, so the path tracer's state across a trace is a few registers, not kilobytes.
@@ -940,22 +1177,99 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
     U32 top = 0;
     stack[top++] = Pending{camera.origin, camera.direction, {1, 1, 1}, 0, 0, 0, 0, 0, 0, 0, 0, {0, 0}, 0, shade::RayDiff{}};
     // MoonRay's primary ray differential scale (initPrimaryRay): its scatterAndScale scales a diffuse lobe's by it.
-    const float primaryScale = 1.0f / fminf(sqrtf(float(c.spp ? c.spp : 1)), 2.0f);
+    const float primaryScale = 1.0f / fminf(sqrtf(float(pixelSpp ? pixelSpp : 1)), 2.0f);
+    // The camera ray's footprint (its differentials scaled, as initPrimaryRay's scaleDifferentials does) and the
+    // camera's position, render space's origin.
+    const float cameraFootprint = dirFootprint(surface::mul(surface::add(camera.dx, surface::mul(camera.direction, -1.0f)), primaryScale),
+                                               surface::mul(surface::add(camera.dy, surface::mul(camera.direction, -1.0f)), primaryScale));
+    const V3 cameraPosition = camera.origin;
     V3 radiance{0, 0, 0};
-    U32 primaryHit = 0;
+    float alpha = 0.0f;  // fillBundledRadiance: each camera-depth hit adds its path pixel weight
+    // AOVs: the sample's values, and the light path expressions' state from the camera event.
+    const aov::Tables& at = backend.aovs();
+    float* aovs = at.count ? out.aov : nullptr;
+    float* aovDepths = out.aovDepth;
+    const bool lpeOn = aovs && (at.types & (aov::TypeLight | aov::TypeVisibility)) && at.lpeCamera >= 0;
+    if (aovs) aov::init(at, aovs, aovDepths);
+    stack[0].lpe = lpeOn ? at.lpeCamera : -1;
+    // Cryptomatte: the camera ray's events, and each path's radiance (and a camera hit's alpha) credited to its event
+    // as the next path is taken up; paths pushed meanwhile take their parent's role.
+    const bool cryptoOn = at.crypto && out.crypto && out.cryptoCapacity;
+    out.cryptoCount = 0;
+    stack[0].crypto = cryptoOn ? aov::CryptoCamera : aov::CryptoNone;
+    int cryptoOwner = aov::CryptoNone;
+    U32 cryptoBase = 0;
+    V3 cryptoMark = radiance;
+    float cryptoAlphaMark = alpha;
+    auto cryptoCredit = [&]() {
+        if (!cryptoOn) return;
+        for (U32 k = cryptoBase; k < top; ++k)
+            if (stack[k].crypto == aov::CryptoInherit) stack[k].crypto = cryptoOwner >= 0 ? cryptoOwner : aov::CryptoNone;
+        if (cryptoOwner >= 0) {
+            aov::CryptoEvent& e = out.crypto[cryptoOwner];
+            if (e.credit) {
+                const V3 d = radiance - cryptoMark;
+                e.beauty[0] += d.x * e.scale;
+                e.beauty[1] += d.y * e.scale;
+                e.beauty[2] += d.z * e.scale;
+                if (e.radianceAlpha) e.beauty[3] += (alpha - cryptoAlphaMark) * e.scale;
+            }
+        }
+        cryptoMark = radiance;
+        cryptoAlphaMark = alpha;
+    };
+    // An event of the sample (CryptoNone when there is no room left).
+    auto cryptoEvent = [&]() -> int {
+        if (out.cryptoCount >= out.cryptoCapacity) return aov::CryptoNone;
+        out.crypto[out.cryptoCount] = aov::CryptoEvent{};
+        out.crypto[out.cryptoCount].scale = 1.0f;
+        out.crypto[out.cryptoCount].presenceDepth = aov::CryptoNoDepth;
+        return int(out.cryptoCount++);
+    };
+    // A light's or a lobe's label in the expressions.
+    auto lobeLpeLabel = [&](const shade::Lobe& l) { return shade::labelLpeId(l.label); };
     while (top) {
+        cryptoCredit();
         Pending pv = stack[--top];
+        cryptoBase = top;
+        cryptoOwner = pv.crypto;
         const bool fromCamera = pv.depth == 0 && pv.presenceDepth == 0;
         // The camera ray keeps its differentials, for the texture footprint of the first hit.
         const surface::Ray ray{pv.origin, pv.dir, fromCamera ? camera.dx : V3{0, 0, 0}, fromCamera ? camera.dy : V3{0, 0, 0},
-                               fromCamera ? camera.nearT : pv.nearT, fromCamera ? camera.farT : pv.farT};
+                               fromCamera ? camera.nearT : pv.nearT, fromCamera ? camera.farT : pv.farT, rayMask(pv.lobeType),
+                               fromCamera ? camera.ox : V3{0, 0, 0}, fromCamera ? camera.oy : V3{0, 0, 0}};
         const resume::Hit hit = backend.trace(ray);
         // The volumes the ray passes on its way (computeRadianceVolume): their light, and the throughput through them.
         const U32 volumeDepthBefore = pv.volumeDepth;
         if (c.volumeCount) radiance += volumeRadiance(c, root, backend, pv, ray.origin, ray.direction, ray.nearT,
                                                       hit.geom == ~0u ? ray.farT : hit.t);
-        if (hit.geom == ~0u) continue;  // a miss adds nothing: lights are reached through the BSDF samples
-        if (pv.depth == 0) primaryHit = 1;
+        // This ray's footprint, for the mip levels of textured lights (the camera's, or its differentials').
+        const float footprint = fromCamera ? cameraFootprint : pv.diff.valid ? dirFootprint(pv.diff.dDx, pv.diff.dDy) : lights::NoFootprint;
+        // The lights the camera sees, along a primary ray (presence continuations included).
+        if (pv.depth == 0 && c.visibleLights) {
+            const bool missed = hit.geom == ~0u;
+            U32 hitLight = ~0u;
+            const V3 Lv = pv.T * visibleLightRadiance(c, root, backend, missed ? ray.origin : cameraPosition, ray.direction,
+                                                      missed ? 3.4028234663852886e+38f : hit.t, missed, footprint, pv.presenceDepth, &hitLight);
+            radiance += Lv;
+            // LPE: the camera saw a light in front of a surface (PathIntegratorBundled). One seen past every surface adds
+            // nothing: MoonRay's miss handler (RayHandlers.cc, its case 1) declares the state anew inside its branch, so
+            // the state it accumulates with stays -1.
+            if (lpeOn && hitLight != ~0u && !missed)
+                aov::light(at, aovs, aovDepths, Lv, nullptr, 0, aov::lpeNext(at, pv.lpe, aov::LpeLight, backend.light(hitLight).lpeLabel));
+        }
+        if (hit.geom == ~0u) {
+            // A camera ray that hits nothing: as many visibility misses as the light samples a hit would have taken.
+            if (pv.depth == 0 && aovs && (at.types & aov::TypeVisibility))
+                aov::visibility(at, aovs, 0.0f, float(c.lightSamples * c.lightCount), -1, true);  // lightSamples: light_samples squared
+            // The background's extra AOV ('U:bg_white', aovAccumBackgroundExtraAovsBundled): white times the path's
+            // throughput (its volumes' transmittance in it).
+            if (lpeOn && at.lpeBackground >= 0) {
+                const int s = aov::lpeNext(at, pv.lpe, aov::LpeExtra, at.lpeBackground);
+                if (s >= 0) aov::light(at, aovs, aovDepths, pv.T, nullptr, 0, s);
+            }
+            continue;  // a miss adds nothing more: lights are reached through the BSDF samples
+        }
 
         shade::State st;
         st.minRoughness[0] = pv.minRoughness[0];
@@ -968,14 +1282,99 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         st.incoming = pv.diff;
         st.subsurfaceAllowed = pv.subsurfaceDepth < c.maxSubsurfacePerPath;
         st.rayLobe = pv.lobeType;
+        st.textureDiffScale = c.textureDiffScale;
+        st.pixelSamples = c.pixelSamples ? pixelSpp : 0;
         float presence = 1.0f;
         shade::reset(bsdf);
         const U32 status = backend.shade(hit, ray, st, bsdf, presence);
         if (status == tex::Miss) return SampleStatus::Miss;
         if (status != tex::Ready) return SampleStatus::Error;
-        if (presence < 1.0f) {
-            // A cut out surface (presence 0): the ray goes on through it (computeRadiancePresence).
-            if (presence > 0.0f || pv.presenceDepth >= c.maxPresenceDepth) return SampleStatus::Error;
+        // A hit without an attribute its shading requires (ShadeBundleHandler's hasAllRequiredAttributes): the fatal
+        // colour and the path's pixel weight, and nothing else; no AOV, no light path expression, no Cryptomatte.
+        if (bsdf.fatal) {
+            if (pv.depth == 0) alpha += pv.pixelWeight;
+            radiance += pv.T * bsdf.selfEmission;
+            continue;
+        }
+        // The hit's state for its AOVs (ShadeBundleHandler: state variables and primitive attributes at a camera-depth
+        // hit, weighted by the path pixel weight it arrived with).
+        // Camera::computeZDistance: a projective camera's camera space -z, any other's ray distance.
+        const bool projective = c.camera.type == surface::CameraPerspective || c.camera.type == surface::CameraOrthographic;
+        const aov::StateContext sc{c.worldToRender, cameraPosition, hit.t, projective,
+                                   -3.402823466e38f * aov::renderVectorOf(c.worldToRender, ray.direction).z};
+        const float hitDepth = projective ? -aov::renderPointOf(c.worldToRender, st.P).z : hit.t;  // the closest filter's depth
+        if (aovs && pv.depth == 0 && (at.types & (aov::TypeState | aov::TypePrim)))
+            for (U32 ei = 0; ei < at.count; ++ei) {
+                const aov::Entry& e = at.entries[ei];
+                const float w = e.filter == aov::FilterAvg ? pv.pixelWeight : 1.0f;
+                float v[3] = {0, 0, 0};
+                if (e.type == aov::TypeState) {
+                    aov::stateValue(e.state, st, sc, w, v);
+                } else if (e.type == aov::TypePrim) {
+                    aov::primValueAt(st, at.primKeys[e.prim], v);
+                    const float miss = e.filter == aov::FilterMin ? aov::infinity() : e.filter == aov::FilterMax ? -aov::infinity() : 0.0f;
+                    for (U32 k = 0; k < 3; ++k) v[k] = v[k] == v[k] ? v[k] * w : miss;
+                } else {
+                    continue;
+                }
+                aov::put(e, aovs, aovDepths, v, hitDepth);
+            }
+        // Cryptomatte at a camera-depth hit (ShadeBundleHandler): a camera ray's hit counts its coverage and takes its
+        // path's radiance as beauty; one reached through presence is settled below.
+        const bool cryptoHere = cryptoOn && pv.depth == 0 && (pv.crypto == aov::CryptoCamera || pv.crypto == aov::CryptoThrough);
+        const bool cryptoThrough = pv.crypto == aov::CryptoThrough;
+        aov::CryptoEvent cryptoData{};
+        if (cryptoHere) aov::cryptoHit(at, st, c.worldToRender, cryptoData);
+        // A presence path's beauty alone (addBeautySampleVector): its radiance over its pixel weight, above 0.01 of it.
+        auto cryptoBeauty = [&](float ppw) {
+            const int b = cryptoEvent();
+            if (b < 0) return aov::CryptoNone;
+            aov::CryptoEvent& e = out.crypto[b];
+            e.id = cryptoData.id;
+            e.materialId = cryptoData.materialId;
+            e.assetId = cryptoData.assetId;
+            e.presenceDepth = pv.presenceDepth;
+            e.scale = ppw == 0.0f ? 0.0f : 1.0f / ppw;
+            e.credit = ppw > 0.01f ? 1u : 0u;
+            return b;
+        };
+        // A presence surface's own sample (addSampleVector): its share of coverage, its presence as alpha.
+        auto cryptoSample = [&](float weight, float a) {
+            if (!(weight > 0.01f)) return;
+            const int s = cryptoEvent();
+            if (s < 0) return;
+            aov::CryptoEvent& e = out.crypto[s];
+            e = cryptoData;
+            e.weight = weight;
+            e.beauty[0] = e.beauty[1] = e.beauty[2] = 0.0f;
+            e.beauty[3] = a;
+            e.presenceDepth = pv.presenceDepth;
+            e.increment = 1;
+            e.scale = 1.0f;
+            e.credit = 0;
+            e.used = 1;
+        };
+        // Presence (ShadeBundleHandler): below presence_quality's throughput a surface's presence is drawn as 0 or 1;
+        // a presence short of one sends a continuation on through it with the rest of the throughput and pixel weight,
+        // into empty space once the presence gathered so far reaches presence_threshold or the presence depth runs
+        // out; the hit keeps its share, and one of no presence adds nothing itself.
+        if (presence < 1.0f && shade::luminance(pv.T) < 1.0f - c.presenceQuality) {
+            sample::Identity pid = root;
+            pid.branch = childBranch(pv.branch, 0xfff9, pv.presenceDepth);
+            Stream ps(pid, pv.depth, 0);
+            presence = ps.next() < presence ? 1.0f : 0.0f;
+        }
+        // The material's extra AOVs (aovAccumExtraAovsBundled, not for a cut out): each one's value times the path's
+        // throughput and the hit's presence, through its 'U:' event.
+        if (lpeOn && bsdf.extraCount && !bsdf.earlyTermination)
+            for (U32 i = 0; i < bsdf.extraCount; ++i) {
+                if (bsdf.extraPost >> i & 1u) continue;
+                const int s = aov::lpeNext(at, pv.lpe, aov::LpeExtra, bsdf.extraLabel[i]);
+                if (s >= 0) aov::light(at, aovs, aovDepths, bsdf.extraValue[i] * pv.T * presence, nullptr, 0, s);
+            }
+        if (presence < 1.0f - lights::Epsilon) {
+            if (top >= MaxPending) return SampleStatus::Error;
+            const float totalPresence = (1.0f - pv.totalPresence) * presence;
             Pending through = pv;
             through.origin = hit.below;
             through.nearT = hit.epsilon;  // from a curve: on from the hit, past its epsilon
@@ -984,15 +1383,86 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
             through.diff.valid = st.diffValid ? 1u : 0u;
             through.diff.dOx = st.dPdx + (st.P - hit.below);
             through.diff.dOy = st.dPdy + (st.P - hit.below);
+            through.farT = (fromCamera ? camera.farT : pv.farT) - hit.t;
+            if (totalPresence >= c.presenceThreshold || pv.presenceDepth >= c.maxPresenceDepth) {
+                through.nearT = 3.402823466e+38f * 0.5f;
+                through.farT = 3.402823466e+38f;
+            }
+            through.T = pv.T * (1.0f - presence);
+            through.pixelWeight = pv.pixelWeight * (1.0f - presence);
+            through.aovPixelWeight = pv.aovPixelWeight * (1.0f - presence);
+            through.totalPresence = totalPresence;
+            through.lpe = aov::lpeStraight(at, pv.lpe);  // presence is a straight event
+            // Cryptomatte: a cut out's continuation starts afresh; another's is a presence path, and this surface
+            // counts its share with its presence as alpha and its own radiance as beauty alone.
+            through.crypto = !cryptoOn ? aov::CryptoNone : bsdf.earlyTermination ? aov::CryptoCamera : aov::CryptoThrough;
+            if (cryptoHere && !bsdf.earlyTermination) {
+                const float ppw = pv.pixelWeight * presence;
+                cryptoSample(ppw, presence);
+                pv.crypto = cryptoBeauty(ppw);
+            }
             ++through.presenceDepth;
             through.volumeDepth = volumeDepthBefore;  // a presence continuation keeps its volume depth
             stack[top++] = through;
+            pv.T = pv.T * presence;
+            pv.pixelWeight *= presence;
+            pv.aovPixelWeight *= presence;
+        }
+        // Material AOVs at this hit (aovAccumMaterialAovs), with the albedo of its BSDF samples where they are drawn.
+        const int geomLabel = backend.geomLabel(hit.geom);
+        float stateValues[3 * 14];
+        float primValues[3 * 8];
+        auto materialAovs = [&](const float* albedo, aov::Color ssAov) {
+            if (!aovs || !(at.types & aov::TypeMaterial)) return;
+            if (pv.depth != 0 && !at.materialSecondary) return;
+            for (U32 s = 0; s < 14; ++s) aov::stateValue(aov::StateP + s, st, sc, 1.0f, stateValues + 3 * s);
+            for (U32 k = 0; k < at.primCount && k < 8; ++k) aov::primValueAt(st, at.primKeys[k], primValues + 3 * k);
+            unsigned char lobes[shade::MaxLobes];
+            for (U32 k = 0; k < shade::MaxLobes; ++k) lobes[k] = 1;
+            const aov::MaterialHit mh{&bsdf, &st, geomLabel, albedo, lobes, ssAov, c.worldToRender, pv.aovPixelWeight, pv.depth == 0, pv.lpe,
+                                      stateValues, primValues};
+            aov::materialAovs(at, aovs, aovDepths, mh, hitDepth);
+        };
+        // Cryptomatte at an opaque camera-depth hit: a camera ray's counts its coverage once with all its path's radiance;
+        // one reached through presence counts its share (alpha one) and takes its radiance as beauty alone.
+        if (cryptoHere && pv.crypto == (cryptoThrough ? aov::CryptoThrough : aov::CryptoCamera) && !bsdf.earlyTermination) {
+            if (cryptoThrough) {
+                cryptoSample(pv.pixelWeight, 1.0f);
+                pv.crypto = cryptoBeauty(pv.pixelWeight);
+            } else {
+                const int e = cryptoEvent();
+                if (e >= 0) {
+                    out.crypto[e] = cryptoData;
+                    out.crypto[e].weight = 1.0f;  // its volume front (Modo's Cryptomatte volumes) is one: none passed
+                    out.crypto[e].presenceDepth = aov::CryptoNoDepth;
+                    out.crypto[e].increment = 1;
+                    out.crypto[e].scale = 1.0f;
+                    out.crypto[e].radianceAlpha = 1;
+                    out.crypto[e].credit = 1;
+                }
+                pv.crypto = e;
+            }
+        }
+        cryptoOwner = pv.crypto;
+        // A shader's early termination (a cut out): nothing more from this hit.
+        if (bsdf.earlyTermination) {
+            materialAovs(nullptr, aov::Color{0, 0, 0});
             continue;
         }
+        if (fabsf(presence) <= lights::Epsilon) continue;  // only the continuation counts
+        if (pv.depth == 0) alpha += pv.pixelWeight;
+        if (cryptoOn && pv.crypto >= 0) out.crypto[pv.crypto].used = 1;  // the path's radiance reaches the film
         radiance += pv.T * bsdf.selfEmission;  // self-emission
+        // LPE: an emission event, with the material's label.
+        if (lpeOn && !shade::isBlack(bsdf.selfEmission))
+            aov::light(at, aovs, aovDepths, pv.T * bsdf.selfEmission, nullptr, 0,
+                       aov::lpeNext(at, pv.lpe, aov::LpeEmission, shade::labelLpeId(bsdf.materialLabels)));
         const bool subsurface = bsdf.bssrdf.type != shade::BssrdfNone;
         if (subsurface && hit.epsilon > 0.0f) return SampleStatus::Error;  // subsurface scattering on curves is not ported
-        if ((bsdf.topCount == 0 && !subsurface) || bsdf.earlyTermination) continue;
+        if (bsdf.topCount == 0 && !subsurface) {
+            materialAovs(nullptr, aov::Color{0, 0, 0});
+            continue;
+        }
         // A hit with subsurface counts toward max_subsurface_per_path for everything after it.
         const U32 subsurfaceDepth = pv.subsurfaceDepth + (subsurface ? 1u : 0u);
 
@@ -1017,12 +1487,21 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         const U32 nl = split ? c.lightSamples : 1;
         const bool clampHere = pv.nonMirrorDepth >= c.clampDepth;
         const bool rr = pv.nonMirrorDepth > 0 && c.rrThreshold > 0;
-        const U32 mask = backend.lightMask(hit.geom);
+        const U32 lightSet = backend.lightSet(hit.geom);
         // Subsurface scattering (computeRadianceSubsurface): its exit samples' light, and their bounces pushed.
+        aov::Color ssAov{0, 0, 0};
         if (subsurface) {
             SampleStatus status = SampleStatus::Done;
-            radiance += subsurfaceRadiance(c, root, backend, mask, pv, subsurfaceDepth, st, hit, ray.direction, bsdf, doIndirect,
-                                           stack, top, status);
+            SubsurfaceLpe sl;
+            if (lpeOn) {
+                sl.t = &at;
+                sl.aovs = aovs;
+                sl.depths = aovDepths;
+                sl.backup = out.aovBackup;
+                sl.state = aov::lpeSubsurface(at, pv.lpe, shade::labelLpeId(bsdf.bssrdf.label));
+            }
+            radiance += subsurfaceRadiance(c, root, backend, lightSet, pv, subsurfaceDepth, st, hit, ray.direction, bsdf, doIndirect,
+                                           stack, top, status, lpeOn ? &sl : nullptr, aovs ? &ssAov : nullptr);
             if (status != SampleStatus::Done) return status;
         }
         // Sample counts per lobe (computeLobeSampleCount): mirrors take one.
@@ -1034,10 +1513,25 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // it; bounces skip the epsilon over the cosine to Ng.
         const float curveEpsilon = hit.epsilon;
 
-        // Light samples (drawLightSamples, integrateLightSetSample).
+        // Light samples (drawLightSamples, integrateLightSetSample): each light of the hit's set; with adaptive light
+        // sampling, the lights outside the set's tree and those the tree picks (chooseLightsToSample), a sample's pdf
+        // times the probability its light was picked while the MIS weights keep the light's own (misPdf).
         const U64 lightBranch = childBranch(pv.branch, 0xfffe, 0);
-        for (U32 i = 0; i < c.lightCount; ++i) {
-            if (!(mask >> i & 1)) continue;
+        // Visibility AOV misses (accumVisibilityAovsOccluded): at camera depth through mirrors, a light sample that
+        // fails (Light::sample, isSampleInvalid) or a light culled from the hit (computeActiveLights) counts as attempts
+        // that missed, through every lobe whose state has a visibility AOV: MoonRay's vector loop means to stop at the
+        // first, but its insert(addVisibility, lane, false) discards its result, so it never stops.
+        const bool visibilityMisses = lpeOn && pv.nonMirrorDepth == 0 && (at.types & aov::TypeVisibility);
+        auto visibilityMiss = [&](const lights::Light& L, float attempts) {
+            for (U32 k = 0; k < bsdf.topCount; ++k) {
+                const shade::Lobe& lobe = shade::topLobe(bsdf, k);
+                const int state = aov::lpeNext(at, aov::lpeScatter(at, pv.lpe, lobe.type, lobeLpeLabel(lobe)), aov::LpeLight, L.lpeLabel);
+                aov::visibility(at, aovs, 0.0f, attempts, state);
+            }
+        };
+        // A camera-depth hit's samples count toward the visibility AOVs even when they carry nothing.
+        const bool visibilityHits = lpeOn && pv.depth == 0 && (at.types & aov::TypeVisibility);
+        auto lightSamples = [&](U32 i, float selection) {
             const lights::Light& L = backend.light(i);
             const U64 lightAddress = childBranch(lightBranch, i, 0);
             sample::Identity lid = root;
@@ -1054,17 +1548,28 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 }
                 V3 wi;
                 lights::Hit lh;
-                if (!lights::sample(L, st.P, cullN, r, wi, lh)) continue;
+                if (!lights::sample(L, st.P, cullN, r, wi, lh, footprint)) {
+                    if (visibilityMisses) visibilityMiss(L, 1.0f);
+                    continue;
+                }
                 float pdfL;
-                const V3 Li = lights::eval(L, st.P, wi, lh, pdfL);
-                if (shade::isExactlyZero(Li) || !(pdfL > 0) || !shade::finite3(Li)) continue;
-                const Color factor = pv.T * Li * (1.0f / (float(nl) * pdfL));
+                const V3 Li = lights::eval(L, st.P, wi, lh, pdfL, footprint);
+                if (shade::isSampleInvalid(Li, pdfL) || !(fabsf(pdfL) < 3.4e38f) || !shade::finite3(Li)) {
+                    if (visibilityMisses) visibilityMiss(L, 1.0f);
+                    continue;
+                }
+                const Color factor = pv.T * Li * (1.0f / (float(nl) * pdfL * selection));
                 const U32 flags = shade::surfaceFlags(slice, bsdf.spherical, wi);
                 Color t{0, 0, 0};
                 bool any = false;
+                // LightSampleLPE: each lobe's share and its LPE state as if the light were reached.
+                Color lobeT[shade::MaxLobes];
+                int lobeLpe[shade::MaxLobes];
                 for (U32 k = 0; k < bsdf.topCount; ++k) {
+                    lobeLpe[k] = -1;
                     const shade::Lobe& lobe = shade::topLobe(bsdf, k);
                     if (!shade::matchesFlags(lobe.type, flags)) continue;
+                    if (!(lights::lobeRayMask(lobe.type) & L.visibilityMask)) continue;
                     float pdf;
                     const Color f = shade::lobeEval(bsdf, bsdf.top[k], slice, wi, pdf);
                     if (shade::isSampleInvalid(f, pdf)) continue;
@@ -1072,37 +1577,105 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     if (clampHere) tk = smartClamp(tk, c.clampValue);
                     t += tk;
                     any = true;
+                    if (lpeOn) {
+                        lobeT[k] = tk;
+                        lobeLpe[k] = aov::lpeNext(at, aov::lpeScatter(at, pv.lpe, lobe.type, lobeLpeLabel(lobe)), aov::LpeLight, L.lpeLabel);
+                    }
                 }
                 if (!any) continue;
                 if (rr) {
                     float scale;
                     if (!roulette(shade::luminance(t), c.rrThreshold, u, scale)) continue;
                     t = t * scale;
+                    if (lpeOn)
+                        for (U32 k = 0; k < bsdf.topCount; ++k) lobeT[k] = lobeT[k] * scale;
                 }
-                if (shade::isExactlyZero(t) || !shade::finite3(t)) continue;
+                if (!shade::finite3(t) || (shade::isExactlyZero(t) && !visibilityHits)) continue;
                 const V3 shadowOrigin = curveEpsilon > 0.0f ? st.P : (shade::dot(wi, st.Ng) >= 0.0f ? above : below);
-                const float shadowNear = curveEpsilon > 0.0f ? curveEpsilon : 0.0f;
-                const float shadowFar = curveEpsilon > 0.0f ? fmaxf(lh.distance * lights::HitEpsilonEnd, 2.0f * curveEpsilon)
-                                                            : lh.distance * lights::HitEpsilonEnd;
-                if (backend.visible(shadowOrigin, wi, shadowNear, shadowFar)) {
+                float shadowNear = curveEpsilon > 0.0f ? curveEpsilon : 0.0f, shadowFar;
+                lightShadowSpan(L, lh.distance, shadowNear, shadowFar);
+                float kept;
+                if (L.presenceShadows) {
+                    // The presence shadows' queue: the light less the presence it passes.
+                    sample::Identity sid = lid;
+                    sid.branch = childBranch(lightAddress, s, 0xfff8);
+                    Stream ps(sid, pv.depth, 0);
+                    kept = 1.0f - rayPresence(c, backend, shadowOrigin, wi, shadowNear, shadowFar, pv.depth,
+                                              shade::luminance(pv.T) < 1.0f - c.presenceQuality, ps);
+                } else {
+                    kept = backend.visible(shadowOrigin, wi, shadowNear, shadowFar) ? 1.0f : lightShadowKept(L, shadowFar);
+                }
+                Color tr{1, 1, 1};
+                if (kept > 0.0f) {
+                    if (kept < 1.0f) t = t * kept;
                     if (c.volumeCount) {
                         // The volumes on the shadow ray's way (transmittance()).
                         sample::Identity tid = lid;
                         tid.branch = childBranch(lightAddress, s, 0xfffb);
                         Stream vs(tid, pv.depth, 0);
-                        t = t * volumeTransmittance(c, backend, vs, shadowOrigin, wi, shadowNear, shadowFar, 1.0f);
+                        tr = volumeTransmittance(c, backend, vs, shadowOrigin, wi, shadowNear, shadowFar, 1.0f);
+                        t = t * tr;
                     }
                     radiance += t;
                 }
+                // LPE (the occlusion queue's accumLightAovs and accumVisibilityAovs): unoccluded, each lobe's share through
+                // the volumes to its expressions, and to the unoccluded ones as it is; occluded, to the unoccluded ones only.
+                // A camera-depth hit's sample counts toward the visibility AOVs once, through the first lobe whose state
+                // has one.
+                if (lpeOn) {
+                    // Presence shadows always reach the light, less the presence they passed (presenceShadowsQueue).
+                    const bool reached = L.presenceShadows || kept >= 1.0f;
+                    const float pass = L.presenceShadows ? kept : 1.0f;
+                    bool visibilityCounted = !(pv.depth == 0 && (at.types & aov::TypeVisibility));
+                    for (U32 k = 0; k < bsdf.topCount; ++k) {
+                        if (lobeLpe[k] < 0) continue;
+                        if (reached) {
+                            const Color through = lobeT[k] * tr * pass;
+                            aov::light(at, aovs, aovDepths, lobeT[k], &through, aov::PrefixUnoccluded, lobeLpe[k]);
+                        } else {
+                            aov::light(at, aovs, aovDepths, lobeT[k], nullptr, aov::PrefixUnoccluded, lobeLpe[k]);
+                        }
+                        if (!visibilityCounted)
+                            visibilityCounted = aov::visibility(at, aovs, reached ? pass * (tr.x + tr.y + tr.z) / 3.0f : 0.0f, 1.0f, lobeLpe[k]);
+                    }
+                }
             }
+        };
+        const int treeRoot = c.lightTree ? backend.treeRoot(lightSet) : -1;
+        // computeActiveLights: the set's lights that can light the hit, the culling eased by the subsurface's reach;
+        // the rest are not sampled (and count as the visibility AOVs' misses, a light's samples each).
+        const float activeRadius = subsurface ? bsdf.bssrdf.maxRadius : 0.0f;
+        for (U32 i = 0; i < c.lightCount; ++i) {
+            if (!backend.inSet(lightSet, i)) continue;
+            const lights::Light& L = backend.light(i);
+            if (!lights::canIlluminate(L, st.P, cullN, activeRadius)) {
+                if (visibilityMisses) visibilityMiss(L, float(c.lightSamples));
+                continue;
+            }
+            if (treeRoot >= 0 && lights::inTree(L)) continue;
+            lightSamples(i, 1.0f);
+        }
+        if (treeRoot >= 0) {
+            // LightTree_sample about the hit's point and geometric normal, culling lights below it.
+            sample::Identity tid = root;
+            tid.branch = childBranch(lightBranch, 0xfffc, 0);
+            Stream ts(tid, pv.depth, 0);
+            lights::treeSample(backend.treeNodes(), treeRoot, c.lightTreeThreshold, st.P, st.Ng, [&]() { return ts.next(); },
+                               [&](int light, float pdf) {
+                                   // LightTree_chooseLight: a light culled from the hit is not in its set.
+                                   if (lights::canIlluminate(backend.light(U32(light)), st.P, cullN, activeRadius)) lightSamples(U32(light), pdf);
+                               });
         }
 
         // BSDF samples (drawBsdfSamples, integrateBsdfSample, addIndirectAndDirectVisibleContributions).
+        float albedo[3 * shade::MaxLobes];
+        for (U32 k = 0; k < 3 * shade::MaxLobes; ++k) albedo[k] = 0.0f;
         for (U32 k = 0; k < bsdf.topCount; ++k) {
             const U32 record = bsdf.top[k];
             const shade::Lobe& lobe = bsdf.records[record];
             const U32 nk = lobeSamples[k];
             const bool mirror = (lobe.type & shade::Mirror) != 0, hair = (lobe.flags & shade::FlagHair) != 0;
+            const U32 lobeMask = lights::lobeRayMask(lobe.type);
             const bool lobeIndirect = shade::matchesFlags(lobe.type, indirectFlags) || (hair && pv.hairDepth < c.maxHairDepth);
             const U64 lobeBranch = childBranch(pv.branch, k, 0xffff);
             for (U32 i = 0; i < nk; ++i) {
@@ -1123,29 +1696,38 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 const Color f = shade::lobeSample(bsdf, record, slice, r1, r2, wi, pdf);
                 if (!shade::isSampleValid(f, pdf) || !shade::finite3(f) || !shade::finite3(wi)) continue;
                 if (!shade::matchesFlags(lobe.type, shade::surfaceFlags(slice, bsdf.spherical, wi))) continue;
+                // The material albedo AOV: the lobe's samples' f / (count pdf).
+                albedo[3 * k] += f.x / (float(nk) * pdf);
+                albedo[3 * k + 1] += f.y / (float(nk) * pdf);
+                albedo[3 * k + 2] += f.z / (float(nk) * pdf);
                 const Color pt = pv.T * f * (1.0f / (float(nk) * pdf));
                 // The lights the ray meets: one chosen uniformly, its radiance times their number.
                 U32 hits = 0;
                 for (U32 j = 0; j < c.lightCount; ++j) {
                     lights::Hit lh;
-                    if ((mask >> j & 1) && lights::intersect(backend.light(j), st.P, cullN, wi, 3.4028234663852886e+38f, lh)) ++hits;
+                    if (backend.inSet(lightSet, j) && (lobeMask & backend.light(j).visibilityMask) &&
+                        lights::intersect(backend.light(j), st.P, cullN, wi, 3.4028234663852886e+38f, lh))
+                        ++hits;
                 }
                 Color direct{0, 0, 0};
                 float lightDistance = 0;
                 bool lightHit = false;
+                U32 lightIndex = 0;
                 if (hits) {
                     const U32 chosen = U32(choice * float(hits)) < hits ? U32(choice * float(hits)) : hits - 1;
                     for (U32 j = 0, seen = 0; j < c.lightCount; ++j) {
                         lights::Hit lh;
-                        if (!(mask >> j & 1) || !lights::intersect(backend.light(j), st.P, cullN, wi, 3.4028234663852886e+38f, lh))
+                        if (!backend.inSet(lightSet, j) || !(lobeMask & backend.light(j).visibilityMask) ||
+                            !lights::intersect(backend.light(j), st.P, cullN, wi, 3.4028234663852886e+38f, lh))
                             continue;
                         if (seen++ != chosen) continue;
                         float pdfL;
-                        const V3 Li = lights::eval(backend.light(j), st.P, wi, lh, pdfL) * float(hits);
-                        if (!shade::isExactlyZero(Li) && pdfL > 0 && shade::finite3(Li)) {
+                        const V3 Li = lights::eval(backend.light(j), st.P, wi, lh, pdfL, footprint) * float(hits);
+                        if (!shade::isSampleInvalid(Li, pdfL) && fabsf(pdfL) < 3.4e38f && shade::finite3(Li)) {  // a negative pdf counts (MoonRay)
                             direct = mirror ? Li * pt : Li * pt * lights::powerHeuristic(float(nk) * pdf, float(nl) * pdfL);
                             lightDistance = lh.distance;
                             lightHit = true;
+                            lightIndex = j;
                         }
                         break;
                     }
@@ -1165,15 +1747,46 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     const float denom = fabsf(shade::dot(st.Ng, wi));
                     start = shade::isZero(denom) ? curveEpsilon : curveEpsilon / denom;
                 }
-                if (lightHit && !shade::isBlack(direct) && shade::finite3(direct) &&
-                    backend.visible(origin, wi, start, lightDistance * lights::HitEpsilonEnd)) {
+                float shadowNear = start, shadowFar = 0.0f;
+                float kept = 0.0f;
+                if (lightHit && !shade::isBlack(direct) && shade::finite3(direct)) {
+                    const lights::Light& L = backend.light(lightIndex);
+                    lightShadowSpan(L, lightDistance, shadowNear, shadowFar);
+                    if (L.presenceShadows) {
+                        sample::Identity sid = bid;
+                        sid.branch = childBranch(sampleBranch, 0xfff8, 0);
+                        Stream ps(sid, pv.depth, 0);
+                        kept = 1.0f - rayPresence(c, backend, origin, wi, shadowNear, shadowFar, pv.depth,
+                                                  shade::luminance(pv.T) < 1.0f - c.presenceQuality, ps);
+                    } else {
+                        kept = backend.visible(origin, wi, shadowNear, shadowFar) ? 1.0f : lightShadowKept(L, shadowFar);
+                    }
+                }
+                const Color directBefore = direct;
+                Color tr{1, 1, 1};
+                if (kept > 0.0f) {
+                    if (kept < 1.0f) direct = direct * kept;
                     if (c.volumeCount) {
                         sample::Identity tid = bid;
                         tid.branch = childBranch(sampleBranch, 0xfffb, 0);
                         Stream vs(tid, pv.depth, 0);
-                        direct = direct * volumeTransmittance(c, backend, vs, origin, wi, start, lightDistance * lights::HitEpsilonEnd, 1.0f);
+                        tr = volumeTransmittance(c, backend, vs, origin, wi, shadowNear, shadowFar, 1.0f);
+                        direct = direct * tr;
                     }
                     radiance += direct;
+                }
+                // LPE: the light the sample reached (addDirectVisibleBsdfLobeSampleContributionBundled).
+                if (lpeOn && lightHit && !shade::isBlack(directBefore) && shade::finite3(directBefore)) {
+                    const int state = aov::lpeNext(at, aov::lpeScatter(at, pv.lpe, lobe.type, lobeLpeLabel(lobe)), aov::LpeLight,
+                                                   backend.light(lightIndex).lpeLabel);
+                    const bool presenceShadows = backend.light(lightIndex).presenceShadows;
+                    const bool reached = presenceShadows || kept >= 1.0f;
+                    if (reached) {
+                        const Color through = directBefore * tr * (presenceShadows ? kept : 1.0f);
+                        aov::light(at, aovs, aovDepths, directBefore, &through, aov::PrefixUnoccluded, state);
+                    } else {
+                        aov::light(at, aovs, aovDepths, directBefore, nullptr, aov::PrefixUnoccluded, state);
+                    }
                 }
                 if (!lobeIndirect || shade::isExactlyZero(indirect) || !shade::finite3(indirect)) continue;
                 // Transparency threshold (mirror transmission lobes accumulate opacity).
@@ -1185,6 +1798,9 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 }
                 if (top >= MaxPending) return SampleStatus::Error;
                 Pending child;
+                child.pixelWeight = 0.0f;
+                child.aovPixelWeight = pv.pixelWeight;
+                child.lpe = lpeOn ? aov::lpeScatter(at, pv.lpe, lobe.type, lobeLpeLabel(lobe)) : -1;
                 child.origin = origin;
                 child.dir = wi;
                 child.diff = shade::scatterDifferentials(bsdf, record, st, wi, r1, r2, origin, primaryScale);
@@ -1216,14 +1832,25 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 }
                 child.minRoughness[0] = shade::clampf(child.minRoughness[0], pv.minRoughness[0], 1.0f);
                 child.minRoughness[1] = shade::clampf(child.minRoughness[1], pv.minRoughness[1], 1.0f);
+                // The post scatter extra AOVs (aovAccumPostScatterExtraAovs): each one's value times the sample's
+                // throughput, through its 'U:' event after the scattering.
+                if (lpeOn && bsdf.extraPost)
+                    for (U32 i = 0; i < bsdf.extraCount; ++i) {
+                        if (!(bsdf.extraPost >> i & 1u)) continue;
+                        const int s = aov::lpeNext(at, child.lpe, aov::LpeExtra, bsdf.extraLabel[i]);
+                        if (s >= 0) aov::light(at, aovs, aovDepths, bsdf.extraValue[i] * child.T, nullptr, 0, s);
+                    }
                 stack[top++] = child;
             }
         }
+        materialAovs(albedo, ssAov);
     }
+    cryptoCredit();
+    if (backend.textureMissed()) return SampleStatus::Miss;
     out.rgb[0] = radiance.x;
     out.rgb[1] = radiance.y;
     out.rgb[2] = radiance.z;
-    out.alpha = primaryHit;
+    out.alpha = alpha;
     return SampleStatus::Done;
 }
 
@@ -1306,6 +1933,13 @@ X2_HD inline U32 tilePixel(U32 tile, U32 position, U32 width, U32 height) {
     const U32 x = (tile % tilesX) * TileSize + position % TileSize;
     const U32 y = (tile / tilesX) * TileSize + position / TileSize;
     return x < width && y < height ? y * width + x : ~0u;
+}
+// The same, ~0u also outside the pixels rendered (the sub viewport: min x, min y, max x, max y, half open).
+X2_HD inline U32 tilePixel(U32 tile, U32 position, U32 width, U32 height, const int* viewport) {
+    const U32 p = tilePixel(tile, position, width, height);
+    if (p == ~0u) return p;
+    const int x = int(p % width), y = int(p / width);
+    return x >= viewport[0] && y >= viewport[1] && x < viewport[2] && y < viewport[3] ? p : ~0u;
 }
 
 }  // namespace xpu2::interactive::async

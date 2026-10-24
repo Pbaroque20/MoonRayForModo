@@ -44,7 +44,7 @@ def closure(objdump, runtime, roots):
     return sorted(seen.values())
 
 
-def build_session(source, runtime, async_build, out):
+def build_session(source, runtime, async_build, out, cpu_test=False):
     source, runtime, async_build, out = (Path(p).resolve() for p in (source, runtime, async_build, out))
     out.mkdir(parents=True, exist_ok=False)
     verify(runtime, json.loads((HERE / 'reference-lock.json').read_text()))
@@ -52,17 +52,25 @@ def build_session(source, runtime, async_build, out):
     if built.get('status') != 'passed':
         raise RuntimeError('The asynchronous build did not pass')
     drift = [n for n in PROGRAM_SOURCES if built['source_hashes'].get(str(HERE / n)) != sha(HERE / n)]
-    if drift:
+    # A CPU test (XPU2_SESSION_MODE=0) never loads the GPU programs: their sources may have moved on.
+    if drift and not cpu_test:
         raise RuntimeError('The GPU programs are made from sources changed since that build: ' + ', '.join(drift))
     files = list(HERE.glob('*.h')) + [HERE / n for n in ('xpu2_session.cc', 'build_session.py', 'native_build.py')]
     files += sorted((HERE.parents[1] / 'native-port').glob('modo_*.h'))
     held = {str(p): sha(p) for p in files}
-    report = {'status': 'incomplete', 'source_hashes': held, 'async_build': str(async_build)}
+    report = {'status': 'incomplete', 'source_hashes': held, 'async_build': str(async_build),
+              'cpu_test_only': bool(cpu_test and drift), 'program_drift': drift}
     try:
+        # MoonRay's light path expression state machine (librendering_lpe) for the light AOVs (aov_plan.h).
+        # MoonRay's display filter input buffers (librendering_displayfilter) for the display filters (aov_display.h).
         include = [source / 'toolchain/xpu/optix-dev/include',
-                   source / 'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include']
+                   source / 'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include',
+                   source / 'upstream/openmoonray/moonray/moonray/lib/rendering/lpe',
+                   source / 'upstream/openmoonray/moonray/moonray/lib/rendering/displayfilter',
+                   source / 'build/native-renderer-avx/moonray/lib/rendering/displayfilter']
         exe, report['native_build'] = build(source, HERE / 'xpu2_session.cc', out / 'native',
-                                            [runtime / 'libembree4.dll', '-lcfgmgr32', '-lwinmm'],
+                                            [runtime / 'libembree4.dll', runtime / 'librendering_lpe.dll', runtime / 'librendering_displayfilter.dll',
+                                             '-lcfgmgr32', '-lwinmm'],
                                             ['-I' + str(v) for v in include])
         rt = out / 'runtime-xpu2'
         (rt / 'adaptive').mkdir(parents=True)
@@ -76,7 +84,11 @@ def build_session(source, runtime, async_build, out):
         proxies = sorted(runtime.glob('*.so.proxy'))
         for p in proxies:
             shutil.copyfile(p, rt / p.name)
-        libraries = closure(objdump, runtime, [exe] + proxies)
+        # The display filters run as MoonRay's own, from their DSOs (aov_display.h).
+        filters = sorted(runtime.glob('*DisplayFilter.so'))
+        for p in filters:
+            shutil.copyfile(p, rt / p.name)
+        libraries = closure(objdump, runtime, [exe] + proxies + filters)
         for p in libraries:
             shutil.copyfile(p, rt / p.name)
         for name in ('MOONRAY_LICENSE.txt', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'RANDOM123_LICENSE.txt', 'ISPC_MATH_LICENSE.txt'):
@@ -99,7 +111,8 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     for n in ('source', 'runtime', 'build', 'output'):
         p.add_argument('--' + n, type=Path, required=True)
+    p.add_argument('--cpu-test', action='store_true', help='allow GPU program sources changed since the build (CPU-only tests)')
     a = p.parse_args()
-    r = build_session(a.source, a.runtime, a.build, a.output)
+    r = build_session(a.source, a.runtime, a.build, a.output, a.cpu_test)
     print(json.dumps({k: v for k, v in r.items() if k in ('status', 'error', 'runtime', 'proxies')}, indent=2), flush=True)
     raise SystemExit(r['status'] != 'passed')

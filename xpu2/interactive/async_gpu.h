@@ -159,7 +159,7 @@ public:
                 inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
                 inst.instanceId = i;
                 inst.sbtOffset = 1;  // the curve hit group
-                inst.visibilityMask = 1;  // surfaces
+                inst.visibilityMask = plan->meshes[i].visibility & 0xffu;  // its visibility (rdl2 VisibilityType)
                 inst.traversableHandle = gas.second;
                 geometry.push_back({nullptr, nullptr, 0, 0});
                 materials.push_back(plan->materials.at(plan->meshes[i].material));
@@ -203,10 +203,11 @@ public:
             auto& inst = instances[i];
             inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
             inst.instanceId = i;
-            // Visibility: 1 for a surface (the path tracer's rays), 2 for a volume's bounds (its crossings); a mesh
-            // with no material is a volume's bounds alone.
+            // Visibility: a surface's (rdl2 VisibilityType, a ray's mask must share it) in the surfaces' tree; a mesh with
+            // no material bounds a volume alone, so none there. Back faces are culled for a single-sided surface alone.
             const bool surface = plan->meshes[i].material != ~0u;
-            inst.visibilityMask = (surface ? 1u : 0u) | (plan->meshes[i].volume >= 0 ? 2u : 0u);
+            inst.visibilityMask = surface ? (plan->meshes[i].visibility & 0xffu) : 0u;
+            inst.flags = plan->meshes[i].singleSided ? OPTIX_INSTANCE_FLAG_NONE : OPTIX_INSTANCE_FLAG_DISABLE_TRIANGLE_FACE_CULLING;
             inst.traversableHandle = gas.second;
             geometry.push_back({reinterpret_cast<const surface::V3*>(vertices->pointer),
                                 reinterpret_cast<const surface::Triangle*>(indices->pointer),
@@ -247,11 +248,73 @@ public:
         auto top = build(input);
         scene_.traversable = top.second;
         scene_.keep.insert(scene_.keep.end(), {instanceBuffer, top.first});
+        // The volumes' bounds: the same geometry in a tree of its own, each bounding mesh with its visibility, both sides.
+        if (!plan->volumes.empty()) {
+            std::vector<OptixInstance> bounds = instances;
+            for (unsigned i = 0; i < bounds.size(); ++i) {
+                bounds[i].visibilityMask = plan->meshes[i].volume >= 0 ? (plan->meshes[i].visibility & 0xffu) : 0u;
+                bounds[i].flags = OPTIX_INSTANCE_FLAG_DISABLE_TRIANGLE_FACE_CULLING;
+            }
+            auto boundsBuffer = upload(bounds.data(), bounds.size() * sizeof(OptixInstance));
+            OptixBuildInput vinput{};
+            vinput.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
+            vinput.instanceArray.instances = boundsBuffer->pointer;
+            vinput.instanceArray.numInstances = unsigned(bounds.size());
+            auto vtop = build(vinput);
+            scene_.volumeTraversable = vtop.second;
+            scene_.keep.insert(scene_.keep.end(), {boundsBuffer, vtop.first});
+        }
         scene_.geometry = upload(geometry.data(), geometry.size() * sizeof(mixed::Geometry));
         scene_.materials = upload(materials.data(), materials.size() * sizeof(surface::Lambert));
         if (plan->paths) {
-            scene_.lights = upload(plan->lights.data(), plan->lights.size() * sizeof(lights::Light));
+            // The lights with their textures' tables on the device: each Image's arrays, then the Image itself with
+            // device pointers, which the light then points to.
+            std::vector<lights::Light> deviceLights = plan->lights;
+            for (auto& l : deviceLights) {
+                auto keep = [&](const void* host, size_t bytes) {
+                    B b = upload(host, bytes);
+                    scene_.keep.push_back(b);
+                    return b->pointer;
+                };
+                // A mesh light's faces and sampling tree, likewise.
+                if (l.mesh) {
+                    const lights::MeshLightTables* tables = nullptr;
+                    for (const auto& e : plan->meshLightTables)
+                        if (&e.tables->view == l.mesh) tables = e.tables.get();
+                    cpu::need(tables != nullptr, "A mesh light's faces are not the plan's");
+                    lights::MeshLightData view = tables->view;
+                    view.nodes = reinterpret_cast<const lights::MeshNode*>(keep(tables->nodes.data(), tables->nodes.size() * sizeof(lights::MeshNode)));
+                    view.faces = reinterpret_cast<const lights::MeshFace*>(keep(tables->faces.data(), tables->faces.size() * sizeof(lights::MeshFace)));
+                    view.vertices = reinterpret_cast<const surface::V3*>(keep(tables->vertices.data(), tables->vertices.size() * sizeof(surface::V3)));
+                    l.mesh = reinterpret_cast<const lights::MeshLightData*>(keep(&view, sizeof(view)));
+                }
+                if (!l.image) continue;
+                const lights::ImageData* data = nullptr;
+                for (const auto& d : plan->lightImages)
+                    if (&d->view == l.image) data = d.get();
+                cpu::need(data != nullptr, "A light's texture is not the plan's");
+                lights::Image view = data->view;
+                view.pixels = reinterpret_cast<const float*>(keep(data->pixels.data(), data->pixels.size() * sizeof(float)));
+                view.cdf = reinterpret_cast<const float*>(keep(data->cdf.data(), data->cdf.size() * sizeof(float)));
+                view.guide = reinterpret_cast<const U32*>(keep(data->guide.data(), data->guide.size() * sizeof(U32)));
+                view.dists = reinterpret_cast<const lights::Dist1D*>(keep(data->dists.data(), data->dists.size() * sizeof(lights::Dist1D)));
+                view.levels = reinterpret_cast<const lights::ImageLevel*>(keep(data->levels.data(), data->levels.size() * sizeof(lights::ImageLevel)));
+                l.image = reinterpret_cast<const lights::Image*>(keep(&view, sizeof(view)));
+            }
+            // A portal's reference: a copy of that light as the device has it.
+            for (auto& l : deviceLights) {
+                if (l.type != lights::Portal) continue;
+                B b = upload(&deviceLights[l.refIndex], sizeof(lights::Light));
+                scene_.keep.push_back(b);
+                l.ref = reinterpret_cast<const lights::Light*>(b->pointer);
+            }
+            scene_.lights = upload(deviceLights.data(), deviceLights.size() * sizeof(lights::Light));
             scene_.meshLights = upload(plan->meshLights.data(), plan->meshLights.size() * sizeof(U32));
+            if (!plan->lightSetBits.empty()) scene_.lightSetBits = upload(plan->lightSetBits.data(), plan->lightSetBits.size() * sizeof(U32));
+            if (!plan->lightTree.empty()) {
+                scene_.lightTree = upload(plan->lightTree.data(), plan->lightTree.size() * sizeof(lights::TreeNode));
+                scene_.lightTreeRoots = upload(plan->lightTreeRoots.data(), plan->lightTreeRoots.size() * sizeof(int));
+            }
             if (!plan->volumes.empty()) {
                 scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
                 std::vector<int> meshVolumes;
@@ -264,15 +327,124 @@ public:
             scene_.meshAttributes = upload(meshAttributes.data(), meshAttributes.size() * sizeof(shade::MeshAttributes));
             const std::vector<float> pool = plan->materialPool.empty() ? std::vector<float>{0.0f} : plan->materialPool;
             scene_.materialPool = upload(pool.data(), pool.size() * sizeof(float));
-            scene_.scratch = device(size_t(options_.launchThreads) * scratchStride(plan->dwaSlots, plan->glitter));
+            // The render outputs' AOVs (aov_core.h): the schema's tables on the device, each mesh's geometry label, and
+            // a sample's values and closest depths in its thread's scratch.
+            aov::Tables t;
+            aovChannels_ = aovClosest_ = 0;
+            aovScratch_ = 0;
+            if (plan->aovs) {
+                const aov::Plan& a = *plan->aovs;
+                t = a.tables();
+                t.primKeys = plan->aovPrimKeys.data();
+                t.primCount = U32(plan->aovPrimKeys.size());
+                auto put = [&](auto& pointer, size_t count) {
+                    using T = std::remove_const_t<std::remove_pointer_t<std::remove_reference_t<decltype(pointer)>>>;
+                    if (!pointer || !count) {
+                        pointer = nullptr;
+                        return;
+                    }
+                    B b = upload(pointer, count * sizeof(T));
+                    scene_.keep.push_back(b);
+                    pointer = reinterpret_cast<const T*>(b->pointer);
+                };
+                put(t.entries, t.count);
+                put(t.lpe, size_t(t.lpeStates) * t.lpeStride);
+                put(t.lpeValid, size_t(t.lpeStates) * t.lpeWords);
+                put(t.materials, t.materialCount);
+                put(t.labelLists, a.labelLists.size());
+                put(t.primKeys, t.primCount);
+                std::vector<int> labels;
+                for (const auto& mesh : plan->meshes) labels.push_back(mesh.geomLabel);
+                if (!labels.empty()) scene_.geomLabels = upload(labels.data(), labels.size() * sizeof(int));
+                aovChannels_ = t.channels;
+                aovClosest_ = t.closestCount;
+                if (aovChannels_) aovScratch_ = (size_t(2 * aovChannels_ + aovClosest_) * sizeof(float) + 15) & ~size_t(15);
+            }
+            scene_.aovTables = upload(&t, sizeof(t));
+            // Cryptomatte's events a thread: a camera hit and two a presence layer.
+            cryptoEvents_ = 0;
+            cryptoScratch_ = 0;
+            if (plan->aovs && plan->aovs->cryptomatte) {
+                cryptoEvents_ = std::min<U32>(aov::CryptoMaxEvents, 2 * plan->maxPresenceDepth + 3);
+                cryptoScratch_ = (size_t(cryptoEvents_) * sizeof(aov::CryptoEvent) + 15) & ~size_t(15);
+            }
+            scene_.scratch = device(size_t(options_.launchThreads) * (scratchStride(plan->dwaSlots, plan->glitter) + aovScratch_ + cryptoScratch_));
         }
-        const auto config = mixed::config(plan);
+        auto config = mixed::config(plan);
+        {
+            // The camera's bokeh image and bake camera maps (camera_core.h) with device pointers.
+            auto keep = [&](const void* host, size_t bytes) {
+                B b = upload(host, bytes);
+                scene_.keep.push_back(b);
+                return b->pointer;
+            };
+            if (plan->bokehImage && config.camera.bokehImage) {
+                const lights::ImageData& data = *plan->bokehImage;
+                lights::Image view = data.view;
+                view.pixels = reinterpret_cast<const float*>(keep(data.pixels.data(), data.pixels.size() * sizeof(float)));
+                view.cdf = reinterpret_cast<const float*>(keep(data.cdf.data(), data.cdf.size() * sizeof(float)));
+                view.guide = reinterpret_cast<const U32*>(keep(data.guide.data(), data.guide.size() * sizeof(U32)));
+                view.dists = reinterpret_cast<const lights::Dist1D*>(keep(data.dists.data(), data.dists.size() * sizeof(lights::Dist1D)));
+                view.levels = reinterpret_cast<const lights::ImageLevel*>(keep(data.levels.data(), data.levels.size() * sizeof(lights::ImageLevel)));
+                config.camera.bokehImage = reinterpret_cast<const void*>(keep(&view, sizeof(view)));
+            }
+            if (!plan->pixelSamples.empty())
+                config.pixelSamples = reinterpret_cast<const U32*>(keep(plan->pixelSamples.data(), plan->pixelSamples.size() * sizeof(U32)));
+            if (plan->cameraMap && config.camera.map) {
+                const auto& data = *plan->cameraMap;
+                surface::CameraMap view = data.view;
+                auto floats = [&](const std::vector<float>& v) {
+                    return v.empty() ? nullptr : reinterpret_cast<const float*>(keep(v.data(), v.size() * sizeof(float)));
+                };
+                view.positions = floats(data.positions);
+                view.normals = floats(data.normals);
+                view.normalMap = floats(data.normalMap);
+                config.camera.map = reinterpret_cast<const void*>(keep(&view, sizeof(view)));
+            }
+        }
         scene_.config = upload(&config, sizeof(config));
         if (cpu::gpuTextures(plan->domain)) prepareTextures(*plan);
         const size_t pixels = size_t(plan->width) * plan->height;
         scene_.sums = device(pixels * 4 * sizeof(double));
         scene_.odd = device(pixels * 4 * sizeof(double));
         scene_.counts = device(pixels * sizeof(U32));
+        // The AOV film (floats, as MoonRay's), the closest filter's depths and locks, and the heat map's seconds.
+        if (aovChannels_) {
+            scene_.aovs = device(pixels * aovChannels_ * sizeof(float));
+            scene_.hostAovs = pinned(pixels * aovChannels_ * sizeof(float));
+            if (aovClosest_) {
+                scene_.aovDepths = device(pixels * aovClosest_ * sizeof(float));
+                scene_.hostAovDepths = pinned(pixels * aovClosest_ * sizeof(float));
+                scene_.aovLocks = device(pixels * sizeof(U32));
+            }
+        }
+        if (plan->aovs && plan->aovs->heatMap) {
+            scene_.heat = device(pixels * sizeof(double));
+            scene_.hostHeat = pinned(pixels * sizeof(double));
+            CUdevice dev;
+            gpu::Driver::check(driver.cuDeviceGet_p(&dev, 0));
+            int kilohertz = 0;
+            gpu::Driver::check(driver.cuDeviceGetAttribute_p(&kilohertz, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, dev));
+            secondsPerTick_ = kilohertz > 0 ? 1.0 / (double(kilohertz) * 1000.0) : 0.0;
+        }
+        scene_.aovInitDone = std::make_shared<gpu::Event>(driver);
+        // Cryptomatte's fragment lists: a head a pixel and category, a lock a pixel, and the node pool (four fragments a
+        // pixel and category; extras when an output writes positions, normals, beauty and the like).
+        if (cryptoEvents_) {
+            const aov::Plan& a = *plan->aovs;
+            cryptoCategories_ = a.cryptoCategories;
+            cryptoMultiPresence_ = a.cryptoMultiPresence ? 1u : 0u;
+            cryptoExtras_ = 0;
+            for (const aov::Output* o : a.all)
+                if (o->result == aov::ResultCryptomatte)
+                    for (int k = 0; k < 7; ++k) cryptoExtras_ |= o->cryptoExtra[k] ? 1u : 0u;
+            cryptoNodeWords_ = cryptoExtras_ ? 26u : 5u;
+            cryptoNodeCapacity_ = U32(std::min<size_t>(pixels * cryptoCategories_ * 4 + (size_t(1) << 20), size_t(0x7fffffff) / cryptoNodeWords_));
+            scene_.cryptoHeads = device(pixels * cryptoCategories_ * sizeof(U32));
+            scene_.cryptoLocks = device(pixels * sizeof(U32));
+            scene_.cryptoNodes = device(size_t(cryptoNodeCapacity_) * cryptoNodeWords_ * sizeof(U32));
+            scene_.cryptoNodeCount = device(sizeof(U32));
+        }
         scene_.hostSums = pinned(pixels * 4 * sizeof(double));
         scene_.hostOdd = pinned(pixels * 4 * sizeof(double));
         scene_.hostCounts = pinned(pixels * sizeof(U32));
@@ -307,6 +479,14 @@ public:
         std::fill(passDone_.begin(), passDone_.end(), 0u);
         memset32(scene_.counts->pointer, 0, pixels);
         memset32(state_->pointer, 0, sizeof(DeviceState) / 4);
+        if (aovChannels_ || scene_.heat || cryptoEvents_) {  // mode 4: the AOV film readied
+            LaunchParams p = baseParams();
+            p.mode = 4;
+            auto& slot = takeParams(p);
+            ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt, p.pixels, 1, 1));
+            gpu::Driver::check(driver.cuEventRecord_p(scene_.aovInitDone->value, stream_));
+            slot.done = scene_.aovInitDone;
+        }
         published_ = 0;
         parkedTail_ = parkedIssued_ = 0;
         // The device's request ring restarts with its state; requested tiles not
@@ -427,6 +607,9 @@ public:
         copyOut(scene_.hostSums, scene_.sums, pixels * 4 * sizeof(double));
         copyOut(scene_.hostCounts, scene_.counts, pixels * sizeof(U32));
         if (adaptive_) copyOut(scene_.hostOdd, scene_.odd, pixels * 4 * sizeof(double));
+        if (aovChannels_) copyOut(scene_.hostAovs, scene_.aovs, pixels * aovChannels_ * sizeof(float));
+        if (aovClosest_) copyOut(scene_.hostAovDepths, scene_.aovDepths, pixels * aovClosest_ * sizeof(float));
+        if (scene_.heat) copyOut(scene_.hostHeat, scene_.heat, pixels * sizeof(double));
         if (chainsLaunched_) copyOut(chain_.hostPlanned, chain_.planned, pixels * sizeof(U32));
         gpu::Driver::check(driver.cuEventRecord_p(scene_.filmDone->value, stream_));
     }
@@ -434,16 +617,70 @@ public:
     // A copy of the device film as it will stand once the launches queued so far have finished, for a progressive
     // picture; previewReady() says when it has landed. Read through sums() and counts(); the frame's own download
     // (downloadFilm) writes the same copy.
-    void downloadPreview() {
+    void downloadPreview(bool aovs = false) {
         const size_t pixels = size_t(plan_->width) * plan_->height;
         copyOut(scene_.hostSums, scene_.sums, pixels * 4 * sizeof(double));
         copyOut(scene_.hostCounts, scene_.counts, pixels * sizeof(U32));
+        if (aovs) {  // a preview of an AOV: its film too
+            if (aovChannels_) copyOut(scene_.hostAovs, scene_.aovs, pixels * aovChannels_ * sizeof(float));
+            if (aovClosest_) copyOut(scene_.hostAovDepths, scene_.aovDepths, pixels * aovClosest_ * sizeof(float));
+            if (scene_.heat) copyOut(scene_.hostHeat, scene_.heat, pixels * sizeof(double));
+        }
         gpu::Driver::check(driver.cuEventRecord_p(scene_.previewDone->value, stream_));
     }
     bool previewReady() { return scene_.previewDone->ready(); }
     const double* sums() const { return static_cast<const double*>(scene_.hostSums->host()); }
     const double* odd() const { return static_cast<const double*>(scene_.hostOdd->host()); }
     const U32* counts() const { return static_cast<const U32*>(scene_.hostCounts->host()); }
+    // The downloaded AOV film (null: none): the accumulators a pixel, the closest filter's depths, the seconds.
+    const float* aovs() const { return scene_.hostAovs ? static_cast<const float*>(scene_.hostAovs->host()) : nullptr; }
+    const float* aovDepths() const { return scene_.hostAovDepths ? static_cast<const float*>(scene_.hostAovDepths->host()) : nullptr; }
+    const double* heat() const { return scene_.hostHeat ? static_cast<const double*>(scene_.hostHeat->host()) : nullptr; }
+    // The device's Cryptomatte fragments into the host's buffer (after the film has landed; waits for the copies).
+    void mergeCrypto(aov::CryptoBuffer& into) {
+        if (!cryptoEvents_ || into.empty()) return;
+        const size_t pixels = size_t(plan_->width) * plan_->height;
+        B countHost = pinned(sizeof(U32)), headsHost = pinned(pixels * cryptoCategories_ * sizeof(U32));
+        copyOut(countHost, scene_.cryptoNodeCount, sizeof(U32));
+        copyOut(headsHost, scene_.cryptoHeads, pixels * cryptoCategories_ * sizeof(U32));
+        driver.drain();  // the frame's end
+        const U32 count = std::min(*static_cast<const U32*>(countHost->host()), cryptoNodeCapacity_);
+        const U32* heads = static_cast<const U32*>(headsHost->host());
+        B nodesHost;
+        if (count) {
+            nodesHost = pinned(size_t(count) * cryptoNodeWords_ * sizeof(U32));
+            copyOut(nodesHost, scene_.cryptoNodes, size_t(count) * cryptoNodeWords_ * sizeof(U32));
+            driver.drain();
+        }
+        const U32* nodes = count ? static_cast<const U32*>(nodesHost->host()) : nullptr;
+        auto f = [](U32 w) {
+            float v;
+            std::memcpy(&v, &w, sizeof v);
+            return v;
+        };
+        for (size_t p = 0; p < pixels; ++p)
+            for (U32 c = 0; c < cryptoCategories_ && c < into.categories(); ++c) {
+                // The list holds the newest first: merged oldest first, as the host's would have kept them.
+                std::vector<U32> order;
+                for (U32 n = heads[p * cryptoCategories_ + c]; n != ~0u && n < count; n = nodes[size_t(n) * cryptoNodeWords_]) order.push_back(n);
+                for (auto it = order.rbegin(); it != order.rend(); ++it) {
+                    const U32* m = nodes + size_t(*it) * cryptoNodeWords_;
+                    aov::CryptoBuffer::Fragment g{f(m[1]), f(m[2]), {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0}, m[4], m[3]};
+                    if (cryptoExtras_) {
+                        const U32* x = m + 5;
+                        g.position = V3{f(x[0]), f(x[1]), f(x[2])};
+                        g.p0 = V3{f(x[3]), f(x[4]), f(x[5])};
+                        g.normal = V3{f(x[6]), f(x[7]), f(x[8])};
+                        for (int k = 0; k < 4; ++k) g.beauty[k] = f(x[9 + k]);
+                        g.refP = V3{f(x[13]), f(x[14]), f(x[15])};
+                        g.refN = V3{f(x[16]), f(x[17]), f(x[18])};
+                        g.uv[0] = f(x[19]);
+                        g.uv[1] = f(x[20]);
+                    }
+                    into.merge(p, c, g);
+                }
+            }
+    }
 
     // Adaptive frames. Every pixel's error, worked out on the device behind the
     // launches already queued (they finish first, on the same stream); only the
@@ -865,12 +1102,13 @@ private:
     }
     struct Scene {
         std::vector<B> keep;
-        U64 traversable = 0;
-        B geometry, materials, lights, meshLights, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
+        U64 traversable = 0, volumeTraversable = 0;
+        B geometry, materials, lights, meshLights, lightSetBits, lightTree, lightTreeRoots, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
             hostSums,
-            hostOdd, hostCounts;
+            hostOdd, hostCounts, aovTables, geomLabels, aovs, hostAovs, aovDepths, hostAovDepths, aovLocks, heat, hostHeat, cryptoHeads,
+            cryptoNodes, cryptoNodeCount, cryptoLocks;
         B passMask[PassSlots], passBase[PassSlots], passStaging[PassSlots], errors, hostErrors;
-        std::shared_ptr<gpu::Event> filmDone, errorsDone, previewDone;
+        std::shared_ptr<gpu::Event> filmDone, errorsDone, previewDone, aovInitDone;
         size_t mipBytes = 0;
     };
     // The fine-detail cache: every level-0 tile of the scene's textures has an
@@ -1113,6 +1351,10 @@ private:
         p.materials = reinterpret_cast<const surface::Lambert*>(scene_.materials->pointer);
         p.lights = scene_.lights ? reinterpret_cast<const lights::Light*>(scene_.lights->pointer) : nullptr;
         p.meshLights = scene_.meshLights ? reinterpret_cast<const U32*>(scene_.meshLights->pointer) : nullptr;
+        p.lightSetBits = scene_.lightSetBits ? reinterpret_cast<const U32*>(scene_.lightSetBits->pointer) : nullptr;
+        p.lightSetWords = plan_->lightSetWords;
+        p.lightTree = scene_.lightTree ? reinterpret_cast<const lights::TreeNode*>(scene_.lightTree->pointer) : nullptr;
+        p.lightTreeRoots = scene_.lightTreeRoots ? reinterpret_cast<const int*>(scene_.lightTreeRoots->pointer) : nullptr;
         p.volumes = scene_.volumes ? reinterpret_cast<const volume::Shader*>(scene_.volumes->pointer) : nullptr;
         p.meshVolumes = scene_.meshVolumes ? reinterpret_cast<const int*>(scene_.meshVolumes->pointer) : nullptr;
         p.walkSequences = scene_.walkSequences ? reinterpret_cast<const float*>(scene_.walkSequences->pointer) : nullptr;
@@ -1120,9 +1362,32 @@ private:
         p.meshAttributes = scene_.meshAttributes ? reinterpret_cast<const shade::MeshAttributes*>(scene_.meshAttributes->pointer) : nullptr;
         p.materialPool = scene_.materialPool ? reinterpret_cast<const float*>(scene_.materialPool->pointer) : nullptr;
         p.scratch = scene_.scratch ? reinterpret_cast<unsigned char*>(scene_.scratch->pointer) : nullptr;
-        p.scratchStride = scratchStride(plan_->dwaSlots, plan_->glitter);
+        p.scratchStride = scratchStride(plan_->dwaSlots, plan_->glitter) + aovScratch_;
+        p.aovOffset = scratchStride(plan_->dwaSlots, plan_->glitter);
+        p.aovTables = reinterpret_cast<const aov::Tables*>(scene_.aovTables->pointer);
+        p.geomLabels = scene_.geomLabels ? reinterpret_cast<const int*>(scene_.geomLabels->pointer) : nullptr;
+        p.aovs = scene_.aovs ? reinterpret_cast<float*>(scene_.aovs->pointer) : nullptr;
+        p.aovDepths = scene_.aovDepths ? reinterpret_cast<float*>(scene_.aovDepths->pointer) : nullptr;
+        p.aovLocks = scene_.aovLocks ? reinterpret_cast<U32*>(scene_.aovLocks->pointer) : nullptr;
+        p.heat = scene_.heat ? reinterpret_cast<double*>(scene_.heat->pointer) : nullptr;
+        p.secondsPerTick = secondsPerTick_;
+        p.scratchStride += cryptoScratch_;
+        if (cryptoEvents_) {
+            p.cryptoOffset = scratchStride(plan_->dwaSlots, plan_->glitter) + aovScratch_;
+            p.cryptoEvents = cryptoEvents_;
+            p.cryptoHeads = reinterpret_cast<U32*>(scene_.cryptoHeads->pointer);
+            p.cryptoNodes = reinterpret_cast<U32*>(scene_.cryptoNodes->pointer);
+            p.cryptoNodeCount = reinterpret_cast<U32*>(scene_.cryptoNodeCount->pointer);
+            p.cryptoLocks = reinterpret_cast<U32*>(scene_.cryptoLocks->pointer);
+            p.cryptoCategories = cryptoCategories_;
+            p.cryptoMultiPresence = cryptoMultiPresence_;
+            p.cryptoExtras = cryptoExtras_;
+            p.cryptoNodeWords = cryptoNodeWords_;
+            p.cryptoNodeCapacity = cryptoNodeCapacity_;
+        }
         p.glitterOffset = plan_->glitter ? glitterOffset(plan_->dwaSlots) : 0;
         p.traversable = scene_.traversable;
+        p.volumeTraversable = scene_.volumeTraversable;
         p.geometry = reinterpret_cast<const mixed::Geometry*>(scene_.geometry->pointer);
         p.maps = scene_.maps ? reinterpret_cast<const tex::Maps*>(scene_.maps->pointer) : nullptr;
         p.textures = scene_.textures ? reinterpret_cast<const tex::Image* const*>(scene_.textures->pointer) : nullptr;
@@ -1226,6 +1491,13 @@ private:
     Fine fine_;
     U32 itemsPerChunk_ = 0, parkedCapacity_ = 0;
     bool adaptive_ = false;
+    // The AOV film's channels and closest depths a pixel, a sample's scratch for them, and the clock's seconds a tick.
+    U32 aovChannels_ = 0, aovClosest_ = 0;
+    size_t aovScratch_ = 0;
+    // Cryptomatte: events a thread and their scratch, categories, multi presence, extras, node size and pool.
+    U32 cryptoEvents_ = 0, cryptoCategories_ = 1, cryptoMultiPresence_ = 0, cryptoExtras_ = 0, cryptoNodeWords_ = 5, cryptoNodeCapacity_ = 0;
+    size_t cryptoScratch_ = 0;
+    double secondsPerTick_ = 0.0;
     std::vector<U32> passDone_;
     U64 published_ = 0, launches_ = 0;
     U64 parkedTail_ = 0, parkedIssued_ = 0;

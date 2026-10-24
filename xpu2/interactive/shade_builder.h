@@ -258,8 +258,16 @@ struct Builder {
     float currentMediumIor = 1.0f, currentTransmittance = 1.0f, weightAccum = 0.0f;
     bool thinGeo = false, preventLightCulling = false, inAdjacentBlock = false;
     bool overflow = false;  // a lobe or Fresnel was dropped: the Bsdf limits were reached
+    // The material's label table (aov_plan.h, in the material pool): its count, then the encoded labels of its shader's
+    // label 0 (the material's own) and of each lobe label; null when no AOV asks for labels.
+    const U32* labels = nullptr;
     X2_HD Builder(Bsdf& b, const State& s) : bsdf(b), state(s) {}
 };
+// aovEncodeLabels: a shader's label (0: the material's own, else its lobe label) as the material's table has it.
+X2_HD inline U32 encodeLabel(const Builder& me, U32 label) {
+    if (!me.labels) return 0;
+    return label < me.labels[0] ? me.labels[1 + label] : me.labels[1];
+}
 
 X2_HD inline bool isUnderB(U32 b) { return (b & UnderPrevious) != 0; }
 X2_HD inline bool isOverB(U32 b) { return (b & OverSubsequent) != 0; }
@@ -389,7 +397,7 @@ X2_HD inline void finishLobe(Builder& me, U32 lobe, U32 label) {
         me.overflow = true;
         return;
     }
-    me.bsdf.records[lobe].label = label;
+    me.bsdf.records[lobe].label = encodeLabel(me, label);
     if (!addLobe(me.bsdf, lobe)) me.overflow = true;
 }
 // Scale of an additive lobe, or of one placed under the previous lobes.
@@ -837,6 +845,7 @@ X2_CALL void addDiffusion(Builder& me, U32 type, const DiffusionProfile& c, floa
     }
     if (type == BssrdfDipole) initDipole(b, c.N, c.albedo, c.radius);
     else initNormalizedDiffusion(b, c.N, c.albedo, c.radius);
+    b.label = encodeLabel(me, label);
     b.fresnel = NoIndex;
     b.scale = rgb(weight);
     if (isUnderB(behavior)) {
@@ -866,6 +875,7 @@ X2_CALL void addRandomWalk(Builder& me, const RandomWalkProfile& c, float weight
         return;
     }
     initRandomWalk(b, c.N, c.albedo, c.radius, c.resolveSelfIntersections);
+    b.label = encodeLabel(me, label);
     b.fresnel = NoIndex;
     b.scale = rgb(weight);
     if (isUnderB(behavior)) {

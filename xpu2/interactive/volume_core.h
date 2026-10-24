@@ -29,7 +29,7 @@ enum ShaderFlags : U32 { UseAttenuationRamp = 1, UseAlbedoRamp = 2, MatchAlbedo 
 struct Shader {
     V3 attenuationColor, albedoColor;
     float intensity, factor, g;
-    U32 flags, lightMask;
+    U32 flags, lightSet;
     float attenuationMin, attenuationMax, albedoMin, albedoMax, densityMin, densityMax;
     shade::ColorRamp attenuationRamp, albedoRamp;
     shade::FloatRamp densityRamp;
@@ -44,7 +44,7 @@ enum CrossingFlags : U32 { Entry = 1, Exit = 2 };
 struct Step {
     V3 sigmaT, sigmaS, tr;
     float g, tStart, delta;
-    U32 lightMask;
+    U32 lightSet;
 };
 
 X2_HD inline V3 times(V3 a, V3 b) { return {a.x * b.x, a.y * b.y, a.z * b.z}; }
@@ -95,7 +95,7 @@ X2_HD inline V3 albedo(const Shader& s, float depth) {
 struct Coefficients {
     V3 sigmaT, sigmaS;
     float g;
-    U32 lightMask;
+    U32 lightSet;
 };
 X2_HD inline Coefficients evalShaders(const Shader* shaders, U32 regions, U32 mode, float rnd, float depth) {
     Coefficients c{{0, 0, 0}, {0, 0, 0}, 0.0f, 0};
@@ -116,7 +116,7 @@ X2_HD inline Coefficients evalShaders(const Shader* shaders, U32 regions, U32 mo
             anisotropy = plus(anisotropy, scaled(scatter, s.g));
             if (l > maxSigmaTLum) {
                 maxSigmaTLum = l;
-                c.lightMask = s.lightMask;
+                c.lightSet = s.lightSet;
             }
         } else if (mode == OverlapMax) {
             if (l > maxSigmaTLum) {
@@ -124,7 +124,7 @@ X2_HD inline Coefficients evalShaders(const Shader* shaders, U32 regions, U32 mo
                 c.sigmaT = sigmaTLocal;
                 c.sigmaS = scatter;
                 anisotropy = scaled(scatter, s.g);
-                c.lightMask = s.lightMask;
+                c.lightSet = s.lightSet;
             }
         } else {
             sigmaTSum = plus(sigmaTSum, sigmaTLocal);
@@ -156,7 +156,7 @@ X2_HD inline Coefficients evalShaders(const Shader* shaders, U32 regions, U32 mo
         c.sigmaT = scaled(sigmaTLocal, weight);
         c.sigmaS = scaled(scatter, weight);
         anisotropy = scaled(scaled(scatter, s.g), weight);
-        c.lightMask = s.lightMask;
+        c.lightSet = s.lightSet;
     }
     c.g = lum(anisotropy);
     const float normalization = lum(c.sigmaS);
@@ -272,11 +272,31 @@ X2_HD inline float pdfDiscrete(const Distribution& d, U32 i) {
     return (d.cdf[i] - prev) / d.total;
 }
 
-// A light's equi-angular pivot (getEquiAngularPivot): a point on a rect or a disk, a spot's lens, a sphere's centre.
+// A light's equi-angular pivot (getEquiAngularPivot): a point on a rect or a disk (from its texture's distribution
+// when it has one), a spot's lens, a cylinder, a sphere's centre, a mesh's tree root's centre (local, as MoonRay's).
 X2_HD inline bool bounded(const lights::Light& l) { return l.type != lights::Env && l.type != lights::Distant; }
 X2_HD inline V3 pivot(const lights::Light& l, const float r[3]) {
     V3 local{0, 0, 0};
-    if (l.type == lights::Rect) {
+    if (l.type == lights::Mesh) return l.mesh->nodes[0].center;
+    if (l.type == lights::Cylinder) {
+        float u = r[0], v = r[1];
+        if (l.image) lights::imageSample(*l.image, r[0], r[1], 0.0f, l.filter, u, v);
+        return surface::add(l.position, lights::rows(l.local2Render, lights::cylinderUv2Local(l, u, v)));
+    }
+    if (l.type == lights::Portal && l.image) {
+        float u, v;
+        lights::imageSample(*l.image, r[0], r[1], 0.0f, l.filter, u, v);
+        local = V3{(u - l.uvOffset[0]) / l.uvScale[0], (v - l.uvOffset[1]) / l.uvScale[1], 0.0f};
+        return surface::add(l.position, lights::rows(l.local2Render, local));
+    }
+    if ((l.type == lights::Rect || l.type == lights::Disk) && l.image) {
+        float u, v;
+        lights::imageSample(*l.image, r[0], r[1], 0.0f, l.filter, u, v);
+        if (l.type == lights::Disk && (u * 2.0f - 1.0f) * (u * 2.0f - 1.0f) + (v * 2.0f - 1.0f) * (v * 2.0f - 1.0f) >= 1.0f) return l.position;
+        local = V3{(u - l.uvOffset[0]) / l.uvScale[0], (v - l.uvOffset[1]) / l.uvScale[1], 0.0f};
+        return surface::add(l.position, lights::rows(l.local2Render, local));
+    }
+    if (l.type == lights::Rect || l.type == lights::Portal) {
         local = V3{(0.5f - r[0]) * 2.0f * l.halfWidth, (0.5f - r[1]) * 2.0f * l.halfHeight, 0.0f};
     } else if (l.type == lights::Disk || l.type == lights::Spot) {
         const float rad = sqrtf(r[0]), angle = lights::TwoPi * r[1];

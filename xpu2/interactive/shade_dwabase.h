@@ -51,7 +51,23 @@ enum DiffuseTransmissionBlending : U32 { DiffuseTransmissionRgb = 0, DiffuseTran
 enum NormalAAStrategy : U32 { NormalAANone = 0, NormalAAToksvig = 1 };
 enum SubsurfaceType : U32 { SubsurfaceNormalizedDiffusion = 0, SubsurfaceDipoleDiffusion = 1, SubsurfaceRandomWalk = 2,
                             SubsurfaceNone = 3 };
-enum DwaLabels : U32 { DwaLabelNone = 0 };
+// The DwaBase family's lobe labels (labels.json, as the build numbers them in labels.h; DECLARE_DWA_BASE_LABELS).
+enum DwaLabels : U32 {
+    DwaLabelNone = 0,
+    DwaLabelGlitter = 1,
+    DwaLabelHair = 2,
+    DwaLabelHairR = 3,
+    DwaLabelHairTT = 4,
+    DwaLabelHairTRT = 5,
+    DwaLabelHairTRRT = 6,
+    DwaLabelHairDiffuse = 7,
+    DwaLabelFuzz = 8,
+    DwaLabelOuterSpecular = 9,
+    DwaLabelSpecular = 10,
+    DwaLabelDiffuse = 11,
+    DwaLabelSpecularTransmission = 12,
+    DwaLabelDiffuseTransmission = 13,
+};
 
 // HairToonMaterial's toon specular sets (specular_1..3): their ramps, input normal's register and settings, once; their
 // inputs at the hit.
@@ -960,20 +976,20 @@ X2_CALL void addOuterSpecularLobes(Builder& bb, const DwaParams& p, const DwaUni
         if (isZero(roughness)) {
             MirrorClearcoat c{p.outerSpecularNormal, p.outerSpecularRefractiveIndex, p.outerSpecularThickness, attenuationColor,
                               refracts, iri};
-            addMirrorClearcoat(bb, c, p.outerSpecular, Physical, DwaLabelNone);
+            addMirrorClearcoat(bb, c, p.outerSpecular, Physical, DwaLabelOuterSpecular);
         } else {
             MicrofacetIsotropicClearcoat c{p.outerSpecularNormal, p.outerSpecularRefractiveIndex, roughness, p.outerSpecularThickness,
                                            attenuationColor, refracts, u.outerSpecularModel, iri};
-            addMicrofacetIsotropicClearcoat(bb, c, p.outerSpecular, Physical, DwaLabelNone);
+            addMicrofacetIsotropicClearcoat(bb, c, p.outerSpecular, Physical, DwaLabelOuterSpecular);
         }
     } else {
         if (isZero(roughness)) {
             addMirrorBRDF(bb, mirrorDielectric(p.outerSpecularNormal, p.outerSpecularRefractiveIndex, iri), p.outerSpecular, Physical,
-                          DwaLabelNone);
+                          DwaLabelOuterSpecular);
         } else {
             addMicrofacetIsotropicBRDF(bb, microfacetDielectric(p.outerSpecularNormal, p.outerSpecularRefractiveIndex, roughness,
                                                                 u.outerSpecularModel, iri),
-                                       p.outerSpecular, Physical, DwaLabelNone);
+                                       p.outerSpecular, Physical, DwaLabelOuterSpecular);
         }
     }
 }
@@ -987,19 +1003,19 @@ X2_CALL void addHairLobes(const DwaParams& p, const DwaUniformParams& u, const S
         const bool hasSSS = !isBlack(p.scatteringRadius);
         const float sssWeight = hasSSS ? hp.subsurfaceBlend : 0.0f;
         addHairDiffuseBSDF(bb, HairDiffuseBSDF{hp.dir, hp.diffuseFrontColor, hp.diffuseBackColor}, p.hairDiffuse * (1.0f - sssWeight),
-                           Physical, DwaLabelNone);
+                           Physical, DwaLabelHairDiffuse);
         if (hasSSS) {
             const DiffusionProfile d{st.N, hp.diffuseFrontColor, p.scatteringRadius};
             if (u.subsurface == SubsurfaceNormalizedDiffusion)
-                addDiffusion(bb, BssrdfNormalizedDiffusion, d, p.hairDiffuse * sssWeight, Physical, DwaLabelNone);
+                addDiffusion(bb, BssrdfNormalizedDiffusion, d, p.hairDiffuse * sssWeight, Physical, DwaLabelDiffuse);
             else if (u.subsurface == SubsurfaceDipoleDiffusion)
-                addDiffusion(bb, BssrdfDipole, d, p.hairDiffuse * sssWeight, Physical, DwaLabelNone);
+                addDiffusion(bb, BssrdfDipole, d, p.hairDiffuse * sssWeight, Physical, DwaLabelDiffuse);
         }
     }
     if (isZero(p.hair)) return;
     setThinGeo(bb);
     if (!hp.castsCaustics) {
-        addHairDiffuseBSDF(bb, HairDiffuseBSDF{hp.dir, hp.color, hp.color}, 1.0f, Physical, DwaLabelNone);
+        addHairDiffuseBSDF(bb, HairDiffuseBSDF{hp.dir, hp.color, hp.color}, 1.0f, Physical, DwaLabelHair);
         return;
     }
     V3 N{0, 0, 0};
@@ -1024,7 +1040,7 @@ X2_CALL void addHairLobes(const DwaParams& p, const DwaUniformParams& u, const S
                    hp.rLongRoughness, hp.rTint, hp.showTT, hp.ttShift, hp.ttLongRoughness, hp.ttAzimRoughness, hp.ttTint,
                    hp.ttSaturation, hp.showTRT, hp.trtShift, hp.trtLongRoughness, hp.trtTint, hp.showGlint, glintRoughness,
                    eccentricity, hp.glintSaturation, hairRotation, N, hp.showTRRT, hp.color};
-        addHairBSDF(bb, b, 1.0f, Physical, DwaLabelNone);
+        addHairBSDF(bb, b, 1.0f, Physical, DwaLabelHair);
         return;
     }
     auto lobe = [&](float shift, float roughness, float aziRoughness, Color tint, float saturation) {
@@ -1032,16 +1048,16 @@ X2_CALL void addHairLobes(const DwaParams& p, const DwaUniformParams& u, const S
                             aziRoughness, hp.color, tint, saturation, hp.showGlint, glintRoughness, eccentricity, hp.glintSaturation,
                             hairRotation, N};
     };
-    if (hp.showR) addHairRBRDF(bb, lobe(hp.rShift, hp.rLongRoughness, 0.0f, rgb(1), 1.0f), 1.0f, Physical, DwaLabelNone);
+    if (hp.showR) addHairRBRDF(bb, lobe(hp.rShift, hp.rLongRoughness, 0.0f, rgb(1), 1.0f), 1.0f, Physical, DwaLabelHairR);
     // TT, TRT and TRRT are adjacent: under R, they do not affect one another's energy.
     startAdjacentComponents(bb);
     if (hp.showTT)
         addHairTTBTDF(bb, lobe(hp.ttShift, hp.ttLongRoughness, hp.ttAzimRoughness, hp.ttTint, hp.ttSaturation), 1.0f, Physical,
-                      DwaLabelNone);
+                      DwaLabelHairTT);
     if (hp.showTRT)
-        addHairTRTBRDF(bb, lobe(hp.trtShift, hp.trtLongRoughness, hp.ttAzimRoughness, hp.trtTint, 1.0f), 1.0f, Physical, DwaLabelNone);
+        addHairTRTBRDF(bb, lobe(hp.trtShift, hp.trtLongRoughness, hp.ttAzimRoughness, hp.trtTint, 1.0f), 1.0f, Physical, DwaLabelHairTRT);
     if (hp.showTRRT)
-        addHairTRRTBRDF(bb, lobe(0.0f, hp.trrtLongRoughness, hp.ttAzimRoughness, rgb(1), 1.0f), 1.0f, Physical, DwaLabelNone);
+        addHairTRRTBRDF(bb, lobe(0.0f, hp.trrtLongRoughness, hp.ttAzimRoughness, rgb(1), 1.0f), 1.0f, Physical, DwaLabelHairTRRT);
     endAdjacentComponents(bb);
 }
 
@@ -1057,7 +1073,7 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
     // Fuzz
     if (!isZero(p.fuzz) && st.entering && !isZero(p.fuzzRoughness)) {
         VelvetBRDF fuzz{p.fuzzNormal, clampf(0.05f + p.fuzzRoughness, 0.0f, 1.0f), p.fuzzAlbedo, p.fuzzUseAbsorbingFibers, nullptr};
-        addVelvetBRDF(bb, fuzz, p.fuzz, Physical, DwaLabelNone);
+        addVelvetBRDF(bb, fuzz, p.fuzz, Physical, DwaLabelFuzz);
     }
 
     // Iridescence
@@ -1092,7 +1108,7 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
     // Outer specular (ignored when exiting)
     if (!isZero(p.outerSpecular) && st.entering) addOuterSpecularLobes(bb, p, u, minRough, outerIri);
 
-    if (!isZero(p.glitterMask) && !createGlitterLobes(bb, st, p.glitter, p.glitterMask, pool, glitter)) return false;
+    if (!isZero(p.glitterMask) && !createGlitterLobes(bb, st, p.glitter, p.glitterMask, pool, glitter, DwaLabelGlitter)) return false;
 
     // Fabric
     startAdjacentComponents(bb);
@@ -1107,7 +1123,7 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
             warp.roughness = warpRoughness;
             warp.threadColor = p.warpColor;
             warp.iridescence = nullptr;
-            addFabricBRDF(bb, warp, p.warpThreadCoverage * p.fabricSpecular, Physical, DwaLabelNone);
+            addFabricBRDF(bb, warp, p.warpThreadCoverage * p.fabricSpecular, Physical, DwaLabelSpecular);
         }
         if (!isBlack(p.weftColor)) {
             FabricBRDF weft{};
@@ -1118,7 +1134,7 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
             weft.roughness = weftRoughness;
             weft.threadColor = p.weftColor;
             weft.iridescence = nullptr;
-            addFabricBRDF(bb, weft, (1.f - p.warpThreadCoverage) * p.fabricSpecular, Physical, DwaLabelNone);
+            addFabricBRDF(bb, weft, (1.f - p.warpThreadCoverage) * p.fabricSpecular, Physical, DwaLabelSpecular);
         }
     }
     endAdjacentComponents(bb);
@@ -1134,13 +1150,13 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
             ToonSpecularBRDF t{ts.normal, ts.intensity, ts.fresnelBlend, ts.tint, ts.rampInputScale, ts.rampNumPoints, ts.rampPositions,
                                ts.rampInterpolators, ts.rampValues, ts.stretchU, ts.stretchV, ts.dPds, ts.dPdt,
                                ts.enableIndirectReflections, ts.indirectReflectionsIntensity, ts.indirectReflectionsRoughness};
-            addToonSpecularBRDF(bb, t, ts.toonSpecular, Physical, DwaLabelNone);
+            addToonSpecularBRDF(bb, t, ts.toonSpecular, Physical, DwaLabelHair);
         } else if (u.hairToonModel[n] == ToonSpecularHair) {
             HairToonSpecularBRDF t{ts.normal, ts.hairDir, {ts.hairUV[0], ts.hairUV[1]}, ts.hairIOR, ts.hairFresnelType,
                                    ts.hairCuticleLayerThickness, ts.hairRShift, ts.roughness, ts.tint, ts.intensity, ts.rampNumPoints,
                                    ts.rampPositions, ts.rampInterpolators, ts.rampValues, ts.enableIndirectReflections,
                                    ts.indirectReflectionsIntensity, ts.indirectReflectionsRoughness};
-            addHairToonSpecularBRDF(bb, t, ts.toonSpecular, Physical, DwaLabelNone);
+            addHairToonSpecularBRDF(bb, t, ts.toonSpecular, Physical, DwaLabelHair);
         }
     }
 
@@ -1157,17 +1173,17 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
         if (!isZero(metallicWeight)) {
             if (roughnessClamped < Epsilon) {
                 addMirrorBRDF(bb, mirrorConductor(N, p.metallicColor, p.metallicEdgeColor, primaryIri), metallicWeight, Physical,
-                              DwaLabelNone);
+                              DwaLabelSpecular);
             } else if (isZero(p.anisotropy)) {
                 addMicrofacetIsotropicBRDF(bb, microfacetConductor(N, p.metallicColor, p.metallicEdgeColor, roughnessClamped,
                                                                    u.specularModel, primaryIri),
-                                           metallicWeight, Physical, DwaLabelNone);
+                                           metallicWeight, Physical, DwaLabelSpecular);
             } else {
                 float rx, ry;
                 computeAnisoRoughness(roughness, minRough, p.anisotropy, rx, ry);
                 addMicrofacetAnisotropicBRDF(bb, microfacetAnisoConductor(N, p.metallicColor, p.metallicEdgeColor, rx, ry, shadingTangent,
                                                                           u.specularModel, primaryIri),
-                                             metallicWeight, Physical, DwaLabelNone);
+                                             metallicWeight, Physical, DwaLabelSpecular);
             }
         }
         if (isOne(metallicWeight)) return !bb.overflow;
@@ -1184,14 +1200,14 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
             ToonSpecularBRDF t{ts.normal, ts.intensity, ts.fresnelBlend, ts.tint, ts.rampInputScale, ts.rampNumPoints, ts.rampPositions,
                                ts.rampInterpolators, ts.rampValues, ts.stretchU, ts.stretchV, ts.dPds, ts.dPdt,
                                ts.enableIndirectReflections, ts.indirectReflectionsIntensity, ts.indirectReflectionsRoughness};
-            addToonSpecularBRDF(bb, t, ts.toonSpecular, Physical, DwaLabelNone);
+            addToonSpecularBRDF(bb, t, ts.toonSpecular, Physical, DwaLabelSpecular);
             if (!isZero(p.transmission)) {
                 if (roughnessClamped < Epsilon) {
                     MirrorBTDF m{N, refrIor, p.transmissionColor, abbeNumber};
-                    addMirrorBTDF(bb, m, p.transmission, Physical, DwaLabelNone);
+                    addMirrorBTDF(bb, m, p.transmission, Physical, DwaLabelSpecularTransmission);
                 } else {
                     MicrofacetIsotropicBTDF m{N, refrIor, roughnessClamped, p.transmissionColor, abbeNumber, u.specularModel};
-                    addMicrofacetIsotropicBTDF(bb, m, p.transmission, Physical, DwaLabelNone);
+                    addMicrofacetIsotropicBTDF(bb, m, p.transmission, Physical, DwaLabelSpecularTransmission);
                 }
             }
         }
@@ -1206,12 +1222,12 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
         // The Modo override (MOONRAY_MODO_TRANSMISSION_ROUGHNESS) is off in the reference.
         if (roughnessClamped < Epsilon) {
             MirrorBSDF m{N, reflIor, p.transmissionColor, abbeNumber, refrIor, dielectricWeight, transmissionWeight, primaryIri};
-            addMirrorBSDF(bb, m, 1.f, Physical, DwaLabelNone, DwaLabelNone);
+            addMirrorBSDF(bb, m, 1.f, Physical, DwaLabelSpecular, DwaLabelSpecularTransmission);
         } else if (isZero(p.anisotropy)) {
             MicrofacetIsotropicBSDF m{N, reflIor, roughnessClamped, transmissionRoughnessClamped, p.useIndependentTransmissionRoughness,
                                       p.transmissionColor, abbeNumber, refrIor, dielectricWeight, transmissionWeight, u.specularModel,
                                       primaryIri};
-            addMicrofacetIsotropicBSDF(bb, m, 1.f, Physical, DwaLabelNone, DwaLabelNone);
+            addMicrofacetIsotropicBSDF(bb, m, 1.f, Physical, DwaLabelSpecular, DwaLabelSpecularTransmission);
         } else {
             float rx, ry, tx, ty;
             computeAnisoRoughness(roughness, minRough, p.anisotropy, rx, ry);
@@ -1221,7 +1237,7 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
             MicrofacetAnisotropicBSDF m{N, reflIor, rx, ry, tx, ty, p.useIndependentTransmissionRoughness, shadingTangent,
                                         p.transmissionColor, abbeNumber, refrIor, dielectricWeight, transmissionWeight,
                                         u.specularModel, primaryIri};
-            addMicrofacetAnisotropicBSDF(bb, m, 1.f, Physical, DwaLabelNone, DwaLabelNone);
+            addMicrofacetAnisotropicBSDF(bb, m, 1.f, Physical, DwaLabelSpecular, DwaLabelSpecularTransmission);
         }
         endAdjacentComponents(bb);
     }
@@ -1235,7 +1251,7 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
         const ToonDiffuseParameters& td = p.toonDiffuse;
         ToonBRDF t{td.normal, reflectionAlbedo, td.rampInputScale, td.rampNumPoints, td.rampPositions, td.rampInterpolators,
                    td.rampColors, td.extendRamp};
-        addToonBRDF(bb, t, p.fabricAttenuation * td.toonDiffuse * td.rampWeight, Physical, DwaLabelNone);
+        addToonBRDF(bb, t, p.fabricAttenuation * td.toonDiffuse * td.rampWeight, Physical, DwaLabelDiffuse);
     }
 
     startAdjacentComponents(bb);
@@ -1245,22 +1261,22 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
             const float flatness = p.toonDiffuse.flatness * p.toonDiffuse.toonDiffuse;
             FlatDiffuseBRDF d{shadingN, reflectionAlbedo, p.diffuseRoughness, p.toonDiffuse.terminatorShift, flatness,
                               p.toonDiffuse.flatnessFalloff};
-            addFlatDiffuseBRDF(bb, d, p.fabricAttenuation, Physical, DwaLabelNone);
+            addFlatDiffuseBRDF(bb, d, p.fabricAttenuation, Physical, DwaLabelDiffuse);
         } else {
             // Subsurface: the material's diffusion profile or random walk.
             const DiffusionProfile d{p.diffuseNormal, reflectionAlbedo, p.scatteringRadius};
-            if (u.subsurface == SubsurfaceDipoleDiffusion) addDiffusion(bb, BssrdfDipole, d, p.fabricAttenuation, Physical, DwaLabelNone);
+            if (u.subsurface == SubsurfaceDipoleDiffusion) addDiffusion(bb, BssrdfDipole, d, p.fabricAttenuation, Physical, DwaLabelDiffuse);
             else if (u.subsurface == SubsurfaceNormalizedDiffusion)
-                addDiffusion(bb, BssrdfNormalizedDiffusion, d, p.fabricAttenuation, Physical, DwaLabelNone);
+                addDiffusion(bb, BssrdfNormalizedDiffusion, d, p.fabricAttenuation, Physical, DwaLabelDiffuse);
             else if (u.subsurface == SubsurfaceRandomWalk)
                 addRandomWalk(bb, RandomWalkProfile{p.diffuseNormal, reflectionAlbedo, p.scatteringRadius, p.sssResolveSelfIntersections},
-                              p.fabricAttenuation, Physical, DwaLabelNone);
+                              p.fabricAttenuation, Physical, DwaLabelDiffuse);
             else return false;
         }
     }
     if (!isBlack(p.diffuseTransmission)) {
         LambertianBTDF t{-p.diffuseNormal, p.diffuseTransmission};
-        addLambertianBTDF(bb, t, p.fabricAttenuation, Physical, DwaLabelNone);
+        addLambertianBTDF(bb, t, p.fabricAttenuation, Physical, DwaLabelDiffuseTransmission);
     }
     endAdjacentComponents(bb);
 

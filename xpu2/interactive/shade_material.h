@@ -21,6 +21,10 @@ struct MeshAttributes {
     const float* primData = nullptr;
     U32 primCount = 0;
     curves::Set curve;  // a curve set in place of triangles (curve_core.h)
+    // MoonRay's polyvertices of each triangle (four vertex indices, the fourth ~0u for a TriMesh's triangle) and the
+    // positions they index; null where nothing reads them.
+    const U32* polyVertices = nullptr;
+    const V3* positions = nullptr;
 };
 
 // computeTrianglePartialDerivatives (scene_rdl2 MathUtil.h).
@@ -95,6 +99,18 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
     st.pa = a;
     st.pb = b;
     st.pc = c;
+    st.pd = c;
+    st.polyCount = 3;
+    if (m.polyVertices && m.positions) {
+        const U32* q = m.polyVertices + 4 * size_t(prim);
+        st.pa = m.positions[q[0]];
+        st.pb = m.positions[q[1]];
+        st.pc = m.positions[q[2]];
+        if (q[3] != ~0u) {
+            st.pd = m.positions[q[3]];
+            st.polyCount = 4;
+        }
+    }
     if (!trianglePartials(a, b, c, st1, st2, st3, st.dPds, st.dPdt)) {
         const Frame f = frame(N);
         st.dPds = f.x;
@@ -128,8 +144,13 @@ enum MaterialFlags : U32 { MatModoUsdSpecular = 1, MatPolyVertices = 2 };  // Ma
 // attributes (UsdPreviewSurface; a DwaBase tree's are on its nodes).
 struct MaterialRecord {
     U32 kind = 0, flags = 0, offset = 0, count = 0;
-    U32 maps = NoMapProgram, bindings = 0, bindingCount = 0, pad = 0;
+    // labels: its label table's pool offset (Builder::labels), NoLabels when no AOV asks for labels.
+    U32 maps = NoMapProgram, bindings = 0, bindingCount = 0, labels = 0xffffffffu;
+    // Its extra AOVs' pool offset (none: NoExtraAovs): their map program, their count, then each one's label, whether
+    // post scatter, the register of the map its colour is bound to (MapNoRegister: none) and its colour.
+    U32 extras = 0xffffffffu;
 };
+constexpr U32 NoExtraAovs = 0xffffffffu, ExtraAovFloats = 6;
 
 // UsdPreviewSurface's parameters, in its pool order.
 struct UsdPreviewSurfaceParams {
@@ -138,7 +159,8 @@ struct UsdPreviewSurfaceParams {
     V3 normal;
 };
 constexpr U32 UsdPreviewSurfaceFloats = sizeof(UsdPreviewSurfaceParams) / sizeof(float);
-enum UsdLabels : U32 { AovSpecular = 1, AovSpecularTransmission, AovOuterSpecular, AovDiffuse };
+// UsdPreviewSurface.json's labels, as the build numbers them (labels.h).
+enum UsdLabels : U32 { AovDiffuse = 1, AovSpecular, AovSpecularTransmission, AovOuterSpecular };
 
 X2_HD inline void usdMirrorDielectric(Builder& b, V3 N, float ior, float weight, float opacity, U32 reflLabel, U32 transLabel,
                                       U32 behavior) {
@@ -232,14 +254,15 @@ X2_HD inline void hitTexDerivatives(const MeshAttributes& m, U32 prim, U32 ia, U
     const float plane = dot(n, a - ray.origin);
     const V3 primary = ray.direction * (plane / den);
     const float scale = 1.f / fminf(sqrtf(float(spp)), 2.f);
-    const V3 directions[2] = {ray.dx, ray.dy};
+    const V3 directions[2] = {ray.dx, ray.dy}, offsets[2] = {ray.ox, ray.oy};
     float ds[2], dt[2];
     for (int i = 0; i < 2; ++i) {
         V3 d = directions[i];
         if (scale < 1) d = normalize(ray.direction + (d - ray.direction) * scale);
         const float dd = dot(n, d);
         if (!(fabsf(dd) > 0)) return;
-        const V3 delta = d * (plane / dd) - primary;
+        const V3 o = offsets[i] * scale;
+        const V3 delta = o + d * (dot(n, a - ray.origin - o) / dd) - primary;
         const float x = (pa(delta) * pb(e2) - pb(delta) * pa(e2)) / det, y = (pa(e1) * pb(delta) - pb(e1) * pa(delta)) / det;
         ds[i] = (st2[0] - st1[0]) * x + (st3[0] - st1[0]) * y;
         dt[i] = (st2[1] - st1[1]) * x + (st3[1] - st1[1]) * y;
@@ -338,6 +361,14 @@ X2_HD inline void normalDifferentials(const MeshAttributes& m, U32 prim, U32 ia,
     st.dNdy = auxY * sign - st.N;
     if (!finite3(st.dNdx) || !finite3(st.dNdy)) st.dNdx = st.dNdy = V3{0, 0, 0};
 }
+// The texture derivatives times textureDiffScale (transferAndComputeDerivatives' last step), before dNdx and dNdy.
+X2_HD inline void scaleTexDerivatives(State& st) {
+    if (st.textureDiffScale == 1.0f) return;
+    st.dsdx *= st.textureDiffScale;
+    st.dsdy *= st.textureDiffScale;
+    st.dtdx *= st.textureDiffScale;
+    st.dtdy *= st.textureDiffScale;
+}
 // The hit's differentials: a camera ray's texture derivatives as the validated subset computes them, and
 // its auxiliary rays scaled for the samples per pixel (PathIntegrator::initPrimaryRay) as the incoming
 // differentials; any other ray's transferred (MoonRay's texture derivatives); then dNdx and dNdy.
@@ -347,6 +378,8 @@ X2_HD inline void hitDifferentials(const MeshAttributes& m, U32 prim, U32 ia, U3
         hitTexDerivatives(m, prim, ia, ib, ic, a, b, c, ray, spp, st);
         const float scale = 1.f / fminf(sqrtf(float(spp)), 2.f);
         RayDiff d;
+        d.dOx = ray.ox * scale;
+        d.dOy = ray.oy * scale;
         d.dDx = normalize(ray.direction + (ray.dx - ray.direction) * scale) - ray.direction;
         d.dDy = normalize(ray.direction + (ray.dy - ray.direction) * scale) - ray.direction;
         d.valid = 1;
@@ -356,6 +389,7 @@ X2_HD inline void hitDifferentials(const MeshAttributes& m, U32 prim, U32 ia, U3
         transferDifferentials(st.incoming, ray.origin, ray.direction, st);
         differentialTexDerivatives(st);
     }
+    scaleTexDerivatives(st);
     normalDifferentials(m, prim, ia, ib, ic, st);
 }
 // LineSegments::postIntersect and CubicSpline::postIntersect: a curve hit's shading state. St is the "st" or "uv"
@@ -434,6 +468,8 @@ X2_HD inline void curveDifferentials(const MeshAttributes& m, const surface::Ray
     if (!isExactlyZero(ray.dx) && !isExactlyZero(ray.dy) && spp) {
         const float scale = 1.f / fminf(sqrtf(float(spp)), 2.f);
         RayDiff d;
+        d.dOx = ray.ox * scale;
+        d.dOy = ray.oy * scale;
         d.dDx = normalize(ray.direction + (ray.dx - ray.direction) * scale) - ray.direction;
         d.dDy = normalize(ray.direction + (ray.dy - ray.direction) * scale) - ray.direction;
         d.valid = 1;
@@ -441,6 +477,7 @@ X2_HD inline void curveDifferentials(const MeshAttributes& m, const surface::Ray
     }
     transferDifferentials(st.incoming, ray.origin, ray.direction, st);
     differentialTexDerivatives(st);
+    scaleTexDerivatives(st);
     st.dNdx = st.dNdy = V3{0, 0, 0};
     if (m.curve.basis != curves::BasisLinear) return;
     const V3 dNdt = st.dPdt;
@@ -520,8 +557,8 @@ template <class Tex>
 X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
                                 DwaParams* slots, GlitterScratch* glitter, bool cutout);
 template <class Tex>
-X2_CALL U32 shadeMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
-                          DwaParams* slots, GlitterScratch* glitter = nullptr) {
+X2_CALL U32 shadeRootMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
+                              DwaParams* slots, GlitterScratch* glitter) {
     bool cutout = false;
     if (m.kind == MatSwitch) {
         const MaterialRecord* chosen = resolveSwitch(m, pool, st, cutout);
@@ -534,6 +571,61 @@ X2_CALL U32 shadeMaterial(const MaterialRecord& m, const float* pool, const Stat
     }
     return shadeChosenMaterial(m, pool, st, tex, bsdf, presence, slots, glitter, false);
 }
+// The root material's extra AOVs at the hit (aovAccumExtraAovs and the post scatter ones' values): each one's colour,
+// times its bound map's result where its colour is not black (evalColor).
+template <class Tex>
+X2_CALL U32 extraAovValues(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf) {
+    const U32* w = reinterpret_cast<const U32*>(pool + m.extras);
+    const U32 program = w[0], count = w[1] < Bsdf::MaxExtraAovs ? w[1] : Bsdf::MaxExtraAovs;
+    Color regs[MapMaxRegisters];
+    if (program != NoMapProgram) {
+        const U32 status = runMapProgram(pool, program, st, tex, regs);
+        if (status != tex::Ready) return status;
+    }
+    const float* e = pool + m.extras + 2;
+    for (U32 i = 0; i < count; ++i, e += ExtraAovFloats) {
+        const U32* ew = reinterpret_cast<const U32*>(e);
+        Color v{e[3], e[4], e[5]};
+        if (ew[2] != MapNoRegister && !isBlack(v)) v = v * regs[ew[2]];
+        bsdf.extraLabel[i] = int(ew[0]);
+        bsdf.extraValue[i] = v;
+        if (ew[1]) bsdf.extraPost |= 1u << i;
+    }
+    bsdf.extraCount = count;
+    return tex::Ready;
+}
+template <class Tex>
+X2_CALL U32 shadeMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
+                          DwaParams* slots, GlitterScratch* glitter = nullptr) {
+    const U32 status = shadeRootMaterial(m, pool, st, tex, bsdf, presence, slots, glitter);
+    if (status != tex::Ready || m.extras == NoExtraAovs || bsdf.fatal || bsdf.earlyTermination) return status;
+    return extraAovValues(m, pool, st, tex, bsdf);
+}
+// A material's presence alone (shading::presence, for presence shadows): its maps run, no lobes made.
+template <class Tex>
+X2_CALL U32 materialPresence(const MaterialRecord& m0, const float* pool, const State& st, const Tex& tex, float& presence) {
+    presence = 1.0f;
+    const MaterialRecord* m = &m0;
+    if (m0.kind == MatSwitch) {
+        bool cutout = false;
+        m = resolveSwitch(m0, pool, st, cutout);
+        if (!m) return tex::Ready;
+    }
+    Color regs[MapMaxRegisters];
+    if (m->maps != NoMapProgram) {
+        if (!mapRequirementsMet(pool, m->maps, st)) return tex::Ready;
+        const U32 status = runMapProgram(pool, m->maps, st, tex, regs);
+        if (status != tex::Ready) return status;
+    }
+    if (m->kind == MatUsdPreviewSurface && m->count >= UsdPreviewSurfaceFloats) {
+        UsdPreviewSurfaceParams p = *reinterpret_cast<const UsdPreviewSurfaceParams*>(pool + m->offset);
+        applyBindings(reinterpret_cast<float*>(&p), reinterpret_cast<const MapBinding*>(pool + m->bindings), m->bindingCount, regs);
+        presence = presenceUsdPreviewSurface(p);
+    } else if (m->kind == MatDwaBase && m->count >= DwaTreeFloats) {
+        presence = dwaTreePresence(pool, *reinterpret_cast<const DwaTree*>(pool + m->offset), st, regs);
+    }
+    return tex::Ready;
+}
 template <class Tex>
 X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
                                 DwaParams* slots, GlitterScratch* glitter, bool cutout) {
@@ -543,6 +635,7 @@ X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, cons
         Builder fatal(bsdf, st);
         presence = 1.0f;
         addEmission(fatal, Color{1.0f, 0.0f, 1.0f});
+        bsdf.fatal = true;
         return tex::Ready;
     }
     if (m.maps != NoMapProgram) {
@@ -550,6 +643,10 @@ X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, cons
         if (status != tex::Ready) return status;
     }
     Builder bb(bsdf, st);
+    if (m.labels != 0xffffffffu) {
+        bb.labels = reinterpret_cast<const U32*>(pool + m.labels);
+        bsdf.materialLabels = encodeLabel(bb, 0);
+    }
     presence = 1.0f;
     switch (m.kind) {
     case MatUsdPreviewSurface: {
@@ -557,7 +654,7 @@ X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, cons
         UsdPreviewSurfaceParams p = *reinterpret_cast<const UsdPreviewSurfaceParams*>(pool + m.offset);
         applyBindings(reinterpret_cast<float*>(&p), reinterpret_cast<const MapBinding*>(pool + m.bindings), m.bindingCount, regs);
         presence = presenceUsdPreviewSurface(p);
-        if (presence < 1.0f) return tex::Ready;  // a cut out: the integrator continues through it
+        if (presence <= 0.0f) return tex::Ready;  // a cut out: the integrator continues through it
         if (cutout) {
             bsdf.earlyTermination = true;
             return tex::Ready;
@@ -571,10 +668,11 @@ X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, cons
         // A geometry without a required attribute shades as the fatal colour (validateRequiredAttributes).
         if (tree.requiresRefP && !primProvided(st, primKey("ref_P", PrimVec3f))) {
             addEmission(bb, Color{1.0f, 0.0f, 1.0f});
+            bsdf.fatal = true;
             return tex::Ready;
         }
         presence = dwaTreePresence(pool, tree, st, regs);
-        if (presence < 1.0f) return tex::Ready;
+        if (fabsf(presence) <= 1e-6f) return tex::Ready;  // nothing of it shows (isEqual(presence, 0))
         if (cutout) {
             bsdf.earlyTermination = true;
             return tex::Ready;

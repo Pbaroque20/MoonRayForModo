@@ -56,8 +56,23 @@ X2_HD inline bool filter(Filter kind,float width,float r,float& out){
 // Prepared matrices use MoonRay/scene_rdl2 row-vector convention. Host adapter
 // supplies inverse(projection * screen-to-raster), copied into immutable data.
 struct Matrix { float m[4][4]; };
-struct Camera {Matrix rasterToCamera,cameraToRender; float nearClip,farClip;};
-struct Ray {V3 origin,direction,dx,dy;float nearT,farT;};
+// MoonRay's camera types (pbr/camera); camera_core.h makes the path tracer's rays for each.
+enum CameraType : unsigned {CameraPerspective=0,CameraOrthographic=1,CameraSpherical=2,CameraFisheye=3,CameraDome=4,CameraBake=5};
+struct Camera {Matrix rasterToCamera,cameraToRender; float nearClip,farClip;
+    // The rest of MoonRay's camera (camera_core.h): its type, the region window's offset into the aperture window
+    // (Camera::createRay) and the aperture window's size, the stereo eye (PerspectiveCamera's focal point, camera
+    // space), the lens (ProjectiveCamera's depth of field, LensDistribution's bokeh: 0 disk, 1 polygon, 2 image),
+    // and the other types' settings (k, flags and mode; camera_core.h says which). bokehImage is a lights::Image,
+    // map a DomeMaster3D interocular map or a BakeCamera's position map (camera_core.h's CameraMap).
+    unsigned type=CameraPerspective;float regionX=0,regionY=0,apertureWidth=0,apertureHeight=0;
+    V3 focalPoint{0,0,0};
+    unsigned dof=0,bokeh=0;int bokehSides=0;float lensRadius=0,focusDistance=0,bokehAngle=0;
+    const void* bokehImage=nullptr;
+    unsigned flags=0;int mode=0;float k[12]={0,0,0,0,0,0,0,0,0,0,0,0};
+    const void* map=nullptr;};
+// mask: rdl2's VisibilityType bits of the ray (CAMERA, SHADOW, a lobe type's), which a geometry's visibility must share.
+// ox, oy: the auxiliary rays' origins less the ray's (an orthographic or bake camera's; zero for rays from one point).
+struct Ray {V3 origin,direction,dx,dy;float nearT,farT;unsigned mask=0xffffffffu;V3 ox{0,0,0},oy{0,0,0};};
 X2_HD inline V3 vector(const Matrix& m,V3 a){return {
     (a.x*m.m[0][0]+a.y*m.m[1][0])+a.z*m.m[2][0],
     (a.x*m.m[0][1]+a.y*m.m[1][1])+a.z*m.m[2][1],

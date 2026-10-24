@@ -79,8 +79,12 @@ struct ChainArgs {
 struct LaunchParams {
     const mixed::Config* config;
     const surface::Lambert* materials;
-    const lights::Light* lights;  // the path tracer's lights, and each mesh's mask over them
+    const lights::Light* lights;  // the path tracer's lights, each mesh's light set, and the sets' bitsets
     const U32* meshLights;
+    const U32* lightSetBits;
+    U32 lightSetWords, lightSetPad;
+    const lights::TreeNode* lightTree;  // adaptive light sampling's trees (light_tree.h), and each light set's root
+    const int* lightTreeRoots;
     const volume::Shader* volumes;  // the volumes bound to meshes (volume_core.h), and each mesh's (-1: none)
     const int* meshVolumes;
     const float* walkSequences;  // MoonRay's integrator sequences for the random walk (cpu_scene.h), or null
@@ -94,6 +98,7 @@ struct LaunchParams {
     U64L scratchStride;
     U64L glitterOffset;  // the glitter scratch's place in a thread's scratch (0: the scene has no glitter)
     U64L traversable;  // OptixTraversableHandle
+    U64L volumeTraversable;  // the volumes' bounds (0: none)
     const mixed::Geometry* geometry;
     const tex::Maps* maps;
     // The scene's textures, as the maps index them (cpu::Plan::textures).
@@ -139,6 +144,30 @@ struct LaunchParams {
     const U64L* activeMasks;
     const U32* chainBase;
     U32 chainPass, chainSize;
+
+    // The render outputs' AOVs (aov_core.h): the schema (always set; no channels: none), each mesh's geometry label,
+    // the film's accumulators a pixel (floats, as MoonRay's film keeps them), the closest filter's depths and a lock a
+    // pixel for it, and each pixel's render seconds (null: no heat map) at secondsPerTick a clock64 tick. A sample's
+    // values sit at aovOffset in its thread's scratch. mode 4 readies the accumulators for a frame.
+    const aov::Tables* aovTables;
+    const int* geomLabels;
+    float* aovs;
+    float* aovDepths;
+    U32* aovLocks;
+    double* heat;
+    U64L aovOffset;
+    double secondsPerTick;
+
+    // Cryptomatte (aov_crypto.h): a sample's events at cryptoOffset in its thread's scratch (cryptoEvents of them),
+    // merged into a list of fragments a pixel and category (cryptoHeads, ~0u: empty) under the pixel's lock, the
+    // nodes taken from a pool (cryptoNodes, cryptoNodeWords words each: next, ID, coverage, samples, presence depth,
+    // and with extras position, P0, normal, beauty, ref_P, ref_N, UV); a pool run dry counts an error.
+    U32* cryptoHeads;
+    U32* cryptoNodes;
+    U32* cryptoNodeCount;
+    U32* cryptoLocks;
+    U64L cryptoOffset;
+    U32 cryptoEvents, cryptoCategories, cryptoMultiPresence, cryptoExtras, cryptoNodeWords, cryptoNodeCapacity;
 };
 
 }  // namespace xpu2::interactive::async

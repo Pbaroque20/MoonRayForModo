@@ -17,7 +17,18 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     float worldToRender[12]={1,0,0,0,0,1,0,0,0,0,1,0};
     // Volumes (volume_core.h; PathIntegrator::update's volume settings): how many, and MoonRay's volume scene variables.
     U32 volumeCount=0,maxVolumeDepth=1,volumeIlluminationSamples=4,volumeOverlapMode=0;
-    float volumeTransmittanceThreshold=0.005f,volumeAttenuationFactor=0.65f,volumeContributionFactor=0.65f,volumePhaseAttenuationFactor=0.5f;};
+    // How many lights the camera sees (their visible_in_camera), which camera rays meet.
+    U32 visibleLights=0;
+    // Adaptive light sampling (light_sampling_mode 1): whether the lights' trees pick the lights sampled, and the
+    // quality threshold of their splitting (light_sampling_quality).
+    U32 lightTree=0;float lightTreeThreshold=0.5f;
+    float presenceThreshold=0.999f,presenceQuality=0.75f;  // presence_threshold, presence_quality
+    float volumeTransmittanceThreshold=0.005f,volumeAttenuationFactor=0.65f,volumeContributionFactor=0.65f,volumePhaseAttenuationFactor=0.5f;
+    // The pixels rendered (the sub viewport: min x, min y, max x, max y, half open) and the texture differential
+    // scale (PathIntegrator::initPrimaryRay's mTextureDiffScale).
+    int viewport[4]={0,0,0x7fffffff,0x7fffffff};float textureDiffScale=1;
+    // The camera's pixel sample map (RenderDriver::computeTotalNumSamples): each pixel's own sample count, or none.
+    const U32* pixelSamples=nullptr;};
 struct Job {path::Epoch epoch{};U64 sequence=0;U32 count=0,first=0,samples=0,fault=0;U64 delay=0;U32 pixels[Capacity]{};};
 struct Pixel {double sum[4]{};U32 count=0,status=0,pixel=0,pad=0;};
 struct Result {path::Epoch epoch{};U64 sequence=0;U32 count=0,pad=0;Pixel pixels[Capacity]{};};

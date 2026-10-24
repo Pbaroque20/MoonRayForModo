@@ -98,8 +98,8 @@ struct DeviceTextures {
 struct GpuBackend {
     __device__ resume::Hit trace(const surface::Ray& ray) {
         unsigned instance = ~0u, primitive = 0;
-        optixTrace(params.traversable, f3(ray.origin), f3(ray.direction), ray.nearT, ray.farT, 0.f, 1,
-                   OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0, instance, primitive);
+        optixTrace(params.traversable, f3(ray.origin), f3(ray.direction), ray.nearT, ray.farT, 0.f, ray.mask & 0xffu,
+                   OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_CULL_BACK_FACING_TRIANGLES, 0, 1, 0, instance, primitive);
         resume::Hit h;
         if (instance == ~0u || instance >= params.config->meshes) return h;
         h.geom = instance;
@@ -159,7 +159,7 @@ struct GpuBackend {
         if (params.meshAttributes[h.geom].curve.basis) {
             if (!shade::curveState(params.meshAttributes[h.geom], h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return false;
             st.geom = h.geom;
-            shade::curveDifferentials(params.meshAttributes[h.geom], ray, c.spp, st);
+            shade::curveDifferentials(params.meshAttributes[h.geom], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
             return true;
         }
         const auto m = params.geometry[h.geom];
@@ -169,8 +169,35 @@ struct GpuBackend {
             return false;
         st.geom = h.geom;
         shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
-                                m.vertices[t.c], ray, c.spp, st);
+                                m.vertices[t.c], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
         return true;
+    }
+    // A shadow ray's hit: its material's presence alone (presence shadows); a texture not yet resident marks the
+    // sample to be done again (textureMissed).
+    bool missed = false;
+    __device__ bool textureMissed() const { return missed; }
+    __device__ unsigned presenceAt(const resume::Hit& h, const surface::Ray& ray, float& presence) {
+        const auto& c = *params.config;
+        presence = 1.0f;
+        if (h.geom >= c.meshes) return tex::Ready;
+        shade::State st;
+        if (params.meshAttributes[h.geom].curve.basis) {
+            const shade::MeshAttributes& a = params.meshAttributes[h.geom];
+            if (!shade::curveState(a, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return tex::Ready;
+        } else {
+            const auto m = params.geometry[h.geom];
+            const auto t = m.triangles[h.prim];
+            if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
+                                 m.vertices[t.c], h.u, h.v, h.point, ray.direction, st))
+                return tex::Ready;
+        }
+        st.geom = h.geom;
+        st.worldToRender = c.worldToRender;
+        st.worldToObject = params.meshAttributes[h.geom].worldToObject;
+        const DeviceTextures textures{params.textures, params.textureCount};
+        const unsigned status = shade::materialPresence(params.meshMaterials[h.geom], params.materialPool, st, textures, presence);
+        if (status == tex::Miss) missed = true;
+        return status;
     }
     // The path tracer's hit: its shading state, and its material's Bsdf (shade_material.h).
     __device__ unsigned shade(const resume::Hit& h, const surface::Ray& ray, shade::State& st, shade::Bsdf& bsdf, float& presence) {
@@ -182,7 +209,7 @@ struct GpuBackend {
             st.geom = h.geom;
             st.worldToRender = c.worldToRender;
             st.worldToObject = a.worldToObject;
-            shade::curveDifferentials(a, ray, c.spp, st);
+            shade::curveDifferentials(a, ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
             const DeviceTextures textures{params.textures, params.textureCount};
             return shade::shadeMaterial(params.meshMaterials[h.geom], params.materialPool, st, textures, bsdf, presence, dwaSlots(),
                                         glitter());
@@ -197,7 +224,7 @@ struct GpuBackend {
         st.worldToObject = params.meshAttributes[h.geom].worldToObject;
         const shade::MaterialRecord& record = params.meshMaterials[h.geom];
         shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
-                                m.vertices[t.c], ray, c.spp, st);
+                                m.vertices[t.c], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
         const DeviceTextures textures{params.textures, params.textureCount};
         return shade::shadeMaterial(record, params.materialPool, st, textures, bsdf, presence, dwaSlots(), glitter());
     }
@@ -207,9 +234,9 @@ struct GpuBackend {
     // Unoccluded between near and far (a shadow ray from a curve skips its epsilon).
     __device__ bool visible(surface::V3 o, surface::V3 d, float near, float distance) {
         unsigned occluded = 1, unused = 0;
-        optixTrace(params.traversable, f3(o), f3(d), near, distance, 0.f, 1,
+        optixTrace(params.traversable, f3(o), f3(d), near, distance, 0.f, 2u,  // SHADOW
                    OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT |
-                       OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
+                       OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
                    0, 1, 1, occluded, unused);
         return occluded == 0;
     }
@@ -235,12 +262,13 @@ struct GpuBackend {
     // each entering or leaving by the triangle's geometric normal; repeats at one distance dropped.
     __device__ const volume::Shader* volumes() const { return params.volumes; }
     __device__ const float* walkSequences() const { return params.walkSequences; }
-    __device__ U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max) {
+    __device__ U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max, U32 mask) {
+        if (!params.volumeTraversable) return 0;
         U32 n = 0;
         float t = tnear;
         for (U32 k = 0; k < 4 * max && n < max; ++k) {
             unsigned instance = ~0u, primitive = 0;
-            optixTrace(params.traversable, f3(o), f3(d), t, __int_as_float(0x7f800000), 0.f, 2, OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0,
+            optixTrace(params.volumeTraversable, f3(o), f3(d), t, __int_as_float(0x7f800000), 0.f, mask & 0xffu, OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0,
                        instance, primitive);
             if (instance == ~0u || instance >= params.config->meshes) break;
             const auto m = params.geometry[instance];
@@ -258,13 +286,168 @@ struct GpuBackend {
         }
         return n;
     }
-    __device__ U32 lightMask(U32 geom) const { return params.meshLights[geom]; }
+    __device__ U32 lightSet(U32 geom) const { return params.meshLights[geom]; }
+    __device__ const lights::TreeNode* treeNodes() const { return params.lightTree; }
+    __device__ int treeRoot(U32 set) const { return params.lightTreeRoots ? params.lightTreeRoots[set] : -1; }
+    __device__ bool inSet(U32 set, U32 i) const { return (params.lightSetBits[size_t(set) * params.lightSetWords + (i >> 5)] >> (i & 31) & 1u) != 0; }
+    __device__ const aov::Tables& aovs() const { return *params.aovTables; }
+    __device__ int geomLabel(U32 geom) const { return params.geomLabels ? params.geomLabels[geom] : -1; }
 };
+
+// The film's math filters (async_cpu.h mergeAov, Film.cc's atomicMathFilter): averages and sums add, min and max keep
+// the least and greatest, the closest keeps the nearer sample's values under its pixel's lock; force-consistent
+// sampling keeps nothing, as MoonRay's vector film does.
+static __device__ void atomicMinFloat(float* a, float v) {
+    int old = __float_as_int(*a);
+    while (v < __int_as_float(old)) {
+        const int seen = atomicCAS(reinterpret_cast<int*>(a), old, __float_as_int(v));
+        if (seen == old) break;
+        old = seen;
+    }
+}
+static __device__ void atomicMaxFloat(float* a, float v) {
+    int old = __float_as_int(*a);
+    while (v > __int_as_float(old)) {
+        const int seen = atomicCAS(reinterpret_cast<int*>(a), old, __float_as_int(v));
+        if (seen == old) break;
+        old = seen;
+    }
+}
+static __device__ void mergeAovs(const aov::Tables& t, U32 pixel, const float* values, const float* depths) {
+    float* acc = params.aovs + size_t(pixel) * t.channels;
+    for (U32 i = 0; i < t.count; ++i) {
+        const aov::Entry& e = t.entries[i];
+        float* d = acc + e.offset;
+        const float* v = values + e.offset;
+        switch (e.filter) {
+        case aov::FilterAvg:
+        case aov::FilterSum:
+            for (U32 c = 0; c < e.channels; ++c)
+                if (v[c] != 0.0f) atomicAdd(d + c, v[c]);
+            break;
+        case aov::FilterMin:
+            for (U32 c = 0; c < e.channels; ++c) atomicMinFloat(d + c, v[c]);
+            break;
+        case aov::FilterMax:
+            for (U32 c = 0; c < e.channels; ++c) atomicMaxFloat(d + c, v[c]);
+            break;
+        case aov::FilterClosest: {
+            volatile float* depth = params.aovDepths + size_t(pixel) * t.closestCount + e.closest;
+            if (!(depths[e.closest] < *depth)) break;
+            U32* lock = params.aovLocks + pixel;
+            for (bool done = false; !done;) {  // no thread spins on a lock its own warp holds
+                if (atomicCAS(lock, 0u, 1u) == 0u) {
+                    __threadfence();
+                    if (depths[e.closest] < *depth) {
+                        *depth = depths[e.closest];
+                        for (U32 c = 0; c < e.channels; ++c) reinterpret_cast<volatile float*>(d)[c] = v[c];
+                    }
+                    __threadfence();
+                    atomicExch(lock, 0u);
+                    done = true;
+                }
+            }
+            break;
+        }
+        default: break;
+        }
+    }
+}
+// A sample's Cryptomatte events into its pixel's fragment lists (CryptoBuffer::add), in every category.
+static __device__ void mergeCrypto(U32 pixel, const aov::CryptoEvent* events, U32 count) {
+    for (U32 k = 0; k < count; ++k) {
+        const aov::CryptoEvent& e = events[k];
+        if (!e.used || !(e.increment || e.credit)) continue;
+        for (U32 c = 0; c < params.cryptoCategories; ++c) {
+            const float id = c == 0 ? e.id : c == 1 ? e.materialId : e.assetId;
+            U32* head = params.cryptoHeads + size_t(pixel) * params.cryptoCategories + c;
+            U32* lock = params.cryptoLocks + pixel;
+            for (bool done = false; !done;) {  // no thread spins on a lock its own warp holds
+                if (atomicCAS(lock, 0u, 1u) != 0u) continue;
+                __threadfence();
+                volatile U32* node = nullptr;
+                for (U32 n = *reinterpret_cast<volatile U32*>(head); n != ~0u;) {
+                    volatile U32* m = params.cryptoNodes + size_t(n) * params.cryptoNodeWords;
+                    if (__uint_as_float(m[1]) == id && (!params.cryptoMultiPresence || m[4] == e.presenceDepth)) {
+                        node = m;
+                        break;
+                    }
+                    n = m[0];
+                }
+                if (!node) {
+                    const U32 n = atomicAdd(params.cryptoNodeCount, 1u);
+                    if (n < params.cryptoNodeCapacity) {
+                        node = params.cryptoNodes + size_t(n) * params.cryptoNodeWords;
+                        for (U32 w = 2; w < params.cryptoNodeWords; ++w) node[w] = 0u;
+                        node[0] = *reinterpret_cast<volatile U32*>(head);
+                        node[1] = __float_as_uint(id);
+                        node[3] = 1u;  // a new fragment counts one sample (Cryptomatte.cc's Fragment)
+                        node[4] = e.presenceDepth;
+                        __threadfence();
+                        *reinterpret_cast<volatile U32*>(head) = n;
+                    } else {
+                        atomicAdd(&params.state->errors, 1u);
+                    }
+                } else if (e.increment) {
+                    node[3] = node[3] + 1u;
+                }
+                if (node) {
+                    node[2] = __float_as_uint(__uint_as_float(node[2]) + e.weight);
+                    if (params.cryptoExtras) {
+                        const float d[21] = {e.position.x, e.position.y, e.position.z, e.p0.x, e.p0.y, e.p0.z, e.normal.x, e.normal.y, e.normal.z,
+                                             e.beauty[0], e.beauty[1], e.beauty[2], e.beauty[3], e.refP.x, e.refP.y, e.refP.z,
+                                             e.refN.x, e.refN.y, e.refN.z, e.uv[0], e.uv[1]};
+                        for (U32 w = 0; w < 21; ++w)
+                            if (e.increment || (w >= 9 && w < 13)) node[5 + w] = __float_as_uint(__uint_as_float(node[5 + w]) + d[w]);
+                    }
+                }
+                __threadfence();
+                atomicExch(lock, 0u);
+                done = true;
+            }
+        }
+    }
+}
+// mode 4: a pixel's accumulators readied for a frame (initAovPixel): +inf for min, -inf for max, 0 for the rest,
+// and the closest filter's depths +inf.
+static __device__ void initAovs() {
+    const unsigned i = optixGetLaunchIndex().x;
+    if (i >= params.pixels) return;
+    const aov::Tables& t = *params.aovTables;
+    float* acc = params.aovs + size_t(i) * t.channels;
+    for (U32 k = 0; k < t.count; ++k) {
+        const aov::Entry& e = t.entries[k];
+        const float v = e.filter == aov::FilterMin ? aov::infinity() : e.filter == aov::FilterMax ? -aov::infinity() : 0.0f;
+        for (U32 c = 0; c < e.channels; ++c) acc[e.offset + c] = v;
+    }
+    for (U32 k = 0; k < t.closestCount; ++k) params.aovDepths[size_t(i) * t.closestCount + k] = aov::infinity();
+    if (params.aovLocks) params.aovLocks[i] = 0u;
+    if (params.heat) params.heat[i] = 0.0;
+    if (params.cryptoHeads) {
+        for (U32 c = 0; c < params.cryptoCategories; ++c) params.cryptoHeads[size_t(i) * params.cryptoCategories + c] = ~0u;
+        params.cryptoLocks[i] = 0u;
+        if (i == 0) *params.cryptoNodeCount = 0u;
+    }
+}
 
 static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries, U32 pass, bool chain = false) {
     Radiance r;
+    const aov::Tables& at = *params.aovTables;
+    if (at.channels) {
+        r.aov = reinterpret_cast<float*>(params.scratch + U64L(optixGetLaunchIndex().x) * params.scratchStride + params.aovOffset);
+        r.aovDepth = r.aov + at.channels;
+        r.aovBackup = r.aovDepth + at.closestCount;
+    }
+    if (params.cryptoHeads) {
+        r.crypto = reinterpret_cast<aov::CryptoEvent*>(params.scratch + U64L(optixGetLaunchIndex().x) * params.scratchStride + params.cryptoOffset);
+        r.cryptoCapacity = params.cryptoEvents;
+    }
+    const long long began = params.heat ? clock64() : 0;
     const SampleStatus status = integrate(*params.config, pixel, index, backend, r);
     if (status == SampleStatus::Done) {
+        if (at.channels) mergeAovs(at, pixel, r.aov, r.aovDepth);
+        if (params.cryptoHeads) mergeCrypto(pixel, r.crypto, r.cryptoCount);
+        if (params.heat) atomicAdd(params.heat + pixel, double(clock64() - began) * params.secondsPerTick);
         double* s = params.sums + size_t(pixel) * 4;
         atomicAdd(s + 0, r.rgb[0]);
         atomicAdd(s + 1, r.rgb[1]);
@@ -282,6 +465,11 @@ static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries,
             }
             atomicAdd(&params.state->passDone[pass], 1u);
         }
+#endif
+    } else if (status == SampleStatus::Skip) {
+        // No camera ray: taken, nothing added.
+#if XPU2_ADAPTIVE
+        atomicAdd(&params.state->passDone[pass], 1u);
 #endif
     } else if (status == SampleStatus::Miss) {
         // Park it; the host sized this launch so the queue cannot overflow.
@@ -338,6 +526,10 @@ extern "C" __global__ void __raygen__async() {
         commit();
         return;
     }
+    if (params.mode == 4) {
+        initAovs();
+        return;
+    }
 #if XPU2_ADAPTIVE
     if (params.mode == 2) {
         errors();
@@ -366,7 +558,7 @@ extern "C" __global__ void __raygen__async() {
         const Chunk chunk = params.ring[chunkIndex % params.ringCapacity];
         const U32 s = offset / TilePixels, position = offset % TilePixels;
         if (s >= chunk.count) continue;
-        const U32 pixel = tilePixel(chunk.tile, position, c.width, c.height);
+        const U32 pixel = tilePixel(chunk.tile, position, c.width, c.height, c.viewport);
         if (pixel == ~0u) continue;
 #if XPU2_ADAPTIVE
         // Only the tile's active pixels, each from its own sample-index base.

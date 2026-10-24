@@ -263,6 +263,8 @@ struct MapProgramBuilder {
     std::set<const rdl::SceneObject*> visiting;
     std::vector<unsigned> nodes;
 
+    // An ImageMap with alpha_only reads its files' alpha (texture::File::alpha) while it is admitted.
+    bool alphaLookup = false;
     unsigned textureIndex(const rdl::SceneObject& o, const char* attribute = "texture") {
         const std::string path = get<rdl::String>(o, attribute);
         if (path.empty()) return shade::MapNoTexture;
@@ -312,16 +314,16 @@ struct MapProgramBuilder {
         texture::admittedPath(fs::path(path), textures.assetRoot);
         auto& table = *textures.textures;
         for (size_t i = 0; i < table.size(); ++i)
-            if (table[i]->name.string() == path) return unsigned(i);
+            if (table[i]->name.string() == path && table[i]->alpha == alphaLookup) return unsigned(i);
         std::shared_ptr<texture::File> file;
         if (textures.previous)
             for (auto& old : *textures.previous)
-                if (old->name.string() == path) file = old;
+                if (old->name.string() == path && old->alpha == alphaLookup) file = old;
         if (file) {
             *textures.system = file->system;
         } else {
             if (!*textures.system) *textures.system = texture::system();
-            file = std::make_shared<texture::File>(fs::path(path), textures.assetRoot, *textures.system);
+            file = std::make_shared<texture::File>(fs::path(path), textures.assetRoot, *textures.system, alphaLookup);
         }
         need(table.size() < 256, "At most 256 textures");
         table.push_back(file);
@@ -331,6 +333,8 @@ struct MapProgramBuilder {
     // The more maps (shade_mapnodes_more.h): the attributes they read beside their lists, refusals, required
     // attributes, and prepared data after their attributes.
     std::vector<unsigned> required;  // primitive attributes a map requires (MoonRay's mRequiredAttributes)
+    // Each map's registers it reads (bindings and the normal maps its parameters name), and the maps being built.
+    std::vector<std::vector<unsigned>> nodeDeps, depStack;
     bool polyVertices = false;       // a map reads the hit polygon's vertices (ToonMap, CurvatureMap, WireframeMap)
     static void moreListed(shade::MapKind kind, const rdl::SceneObject& m, std::set<std::string>& listed) {
         auto all = [&]() {
@@ -569,6 +573,21 @@ struct MapProgramBuilder {
     // The register holding map m's result; admits m and what it is bound to first.
     unsigned reg(const rdl::SceneObject& m) {
         auto it = registers.find(&m);
+        unsigned r;
+        if (it != registers.end()) {
+            r = it->second;
+        } else {
+            depStack.emplace_back();
+            r = regBuild(m);
+            if (nodeDeps.size() <= r) nodeDeps.resize(r + 1);
+            nodeDeps[r] = std::move(depStack.back());
+            depStack.pop_back();
+        }
+        if (!depStack.empty()) depStack.back().push_back(r);
+        return r;
+    }
+    unsigned regBuild(const rdl::SceneObject& m) {
+        auto it = registers.find(&m);
         if (it != registers.end()) return it->second;
         need(m.isA<rdl::Map>() || m.isA<rdl::NormalMap>(), m.getName() + ": a binding that is not a map");
         need(visiting.insert(&m).second, m.getName() + ": map cycle");
@@ -596,17 +615,22 @@ struct MapProgramBuilder {
             listed.insert("gamma");
             need(get<rdl::Int>(m, "texture_coordinates") == 0 || get<rdl::Int>(m, "texture_coordinates") == 2,
                  m.getName() + ": hair texture coordinates unsupported");
-            need(!get<rdl::Bool>(m, "alpha_only"), m.getName() + ": alpha-only lookups unsupported");
+            // alpha_only: the texture's alpha (its own texture of (a, a, a)), which no gamma linearises.
+            listed.insert("alpha_only");
+            const bool alphaOnly = get<rdl::Bool>(m, "alpha_only");
+            alphaLookup = alphaOnly;
             bool udimEightBit = false;
             udim = udimTiles(m, udimEightBit);
             h.udim = unsigned(udim.size());
             h.texture = udim.empty() ? textureIndex(m) : shade::MapNoTexture;
+            alphaLookup = false;
             h.wrap = get<rdl::Bool>(m, "wrap_around") ? 1 : 0;
             const int gamma = get<rdl::Int>(m, "gamma");
             need(gamma >= 0 && gamma <= 2, m.getName() + ": invalid gamma mode");
             // As the validated ImageMap subset: linearise 8-bit data when gamma is on or auto.
             h.gamma = (gamma != 0 && h.texture != shade::MapNoTexture && (*textures.textures)[h.texture]->eightBit) ? 1 : 0;
             if (h.udim) h.gamma = (gamma != 0 && udimEightBit) ? 1 : 0;
+            if (alphaOnly) h.gamma = 0;
         }
         if (c->kind == shade::MapModoTexture) {
             listed.insert("uv_name");
@@ -960,12 +984,6 @@ struct MapProgramBuilder {
             const float* bf = reinterpret_cast<const float*>(&b);
             pool.insert(pool.end(), bf, bf + sizeof(b) / sizeof(float));
         }
-        if (c->kind == shade::MapModoTexture && get<rdl::Int>(m, "mode") == 1 && get<rdl::Float>(m, "bump_strength") != 0.0f)
-            for (unsigned n : nodes) {
-                const auto& other = *reinterpret_cast<const shade::MapNodeHeader*>(pool.data() + n);
-                need(!shade::modoNeedsBump(other, pool.data() + n + sizeof(shade::MapNodeHeader) / sizeof(float)),
-                     m.getName() + ": a bump map in a material with another bump map unsupported");
-            }
         nodes.push_back(offset);
         visiting.erase(&m);
         registers[&m] = h.reg;
@@ -1155,6 +1173,34 @@ struct MapProgramBuilder {
         required.erase(std::unique(required.begin(), required.end()), required.end());
         word(unsigned(required.size()));
         for (unsigned k : required) word(k);
+        // The bump maps (ModoTextureMap's bump mode, whose heights are its inputs' at shifted states): each one's node
+        // and the nodes its inputs need, in program order. One whose inputs need another bump map is refused.
+        auto isBump = [&](unsigned i) {
+            const auto& h = *reinterpret_cast<const shade::MapNodeHeader*>(pool.data() + nodes[i]);
+            return shade::modoNeedsBump(h, pool.data() + nodes[i] + sizeof(shade::MapNodeHeader) / sizeof(float));
+        };
+        std::vector<unsigned> bumps;
+        for (unsigned i = 0; i < nodes.size(); ++i)
+            if (isBump(i)) bumps.push_back(i);
+        std::vector<std::vector<unsigned>> lists;
+        for (unsigned b : bumps) {
+            std::set<unsigned> closure;
+            std::vector<unsigned> todo = b < nodeDeps.size() ? nodeDeps[b] : std::vector<unsigned>{};
+            while (!todo.empty()) {
+                const unsigned r = todo.back();
+                todo.pop_back();
+                if (!closure.insert(r).second) continue;
+                if (r < nodeDeps.size()) todo.insert(todo.end(), nodeDeps[r].begin(), nodeDeps[r].end());
+            }
+            for (unsigned r : closure) need(r < nodes.size() && !isBump(r), "A bump map whose height reads another bump map is not rendered yet");
+            lists.emplace_back(closure.begin(), closure.end());
+        }
+        word(unsigned(bumps.size()));
+        for (size_t k = 0; k < bumps.size(); ++k) {
+            word(bumps[k]);
+            word(unsigned(lists[k].size()));
+            for (unsigned r : lists[k]) word(r);
+        }
         return offset;
     }
 };

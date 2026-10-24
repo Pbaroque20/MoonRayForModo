@@ -15,11 +15,11 @@ from native_build import build
 from reference_runtime import sha, verify
 
 HERE = Path(__file__).resolve().parent
-HEADERS = ('async_gpu_abi.h', 'async_adaptive_core.h', 'async_integrator.h', 'light_core.h', 'gpu_jobs.h', 'resume_core.h', 'triangle_hit.h',
+HEADERS = ('async_gpu_abi.h', 'async_adaptive_core.h', 'async_integrator.h', 'light_core.h', 'light_image.h', 'light_tree.h', 'gpu_jobs.h', 'resume_core.h', 'triangle_hit.h',
            'texture_core.h', 'surface_core.h', 'sample_stream.h', 'path_stage.h', 'shade_math.h', 'shade_tables.h',
            'shade_fresnel.h', 'shade_color.h', 'shade_lobes.h', 'shade_lobes_eval.h', 'shade_hair.h', 'shade_flakes.h', 'shade_glitter.h', 'shade_glitter_tables.h', 'shade_state.h', 'shade_builder.h',
            'shade_colorcorrect.h', 'shade_dwabase.h', 'shade_dwalayer.h', 'shade_maps.h', 'shade_noise.h', 'shade_bssrdf.h', 'shade_mapnodes.h', 'shade_mapnodes_more.h', 'curve_core.h', 'curve_embree.h', 'volume_core.h', 'shade_material.h',
-           'dwa_admission.h', 'map_admission.h')
+           'dwa_admission.h', 'map_admission.h', 'aov_core.h', 'aov_material.h', 'aov_state.h', 'aov_crypto.h', 'camera_core.h')
 FAST_FLAGS = ['--std=c++17', '--gpu-architecture=compute_75', '--fmad=true', '--prec-div=true',
               '--prec-sqrt=true', '--ftz=false', '-DXPU2_PATHS_ONLY']
 

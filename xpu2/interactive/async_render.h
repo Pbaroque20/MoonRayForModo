@@ -12,6 +12,8 @@
 #include "async_cpu.h"
 #include "async_gpu.h"
 #include <functional>
+#include <limits>
+#include <map>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -45,6 +47,10 @@ struct Watch {
     double previewSeconds = 0.1;
     // The picture so far (RGB, the film's pixel order) and the share of the frame's samples in it.
     std::function<void(const std::vector<float>& rgb, U32 width, U32 height, double fraction)> preview;
+    // An output to show instead of the beauty (null: the beauty), asked at each picture; its picture comes as the
+    // frame so far, its AOVs resolved as the frame's end resolves them.
+    std::function<bool()> previewAov;
+    std::function<void(const struct RenderResult& sofar, double fraction)> previewResult;
 };
 
 // When things happened in a frame, in seconds from its start (TEL-01).
@@ -70,7 +76,15 @@ struct PassTrace {
 struct RenderResult {
     std::vector<float> rgba;
     std::vector<U32> counts;  // samples each pixel received
-    std::vector<float> odd;   // adaptive frames: odd-index sums over all samples (MoonRay's beauty aux)
+    std::vector<float> odd;   // adaptive frames and aux outputs: odd-index sums over all samples (MoonRay's beauty aux)
+    // The AOV schema's values a pixel (aov_core.h), resolved as MoonRay's snapshots resolve them: averages over the
+    // pixel's samples, sums, minima, maxima and the closest as they are; and the seconds each pixel took.
+    std::vector<float> aov;
+    std::vector<float> heat;
+    // Cryptomatte's fragments, finalized (aov_crypto.h), when an output asks for them.
+    std::shared_ptr<aov::CryptoBuffer> crypto;
+    // The display filter outputs' pixels by output name (aov_display.h), three floats a pixel, rows from the bottom.
+    std::map<std::string, std::vector<float>> displayFilters;
     U64 cpuSamples = 0, gpuSamples = 0, parkedRun = 0, launches = 0, cpuSteals = 0, cpuMoves = 0,
         gpuStolenChunks = 0, fineLoaded = 0, fineEvicted = 0;
     double seconds = 0, gpuItemsPerSecond = 0, cpuSamplesPerSecond = 0;
@@ -201,8 +215,10 @@ public:
         // Ownership carried over from earlier frames of the same grid (GRD-03).
         const U32 cells = ((plan_->width + gridOptions.cellSize - 1) / gridOptions.cellSize) *
                           ((plan_->height + gridOptions.cellSize - 1) / gridOptions.cellSize);
-        Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, ownership_.owners(cells), adaptive);
+        Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, ownership_.owners(cells), adaptive, plan_->viewport);
         HostFilm film(plan_->width, plan_->height);
+        film.initAovs(cpuScene_.aovTables, plan_->aovs && plan_->aovs->heatMap);
+        film.initCrypto(plan_->aovs.get());
         RetryQueue retries;
         const U32 itemsPerChunk = gridOptions.samplesPerChunk * TilePixels;
         if (useGpu) gpu_->begin(gridOptions.samplesPerChunk, adaptive);
@@ -285,14 +301,24 @@ public:
         double nextPreview = watch && watch->preview ? watch->previewSeconds : -1;
         std::vector<float> previewRgb;
         const double plannedSamples = double(plan_->width) * plan_->height * plan_->spp;
+        bool previewOfAov = false;
         auto preview = [&] {
             if (nextPreview < 0 || (previewState == PreviewIdle && at() < nextPreview)) return;
+            if (previewState == PreviewIdle) previewOfAov = watch->previewAov && watch->previewResult && watch->previewAov();
             if (previewState == PreviewIdle && useGpu) {
-                gpu_->downloadPreview();
+                gpu_->downloadPreview(previewOfAov);
                 previewState = PreviewCopying;
                 return;
             }
             if (previewState == PreviewCopying && !gpu_->previewReady()) return;
+            if (previewOfAov) {
+                RenderResult sofar;
+                const U64 seen = snapshotResult(film, sofar, adaptive, useGpu ? gpu_ : nullptr);
+                watch->previewResult(sofar, std::min(1.0, double(seen) / plannedSamples));
+                previewState = PreviewIdle;
+                nextPreview = at() + std::max(watch->previewSeconds, 0.5);
+                return;
+            }
             previewRgb.resize(size_t(plan_->width) * plan_->height * 3);
             const U64 seen = film.preview(previewRgb.data(), useGpu ? gpu_->sums() : nullptr, useGpu ? gpu_->counts() : nullptr);
             // An adaptive frame stops short of its most samples: its share is its passes done, where the host knows them.
@@ -442,13 +468,22 @@ public:
         const size_t pixels = size_t(plan_->width) * plan_->height;
         result.rgba.resize(pixels * 4);
         result.counts.resize(pixels);
-        if (adaptive) result.odd.resize(pixels * 4);
+        const bool aux = plan_->aovs && (plan_->aovs->beautyAux || plan_->aovs->alphaAux);
+        if (adaptive || aux) result.odd.resize(pixels * 4);
         const auto& hs = film.sums();
         const auto& hc = film.counts();
         U64 planned = 0;
+        // A camera that may make no ray for a sample (camera_core.h's CameraResult::None: a fisheye's corners, a bake
+        // camera's texels no face covers) leaves a pixel fewer samples than planned, none at all where it never makes
+        // one; pixels outside the sub viewport take none.
+        const bool dropsRays = plan_->camera.type == surface::CameraFisheye || plan_->camera.type == surface::CameraBake;
+        const int* view = plan_->viewport;
         for (size_t i = 0; i < pixels; ++i) {
             const U32 gc = useGpu ? gpu_->counts()[i] : 0, count = hc[i] + gc;
-            const U32 expected = !adaptive ? plan_->spp : state.chain ? gpu_->chainPlanned()[i] : state.planned[i];
+            const int px = int(i % plan_->width), py = int(i / plan_->width);
+            const bool inView = px >= view[0] && py >= view[1] && px < view[2] && py < view[3];
+            const U32 expected = !inView ? 0u : !adaptive ? (plan_->pixelSamples.empty() ? plan_->spp : plan_->pixelSamples[i])
+                                 : state.chain ? gpu_->chainPlanned()[i] : state.planned[i];
             result.counts[i] = count;
             planned += expected;
             // A drained frame has what it got: the mean of its samples, black where none landed.
@@ -459,20 +494,21 @@ public:
                 result.gpuSamples += gc;
                 continue;
             }
-            if (count != expected || !count) {
+            if (dropsRays ? count > expected : count != expected || (inView && !count)) {
                 result.failed = true;
                 result.error = "Sample audit failure at pixel " + std::to_string(i) + ": " + std::to_string(count);
                 return result;
             }
             for (int c = 0; c < 4; ++c) {
                 const double sum = hs[i * 4 + c] + (useGpu ? gpu_->sums()[i * 4 + c] : 0.0);
-                result.rgba[i * 4 + c] = float(sum / count);
-                if (adaptive)
-                    result.odd[i * 4 + c] = float((film.odd()[i * 4 + c] + (useGpu ? gpu_->odd()[i * 4 + c] : 0.0)) / count);
+                result.rgba[i * 4 + c] = count ? float(sum / count) : 0.0f;
+                if (adaptive || aux)
+                    result.odd[i * 4 + c] = count ? float((film.odd()[i * 4 + c] + (useGpu ? gpu_->odd()[i * 4 + c] : 0.0)) / count) : 0.0f;
             }
             result.cpuSamples += hc[i];
             result.gpuSamples += gc;
         }
+        resolveAovs(film, result, adaptive, useGpu ? gpu_ : nullptr);
         result.cpuSteals = cpuLane.counters.steals.load();
         result.cpuBusySeconds = cpuLane.counters.busyMicros.load() * 1e-6;
         result.cpuSlowestChunk = cpuLane.counters.slowestChunkMicros.load() * 1e-6;
@@ -504,6 +540,91 @@ public:
     }
 
 private:
+    // The frame so far, as its end would make it: the mean of each pixel's samples, the host's and the GPU's films
+    // merged and their AOVs resolved. The samples in it.
+    U64 snapshotResult(HostFilm& film, RenderResult& r, bool adaptive, const GpuLane* gpu) const {
+        std::vector<double> sums, odd, aov, heat;
+        std::vector<U32> counts;
+        std::vector<float> depths;
+        film.snapshot(sums, counts, odd, aov, depths, heat);
+        const size_t pixels = size_t(plan_->width) * plan_->height;
+        r.rgba.assign(pixels * 4, 0.0f);
+        r.counts.resize(pixels);
+        r.odd.assign(pixels * 4, 0.0f);
+        U64 seen = 0;
+        for (size_t i = 0; i < pixels; ++i) {
+            const U32 count = counts[i] + (gpu ? gpu->counts()[i] : 0u);
+            r.counts[i] = count;
+            seen += count;
+            if (!count) continue;
+            for (int c = 0; c < 4; ++c) {
+                r.rgba[i * 4 + c] = float((sums[i * 4 + c] + (gpu ? gpu->sums()[i * 4 + c] : 0.0)) / count);
+                r.odd[i * 4 + c] = float(odd[i * 4 + c] / count);
+            }
+        }
+        resolveAovValues(film.aovTables(), aov.data(), depths.data(), gpu ? gpu->aovs() : nullptr, gpu ? gpu->aovDepths() : nullptr,
+                         r.counts, adaptive, r.aov);
+        if (!heat.empty()) {
+            r.heat.resize(pixels);
+            for (size_t p = 0; p < pixels; ++p) r.heat[p] = float(heat[p] + (gpu && gpu->heat() ? gpu->heat()[p] : 0.0));
+        }
+        return seen;
+    }
+    // The AOV accumulators (the host's, and the GPU's merged in) resolved as MoonRay's snapshots resolve them.
+    void resolveAovValues(const aov::Tables& t, const double* hostAov, const float* hostDepths, const float* gpuAovs,
+                          const float* gpuDepths, const std::vector<U32>& counts, bool adaptive, std::vector<float>& out) const {
+        const size_t pixels = size_t(plan_->width) * plan_->height;
+        if (!t.channels) return;
+        out.assign(pixels * t.channels, 0.0f);
+        const unsigned consistent = adaptive ? std::max(2u, plan_->minSamples) : plan_->spp;
+        std::vector<double> merged(t.channels);
+        std::vector<float> depths(std::max<U32>(t.closestCount, 1));
+        for (size_t p = 0; p < pixels; ++p) {
+            const double* a = hostAov + p * t.channels;
+            if (gpuAovs) {
+                std::copy(a, a + t.channels, merged.begin());
+                for (U32 k = 0; k < t.closestCount; ++k) depths[k] = hostDepths[p * t.closestCount + k];
+                mergeAovPixel(t, merged.data(), depths.data(), gpuAovs + p * t.channels, gpuDepths ? gpuDepths + p * t.closestCount : depths.data());
+                a = merged.data();
+            }
+            float* o = out.data() + p * t.channels;
+            const double w = double(counts[p]);
+            for (U32 i = 0; i < t.count; ++i) {
+                const aov::Entry& e = t.entries[i];
+                for (U32 c = 0; c < e.channels; ++c) {
+                    const double v = a[e.offset + c];
+                    const bool data = std::isfinite(v);
+                    double r = v;
+                    if (e.type == aov::TypeVisibility) r = v;
+                    // MoonRay's frame buffers sum in floats: a sum past the largest float is infinite.
+                    else if (data && (e.filter == aov::FilterAvg || e.filter == aov::FilterSum) && std::fabs(v) > 3.402823466e38)
+                        r = v > 0 ? std::numeric_limits<double>::infinity() : -std::numeric_limits<double>::infinity();
+                    else if (e.filter == aov::FilterAvg && w > 0 && data) r = v / w;
+                    else if (e.filter == aov::FilterConsistent && data) r = v / double(consistent);
+                    o[e.offset + c] = float(r);
+                }
+            }
+        }
+    }
+    // The film's AOV accumulators as MoonRay's snapshots resolve them (snapshotAovBuffer): an average over the pixel's
+    // samples (its weight), the force-consistent filter over the frame's consistent sample count (getNumConsistentSamples),
+    // the rest as they are (an untouched min or max infinite, as MoonRay leaves it).
+    void resolveAovs(HostFilm& film, RenderResult& result, bool adaptive, const GpuLane* gpu) const {
+        const aov::Tables& t = film.aovTables();
+        const size_t pixels = size_t(plan_->width) * plan_->height;
+        resolveAovValues(t, film.aovs().data(), film.aovDepths().data(), gpu ? gpu->aovs() : nullptr, gpu ? gpu->aovDepths() : nullptr,
+                         result.counts, adaptive, result.aov);
+        if (!film.crypto().empty()) {
+            if (gpu) const_cast<GpuLane*>(gpu)->mergeCrypto(film.crypto());
+            result.crypto = std::make_shared<aov::CryptoBuffer>(std::move(film.crypto()));
+            result.crypto->finalize(result.counts);
+        }
+        if (!film.heat().empty()) {
+            result.heat.resize(pixels);
+            const double* gpuHeat = gpu ? gpu->heat() : nullptr;
+            for (size_t p = 0; p < pixels; ++p) result.heat[p] = float(film.heat()[p] + (gpuHeat ? gpuHeat[p] : 0.0));
+        }
+    }
     // An adaptive frame's passes (async_adaptive.h). Passes below the minimum sample
     // count render every pixel and go out together, as table slots free. Each
     // later pass goes out once the trees have seen every pass before it, as each of
@@ -545,7 +666,7 @@ private:
             inImage.assign(tiles, 0);
             for (U32 tile = 0; tile < tiles; ++tile)
                 for (U32 q = 0; q < TilePixels; ++q)
-                    if (tilePixel(tile, q, p.width, p.height) != ~0u) inImage[tile] |= 1ull << q;
+                    if (tilePixel(tile, q, p.width, p.height, p.viewport) != ~0u) inImage[tile] |= 1ull << q;
             for (U32 s = 0; s < PassSlots; ++s) {
                 tables.masks[s].assign(tiles, 0);
                 tables.bases[s].assign(planned.size(), 0);

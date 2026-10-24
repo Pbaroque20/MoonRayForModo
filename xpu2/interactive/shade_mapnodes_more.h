@@ -392,9 +392,10 @@ X2_HD inline Color sampleWireframe(const MapParams& P, const State& st) {
     float t = thickness + thickness * .5f;
     if (q.raster != 0.0f) t = pw * q.line_width;
     const float tSq = t * t;
-    const V3 v[3] = {renderPoint(st, st.pa), renderPoint(st, st.pb), renderPoint(st, st.pc)};
-    for (int i1 = 0; i1 < 3; ++i1) {
-        const int i0 = i1 == 0 ? 2 : i1 - 1;
+    const V3 v[4] = {renderPoint(st, st.pa), renderPoint(st, st.pb), renderPoint(st, st.pc), renderPoint(st, st.pd)};
+    const int n = int(st.polyCount);
+    for (int i1 = 0; i1 < n; ++i1) {
+        const int i0 = i1 == 0 ? n - 1 : i1 - 1;
         const V3 edge = v[i1] - v[i0], dir = Pr - v[i0];
         if (lengthSqr(cross(edge, dir)) < tSq * lengthSqr(edge)) return line;
     }

@@ -20,6 +20,8 @@
 #include "../../native-port/modo_scene_memory.h"
 #include "../../native-port/modo_shared_image.h"
 #include <OpenImageIO/imageio.h>
+#include "aov_write.h"
+#include "aov_display.h"
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 #include <fstream>
@@ -180,6 +182,7 @@ struct Scene {
     fs::path lastFolder;
     cpu::PlanView plan;
     std::unique_ptr<async::CpuScene> cpuScene;
+    aov::DisplayFilters displayFilters;  // the scene's display filters, MoonRay's own (aov_display.h)
     bool changed = true;
 
     void load(const std::vector<std::string>& files) {
@@ -204,6 +207,9 @@ struct Scene {
         ++epoch;
         const fs::path folder = staging / ("frame-" + std::to_string(++frames));
         auto frame = canonical->prepare(*source, folder, {3301, epoch, epoch, epoch});
+        // The outputs in the order the scene declared them (the canonical copy holds them by name).
+        aov::outputOrder().clear();
+        for (const rdl::RenderOutput* ro : source->getAllRenderOutputs()) aov::outputOrder().push_back(ro->getName());
         try {
             plan = cpu::prepare(*canonical, frame, plan, cpu::Limits{}, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
         } catch (...) {
@@ -212,6 +218,9 @@ struct Scene {
         }
         cpu::need(canonical->acknowledge(frame) && canonical->publish(frame), "Canonical publish");
         cpuScene = std::make_unique<async::CpuScene>(plan);
+        displayFilters = aov::DisplayFilters();
+        if (plan->aovs && !plan->aovs->displayFilters.empty())
+            displayFilters.prepare(canonical->replica(), *plan->aovs, dso.string(), plan->width, plan->height);
         std::error_code ignored;
         if (!lastFolder.empty()) fs::remove_all(lastFolder, ignored);
         lastFolder = folder;
@@ -224,42 +233,11 @@ struct Scene {
     }
 };
 
-// What the frame writes when it ends: the scene's render outputs, its beauty (RGB) and alpha (A).
-struct Output {
-    std::string file;
-    int result = 0;
-    bool half = false;
-    int compression = 1;
-};
-std::vector<Output> outputs(const rdl::SceneContext& context) {
-    std::vector<Output> list;
-    for (auto i = context.beginSceneObject(); i != context.endSceneObject(); ++i) {
-        const rdl::SceneObject* o = i->second;
-        if (!o->isA<rdl::RenderOutput>()) continue;
-        const auto* r = o->asA<rdl::RenderOutput>();
-        if (!r->getActive()) continue;
-        const int result = int(r->getResult());
-        cpu::need(result == 0 || result == 1,
-                  o->getName() + ": XPU2 renders the beauty and alpha only; this render output needs MoonRay");
-        list.push_back({r->getFileName(), result, r->getChannelFormat() == rdl::RenderOutput::CHANNEL_FORMAT_HALF, int(r->getCompression())});
-    }
-    return list;
-}
-void writeOutput(const Output& out, const std::vector<float>& rgba, U32 width, U32 height) {
-    // The film's rows run from the bottom, an EXR's from the top (as MoonRay writes it).
-    const int channels = out.result == 0 ? 3 : 1;
-    std::vector<float> data(size_t(width) * height * channels);
-    for (size_t y = 0; y < height; ++y)
-        for (size_t x = 0; x < width; ++x)
-            for (int c = 0; c < channels; ++c)
-                data[((height - 1 - y) * width + x) * channels + c] = rgba[(y * width + x) * 4 + (out.result == 0 ? c : 3)];
-    OIIO::ImageSpec spec(int(width), int(height), channels, out.half ? OIIO::TypeDesc::HALF : OIIO::TypeDesc::FLOAT);
-    spec.channelnames = out.result == 0 ? std::vector<std::string>{"R", "G", "B"} : std::vector<std::string>{"A"};
-    static const char* const compressions[] = {"none", "zip", "rle", "zips", "piz", "pxr24", "b44", "b44a", "dwaa", "dwab"};
-    spec.attribute("compression", compressions[out.compression >= 0 && out.compression < 10 ? out.compression : 1]);
-    auto file = OIIO::ImageOutput::create(out.file);
-    cpu::need(file && file->open(out.file, spec), "Cannot write " + out.file);
-    cpu::need(file->write_image(OIIO::TypeDesc::FLOAT, data.data()) && file->close(), "Cannot write " + out.file);
+// What the frame writes when it ends: the scene's render outputs (aov_plan.h, aov_write.h), as MoonRay writes them.
+// What XPU2 does not make yet leaves the scene to MoonRay.
+void checkOutputs(const aov::Plan& plan, bool gpu) {
+    cpu::need(!plan.deep, "Deep outputs are not rendered by XPU2 yet");
+    cpu::need(!plan.checkpoint && !plan.resume, "Checkpoint and resume renders are not rendered by XPU2 yet");
 }
 
 // The outlines of the work, thirty times a second, from a thread of their own.
@@ -395,7 +373,6 @@ int session(const Args& args, const fs::path& directory) {
         bool complete = false;
         if (!waiting()) {
             async::RenderResult result;
-            std::vector<Output> files;
             try {
                 const auto began = Clock::now();
                 const bool fresh = scene.changed;
@@ -405,7 +382,7 @@ int session(const Args& args, const fs::path& directory) {
                     renderer.reset();
                 }
                 scene.prepare();
-                files = outputs(*scene.source);
+                if (scene.plan->aovs) checkOutputs(*scene.plan->aovs, mode != 0);
                 if (mode != 0 && !gpu) {
                     const Programs p = programs(folder);
                     if (!fs::exists(shaderMark(p))) {
@@ -485,6 +462,55 @@ int session(const Args& args, const fs::path& directory) {
                         out[2] = rgb[i * 3 + 2];
                     });
                 };
+                // An output the kit asks to see (its view.txt, a key of hold.txt): /modo/preview/<key>, of at most three
+                // channels, neither Cryptomatte nor deep (as the kit's MoonRay session takes it).
+                auto previewOutput = [&](const std::string& key) -> const aov::Output* {
+                    if (key == "beauty" || !scene.plan->aovs) return nullptr;
+                    for (const aov::Output* out : scene.plan->aovs->all)
+                        if (out->name == "/modo/preview/" + key && out->channels.size() <= 3 && out->result != aov::ResultCryptomatte)
+                            return out;
+                    return nullptr;
+                };
+                auto viewKey = [&]() {
+                    std::string key = "beauty", selected;
+                    std::ifstream view(directory / "view.txt");
+                    if (std::getline(view, selected) && !selected.empty() && selected.size() <= 64 &&
+                        std::all_of(selected.begin(), selected.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; }))
+                        key = selected;
+                    return key;
+                };
+                // An output's values as a picture (one channel shown grey, two with blue black).
+                auto publishOutput = [&](const std::string& key, const aov::Output& out, async::RenderResult& r) {
+                    if (out.result == aov::ResultDisplayFilter && !scene.displayFilters.empty() && !r.displayFilters.count(out.name)) {
+                        std::vector<std::vector<float>> filtered;
+                        scene.displayFilters.run(*scene.plan->aovs, r, filtered);
+                        size_t k = 0;
+                        for (const aov::Output* o : scene.plan->aovs->all)
+                            if (o->result == aov::ResultDisplayFilter && k < filtered.size()) r.displayFilters[o->name] = std::move(filtered[k++]);
+                    }
+                    const size_t n = out.channels.size();
+                    std::vector<float> v(std::max<size_t>(n, 3) + 8);
+                    return useShared && shared.publish(id, key, width, height, [&](size_t i, float* px) {
+                        aov::outputValues(*scene.plan->aovs, out, r, i, v.data());
+                        px[0] = v[0];
+                        px[1] = n > 1 ? v[1] : v[0];
+                        px[2] = n > 2 ? v[2] : n == 1 ? v[0] : 0.0f;
+                    });
+                };
+                std::string currentView = "beauty";
+                watch.previewAov = [&] {
+                    currentView = viewKey();
+                    return previewOutput(currentView) != nullptr;
+                };
+                watch.previewResult = [&](const async::RenderResult& sofar, double fraction) {
+                    if (const aov::Output* out = previewOutput(currentView)) {
+                        async::RenderResult r = sofar;
+                        publishOutput(currentView, *out, r);
+                    }
+                    std::ostringstream progress;
+                    progress << "@@MODO_PROGRESS " << id << " " << fraction;
+                    modoProtocolLine(progress.str());
+                };
                 watch.preview = [&](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
                     publish(rgb, w, h);
                     std::ostringstream progress;
@@ -516,12 +542,32 @@ int session(const Args& args, const fs::path& directory) {
                     const auto until = Clock::now() + std::chrono::milliseconds(held ? 3000 : 300);
                     while (useShared && !shared.ready() && Clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(5));
                     if (held) {
-                        for (const auto& key : holdKeys)
+                        // The keys asked for at a stop, each when the host has taken the one before.
+                        for (const auto& key : holdKeys) {
+                            const auto wait = Clock::now() + std::chrono::milliseconds(3000);
+                            while (useShared && !shared.ready() && Clock::now() < wait) std::this_thread::sleep_for(std::chrono::milliseconds(5));
                             if (key == "beauty") publish(rgb, width, height);
+                            else if (const aov::Output* out = previewOutput(key)) publishOutput(key, *out, result);
+                        }
                         fs::remove(directory / "hold.txt", ignored);
                     } else {
-                        publish(rgb, width, height);
-                        for (const auto& f : files) writeOutput(f, result.rgba, width, height);
+                        const std::string view = viewKey();
+                        if (const aov::Output* out = previewOutput(view)) publishOutput(view, *out, result);
+                        else publish(rgb, width, height);
+                        if (scene.plan->aovs) {
+                            std::vector<std::string> warnings;
+                            if (!scene.displayFilters.empty()) {
+                                std::vector<std::vector<float>> filtered;
+                                scene.displayFilters.run(*scene.plan->aovs, result, filtered);
+                                size_t k = 0;
+                                for (const aov::Output* out : scene.plan->aovs->all)
+                                    if (out->result == aov::ResultDisplayFilter && k < filtered.size())
+                                        result.displayFilters[out->name] = std::move(filtered[k++]);
+                            }
+                            const std::string error = aov::writeOutputs(*scene.plan->aovs, result, width, height, warnings);
+                            for (const auto& w : warnings) std::puts(("XPU2: " + w).c_str());
+                            cpu::need(error.empty(), error);
+                        }
                         complete = true;
                         std::printf("XPU2: %s in %.2f s (CPU %llu samples, GPU %llu)\n", result.drained ? "drained" : "finished",
                                     result.seconds, (unsigned long long)result.cpuSamples, (unsigned long long)result.gpuSamples);

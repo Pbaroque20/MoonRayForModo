@@ -203,6 +203,7 @@ struct IridescenceParams {
 
 struct Lobe {
     U32 kind = KindLambert, type = 0, flags = 0;
+    // label: its AOV label ids as aovEncodeLabels makes them (encodedLabel), 0 for none.
     U32 fresnel = NoIndex, child = NoIndex, label = 0;
     Color scale{1, 1, 1};
     Frame frame{};  // z is the lobe normal N
@@ -231,6 +232,9 @@ struct Bsdf {
     unsigned char top[MaxLobes];
     U32 topCount = 0, recordCount = 0, type = 0;
     bool spherical = false, earlyTermination = false;
+    bool fatal = false;  // a hit without an attribute its shading requires: the fatal colour alone
+    // The material's own label ids (encodedLabel of label 0: Bsdf::getMaterialLabelId, getLpeMaterialLabelId).
+    U32 materialLabels = 0;
     Color selfEmission{0, 0, 0};
     FresnelPool fresnels;
     ColorRamp ramps[MaxRamps];
@@ -239,16 +243,25 @@ struct Bsdf {
     HairRecord hairs[MaxHairRecords];  // its hair lobes' parameters
     U32 hairCount = 0;
     GlitterFlakeSet flakeSet;  // its stochastic flakes lobe's flakes (one glitter a material)
+    // The material's extra AOVs at this hit (shading::Material's extra AOVs, ListMap of ExtraAovMaps): each one's
+    // light path expression label ('U:' and its label), its value, and (extraPost, a bit each) whether it is
+    // accumulated after the scattering (Bsdf::setPostScatterExtraAovs) rather than at the hit.
+    static constexpr U32 MaxExtraAovs = 20;
+    U32 extraCount = 0, extraPost = 0;
+    int extraLabel[MaxExtraAovs];
+    Color extraValue[MaxExtraAovs];
 };
 // Empties a Bsdf for reuse without touching its records' storage.
 X2_HD inline void reset(Bsdf& b) {
     b.topCount = b.recordCount = b.type = 0;
-    b.spherical = b.earlyTermination = false;
+    b.spherical = b.earlyTermination = b.fatal = false;
+    b.materialLabels = 0;
     b.selfEmission = Color{0, 0, 0};
     b.fresnels.count = 0;
     b.rampCount = 0;
     b.bssrdf.type = BssrdfNone;
     b.hairCount = 0;
+    b.extraCount = b.extraPost = 0;
 }
 X2_HD inline U32 newRecord(Bsdf& b) {
     if (b.recordCount >= MaxLobeRecords) return NoIndex;
@@ -263,6 +276,13 @@ X2_HD inline bool addLobe(Bsdf& b, U32 record) {
     return true;
 }
 X2_HD inline const Lobe& topLobe(const Bsdf& b, U32 i) { return b.records[b.top[i]]; }
+// AovLabels.hh: a label's material AOV id (bits 0 to 15 less one) and its light path expression id (bits 16 to 31 less
+// one), -1 for none.
+X2_HD inline U32 encodedLabel(int materialAovId, int lpeId) {
+    return U32(materialAovId + 1) & 0xffffu | (U32(lpeId + 1) & 0xffffu) << 16;
+}
+X2_HD inline int labelMaterialAovId(U32 encoded) { return int(encoded & 0xffffu) - 1; }
+X2_HD inline int labelLpeId(U32 encoded) { return int(encoded >> 16) - 1; }
 
 X2_HD inline Color scaleAndFresnel(const Bsdf& b, const Lobe& l, float cosWi) {
     return l.fresnel == NoIndex ? l.scale : l.scale * fresnelEval(b.fresnels, l.fresnel, cosWi);

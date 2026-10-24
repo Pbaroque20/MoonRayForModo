@@ -1802,6 +1802,43 @@ X2_CALL U32 runMapPrefix(const float* pool, U32 program, U32 end, const State& s
     }
     return tex::Ready;
 }
+// A bump map's list (after the program's required keys: the bump count, then each bump map's node, its list's
+// length and the nodes its inputs need, in program order); null when the node has none.
+X2_HD inline const U32* bumpList(const float* pool, U32 program, U32 node, U32& n) {
+    const U32* w = reinterpret_cast<const U32*>(pool + program);
+    const U32 count = w[0], required = w[1 + count];
+    const U32* t = w + 2 + count + required;
+    const U32 bumps = t[0];
+    ++t;
+    for (U32 b = 0; b < bumps; ++b) {
+        const U32 at = t[0], len = t[1];
+        if (at == node) {
+            n = len;
+            return t + 2;
+        }
+        t += 2 + len;
+    }
+    n = 0;
+    return nullptr;
+}
+// Runs the listed maps of a program at st, each map's result in its register (none of them a bump map).
+template <class Tex>
+X2_CALL U32 runMapList(const float* pool, U32 program, const U32* list, U32 n, const State& st, const Tex& tex, Color* regs) {
+    for (U32 k = 0; k < n; ++k) {
+        const U32 node = *reinterpret_cast<const U32*>(pool + program + 1 + list[k]);
+        const MapNodeHeader& h = *reinterpret_cast<const MapNodeHeader*>(pool + node);
+        if (h.reg >= MapMaxRegisters) return tex::Invalid;
+        const U32 headerFloats = sizeof(MapNodeHeader) / sizeof(float);
+        const MapParams P{pool + node + headerFloats,
+                          reinterpret_cast<const MapBinding*>(pool + node + headerFloats + h.paramCount), h.bindingCount, regs};
+        if (modoNeedsBump(h, P.p)) return tex::Invalid;
+        Color out;
+        const U32 status = sampleMap(h, P, st, tex, out);
+        if (status != tex::Ready) return status;
+        regs[h.reg] = out;
+    }
+    return tex::Ready;
+}
 // Whether the hit has every primitive attribute the program's maps require (after its nodes: a count, the keys).
 X2_HD inline bool mapRequirementsMet(const float* pool, U32 program, const State& st) {
     const U32 count = *reinterpret_cast<const U32*>(pool + program);
@@ -1823,17 +1860,20 @@ X2_CALL U32 runMapProgram(const float* pool, U32 program, const State& st, const
                           reinterpret_cast<const MapBinding*>(pool + node + headerFloats + h.paramCount), h.bindingCount, regs};
         Color out;
         if (modoNeedsBump(h, P.p)) {
-            // evalAttrHeight at st shifted by the bump step: the maps before this one at each shifted state.
+            // evalAttrHeight at st shifted by the bump step: the maps its inputs need at each shifted state.
             using Q = MapModoTextureParams;
             const float e = fmaxf(1.e-7f, reinterpret_cast<const Q*>(P.p)->bump_step);
             const float ds[4] = {e, -e, 0, 0}, dt[4] = {0, 0, e, -e};
+            U32 listLength = 0;
+            const U32* list = bumpList(pool, program, i, listLength);
+            if (!list) return tex::Invalid;
             ModoBumpHeights heights;
             for (int k = 0; k < 4; ++k) {
                 State other = st;
                 other.s = st.s + ds[k];
                 other.t = st.t + dt[k];
                 Color shifted[MapMaxRegisters];
-                const U32 status = runMapPrefix(pool, program, i, other, tex, shifted);
+                const U32 status = runMapList(pool, program, list, listLength, other, tex, shifted);
                 if (status != tex::Ready) return status;
                 const MapParams Q2{P.p, P.b, P.nb, shifted};
                 heights.v[k] = Q2.f(X2_OFF(Q, height));
