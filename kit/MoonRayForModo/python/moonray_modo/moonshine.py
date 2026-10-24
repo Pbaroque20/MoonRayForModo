@@ -228,6 +228,11 @@ def emit(material, tag, index, bindings, lines):
             lines += ['ModoNormalMap(%s) { ["input"] = %s }' % (string(name),value)]
             attributes['input_normal' if key=='normal' else 'independent_clearcoat_normal']='ModoNormalMap(%s)' % string(name)
             if key=='coatNormal':attributes['use_independent_clearcoat_normal']='true'
+            elif 'coatNormal' not in bindings and material.get('clearcoat',0)>0 and material.get('clearcoat_bump',1.0)<1.0:
+                # Modo's Clearcoat Bump Strength: the coat takes the bump and normal maps that much (none at 0, a
+                # smooth coat over a bumpy surface), as MoonRay's own normal for the coat, turned down by its dial.
+                attributes.update(use_independent_clearcoat_normal='true',independent_clearcoat_normal='ModoNormalMap(%s)'%string(name),
+                                  clearcoat_normal_dial=number(max(0.0,material['clearcoat_bump'])))
         elif key=='ior':
             # MoonRay takes an index of refraction as a number only: a map wired to it is refused with a warning for
             # each material, and the number set above is what renders either way.

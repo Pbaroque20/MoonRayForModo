@@ -1048,11 +1048,23 @@ FILTER_INPUTS = {
 FILTER_NEEDS = {'ShadowDisplayFilter': (), 'RampDisplayFilter': (), 'ImageDisplayFilter': ()}
 
 
+def toon_lines_apart():
+    """The MoonRay Source Override that lets a Toon display filter give its lines apart from its shading."""
+    try:
+        from .preferences import Preferences
+        return bool(Preferences().get('toon_lines_apart'))
+    except Exception:
+        return True
+
+
 def completed_filters(entities, warnings):
     """The entities, each display filter with every input MoonRay needs: one left empty takes the output it starts
     on, said in a notice; a filter missing one with nothing to take is left out, said, rather than drawn pink."""
     result = []
     for entity in entities:
+        if entity['class'] == 'ToonDisplayFilter' and entity['parameters'].get('output_mode') and not toon_lines_apart():
+            # The MoonRay Source Override is off: the shading with its lines, as MoonRay itself gives it.
+            entity = dict(entity, parameters={k: v for k, v in entity['parameters'].items() if k != 'output_mode'})
         inputs = FILTER_INPUTS.get(entity['class'])
         if not inputs or catalog()[entity['class']]['category'] != 'displayfilter':
             result.append(entity)

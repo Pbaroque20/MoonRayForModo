@@ -184,6 +184,7 @@ DeviceMaterial toDevice(const Material& m) {
     d.coatRoughness = std::clamp(m.clearcoatRoughness, 0.0f, 1.0f);
     d.dissolve = std::clamp(m.dissolve, 0.0f, 1.0f);
     d.bumpStrength = m.bumpStrength;
+    d.coatBump = std::clamp(m.clearcoatBump, 0.0f, 1.0f);
     d.anisotropy = std::clamp(m.anisotropy, -1.0f, 1.0f);
     std::copy(m.tangent, m.tangent + 2, d.tangent);
     d.tangentSlot = std::min<uint32_t>(m.tangentSlot, UV_SLOTS);

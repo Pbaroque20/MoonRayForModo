@@ -11,6 +11,23 @@ def deformers(scene):
     return False
 
 
+def environment_locator(item):
+    """Whether a texture locator places only environment layers (an HDRI's rotation): moving it changes what lights
+    the scene from around it, which is read at every update, and no mesh."""
+    try:
+        if item.type!='txtrLocator':return False
+        layers=list(item.itemGraph('shadeLoc').reverse())
+        if not layers:return False
+        for layer in layers:
+            parent=layer.parent
+            while parent is not None and parent.type!='environment':
+                if parent.type=='polyRender':return False
+                parent=parent.parent
+            if parent is None:return False
+        return True
+    except (RuntimeError,LookupError,AttributeError):return False
+
+
 def classify(scene, identities, cache):
     # A native material added from Add Layer has a type of its own; it is a material like the rest.
     types={'advancedMaterial' if kind.startswith('material.dw.') or kind=='material.mtlx' else kind for kind in (scene.item(identity).type for identity in identities)}
@@ -22,6 +39,16 @@ def classify(scene, identities, cache):
             except (RuntimeError,LookupError,AttributeError):pass
         return False
     if types<=LIGHTS:return True
+    # An environment image turned or moved: what is around the scene is read again, the meshes are kept (each step
+    # of turning an HDRI read the whole scene again, seconds in a large one).
+    try:
+        if types<=LIGHTS|{'txtrLocator','translation','rotation','scale'} and 'txtrLocator' in types or types&{'translation','rotation','scale'}:
+            located=[scene.item(identity) for identity in identities]
+            owners=[o for item in located if item.type in ('translation','rotation','scale') for o in item.itemGraph('xfrmCore').forward()]
+            places=[item for item in located if item.type=='txtrLocator']+[o for o in owners if o.type=='txtrLocator']
+            others=[item for item in located if item.type not in LIGHTS|{'txtrLocator','translation','rotation','scale'}]+[o for o in owners if o.type!='txtrLocator' and o.type not in LIGHTS]
+            if places and not others and all(environment_locator(item) for item in places):return True
+    except (RuntimeError,LookupError,AttributeError):pass
     if types<=LIGHTS|MATERIALS:return 'materials'
     if types<=LIGHTS|{'translation','rotation','scale'}:
         owners=[]

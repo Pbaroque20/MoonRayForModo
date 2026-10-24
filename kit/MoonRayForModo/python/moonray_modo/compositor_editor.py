@@ -336,7 +336,7 @@ class Editor(QtWidgets.QDialog):
         footer = QtWidgets.QHBoxLayout(); layout.addLayout(footer)
         self.info = QtWidgets.QLabel('Tab or double-click adds a node. Drag between sockets to connect. The Composite buffer is made when a MoonRay render has finished.')
         self.info.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
-        self.info.setToolTip('Wheel zooms. Middle drag, or Alt and drag, pans. F frames the selection, A everything. Ctrl+D duplicates, Delete removes, Ctrl+Z undoes. Right-click a socket or wire to disconnect.')
+        self.info.setToolTip('Wheel zooms. Middle drag, or Alt and drag, pans. F frames the selection, A everything. Ctrl+D duplicates, Delete removes, Ctrl+Z undoes. Drag a wire off its input to disconnect it or move it to another input; right-click a socket or wire to disconnect.')
         footer.addWidget(self.info, 1)
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close); footer.addWidget(buttons)
         buttons.rejected.connect(self.reject)
@@ -1108,6 +1108,11 @@ class Editor(QtWidgets.QDialog):
                 for spin in spins:
                     spin.valueChanged.connect(lambda value, key=key, spins=spins: self.set_value(identity, key, [s.value() for s in spins]))
             self.form.addRow(key, field); self.fields.append(field)
+            # Tab and Shift+Tab go from field to field.
+            if getattr(self, 'tab_between', None) is None:
+                from .node_widgets import TabBetween
+                self.tab_between = TabBetween(lambda: list(self.fields), self)
+            self.tab_between.watch(field)
         if not schema['parameters']:
             self.property_help.setText(schema['tip'] + ' It has no settings.')
 

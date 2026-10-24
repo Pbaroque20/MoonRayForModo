@@ -8,6 +8,18 @@ The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## Coming next
 
+- **Previews on texture nodes** in the graph editor: each texture node shows what it makes, rendered by MoonRay in the background and kept until something feeding it changes (View > Previews on Texture Nodes).
+- **Toon lines apart from the shading**: a Toon display filter's Output Mode gives its ink lines alone, white on black, or its shading without them; add one of each to composite the lines yourself. A MoonRay Source Override in Preferences, on by default.
+- **Clearcoat Bump Strength** is followed, in MoonRay and in MoonLightIPR: at 0 the coat stays smooth over a bumpy or normal-mapped surface.
+- **The graph editor's Image node has Invert**, as a Shader Tree image layer does.
+- **Images in the scene are a click away** when choosing a texture file in the graph editor: the images Modo's Clip Browser lists come first, then Browse Files.
+- **Drag a wire off its input** to disconnect it, or onto another input to move it, in the graph editor and the compositor.
+- **Tab and Shift+Tab move between fields** in the graph editor's and the compositor's settings.
+- **A render working space for every new scene** in MoonRay's Preferences (Renderer), for scenes that have not chosen one in the Assets window.
+- **Textures convert side by side**: MoonRay's .tx and MoonLightIPR's conversions run several at a time, the first render of a scene with many textures in a fraction of the time.
+- **A colour correction on an image is sharp in MoonLightIPR**: it is baked over one repeat of the image at 2048 pixels and laid on as the image is, where it was 512 pixels over the whole of the UVs.
+- **Turning an environment image is followed at once**: the scene's meshes are no longer read again for it.
+- **A Modo package (.lpk)** can be made of a release, kit and runtime in one file to drop onto Modo (tools/package_lpk.py).
 - **Display filters no longer come out pink for want of an input.** Each starts on every picture MoonRay needs it to have (a Toon filter on Albedo, Camera depth, Direct diffuse, Direct glossy and Shading normal; Depth of Field on Camera depth; Over on Alpha). One left empty in a scene takes that picture, with a notice, and one that cannot be given what it needs is left out, said, rather than drawn pink.
 - **Modo's light volumetrics and environment fog render**, in MoonRay and in MoonLightIPR. A point light with Volumetrics on lights a sphere of fog, a spot light its cone and a directional light a cylinder, sized by the light's volumetric Radius, Height and Base, and thick as its light material's Density, Scattering, Scattering Color, Attenuation and Shift say; only that light lights it. The Environment Material's fog is fog around the camera, lit by the environment: Exponential at its density, Linear from Fog Start and thick by Fog End, Layered up to its height. Not yet compared with Modo's own renders.
 

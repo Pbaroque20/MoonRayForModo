@@ -116,16 +116,19 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
         digest = hashlib.sha256(repr((signature,transform_key,mipmaps)).encode()).hexdigest()
         cache = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/Textures' / digest
         cache.mkdir(parents=True, exist_ok=True)
+        from . import conversions
         for tile,path in tiles.items():
             target = cache / ('tile.%d.tx' % tile)
             if not target.is_file():
-                prepared = prepare(path, srgb, mipmaps, space)
-                staged = target.with_name(target.name+'.'+uuid.uuid4().hex+'.tmp')
-                try:
-                    shutil.copyfile(prepared, staged)
-                    staged.replace(target)
-                finally:
-                    if staged.exists(): staged.unlink()
+                def tile_work(path=path, target=target):
+                    prepared = prepare(path, srgb, mipmaps, space)
+                    staged = target.with_name(target.name+'.'+uuid.uuid4().hex+'.tmp')
+                    try:
+                        shutil.copyfile(prepared, staged)
+                        staged.replace(target)
+                    finally:
+                        if staged.exists(): staged.unlink()
+                conversions.run(str(target), tile_work)
         return str(cache/'tile.<UDIM>.tx')
 
     source = Path(source).resolve()
@@ -146,13 +149,21 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
     converter = runtime / 'maketx.exe'
     if not converter.is_file():
         raise ValueError('Texture conversion needs maketx.exe in the MoonRay runtime. Reinstall the kit.')
-    staged = cache / (key + '-' + uuid.uuid4().hex + '.tx')
+    def convert():
+        staged = cache / (key + '-' + uuid.uuid4().hex + '.tx')
+        _convert(args + ['-o', str(staged), str(source)], staged, target, source, runtime)
     args = [str(converter), '--oiio', '--threads', '2', '-d', 'float', '--unpremult']
     if not mipmaps:
         args += ['--nomipmap']
     if custom:args += ['--colorconfig',config,'--colorconvert',space,policy.get('linear_space','Linear Rec.709 (sRGB)')]
     elif space=='sRGB':args += ['--colorconvert','sRGB','linear']
-    args += ['-o', str(staged), str(source)]
+    # Inside a scene being written (conversions.together), alongside the scene's other textures.
+    from . import conversions
+    conversions.run(str(target), convert)
+    return str(target)
+
+
+def _convert(args, staged, target, source, runtime):
     try:
         result = subprocess.run(args, env=native.environment(runtime), stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, timeout=600,
@@ -163,7 +174,6 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
     finally:
         if staged.exists():
             staged.unlink()
-    return str(target)
 
 
 def resolve_scene_source(filename,scene_filename=None):

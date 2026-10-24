@@ -9,7 +9,7 @@ MAPS={
  'swizzle':{'in':('Rgb',[0,0,0]),'channels':('String','rgb'),'index':('Int',0)},
  'combine':{'in1':('Float',0),'in2':('Float',0),'in3':('Float',0)},
  'clamp':{'in':('Rgb',[0,0,0]),'low':('Rgb',[0,0,0]),'high':('Rgb',[1,1,1])},
- 'image':{'file':('String',''),'srgb':('Bool',True),'color_space':('String',''),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0]),'uaddressmode':('String','periodic'),'vaddressmode':('String','periodic'),'default':('Rgb',[0,0,0]),'filtertype':('String','linear')},
+ 'image':{'file':('String',''),'srgb':('Bool',True),'color_space':('String',''),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0]),'uaddressmode':('String','periodic'),'vaddressmode':('String','periodic'),'default':('Rgb',[0,0,0]),'filtertype':('String','linear'),'invert':('Bool',False)},
  'multiply':{'in1':('Rgb',[1,1,1]),'in2':('Rgb',[1,1,1])},
  'add':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
  'subtract':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
@@ -364,6 +364,8 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 if not 0<=channel<=4: raise ValueError('Image channel must be 0 (RGB), 1-3 (RGB components), or 4 (alpha)')
                 if channel==4: ref=alpha
                 elif channel: ref=definition('ModoTextureMap',path+'/component',{'mode':'7','foreground':binding(ref,'Rgb'),'component':str(channel-1)})
+                # Invert, as a Shader Tree image layer's: one less the image's value.
+                if params.get('invert'):ref=definition('ModoTextureMap',path+'/invert',{'background':'Rgb(1,1,1)','foreground':binding(ref,'Rgb'),'blend':'3'})
                 if coverage:ref=definition('ModoTextureMap',path+'/default',{'background':values['default'],'foreground':binding(ref,'Rgb'),'mask':binding(coverage,'Float')})
             elif kind=='texcoord':
                 ref=definition('AttributeMap',path,{'primitive_attribute_name':string(image_descriptor(item)['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})

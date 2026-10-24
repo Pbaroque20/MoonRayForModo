@@ -276,6 +276,8 @@ def material_values(material):
                                 'opacity': 1.0 - float(channel(material, 'dissAmt', 0)),
                                 'clearcoat': float(channel(material, 'coatAmt', 0)),
                                 'clearcoat_roughness': float(channel(material, 'coatRough', .01)),
+                                # Clearcoat Bump Strength: how much of the bump and normal maps the coat takes.
+                                'clearcoat_bump': min(1.0, max(0.0, float(channel(material, 'coatBump', 1.0)))),
                                 # Displacement Distance, and the value the Shader Tree's displacement layers start from.
                                 'displacement_distance': float(channel(material, 'displace', .02)),
                                 'displacement_value': float(channel(material, 'dispVal', 0)),

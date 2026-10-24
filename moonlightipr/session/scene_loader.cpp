@@ -313,13 +313,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x4c534c4d)
+    if (mark != 0x4d534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'L'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'M'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -481,6 +481,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         in.floats(material.fuzzColor, 3);
         material.fuzzRoughness = in.value<float>();
         material.fuzzAbsorbs = in.value<float>() > 0.5f;
+        material.clearcoatBump = in.value<float>();
         const uint32_t materialFlags = in.value<uint32_t>();
         material.thin = (materialFlags & 1) != 0;
         material.clearcoatDims = (materialFlags & 2) != 0;

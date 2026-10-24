@@ -44,6 +44,15 @@ def complete(stored):
                 result[key].update(held if isinstance(held, dict) else {})
             else:
                 result[key] = held
+    if 'working_space' not in (result.get('asset_settings') or {}):
+        # A scene that has not chosen its render working space renders in the one the MoonRay preferences name.
+        try:
+            from .preferences import Preferences
+            chosen = Preferences().get('working_space')
+        except Exception:
+            chosen = 'rec709'
+        if chosen in ('rec709', 'acescg'):
+            result['asset_settings'] = dict(result.get('asset_settings') or {}, working_space=chosen)
     render = dict(stored.get('render') or {})
     if render and 'sampling_mode' not in render:
         render['sampling_mode'] = 0

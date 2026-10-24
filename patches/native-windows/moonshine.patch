@@ -1,3 +1,67 @@
+diff --git a/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.cc b/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.cc
+index aaded81..330d948 100644
+--- a/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.cc
++++ b/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.cc
+@@ -85,6 +85,8 @@ ToonDisplayFilter::update()
+     mIspc.mInkNormalThreshold = get(attrInkNormalThreshold);
+     mIspc.mInkNormalScale = get(attrInkNormalScale);
+     mIspc.mEdgeDetector = get(attrEdgeDetector);
++    // MoonRay for Modo: the lines apart from the shading, for compositing.
++    mIspc.mOutputMode = get(attrOutputMode);
+ }
+ 
+ void
+diff --git a/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.ispc b/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.ispc
+index 633f044..e1ba89f 100644
+--- a/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.ispc
++++ b/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.ispc
+@@ -14,6 +14,7 @@ struct ToonDisplayFilter
+     float mInkNormalThreshold;
+     float mInkNormalScale;
+     int mEdgeDetector;
++    int mOutputMode;    // MoonRay for Modo: 0 shading and lines, 1 lines only (white on black), 2 shading only
+ };
+ 
+ export const uniform ToonDisplayFilter * uniform
+@@ -251,7 +252,13 @@ filter(const uniform DisplayFilter * uniform me,
+     edgeN = edgeN - self->mInkNormalThreshold;
+     const float inkN = 1.0f - saturate(edgeN * self->mInkNormalScale);
+ 
+-    result = result * min(inkD, inkN);
++    const float ink = min(inkD, inkN);
++    if (self->mOutputMode == 1) {
++        // The lines alone: as much white as there is ink, on black.
++        result = Vec3f_ctor(1.0f - ink, 1.0f - ink, 1.0f - ink);
++    } else if (self->mOutputMode != 2) {
++        result = result * ink;
++    }
+ 
+     *output = Color_ctor(result.x, result.y, result.z);
+ }
+diff --git a/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.json b/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.json
+index b08f827..afe09f5 100644
+--- a/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.json
++++ b/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.json
+@@ -84,6 +84,19 @@
+             },
+             "default": "0",
+             "comment": "Type of edge detector to use"
++        },
++        "attrOutputMode": {
++            "name": "output_mode",
++            "label": "output mode",
++            "type": "Int",
++            "flags": "FLAGS_ENUMERABLE",
++            "enum": {
++                "Shading and lines": "0",
++                "Lines only": "1",
++                "Shading only": "2"
++            },
++            "default": "0",
++            "comment": "MoonRay for Modo: the cel shading with its ink lines, the ink lines alone (white on black, a matte to composite with), or the cel shading without them"
+         }
+     }
+ }
 diff --git a/lib/material/dwabase/DwaBaseLayerable.cc b/lib/material/dwabase/DwaBaseLayerable.cc
 index 9787e02..99dbda4 100644
 --- a/lib/material/dwabase/DwaBaseLayerable.cc

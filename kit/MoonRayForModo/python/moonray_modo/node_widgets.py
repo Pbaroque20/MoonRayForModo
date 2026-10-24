@@ -7,6 +7,43 @@ from . import nodes,parameter_state
 
 from .file_inputs import file_parameter
 
+TYPED=(QtWidgets.QLineEdit,QtWidgets.QAbstractSpinBox,QtWidgets.QComboBox,QtWidgets.QAbstractButton,QtWidgets.QPlainTextEdit)
+
+
+class TabBetween(QtCore.QObject):
+    """Tab and Shift+Tab step through a window's settings in order, each field's controls one after another. Modo
+    has a Tab shortcut of its own, which took the key from a field being typed in; it is held off here. fields gives
+    the fields in order, at the moment of the key."""
+    def __init__(self,fields,parent=None):
+        super().__init__(parent);self.fields=fields
+    def watch(self,field):
+        for widget in [field]+field.findChildren(QtWidgets.QWidget):widget.installEventFilter(self)
+    def targets(self):
+        found=[]
+        for field in self.fields():
+            if field is None or not isValid(field) or not field.isVisibleTo(field.window()) or not field.isEnabled():continue
+            found+=[w for w in [field]+field.findChildren(QtWidgets.QWidget) if isinstance(w,TYPED) and w.isEnabled() and w.focusPolicy()&QtCore.Qt.TabFocus
+                    and not (isinstance(w,QtWidgets.QLineEdit) and isinstance(w.parent(),(QtWidgets.QAbstractSpinBox,QtWidgets.QComboBox)))]
+        return found
+    def eventFilter(self,watched,event):
+        kind=event.type()
+        if kind in (QtCore.QEvent.ShortcutOverride,QtCore.QEvent.KeyPress) and event.key() in (QtCore.Qt.Key_Tab,QtCore.Qt.Key_Backtab):
+            if kind==QtCore.QEvent.ShortcutOverride:
+                event.accept();return True
+            targets=self.targets()
+            if not targets:return False
+            here=watched
+            while here is not None and here not in targets:here=here.parent()
+            back=event.key()==QtCore.Qt.Key_Backtab or bool(event.modifiers()&QtCore.Qt.ShiftModifier)
+            index=targets.index(here) if here in targets else -1
+            target=targets[(index+(-1 if back else 1))%len(targets)]
+            target.setFocus(QtCore.Qt.BacktabFocusReason if back else QtCore.Qt.TabFocusReason)
+            if isinstance(target,QtWidgets.QLineEdit):target.selectAll()
+            elif isinstance(target,QtWidgets.QAbstractSpinBox):target.selectAll()
+            return True
+        return False
+
+
 COLORS={'map':'#77bce8','material':'#89ce94','normal':'#c6a0e9','displacement':'#e4b367'}
 
 def tint_value(widget,value,spec,kind=None,key=None,connected=False):
@@ -106,7 +143,7 @@ class QuickAdd(QtWidgets.QFrame):
 
 class GraphView(QtWidgets.QGraphicsView):
     def __init__(self,editor,scene):
-        super().__init__(scene);self.editor=editor;self.start_socket=None;self.rubber=None;self.pan=None;self.move_before=None
+        super().__init__(scene);self.editor=editor;self.start_socket=None;self.rubber=None;self.pan=None;self.move_before=None;self.lifted=None
         self.setRenderHint(QtGui.QPainter.Antialiasing);self.setDragMode(self.RubberBandDrag)
         self.setTransformationAnchor(self.AnchorUnderMouse);self.setBackgroundBrush(grid_brush())
         # Panning is by dragging; the canvas has no edges to scroll to.
@@ -122,7 +159,15 @@ class GraphView(QtWidgets.QGraphicsView):
         return owner
     def cancel_wire(self):
         if self.rubber and self.rubber.scene():self.scene().removeItem(self.rubber)
-        self.rubber=None;self.start_socket=None
+        self.rubber=None;self.start_socket=None;self.lifted=None
+    def wired_to(self,identity,key):
+        """The node feeding an input, or None."""
+        target=getattr(self.editor,'target',None)
+        try:node=target(identity) if callable(target) else self.editor.graph['nodes'].get(identity)
+        except (KeyError,ValueError):return None
+        return ((node or {}).get('inputs') or {}).get(key)
+    def output_socket(self,identity):
+        return next((item for item in self.scene().items() if getattr(item,'is_socket',False) and item.identity==identity and item.key is None),None)
     def wheelEvent(self,event):
         factor=1.15 if event.angleDelta().y()>0 else 1/1.15
         # Zooming in is always allowed up to three times life size, and zooming out down to a twentieth. Framing a
@@ -137,7 +182,14 @@ class GraphView(QtWidgets.QGraphicsView):
             self.pan=event.pos();self.setCursor(QtCore.Qt.ClosedHandCursor);event.accept();return
         socket=self.socket_at(event.pos())
         if socket and event.button()==QtCore.Qt.LeftButton:
-            self.cancel_wire();self.start_socket=socket
+            self.cancel_wire()
+            # A connected input picks its wire up, held from the node that feeds it: let go over nothing to
+            # disconnect it, over another input to move it there, or back on this input to leave it.
+            source=self.wired_to(socket.identity,socket.key) if socket.key is not None else None
+            held=self.output_socket(source) if source else None
+            if held is not None:
+                self.lifted=(socket.identity,socket.key,source);socket=held
+            self.start_socket=socket
             self.rubber=self.scene().addPath(curve(socket.scenePos(),socket.scenePos()),QtGui.QPen(QtGui.QColor('#a9d7ff'),2,QtCore.Qt.DashLine));self.rubber.setZValue(10)
             self.editor.focus_socket(socket.identity,socket.key)
             event.accept();return
@@ -159,6 +211,14 @@ class GraphView(QtWidgets.QGraphicsView):
     def mouseReleaseEvent(self,event):
         if self.pan is not None and event.button() in (QtCore.Qt.MiddleButton,QtCore.Qt.LeftButton):
             self.pan=None;self.unsetCursor();event.accept();return
+        if self.start_socket and event.button()==QtCore.Qt.LeftButton and self.lifted:
+            identity,key,source=self.lifted;end=self.socket_at(event.pos());self.cancel_wire()
+            if end is not None and (end.identity,end.key)==(identity,key):self.editor.socket(identity,key)
+            elif end is not None and end.key is not None and self.editor.can_connect(source,end.identity,end.key):
+                self.editor.unlink(identity,key);self.editor.connect_nodes(source,end.identity,end.key)
+            else:
+                self.editor.unlink(identity,key);self.editor.info.setText('Disconnected '+key.replace('_',' ')+'.')
+            event.accept();return
         if self.start_socket and event.button()==QtCore.Qt.LeftButton:
             start=self.start_socket;end=self.socket_at(event.pos());self.cancel_wire()
             if end and end is not start and ((end.key is None)!=(start.key is None)):

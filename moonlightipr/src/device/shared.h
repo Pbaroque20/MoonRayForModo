@@ -104,6 +104,7 @@ struct DeviceMaterial {
     unsigned layerStart;
     unsigned layerCount;
     float bumpStrength;         // height of a bump map's full range, in scene units
+    float coatBump;             // how much of the bump and normal maps the coat takes, 0 to 1
     float anisotropy;           // -1 to 1, as DwaBaseMaterial's
     float tangent[2];           // the direction the lobe is stretched along, as (cos, sin) from texture u
     unsigned tangentSlot;       // the coordinates that give texture u; UV_SLOTS for none

@@ -42,8 +42,8 @@ class MaterialKinds(unittest.TestCase):
     def flags(self,material):
         compiler=moonlightipr_materials.Compiler()
         record=compiler.material(material,'tested')
-        # The flags come after the material's 45 numbers.
-        return struct.unpack_from('<I',record,45*4)[0]
+        # The flags come after the material's 46 numbers (the clearcoat bump strength the last of them).
+        return struct.unpack_from('<I',record,46*4)[0]
 
     def test_a_stack_is_a_dwa_material(self):
         row={'color':[.8,.2,.1],'roughness':.3,'standard_material':True,'layers':[],'material_groups':[]}
