@@ -295,7 +295,11 @@ public:
             if (previewState == PreviewCopying && !gpu_->previewReady()) return;
             previewRgb.resize(size_t(plan_->width) * plan_->height * 3);
             const U64 seen = film.preview(previewRgb.data(), useGpu ? gpu_->sums() : nullptr, useGpu ? gpu_->counts() : nullptr);
-            watch->preview(previewRgb, plan_->width, plan_->height, std::min(1.0, double(seen) / plannedSamples));
+            // An adaptive frame stops short of its most samples: its share is its passes done, where the host knows them.
+            double fraction = std::min(1.0, double(seen) / plannedSamples);
+            if (adaptive && !state.chain && !state.passes.empty())
+                fraction = std::max(fraction, double(state.retired) / double(state.passes.size()));
+            watch->preview(previewRgb, plan_->width, plan_->height, fraction);
             previewState = PreviewIdle;
             nextPreview = at() + watch->previewSeconds;
         };

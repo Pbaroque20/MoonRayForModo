@@ -33,17 +33,10 @@ struct GpuOptions {
     U32 launchThreads = 1u << 16;      // fixed grid size of every render launch
     U32 maxChunksPerLaunch = 16384;
     U32 ringChunks = 1u << 17;         // mailbox ring capacity, in chunks
-    // Only programs OptiX's disk cache already holds: a program that would have to be compiled (about an hour
-    // the first time) throws NotCompiled instead.
-    bool cachedOnly = false;
     // Called as the programs compile: OptiX compile tasks done so far, and those known to remain.
     std::function<void(unsigned done, unsigned waiting)> compileProgress;
 };
 
-// A program the GPU lane would have to compile first (GpuOptions::cachedOnly).
-struct NotCompiled : std::runtime_error {
-    using std::runtime_error::runtime_error;
-};
 
 // What the host learns when a launch has finished.
 struct Completion {
@@ -676,7 +669,7 @@ private:
     }
     // The program modules (the adaptive one if any), compiled together on a pool of threads through OptiX's
     // compile tasks: one thread compiling the shading library took minutes. OptiX's disk cache still serves
-    // a module it has compiled before (no tasks then).
+    // a module it has compiled before: it hands out tasks all the same, which then finish at once.
     void compileModules(const std::string& ptx, const std::string& adaptivePtx, OptixModule (&modules)[2]) {
         OptixModuleCompileOptions mo{};
         mo.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
@@ -697,14 +690,6 @@ private:
                                                   &modules[i], &first) != OPTIX_SUCCESS)
                 throw std::runtime_error("OptiX module: " + std::string(logs[i], std::min(lengths[i], sizeof(logs[i]))));
             if (first) tasks.push_back(first);
-        }
-        if (options_.cachedOnly && !tasks.empty()) {
-            for (auto& m : modules)
-                if (m) {
-                    optixModuleDestroy(m);
-                    m = nullptr;
-                }
-            throw NotCompiled("The XPU2 GPU programs are not compiled yet");
         }
         unsigned finished = 0;
         unsigned active = 0;

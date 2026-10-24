@@ -6,9 +6,9 @@
 //       (MOONRAY_XPU2_MOONRAY names its moonray.exe).
 //   moonray_xpu2 --compile-shaders
 //       Compiles the GPU programs into OptiX's disk cache, printing progress: about an hour the first time, then
-//       cached for every session after.
+//       cached for every session after. A mark of it is left (shaderMark) for this driver and these programs.
 //   moonray_xpu2 --shaders-compiled
-//       Exits 0 when the GPU programs are in OptiX's cache, 3 when they are not.
+//       Exits 0 when the mark is there, 3 when it is not.
 //
 // Where XPU2 does not render a scene (PATH_TRACER.md says what it renders), its GPU programs are not compiled yet,
 // or the GPU fails, the session prints "@@MODO_XPU2 FALLBACK <reason>" and ends: the kit then starts MoonRay in its
@@ -62,12 +62,35 @@ Programs programs(const fs::path& folder) {
             fileText(folder / "adaptive" / "async_adaptive.ptx")};
 }
 
-std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, bool cachedOnly,
-                                        std::function<void(unsigned, unsigned)> progress = {}) {
+std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, std::function<void(unsigned, unsigned)> progress = {}) {
     async::GpuOptions options;
-    options.cachedOnly = cachedOnly;
     options.compileProgress = std::move(progress);
     return std::make_unique<async::GpuLane>(p.uniform, p.adaptive, p.chain, options);
+}
+
+// OptiX hands out compile tasks whether or not its disk cache holds a program, so whether it does is kept as a mark
+// of our own: a file named for the programs' text and the graphics driver (a new driver empties OptiX's cache),
+// left once they have compiled.
+fs::path shaderMark(const Programs& p) {
+    std::uint64_t h = 1469598103934665603ull;
+    auto mix = [&](const void* data, size_t n) {
+        for (size_t i = 0; i < n; ++i) h = (h ^ static_cast<const unsigned char*>(data)[i]) * 1099511628211ull;
+    };
+    for (const std::string* s : {&p.uniform, &p.adaptive, &p.chain}) mix(s->data(), s->size());
+    wchar_t system[MAX_PATH] = {};
+    GetSystemDirectoryW(system, MAX_PATH);
+    WIN32_FILE_ATTRIBUTE_DATA driver{};
+    if (GetFileAttributesExW((fs::path(system) / "nvcuda.dll").c_str(), GetFileExInfoStandard, &driver))
+        mix(&driver.ftLastWriteTime, sizeof(driver.ftLastWriteTime)), mix(&driver.nFileSizeLow, sizeof(driver.nFileSizeLow));
+    const char* local = std::getenv("LOCALAPPDATA");
+    char name[32];
+    std::snprintf(name, sizeof(name), "%016llx.compiled", (unsigned long long)h);
+    return fs::u8path(local ? local : ".") / "MoonRayForModo" / "xpu2-shaders" / name;
+}
+void markCompiled(const Programs& p) {
+    std::error_code ignored;
+    fs::create_directories(shaderMark(p).parent_path(), ignored);
+    std::ofstream(shaderMark(p)) << "compiled\n";
 }
 
 // --compile-shaders: the GPU programs into OptiX's disk cache, with progress as it goes.
@@ -76,21 +99,16 @@ int compileShaders(const fs::path& folder) {
     auto seconds = [&] { return std::chrono::duration<double>(Clock::now() - began).count(); };
     try {
         const Programs p = programs(folder);
-        try {
-            gpuLane(p, true);
-            std::cout << "XPU2 shaders: already compiled" << std::endl;
-            return 0;
-        } catch (const async::NotCompiled&) {
-        }
-        std::cout << "XPU2 shaders: compiling (about an hour the first time; later sessions take them from the cache)"
+        std::cout << "XPU2 shaders: compiling (about an hour the first time; at once when OptiX's cache has them)"
                   << std::endl;
-        double last = -1;
-        gpuLane(p, false, [&](unsigned done, unsigned waiting) {
+        double last = 0;
+        gpuLane(p, [&](unsigned done, unsigned waiting) {
             if (seconds() - last < 10) return;
             last = seconds();
             std::printf("XPU2 shaders: %u compile tasks done, %u waiting, %.0f s\n", done, waiting, last);
             std::fflush(stdout);
         });
+        markCompiled(p);
         std::printf("XPU2 shaders: compiled in %.0f s\n", seconds());
         return 0;
     } catch (const std::exception& e) {
@@ -101,12 +119,9 @@ int compileShaders(const fs::path& folder) {
 
 int shadersCompiled(const fs::path& folder) {
     try {
-        gpuLane(programs(folder), true);
-        std::cout << "XPU2 shaders: compiled" << std::endl;
-        return 0;
-    } catch (const async::NotCompiled&) {
-        std::cout << "XPU2 shaders: not compiled" << std::endl;
-        return 3;
+        const bool compiled = fs::exists(shaderMark(programs(folder)));
+        std::cout << (compiled ? "XPU2 shaders: compiled" : "XPU2 shaders: not compiled") << std::endl;
+        return compiled ? 0 : 3;
     } catch (const std::exception& e) {
         std::cerr << "XPU2 shaders: " << e.what() << std::endl;
         return 1;
@@ -387,8 +402,36 @@ int session(const Args& args, const fs::path& directory) {
                 scene.prepare();
                 files = outputs(*scene.source);
                 if (mode != 0 && !gpu) {
+                    const Programs p = programs(folder);
+                    if (!fs::exists(shaderMark(p))) {
+                        outlines.watch(nullptr, id, 0, 0);
+                        fallback("XPU2's GPU programs are not compiled yet: System > Preferences > MoonRay > XPU2 (experimental) > "
+                                 "Compile XPU2 Shaders (about an hour, once)");
+                        return 0;
+                    }
+                    // Taken from OptiX's cache in a second or two. Its cache emptied (a driver update, its size limit),
+                    // they would compile for an hour here: past a minute the session leaves the scene to MoonRay.
                     const auto made = Clock::now();
-                    gpu = gpuLane(programs(folder), true);
+                    std::atomic<bool> loaded{false};
+                    std::thread guard([&] {
+                        for (int i = 0; i < 600 && !loaded.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        if (loaded.load()) return;
+                        std::error_code gone;
+                        fs::remove(shaderMark(p), gone);
+                        fallback("OptiX's shader cache no longer holds XPU2's GPU programs (a new graphics driver?): "
+                                 "Compile XPU2 Shaders again");
+                        std::fflush(stdout);
+                        TerminateProcess(GetCurrentProcess(), 0);
+                    });
+                    try {
+                        gpu = gpuLane(p);
+                    } catch (...) {
+                        loaded.store(true);
+                        guard.join();
+                        throw;
+                    }
+                    loaded.store(true);
+                    guard.join();
                     std::printf("XPU2: GPU programs loaded from the cache in %.2f s\n",
                                 std::chrono::duration<double>(Clock::now() - made).count());
                 }
@@ -480,10 +523,6 @@ int session(const Args& args, const fs::path& directory) {
                     }
                 }
                 outlines.watch(nullptr, id, 0, 0);
-            } catch (const async::NotCompiled&) {
-                outlines.watch(nullptr, id, 0, 0);
-                fallback("XPU2's GPU programs are not compiled yet: System > Preferences > MoonRay > Compile XPU2 Shaders (about an hour, once)");
-                return 0;
             } catch (const std::exception& e) {
                 outlines.watch(nullptr, id, 0, 0);
                 fallback(e.what());

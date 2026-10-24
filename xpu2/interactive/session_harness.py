@@ -88,6 +88,8 @@ def main():
     p.add_argument('--env', action='append', default=[])
     p.add_argument('--timeout', type=float, default=600)
     p.add_argument('--stop-after', type=float, default=0, help='send the next delta this many seconds into a frame')
+    p.add_argument('--drain-after', type=float, default=0, help='ask the last frame to finish with what it has after this many seconds')
+    p.add_argument('--keep-pictures', action='store_true', help='save every progressive picture, as frame-<id>-<seconds>.pfm')
     a = p.parse_args()
     out = a.output.resolve()
     session = out / 'session'
@@ -116,7 +118,7 @@ def main():
             line = raw.decode('utf-8', errors='replace').rstrip('\r\n')
             t = time.monotonic() - began
             with lock:
-                lines.append('%8.3f %s' % (t, line[:400]))
+                lines.append('%8.3f %s' % (t, line if line.startswith('@@MODO_') else line[:400]))
                 if line.startswith('@@MODO_SHARED '):
                     try:
                         g, key, w, h, pixels = receive(line, proc.pid)
@@ -124,6 +126,8 @@ def main():
                         f['pictures'] += 1
                         f['last_picture'] = t
                         state['last'][g] = (w, h, pixels)
+                        if a.keep_pictures:
+                            save_pfm(out / ('frame-%d-%07.3f.pfm' % (g, t)), w, h, pixels)
                     except (OSError, ValueError) as e:
                         lines.append('         picture skipped: %s' % e)
                 elif line.startswith('@@MODO_SESSION '):
@@ -171,6 +175,10 @@ def main():
                 state['done'] = None
             send(identity, 'delta', str(delta.resolve()).replace('\\', '/'), str(a.scene[0].resolve()).replace('\\', '/'))
             wait(lambda: state['applied'] == identity, a.timeout)
+        if a.drain_after:
+            time.sleep(a.drain_after)
+            (session / 'drain.tmp').write_text(str(identity), encoding='ascii')
+            (session / 'drain.tmp').replace(session / 'drain.txt')
         wait(lambda: state['done'] and state['done'][1] == identity, a.timeout)
         send(identity + 1, 'quit')
         proc.wait(30)
