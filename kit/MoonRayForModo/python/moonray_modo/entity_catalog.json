@@ -6784,6 +6784,18 @@
         "label": "num cels",
         "name": "num_cels",
         "type": "Int"
+      },
+      "output_mode": {
+        "comment": "MoonRay for Modo: the cel shading with its ink lines, the ink lines alone (white on black, a matte to composite with), or the cel shading without them",
+        "default": 0,
+        "enum": {
+          "Lines only": 1,
+          "Shading and lines": 0,
+          "Shading only": 2
+        },
+        "label": "output mode",
+        "name": "output_mode",
+        "type": "Int"
       }
     },
     "category": "displayfilter",

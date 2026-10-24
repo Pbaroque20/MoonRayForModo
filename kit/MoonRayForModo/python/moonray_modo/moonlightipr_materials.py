@@ -480,6 +480,8 @@ def graph_image(node, graph=None):
         layer = {'kind': 'imageMap', 'path': values['file'], 'srgb': values.get('srgb', True), 'color_space': values.get('color_space', ''),
                  'tile_u': GRAPH_WRAP.get(values.get('uaddressmode', 'periodic'), 'repeat'),
                  'tile_v': GRAPH_WRAP.get(values.get('vaddressmode', 'periodic'), 'repeat')}
+        if values.get('invert'):
+            layer['invert'] = True
         if 'texcoord' not in node.get('inputs', {}):
             # Its UV map and scale are baked onto the meshes under this name.
             layer['coordinate_key'] = nodes.image_descriptor(node)['coordinate_key']
@@ -721,13 +723,20 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
             if why is not None:
                 note('%s wired to %s' % (why, key.replace('_', ' ')))
                 continue
+            tile = graph_bake.single_image(graph, identity)
             try:
-                baked = graph_bake.bake(graph, identity, runtime)
+                baked = graph_bake.bake(graph, identity, runtime, tile)
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
                 note('a node wired to %s that could not be baked (%s)' % (key.replace('_', ' '), exc))
                 continue
             # The bake is linear and covers one unit of UV, repeating beyond it.
             layer = {'kind': 'imageMap', 'path': str(baked), 'srgb': False, 'color_space': 'linear', 'tile_u': 'repeat', 'tile_v': 'repeat'}
+            if tile is not None:
+                # One repeat of a colour-corrected image, laid on as the image is: its UV map, its repeats and its
+                # edges, and as sharp as it (it was baked at 512 pixels over the whole of the UVs).
+                image = graph_image(graph['nodes'][tile], graph)
+                if not isinstance(image, str):
+                    layer.update(coordinate_key=image.get('coordinate_key'), tile_u=image['tile_u'], tile_v=image['tile_v'])
             spatial = graph_bake.plan(graph, identity)[1]
             if spatial is not None:
                 # Laid out in space: the plugin has projected that space onto the meshes under this name.
@@ -791,10 +800,10 @@ class Compiler:
         digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, MAX_TEXTURE_SIDE, 'moonlightipr-v2', ocio and (space, ocio))).encode()).hexdigest()
         target = cache_folder() / (digest + ('.pfm' if hdr else '.tga'))
         if not target.is_file() or not target.stat().st_size:
-            if ocio:
-                self.convert_space(source, target, hdr, space, ocio)
-            else:
-                self.convert(source, target, hdr)
+            # Alongside the scene's other textures, while the scene is packed (moonlightipr_scene.pack).
+            from . import conversions
+            conversions.run(str(target), (lambda: self.convert_space(source, target, hdr, space, ocio)) if ocio
+                            else (lambda: self.convert(source, target, hdr)))
         tile_u = layer.get('tile_u', 'repeat' if layer.get('repeat', True) else 'edge')
         tile_v = layer.get('tile_v', tile_u)
         if wrap:
@@ -1267,14 +1276,16 @@ class Compiler:
                   + [radius, depth, max(0.0, float(source.get('dispersion_abbe', 0))) if dwa else 0.0, min(1.0, max(0.0, weight))]
                   + triple(source.get('_back', [0.0, 0.0, 0.0])) + triple(source.get('_front_keep', [1.0, 1.0, 1.0]))
                   + [min(1.0, max(0.0, float(source.get('fuzz', 0.0))))] + triple(source.get('fuzz_color', [1.0, 1.0, 1.0]))
-                  + [min(1.0, max(0.05, float(source.get('fuzz_roughness', 0.3)))), 1.0 if source.get('fuzz_absorbs') else 0.0])
+                  + [min(1.0, max(0.05, float(source.get('fuzz_roughness', 0.3)))), 1.0 if source.get('fuzz_absorbs') else 0.0]
+                  # Clearcoat Bump Strength: how much of the bump and normal maps the coat takes (form 'M').
+                  + [min(1.0, max(0.0, float(source.get('clearcoat_bump', 1.0))))])
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Material %s contains a non-finite number' % name)
         fog = material.get('_volume')
         toon = source.get('_toon') if not source.get('_hair') and not fog else None
         if toon:
             flags |= (MATERIAL_TOON_DIFFUSE if toon['diffuse'] else 0) | (MATERIAL_TOON_SPECULAR if toon['specular'] else 0)
-        record = struct.pack('<45f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
+        record = struct.pack('<46f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
                              UV_SLOTS if tangent_slot is None else tangent_slot)
         if toon:
             # A toon material's two ramps, and the numbers that go with them.

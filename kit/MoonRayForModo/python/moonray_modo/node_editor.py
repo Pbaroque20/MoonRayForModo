@@ -101,6 +101,13 @@ class Node(QtWidgets.QGraphicsRectItem):
         self.hidden_ports=len(ports)-len(shown)
         foot=bool(self.hidden_ports) or (identity in editor.expanded and len(ports)>SHOWN)
         height=HEADER+len(shown)*ROW+(ROW if foot else 0)+8
+        # A texture node shows what it makes beneath its inputs (node_previews).
+        previews=getattr(editor,'previews',None)
+        self.previewed=previews is not None and previews.wanted(identity)
+        self.preview_top=height
+        if self.previewed:
+            from .node_previews import SIZE
+            height+=SIZE+8
         super().__init__(0,0,WIDTH,height)
         self.editor,self.identity=editor,identity
         self.setFlags(self.ItemIsMovable|self.ItemIsSelectable|self.ItemSendsGeometryChanges|self.ItemHasNoContents)
@@ -125,7 +132,21 @@ class Node(QtWidgets.QGraphicsRectItem):
             words=('+ %d more inputs'%self.hidden_ports) if self.hidden_ports else '- fewer inputs'
             toggle=Toggle(editor,identity,words,self);font=toggle.font();font.setPointSizeF(max(6.0,font.pointSizeF()-1));toggle.setFont(font)
             toggle.setPos(12,HEADER+6+len(shown)*ROW)
+        self.preview=None
+        if self.previewed:self.show_preview(None,waiting=True)
         self.setPos(*value.get('position',[0,0]))
+    def show_preview(self,path,waiting=False):
+        """The node's picture, or words for why there is none yet."""
+        from .node_previews import SIZE
+        if self.preview is not None and self.preview.scene():self.preview.scene().removeItem(self.preview)
+        left=(WIDTH-SIZE)/2
+        if path:
+            pixmap=QtGui.QPixmap(path)
+            if not pixmap.isNull():
+                self.preview=QtWidgets.QGraphicsPixmapItem(pixmap.scaled(SIZE,SIZE,QtCore.Qt.IgnoreAspectRatio,QtCore.Qt.SmoothTransformation),self)
+                self.preview.setPos(left,self.preview_top);self.preview.setToolTip('What this node makes, over one unit of UV')
+                return
+        self.preview=text(self,'Rendering...' if waiting else 'No preview',TEXT_DIM,int(left)+8,int(self.preview_top+SIZE/2-8),SIZE-8,size=-1)
     def itemChange(self,change,value):
         if change==self.ItemPositionHasChanged and hasattr(self,'identity') and not self.editor.busy:
             self.editor.graph['nodes'][self.identity]['position']=[self.pos().x(),self.pos().y()]
@@ -270,7 +291,11 @@ class Editor(QtWidgets.QDialog):
         self.auto_connect=checkable(view_menu,'Connect New Nodes to the Selected Input',True)
         self.show_all=checkable(view_menu,'Show All Inputs on Every Node',False)
         self.show_library=checkable(view_menu,'Node Library',True)
+        self.show_previews=checkable(view_menu,'Previews on Texture Nodes',True)
         self.show_all.toggled.connect(self.rebuild)
+        self.show_previews.toggled.connect(self.rebuild)
+        from .node_previews import Previews
+        self.previews=Previews(self)
         # Every material with a graph, named with the object it belongs to; choosing one moves
         # the editor to it.
         self.material_picker=QtWidgets.QComboBox();self.material_picker.setMinimumWidth(260)
@@ -313,7 +338,7 @@ class Editor(QtWidgets.QDialog):
         self.info=QtWidgets.QLabel('Tab or double-click adds a node. Drag between sockets to connect.')
         # A long message is cut short rather than widening the window.
         self.info.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
-        self.info.setToolTip('Wheel zooms. Middle drag, or Alt and drag, pans. F frames the selection, A everything. Tab or double-click adds a node; drag an input to empty canvas to add the node that feeds it. Ctrl+D duplicates, Delete removes, Ctrl+Z undoes. Right-click a socket or wire to disconnect.')
+        self.info.setToolTip('Wheel zooms. Middle drag, or Alt and drag, pans. F frames the selection, A everything. Tab or double-click adds a node; drag an input to empty canvas to add the node that feeds it. Ctrl+D duplicates, Delete removes, Ctrl+Z undoes. Drag a wire off its input to disconnect it or move it to another input; right-click a socket or wire to disconnect.')
         footer.addWidget(self.info,1)
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close);footer.addWidget(buttons)
         buttons.button(QtWidgets.QDialogButtonBox.Close).setToolTip('Edits are written to the material as they are made; Ctrl+Z here or in Modo undoes them')
@@ -417,10 +442,24 @@ class Editor(QtWidgets.QDialog):
         if not os.path.isfile(start):start=os.path.dirname(start) or getattr(self,'last_asset_directory','')
         filters=('OpenVDB (*.vdb);;All files (*)' if node['type']=='OpenVdbMap' else
                  'Textures (*.exr *.tx *.hdr *.png *.jpg *.jpeg *.tif *.tiff *.tga *.bmp *.dds *.pic *.rat);;All files (*)')
-        chooser=QtWidgets.QFileDialog.getOpenFileNames if multiple else QtWidgets.QFileDialog.getOpenFileName
-        path,_=chooser(self,'Choose '+key,start,filters)
-        if not path:return
-        self.last_asset_directory=os.path.dirname(path[0] if multiple else path)
+        path=None
+        clips=modo_images() if not multiple and node['type']!='OpenVdbMap' else []
+        if clips:
+            # The images of the scene, as Modo's Clip Browser lists them, are a click away; a file elsewhere still is.
+            menu=QtWidgets.QMenu(self);menu.setStyleSheet(MENU_STYLE)
+            heading=menu.addAction('Images in the scene');heading.setEnabled(False)
+            for name,filename in clips:
+                action=menu.addAction(name);action.setData(filename);action.setToolTip(filename)
+            menu.addSeparator();browse=menu.addAction('Browse Files...');browse.setData(None)
+            menu.setToolTipsVisible(True)
+            chosen=menu.exec_(QtGui.QCursor.pos())
+            if chosen is None:return
+            path=chosen.data()
+        if not path:
+            chooser=QtWidgets.QFileDialog.getOpenFileNames if multiple else QtWidgets.QFileDialog.getOpenFileName
+            path,_=chooser(self,'Choose '+key,start,filters)
+            if not path:return
+            self.last_asset_directory=os.path.dirname(path[0] if multiple else path)
         before=copy.deepcopy(self.graph)
         try:
             target=self.target(identity);target.setdefault('parameters',{})[key]=path
@@ -468,6 +507,11 @@ class Editor(QtWidgets.QDialog):
         # The control covers the cell beneath it, swatch and text included.
         field.setAutoFillBackground(True)
         for child in field.findChildren(QtWidgets.QWidget):child.property_row=row;child.installEventFilter(self)
+        # Tab and Shift+Tab go from field to field down the list.
+        if getattr(self,'tab_between',None) is None:
+            from .node_widgets import TabBetween
+            self.tab_between=TabBetween(lambda:[self.table.cellWidget(r,1) for r in range(self.table.rowCount()) if not self.table.isRowHidden(r)],self)
+        self.tab_between.watch(field)
         cell.setFlags(cell.flags() & ~QtCore.Qt.ItemIsEditable)
         # The control shows the value. Left in the cell as well, the old text shows through behind it.
         cell.setText('');cell.setData(QtCore.Qt.DecorationRole,None);cell.setBackground(QtGui.QBrush())
@@ -553,6 +597,7 @@ class Editor(QtWidgets.QDialog):
         if moving:self.info.setText('%d ramp%s follow%s the camera. Graph > Fix Ramps That Follow the Camera puts %s on the object.'%(
             moving,'' if moving==1 else 's','s' if moving==1 else '','it' if moving==1 else 'them'))
         self.material_preview.graph_changed(self.graph);self.publish_draft()
+        self.previews.schedule()
     def edges(self):
         if not hasattr(self,'canvas'): return
         for item in self.links:
@@ -1123,3 +1168,19 @@ class Editor(QtWidgets.QDialog):
             self.info.setText('Applied to '+self.item.name+': '+root['type'])
             if close:self.accept()
         except (ValueError,RuntimeError,LookupError) as exc: self.error(exc)
+
+
+def modo_images():
+    """The scene's images, as Modo's Clip Browser lists them: (name, file) for each still whose file is on this
+    machine, a UDIM pattern included."""
+    try:
+        import modo
+        from .textures import source_tiles
+        found=[]
+        for clip in modo.Scene().items('videoStill'):
+            try:filename=clip.channel('filename').get()
+            except (LookupError,RuntimeError,AttributeError):continue
+            if filename and source_tiles(filename):found.append((clip.name,str(filename)))
+        return sorted(found,key=lambda entry:entry[0].lower())
+    except Exception:
+        return []

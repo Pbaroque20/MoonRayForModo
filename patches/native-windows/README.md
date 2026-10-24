@@ -390,6 +390,30 @@ Upstream's own branch, taken with the switch on. Off, Auto starts in vector mode
 The same scene in Auto: MoonRay's log says "Executing an XPU render since execution mode was set to auto." with the switch
 on, and "Executing a vectorized render since execution mode was set to auto." with it off.
 
+## `moonshine.patch`: toon lines apart from the shading (`output_mode`)
+
+A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines apart from the shading", on by default; with it
+off the plugin does not write the attribute and the filter renders as MoonRay's own.
+
+### What MoonRay does
+
+`ToonDisplayFilter` multiplies its cel shading by its ink, `result * min(inkD, inkN)`: the lines and the shading come out
+as one picture.
+
+### Why the plugin changes it
+
+Artists composite toon lines over the shading themselves (a colour, a width, a different weight per shot), which needs the
+lines as a picture of their own.
+
+### The change
+
+`output_mode`: 0, shading and lines (MoonRay's); 1, the lines alone, as much white as there is ink on black; 2, the shading
+without its lines. Two Toon filters, one of each, are two buffers of the preview and two channels of the EXR.
+
+### How it was checked
+
+Built (`ninja bin/ToonDisplayFilter.so bin/ToonDisplayFilter.so.proxy` in `build/native-renderer-avx`); not yet rendered.
+
 ## `cl1-pool-scale.patch`: a larger store for rays in flight (no switch)
 
 `ThreadLocalState.cc` gives each thread four times MoonRay's store of CacheLine1 items, about 4 GB of address space at 16

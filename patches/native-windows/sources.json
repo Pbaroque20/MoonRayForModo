@@ -33,7 +33,7 @@
       "commit": "a3c8667298a23df7d6efed128cb475484de66c8e",
       "origin": "https://github.com/OpenMoonRay/moonshine",
       "patch": "patches/native-windows/moonshine.patch",
-      "patch_sha256": "75e502fc6cea51b01a9cbdb679d9c4f236c1f057cf9e88824698af960d4d2bc0"
+      "patch_sha256": "0f78b057754f3a8107f6ae2a9c27a77afe3e09140b4d90cd2d2238e71870f12b"
     },
     "log4cplus": {
       "path": "upstream/log4cplus",

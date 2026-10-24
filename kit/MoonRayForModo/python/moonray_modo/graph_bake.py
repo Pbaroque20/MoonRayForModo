@@ -32,6 +32,27 @@ SPACES = (nodes.SPACE_WORLD, nodes.SPACE_OBJECT, nodes.SPACE_TEXTURE)
 RAMP_BY_INPUT = 8
 # Nodes that read the surface's UVs, which cannot share a picture with one laid out in space.
 READ_UVS = ('image', 'texcoord', 'checker', 'ImageMap', 'CheckerboardMap', 'UVTransformMap', 'UsdUVTexture', 'UsdTransform2d')
+# Nodes that work on each value alone, wherever it is: a colour correction or arithmetic. Over one image and these, a
+# bake need cover only one repeat of the image, laid on as the image is (single_image).
+POINTWISE = ('multiply', 'add', 'subtract', 'divide', 'clamp', 'convert', 'swizzle', 'lerp', 'constant', 'invert', 'power',
+             'RemapMap', 'ClampMap', 'InvertMap', 'RgbToFloatMap', 'FloatToRgbMap', 'RgbToLabMap', 'LabToRgbMap', 'MultiChannelToFloatMap')
+TILE_RESOLUTION = 2048
+
+
+def single_image(graph, identity):
+    """The one image a node is a colour correction or arithmetic of, or None. Baked, such a node is the image with
+    those done to it: one repeat of it, at more than the bake's usual size, laid on through the image's own UV map
+    and repeats, as sharp as the image."""
+    found = None
+    for key, node in feeding(graph, identity).items():
+        kind = node['type']
+        if kind == 'image' and 'texcoord' not in node.get('inputs', {}) and node.get('parameters', {}).get('file'):
+            if found is not None:
+                return None
+            found = key
+        elif not (kind.startswith('ColorCorrect') or kind in POINTWISE):
+            return None
+    return found
 
 
 def feeding(graph, identity, seen=None):
@@ -103,7 +124,7 @@ def folder():
     return root
 
 
-def scene(graph, identity):
+def scene(graph, identity, tile=None):
     """A scene that is nothing but the node, shown on a square that fills an orthographic view.
 
     The square is one unit across with a corner at the origin, so a point's position is also
@@ -119,6 +140,10 @@ def scene(graph, identity):
         values['space'] = nodes.SPACE_WORLD
         if baked['nodes'][spatial]['type'] == 'GradientMap':
             values['start'], values['end'] = [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]
+    if tile is not None:
+        # One repeat of the image: what the image's scale makes several of is laid on again by the image's own UVs.
+        baked['nodes'][tile].setdefault('parameters', {})['scale'] = [1.0, 1.0]
+    size = TILE_RESOLUTION if tile is not None else RESOLUTION
     baked['nodes']['bake'] = {'type': 'DwaEmissiveMaterial', 'parameters': {'show_emission': True}, 'inputs': {'emission': identity}}
     material = {'name': 'bake', 'color': [0, 0, 0], 'roughness': 1.0, 'shader': 'DwaBaseMaterial', 'native_shader': 'DwaEmissiveMaterial',
                 'native_parameters': {'show_emission': True}, 'node_graph': baked, 'node_override': True}
@@ -130,28 +155,46 @@ def scene(graph, identity):
     return {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, .5, .5, 5, 1], 'projection': 'ortho', 'ortho_width': 1.0,
                        'focal_mm': 50.0, 'film_mm': 36.0},
             'materials': {'': {'color': [0, 0, 0], 'roughness': 1.0}, 'bake': material},
-            'meshes': [mesh], 'lights': [], 'environments': [], 'width': RESOLUTION, 'height': RESOLUTION, 'warnings': []}
+            'meshes': [mesh], 'lights': [], 'environments': [], 'width': size, 'height': size, 'warnings': []}
 
 
-def bake(graph, identity, runtime):
-    """The path of an EXR holding the node's output over one unit of UV; made if it is not there yet."""
+def bake(graph, identity, runtime, tile=None):
+    """The path of an EXR holding the node's output over one unit of UV (with tile, over one repeat of that image);
+    made if it is not there yet."""
+    target, render = prepared(graph, identity, runtime, tile)
+    if render is not None:
+        render()
+    return target
+
+
+def prepared(graph, identity, runtime, tile=None, size=None):
+    """(the EXR's path, None) where the bake is already made; else (the path it will have, a call that makes it). The
+    scene is written here, where Modo may be asked about textures; the call only runs MoonRay, and may be made on
+    another thread (the graph editor's node previews). size, where given, is the picture's side in pixels."""
     from . import native, rdla
-    signature = hashlib.sha256(json.dumps(['graph-bake-v2', RESOLUTION, scene(graph, identity)['materials']['bake']['node_graph'],
+    made = scene(graph, identity, tile)
+    if size is not None:
+        made['width'] = made['height'] = int(size)
+    size = made['width']
+    signature = hashlib.sha256(json.dumps(['graph-bake-v2', size, made['materials']['bake']['node_graph'],
                                            files(graph, identity)], sort_keys=True, default=str).encode()).hexdigest()
     target = folder() / (signature + '.exr')
     if target.is_file() and target.stat().st_size:
-        return target
+        return target, None
     runtime = native.find_runtime(runtime)
-    text = rdla.scene_text(scene(graph, identity), RESOLUTION, RESOLUTION, 2, 0.0, str(target))
+    text = rdla.scene_text(made, size, size, 2, 0.0, str(target))
     source = folder() / (signature + '.rdla')
     source.write_text(text, encoding='utf-8')
-    done = subprocess.run([str(Path(runtime) / 'moonray.exe')] + native.arguments(source, target, 0, 'vectorized'),
-                          env=native.environment(runtime), cwd=str(folder()), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=120)
-    if done.returncode or not target.is_file():
-        raise ValueError('MoonRay could not bake the node: ' + done.stdout.decode(errors='replace')[-300:].strip())
-    try:
-        source.unlink()
-    except OSError:
-        pass
-    return target
+    environment = native.environment(runtime)
+    arguments = [str(Path(runtime) / 'moonray.exe')] + native.arguments(source, target, 0, 'vectorized')
+
+    def render():
+        done = subprocess.run(arguments, env=environment, cwd=str(folder()), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=120)
+        if done.returncode or not target.is_file():
+            raise ValueError('MoonRay could not bake the node: ' + done.stdout.decode(errors='replace')[-300:].strip())
+        try:
+            source.unlink()
+        except OSError:
+            pass
+    return target, render

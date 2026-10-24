@@ -283,7 +283,9 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     from .serialization import WRITING
     with WRITING,working_configuration(scene.get('asset_settings',{})),reference_configuration(scene),textures.configuration(scene.get("asset_settings",{})),revision(scene.get("_geometry_revision")):
         found=[]
-        with textures.noting_missing(found):
+        from . import conversions
+        # The scene's textures are converted side by side, and all are done before the scene is handed on.
+        with textures.noting_missing(found),conversions.together():
             text=_scene_text(scene,width,height,samples,environment,output_file)
         if found:
             # Said once for each texture, with the scene's other notices.

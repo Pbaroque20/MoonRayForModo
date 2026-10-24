@@ -21,6 +21,7 @@ extern "C" { __constant__ LaunchParams params; }
 
 struct Hit {
     float3 p, ng, ns;
+    float3 coatNormal;          // the normal the clear coat reflects about, where its maps tilt it less than ns; else 0
     float3 albedo, emission, transmissionColor;
     float roughness, metallic, ior, underRoughness;
     float transmission, transmissionRoughness, transmissionIor, coat, coatRoughness;
@@ -722,6 +723,7 @@ struct Surface {
     float fuzz, fuzzRoughness, fuzzNormalization, fuzzDims;
     float3 fuzzColor;
     float3 diffuseNormal;   // the normal diffuse light falls on, in the shading frame
+    float3 coatNormal;      // the normal the clear coat reflects about, in the shading frame
     // MoonRay's toon material: its ramps, and which of the diffuse light and the highlight they band.
     const DeviceToon* toon;
     bool toonDiffuse, toonSpecular;
@@ -744,6 +746,7 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.transmissionIor = fmaxf(hit.transmissionIor, 1.0001f);
     s.coat = hit.coat;
     s.coatAlpha = fmaxf(hit.coatRoughness * hit.coatRoughness, 0.002f);
+    s.coatNormal = make_float3(0.0f, 0.0f, 1.0f);
     s.coatDims = (hit.flags & MATERIAL_COAT_DIMS) != 0;
     s.thin = (hit.flags & MATERIAL_THIN) != 0;
     s.beckmann = (hit.flags & MATERIAL_BECKMANN) != 0;
@@ -1087,9 +1090,14 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
         e.specularPdf = e.specularPdf * (1.0f - broad) + (1.0f - lobes.coat) * broad * wi.z / ML_PI;
     }
     if (s.coat > 0.0f) {
-        const float cd = ggxD(s.coatAlpha, h.z), cg1o = smithG1(s.coatAlpha, wo.z), cg1i = smithG1(s.coatAlpha, wi.z);
-        e.specular += vec(s.coat * dielectricFresnel(cosine, COAT_IOR) * cd * cg1o * cg1i / (4.0f * wo.z));
-        e.specularPdf += lobes.coat * cg1o * cd / (4.0f * wo.z);
+        // About the coat's own normal, which its maps may tilt less than the surface's.
+        const float3 cn = s.coatNormal;
+        const float co = dot(cn, wo), ci = dot(cn, wi), ch = dot(cn, h);
+        if (co > 0.0f && ci > 0.0f && ch > 0.0f) {
+            const float cd = ggxD(s.coatAlpha, ch), cg1o = smithG1(s.coatAlpha, co), cg1i = smithG1(s.coatAlpha, ci);
+            e.specular += vec(s.coat * dielectricFresnel(cosine, COAT_IOR) * cd * cg1o * cg1i / (4.0f * co));
+            e.specularPdf += lobes.coat * cg1o * cd / (4.0f * co);
+        }
     }
     // Diffuse light falls on the surface's own smoothed normal; only reflections use the bent one.
     if (s.toonDiffuse) {
@@ -2071,6 +2079,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
         const float3 wo = frame.toLocal(toViewer);
         surface.diffuseNormal = frame.toLocal(smoothed);
+        surface.coatNormal = dot(hit.coatNormal, hit.coatNormal) > 0.5f ? frame.toLocal(hit.coatNormal) : make_float3(0.0f, 0.0f, 1.0f);
         if (surface.toonSpecular) {
             // The way the strand runs, or the surface's tangent, for a hair toon's highlight.
             const float3 along = hit.curve ? hit.curveTangent : hit.tangent - ns * dot(hit.tangent, ns);
@@ -2411,7 +2420,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
             else wi = lobes.sheen > 0.0f && rnd(seed) < lobes.sheen ? sampleSheen(wo, u1, u2) : sampleDiffuse(u1, u2);
         }
-        else if (rnd(seed) < lobes.coat) wi = reflectAbout(wo, sampleFacet(surface.coatAlpha, wo, u1, u2));
+        else if (rnd(seed) < lobes.coat) {
+            const Frame coatFrame(surface.coatNormal);
+            wi = reflectAbout(wo, coatFrame.toWorld(sampleFacet(surface.coatAlpha, coatFrame.toLocal(wo), u1, u2)));
+        }
         else if (rnd(seed) < broadShare(surface)) wi = sampleDiffuse(u1, u2);
         else wi = reflectAbout(wo, surface.beckmann ? sampleBeckmann(surface.alphaX, surface.alphaY, u1, u2) : sampleFacet(surface.alpha, wo, u1, u2));
         const BsdfEval e = evalBsdf(surface, lobes, wo, wi);
@@ -2915,6 +2927,7 @@ extern "C" __global__ void __closesthit__radiance() {
     hit->p = optixTransformPointFromObjectToWorldSpace(p0 * w + p1 * uv.x + p2 * uv.y);
     hit->ng = normalize(optixTransformNormalFromObjectToWorldSpace(ng));
     hit->ns = normalize(optixTransformNormalFromObjectToWorldSpace(ns));
+    hit->coatNormal = vec(0.0f);
     hit->t = optixGetRayTmax();
     hit->instance = optixGetInstanceId();
     hit->light = instance.light;
@@ -2979,6 +2992,9 @@ extern "C" __global__ void __closesthit__radiance() {
             }
             const float3 bent = t * sx + b * sy + n;
             if (dot(bent, bent) > 1e-12f) hit->ns = normalize(bent);
+            // The clear coat takes the maps' tilt as far as its Clearcoat Bump Strength says: not at all at 0, a
+            // smooth coat over a bumpy surface.
+            if (material.coatBump < 1.0f) hit->coatNormal = normalize((t * sx + b * sy) * material.coatBump + n);
         }
     }
 
@@ -3035,6 +3051,7 @@ extern "C" __global__ void __closesthit__curve() {
     }
     hit->p = world;
     hit->ng = hit->ns = normalize(optixTransformNormalFromObjectToWorldSpace(out));
+    hit->coatNormal = vec(0.0f);
     // The strand as the ray sees it: the way across it that faces the ray, and how squarely the ray met it.
     const float3 tangent = normalize(optixTransformVectorFromObjectToWorldSpace(along)), back = -optixGetWorldRayDirection();
     const float3 facing = back - tangent * dot(back, tangent);

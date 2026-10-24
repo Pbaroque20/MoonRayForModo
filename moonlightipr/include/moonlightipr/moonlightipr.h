@@ -77,6 +77,7 @@ struct Material {
     float fuzzColor[3] = {1, 1, 1};
     float fuzzRoughness = 0.3f;
     bool fuzzAbsorbs = false;
+    float clearcoatBump = 1.0f;     // how much of the bump and normal maps the coat takes: Modo's Clearcoat Bump Strength
     // On curves, a hair fibre as MoonRay's HairMaterial, in place of all the above but baseColor (the hair's colour),
     // its layers, emission and ior. The four lobes are light reflected off the fibre, passed through it, reflected
     // once inside it, and the rest: each has a roughness along the fibre and an offset in degrees from the tilt of
