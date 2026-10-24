@@ -98,9 +98,8 @@ def starting(name):
     """What a newly added item of a class starts with: the values above, with a light's intensity as the MoonRay page
     of Modo's Preferences has it."""
     held = dict(STARTING.get(name, {}))
-    # A display filter with one picture to work on starts on the beauty.
-    if catalog()[name]['category'] == 'displayfilter' and 'input' in catalog()[name]['attributes']:
-        held['input'] = 'Beauty'
+    # A display filter starts on the pictures it needs: the beauty, or the passes it is made for.
+    held.update(FILTER_INPUTS.get(name, {}))
     if 'intensity' in held:
         try:
             from .preferences import Preferences
@@ -401,7 +400,7 @@ def collect(scene, warnings):
                            'parameters': validate(name, settings.get(PARAMETERS_KEY, {}))})
         except (ValueError, LookupError, RuntimeError) as exc:
             warnings.append('MoonRay item %s: %s.' % (getattr(item, 'name', '?'), exc))
-    return [located(entity, getattr(scene, 'filename', None), warnings) for entity in result]
+    return completed_filters([located(entity, getattr(scene, 'filename', None), warnings) for entity in result], warnings)
 
 
 def located(entity, scene_filename, warnings):
@@ -1025,6 +1024,54 @@ def emit_lights(scene, lines, refs=None):
 # written as a render output: a buffer of the preview and a channel of the final EXR.
 INPUT_PREFIX = '/modo/displayfilter/input/'
 FILTER_PREFIX = 'displayfilter_'
+
+
+# The inputs MoonRay refuses a display filter without (each filter's source says "Missing ..." and draws nothing,
+# which the preview shows as pink), with the render output each starts on. None where no output of the render is
+# that picture (a tangent space filter's dPds), which the artist must give it.
+FILTER_INPUTS = {
+    'BlendDisplayFilter': {'input1': 'Beauty', 'input2': 'Beauty'},
+    'OpDisplayFilter': {'input1': 'Beauty', 'input2': 'Beauty'},
+    'ClampDisplayFilter': {'input': 'Beauty'}, 'ColorCorrectDisplayFilter': {'input': 'Beauty'},
+    'ConvolutionDisplayFilter': {'input': 'Beauty'}, 'DiscretizeDisplayFilter': {'input': 'Beauty'},
+    'HalftoneDisplayFilter': {'input': 'Beauty'}, 'RemapDisplayFilter': {'input': 'Beauty'},
+    'RgbToFloatDisplayFilter': {'input': 'Beauty'}, 'RgbToHsvDisplayFilter': {'input': 'Beauty'},
+    'ImageDisplayFilter': {'input': 'Beauty'}, 'RampDisplayFilter': {'input': 'Beauty'},
+    'DofDisplayFilter': {'input': 'Beauty', 'depth': 'Camera depth'},
+    'OverDisplayFilter': {'input_top': 'Beauty', 'input_bottom': 'Beauty', 'alpha': 'Alpha'},
+    'ShadowDisplayFilter': {'occluded': 'Direct diffuse', 'unoccluded': 'Diffuse without shadows (shadow pass)'},
+    'TangentSpaceDisplayFilter': {'input': 'Beauty', 'N': 'Shading normal', 'dPds': None},
+    'ToonDisplayFilter': {'input_albedo': 'Albedo', 'input_depth': 'Camera depth', 'input_diffuse': 'Direct diffuse',
+                          'input_glossy': 'Direct glossy', 'input_normal': 'Shading normal'},
+}
+# Those MoonRay draws nothing without; the others above only start on a picture.
+FILTER_NEEDS = {'ShadowDisplayFilter': (), 'RampDisplayFilter': (), 'ImageDisplayFilter': ()}
+
+
+def completed_filters(entities, warnings):
+    """The entities, each display filter with every input MoonRay needs: one left empty takes the output it starts
+    on, said in a notice; a filter missing one with nothing to take is left out, said, rather than drawn pink."""
+    result = []
+    for entity in entities:
+        inputs = FILTER_INPUTS.get(entity['class'])
+        if not inputs or catalog()[entity['class']]['category'] != 'displayfilter':
+            result.append(entity)
+            continue
+        parameters, missing = dict(entity['parameters']), []
+        for key in FILTER_NEEDS.get(entity['class'], tuple(inputs)):
+            if parameters.get(key):
+                continue
+            if inputs[key] is None:
+                missing.append(key)
+                continue
+            parameters[key] = inputs[key]
+            warnings.append('Display filter %s had no %s input; it takes %s. Choose another in its Properties.' % (entity['name'], key, inputs[key]))
+        if missing:
+            warnings.append('Display filter %s is left out: it needs its %s input, which no output of the render gives. '
+                            'Set it in its Properties.' % (entity['name'], ', '.join(missing)))
+            continue
+        result.append(dict(entity, parameters=parameters) if parameters != entity['parameters'] else entity)
+    return result
 
 
 def display_filters(scene):
