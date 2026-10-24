@@ -133,6 +133,44 @@ enum MapAttrType : U32 { MapAttrBool, MapAttrInt, MapAttrFloat, MapAttrRgb, MapA
     F(Vec3f, translation) F(Vec3f, scale) F(Vec3f, rotation) F(Int, rotation_order) F(Int, transformation_order) F(Float, F1)   \
     F(Float, F2) F(Float, F3) F(Float, F4) F(Int, cell_id)
 
+
+// More maps (shade_mapnodes_more.h). Prepared data after the attributes where a comment says.
+#define X2_MAP_AXIS_ANGLE(F) \
+    F(Vec3f, input_vector) F(Int, input_space) F(Vec3f, rotation_axis) F(Int, axis_space) F(Float, angle) F(Int, output_space)
+#define X2_MAP_TRANSFORM_NORMAL(F) F(Vec3f, input_normal) F(Int, transform) F(Bool, decode_input_normal)
+#define X2_MAP_RGB_TO_LAB(F) F(Rgb, input_color)
+#define X2_MAP_RANDOM(F) F(Rgb, input) F(Int, seed) F(Bool, monochrome) F(Float, output_min) F(Float, output_max)  // then 2048 colours
+#define X2_MAP_MULTI_CHANNEL(F) F(Rgb, input) F(Int, mode) F(Float, tolerance)
+#define X2_MAP_LAYER(F) F(Rgb, input_A) F(Rgb, input_B) F(Float, mask) F(Int, mode)
+#define X2_MAP_HAIR(F) F(Rgb, base_color) F(Rgb, tip_color) F(Float, bias) F(Float, gain) F(Rgb, column_uv_color)
+#define X2_MAP_HAIR_COLUMN(F) F(Float, unused)
+#define X2_MAP_HAIR_PRESETS(F) F(Int, color)
+#define X2_MAP_TOON(F)                                                                                                               \
+    F(Int, mode) F(Rgb, fill_color) F(Rgb, outline_color) F(Rgb, crease_color) F(Float, outline_threshold) F(Float, outline_scale) \
+    F(Float, crease_threshold) F(Float, crease_scale)
+#define X2_MAP_CURVATURE(F) F(Bool, invert) F(Float, power) F(Float, scale) F(Int, mode)
+#define X2_MAP_WIREFRAME(F) F(Rgb, line_color) F(Rgb, fill_color) F(Bool, raster) F(Float, line_width)
+#define X2_MAP_DEFORMATION(F) F(Int, output_mode) F(Bool, use_warning_color) F(Rgb, warning_color)  // then the fatal colour
+#define X2_MAP_DIRECTIONAL(F)                                                                                                       \
+    F(Int, prime_direction) F(Int, polarity) F(Rgb, color_a) F(Rgb, color_b) F(Int, object_axis) F(Vec3f, custom_direction)       \
+    F(Bool, use_reference_space) F(Float, input_normal_dial) F(Int, clamping_behavior) F(Float, bias) F(Bool, use_smoothstep)     \
+    F(Float, smoothstep_start) F(Float, smoothstep_end) F(Int, falloff_type)  // then world-to-object (12), the input normal's register
+#define X2_MAP_TRANSFORM_SPACE(F)                                                                                                   \
+    F(Vec3f, input) F(Int, input_type) F(Int, from_space) F(Int, to_space) F(Bool, concatenate_instance_level_transforms)          \
+    F(Bool, use_custom_window_coordinates) F(Float, window_x_min) F(Float, window_x_max) F(Float, window_y_min) F(Float, window_y_max)
+#define X2_MAP_TRIPLANAR_UDIM(F)                                                                                                    \
+    F(Bool, use_correct_uv) F(Bool, use_reference_space) F(Vec2f, x_offset) F(Vec2f, x_scale) F(Float, x_rotation)                \
+    F(Vec2f, x_rotation_center) F(Vec2f, y_offset) F(Vec2f, y_scale) F(Float, y_rotation) F(Vec2f, y_rotation_center)            \
+    F(Vec2f, z_offset) F(Vec2f, z_scale) F(Float, z_rotation) F(Vec2f, z_rotation_center)
+#define X2_MAP_EXTRA_AOV(F) F(Rgb, color)
+#define X2_MAP_LIST(F) F(Float, unused)
+#define X2_MAP_DEBUG(F) \
+    F(Bool, checkerboard) F(Int, map_type) F(Vec3f, input_normal) F(Int, input_normal_space) F(Float, input_normal_dial) F(Int, primitive_attribute_type)
+#define X2_MAP_DISTORT_NORMAL(F)                                                                                                    \
+    F(Int, noise_space) F(Vec3f, input_texture_coordinates) F(Bool, use_input_vectors) F(Rgb, input_U) F(Rgb, input_V) F(Int, seed) \
+    F(Vec3f, frequency_U) F(Vec3f, frequency_V) F(Float, amplitude_U) F(Float, amplitude_V)
+#define X2_MAP_RANDOM_NORMAL(F) F(Rgb, input) F(Int, seed)  // then 2048 floats
+
 #define X2_MAPS(X)                                                                   \
     X(MapConstantColor, "ConstantColorMap", X2_MAP_CONSTANT_COLOR)                   \
     X(MapConstantScalar, "ConstantScalarMap", X2_MAP_CONSTANT_SCALAR)                \
@@ -172,7 +210,29 @@ enum MapAttrType : U32 { MapAttrBool, MapAttrInt, MapAttrFloat, MapAttrRgb, MapA
     X(MapProjectCylindrical, "ProjectCylindricalMap", X2_MAP_PROJECT_CYLINDRICAL) \
     X(MapNoise, "NoiseMap_v2", X2_MAP_NOISE) \
     X(MapWorley2, "NoiseWorleyMap_v2", X2_MAP_WORLEY) \
-    X(MapWorley3, "NoiseWorleyMap_v3", X2_MAP_WORLEY)     X(MapColorCorrectLegacy, "ColorCorrectLegacyMap", X2_MAP_CC_LEGACY)     X(MapUVTransform, "UVTransformMap", X2_MAP_UV_TRANSFORM)
+    X(MapWorley3, "NoiseWorleyMap_v3", X2_MAP_WORLEY)     X(MapColorCorrectLegacy, "ColorCorrectLegacyMap", X2_MAP_CC_LEGACY)     X(MapUVTransform, "UVTransformMap", X2_MAP_UV_TRANSFORM) \
+    X(MapAxisAngle, "AxisAngleMap", X2_MAP_AXIS_ANGLE) \
+    X(MapTransformNormal, "TransformNormalMap", X2_MAP_TRANSFORM_NORMAL) \
+    X(MapRgbToLab, "RgbToLabMap", X2_MAP_RGB_TO_LAB) \
+    X(MapRandom, "RandomMap", X2_MAP_RANDOM) \
+    X(MapMultiChannelToFloat, "MultiChannelToFloatMap", X2_MAP_MULTI_CHANNEL) \
+    X(MapLayer, "LayerMap", X2_MAP_LAYER) \
+    X(MapLayer2, "LayerMap_v2", X2_MAP_LAYER) \
+    X(MapHair, "HairMap", X2_MAP_HAIR) \
+    X(MapHairColumn, "HairColumnMap", X2_MAP_HAIR_COLUMN) \
+    X(MapHairColorPresets, "HairColorPresetsMap", X2_MAP_HAIR_PRESETS) \
+    X(MapToon, "ToonMap", X2_MAP_TOON) \
+    X(MapCurvature, "CurvatureMap", X2_MAP_CURVATURE) \
+    X(MapWireframe, "WireframeMap", X2_MAP_WIREFRAME) \
+    X(MapDeformation, "DeformationMap", X2_MAP_DEFORMATION) \
+    X(MapDirectional, "DirectionalMap", X2_MAP_DIRECTIONAL) \
+    X(MapTransformSpace, "TransformSpaceMap", X2_MAP_TRANSFORM_SPACE) \
+    X(MapProjectTriplanarUdim, "ProjectTriplanarUdimMap", X2_MAP_TRIPLANAR_UDIM) \
+    X(MapExtraAov, "ExtraAovMap", X2_MAP_EXTRA_AOV) \
+    X(MapList, "ListMap", X2_MAP_LIST) \
+    X(MapDebug, "DebugMap", X2_MAP_DEBUG) \
+    X(MapDistortNormal, "DistortNormalMap", X2_MAP_DISTORT_NORMAL) \
+    X(MapRandomNormal, "RandomNormalMap", X2_MAP_RANDOM_NORMAL)
 
 #define X2_MAP_KIND(kind, cls, list) kind,
 enum MapKind : U32 { X2_MAPS(X2_MAP_KIND) MapSwitchColor, MapSwitchFloat, MapProjectTriplanar, MapProjectCamera, MapRgbToNormal, MapSwitchNormal,
@@ -1108,8 +1168,9 @@ X2_CALL U32 sampleProjectCamera(const MapNodeHeader& h, const MapParams& P, cons
     V3 nc{0.0f, 0.0f, -1.0f};
     if (q.projectOnBackFaces == 0.0f) nc = normalize(xformVector(q.normalToCamera, st.N));
     if (normalMap) {
-        // ProjectCameraNormalMap: the texel (N on a face turned away), decoded and taken in the frame of N and dPds.
-        V3 normal = st.N;
+        // ProjectCameraNormalMap: the texel, decoded and taken in the frame of N and dPds. On a face turned away MoonRay
+        // decodes the shading normal itself as if it were a texel: its render-space components.
+        V3 normal = worldToRenderNormal(st.worldToRender, st.N);
         if (q.projectOnBackFaces != 0.0f || nc.z > 0.0f) {
             const float s = ps.x * 0.5f + 0.5f, t = ps.y * 0.5f + 0.5f;
             const tex::Binding b{nullptr, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0u, 0u, textureMode(st)};
@@ -1349,10 +1410,35 @@ X2_HD inline Color sampleWorleyMap(const MapNodeHeader& h, const MapParams& P, c
     }
 }
 
+}}}
+#include "shade_mapnodes_more.h"
+namespace xpu2 { namespace interactive { namespace shade {
 // One map's result. Status as tex::lookup's: Ready, Miss (a texture tile is not resident yet) or Invalid.
 template <class Tex>
 X2_CALL U32 sampleMap(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
     switch (h.kind) {
+    case MapAxisAngle: out = sampleAxisAngle(P, st); return tex::Ready;
+    case MapTransformNormal: out = sampleTransformNormal(P, st); return tex::Ready;
+    case MapRgbToLab: out = sampleRgbToLab(P.c(X2_OFF(MapRgbToLabParams, input_color))); return tex::Ready;
+    case MapRandom: out = sampleRandom(P); return tex::Ready;
+    case MapMultiChannelToFloat: out = sampleMultiChannelToFloat(P); return tex::Ready;
+    case MapLayer: out = sampleLayerMap(P, false); return tex::Ready;
+    case MapLayer2: out = sampleLayerMap(P, true); return tex::Ready;
+    case MapHair: out = sampleHairMap(P, st); return tex::Ready;
+    case MapHairColumn: out = sampleHairColumn(st); return tex::Ready;
+    case MapHairColorPresets: out = sampleHairColorPresets(int(reinterpret_cast<const MapHairColorPresetsParams*>(P.p)->color)); return tex::Ready;
+    case MapToon: out = sampleToon(P, st); return tex::Ready;
+    case MapCurvature: out = sampleCurvature(P, st); return tex::Ready;
+    case MapWireframe: out = sampleWireframe(P, st); return tex::Ready;
+    case MapDeformation: out = sampleDeformation(P, st); return tex::Ready;
+    case MapDirectional: out = sampleDirectional(P, st, h); return tex::Ready;
+    case MapTransformSpace: out = sampleTransformSpace(P, st, h); return tex::Ready;
+    case MapProjectTriplanarUdim: out = sampleTriplanarUdim(P, st, h); return tex::Ready;
+    case MapExtraAov: out = P.c(X2_OFF(MapExtraAovParams, color)); return tex::Ready;
+    case MapList: out = rgb(1.0f); return tex::Ready;
+    case MapDebug: out = sampleDebug(P, st, h); return tex::Ready;
+    case MapDistortNormal: out = sampleDistortNormal(P, st); return tex::Ready;
+    case MapRandomNormal: out = sampleRandomNormal(P, st); return tex::Ready;
     case MapConstantColor: out = reinterpret_cast<const MapConstantColorParams*>(P.p)->color_value; return tex::Ready;
     case MapConstantScalar: out = rgb(reinterpret_cast<const MapConstantScalarParams*>(P.p)->scalar_value); return tex::Ready;
     case MapCheckerboard: {
@@ -1637,7 +1723,7 @@ X2_CALL U32 sampleMap(const MapNodeHeader& h, const MapParams& P, const State& s
     case MapProjectCamera:
     case MapProjectCameraNormal: return sampleProjectCamera(h, P, st, tex, out);
     case MapProjectPlanarNormal: return sampleProjectPlanarNormal(h, P, st, tex, out);
-    case MapRgbToNormal: out = P.c(0); return tex::Ready;
+    case MapRgbToNormal: out = renderToWorldNormal(st.worldToRender, P.c(0)); return tex::Ready;  // its colour, a render-space normal
     case MapColorCorrectLegacy: out = sampleColorCorrectLegacy(P); return tex::Ready;
     case MapUVTransform: out = sampleUVTransform(P, st); return tex::Ready;
     case MapSwitchNormal: {  // the chosen input's normal, N where there is none
@@ -1715,6 +1801,14 @@ X2_CALL U32 runMapPrefix(const float* pool, U32 program, U32 end, const State& s
         regs[h.reg] = out;
     }
     return tex::Ready;
+}
+// Whether the hit has every primitive attribute the program's maps require (after its nodes: a count, the keys).
+X2_HD inline bool mapRequirementsMet(const float* pool, U32 program, const State& st) {
+    const U32 count = *reinterpret_cast<const U32*>(pool + program);
+    const U32 n = *reinterpret_cast<const U32*>(pool + program + 1 + count);
+    for (U32 i = 0; i < n; ++i)
+        if (!primProvided(st, *reinterpret_cast<const U32*>(pool + program + 2 + count + i))) return false;
+    return true;
 }
 // Runs a material's map program: each map in dependency order, its result in its register.
 template <class Tex>

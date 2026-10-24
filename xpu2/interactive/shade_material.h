@@ -83,13 +83,18 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
         }
     }
     V3 N = st.Ng;
+    st.dNds = st.dNdt = V3{0, 0, 0};
     if (m.normalRate != RateNone && m.normals) {
         const U32 i1 = m.normalRate == RateVertex ? ia : prim * 3, i2 = m.normalRate == RateVertex ? ib : prim * 3 + 1,
                   i3 = m.normalRate == RateVertex ? ic : prim * 3 + 2;
         const V3 n = w * m.normals[i1] + u * m.normals[i2] + v * m.normals[i3];
         const float ln = length(n);
         if (ln > 0) N = n / ln;
+        if (!trianglePartials(m.normals[i1], m.normals[i2], m.normals[i3], st1, st2, st3, st.dNds, st.dNdt)) st.dNds = st.dNdt = V3{0, 0, 0};
     }
+    st.pa = a;
+    st.pb = b;
+    st.pc = c;
     if (!trianglePartials(a, b, c, st1, st2, st3, st.dPds, st.dPdt)) {
         const Frame f = frame(N);
         st.dPds = f.x;
@@ -117,8 +122,8 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
 
 //----------------------------------------------------------------------------
 // Materials. A material is a record and its parameters in a pool of floats.
-enum MaterialKind : U32 { MatUsdPreviewSurface = 1, MatDwaBase = 2 };
-enum MaterialFlags : U32 { MatModoUsdSpecular = 1 };
+enum MaterialKind : U32 { MatUsdPreviewSurface = 1, MatDwaBase = 2, MatSwitch = 3 };
+enum MaterialFlags : U32 { MatModoUsdSpecular = 1, MatPolyVertices = 2 };  // MatPolyVertices: its maps read the hit polygon
 // maps: the material's map program (shade_maps.h), NoMapProgram for none; bindings: its own bound
 // attributes (UsdPreviewSurface; a DwaBase tree's are on its nodes).
 struct MaterialRecord {
@@ -473,13 +478,73 @@ X2_HD inline RayDiff scatterDifferentials(const Bsdf& b, U32 record, const State
     return d;
 }
 
+// SwitchMaterial and RaySwitchMaterial (moonray dso/material): copies of their materials' records (kind 0 for none).
+// A SwitchMaterial shades its chosen material (def). A RaySwitchMaterial is replaced once, by the integrator, with
+// the material for the type of the lobe whose sample the ray is (PathIntegratorUtil lobeTypeToRayType: none for a
+// camera ray, then diffuse, mirror, glossy in that order); shaded itself it shades its default material, or, cutting
+// out camera rays, ends a primary path (BsdfBuilder early termination) after its default material's presence.
+struct SwitchRecord {
+    U32 byRay, cutout, pad[2];
+    MaterialRecord def, camera, mirror, glossy, diffuse;
+};
+constexpr U32 SwitchRecordFloats = sizeof(SwitchRecord) / sizeof(float);
+X2_HD inline const MaterialRecord* resolveSwitch(const MaterialRecord& m, const float* pool, const State& st, bool& cutout) {
+    const MaterialRecord* cur = &m;
+    bool first = true;
+    for (U32 hop = 0; hop < 16 && cur && cur->kind == MatSwitch; ++hop) {
+        if (cur->count < SwitchRecordFloats) return nullptr;
+        const SwitchRecord& s = *reinterpret_cast<const SwitchRecord*>(pool + cur->offset);
+        const MaterialRecord* next = nullptr;
+        if (first && s.byRay) {
+            const U32 t = st.rayLobe;
+            if (t == 0) next = s.cutout ? nullptr : &s.camera;
+            else if (t & Diffuse) next = &s.diffuse;
+            else if (t & Mirror) next = &s.mirror;
+            else if (t & Glossy) next = &s.glossy;
+            if (next && next->kind == 0) next = nullptr;
+        }
+        first = false;
+        if (!next) {
+            if (s.byRay && s.cutout && st.pathType == PathPrimary) cutout = true;
+            next = s.def.kind ? &s.def : nullptr;
+        }
+        cur = next;
+    }
+    return cur && cur->kind != MatSwitch ? cur : nullptr;
+}
+
 // Runs a material into a Bsdf: its maps, then the material over its bound values. The status is
 // a texture lookup's: Ready, Miss (a tile is on its way: try the sample again later) or Invalid
 // (the material is unknown, its Bsdf overflowed, or it needs what is not shaded yet).
 template <class Tex>
+X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
+                                DwaParams* slots, GlitterScratch* glitter, bool cutout);
+template <class Tex>
 X2_CALL U32 shadeMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
                           DwaParams* slots, GlitterScratch* glitter = nullptr) {
+    bool cutout = false;
+    if (m.kind == MatSwitch) {
+        const MaterialRecord* chosen = resolveSwitch(m, pool, st, cutout);
+        if (!chosen) {  // nothing to shade: no lobes (presence one)
+            presence = 1.0f;
+            if (cutout) bsdf.earlyTermination = true;
+            return tex::Ready;
+        }
+        return shadeChosenMaterial(*chosen, pool, st, tex, bsdf, presence, slots, glitter, cutout);
+    }
+    return shadeChosenMaterial(m, pool, st, tex, bsdf, presence, slots, glitter, false);
+}
+template <class Tex>
+X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
+                                DwaParams* slots, GlitterScratch* glitter, bool cutout) {
     Color regs[MapMaxRegisters];
+    // A hit without an attribute its maps require: the fatal colour, and the path ends (hasAllRequiredAttributes).
+    if (m.maps != NoMapProgram && !mapRequirementsMet(pool, m.maps, st)) {
+        Builder fatal(bsdf, st);
+        presence = 1.0f;
+        addEmission(fatal, Color{1.0f, 0.0f, 1.0f});
+        return tex::Ready;
+    }
     if (m.maps != NoMapProgram) {
         const U32 status = runMapProgram(pool, m.maps, st, tex, regs);
         if (status != tex::Ready) return status;
@@ -493,6 +558,10 @@ X2_CALL U32 shadeMaterial(const MaterialRecord& m, const float* pool, const Stat
         applyBindings(reinterpret_cast<float*>(&p), reinterpret_cast<const MapBinding*>(pool + m.bindings), m.bindingCount, regs);
         presence = presenceUsdPreviewSurface(p);
         if (presence < 1.0f) return tex::Ready;  // a cut out: the integrator continues through it
+        if (cutout) {
+            bsdf.earlyTermination = true;
+            return tex::Ready;
+        }
         shadeUsdPreviewSurface(p, m.flags, st, bb);
         break;
     }
@@ -506,6 +575,10 @@ X2_CALL U32 shadeMaterial(const MaterialRecord& m, const float* pool, const Stat
         }
         presence = dwaTreePresence(pool, tree, st, regs);
         if (presence < 1.0f) return tex::Ready;
+        if (cutout) {
+            bsdf.earlyTermination = true;
+            return tex::Ready;
+        }
         initColorCorrectParameters(slots[0]);
         // A material whose resolve fails (a missing input) gives no lobes, as in MoonRay.
         if (resolveDwaTree(pool, tree, st, slots, regs) && !createDwaLobes(slots[0], tree.up, st, bb, pool, glitter)) return tex::Invalid;

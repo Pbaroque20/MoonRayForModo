@@ -327,12 +327,240 @@ struct MapProgramBuilder {
         table.push_back(file);
         return unsigned(table.size() - 1);
     }
+
+    // The more maps (shade_mapnodes_more.h): the attributes they read beside their lists, refusals, required
+    // attributes, and prepared data after their attributes.
+    std::vector<unsigned> required;  // primitive attributes a map requires (MoonRay's mRequiredAttributes)
+    bool polyVertices = false;       // a map reads the hit polygon's vertices (ToonMap, CurvatureMap, WireframeMap)
+    static void moreListed(shade::MapKind kind, const rdl::SceneObject& m, std::set<std::string>& listed) {
+        auto all = [&]() {
+            for (auto i = m.getSceneClass().beginAttributes(); i != m.getSceneClass().endAttributes(); ++i) listed.insert((*i)->getName());
+        };
+        switch (kind) {
+        case shade::MapDirectional: listed.insert({"object", "input_normal"}); break;
+        case shade::MapTransformSpace: listed.insert({"camera", "object"}); break;
+        case shade::MapProjectTriplanarUdim: all(); break;
+        case shade::MapExtraAov: listed.insert({"label", "post_scatter"}); break;
+        case shade::MapList: all(); break;
+        case shade::MapDebug: listed.insert("primitive_attribute_name"); break;
+        case shade::MapDistortNormal: listed.insert("input_normals"); break;
+        default: break;
+        }
+    }
+    // An object's world-to-object as 3x4 rows for xformPoint (MoonRay's matrices are row vectors).
+    static void worldToObjectRows(const rdl::Mat4d& nodeXform, float* rows) {
+        const auto w = nodeXform.inverse();
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 4; ++j) rows[4 * i + j] = float(w[j][i]);
+    }
+    // A Mat4d (row vectors) as 3x4 rows for xformPoint.
+    static void affineRows(const rdl::Mat4d& M, float* rows) {
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 4; ++j) rows[4 * i + j] = float(M[j][i]);
+    }
+    // rdl2::Camera::computeProjectionMatrix (interocular 0) for perspective and orthographic cameras; identity for
+    // the others (doesSupportProjectionMatrix).
+    static scene_rdl2::math::Mat4f cameraToScreen(const rdl::SceneObject& cam, const float window[4]) {
+        namespace sm = scene_rdl2::math;
+        const std::string cls = cam.getSceneClass().getName();
+        if (cls != "PerspectiveCamera" && cls != "OrthographicCamera") return sm::Mat4f(sm::one);
+        const bool perspective = cls == "PerspectiveCamera";
+        const float minimum = perspective ? 0.00001f : 0.01f;
+        const float focal = perspective ? sm::max(get<rdl::Float>(cam, "focal"), 0.00001f) : 1.0f;
+        const float halfFilmWidth = sm::max(get<rdl::Float>(cam, "film_width_aperture"), minimum) * 0.5f;
+        const float near = sm::max(get<rdl::Float>(cam, "near"), minimum), far = sm::max(get<rdl::Float>(cam, "far"), minimum);
+        const float offsetX = get<rdl::Float>(cam, "horizontal_film_offset"), offsetY = get<rdl::Float>(cam, "vertical_film_offset");
+        float par = get<rdl::Float>(cam, "pixel_aspect_ratio");
+        if (sm::isEqual(par, 0.0f)) par = 1.0f;
+        const float factor = perspective ? near / focal : 1.0f;
+        const float w0 = (window[0] * halfFilmWidth + offsetX) * factor, w1 = (window[1] * halfFilmWidth + offsetY) * factor / par,
+                    w2 = (window[2] * halfFilmWidth + offsetX) * factor, w3 = (window[3] * halfFilmWidth + offsetY) * factor / par;
+        sm::Mat4f c2s(sm::zero);
+        if (perspective) {
+            c2s[0][0] = (2.0f * near) / (w2 - w0);
+            c2s[1][1] = (2.0f * near) / (w3 - w1);
+            c2s[2][0] = (w2 + w0) / (w2 - w0);
+            c2s[2][1] = (w3 + w1) / (w3 - w1);
+            c2s[2][2] = -(far + near) / (far - near);
+            c2s[2][3] = -1.0f;
+            c2s[3][2] = -(2.0f * far * near) / (far - near);
+        } else {
+            c2s[0][0] = 2.0f / (w2 - w0);
+            c2s[1][1] = 2.0f / (w3 - w1);
+            c2s[2][2] = -2.0f / (far - near);
+            c2s[3][0] = -(w2 + w0) / (w2 - w0);
+            c2s[3][1] = -(w3 + w1) / (w3 - w1);
+            c2s[3][2] = -(far + near) / (far - near);
+            c2s[3][3] = 1.0f;
+        }
+        return c2s;
+    }
+    // The active camera's node transform: render to world (MoonRay's render space is its space).
+    static rdl::Mat4d renderToWorld(const rdl::SceneObject& m) {
+        const auto cameras = m.getSceneClass().getSceneContext()->getActiveCameras();
+        need(!cameras.empty(), m.getName() + ": no active camera");
+        return get<rdl::Mat4d>(*cameras[0], "node_xform");
+    }
+    void morePrepared(shade::MapKind kind, const rdl::SceneObject& m, shade::MapNodeHeader& h, std::vector<float>& params,
+                      const std::set<std::string>& bound) {
+        namespace sm = scene_rdl2::math;
+        switch (kind) {
+        case shade::MapAxisAngle:
+            for (const char* n : {"input_space", "axis_space", "output_space"}) {
+                const int s = get<rdl::Int>(m, n);
+                need(s == 0 || s == 1 || s == 2 || s == 4, m.getName() + ": screen space is not shaded yet");
+            }
+            break;
+        case shade::MapRandom:
+        case shade::MapRandomNormal: {
+            // RandomMap's and RandomNormalMap's static tables: scene_rdl2's Random, default seeded.
+            scene_rdl2::util::Random rnd;
+            const int per = kind == shade::MapRandom ? 3 : 1;
+            for (int i = 0; i < 2048 * per; ++i) params.push_back(rnd.getNextFloat());
+            break;
+        }
+        case shade::MapHairColumn: required.push_back(shade::primKey("scatter_tag", shade::PrimFloat)); break;
+        case shade::MapToon:
+        case shade::MapCurvature:
+        case shade::MapWireframe: polyVertices = true; break;
+        case shade::MapDeformation: {
+            required.push_back(shade::primKey("ref_P", shade::PrimVec3f));
+            const auto c = get<rdl::Rgb>(m.getSceneClass().getSceneContext()->getSceneVariables(), "fatal_color");
+            params.insert(params.end(), {c.r, c.g, c.b});
+            break;
+        }
+        case shade::MapDirectional: {
+            if (get<rdl::Bool>(m, "use_reference_space")) required.push_back(shade::primKey("ref_P", shade::PrimVec3f));
+            float rows[12] = {};
+            const rdl::SceneObject* object = get<rdl::SceneObject*>(m, "object");
+            if (object) {
+                need(object->isA<rdl::Node>(), m.getName() + ": its object is not a node");
+                worldToObjectRows(get<rdl::Mat4d>(*object, "node_xform"), rows);
+                h.object = 1;
+            }
+            params.insert(params.end(), rows, rows + 12);
+            const rdl::SceneObject* input = get<rdl::SceneObject*>(m, "input_normal");
+            need(!input || input->isA<rdl::NormalMap>(), m.getName() + ": its input normal is not a normal map");
+            params.push_back(input ? float(int(reg(*input))) : -1.0f);
+            break;
+        }
+        case shade::MapTransformSpace: {
+            const int from = get<rdl::Int>(m, "from_space"), to = get<rdl::Int>(m, "to_space"), type = get<rdl::Int>(m, "input_type");
+            need(from >= 0 && from <= 12 && to >= 0 && to <= 12 && type >= 0 && type <= 2, m.getName() + ": invalid space or type");
+            if (to == 5) required.push_back(shade::primKey("ref_P", shade::PrimVec3f));
+            // shading::Xform: render to world (the active camera), to the map's camera (else the active one) and to its
+            // screen through the map's window (else the square -1..1), and the map's object.
+            float window[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+            if (get<rdl::Bool>(m, "use_custom_window_coordinates")) {
+                window[0] = get<rdl::Float>(m, "window_x_min");
+                window[1] = get<rdl::Float>(m, "window_y_min");
+                window[2] = get<rdl::Float>(m, "window_x_max");
+                window[3] = get<rdl::Float>(m, "window_y_max");
+            }
+            const rdl::Mat4d r2w = renderToWorld(m);
+            const rdl::SceneObject* camObj = get<rdl::SceneObject*>(m, "camera");
+            const rdl::SceneObject& cam = camObj ? *camObj : *m.getSceneClass().getSceneContext()->getActiveCameras()[0];
+            need(cam.isA<rdl::Camera>(), m.getName() + ": its camera is not a camera");
+            const rdl::Mat4d r2c = r2w * get<rdl::Mat4d>(cam, "node_xform").inverse();
+            const sm::Mat4f r2s = sm::toFloat(r2c) * cameraToScreen(cam, window), s2r = r2s.inverse();
+            shade::TransformSpacePrep x{};
+            affineRows(r2w, x.r2w);
+            affineRows(r2w.inverse(), x.w2r);
+            affineRows(r2c, x.r2c);
+            affineRows(r2c.inverse(), x.c2r);
+            for (int i = 0; i < 4; ++i)
+                for (int j = 0; j < 4; ++j) {
+                    x.r2s[4 * i + j] = r2s[i][j];
+                    x.s2r[4 * i + j] = s2r[i][j];
+                }
+            const rdl::SceneObject* object = get<rdl::SceneObject*>(m, "object");
+            if (object) {
+                need(object->isA<rdl::Node>(), m.getName() + ": its object is not a node");
+                worldToObjectRows(get<rdl::Mat4d>(*object, "node_xform"), x.w2o);
+                h.object = 1;
+            }
+            const float* f = reinterpret_cast<const float*>(&x);
+            for (size_t i = 0; i < sizeof(x) / sizeof(float); ++i) need(std::isfinite(f[i]), m.getName() + ": a space cannot be inverted");
+            params.insert(params.end(), f, f + sizeof(x) / sizeof(float));
+            break;
+        }
+        case shade::MapProjectTriplanarUdim: {
+            // The projector (projection::getProjectorXform) as the projection maps', then each face's composeTransform2D.
+            if (get<rdl::Bool>(m, "use_reference_space")) required.push_back(shade::primKey("ref_P", shade::PrimVec3f));
+            rdl::Mat4d M;
+            float rows[24] = {};
+            if (projectorMatrix(m, M)) {
+                const auto w = M.inverse();
+                for (int i = 0; i < 3; ++i) {
+                    for (int j = 0; j < 4; ++j) rows[4 * i + j] = float(w[j][i]);
+                    for (int j = 0; j < 3; ++j) rows[12 + 4 * i + j] = float(M[i][j]);
+                }
+                for (float v : rows) need(std::isfinite(v), m.getName() + ": its projector cannot be inverted");
+                h.object = 1;
+            }
+            params.insert(params.end(), rows, rows + 24);
+            for (const char* a : {"x", "y", "z"}) {
+                const std::string p(a);
+                const auto t = get<rdl::Vec2f>(m, (p + "_offset").c_str()), s = get<rdl::Vec2f>(m, (p + "_scale").c_str()),
+                           c = get<rdl::Vec2f>(m, (p + "_rotation_center").c_str());
+                const float r = sm::deg2rad(get<rdl::Float>(m, (p + "_rotation").c_str()));
+                sm::Xform3f x(sm::one);
+                x = x * sm::Xform3f::translate(sm::Vec3f(-c.x, -c.y, 0));
+                x = x * sm::Xform3f::rotate(sm::Vec3f(0.0f, 0.0f, 1.0f), r);
+                x = x * sm::Xform3f::translate(sm::Vec3f(c.x, c.y, 0));
+                x = x * sm::Xform3f::scale(sm::Vec3f(s.x, s.y, 0));
+                x = x * sm::Xform3f::translate(sm::Vec3f(t.x, t.y, 0));
+                const float xr[12] = {x.l.vx.x, x.l.vx.y, x.l.vx.z, x.l.vy.x, x.l.vy.y, x.l.vy.z, x.l.vz.x, x.l.vz.y, x.l.vz.z, x.p.x, x.p.y, x.p.z};
+                params.insert(params.end(), xr, xr + 12);
+            }
+            break;
+        }
+        case shade::MapDebug: {
+            const int type = get<rdl::Int>(m, "map_type"), primType = get<rdl::Int>(m, "primitive_attribute_type");
+            need(type >= 0 && type <= 6 && primType >= 0 && primType <= 3, m.getName() + ": invalid debug setting");
+            need(get<rdl::Int>(m, "input_normal_space") == 0 || get<rdl::Int>(m, "input_normal_space") == 1,
+                 m.getName() + ": invalid input normal space");
+            // DebugMap's primitive attribute types: float, vec2f, vec3f, rgb.
+            static const unsigned prim[4] = {shade::PrimFloat, shade::PrimVec2f, shade::PrimVec3f, shade::PrimRgb};
+            const unsigned key = shade::primKey(get<rdl::String>(m, "primitive_attribute_name").c_str(), prim[primType]);
+            if (type == 6) required.push_back(key);
+            float f;
+            std::memcpy(&f, &key, sizeof f);
+            params.push_back(f);
+            params.push_back(bound.count("input_normal") ? 1.0f : 0.0f);
+            break;
+        }
+        case shade::MapDistortNormal: {
+            const int space = get<rdl::Int>(m, "noise_space");
+            need(space != 8 && space != 9, m.getName() + ": hair surface coordinates are not shaded yet");
+            if (space == int(shade::SpaceReference)) required.push_back(shade::primKey("ref_P", shade::PrimVec3f));
+            const rdl::SceneObject* input = get<rdl::SceneObject*>(m, "input_normals");
+            need(!input || input->isA<rdl::NormalMap>(), m.getName() + ": its input is not a normal map");
+            params.push_back(input ? float(int(reg(*input))) : -1.0f);
+            const size_t offsets = params.size();
+            params.insert(params.end(), 2, 0.0f);
+            const int seed = get<rdl::Int>(m, "seed");
+            params[offsets] = float(params.size());
+            noiseTables(params, seed, false, false);
+            params[offsets + 1] = float(params.size());
+            noiseTables(params, seed + 2, false, false);
+            break;
+        }
+        default: break;
+        }
+    }
+
     // The bindings of o's bound attributes among those listed, at their offsets in o's parameter block.
     void bindingsOf(const rdl::SceneObject& o, const std::vector<std::pair<std::string, unsigned>>& attrs,
                     std::vector<shade::MapBinding>& out) {
         for (auto& [name, offset] : attrs) {
-            const rdl::Attribute* a = o.getSceneClass().getAttribute(name);
-            if (!a->isBindable()) continue;
+            const rdl::Attribute* a = nullptr;  // none for a placeholder field (HairColumnMap, ListMap)
+            for (auto i = o.getSceneClass().beginAttributes(); i != o.getSceneClass().endAttributes(); ++i)
+                if ((*i)->getName() == name) {
+                    a = *i;
+                    break;
+                }
+            if (!a || !a->isBindable()) continue;
             const rdl::SceneObject* m = o.getBinding(*a);
             if (!m) continue;
             out.push_back(shade::MapBinding{offset, bindRule(a->getType()), reg(*m)});
@@ -442,6 +670,7 @@ struct MapProgramBuilder {
                 listed.insert(n);
             need(!get<rdl::Bool>(m, "use_reference_space"), m.getName() + ": reference space (ref_P) is not shaded yet");
         }
+        moreListed(c->kind, m, listed);
         attributes(m, listed, bound);
         std::vector<float> params(floats, 0.0f);
         if (primvarReader) {
@@ -489,9 +718,10 @@ struct MapProgramBuilder {
             const rdl::SceneObject* input = get<rdl::SceneObject*>(m, "input");
             need(!input || input->isA<rdl::NormalMap>(), m.getName() + ": its input is not a normal map");
             params[0] = input ? float(int(reg(*input))) : -1.0f;
-        } else {
+        } else if (c->kind != shade::MapHairColumn && c->kind != shade::MapList) {
             for (size_t k = 0; k < c->attributes.size(); ++k) writeAttribute(m, c->attributes[k], params.data() + offsets[k].second);
         }
+        morePrepared(c->kind, m, h, params, bound);
         // Prepared data after the attributes: a ramp's control, then the 'object' space's matrix.
         if (c->kind == shade::MapRamp) {
             const auto& positions = get<rdl::FloatVector>(m, "positions");
@@ -910,7 +1140,7 @@ struct MapProgramBuilder {
         const float* p = reinterpret_cast<const float*>(&q);
         return std::vector<float>(p, p + sizeof(q) / sizeof(float));
     }
-    // The program: {count, node offsets...}; NoMapProgram with no maps.
+    // The program: {count, node offsets..., required count, required attribute keys...}; NoMapProgram with no maps.
     unsigned finish() {
         if (nodes.empty()) return shade::NoMapProgram;
         const unsigned offset = unsigned(pool.size());
@@ -921,6 +1151,10 @@ struct MapProgramBuilder {
         };
         word(unsigned(nodes.size()));
         for (unsigned n : nodes) word(n);
+        std::sort(required.begin(), required.end());
+        required.erase(std::unique(required.begin(), required.end()), required.end());
+        word(unsigned(required.size()));
+        for (unsigned k : required) word(k);
         return offset;
     }
 };

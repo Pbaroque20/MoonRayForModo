@@ -89,6 +89,7 @@ struct DeviceTextures {
     __device__ U32 lookup(U32 texture, tex::Binding b, const tex::Footprint& f, surface::V3& out) const {
         if (texture >= count || !images[texture]) return tex::Invalid;
         b.image = images[texture];
+        b.swapCross = b.mode != 3 ? 1u : 0u;  // as XPU's vector shading looks up (displacement: in order)
         RequestSink sink;
         return tex::lookup(b, f, out, sink);
     }

@@ -768,9 +768,9 @@ X2_CALL void resolveDwaBase(const DwaUniforms& u, const DwaInputs& in, const Sta
             t.normal = st.N;
         t.stretchU = in.toonSpecStretchU;
         t.stretchV = in.toonSpecStretchV;
-        if (u.settings & SetToonSpecUseInputVectors) {
-            t.dPds = normalize(in.toonSpecInputU);
-            t.dPdt = normalize(in.toonSpecInputV);
+        if (u.settings & SetToonSpecUseInputVectors) {  // render-space vectors
+            t.dPds = normalize(renderToWorldVector(st.worldToRender, in.toonSpecInputU));
+            t.dPdt = normalize(renderToWorldVector(st.worldToRender, in.toonSpecInputV));
         } else {
             t.dPds = normalize(st.dPds);
             t.dPdt = normalize(st.dPdt);
@@ -806,9 +806,9 @@ X2_CALL void resolveDwaBase(const DwaUniforms& u, const DwaInputs& in, const Sta
             t.normal = st.N;
         t.stretchU = i.stretchU;
         t.stretchV = i.stretchV;
-        if (v.settings & HairToonUseInputVectors) {
-            t.dPds = normalize(i.inputU);
-            t.dPdt = normalize(i.inputV);
+        if (v.settings & HairToonUseInputVectors) {  // render-space vectors
+            t.dPds = normalize(renderToWorldVector(st.worldToRender, i.inputU));
+            t.dPdt = normalize(renderToWorldVector(st.worldToRender, i.inputV));
         } else {
             t.dPds = normalize(st.dPds);
             t.dPdt = normalize(st.dPdt);

@@ -8,6 +8,7 @@
 // Copyright 2023-2024 DreamWorks Animation LLC. See MOONRAY_LICENSE.txt.
 #pragma once
 #include <array>
+#include <memory>
 #include <cstdint>
 #include <unordered_map>
 
@@ -298,13 +299,18 @@ inline Tessellation tessellate(const std::vector<Tri>& tris, size_t vertexCount,
 // A displacement shader as its maps evaluate it: NormalDisplacement (height, zero value, height multiplier) or
 // VectorDisplacement in tangent space (vector, factor, the tangent space style).
 struct Shader {
-    enum Kind : unsigned { Normal = 1, Vector = 2 };
+    // NormalDisplacement, VectorDisplacement, CombineDisplacement (two inputs scaled and combined), or none (a
+    // SwitchDisplacement's empty choice: no displacement).
+    enum Kind : unsigned { Normal = 1, Vector = 2, Combine = 3, None = 4 };
     unsigned kind = Normal, program = shade::NoMapProgram;
     unsigned heightReg = shade::MapNoRegister, multiplierReg = shade::MapNoRegister, vectorReg = shade::MapNoRegister;
     float height = 1, zero = 0, multiplier = 1;
     V3 vector{0, 0, 0};
     float factor = 1;
     int style = 0;  // 0 TNB (green up), 1 TBN
+    int operation = 0;  // Combine: 0 add, 1 the larger, 2 the smaller (by length)
+    float scale1 = 1, scale2 = 1;
+    std::shared_ptr<const Shader> input1, input2;
 };
 
 // The textures as the CPU backend reads them (async_cpu.h's HostTextures).
@@ -321,6 +327,18 @@ struct Textures {
 // NormalDisplacement::displace (evalFloatWithPreAdd and evalFloat: a bound map's average scales a nonzero value)
 // and VectorDisplacement::displace (a bound map replaces the value).
 inline V3 displacement(const Shader& d, const float* pool, const shade::State& st, const Textures& textures) {
+    if (d.kind == Shader::None) return V3{0, 0, 0};
+    if (d.kind == Shader::Combine) {
+        // CombineDisplacement: each input's displacement (none without one), scaled, then combined.
+        const V3 a = (d.input1 ? displacement(*d.input1, pool, st, textures) : V3{0, 0, 0}) * d.scale1;
+        const V3 b = (d.input2 ? displacement(*d.input2, pool, st, textures) : V3{0, 0, 0}) * d.scale2;
+        switch (d.operation) {
+        case 0: return a + b;
+        case 1: return shade::lengthSqr(a) > shade::lengthSqr(b) ? a : b;
+        case 2: return shade::lengthSqr(a) < shade::lengthSqr(b) ? a : b;
+        default: return a;
+        }
+    }
     shade::Color regs[shade::MapMaxRegisters];
     if (d.program != shade::NoMapProgram)
         need(shade::runMapProgram(pool, d.program, st, textures, regs) == tex::Ready, "A displacement map did not evaluate");

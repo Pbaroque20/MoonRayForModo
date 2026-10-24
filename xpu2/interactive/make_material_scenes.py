@@ -161,6 +161,25 @@ CASES = {
                             iridescence_at_0_incidence=0.2),
                         dwa('s2', albedo=(0.5, 0.5, 0.5), roughness=0.35, iridescence=0.8, iridescence_color_control=1,
                             iridescence_ramp_interpolation_mode=1, iridescence_thickness=0.6, iridescence_exponent=2.0)],
+    # MoonRay's switch materials: SwitchMaterial picking a DwaBase, a choice with no material (no lobes), a
+    # UsdPreviewSurface; RaySwitchMaterial by the ray's type (camera rays see one material, the floor's diffuse
+    # bounces another), and one cutting out camera rays over a default seen in reflections and bounces.
+    'mat-switch': [dwa('m_red', albedo=(0.8, 0.1, 0.1), roughness=0.4),
+                   mat('DwaMetalMaterial', 'm_steel', metallic_color=(0.8, 0.8, 0.85), roughness=0.3),
+                   usd('m_usd', diffuseColor=(0.2, 0.7, 0.3), roughness=0.4),
+                   mat('SwitchMaterial', 's0', choice=1, material0=ref('DwaBaseMaterial', 'm_red'), material1=ref('DwaMetalMaterial', 'm_steel')),
+                   mat('SwitchMaterial', 's1', choice=5, material0=ref('DwaBaseMaterial', 'm_red')),
+                   mat('SwitchMaterial', 's2', choice=0, material0=ref('UsdPreviewSurface', 'm_usd'))],
+    'mat-rayswitch': [dwa('m_grey', albedo=(0.6, 0.6, 0.6), roughness=0.3),
+                      dwa('m_red', albedo=(0.8, 0.1, 0.1), roughness=0.4),
+                      dwa('m_green', albedo=(0.1, 0.8, 0.2), roughness=0.5),
+                      dwa('m_yellow', albedo=(0.9, 0.8, 0.1), roughness=0.4),
+                      mat('RaySwitchMaterial', 's0', default_material=ref('DwaBaseMaterial', 'm_grey'),
+                          camera_ray_material=ref('DwaBaseMaterial', 'm_red')),
+                      mat('RaySwitchMaterial', 's1', default_material=ref('DwaBaseMaterial', 'm_grey'),
+                          indirect_diffuse_ray_material=ref('DwaBaseMaterial', 'm_green'),
+                          indirect_glossy_ray_material=ref('DwaBaseMaterial', 'm_red')),
+                      mat('RaySwitchMaterial', 's2', default_material=ref('DwaBaseMaterial', 'm_yellow'), cutout_camera_rays=True)],
     # The combinators.
     'dwa-layer': [dwa('m_plastic', albedo=(0.7, 0.7, 0.65), roughness=0.4),
                   mat('DwaMetalMaterial', 'm_gold', metallic_color=(1.0, 0.78, 0.34), roughness=0.25),
@@ -304,6 +323,83 @@ CASES = {
                      mat('DwaLayerMaterial', 's2', material_A=ref('DwaRefractiveMaterial', 'm_glass'),
                          material_B=ref('DwaBaseMaterial', 'm_front'), mask=0.6)],
 }
+
+
+# The more maps. Colour maps: LayerMap_v2 overlay-contrasting a checker over a colour, RandomMap per checker colour,
+# MultiChannelToFloatMap picking the red of a red/cyan checker; LayerMap's screen and RgbToLabMap scaled down.
+CHECK = lambda name, a, b, n=8: mat('CheckerboardMap', name, color_A=a, color_B=b, num_u_tiles=n, num_v_tiles=n)
+CASES['map-more-color'] = [
+    CHECK('chk0', (0.9, 0.2, 0.1), (0.95, 0.95, 0.9)),
+    mat('LayerMap_v2', 'lay', input_B=(0.2, 0.4, 0.8), mask=0.6, mode=7),
+    'LayerMap_v2("/lay") { ["input_A"]=bind(CheckerboardMap("/chk0"),Rgb(1,1,1)) }',
+    dwa('s0', roughness=0.4),
+    'DwaBaseMaterial("/s0") { ["albedo"]=bind(LayerMap_v2("/lay"),Rgb(1,1,1)) }',
+    CHECK('chk1', (0.1, 0.3, 0.7), (0.6, 0.2, 0.9), 6),
+    mat('RandomMap', 'rnd', seed=5, output_min=0.1, output_max=0.9),
+    'RandomMap("/rnd") { ["input"]=bind(CheckerboardMap("/chk1"),Rgb(1,1,1)) }',
+    dwa('s1', roughness=0.4),
+    'DwaBaseMaterial("/s1") { ["albedo"]=bind(RandomMap("/rnd"),Rgb(1,1,1)) }',
+    CHECK('chk2', (1.0, 0.0, 0.0), (0.0, 1.0, 1.0), 10),
+    mat('MultiChannelToFloatMap', 'mc', mode=0, tolerance=0.8),
+    'MultiChannelToFloatMap("/mc") { ["input"]=bind(CheckerboardMap("/chk2"),Rgb(1,1,1)) }',
+    mat('LayerMap', 'lay1', input_B=(0.15, 0.5, 0.3), mask=0.7, mode=5),
+    'LayerMap("/lay1") { ["input_A"]=bind(MultiChannelToFloatMap("/mc"),Rgb(1,1,1)) }',
+    dwa('s2', roughness=0.4),
+    'DwaBaseMaterial("/s2") { ["albedo"]=bind(LayerMap("/lay1"),Rgb(1,1,1)) }',
+]
+# Spaces: TransformNormalMap of an AxisAngleMap's vector into tangent space, DirectionalMap facing the viewer,
+# TransformSpaceMap from tangent to world (clamped).
+CASES['map-more-space'] = [
+    mat('AxisAngleMap', 'aa', input_vector=Raw('Vec3(0.2,0.9,0.3)'), input_space=2, rotation_axis=Raw('Vec3(0,1,0)'), axis_space=4,
+        angle=40.0, output_space=0),
+    mat('TransformNormalMap', 'tn', transform=1),
+    'TransformNormalMap("/tn") { ["input_normal"]=bind(AxisAngleMap("/aa"),Vec3(0,0,1)) }',
+    dwa('s0', roughness=0.4),
+    'DwaBaseMaterial("/s0") { ["albedo"]=bind(TransformNormalMap("/tn"),Rgb(1,1,1)) }',
+    mat('DirectionalMap', 'dir', prime_direction=0, polarity=1, color_a=(0.05, 0.1, 0.3), color_b=(0.9, 0.8, 0.3), bias=0.6,
+        use_smoothstep=True, smoothstep_start=0.2, smoothstep_end=0.9, falloff_type=1),
+    dwa('s1', roughness=0.4),
+    'DwaBaseMaterial("/s1") { ["albedo"]=bind(DirectionalMap("/dir"),Rgb(1,1,1)) }',
+    mat('TransformSpaceMap', 'ts', input=Raw('Vec3(0.4,0.2,0.9)'), input_type=1, from_space=5, to_space=2),
+    mat('ClampMap', 'clp', clamp=True, clamp_min=0.02, clamp_max=1.0),
+    'ClampMap("/clp") { ["input"]=bind(TransformSpaceMap("/ts"),Rgb(1,1,1)) }',
+    dwa('s2', roughness=0.4),
+    'DwaBaseMaterial("/s2") { ["albedo"]=bind(ClampMap("/clp"),Rgb(1,1,1)) }',
+]
+# The polygon maps: ToonMap's outlines and creases, CurvatureMap, WireframeMap in raster widths.
+CASES['map-more-poly'] = [
+    mat('ToonMap', 'toon', mode=2, fill_color=(0.8, 0.6, 0.4), outline_color=(0.05, 0.05, 0.1), crease_color=(0.9, 0.1, 0.1),
+        outline_threshold=0.3, outline_scale=4.0, crease_threshold=10.0, crease_scale=2.0),
+    dwa('s0', roughness=0.5),
+    'DwaBaseMaterial("/s0") { ["albedo"]=bind(ToonMap("/toon"),Rgb(1,1,1)) }',
+    mat('CurvatureMap', 'curv', mode=3, scale=8.0, power=0.8),
+    dwa('s1', roughness=0.5),
+    'DwaBaseMaterial("/s1") { ["albedo"]=bind(CurvatureMap("/curv"),Rgb(1,1,1)) }',
+    mat('WireframeMap', 'wire', line_color=(0.05, 0.05, 0.05), fill_color=(0.85, 0.85, 0.8), raster=True, line_width=1.5),
+    dwa('s2', roughness=0.5),
+    'DwaBaseMaterial("/s2") { ["albedo"]=bind(WireframeMap("/wire"),Rgb(1,1,1)) }',
+]
+# The more normal maps and the rest: DistortNormalMap, RandomNormalMap per checker colour, DebugMap's checkered St
+# through an ExtraAovMap; ListMap and HairColorPresetsMap layered.
+CASES['map-more-normals'] = [
+    mat('DistortNormalMap', 'dn', frequency_U=Raw('Vec3(3,3,3)'), frequency_V=Raw('Vec3(2,4,2)'), amplitude_U=0.6, amplitude_V=0.4, seed=3),
+    dwa('s0', albedo=(0.7, 0.5, 0.3), roughness=0.3, specular=1.0, input_normal=Raw('DistortNormalMap("/dn")')),
+    CHECK('chk3', (0.1, 0.1, 0.1), (0.7, 0.7, 0.7), 6),
+    mat('RandomNormalMap', 'rn', seed=9),
+    'RandomNormalMap("/rn") { ["input"]=bind(CheckerboardMap("/chk3"),Rgb(1,1,1)) }',
+    dwa('s1', albedo=(0.4, 0.6, 0.8), roughness=0.3, specular=1.0, input_normal=Raw('RandomNormalMap("/rn")')),
+    mat('DebugMap', 'dbg', map_type=1, checkerboard=True),
+    mat('ExtraAovMap', 'xa'),
+    'ExtraAovMap("/xa") { ["color"]=bind(DebugMap("/dbg"),Rgb(1,1,1)) }',
+    mat('ListMap', 'lst'),
+    mat('HairColorPresetsMap', 'hp', color=5),
+    mat('LayerMap_v2', 'lay2', mask=0.5, mode=4),
+    'LayerMap_v2("/lay2") { ["input_A"]=bind(ExtraAovMap("/xa"),Rgb(1,1,1)), ["input_B"]=bind(HairColorPresetsMap("/hp"),Rgb(1,1,1)) }',
+    mat('LayerMap_v2', 'lay3', mask=0.3, mode=2),
+    'LayerMap_v2("/lay3") { ["input_A"]=bind(ListMap("/lst"),Rgb(1,1,1)), ["input_B"]=bind(LayerMap_v2("/lay2"),Rgb(1,1,1)) }',
+    dwa('s2', roughness=0.4),
+    'DwaBaseMaterial("/s2") { ["albedo"]=bind(LayerMap_v2("/lay3"),Rgb(1,1,1)) }',
+]
 
 
 def write_pfm(path, w, h, fn):
@@ -508,6 +604,22 @@ GLITTER_REF = [
         mask=0.6),
 ]
 REF_P_CASES = {'dwa-glitter-ref': GLITTER_REF}
+REF_P_CASES['map-ref-maps'] = [
+    mat('DeformationMap', 'def', output_mode=0),
+    dwa('s0', roughness=0.4),
+    'DwaBaseMaterial("/s0") { ["albedo"]=bind(DeformationMap("/def"),Rgb(1,1,1)) }',
+    mat('DirectionalMap', 'dir', prime_direction=3, use_reference_space=True, polarity=1, color_a=(0.1, 0.2, 0.6),
+        color_b=(0.9, 0.7, 0.2)),
+    dwa('s1', roughness=0.4),
+    'DwaBaseMaterial("/s1") { ["albedo"]=bind(DirectionalMap("/dir"),Rgb(1,1,1)) }',
+    mat('ProjectTriplanarUdimMap', 'udim', projection_mode=2, translate=Raw('Vec3(1.6,0.7,0)'), scale=Raw('Vec3(0.8,0.8,0.8)'),
+        use_reference_space=True, x_scale=Raw('Vec2(2,2)'),
+        z_rotation=30.0, y_offset=Raw('Vec2(0.25,0)')),
+    mat('ClampMap', 'uvc', clamp=True, clamp_min=0.0, clamp_max=1.0),
+    'ClampMap("/uvc") { ["input"]=bind(ProjectTriplanarUdimMap("/udim"),Rgb(1,1,1)) }',
+    dwa('s2', roughness=0.4),
+    'DwaBaseMaterial("/s2") { ["albedo"]=bind(ClampMap("/uvc"),Rgb(1,1,1)) }',
+]
 
 
 def box(cx, cy, cz, sx, sy, sz):
@@ -587,6 +699,25 @@ DISPLACEMENT = {
         mat('VectorDisplacement', 'd1', factor=0.05, tangent_space_style=1),
         'VectorDisplacement("/d1") { ["vector"]=bind(ImageMap("/tex_checker"),Vec3(0,0,0)) }',
     ], displaced={'ball0': ('d0', 6), 'ball1': ('d1', 3)}),
+    # The displacement combinators: CombineDisplacement adding a noise height to a constant vector, SwitchDisplacement
+    # choosing the second of two, CombineDisplacement keeping the larger of two scaled heights.
+    'disp-combine': lambda t: dict(materials=[
+        mat('NoiseMap_v2', 'bumps', space=2, frequency_multiplier=3.0, max_level=4.5, color_A=(0.0, 0.0, 0.0), color_B=(1.0, 1.0, 1.0)),
+        mat('NoiseWorleyMap_v3', 'cells', space=2, frequency=4.0, F1=-1.0, F2=1.0, max_level=2.5),
+        dwa('s0', albedo=(0.8, 0.35, 0.2), roughness=0.4), dwa('s1', albedo=(0.3, 0.6, 0.3), roughness=0.35, specular=0.8),
+        dwa('s2', albedo=(0.3, 0.4, 0.8), roughness=0.5),
+        mat('NormalDisplacement', 'h0', zero_value=0.5, height_multiplier=0.12),
+        'NormalDisplacement("/h0") { ["height"]=bind(NoiseMap_v2("/bumps"),1.0) }',
+        mat('VectorDisplacement', 'v0', vector=Raw('Vec3(0.03,0.06,0.0)')),
+        mat('NormalDisplacement', 'h1', height_multiplier=0.1),
+        'NormalDisplacement("/h1") { ["height"]=bind(NoiseWorleyMap_v3("/cells"),1.0) }',
+        mat('CombineDisplacement', 'd0', operation=0, scale_1=0.8, scale_2=1.5),
+        'CombineDisplacement("/d0") { ["input_1"]=NormalDisplacement("/h0"), ["input_2"]=VectorDisplacement("/v0") }',
+        mat('SwitchDisplacement', 'd1', choice=1.0),
+        'SwitchDisplacement("/d1") { ["displacement0"]=NormalDisplacement("/h0"), ["displacement1"]=NormalDisplacement("/h1") }',
+        mat('CombineDisplacement', 'd2', operation=1, scale_1=1.0, scale_2=0.7),
+        'CombineDisplacement("/d2") { ["input_1"]=NormalDisplacement("/h1"), ["input_2"]=NormalDisplacement("/h0") }',
+    ], displaced={'ball0': ('d0', 4), 'ball1': ('d1', 4), 'ball2': ('d2', 5)}),
 }
 
 
@@ -679,6 +810,28 @@ HAIR_CURVES = {
     'curve-hair-toon-hair': (2, 0, mat('HairToonMaterial', 'c0', hair_color=(0.3, 0.35, 0.6), hair_diffuse=0.7, specular_1_model=3,
                                        specular_1_roughness=0.25, specular_1_intensity=2.0), False),
 }
+# The hair combinators: a list of declarations, the last the strands' /c0.
+HAIR_A = mat('HairMaterial_v3', 'ha', hair_color=(0.85, 0.62, 0.3), primary_specular_tint=(1.0, 0.9, 0.8),
+             direct_transmission_saturation=0.7)
+HAIR_B = mat('HairMaterial_v3', 'hb', hair_color=(0.12, 0.07, 0.05), primary_specular_offset=-6.0, secondary_specular_tint=(0.9, 0.7, 0.6),
+             use_independent_secondary_specular_roughness=True, independent_secondary_specular_roughness=0.4)
+HAIR_CURVES.update({
+    'curve-hair-maps': (0, 0, [mat('HairColorPresetsMap', 'hp0', color=11), mat('HairColorPresetsMap', 'hp1', color=3),
+                               mat('HairColumnMap', 'hcol'), mat('HairMap', 'hm', bias=0.3, gain=0.6),
+                               'HairMap("/hm") { ["base_color"]=bind(HairColorPresetsMap("/hp0"),Rgb(1,1,1)), '
+                               '["tip_color"]=bind(HairColorPresetsMap("/hp1"),Rgb(1,1,1)), '
+                               '["column_uv_color"]=bind(HairColumnMap("/hcol"),Rgb(1,1,1)) }',
+                               mat('HairMaterial_v3', 'c0'),
+                               'HairMaterial_v3("/c0") { ["hair_color"]=bind(HairMap("/hm"),Rgb(1,1,1)) }'], True),
+    'curve-hair-layer': (0, 0, [HAIR_A, HAIR_B, mat('HairLayerMaterial', 'c0', hair_material_A=ref('HairMaterial_v3', 'ha'),
+                                                    hair_material_B=ref('HairMaterial_v3', 'hb'), mask=0.4)], False),
+    'curve-hair-layer-diffuse': (2, 0, [HAIR_A, mat('HairDiffuseMaterial', 'hd', hair_color=(0.3, 0.5, 0.2)),
+                                        mat('HairLayerMaterial', 'c0', hair_material_A=ref('HairMaterial_v3', 'ha'),
+                                            hair_material_B=ref('HairDiffuseMaterial', 'hd'), mask=0.6, blend_color_space=1)], False),
+    'curve-hair-cc': (0, 0, [HAIR_A, mat('HairColorCorrectMaterial', 'c0', input_hair_material=ref('HairMaterial_v3', 'ha'),
+                                         hue_shift=0.15, saturation=1.6, gain=1.3, TMI_enabled=True, TMI=(0.2, -0.3, 0.1), mix=0.8)],
+                      False),
+})
 CURVES = {'curve-linear': (0, 0), 'curve-linear-round': (0, 1), 'curve-bezier': (1, 0), 'curve-bspline': (2, 0),
           'curve-bspline-round': (2, 1)}
 CURVES.update({k: v[:2] for k, v in HAIR_CURVES.items()})
@@ -695,7 +848,7 @@ def curve_case(case):
         tags = [((i * 2654435761) % 1000003) / 1000003.0 for i in range(len(counts))]
         extra.append('UserData("/scatter") { ["float_key"]="scatter_tag", ["float_values_0"]={%s} }' % ','.join('%.6f' % t for t in tags))
         declaration = declaration[:-2] + ', ["primitive_attributes"]={UserData("/scatter")} }'
-    return CURVE_BALLS + [material] + extra, [('hair', declaration, 'c0')]
+    return CURVE_BALLS + (material if isinstance(material, list) else [material]) + extra, [('hair', declaration, 'c0')]
 
 
 def main():

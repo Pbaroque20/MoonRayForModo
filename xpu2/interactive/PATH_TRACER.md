@@ -56,11 +56,45 @@ the solid-angle pdf) and `intersect(P, wi)` (for BSDF samples). Area pdfs become
   (transforms, radiance, sizes, sidedness, spread, visibility flags), gives each mesh a mask of its light set's lights
   (up to 32), and admits `max_depth`, `max_diffuse_depth`, `max_glossy_depth`, `max_mirror_depth`, `bsdf_samples`,
   `light_samples`, `russian_roulette_threshold` and `lights_visible_in_camera`.
-- **Random numbers.** Camera dimensions 0-1 and the first BSDF sample (16-17) keep their Sobol nets; every other
-  dimension comes from the per-bounce Philox stream (`sample::next`) in a fixed order: per vertex, the BSDF samples,
-  their light choices, the light samples (3 each), then Russian roulette.
+- **Random numbers.** The camera (dimensions 0-1) and, at the first hit, the BSDF samples (16-17) and light samples
+  (18-19) are stratified across the pixel's samples (Sobol, digitally shifted); so are, at the first hit, subsurface
+  scattering's draws (20-27, Sobol dimensions 6 to 13, policy bit 8: the profile samples, the forward-scattering samples,
+  and the exits' light and Lambertian samples), as MoonRay draws a pixel's subsurface samples from one sequence across
+  its samples. Every other dimension comes from the per-bounce Philox stream (`sample::next`) in a fixed order: per
+  vertex, the BSDF samples, their light choices, the light samples (3 each), then Russian roulette. Without the
+  stratified subsurface draws XPU2's dipole and normalized diffusion were 1.7 times as noisy as XPU at 64 samples.
 - **Splitting.** A first hit with several samples continues each as its own branch, depth first, on a small stack.
 - **Shadow rays** get a finite end (`visible(origin, direction, distance)`).
+
+## Render space
+
+MoonRay shades in render space, the active camera's space at its first motion step (`Scene::updateActiveCamera`);
+XPU2 shades in world space. A map's colour keeps MoonRay's numbers (a render-space position or vector comes out in
+render space), and a normal map's result is a world normal. Where MoonRay reads a value as a render-space quantity,
+XPU2 turns it into world space: RgbToNormalMap's colour (a normal: by world-to-render's transpose), a toon specular's
+input vectors (by its inverse), the render-space normals and vectors the newer maps take and give. ProjectCameraNormalMap,
+on a face turned from its projector, decodes the shading normal itself as if it were a texel: its render-space
+components are decoded. Without these the fixtures' cameras (turned 12 degrees) moved RgbToNormal's highlight (2%
+darker) and drew a line along a ball's rim.
+
+## Materials
+
+The DwaBase family (`shade_dwabase.h`: DwaBaseMaterial, DwaMetal, DwaRefractive, DwaSolidDielectric, DwaFabric,
+DwaVelvet_v2, DwaEmissive, DwaSkin, DwaToonMaterial, HairMaterial_v3, HairDiffuseMaterial, HairToonMaterial),
+UsdPreviewSurface, and the combinators as a tree of nodes (`shade_dwalayer.h`): DwaLayer, DwaMix, DwaTwoSided,
+DwaSwitch, DwaColorCorrect, DwaAdjust, and the hair ones, HairLayerMaterial (DWABASE_blendHairParameters: the emission,
+hair lobes, hair diffuse and hair toon speculars blended, an input alone with its own castsCaustics; two hairs with
+different Fresnel types give no lobes) and HairColorCorrectMaterial (the hair colours corrected and clamped, the
+emission not above; its presence a bool, as MoonRay's). A hair material combines only through the hair combinators:
+MoonRay's DwaBase combinators drop hair.
+
+MoonRay's own SwitchMaterial and RaySwitchMaterial are records holding their materials' records
+(`shade_material.h`, `SwitchRecord`). A SwitchMaterial shades its chosen material. A RaySwitchMaterial is replaced
+once, as MoonRay's integrator does, by the material for the type of the lobe whose sample the ray is
+(`lobeTypeToRayType`: none for a camera ray, then diffuse, mirror and glossy; a subsurface exit's ray is diffuse);
+shaded itself it shades its default material, and cutting out camera rays it ends a primary path (early
+termination) after its default material's presence. A material whose maps require a primitive attribute the hit
+lacks shades as the fatal colour and ends the path (`hasAllRequiredAttributes`).
 
 ## Curves and hair
 
@@ -142,8 +176,11 @@ when the scene is prepared; the renderers get an ordinary mesh:
   place), through a NormalDisplacement or a tangent-space VectorDisplacement whose maps run on the host.
 - Smooth shading normals over the displaced faces (`PolyMeshCalcNv`); the mesh's own normals are discarded. A mesh
   with `smooth_normal` and no normals of its own gets the same smoothing undisplaced.
+- CombineDisplacement (its inputs' displacements scaled, added or the longer or shorter kept) and
+  SwitchDisplacement (its choice, a float read as an int and cycled through 64, at preparation).
 - Refused: adaptive tessellation (`adaptive_error` above zero needs the camera's frustum), subdivision meshes,
-  object-space VectorDisplacement, CombineDisplacement and SwitchDisplacement, `mesh_resolution` above 64.
+  object-space VectorDisplacement, `mesh_resolution` above 64, and maps that read the polygon or require attributes in
+  a displacement (MoonRay tessellates a displaced mesh into quads, four polyvertices).
 
 ## Maps
 
@@ -155,9 +192,25 @@ _v3, GradientMap, RampMap, the colour corrects (ColorCorrect, Contrast, GainOffs
 TMI and Legacy), BlendMap, ClampMap, RemapMap, OpMap, the conversions, Switch maps, TwoSidedMap and LODMap; the normal
 maps ImageNormalMap, ProjectPlanarNormalMap, ProjectTriplanarNormalMap_v2, ProjectCameraNormalMap, CombineNormalMap,
 SwitchNormalMap and RgbToNormalMap; and the kit's ModoTextureMap and ModoNormalMap. Projections read P and N
-(reference space, ref_P and ref_N, is refused); textures must be complete stored mip pyramids. Not ported:
-ProjectTriplanarUdimMap, DistortNormalMap, RandomNormalMap, the hair and toon maps, RandomMap, CurvatureMap,
-DirectionalMap, WireframeMap; nor HairLayerMaterial and HairColorCorrectMaterial among the materials.
+(reference space, ref_P and ref_N, is refused); textures must be complete stored mip pyramids.
+
+Texture lookups follow XPU's: MoonRay's vector shading reads textures through `CPP_oiioTexture` and
+`CPP_oiioUdimTexture` (`BasicTexture.cc`, `UdimTexture.cc`), which pass OIIO `dsdx, dsdy, dtdx, dtdy` where it takes
+`dsdx, dtdx, dsdy, dtdy`: the footprint transposed, its anisotropic filter turned. XPU2's path tracer swaps the two
+the same way (`tex::Binding::swapCross`), except in displacement, which MoonRay samples through its scalar path, in
+order. Without it texture edges (checker squares, triplanar stripes) differed by up to 0.2 at single pixels.
+
+`shade_mapnodes_more.h` has the rest, as XPU runs them (their ISPC): AxisAngleMap, TransformNormalMap and
+TransformSpaceMap (render, camera, world, screen through the map's camera and window, object, tangent; the instance
+spaces leave a value as it is without instancing), RgbToLabMap, RandomMap and RandomNormalMap (MoonRay's static
+tables, a negative index wrapped where MoonRay reads before its table), MultiChannelToFloatMap, LayerMap and LayerMap_v2,
+HairMap, HairColumnMap (scatter_tag required), HairColorPresetsMap, ToonMap, CurvatureMap and WireframeMap (a mesh hit a
+triangle, MoonRay's TriMesh; the normal's St partials from the vertex normals, not flipped with N as MoonRay's are not),
+DirectionalMap, DeformationMap (ref_P required; the scene's fatal colour where a pair of partials is degenerate),
+ProjectTriplanarUdimMap, ExtraAovMap (its colour; XPU2 renders no AOVs), ListMap (white), DebugMap and
+DistortNormalMap (MoonRay passes it no transform: its noise reads the render-space position unless St, input
+coordinates or ref_P; the hair surface coordinates are refused). Not ported: OpenVdbMap, which needs VDB grids (with
+VdbVolume and CutoutVolume among the volume shaders).
 
 ## Gates
 

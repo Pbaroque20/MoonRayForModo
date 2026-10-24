@@ -10,10 +10,11 @@ image's relative MSE against an independent XPU 1024-sample image (frame 1) is a
 XPU2 converges to XPU (8x8 block mean .015, alpha .015, maximum pixel within .08 or 1.25 times XPU2's own noise)."""
 import argparse
 import json
+import shutil
 import statistics
 from pathlib import Path
 
-from reference_repeatability import save, values
+from reference_repeatability import save, values, stats
 from reference_runtime import verify
 from run_m0 import guard
 from run_paths_benchmark import GATES, HERE, TR, probe, xpu
@@ -27,6 +28,9 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--cases', nargs='+')
     p.add_argument('--threads', type=int, default=12)
+    p.add_argument('--reuse', type=Path, nargs='*', default=[],
+                   help="earlier benchmarks (with their fixtures' report beside as 'fixtures' in their report) whose MoonRay "
+                        "images and times a case takes when its scenes are unchanged")
     p.add_argument('--reference-mode', default='xpu', choices=['xpu', 'scalar', 'vector'],
                    help="MoonRay's execution mode for its images (scalar where XPU cannot render the cases)")
     a = p.parse_args()
@@ -43,6 +47,33 @@ def main():
     report = {'status': 'incomplete', 'gates': GATES, 'build': str(a.build), 'fixtures': str(a.fixtures),
               'reference_mode': a.reference_mode, 'cases': {}}
     t = a.threads
+
+    # MoonRay's renders do not depend on XPU2: a case whose scenes are the same text as in an earlier benchmark (its
+    # fixture folder aside) takes that benchmark's MoonRay images and times.
+    def scene_text(path, root):
+        return Path(path).read_text(encoding='utf-8').replace(str(root), '<root>').replace(str(root).replace('\\', '/'), '<root>')
+    earlier = []
+    for folder in a.reuse:
+        r = json.loads((folder / 'report.json').read_text(encoding='utf-8'))
+        if r.get('reference_mode', 'xpu') != a.reference_mode:
+            continue
+        old = json.loads(Path(r['fixtures']).resolve().read_text(encoding='utf-8'))['cases']
+        earlier.append((folder, Path(r['fixtures']).resolve().parent, old))
+    new_root = a.fixtures.resolve().parent
+
+    def reusable(name, fixture):
+        for folder, old_root, old in earlier:
+            if name not in old or not (folder / name / 'xpu-64-3' / 'beauty.rgba').exists():
+                continue
+            if all(scene_text(fixture['scenes'][g], new_root) == scene_text(old[name]['scenes'][g], old_root) for g in ('8', '32')):
+                return folder / name
+        return None
+
+    def moonray(source, scene, settings, folder):
+        if source is None:
+            return xpu(runtime, scene, settings, folder, t, decoder, a.reference_mode)
+        shutil.copytree(source / folder.name, folder)
+        return values((folder / 'beauty.rgba').read_bytes()), stats(folder / 'stats.csv')['Mcrt time (s)']
     try:
         for name in a.cases or list(fixtures):
             fixture = fixtures[name]
@@ -52,13 +83,14 @@ def main():
             d.mkdir()
             settings = d / 'none.rdla'
             settings.write_text('-- the scene as it is\n', encoding='utf-8')
-            reference, reference_seconds = xpu(runtime, scenes[32], settings, d / 'xpu-1024', t, decoder, a.reference_mode)
+            source = reusable(name, fixture)
+            reference, reference_seconds = moonray(source, scenes[32], settings, d / 'xpu-1024')
             # The 64-sample errors are measured against an independent XPU reference (frame 1): XPU's own
             # 1024-sample image shares its random sequences with its 64-sample one and so flatters it.
             frame1 = d / 'frame1.rdla'
             frame1.write_text(settings.read_text(encoding='utf-8') + 'SceneVariables { ["frame"]=1 }\n', encoding='utf-8')
-            independent, _ = xpu(runtime, scenes[32], frame1, d / 'xpu-1024-frame1', t, decoder, a.reference_mode)
-            x = [xpu(runtime, scenes[8], settings, d / f'xpu-64-{i}', t, decoder, a.reference_mode) for i in range(4)]
+            independent, _ = moonray(source, scenes[32], frame1, d / 'xpu-1024-frame1')
+            x = [moonray(source, scenes[8], settings, d / f'xpu-64-{i}') for i in range(4)]
             xpu_error = min(metric(img, independent, width, height)['relative_mse'] for img, _ in x[1:])
             xpu_error_own = min(metric(img, reference, width, height)['relative_mse'] for img, _ in x[1:])
             native = probe(build, scenes[8], runtime, d / 'xpu2-64', t, 4, settings)
@@ -69,6 +101,7 @@ def main():
             he = metric(first, reference, width, height)
             noise = metric(first, values(Path(other['runs'][0]['raw_file']).read_bytes()), width, height)['max_pixel']
             case = report['cases'][name] = {
+                'moonray_reused_from': str(source) if source else None,
                 'xpu_reference_seconds': reference_seconds,
                 'xpu_mcrt_seconds': [s for _, s in x], 'xpu_median': statistics.median([s for _, s in x][1:]),
                 'xpu_error': xpu_error, 'xpu_error_own_reference': xpu_error_own,

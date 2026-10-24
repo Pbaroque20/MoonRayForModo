@@ -293,6 +293,7 @@ struct CpuBackend {
         unsigned lookup(unsigned texture, tex::Binding b, const tex::Footprint& f, surface::V3& out) const {
             if (texture >= count || !images[texture]) return tex::Invalid;
             b.image = images[texture];
+            b.swapCross = b.mode != 3 ? 1u : 0u;  // as XPU's vector shading looks up (displacement: in order)
             return tex::lookup(b, f, out);
         }
     };

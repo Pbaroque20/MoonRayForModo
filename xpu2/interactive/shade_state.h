@@ -39,11 +39,16 @@ struct State {
     float dsdx = 0, dsdy = 0, dtdx = 0, dtdy = 0;
     V3 dPdx{0, 0, 0}, dPdy{0, 0, 0};         // ray differentials at P
     V3 dNdx{0, 0, 0}, dNdy{0, 0, 0};
+    // computeIntersectCurvature: the shading normal's St partials from the triangle's vertex normals (zero without
+    // normals and on curves; MoonRay does not flip them with N); and the hit triangle's corners (its polyvertices).
+    V3 dNds{0, 0, 0}, dNdt{0, 0, 0};
+    V3 pa{0, 0, 0}, pb{0, 0, 0}, pc{0, 0, 0};
     RayDiff incoming;        // the ray's differentials (set before shading; a camera ray's are its own)
     bool diffValid = false;  // whether dPdx and dPdy came from differentials
     float minRoughness[2] = {0, 0};
     float mediumIor = 1.0f;
     U32 geom = 0, prim = 0, pathType = PathPrimary;
+    U32 rayLobe = 0;  // the type of the lobe whose sample the ray is (0 for a camera ray): RaySwitchMaterial's choice
     float u = 0, v = 0;                      // barycentrics of the hit triangle
     bool entering = true, causticPath = false, subsurfaceAllowed = true, useAdaptNormal = true;
     bool displacement = false;  // a displacement shader's state (Intersection::initDisplacement)
@@ -64,6 +69,36 @@ struct State {
 };
 X2_HD inline V3 xformVector(const float* m, V3 v) {
     return V3{m[0] * v.x + m[1] * v.y + m[2] * v.z, m[4] * v.x + m[5] * v.y + m[6] * v.z, m[8] * v.x + m[9] * v.y + m[10] * v.z};
+}
+// MoonRay shades in render space (the camera's), XPU2 in world space: a value MoonRay reads as a render-space
+// normal (an RgbToNormalMap's colour) or vector (a toon specular's input vectors) comes into world space through
+// world-to-render (st.worldToRender, null for identity): a normal by its linear part transposed (the inverse transpose
+// of render-to-world), a vector by its inverse.
+X2_HD inline V3 renderToWorldNormal(const float* m, V3 n) {
+    if (!m) return n;
+    return V3{m[0] * n.x + m[4] * n.y + m[8] * n.z, m[1] * n.x + m[5] * n.y + m[9] * n.z, m[2] * n.x + m[6] * n.y + m[10] * n.z};
+}
+// The other way: a world normal's components in render space (the inverse transpose of world-to-render).
+X2_HD inline V3 worldToRenderNormal(const float* m, V3 n) {
+    if (!m) return n;
+    const float a = m[0], b = m[1], c = m[2], d = m[4], e = m[5], f = m[6], g = m[8], h = m[9], i = m[10];
+    const float A = e * i - f * h, B = f * g - d * i, C = d * h - e * g;
+    const float det = a * A + b * B + c * C;
+    if (det == 0.0f) return n;
+    const float r = 1.0f / det;
+    // (L^-1)^T n: the cofactor matrix over the determinant
+    return V3{(A * n.x + B * n.y + C * n.z) * r, ((c * h - b * i) * n.x + (a * i - c * g) * n.y + (b * g - a * h) * n.z) * r,
+              ((b * f - c * e) * n.x + (c * d - a * f) * n.y + (a * e - b * d) * n.z) * r};
+}
+X2_HD inline V3 renderToWorldVector(const float* m, V3 v) {
+    if (!m) return v;
+    const float a = m[0], b = m[1], c = m[2], d = m[4], e = m[5], f = m[6], g = m[8], h = m[9], i = m[10];
+    const float A = e * i - f * h, B = f * g - d * i, C = d * h - e * g;
+    const float det = a * A + b * B + c * C;
+    if (det == 0.0f) return v;
+    const float r = 1.0f / det;
+    return V3{(A * v.x + (c * h - b * i) * v.y + (b * f - c * e) * v.z) * r, (B * v.x + (a * i - c * g) * v.y + (c * d - a * f) * v.z) * r,
+              (C * v.x + (b * g - a * h) * v.y + (a * e - b * d) * v.z) * r};
 }
 // A curve's attribute at the hit (LineSegmentsInterpolator, CubicSplineInterpolator): a uniform value is its
 // curve's; vertex values are a linear span's ends or a cubic span's four points by its basis; varying values a

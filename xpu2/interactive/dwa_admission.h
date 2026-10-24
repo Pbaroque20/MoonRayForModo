@@ -868,10 +868,12 @@ inline bool dwaCombinator(const std::string& cls) {
     return cls == "DwaLayerMaterial" || cls == "DwaMixMaterial" || cls == "DwaTwoSidedMaterial" || cls == "DwaSwitchMaterial" ||
            cls == "DwaColorCorrectMaterial" || cls == "DwaAdjustMaterial";
 }
+// HairLayerMaterial and HairColorCorrectMaterial: the hair combinators (Blending.cc registerHairLayerable).
+inline bool hairCombinator(const std::string& cls) { return cls == "HairLayerMaterial" || cls == "HairColorCorrectMaterial"; }
 inline bool dwaLayerable(const rdl::SceneObject* o) {
     if (!o) return false;
     const std::string cls = o->getSceneClass().getName();
-    return dwaClass(cls) || dwaCombinator(cls);
+    return dwaClass(cls) || dwaCombinator(cls) || hairCombinator(cls);
 }
 // Blending.cc blendUniformParameters: where the two disagree, the material's fallback.
 inline void blendUniformParameters(const shade::DwaUniformParams& u0, const shade::DwaUniformParams& u1, shade::DwaUniformParams& u,
@@ -900,6 +902,7 @@ struct DwaTreeBuilder {
     };
     std::map<const rdl::SceneObject*, Leaf> records;  // a leaf's DwaRecord and bindings, once per object
     unsigned depth = 0, colorCorrections = 0;
+    unsigned dwaAncestors = 0;  // DwaBase combinators above the node being built (they drop hair, as MoonRay's do)
     bool glitter = false, refP = false;  // a leaf has glitter tables; one in reference space
 
     static const rdl::SceneObject* obj(const rdl::SceneObject& o, const char* name) { return get<rdl::SceneObject*>(o, name); }
@@ -953,6 +956,12 @@ struct DwaTreeBuilder {
         }
         if (cls == "DwaSwitchMaterial") return castsCaustics(switchChoice(*o));
         if (cls == "DwaColorCorrectMaterial") return castsCaustics(obj(*o, "input_material"));
+        if (cls == "HairLayerMaterial") {
+            const rdl::SceneObject *a = obj(*o, "hair_material_A"), *b = obj(*o, "hair_material_B");
+            if (a && b) return castsCaustics(a) || castsCaustics(b);
+            return castsCaustics(b ? b : a);
+        }
+        if (cls == "HairColorCorrectMaterial") return castsCaustics(obj(*o, "input_hair_material"));
         if (cls == "DwaAdjustMaterial") {
             const rdl::SceneObject* in = obj(*o, "input_material");
             if (!in) return false;
@@ -1017,6 +1026,13 @@ struct DwaTreeBuilder {
             if (const rdl::SceneObject* m = switchChoice(*o)) u = uniformParams(m);
         } else if (cls == "DwaColorCorrectMaterial") {
             if (const rdl::SceneObject* m = obj(*o, "input_material")) u = uniformParams(m);
+        } else if (cls == "HairLayerMaterial") {
+            // HairLayerMaterial::resolveUniformParameters: both inputs' (build() requires both), its fallback BSSRDF.
+            const auto ua = uniformParams(obj(*o, "hair_material_A")), ub = uniformParams(obj(*o, "hair_material_B"));
+            u = ua;
+            blendUniformParameters(ua, ub, u, 1, 1, false, get<rdl::Int>(*o, "fallback_bssrdf"), false, false);
+        } else if (cls == "HairColorCorrectMaterial") {
+            if (const rdl::SceneObject* m = obj(*o, "input_hair_material")) u = uniformParams(m);
         } else if (cls == "DwaAdjustMaterial") {
             if (const rdl::SceneObject* m = obj(*o, "input_material")) {
                 u = uniformParams(m);
@@ -1092,9 +1108,9 @@ struct DwaTreeBuilder {
         shade::DwaNode n{};
         n.child[0] = n.child[1] = shade::DwaNoNode;
         if (dwaClass(cls)) {
-            // Hair materials layer only with their own combinators (HairLayerMaterial: not ported).
+            // Hair materials combine only through the hair combinators: MoonRay's DwaBase combinators drop hair.
             const auto model = dwaClass(cls)->model;
-            need(depth == 1 || (model != shade::ModelHair && model != shade::ModelHairDiffuse && model != shade::ModelHairToon),
+            need(dwaAncestors == 0 || (model != shade::ModelHair && model != shade::ModelHairDiffuse && model != shade::ModelHairToon),
                  o->getName() + ": hair in a layer");
             n.kind = shade::NodeLeaf;
             const Leaf l = leaf(*o);
@@ -1102,9 +1118,43 @@ struct DwaTreeBuilder {
             n.bindings = l.bindings;
             n.bindingCount = l.bindingCount;
             slots = 1;
+        } else if (hairCombinator(cls)) {
+            need(dwaAncestors == 0, o->getName() + ": hair in a layer");
+            admitCombinatorBound(*o, {"mask", "mix", "hue_shift", "saturation", "gain"});
+            if (cls == "HairLayerMaterial") {
+                // MoonRay's update() resolves both inputs' uniform parameters: it needs both.
+                const rdl::SceneObject *a = obj(*o, "hair_material_A"), *b = obj(*o, "hair_material_B");
+                need(a && b && dwaLayerable(a) && dwaLayerable(b), o->getName() + ": a hair layer needs two layerable inputs");
+                n.kind = shade::NodeHairLayer;
+                n.colorSpace = unsigned(get<rdl::Int>(*o, "blend_color_space"));
+                need(n.colorSpace <= 2, o->getName() + ": invalid colour space");
+                n.value[0] = f1(*o, "mask");
+                nodeBindings(*o, {{"mask", 0}}, n);
+                unsigned sb, sa;
+                n.child[0] = build(b, sb);
+                n.child[1] = build(a, sa);
+                n.childCaustics[0] = castsCaustics(b);
+                n.childCaustics[1] = castsCaustics(a);
+                slots = std::max({3u, 1 + sb, 2 + sa});
+            } else {  // HairColorCorrectMaterial: its TMI is not bindable
+                const rdl::SceneObject* m = obj(*o, "input_hair_material");
+                need(!m || dwaLayerable(m), o->getName() + ": the input is not layerable");
+                n.kind = shade::NodeHairColorCorrect;
+                n.value[0] = get<rdl::Bool>(*o, "on") ? 1.0f : 0.0f;
+                n.value[1] = f1(*o, "mix");
+                n.value[2] = f1(*o, "hue_shift");
+                n.value[3] = f1(*o, "saturation");
+                n.value[4] = f1(*o, "gain");
+                n.value[5] = get<rdl::Bool>(*o, "TMI_enabled") ? 1.0f : 0.0f;
+                c3(*o, "TMI", n.value + 6);
+                nodeBindings(*o, {{"mix", 1}, {"hue_shift", 2}, {"saturation", 3}, {"gain", 4}}, n);
+                n.child[0] = build(m, slots);
+                n.childCaustics[0] = castsCaustics(m);
+            }
         } else {
             need(dwaCombinator(cls), o->getName() + ": not a layerable material");
             admitCombinatorBound(*o, {"mask", "mix", "hue_shift", "saturation", "gain", "TMI", "emission"});
+            ++dwaAncestors;
             if (cls == "DwaLayerMaterial") {
                 const rdl::SceneObject *a = obj(*o, "material_A"), *b = obj(*o, "material_B");
                 need(b != nullptr, o->getName() + ": no material_B");
@@ -1201,6 +1251,7 @@ struct DwaTreeBuilder {
                 n.child[0] = build(m, slots);
                 n.childCaustics[0] = castsCaustics(m);
             }
+            --dwaAncestors;
         }
         --depth;
         return addNode(n);
@@ -1226,6 +1277,7 @@ inline shade::MaterialRecord admitDwaTree(const rdl::SceneObject& o, std::vector
     const float* f = reinterpret_cast<const float*>(&tree);
     pool.insert(pool.end(), f, f + shade::DwaTreeFloats);
     rec.maps = b.maps.finish();
+    if (b.maps.polyVertices) rec.flags |= shade::MatPolyVertices;
     if (glitter && b.glitter) *glitter = true;
     if (randomWalk && tree.up.subsurface == shade::SubsurfaceRandomWalk) *randomWalk = true;
     return rec;

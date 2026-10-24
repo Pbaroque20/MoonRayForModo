@@ -12,6 +12,7 @@
 #include "host_texture.h"
 #include <cmath>
 #include <map>
+#include <functional>
 #include <set>
 #include <mutex>
 namespace xpu2::interactive::cpu {
@@ -272,8 +273,29 @@ inline std::vector<std::shared_ptr<const ix::Buffer>> signature(const rdl::Scene
 #include "mesh_displacement.h"
 namespace xpu2::interactive::cpu {
 // A NormalDisplacement or a tangent-space VectorDisplacement (mesh_displacement.h), its maps in a program of its own.
-inline displace::Shader admitDisplacement(const rdl::SceneObject& o,std::vector<float>& pool,TextureContext& textures){
+inline displace::Shader admitDisplacement(const rdl::SceneObject& o,std::vector<float>& pool,TextureContext& textures,int depth=0){
  const std::string cls=o.getSceneClass().getName();
+ need(depth<16,o.getName()+": displacement tree too deep");
+ // CombineDisplacement: its two inputs (each a displacement or none), their scales and the operation.
+ if(cls=="CombineDisplacement"){
+  attributes(o,{"operation","input_1","scale_1","input_2","scale_2"});displace::Shader d;d.kind=displace::Shader::Combine;
+  d.operation=get<rdl::Int>(o,"operation");d.scale1=get<rdl::Float>(o,"scale_1");d.scale2=get<rdl::Float>(o,"scale_2");
+  need(std::isfinite(d.scale1)&&std::isfinite(d.scale2),o.getName()+": invalid scale");
+  for(int k=1;k<=2;++k){const rdl::SceneObject* in=get<rdl::SceneObject*>(o,("input_"+std::to_string(k)).c_str());
+   if(!in)continue;need(in->isA<rdl::Displacement>(),o.getName()+": an input that is not a displacement");
+   auto s=std::make_shared<displace::Shader>(admitDisplacement(*in,pool,textures,depth+1));(k==1?d.input1:d.input2)=s;}
+  return d;
+ }
+ // SwitchDisplacement: its choice (cycled through 64) at preparation, none for an empty one.
+ if(cls=="SwitchDisplacement"){
+  // choice is a float read as an int (getAttrChoice): a binding on it is not evaluated.
+  {std::set<std::string> all;for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)all.insert((*i)->getName());attributes(o,all,{"choice"});}
+  const int choice=int(get<rdl::Float>(o,"choice"))%64;displace::Shader none;none.kind=displace::Shader::None;
+  if(choice<0)return none;
+  const rdl::SceneObject* in=get<rdl::SceneObject*>(o,("displacement"+std::to_string(choice)).c_str());
+  if(!in)return none;need(in->isA<rdl::Displacement>(),o.getName()+": its choice is not a displacement");
+  return admitDisplacement(*in,pool,textures,depth+1);
+ }
  MapProgramBuilder maps{pool,textures};displace::Shader d;
  auto bound=[&](const char* n)->unsigned{const rdl::SceneObject* m=o.getBinding(*o.getSceneClass().getAttribute(n));return m?maps.reg(*m):shade::MapNoRegister;};
  auto f1=[&](const char* n){float f=get<rdl::Float>(o,n);need(std::isfinite(f),o.getName()+": invalid "+n);return f;};
@@ -288,6 +310,7 @@ inline displace::Shader admitDisplacement(const rdl::SceneObject& o,std::vector<
   const auto v=get<rdl::Vec3f>(o,"vector");d.kind=displace::Shader::Vector;d.vector=V3{v.x,v.y,v.z};need(surface::finite(d.vector),o.getName()+": invalid vector");
   d.factor=f1("factor");d.style=style;d.vectorReg=bound("vector");
  }else throw Unsupported(o.getName()+": displacement class "+cls+" is not rendered yet");
+ need(!maps.polyVertices&&maps.required.empty(),o.getName()+": polygon and attribute-requiring maps in a displacement are not rendered yet");
  d.program=maps.finish();
  return d;
 }
@@ -519,6 +542,7 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   need(std::isfinite(scale.x)&&std::isfinite(scale.y)&&std::abs(scale.x)<=256&&std::abs(scale.y)<=256&&std::isfinite(offset.x)&&std::isfinite(offset.y)&&std::abs(offset.x)<=256&&std::abs(offset.y)<=256&&std::isfinite(binding.mipBias)&&binding.mipBias>=-1&&binding.mipBias<=32,"Texture transform/bias budget");maps.emplace(&o,std::move(binding));
  }
 
+ std::vector<const rdl::SceneObject*> switches;
  for(auto& pair:sorted){auto& o=*pair.second;auto cls=o.getSceneClass().getName();
   if(cls=="SceneVariables"||&o==camera||maps.count(&o))continue;
   // On the path tracer a map is admitted where a material is bound to it (map_admission.h).
@@ -549,9 +573,13 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
     program.bindingsOf(o,{{"diffuseColor",X2_OFF(U,diffuseColor)},{"emissiveColor",X2_OFF(U,emissiveColor)},{"specularColor",X2_OFF(U,specularColor)},{"metallic",X2_OFF(U,metallic)},{"roughness",X2_OFF(U,roughness)},{"clearcoat",X2_OFF(U,clearcoat)},{"clearcoatRoughness",X2_OFF(U,clearcoatRoughness)},{"opacity",X2_OFF(U,opacity)},{"ior",X2_OFF(U,ior)},{"normal",X2_OFF(U,normal)}},bindings);
     rec.bindings=unsigned(plan->materialPool.size());rec.bindingCount=unsigned(bindings.size());
     for(auto& b:bindings){const float* bf=reinterpret_cast<const float*>(&b);plan->materialPool.insert(plan->materialPool.end(),bf,bf+sizeof(b)/sizeof(float));}
-    rec.maps=program.finish();}
+    rec.maps=program.finish();if(program.polyVertices)rec.flags|=shade::MatPolyVertices;}
    materialIds[o.getName()]=unsigned(plan->materials.size());plan->materials.push_back({q.diffuseColor,q.emissiveColor});plan->materialRecords.push_back(rec);
-  }else if(paths&&(dwaClass(cls)||dwaCombinator(cls))){
+  }else if(paths&&(cls=="SwitchMaterial"||cls=="RaySwitchMaterial")){
+   // Their records once every material is read (shade_material.h SwitchRecord).
+   {std::set<std::string> all;for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)all.insert((*i)->getName());attributes(o,all);}
+   materialIds[o.getName()]=unsigned(plan->materials.size());plan->materials.push_back({V3{0,0,0},V3{0,0,0}});plan->materialRecords.push_back(shade::MaterialRecord{});switches.push_back(&o);
+  }else if(paths&&(dwaClass(cls)||dwaCombinator(cls)||hairCombinator(cls))){
    // The DwaBase family and its combinators (shade_dwabase.h, shade_dwalayer.h, dwa_admission.h): each material its
    // own tree, its inputs' trees inside it.
    shade::MaterialRecord rec=admitDwaTree(o,plan->materialPool,plan->dwaSlots,textureContext,&plan->glitter,&plan->randomWalk);
@@ -583,6 +611,25 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    // Read where a geometry lists it among its primitive attributes.
   }else throw Unsupported(o.getName()+": unsupported class "+cls);
  }
+ // The switches' records: copies of their materials' (a switch's switch first; a material not shaded fails the scene).
+ {std::map<const rdl::SceneObject*,int> state;
+  std::function<void(const rdl::SceneObject*)> fill=[&](const rdl::SceneObject* s){
+   int& st=state[s];if(st==2)return;need(st==0,s->getName()+": switch materials in a cycle");st=1;
+   auto sub=[&](const rdl::SceneObject* m){shade::MaterialRecord rec{};if(!m)return rec;
+    need(materialIds.count(m->getName()),s->getName()+": its material "+m->getName()+" is not shaded");
+    const std::string mc=m->getSceneClass().getName();if(mc=="SwitchMaterial"||mc=="RaySwitchMaterial")fill(m);
+    return plan->materialRecords[materialIds.at(m->getName())];};
+   shade::SwitchRecord r{};
+   if(s->getSceneClass().getName()=="SwitchMaterial"){const int choice=get<rdl::Int>(*s,"choice");
+    if(choice>=0&&choice<64)r.def=sub(get<rdl::SceneObject*>(*s,("material"+std::to_string(choice)).c_str()));}
+   else{r.byRay=1;r.cutout=get<rdl::Bool>(*s,"cutout_camera_rays")?1:0;r.def=sub(get<rdl::SceneObject*>(*s,"default_material"));
+    r.camera=sub(get<rdl::SceneObject*>(*s,"camera_ray_material"));r.mirror=sub(get<rdl::SceneObject*>(*s,"indirect_mirror_ray_material"));
+    r.glossy=sub(get<rdl::SceneObject*>(*s,"indirect_glossy_ray_material"));r.diffuse=sub(get<rdl::SceneObject*>(*s,"indirect_diffuse_ray_material"));}
+   shade::MaterialRecord rec{};rec.kind=shade::MatSwitch;rec.offset=unsigned(plan->materialPool.size());rec.count=shade::SwitchRecordFloats;
+   for(const auto* sr:{&r.def,&r.camera,&r.mirror,&r.glossy,&r.diffuse})rec.flags|=sr->flags&shade::MatPolyVertices;
+   const float* f=reinterpret_cast<const float*>(&r);plan->materialPool.insert(plan->materialPool.end(),f,f+shade::SwitchRecordFloats);
+   plan->materialRecords[materialIds.at(s->getName())]=rec;st=2;};
+  for(auto* s:switches)fill(s);}
  need((paths||sky)&&outputCount==2&&beauty&&alpha,"One environment and beauty/alpha outputs required");need(allGeometry==setGeometry&&!allGeometry.empty(),"Geometry sets must contain exactly the rendered meshes");
  need(size_t(layer.getAssignmentCount())==allGeometry.size(),"Only one whole-mesh assignment supported");
  for(auto& pair:sorted){auto& o=*pair.second;if(!allGeometry.count(&o))continue;
@@ -611,6 +658,8 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    const float resolution=get<rdl::Float>(o,"mesh_resolution");need(std::isfinite(resolution)&&resolution<=64.0f,o.getName()+": a mesh resolution above 64");
    edgeVertices=std::max(0,std::max(1,int(resolution))-1);
    displacement=admitDisplacement(*displacementShader,plan->materialPool,textureContext);
+   // MoonRay tessellates a displaced mesh into quads: polygon maps would read four polyvertices.
+   need(!mat||!(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices),o.getName()+": polygon maps on a displaced mesh are not rendered yet");
   }
   auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;
   // The fur file can change under the same name: fur is read again each time.

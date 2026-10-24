@@ -7,7 +7,7 @@
 namespace xpu2::interactive::mixed {
 inline Config config(const cpu::PlanView& p){auto e=p->source->routing->epoch;Config c{{e.session,e.scene,e.camera,e.settings},p->camera,p->sky,p->width,p->height,p->seed,unsigned(p->meshes.size()),p->filter,p->filterWidth,cpu::isSpatial(p->domain)?1u:0u,p->surfaceLimit,p->spp,cpu::gpuTextures(p->domain)?1u:0u,p->sampling};
  // The path tracer's first-hit light samples take Sobol dimensions of their own (sample_stream.h, bit 4).
- if(p->paths){c.paths=1;if(p->sampling&2)c.sampling|=4;c.lightCount=U32(p->lights.size());c.bsdfSamples=p->bsdfSamples;c.lightSamples=p->lightSamples;c.maxDepth=p->maxDepth;c.maxDiffuseDepth=p->maxDiffuseDepth;c.clampDepth=p->clampDepth;c.rrThreshold=p->rrThreshold;c.clampValue=p->clampValue;
+ if(p->paths){c.paths=1;if(p->sampling&2)c.sampling|=4|8;c.lightCount=U32(p->lights.size());c.bsdfSamples=p->bsdfSamples;c.lightSamples=p->lightSamples;c.maxDepth=p->maxDepth;c.maxDiffuseDepth=p->maxDiffuseDepth;c.clampDepth=p->clampDepth;c.rrThreshold=p->rrThreshold;c.clampValue=p->clampValue;
   c.maxGlossyDepth=p->maxGlossyDepth;c.maxMirrorDepth=p->maxMirrorDepth;c.maxHairDepth=p->maxHairDepth;c.maxPresenceDepth=p->maxPresenceDepth;
   c.shadowTerminatorFix=p->shadowTerminatorFix;c.roughnessClamping=p->roughnessClamping;c.transparencyThreshold=p->transparencyThreshold;
   c.bssrdfSamples=p->bssrdfSamples;c.maxSubsurfacePerPath=p->maxSubsurfacePerPath;c.enableSss=p->enableSss;

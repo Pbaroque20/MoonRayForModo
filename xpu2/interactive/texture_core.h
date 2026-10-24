@@ -17,7 +17,10 @@ struct NoSink {X2_HD void operator()(unsigned) const {} X2_HD void touch(unsigne
 struct Image {unsigned count=0;Mip levels[MaxLevels]{};};
 // mode: 0 anisotropic (MoonRay's primary paths), 1 trilinear mips of the closest texels (glossy and mirror
 // paths), 2 one mip level's closest texel (diffuse paths).
-struct Binding {const Image* image=nullptr;float sx=1,sy=1,ox=0,oy=0,bias=0;unsigned wrap=1,gamma=0,mode=0;};
+// swapCross: MoonRay XPU's lookups (CPP_oiioTexture and CPP_oiioUdimTexture, which its vector shading calls) pass
+// OIIO dsdx, dsdy, dtdx, dtdy where it takes dsdx, dtdx, dsdy, dtdy: the footprint transposed. Its scalar path, which
+// displacement takes, passes them in order.
+struct Binding {const Image* image=nullptr;float sx=1,sy=1,ox=0,oy=0,bias=0;unsigned wrap=1,gamma=0,mode=0,swapCross=0;};
 struct Maps {Binding diffuse,emission;};
 struct Footprint {float u,v,dudx,dvdx,dudy,dvdy;};
 X2_HD inline float clamp(float x,float lo,float hi){return fminf(fmaxf(x,lo),hi);}
@@ -66,6 +69,7 @@ template<class Sink>X2_HD inline Status lookup(const Binding& b,Footprint f,V3& 
  if(!b.image||!b.image->count||b.image->count>MaxLevels)return Invalid;
  float s=b.sx*f.u+b.ox,t=1-(b.sy*f.v+b.oy),bias=1+b.bias;
  float dx=f.dudx*b.sx*bias,tx=-f.dvdx*b.sx*bias,dy=f.dudy*b.sy*bias,ty=-f.dvdy*b.sy*bias;
+ if(b.swapCross){const float c=tx;tx=dy;dy=c;}
  if(!surface::finite(s)||!surface::finite(t)||fabsf(s)>1024||fabsf(t)>1024||!surface::finite(dx)||!surface::finite(tx)||!surface::finite(dy)||!surface::finite(ty))return Invalid;
  if(b.mode)return trilinear(b,s,t,dx,tx,dy,ty,out,sink);
  double A=tx*tx+ty*ty,B=-2.0*(dx*tx+dy*ty),C=dx*dx+dy*dy,root=hypot(A-C,B);

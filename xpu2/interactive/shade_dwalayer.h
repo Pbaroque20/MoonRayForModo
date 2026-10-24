@@ -418,24 +418,195 @@ X2_CALL void blendParameters(U32 cs, float mask, const DwaParams& p0, const DwaP
     blendDiffuse(cs, mask, p0, p1, p);
 }
 
+// DWABASE_blendHairParameters (HairLayerMaterial) past its early exits and its check that two hairs share a Fresnel
+// type: the emission, the hair lobes', the hair diffuse's and the hair toon speculars' parameters, nothing else.
+X2_HD inline void copyHairR(const HairParameters& s, HairParameters& d) {
+    d.showR = s.showR;
+    d.rShift = s.rShift;
+    d.rLongRoughness = s.rLongRoughness;
+    d.rTint = s.rTint;
+}
+X2_HD inline void copyHairTT(const HairParameters& s, HairParameters& d) {
+    d.showTT = s.showTT;
+    d.ttShift = s.ttShift;
+    d.ttLongRoughness = s.ttLongRoughness;
+    d.ttAzimRoughness = s.ttAzimRoughness;
+    d.ttTint = s.ttTint;
+    d.ttSaturation = s.ttSaturation;
+}
+X2_HD inline void copyHairTRT(const HairParameters& s, HairParameters& d) {
+    d.showTRT = s.showTRT;
+    d.trtShift = s.trtShift;
+    d.trtLongRoughness = s.trtLongRoughness;
+    d.trtTint = s.trtTint;
+}
+X2_HD inline void copyHairGlint(const HairParameters& s, HairParameters& d) {
+    d.showGlint = s.showGlint;
+    d.glintRoughness = s.glintRoughness;
+    d.glintMinTwists = s.glintMinTwists;
+    d.glintMaxTwists = s.glintMaxTwists;
+    d.glintEccentricity = s.glintEccentricity;
+    d.glintSaturation = s.glintSaturation;
+}
+X2_HD inline void copyHairTRRT(const HairParameters& s, HairParameters& d) {
+    d.showTRRT = s.showTRRT;
+    d.trrtLongRoughness = s.trrtLongRoughness;
+}
+// copyHairParams: not the glint (MoonRay's copies it only with a blended TRT).
+X2_HD inline void copyHair(const HairParameters& s, HairParameters& d) {
+    d.uv[0] = s.uv[0];
+    d.uv[1] = s.uv[1];
+    d.ior = s.ior;
+    d.fresnelType = s.fresnelType;
+    d.cuticleLayerThickness = s.cuticleLayerThickness;
+    d.useOptimizedSampling = s.useOptimizedSampling;
+    d.color = s.color;
+    copyHairR(s, d);
+    copyHairTT(s, d);
+    copyHairTRT(s, d);
+    copyHairTRRT(s, d);
+}
+X2_HD inline void copyHairDiffuse(const HairParameters& s, HairParameters& d) {
+    d.diffuseFrontColor = s.diffuseFrontColor;
+    d.diffuseBackColor = s.diffuseBackColor;
+    d.diffuseIndependent = s.diffuseIndependent;
+}
+X2_CALL void blendHairSpec(U32 cs, float mask, const DwaParams& p0, const DwaParams& p1, DwaParams& p) {
+    const HairParameters &h0 = p0.hairs, &h1 = p1.hairs;
+    HairParameters& h = p.hairs;
+    p.hair = lerpf(p0.hair, p1.hair, mask);
+    if (isZero(p.hair)) return;
+    if (isZero(p1.hair) && !isZero(p0.hair)) {
+        copyHair(h0, h);
+        return;
+    } else if (isZero(p0.hair) && !isZero(p1.hair)) {
+        copyHair(h1, h);
+        return;
+    }
+    h.fresnelType = h1.fresnelType;
+    h.uv[0] = lerpf(h0.uv[0], h1.uv[0], mask);
+    h.uv[1] = lerpf(h0.uv[1], h1.uv[1], mask);
+    h.ior = lerpf(h0.ior, h1.ior, mask);
+    h.cuticleLayerThickness = lerpf(h0.cuticleLayerThickness, h1.cuticleLayerThickness, mask);
+    h.useOptimizedSampling = h0.useOptimizedSampling || h1.useOptimizedSampling;
+    h.ttAzimRoughness = lerpf(h0.ttAzimRoughness, h1.ttAzimRoughness, mask);
+    if (h0.showR && h1.showR) {
+        h.showR = true;
+        h.rShift = lerpf(h0.rShift, h1.rShift, mask);
+        h.rLongRoughness = lerpf(h0.rLongRoughness, h1.rLongRoughness, mask);
+        h.rTint = colorSpaceLerp(h0.rTint, h1.rTint, mask, cs);
+    } else {
+        copyHairR(h0.showR ? h0 : h1, h);
+    }
+    if (h0.showTT && h1.showTT) {
+        h.showTT = true;
+        h.ttShift = lerpf(h0.ttShift, h1.ttShift, mask);
+        h.ttLongRoughness = lerpf(h0.ttLongRoughness, h1.ttLongRoughness, mask);
+        h.ttTint = colorSpaceLerp(h0.ttTint, h1.ttTint, mask, cs);
+        h.ttSaturation = lerpf(h0.ttSaturation, h1.ttSaturation, mask);
+    } else {
+        copyHairTT(h0.showTT ? h0 : h1, h);
+    }
+    if (h0.showTRT && h1.showTRT) {
+        h.showTRT = true;
+        h.trtShift = lerpf(h0.trtShift, h1.trtShift, mask);
+        h.trtLongRoughness = lerpf(h0.trtLongRoughness, h1.trtLongRoughness, mask);
+        h.trtTint = colorSpaceLerp(h0.trtTint, h1.trtTint, mask, cs);
+        if (h0.showGlint && h1.showGlint) {
+            h.showGlint = true;
+            h.glintRoughness = lerpf(h0.glintRoughness, h1.glintRoughness, mask);
+            h.glintMinTwists = lerpf(h0.glintMinTwists, h1.glintMinTwists, mask);
+            h.glintMaxTwists = lerpf(h0.glintMaxTwists, h1.glintMaxTwists, mask);
+            h.glintEccentricity = lerpf(h0.glintEccentricity, h1.glintEccentricity, mask);
+            h.glintSaturation = lerpf(h0.glintSaturation, h1.glintSaturation, mask);
+        } else {
+            copyHairGlint(h0.showGlint ? h0 : h1, h);
+        }
+    } else {
+        copyHairTRT(h0.showTRT ? h0 : h1, h);
+    }
+    if (h0.showTRRT && h1.showTRRT) {
+        h.showTRRT = true;
+        h.trrtLongRoughness = lerpf(h0.trrtLongRoughness, h1.trrtLongRoughness, mask);
+    } else {
+        copyHairTRRT(h0.showTRRT ? h0 : h1, h);
+    }
+    if (!isOne(p0.hairDiffuse) && !isOne(p1.hairDiffuse)) h.color = colorSpaceLerp(h0.color, h1.color, mask, cs);
+    else h.color = !isOne(p0.hairDiffuse) ? h0.color : h1.color;
+}
+X2_CALL void blendHairDiffuse(U32 cs, float mask, const DwaParams& p0, const DwaParams& p1, DwaParams& p) {
+    const HairParameters &h0 = p0.hairs, &h1 = p1.hairs;
+    p.hairDiffuse = lerpf(p0.hairDiffuse, p1.hairDiffuse, mask);
+    if (isZero(p1.hairDiffuse) && !isZero(p0.hairDiffuse)) {
+        copyHairDiffuse(h0, p.hairs);
+        p.normal = p0.normal;
+    } else if (isZero(p0.hairDiffuse) && !isZero(p1.hairDiffuse)) {
+        copyHairDiffuse(h1, p.hairs);
+        p.normal = p1.normal;
+    } else {
+        p.hairs.diffuseIndependent = h0.diffuseIndependent || h1.diffuseIndependent;
+        p.hairs.diffuseFrontColor = colorSpaceLerp(h0.diffuseFrontColor, h1.diffuseFrontColor, mask, cs);
+        p.hairs.diffuseBackColor = colorSpaceLerp(h0.diffuseBackColor, h1.diffuseBackColor, mask, cs);
+        p.normal = normalize(lerpV(p0.normal, p1.normal, mask));
+    }
+    // The hair diffuse's subsurface blend: a material without scattering counts as none.
+    const bool s0 = !isBlack(p0.scatteringRadius) && !isZero(h0.subsurfaceBlend);
+    const bool s1 = !isBlack(p1.scatteringRadius) && !isZero(h1.subsurfaceBlend);
+    if (s0 && !s1) {
+        p.scatteringRadius = p0.scatteringRadius;
+        p.hairs.subsurfaceBlend = isZero(p1.hairDiffuse) ? h0.subsurfaceBlend : lerpf(h0.subsurfaceBlend, 0.0f, p1.hairDiffuse * mask);
+    } else if (s1 && !s0) {
+        p.scatteringRadius = p1.scatteringRadius;
+        p.hairs.subsurfaceBlend =
+            isZero(p0.hairDiffuse) ? h1.subsurfaceBlend : lerpf(h1.subsurfaceBlend, 0.0f, p0.hairDiffuse * (1.0f - mask));
+    } else {
+        p.scatteringRadius = colorSpaceLerp(p0.scatteringRadius, p1.scatteringRadius, mask, cs);
+        p.hairs.subsurfaceBlend = lerpf(h0.subsurfaceBlend, h1.subsurfaceBlend, mask);
+    }
+}
+// p0 the background (hair_material_B), p1 the foreground (hair_material_A).
+X2_CALL void blendHairParameters(U32 cs, float mask, const DwaParams& p0, const DwaParams& p1, DwaParams& p) {
+    initParameters(p);
+    p.emission = colorSpaceLerp(p0.emission, p1.emission, mask, cs);
+    p.hairs.castsCaustics = p0.hairs.castsCaustics || p1.hairs.castsCaustics;
+    p.hairs.dir = p1.hairs.dir;  // the geometry's dPds in both
+    blendHairSpec(cs, mask, p0, p1, p);
+    blendHairDiffuse(cs, mask, p0, p1, p);
+    for (U32 k = 0; k < 3; ++k) blendToonSpecular(cs, mask, p0.hairToonSpecs[k], p1.hairToonSpecs[k], p.hairToonSpecs[k]);
+}
+// HairColorCorrectMaterial's modifyParameters: the hair colours (clamped to [0, 1]) and the emission (not above).
+X2_HD inline void hairColorCorrect(const ColorCorrectParameters& cc, DwaParams& p) {
+    if (!cc.on || isZero(cc.mix)) return;
+    Color* colors[] = {&p.hairs.color, &p.hairs.diffuseFrontColor, &p.hairs.diffuseBackColor};
+    for (U32 i = 0; i < 3; ++i) correctClamped(cc, *colors[i]);
+    const Color original = p.emission;
+    Color c = p.emission;
+    applyColorCorrections(cc, c);
+    c = lerpOpt(original, c, cc.mix);
+    p.emission = Color{fmaxf(c.x, 0.f), fmaxf(c.y, 0.f), fmaxf(c.z, 0.f)};
+}
+
 //----------------------------------------------------------------------------
 // The material tree. Every node is 32 words in the material pool.
-enum DwaNodeKind : U32 { NodeLeaf = 0, NodeLayer, NodeMix, NodeTwoSided, NodeSwitch, NodeColorCorrect, NodeAdjust };
+enum DwaNodeKind : U32 { NodeLeaf = 0, NodeLayer, NodeMix, NodeTwoSided, NodeSwitch, NodeColorCorrect, NodeAdjust, NodeHairLayer,
+                        NodeHairColorCorrect };
 constexpr U32 DwaNoNode = 0xffffffffu, DwaMaxSlots = 6, DwaMaxDepth = 24, DwaMaxMixInputs = 64;
 enum AdjustEmissionMode : U32 { EmissionOff = 0, EmissionMasked = 1, EmissionUnmasked = 2 };
 struct DwaNode {
     U32 kind;
-    // Leaf: the DwaRecord's pool offset. Layer: B (background), A (foreground). TwoSided: front, back.
-    // Switch, ColorCorrect, Adjust: the input. Mix: the pool offset of its list of inputs, and its count.
+    // Leaf: the DwaRecord's pool offset. Layer, HairLayer: B (background), A (foreground). TwoSided: front, back.
+    // Switch, ColorCorrect, Adjust, HairColorCorrect: the input. Mix: the pool offset of its list of inputs, and its
+    // count.
     U32 child[2];
     // The castsCaustics each child is resolved with when it is its own (TwoSided, Switch, ColorCorrect,
-    // Adjust pass their input its own; Layer and Mix pass on what they were given).
+    // Adjust, HairColorCorrect pass their input its own; Layer and Mix pass on what they were given; HairLayer passes
+    // one input alone its own, and both blended the two's either).
     U32 childCaustics[2];
     U32 colorSpace;
     // The node's bound attributes: a leaf's onto its DwaInputs, a combinator's onto value[].
     U32 bindings, bindingCount;
-    // Layer: mask. Mix: mix, maxMixValue, inputMultiplier, interpolation. ColorCorrect: on, mix, hueShift,
-    // saturation, gain, tmiEnabled, tmi (3). Adjust: on, mix, emissionMode, emission (3), disableClearcoat,
+    // Layer, HairLayer: mask. Mix: mix, maxMixValue, inputMultiplier, interpolation. ColorCorrect, HairColorCorrect:
+    // on, mix, hueShift, saturation, gain, tmiEnabled, tmi (3). Adjust: on, mix, emissionMode, emission (3), disableClearcoat,
     // disableSpecular, disableDiffuse.
     float value[24];
 };
@@ -579,6 +750,33 @@ X2_CALL bool resolveDwaTree(const float* pool, const DwaTree& tree, const State&
             }
             break;
         }
+        case NodeHairLayer: {
+            // DWABASE_blendHairParameters: one input alone with its own castsCaustics; both, with either's.
+            if (f.phase == 0) {
+                const NodeValues values(pool, n, regs);
+                f.t = saturate(values.v[0]);
+                if (n.child[0] == DwaNoNode) return false;
+                if (n.child[1] == DwaNoNode || isZero(f.t)) {
+                    replace(n.child[0], n.childCaustics[0]);
+                } else if (isOne(f.t)) {
+                    replace(n.child[1], n.childCaustics[1]);
+                } else {
+                    if (f.slot + 3 > tree.slots) return false;
+                    f.phase = 1;
+                    if (!push(n.child[0], f.slot + 1, n.childCaustics[0] | n.childCaustics[1])) return false;
+                }
+            } else if (f.phase == 1) {
+                f.phase = 2;
+                if (!push(n.child[1], f.slot + 2, n.childCaustics[0] | n.childCaustics[1])) return false;
+            } else {
+                const DwaParams &p0 = slots[f.slot + 1], &p1 = slots[f.slot + 2];
+                // Two hairs with different Fresnel types: MoonRay logs an error and gives no lobes.
+                if (!isZero(p0.hair) && !isZero(p1.hair) && p0.hairs.fresnelType != p1.hairs.fresnelType) return false;
+                blendHairParameters(n.colorSpace, f.t, p0, p1, slots[f.slot]);
+                --depth;
+            }
+            break;
+        }
         case NodeTwoSided: {
             const U32 side = st.entering ? 0 : 1;
             if (n.child[side] == DwaNoNode) return false;
@@ -613,13 +811,26 @@ X2_CALL bool resolveDwaTree(const float* pool, const DwaTree& tree, const State&
             }
             break;
         case NodeAdjust:
+        case NodeHairColorCorrect:
             if (n.child[0] == DwaNoNode) return false;
             if (f.phase == 0) {
                 f.phase = 1;
                 if (!push(n.child[0], f.slot, n.childCaustics[0])) return false;
             } else {
                 const NodeValues values(pool, n, regs);
-                adjustParameters(n, values.v, slots[f.slot]);
+                if (n.kind == NodeAdjust) {
+                    adjustParameters(n, values.v, slots[f.slot]);
+                } else {
+                    ColorCorrectParameters c;
+                    c.on = n.value[0] != 0.0f;
+                    c.mix = saturate(values.v[1]);
+                    c.hueShift = values.v[2];
+                    c.saturation = fmaxf(0.f, values.v[3]);
+                    c.gain = values.v[4];
+                    c.tmiEnabled = n.value[5] != 0.0f;
+                    c.tmi = Color{n.value[6], n.value[7], n.value[8]};  // TMI is not bindable
+                    hairColorCorrect(c, slots[f.slot]);
+                }
                 --depth;
             }
             break;
@@ -664,11 +875,12 @@ X2_CALL float dwaTreePresence(const float* pool, const DwaTree& tree, const Stat
             break;
         }
         case NodeLayer:
+        case NodeHairLayer:
         case NodeMix: {
             U32 in0 = DwaNoNode, in1 = DwaNoNode;
             float t = 0.0f;
             const NodeValues values(pool, n, regs);
-            if (n.kind == NodeLayer) {
+            if (n.kind != NodeMix) {
                 in0 = n.child[0];
                 in1 = n.child[1];
                 t = saturate(values.v[0]);
@@ -717,6 +929,7 @@ X2_CALL float dwaTreePresence(const float* pool, const DwaTree& tree, const Stat
         }
         case NodeSwitch:
         case NodeColorCorrect:
+        case NodeHairColorCorrect:
         case NodeAdjust:
             if (f.phase == 0) {
                 if (n.child[0] == DwaNoNode) {

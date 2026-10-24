@@ -187,6 +187,7 @@ struct Pending {
     float farT = 3.402823466e+38f;  // a subsurface exit sample's ray stops at the light it meets
     float nearT = 0.0f;             // a ray from a curve skips what is nearer than this
     U32 volumeDepth = 0;            // the volume scattering it has been through (PathVertex::volumeDepth)
+    U32 lobeType = 0;               // the type of the lobe it is a sample of, 0 for a camera ray (PathVertex::lobeType)
 };
 constexpr U32 MaxPending = 32;
 // A child's address in the sample's tree: a 64-bit mix of its parent's, the
@@ -461,11 +462,14 @@ X2_HD inline shade::Color exitLambert(const mixed::Config& c, const ExitPoint& x
 
 // computeRadianceSubsurfaceSample: an exit sample's light samples and Lambertian samples (MIS, no
 // clamping or roulette), its bounces pushed from the entry point as MoonRay's parent ray starts there.
+// At the first hit (strat) a pixel's exits draw their light and Lambertian samples from one stratified set, as
+// MoonRay's one sequence a pixel: Sobol index strat * split + s, keyed by the exit kind (stratAddress).
 template <class Backend>
 X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 mask,
                                        const paths::Pending& pv, U32 depthAdd, U32 subsurfaceDepth, const shade::State& entry,
                                        const resume::Hit& entryHit, const paths::ExitPoint& x, shade::Color pt, U32 split, U64 branch,
-                                       bool doIndirect, paths::Pending* stack, U32& top, SampleStatus& status) {
+                                       bool doIndirect, paths::Pending* stack, U32& top, SampleStatus& status,
+                                       bool stratified = false, U64 strat = 0, U64 stratAddress = 0) {
     using namespace paths;
     V3 radiance{0, 0, 0};
     pt = pt * (1.0f / float(split));
@@ -477,6 +481,11 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
             id.branch = childBranch(branch, i, s);
             Stream ls(id, pv.depth, 0);
             float r[3] = {ls.next(), ls.next(), ls.next()};
+            if (stratified) {
+                const sample::Identity sid{root.pixel, strat * split + s, root.stream, childBranch(stratAddress, i, 0)};
+                r[0] = sample::draw(sid, sample::CameraDimensions + 6, c.sampling);
+                r[1] = sample::draw(sid, sample::CameraDimensions + 7, c.sampling);
+            }
             V3 wi;
             lights::Hit lh;
             if (!lights::sample(L, x.P, &x.N, r, wi, lh)) continue;
@@ -503,7 +512,13 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
         sample::Identity id = root;
         id.branch = childBranch(branch, 0xffff, s);
         Stream bs(id, pv.depth, 0);
-        const float r1 = bs.next(), r2 = bs.next(), choice = bs.next();
+        float r1 = bs.next(), r2 = bs.next();
+        const float choice = bs.next();
+        if (stratified) {
+            const sample::Identity sid{root.pixel, strat * split + s, root.stream, childBranch(stratAddress, 0xffff, 0)};
+            r1 = sample::draw(sid, sample::CameraDimensions + 10, c.sampling);
+            r2 = sample::draw(sid, sample::CameraDimensions + 11, c.sampling);
+        }
         const V3 wi = shade::localToGlobal(shade::frame(x.N), shade::sampleLocalHemisphereCosine(r1, r2));
         float pdf;
         const shade::Color f = exitLambert(c, x, entry.wo, wi, pdf);
@@ -549,6 +564,7 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
             child.presenceDepth = pv.presenceDepth;
             child.subsurfaceDepth = subsurfaceDepth;
             child.accumOpacity = pv.accumOpacity;
+            child.lobeType = shade::Diffuse | shade::Reflection;  // the exit's Lambertian lobe
             child.farT = lightHit ? lightDistance * lights::HitEpsilonEnd : 3.402823466e+38f;
             // computeMinRoughness of a Lambertian lobe (roughness one).
             child.minRoughness[0] = shade::clampf(c.roughnessClamping, pv.minRoughness[0], 1.0f);
@@ -791,6 +807,9 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
     const shade::Color scaleFresnelWo =
         (b.fresnel != shade::NoIndex ? shade::fresnelEval(bsdf.fresnels, b.fresnel, fabsf(shade::dot(N, st.wo))) : shade::rgb(1)) * b.scale;
     const U64 sssBranch = childBranch(pv.branch, 0xfffd, 0);
+    // At the first non-mirror hit MoonRay draws a pixel's subsurface samples, and their exits' light and Lambertian
+    // samples, from one sequence across the pixel's samples; here one stratified set, Sobol index index * split + i.
+    const bool stratified = pv.nonMirrorDepth == 0;
     const U32 material = backend.materialId(hit.geom);
     const ExitPoint entryPoint{P, N, st.Ng, hit.normal, hit.origin, hit.below};
     // canSubstituteSubsurface
@@ -801,7 +820,8 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
         const U32 lambertSplit = pv.nonMirrorDepth > 0 ? 1u : c.bsdfSamples;
         const shade::Color throughput = pv.T * shade::bssrdfDiffuseReflectance(b) * scaleFresnelWo;
         radiance += subsurfaceExitRadiance(c, root, backend, mask, pv, 1, subsurfaceDepth, st, hit, entryPoint, throughput, lambertSplit,
-                                           childBranch(sssBranch, 1, 0), doIndirect, stack, top, status);
+                                           childBranch(sssBranch, 1, 0), doIndirect, stack, top, status, stratified, root.index,
+                                           childBranch(sssBranch, 1, 1));
         split = 1;
     } else {
         split = pv.nonMirrorDepth > 0 ? 2u : c.bssrdfSamples;
@@ -810,13 +830,19 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
         shade::Color measured{0, 0, 0};
         ExitPoint exits[16];
         shade::Color pts[16];
+        U32 drawn[16];
         U32 n = 0;
         for (U32 i = 0; i < split; ++i) {
             sample::Identity id = root;
             id.branch = childBranch(sssBranch, 2, i);
             Stream ss(id, pv.depth, 0);
             float r1 = ss.next();
-            const float r2 = ss.next();
+            float r2 = ss.next();
+            if (stratified) {
+                const sample::Identity sid{root.pixel, U64(root.index) * split + i, root.stream, childBranch(sssBranch, 2, 0xfff0)};
+                r1 = sample::draw(sid, sample::CameraDimensions + 4, c.sampling);
+                r2 = sample::draw(sid, sample::CameraDimensions + 5, c.sampling);
+            }
             V3 directionProj;
             const int axis = shade::bssrdfSelectAxis(localF, r1, directionProj);
             V3 dPi;
@@ -839,13 +865,15 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
             measured = measured + e;
             exits[n] = ExitPoint{ps.P, ps.N, ps.Ng, ph.normal, ph.origin, ph.below};
             pts[n] = ptSubsurface * e * scaleFresnelWo;
+            drawn[n] = i;
             ++n;
         }
         measured = measured * (1.0f / float(split));
         const shade::Color compensation = shade::bssrdfAreaCompensation(measured, shade::bssrdfDiffuseReflectance(b));
         for (U32 k = 0; k < n; ++k) {
             radiance += subsurfaceExitRadiance(c, root, backend, mask, pv, 1, subsurfaceDepth, st, hit, exits[k], pts[k] * compensation, 1,
-                                               childBranch(sssBranch, 3, k), doIndirect, stack, top, status);
+                                               childBranch(sssBranch, 3, k), doIndirect, stack, top, status, stratified,
+                                               U64(root.index) * split + drawn[k], childBranch(sssBranch, 3, 0xfff0));
             if (status != SampleStatus::Done) return radiance;
         }
     }
@@ -858,7 +886,12 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
         sample::Identity id = root;
         id.branch = childBranch(sssBranch, 4, i);
         Stream ss(id, pv.depth, 0);
-        const float r1 = ss.next(), r2 = ss.next();
+        float r1 = ss.next(), r2 = ss.next();
+        if (stratified) {
+            const sample::Identity sid{root.pixel, U64(root.index) * split + i, root.stream, childBranch(sssBranch, 4, 0xfff0)};
+            r1 = sample::draw(sid, sample::CameraDimensions + 8, c.sampling);
+            r2 = sample::draw(sid, sample::CameraDimensions + 9, c.sampling);
+        }
         V3 local;
         const float pdf = shade::bssrdfSampleGlobal(r1, r2, cosThetaMax, local);
         const V3 direction = -shade::localToGlobal(localF, local);
@@ -878,7 +911,8 @@ X2_CALL V3 subsurfaceRadiance(const mixed::Config& c, const sample::Identity& ro
         if (!shade::finite3(pt)) continue;
         const ExitPoint x{bs.P, Ni, -bs.Ng, bh.normal, bh.origin, bh.below};
         radiance += subsurfaceExitRadiance(c, root, backend, mask, pv, 2, subsurfaceDepth, st, hit, x, pt, 1, childBranch(sssBranch, 5, i),
-                                           doIndirect, stack, top, status);
+                                           doIndirect, stack, top, status, stratified, U64(root.index) * split + i,
+                                           childBranch(sssBranch, 5, 0xfff0));
         if (status != SampleStatus::Done) return radiance;
     }
     return radiance;
@@ -933,6 +967,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         st.causticPath = pv.diffuseDepth > 0;
         st.incoming = pv.diff;
         st.subsurfaceAllowed = pv.subsurfaceDepth < c.maxSubsurfacePerPath;
+        st.rayLobe = pv.lobeType;
         float presence = 1.0f;
         shade::reset(bsdf);
         const U32 status = backend.shade(hit, ray, st, bsdf, presence);
@@ -1169,6 +1204,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 // max_volume_depth one only camera rays gather volume scattering.
                 child.volumeDepth = pv.volumeDepth + 1;
                 child.accumOpacity = opacity;
+                child.lobeType = lobe.type;
                 // computeMinRoughness: the path's roughness floor for later hair lobes.
                 child.minRoughness[0] = child.minRoughness[1] = 0.0f;
                 if (c.roughnessClamping > 0.0f) {
