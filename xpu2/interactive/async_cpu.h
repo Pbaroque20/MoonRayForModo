@@ -425,6 +425,26 @@ public:
             lock.clear(std::memory_order_release);
         }
     }
+    // The picture so far, RGB: each pixel's mean over its samples here and in a copy of the GPU's film (gpuSums
+    // and gpuCounts, or none), black where none has landed. Consistent tile by tile, taken while workers keep
+    // adding. Returns the samples it saw.
+    U64 preview(float* rgb, const double* gpuSums, const U32* gpuCounts) {
+        U64 seen = 0;
+        for (U32 tile = 0; tile < locks_.size(); ++tile) {
+            auto& lock = locks_[tile].flag;
+            while (lock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+            for (U32 p = 0; p < TilePixels; ++p) {
+                const U32 pixel = tilePixel(tile, p, width_, height_);
+                if (pixel == ~0u) continue;
+                const U32 count = counts_[pixel] + (gpuCounts ? gpuCounts[pixel] : 0u);
+                seen += count;
+                for (int c = 0; c < 3; ++c)
+                    rgb[size_t(pixel) * 3 + c] = count ? float((sums_[size_t(pixel) * 4 + c] + (gpuSums ? gpuSums[size_t(pixel) * 4 + c] : 0.0)) / count) : 0.0f;
+            }
+            lock.clear(std::memory_order_release);
+        }
+        return seen;
+    }
     const std::vector<double>& sums() const { return sums_; }
     const std::vector<double>& odd() const { return odd_; }
     const std::vector<U32>& counts() const { return counts_; }
@@ -536,7 +556,9 @@ inline U64 renderChunk(const CpuScene& scene, const mixed::Config& config, const
 class CpuLane {
 public:
     // affinity: the logical processors the workers may run on (0 for any).
-    CpuLane(const CpuScene& scene, unsigned threads, DWORD_PTR affinity = 0) : scene_(scene) {
+    CpuLane(const CpuScene& scene, unsigned threads, DWORD_PTR affinity = 0)
+        : scene_(scene), active_(new std::atomic<U32>[std::max(1u, threads)]) {
+        for (unsigned w = 0; w < std::max(1u, threads); ++w) active_[w].store(~0u, std::memory_order_relaxed);
         workers_.reserve(threads);
         for (unsigned w = 0; w < threads; ++w)
             workers_.emplace_back([this, w, threads, affinity] {
@@ -597,6 +619,8 @@ public:
     }
     unsigned idle() const { return idle_.load(std::memory_order_acquire); }
     unsigned threads() const { return unsigned(workers_.size()); }
+    // The tile worker w is rendering (~0u: none), for a host's outlines of the work; read from any thread.
+    U32 activeTile(unsigned w) const { return active_[w].load(std::memory_order_relaxed); }
     CpuCounters counters;
 
 private:
@@ -670,7 +694,9 @@ private:
             const U64 claimed = U64(std::chrono::duration_cast<std::chrono::microseconds>(begun - started_).count());
             for (U64 v = counters.firstClaimMicros.load(); claimed < v && !counters.firstClaimMicros.compare_exchange_weak(v, claimed);) {}
             for (U64 v = counters.lastClaimMicros.load(); claimed > v && !counters.lastClaimMicros.compare_exchange_weak(v, claimed);) {}
+            active_[w].store(chunk.tile, std::memory_order_relaxed);
             const U64 samples = renderChunk(scene_, config_, chunk, film, counters, tables_);
+            active_[w].store(~0u, std::memory_order_relaxed);
             const U64 took = U64(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begun).count());
             counters.busyMicros.fetch_add(took, std::memory_order_relaxed);
             for (U64 v = counters.slowestChunkMicros.load(); took > v && !counters.slowestChunkMicros.compare_exchange_weak(v, took);) {}
@@ -680,6 +706,7 @@ private:
     }
 
     const CpuScene& scene_;
+    std::unique_ptr<std::atomic<U32>[]> active_;  // each worker's tile (activeTile)
     std::vector<std::thread> workers_;
     std::mutex mutex_, idleMutex_;
     std::condition_variable wake_, idleWake_;

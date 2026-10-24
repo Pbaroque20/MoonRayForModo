@@ -19,7 +19,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <functional>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <unordered_map>
 
@@ -31,6 +33,16 @@ struct GpuOptions {
     U32 launchThreads = 1u << 16;      // fixed grid size of every render launch
     U32 maxChunksPerLaunch = 16384;
     U32 ringChunks = 1u << 17;         // mailbox ring capacity, in chunks
+    // Only programs OptiX's disk cache already holds: a program that would have to be compiled (about an hour
+    // the first time) throws NotCompiled instead.
+    bool cachedOnly = false;
+    // Called as the programs compile: OptiX compile tasks done so far, and those known to remain.
+    std::function<void(unsigned done, unsigned waiting)> compileProgress;
+};
+
+// A program the GPU lane would have to compile first (GpuOptions::cachedOnly).
+struct NotCompiled : std::runtime_error {
+    using std::runtime_error::runtime_error;
 };
 
 // What the host learns when a launch has finished.
@@ -272,6 +284,7 @@ public:
         scene_.hostOdd = pinned(pixels * 4 * sizeof(double));
         scene_.hostCounts = pinned(pixels * sizeof(U32));
         scene_.filmDone = std::make_shared<gpu::Event>(driver);
+        scene_.previewDone = std::make_shared<gpu::Event>(driver);
         const U32 tiles = ((plan->width + TileSize - 1) / TileSize) * ((plan->height + TileSize - 1) / TileSize);
         for (U32 s = 0; s < PassSlots; ++s) {
             scene_.passMask[s] = device(size_t(tiles) * sizeof(U64L));
@@ -425,6 +438,16 @@ public:
         gpu::Driver::check(driver.cuEventRecord_p(scene_.filmDone->value, stream_));
     }
     bool filmReady() { return scene_.filmDone->ready(); }
+    // A copy of the device film as it will stand once the launches queued so far have finished, for a progressive
+    // picture; previewReady() says when it has landed. Read through sums() and counts(); the frame's own download
+    // (downloadFilm) writes the same copy.
+    void downloadPreview() {
+        const size_t pixels = size_t(plan_->width) * plan_->height;
+        copyOut(scene_.hostSums, scene_.sums, pixels * 4 * sizeof(double));
+        copyOut(scene_.hostCounts, scene_.counts, pixels * sizeof(U32));
+        gpu::Driver::check(driver.cuEventRecord_p(scene_.previewDone->value, stream_));
+    }
+    bool previewReady() { return scene_.previewDone->ready(); }
     const double* sums() const { return static_cast<const double*>(scene_.hostSums->host()); }
     const double* odd() const { return static_cast<const double*>(scene_.hostOdd->host()); }
     const U32* counts() const { return static_cast<const U32*>(scene_.hostCounts->host()); }
@@ -675,6 +698,15 @@ private:
                 throw std::runtime_error("OptiX module: " + std::string(logs[i], std::min(lengths[i], sizeof(logs[i]))));
             if (first) tasks.push_back(first);
         }
+        if (options_.cachedOnly && !tasks.empty()) {
+            for (auto& m : modules)
+                if (m) {
+                    optixModuleDestroy(m);
+                    m = nullptr;
+                }
+            throw NotCompiled("The XPU2 GPU programs are not compiled yet");
+        }
+        unsigned finished = 0;
         unsigned active = 0;
         bool done = tasks.empty();
         OptixResult error = OPTIX_SUCCESS;
@@ -699,6 +731,8 @@ private:
                     for (unsigned i = 0; i < count; ++i) tasks.push_back(additional[i]);
                 else
                     tasks.clear();
+                ++finished;
+                if (options_.compileProgress) options_.compileProgress(finished, unsigned(tasks.size()) + active);
                 if (tasks.empty() && active == 0) done = true;
                 wake.notify_all();
             }
@@ -851,7 +885,7 @@ private:
             hostSums,
             hostOdd, hostCounts;
         B passMask[PassSlots], passBase[PassSlots], passStaging[PassSlots], errors, hostErrors;
-        std::shared_ptr<gpu::Event> filmDone, errorsDone;
+        std::shared_ptr<gpu::Event> filmDone, errorsDone, previewDone;
         size_t mipBytes = 0;
     };
     // The fine-detail cache: every level-0 tile of the scene's textures has an

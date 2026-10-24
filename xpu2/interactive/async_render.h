@@ -33,6 +33,18 @@ struct RenderOptions {
     // Adaptive frames with a GPU: make every pass on the device (the pass chain),
     // or, false, on the host between the GPU's passes.
     bool deviceChain = true;
+    // A preview session's watch over the frame (none: the frame runs to its end).
+    struct Watch* watch = nullptr;
+};
+
+// What a preview session asks of a frame, on the feeder's thread: whether to stop it (its samples are dropped,
+// the frame is cancelled) or drain it (the work in hand finishes and the frame ends with what it has, every
+// pixel the mean of the samples it got), and a picture of it now and then.
+struct Watch {
+    std::function<bool()> stop, drain;
+    double previewSeconds = 0.1;
+    // The picture so far (RGB, the film's pixel order) and the share of the frame's samples in it.
+    std::function<void(const std::vector<float>& rgb, U32 width, U32 height, double fraction)> preview;
 };
 
 // When things happened in a frame, in seconds from its start (TEL-01).
@@ -75,6 +87,7 @@ struct RenderResult {
     std::vector<LaunchTrace> launchTrace;
     double cpuBusySeconds = 0, cpuSlowestChunk = 0, cpuFirstClaim = 0, cpuLastClaim = 0;
     bool failed = false;
+    bool cancelled = false, drained = false;  // stopped or drained by a Watch
     std::string error;
 };
 
@@ -158,6 +171,21 @@ public:
     }
     ~Renderer() { timeEndPeriod(1); }
 
+    // What the frame's workers are on, for a host's outlines of the work, from any thread: each CPU worker's tile
+    // (8 pixels a side), and the work grid's cells that the GPU's queued launches hold. Empty between frames.
+    void activity(std::vector<U32>& cpuTiles, std::vector<U32>& gpuCells) const {
+        cpuTiles.clear();
+        gpuCells.clear();
+        std::lock_guard<std::mutex> lock(activityMutex_);
+        if (activeLane_)
+            for (unsigned w = 0; w < activeLane_->threads(); ++w)
+                if (const U32 t = activeLane_->activeTile(w); t != ~0u) cpuTiles.push_back(t);
+        for (const auto& flight : gpuFlights_) gpuCells.insert(gpuCells.end(), flight.begin(), flight.end());
+        std::sort(gpuCells.begin(), gpuCells.end());
+        gpuCells.erase(std::unique(gpuCells.begin(), gpuCells.end()), gpuCells.end());
+    }
+    U32 cellSize() const { return cellSize_; }
+
     RenderResult render(const RenderOptions& o) {
         using Clock = std::chrono::steady_clock;
         RenderResult result;
@@ -221,6 +249,56 @@ public:
         const auto start = Clock::now();
         auto at = [&] { return std::chrono::duration<double>(Clock::now() - start).count(); };
         cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr);
+        {
+            std::lock_guard<std::mutex> lock(activityMutex_);
+            activeLane_ = &cpuLane;
+            gpuFlights_.clear();
+            cellSize_ = gridOptions.cellSize;
+        }
+        // Outlines end with the frame, however it ends.
+        struct Quiet {
+            Renderer& r;
+            ~Quiet() {
+                std::lock_guard<std::mutex> lock(r.activityMutex_);
+                r.activeLane_ = nullptr;
+                r.gpuFlights_.clear();
+            }
+        } quiet{*this};
+        // The queued launches' cells: one list a launch, oldest first, as long as the GPU's queue.
+        auto flights = [&](const Chunk* chunks, U32 count) {
+            std::vector<U32> cells;
+            for (U32 i = 0; i < count; ++i) cells.push_back(chunks[i].cell);
+            std::sort(cells.begin(), cells.end());
+            cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+            std::lock_guard<std::mutex> lock(activityMutex_);
+            gpuFlights_.push_back(std::move(cells));
+        };
+        auto landed = [&] {
+            std::lock_guard<std::mutex> lock(activityMutex_);
+            while (gpuFlights_.size() > gpu_->inFlight()) gpuFlights_.pop_front();
+            while (gpuFlights_.size() < gpu_->inFlight()) gpuFlights_.emplace_back();  // the pass chain's flights
+        };
+        Watch* const watch = o.watch;
+        bool cancelled = false, drained = false;
+        // Progressive pictures: the GPU's film is copied behind its queued launches, then merged with the host's.
+        enum { PreviewIdle, PreviewCopying } previewState = PreviewIdle;
+        double nextPreview = watch && watch->preview ? watch->previewSeconds : -1;
+        std::vector<float> previewRgb;
+        const double plannedSamples = double(plan_->width) * plan_->height * plan_->spp;
+        auto preview = [&] {
+            if (nextPreview < 0 || (previewState == PreviewIdle && at() < nextPreview)) return;
+            if (previewState == PreviewIdle && useGpu) {
+                gpu_->downloadPreview();
+                previewState = PreviewCopying;
+                return;
+            }
+            if (previewState == PreviewCopying && !gpu_->previewReady()) return;
+            previewRgb.resize(size_t(plan_->width) * plan_->height * 3);
+            const U64 seen = film.preview(previewRgb.data(), useGpu ? gpu_->sums() : nullptr, useGpu ? gpu_->counts() : nullptr);
+            watch->preview(previewRgb, plan_->width, plan_->height, std::min(1.0, double(seen) / plannedSamples));
+            previewState = PreviewIdle;
+            nextPreview = at() + watch->previewSeconds;
+        };
 
         double gpuRate = 0;  // chunk items a second, timed on the device, smoothed
         U64 queuedItems = 0, gpuItems = 0, stalls = 0, lastParked = 0;
@@ -228,6 +306,17 @@ public:
         std::vector<U64> cellSamples(grid.cellCount(), 0);  // the GPU's claims, for the ownership accounting
         std::string failure;
         while (failure.empty()) {
+            if (watch) {
+                if (watch->stop && watch->stop()) {
+                    cancelled = true;
+                    break;
+                }
+                if (watch->drain && watch->drain()) {
+                    drained = true;
+                    break;
+                }
+                preview();
+            }
             if (useGpu) {
                 Completion c;
                 while (gpu_->poll(c)) {
@@ -249,6 +338,7 @@ public:
                     ++result.launches;
                     result.parkedRun += c.parkedRun;
                 }
+                landed();
                 while (failure.empty() && gpu_->ready()) {
                     const double claimStart = at();
                     const U32 want = launchSize(o, grid, gpuRate, cpuLane, itemsPerChunk, queuedItems, start);
@@ -282,6 +372,7 @@ public:
                         }
                     const double launchStart = at();
                     if (!gpu_->launch(claim.data(), got)) break;
+                    flights(claim.data(), got);
                     if (result.timeline.firstLaunch < 0) result.timeline.firstLaunch = at();
                     result.launchTrace.push_back({at(), -1, 0, accountStart - claimStart, launchStart - accountStart,
                                                   at() - launchStart, got, 0});
@@ -298,6 +389,7 @@ public:
             if (adaptive) {
                 const U64 before = useGpu ? gpu_->launchCount() : 0;
                 state.advance(grid, film, useGpu ? gpu_ : nullptr, *pool_);
+                if (useGpu) landed();
                 if (state.chain && gpu_->launchCount() > before) {  // the pass chain went out: one flight
                     if (result.timeline.firstLaunch < 0) result.timeline.firstLaunch = at();
                     result.launchTrace.push_back({at(), -1, 0, 0, 0, 0, 0, 0});
@@ -313,7 +405,9 @@ public:
             if (useGpu && (o.reserveFeederCore || !useCpu)) std::this_thread::yield();
             else Sleep(1);
         }
-        if (!failure.empty()) cpuLane.cancel();
+        // Stopped or drained: no more work is handed out; the workers' chunks in hand and the GPU's queued
+        // launches finish (their parked samples are dropped).
+        if (!failure.empty() || cancelled || drained) cpuLane.cancel();
         cpuLane.finish();
         cpuLane.waitParked();  // the frame's grid and film outlive every worker's use
         if (!failure.empty()) {
@@ -321,6 +415,17 @@ public:
             result.error = failure;
             return result;
         }
+        if ((cancelled || drained) && useGpu) {
+            Completion c;
+            while (gpu_->inFlight())
+                if (!gpu_->poll(c)) std::this_thread::yield();
+        }
+        if (cancelled) {
+            result.cancelled = true;
+            result.seconds = at();
+            return result;
+        }
+        result.drained = drained;
         if (useGpu) {
             gpu_->downloadFilm();
             while (!gpu_->filmReady()) std::this_thread::yield();
@@ -342,6 +447,14 @@ public:
             const U32 expected = !adaptive ? plan_->spp : state.chain ? gpu_->chainPlanned()[i] : state.planned[i];
             result.counts[i] = count;
             planned += expected;
+            // A drained frame has what it got: the mean of its samples, black where none landed.
+            if (drained) {
+                for (int c = 0; c < 4; ++c)
+                    result.rgba[i * 4 + c] = count ? float((hs[i * 4 + c] + (useGpu ? gpu_->sums()[i * 4 + c] : 0.0)) / count) : 0.0f;
+                result.cpuSamples += hc[i];
+                result.gpuSamples += gc;
+                continue;
+            }
             if (count != expected || !count) {
                 result.failed = true;
                 result.error = "Sample audit failure at pixel " + std::to_string(i) + ": " + std::to_string(count);
@@ -382,7 +495,7 @@ public:
         result.passes = state.trace;
         result.errorSeconds = state.errorSeconds;
         result.meanSamples = double(planned) / double(pixels);
-        ownership_.finished(grid);
+        if (!drained) ownership_.finished(grid);
         return result;
     }
 
@@ -643,6 +756,11 @@ private:
     std::unique_ptr<CpuLane> cpu_;  // persistent workers (spec §4)
     DWORD_PTR cpuAffinity_ = 0;
     std::unique_ptr<Pool> pool_;  // the adaptive error trees
+    // activity(): the frame's CPU lane and the GPU's queued launches' cells.
+    mutable std::mutex activityMutex_;
+    const CpuLane* activeLane_ = nullptr;
+    std::deque<std::vector<U32>> gpuFlights_;
+    U32 cellSize_ = 64;
 };
 
 }  // namespace xpu2::interactive::async

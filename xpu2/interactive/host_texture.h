@@ -17,7 +17,7 @@ inline void need(bool v,const char* s){if(!v)throw std::runtime_error(s);}
 inline std::shared_ptr<OIIO::TextureSystem> system(){
  auto s=OIIO::TextureSystem::create(false);need(bool(s),"OIIO texture system unavailable");
  for(auto n:{"automip","autotile","accept_untiled","accept_unmipped"})need(s->attribute(n,0),"OIIO option");
- need(s->attribute("gray_to_rgb",1)&&s->attribute("max_memory_MB",64.0f),"OIIO budget option");return s;
+ need(s->attribute("gray_to_rgb",1)&&s->attribute("max_memory_MB",1024.0f),"OIIO budget option");return s;
 }
 inline void admittedPath(const std::filesystem::path& path,const std::filesystem::path& root){
  need(path.is_absolute()&&root.is_absolute()&&path.extension()==".tx","Frozen absolute TX required");
@@ -45,13 +45,13 @@ struct File {
   // Retain a read lease: no writer or delete can change the file under OIIO's cache.
   lock=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
   need(lock!=INVALID_HANDLE_VALUE,"Cannot lease immutable texture");
-  try{LARGE_INTEGER bytes{};need(GetFileSizeEx(lock,&bytes)&&bytes.QuadPart>0&&bytes.QuadPart<=(16<<20),"Texture file budget");
+  try{LARGE_INTEGER bytes{};need(GetFileSizeEx(lock,&bytes)&&bytes.QuadPart>0&&bytes.QuadPart<=(1ll<<30),"Texture file budget");
    auto in=OIIO::ImageInput::open(path.string());need(bool(in),"TX open failed");
    int w=0,h=0;for(int level=0;level<32;++level){if(!in->seek_subimage(0,level))break;const auto& spec=in->spec();
     need(spec.depth==1&&spec.x==0&&spec.y==0&&spec.z==0&&spec.full_x==0&&spec.full_y==0&&spec.full_width==spec.width&&spec.full_height==spec.height&&spec.width>0&&spec.height>0&&spec.tile_width>0&&spec.tile_height>0&&spec.nchannels>=3&&spec.nchannels<=4&&spec.channelformats.empty()&&!spec.deep,"Unsupported TX layout");
     if(level==0){eightBit=spec.format==OIIO::TypeDesc::UINT8;need(eightBit||spec.format==OIIO::TypeDesc::HALF||spec.format==OIIO::TypeDesc::FLOAT,"Unsupported TX format");}
     else need(spec.width==std::max(1,w/2)&&spec.height==std::max(1,h/2),"Invalid stored mip pyramid");
-    w=spec.width;h=spec.height;decodedBytes+=uint64_t(w)*h*spec.nchannels*4;need(decodedBytes<=(32<<20),"Decoded texture budget");++levels;
+    w=spec.width;h=spec.height;decodedBytes+=uint64_t(w)*h*spec.nchannels*4;need(decodedBytes<=(2ull<<30),"Decoded texture budget");++levels;
    }need(levels>0&&w==1&&h==1,"Complete stored mip pyramid required");need(!in->seek_subimage(1,0),"Multipart texture unsupported");
    OIIO::ImageSpec spec;need(system->get_imagespec(name,spec),"OIIO texture admission failed");
   }catch(...){CloseHandle(lock);lock=INVALID_HANDLE_VALUE;throw;}

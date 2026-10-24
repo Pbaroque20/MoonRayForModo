@@ -12,6 +12,7 @@
 #include "host_texture.h"
 #include <cmath>
 #include <map>
+#include <array>
 #include <functional>
 #include <set>
 #include <mutex>
@@ -76,7 +77,8 @@ struct Plan {
     std::vector<std::shared_ptr<texture::File>> textures;std::vector<const tex::Image*> textureImages;
 };
 using PlanView=std::shared_ptr<const Plan>;
-struct Limits {size_t vertices=1000000,triangles=1000000,bytes=64ull<<20,objects=4096,pixels=1048576;};
+// What a scene may hold: room for scenes from Modo (an RTX 3090 holds this much several times over).
+struct Limits {size_t vertices=16000000,triangles=16000000,bytes=1ull<<30,objects=1000000,pixels=8388608;};
 template<class T>inline T get(const rdl::SceneObject& o,const char* name){return o.get<T>(name);}
 template<class T>inline T get(const rdl::SceneObject& o,const std::string& name){return o.get<T>(name);}
 struct State {bool isDefault,stationary;};
@@ -142,7 +144,8 @@ inline rdl::Mat4d affine(const rdl::SceneObject& obj){
 // local frame, the node transform turned about X by 180 degrees.
 inline bool admitLight(const rdl::SceneObject& o,float sceneScale,lights::Light& out){
  auto cls=o.getSceneClass().getName();
- std::set<std::string> allowed{"on","color","intensity","exposure","node_xform","normalized","apply_scene_scale","sidedness"};
+ // A label names the light for light path expressions only (light AOVs fall back).
+ std::set<std::string> allowed{"on","color","intensity","exposure","node_xform","normalized","apply_scene_scale","sidedness","label"};
  if(cls=="RectLight")allowed.insert({"width","height"});else if(cls=="DiskLight"||cls=="SphereLight")allowed.insert("radius");else if(cls=="DistantLight")allowed.insert("angular_extent");
  else if(cls=="SpotLight")allowed.insert({"lens_radius","aspect_ratio","focal_plane_distance","outer_cone_angle","inner_cone_angle","angle_falloff_type","black_level"});
  attributes(o,allowed);
@@ -426,6 +429,86 @@ inline std::shared_ptr<const std::vector<float>> walkSequences(){
  read("ppd_2D_integrator_points_4096_sequences_of_1024.bin",v->data()+size_t(4096)*1024,size_t(4096)*1024*2);
  cache=v;return v;
 }
+// MoonRay's polygon meshes (geom/PolygonMesh.cc). With no face above four vertices, a QuadMesh when its quads are
+// fewer primitives than triangles would be: each face a quad, a triangle's as v0 v1 v2 v2 (QuadMesh::splitNGons),
+// which Embree and XPU's GPU split as (0, 1, 3) and (2, 3, 1). Otherwise a TriMesh: each face a fan (0, k, k + 1),
+// but a planar n-gon above four vertices of some area, which it ear-clips in object space (TriMesh::splitNGons).
+// Each triangle keeps its face and its corners' face-vertices.
+struct PolygonSplit {
+ bool quads=false;
+ std::vector<int> quadVertices;  // a QuadMesh's quads, four vertex indices each (its smooth normals)
+ std::vector<unsigned> corners;  // three face-vertex indices a triangle
+ std::vector<unsigned> faceOf;   // each triangle's face
+};
+namespace polygon {
+struct F3{float x,y,z;};
+inline F3 sub(F3 a,F3 b){return {a.x-b.x,a.y-b.y,a.z-b.z};}
+inline F3 crs(F3 a,F3 b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
+inline float dt(F3 a,F3 b){return a.x*b.x+a.y*b.y+a.z*b.z;}
+inline F3 nrm(F3 a){const float r=1.0f/std::sqrt(dt(a,a));return {a.x*r,a.y*r,a.z*r};}
+inline unsigned loop(int i,int n){return unsigned(i>=0&&i<n?i:i>=n?i%n:i%n+n);}
+inline F3 at(const rdl::Vec3fVector& v,const rdl::IntVector& ind,size_t k){const auto& q=v[size_t(ind[k])];return {q.x,q.y,q.z};}
+// TriMesh.cc's unitNormal, calculateConcaveNGonArea, calculateConcaveNGonNormal, isPlanar and pointInTriangle.
+inline F3 unitNormal(F3 a,F3 b,F3 c){
+ auto det=[](F3 r0,F3 r1,F3 r2){return dt(r0,crs(r1,r2));};
+ const float x=det({1,a.y,a.z},{1,b.y,b.z},{1,c.y,c.z}),y=det({a.x,1,a.z},{b.x,1,b.z},{c.x,1,c.z}),z=det({a.x,a.y,1},{b.x,b.y,1},{c.x,c.y,1});
+ const float m=std::max(1e-6f,std::sqrt(x*x+y*y+z*z));return {x/m,y/m,z/m};}
+inline float area(const rdl::Vec3fVector& v,const rdl::IntVector& ind,int n,size_t o){
+ F3 t{0,0,0};for(int i=0;i<n;++i){const F3 c=crs(at(v,ind,o+loop(i,n)),at(v,ind,o+loop(i+1,n)));t={t.x+c.x,t.y+c.y,t.z+c.z};}
+ return dt(t,unitNormal(at(v,ind,o),at(v,ind,o+1),at(v,ind,o+2)))/2.f;}
+inline F3 normal(const rdl::Vec3fVector& v,const rdl::IntVector& ind,int n,size_t o){
+ const float a=area(v,ind,n,o);F3 t{0,0,0};
+ for(int i=0;i<n;++i){const F3 c=crs(at(v,ind,o+size_t(i)),at(v,ind,o+loop(i+1,n)));t={t.x+c.x,t.y+c.y,t.z+c.z};}
+ if(a<0.f)t={-t.x,-t.y,-t.z};return nrm(t);}
+inline bool planar(const rdl::Vec3fVector& v,const rdl::IntVector& ind,int n,size_t o){
+ const F3 a=at(v,ind,o),b=at(v,ind,o+1),c=at(v,ind,o+2),N=crs(sub(a,b),sub(c,b));
+ for(int i=3;i<n;++i)if(!(std::abs(dt(nrm(sub(a,at(v,ind,o+size_t(i)))),N))<=1e-6f))return false;
+ return true;}
+inline bool inside(F3 N,F3 p,F3 a,F3 b,F3 c){
+ (void)N;const F3 v0=sub(b,a),v1=sub(c,a),v2=sub(p,a);
+ const float d00=dt(v0,v0),d01=dt(v0,v1),d11=dt(v1,v1),d20=dt(v2,v0),d21=dt(v2,v1),den=d00*d11-d01*d01;
+ const float y=(d11*d20-d01*d21)/den,w=(d00*d21-d01*d20)/den,u=1.0f-y-w;return u>=0&&y>=0&&w>=0;}
+}
+inline PolygonSplit splitPolygons(const rdl::Vec3fVector& v,const rdl::IntVector& counts,const rdl::IntVector& ind,const std::string& name){
+ using namespace polygon;
+ PolygonSplit out;size_t tris=0,quads=0,total=0;int most=0;
+ for(int n:counts){need(n>=3,name+": a face of fewer than three vertices");tris+=size_t(n-2);quads+=size_t((n-1)>>1);total+=size_t(n);most=std::max(most,n);}
+ need(total==ind.size(),name+": face vertex counts do not match the vertex indices");
+ for(int k:ind)need(k>=0&&size_t(k)<v.size(),"Vertex index out of bounds");
+ auto tri=[&](size_t f,unsigned a,unsigned b,unsigned c){out.corners.insert(out.corners.end(),{a,b,c});out.faceOf.push_back(unsigned(f));};
+ out.quads=most<=4&&quads*4<tris*3;
+ size_t o=0;
+ for(size_t f=0;f<counts.size();o+=size_t(counts[f]),++f){
+  const int n=counts[f];const unsigned b=unsigned(o);
+  if(out.quads){
+   const unsigned q[4]={b,b+1,b+2,n==3?b+2:b+3};
+   for(unsigned k:q)out.quadVertices.push_back(ind[k]);
+   tri(f,q[0],q[1],q[3]);if(n==4)tri(f,q[2],q[3],q[1]);
+   continue;}
+  const float a=area(v,ind,n,o);const bool some=!std::isnan(a)&&a>=1e-6f;
+  bool clipped=false;
+  if(n>4&&some&&planar(v,ind,n,o)){
+   // Ear clipping (TriMesh::splitNGons): MoonRay writes the face's triangles from its end, so they run last
+   // triangle first, then the ears in the reverse of the order they were clipped.
+   const F3 N=normal(v,ind,n,o);std::vector<unsigned> local(static_cast<size_t>(n),0u);for(int i=0;i<n;++i)local[size_t(i)]=unsigned(i);
+   std::vector<std::array<unsigned,3>> ears;bool ok=true;
+   while(local.size()>3&&ok){
+    ok=false;const int m=int(local.size());
+    for(int i=m-1;i>=0;--i){
+     const unsigned ia=local[size_t(i)],ib=local[loop(i-1,m)],ic=local[loop(i+1,m)];
+     const F3 va=at(v,ind,o+ia),vb=at(v,ind,o+ib),vc=at(v,ind,o+ic);
+     if(dt(crs(sub(vc,va),sub(vb,va)),N)<0.f)continue;
+     bool interior=false;
+     for(int j=0;j<m;++j){const unsigned l=local[size_t(j)];if(l==ia||l==ib||l==ic)continue;if(inside(N,at(v,ind,o+l),vb,va,vc)){interior=true;break;}}
+     if(interior)continue;
+     ears.push_back({b+ib,b+ia,b+ic});local.erase(local.begin()+i);ok=true;break;}
+   }
+   if(ok){clipped=true;tri(f,b+local[0],b+local[1],b+local[2]);for(size_t e=ears.size();e-->0;)tri(f,ears[e][0],ears[e][1],ears[e][2]);}
+  }
+  if(!clipped)for(int k=1;k+1<n;++k)tri(f,b,b+unsigned(k),b+unsigned(k+1));
+ }
+ return out;
+}
 inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false){
  need(bool(frame),"Missing canonical snapshot");
  const Limits hard{};
@@ -439,14 +522,17 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
  for(auto i=context.beginSceneObject();i!=context.endSceneObject();++i){auto* o=i->second;need(++objects<=limits.objects,"Object budget");sorted.emplace(o->getName(),o);
   if(o->getSceneClass().getName()=="RdlMeshGeometry"){
    auto& v=o->get<rdl::Vec3fVector>("vertex_list");auto& t=o->get<rdl::IntVector>("face_vertex_count");auto& ind=o->get<rdl::IntVector>("vertices_by_index");
-   need(v.size()<=limits.vertices-verts&&t.size()<=limits.triangles-tris,"Geometry count budget");verts+=v.size();tris+=t.size();need(ind.size()==t.size()*3,"Only triangle topology supported");
+   size_t faces=0,corners=0;for(int n:t){faces+=n>=3?size_t(n-2):0;corners+=n>0?size_t(n):0;}need(corners==ind.size(),"Face vertex counts do not match the vertex indices");
+   need(v.size()<=limits.vertices-verts&&faces<=limits.triangles-tris,"Geometry count budget");verts+=v.size();tris+=faces;
   }
  }
  need(verts*sizeof(V3)+tris*sizeof(Tri)<=limits.bytes,"Prepared geometry byte budget");
  attributes(sv,{"camera","layer","image_width","image_height","pixel_samples","sampling_mode","min_adaptive_samples","max_adaptive_samples","target_adaptive_error","frame","lock_frame_noise","pixel_filter","pixel_filter_width","bsdf_samples","light_samples","max_depth","max_diffuse_depth","enable_dof","enable_motion_blur","sample_clamping_value","shadow_terminator_fix","two_stage_output","russian_roulette_threshold","lights_visible_in_camera","max_glossy_depth","max_mirror_depth","sample_clamping_depth","scene_scale",
   "max_hair_depth","max_presence_depth","roughness_clamping_factor","transparency_threshold","bssrdf_samples","max_subsurface_per_path",
   "enable_subsurface_scattering","max_volume_depth","volume_quality","volume_shadow_quality","volume_illumination_samples",
-  "volume_opacity_threshold","volume_overlap_mode","volume_attenuation_factor","volume_contribution_factor","volume_phase_attenuation_factor"});
+  "volume_opacity_threshold","volume_overlap_mode","volume_attenuation_factor","volume_contribution_factor","volume_phase_attenuation_factor",
+  // What changes only MoonRay's scheduling, its texture cache's size, or motion blur, which is refused unless off.
+  "progressive_tile_order","checkpoint_tile_order","batch_tile_order","texture_cache_size","fps","motion_steps","max_geometry_resolution"});
  int width=get<rdl::Int>(sv,"image_width"),height=get<rdl::Int>(sv,"image_height"),grid=get<rdl::Int>(sv,"pixel_samples");
  need(width>0&&height>0&&size_t(width)*height<=limits.pixels,"Image budget");need(grid>0&&grid<=64,"Sample budget");plan->width=width;plan->height=height;plan->spp=unsigned(grid*grid);
  int samplingMode=get<rdl::Int>(sv,"sampling_mode");need(samplingMode==0||(samplingMode==2&&allowAdaptive),"Adaptive sampling unsupported");
@@ -509,7 +595,9 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
  int filter=get<rdl::Int>(sv,"pixel_filter");plan->filterWidth=get<rdl::Float>(sv,"pixel_filter_width");need(filter>=0&&filter<=2&&surface::finite(plan->filterWidth)&&plan->filterWidth>0&&plan->filterWidth<=4,"Unsupported pixel filter");plan->filter=surface::Filter(filter);
  auto* camera=get<rdl::SceneObject*>(sv,"camera");auto* layerObject=get<rdl::SceneObject*>(sv,"layer");
  need(camera&&camera->getSceneClass().getName()=="PerspectiveCamera","Perspective camera required");need(layerObject&&layerObject->isA<rdl::Layer>(),"Layer required");auto& layer=*layerObject->asA<rdl::Layer>();
- attributes(*camera,{"node_xform","focal","film_width_aperture","near","far"});auto cm=plan->paths?rigid(*camera):translation(*camera);need(plan->paths||cm[3][2]>0,"Camera must face the planar surface from positive Z");
+ // The lens's depth of field, bokeh and shutter count only with depth of field or motion blur, which are refused.
+ attributes(*camera,{"node_xform","focal","film_width_aperture","near","far","dof_aperture","dof_focus_distance","bokeh_sides","bokeh_angle",
+  "bokeh_weight_location","bokeh_weight_strength","mb_shutter_open","mb_shutter_close","mb_shutter_bias"});auto cm=plan->paths?rigid(*camera):translation(*camera);need(plan->paths||cm[3][2]>0,"Camera must face the planar surface from positive Z");
  float focal=get<rdl::Float>(*camera,"focal"),film=get<rdl::Float>(*camera,"film_width_aperture");
  auto& cam=plan->camera;cam.nearClip=get<rdl::Float>(*camera,"near");cam.farClip=get<rdl::Float>(*camera,"far");
  need(surface::finite(focal)&&surface::finite(film)&&focal>0&&film>0&&surface::finite(cam.nearClip)&&surface::finite(cam.farClip)&&cam.nearClip>0&&cam.farClip>cam.nearClip,"Invalid lens");
@@ -602,7 +690,7 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    need(&o==&layer,"Additional layers unsupported");attributes(o,{"geometries","parts","surface_shaders","lightsets","displacements","volume_shaders","lightfiltersets","shadowsets","shadowreceiversets"});
   }else if(cls=="LightSet")attributes(o,{"lights"});
   else if(cls=="RenderOutput"){
-   attributes(o,{"file_name","result","channel_format","compression"});int result=get<rdl::Int>(o,"result");need(result==0||result==1,"Unsupported AOV");need(get<rdl::Int>(o,"channel_format")==0,"Only float32 outputs supported");++outputCount;(result?alpha:beauty)=true;
+   attributes(o,{"file_name","result","channel_format","compression"});int result=get<rdl::Int>(o,"result");need(result==0||result==1,"Unsupported AOV");need(paths||get<rdl::Int>(o,"channel_format")==0,"Only float32 outputs supported");++outputCount;(result?alpha:beauty)=true;
   }else if(paths&&(cls=="PerspectiveCamera"||cls=="OrthographicCamera")){
    // Another camera: a projector, read by the maps that name it (ProjectCameraMap_v2).
   }else if(paths&&cls=="BaseVolume"){
@@ -630,7 +718,8 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    const float* f=reinterpret_cast<const float*>(&r);plan->materialPool.insert(plan->materialPool.end(),f,f+shade::SwitchRecordFloats);
    plan->materialRecords[materialIds.at(s->getName())]=rec;st=2;};
   for(auto* s:switches)fill(s);}
- need((paths||sky)&&outputCount==2&&beauty&&alpha,"One environment and beauty/alpha outputs required");need(allGeometry==setGeometry&&!allGeometry.empty(),"Geometry sets must contain exactly the rendered meshes");
+ // The path tracer's caller writes the outputs it asks for: a beauty, an alpha, or both.
+ need((paths||sky)&&(paths?outputCount>=1:outputCount==2&&beauty&&alpha),"One environment and beauty/alpha outputs required");need(allGeometry==setGeometry&&!allGeometry.empty(),"Geometry sets must contain exactly the rendered meshes");
  need(size_t(layer.getAssignmentCount())==allGeometry.size(),"Only one whole-mesh assignment supported");
  for(auto& pair:sorted){auto& o=*pair.second;if(!allGeometry.count(&o))continue;
   auto* geom=o.asA<rdl::Geometry>();int id=layer.getAssignmentId(geom,"");need(id>=0,"Part-specific assignment unsupported");
@@ -686,17 +775,36 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    for(auto p:v){need(std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z)&&(spatial||p.z==0),"Invalid spatial/planar vertex");
     V3 point{float(p.x*transform[0][0]+p.y*transform[1][0]+p.z*transform[2][0]+transform[3][0]),float(p.x*transform[0][1]+p.y*transform[1][1]+p.z*transform[2][1]+transform[3][1]),float(p.x*transform[0][2]+p.y*transform[1][2]+p.z*transform[2][2]+transform[3][2])};
     need(surface::finite(point)&&(!spatial||(std::abs(point.x)<=10000&&std::abs(point.y)<=10000&&std::abs(point.z)<=10000)),"Transformed vertex bound");m->positions.push_back(point);}
-   for(size_t i=0;i<counts.size();++i){need(counts[i]==3,"Non-triangle mesh");unsigned ids[3];for(int j=0;j<3;++j){auto k=indices[i*3+j];need(k>=0&&size_t(k)<v.size(),"Vertex index out of bounds");ids[j]=k;}
-    auto a=m->positions[ids[0]],b=m->positions[ids[1]],c=m->positions[ids[2]];double area=(double(b.x)-a.x)*(double(c.y)-a.y)-(double(b.y)-a.y)*(double(c.x)-a.x);if(spatial){V3 n;need(surface::normalize(surface::cross(surface::add(b,surface::mul(a,-1)),surface::add(c,surface::mul(a,-1))),n),"Degenerate triangle");}
-    else need(std::isfinite(area)&&area>0,"Degenerate/reversed triangle unsupported");m->triangles.push_back({ids[0],ids[1],ids[2]});}
+   PolygonSplit split;
+   if(paths){split=splitPolygons(v,counts,indices,o.getName());
+    // MoonRay's QuadMesh hands polygon maps four polyvertices; a displaced mesh is tessellated from its faces.
+    need(!split.quads||!mat||!(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices),o.getName()+": polygon maps on a quad mesh are not rendered yet");
+    need(!displacementShader||(!split.quads&&split.faceOf.size()==counts.size()),o.getName()+": a displacement on a mesh with faces of more than three vertices is not rendered yet");}
+   else for(size_t i=0;i<counts.size();++i){need(counts[i]==3,"Non-triangle mesh");split.corners.insert(split.corners.end(),{unsigned(i*3),unsigned(i*3+1),unsigned(i*3+2)});split.faceOf.push_back(unsigned(i));}
+   std::vector<unsigned> kept;  // the split's triangles kept, in order
+   for(size_t i=0;i<split.faceOf.size();++i){unsigned ids[3];for(int j=0;j<3;++j){auto k=indices[split.corners[i*3+size_t(j)]];need(k>=0&&size_t(k)<v.size(),"Vertex index out of bounds");ids[j]=unsigned(k);}
+    auto a=m->positions[ids[0]],b=m->positions[ids[1]],c=m->positions[ids[2]];double area=(double(b.x)-a.x)*(double(c.y)-a.y)-(double(b.y)-a.y)*(double(c.x)-a.x);
+    if(spatial){V3 n;const bool some=surface::normalize(surface::cross(surface::add(b,surface::mul(a,-1)),surface::add(c,surface::mul(a,-1))),n);
+     if(!some&&paths)continue;need(some,"Degenerate triangle");}
+    else need(std::isfinite(area)&&area>0,"Degenerate/reversed triangle unsupported");m->triangles.push_back({ids[0],ids[1],ids[2]});kept.push_back(unsigned(i));}
+   need(!m->triangles.empty(),o.getName()+": no triangle of any area");
+   // Face-varying values a kept triangle's corner, uniform ones its face's (QuadMesh/TriMesh splitNGons).
+   auto byCorner=[&](const std::vector<float>& d,unsigned n){std::vector<float> r;r.reserve(kept.size()*3*n);
+    for(unsigned t:kept)for(int j=0;j<3;++j){const size_t c=split.corners[size_t(t)*3+size_t(j)];r.insert(r.end(),d.begin()+std::ptrdiff_t(c*n),d.begin()+std::ptrdiff_t((c+1)*n));}return r;};
+   auto byFace=[&](const std::vector<float>& d,unsigned n){std::vector<float> r;r.reserve(kept.size()*n);
+    for(unsigned t:kept){const size_t f=split.faceOf[t];r.insert(r.end(),d.begin()+std::ptrdiff_t(f*n),d.begin()+std::ptrdiff_t((f+1)*n));}return r;};
    if(paths){
     // pickRate: face-varying when there is one value a face-vertex, else one a vertex.
-    auto rate=[&](size_t n)->unsigned{if(n==0)return shade::RateNone;if(n==counts.size()*3)return shade::RateFaceVarying;if(n==v.size())return shade::RateVertex;throw Unsupported(o.getName()+": unsupported attribute rate");};
+    auto rate=[&](size_t n)->unsigned{if(n==0)return shade::RateNone;if(n==indices.size())return shade::RateFaceVarying;if(n==v.size())return shade::RateVertex;throw Unsupported(o.getName()+": unsupported attribute rate");};
     const auto& nl=o.get<rdl::Vec3fVector>("normal_list");m->normalRate=rate(nl.size());
     // No normals and smooth_normal: each vertex's the normalized sum of its triangles' (PolyMeshCalcNv).
-    if(nl.empty()&&get<rdl::Bool>(o,"smooth_normal")){std::vector<int> faces;faces.reserve(m->triangles.size()*3);
-     for(auto& t:m->triangles)faces.insert(faces.end(),{int(t.a),int(t.b),int(t.c)});
-     m->normals=displace::smoothNormals(m->positions,faces,3);m->normalRate=shade::RateVertex;}
+    // A QuadMesh sums each quad's normal (QuadMeshCalcNv), a TriMesh each triangle's.
+    if(nl.empty()&&get<rdl::Bool>(o,"smooth_normal")){
+     if(split.quads)m->normals=displace::smoothNormals(m->positions,split.quadVertices,4);
+     else{std::vector<int> faces;faces.reserve(m->triangles.size()*3);
+      for(auto& t:m->triangles)faces.insert(faces.end(),{int(t.a),int(t.b),int(t.c)});
+      m->normals=displace::smoothNormals(m->positions,faces,3);}
+     m->normalRate=shade::RateVertex;}
     if(!nl.empty()){
      // Normals transform by the inverse transpose of the node transform (row vectors: n * inverse(M)^T).
      double M[3][3];for(int i=0;i<3;++i)for(int j=0;j<3;++j)M[i][j]=transform[i][j];
@@ -705,6 +813,8 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
      m->normals.reserve(nl.size());
      for(auto n:nl){double x=n.x*inv[0][0]+n.y*inv[0][1]+n.z*inv[0][2],y=n.x*inv[1][0]+n.y*inv[1][1]+n.z*inv[1][2],z=n.x*inv[2][0]+n.y*inv[2][1]+n.z*inv[2][2];
       double l=std::sqrt(x*x+y*y+z*z);need(std::isfinite(l)&&l>0,o.getName()+": invalid normal");m->normals.push_back({float(x/l),float(y/l),float(z/l)});}
+     if(m->normalRate==shade::RateFaceVarying){std::vector<float> f;for(auto& n:m->normals)f.insert(f.end(),{n.x,n.y,n.z});f=byCorner(f,3);
+      m->normals.clear();for(size_t i=0;i<f.size();i+=3)m->normals.push_back({f[i],f[i+1],f[i+2]});}
     }
     // primitive_attributes: UserData of floats, colours, vectors and ints (geom/PrimitiveUserData processArbitraryData).
     for(auto* object:o.get<rdl::SceneObjectVector>("primitive_attributes")){
@@ -712,13 +822,14 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
      attributes(*object,{"bool_key","bool_values","int_key","int_values","float_key","float_values_0","float_values_1","string_key","string_values","color_key","color_values_0","color_values_1","vec2f_key","vec2f_values_0","vec2f_values_1","vec3f_key","vec3f_values_0","vec3f_values_1","mat3f_key","mat3f_values_0","mat3f_values_1","mat4f_key","mat4f_values_0","mat4f_values_1","rate"});
      const int explicitRate=get<rdl::Int>(*object,"rate");
      // pickRate: the explicit rate when its count fits, else guessed from the count (auto).
-     auto pick=[&](size_t n)->unsigned{const size_t fv=counts.size()*3,uni=counts.size(),vert=v.size();
+     auto pick=[&](size_t n)->unsigned{const size_t fv=indices.size(),uni=counts.size(),vert=v.size();
       switch(explicitRate){case 1:return n==1?1u:0u;case 3:return n==uni?3u:0u;case 4:return n==vert?4u:0u;case 5:return n==vert?5u:0u;case 6:return n==fv?6u:0u;case 0:break;default:return 0u;}
       if(n==0)return 0u;if(n==1)return 1u;if(n==fv)return 6u;if(n==uni)return 3u;if(n==vert)return 4u;return 0u;};
      auto add=[&](const std::string& key,unsigned type,unsigned components,const std::vector<float>& values,size_t count){
       if(key.empty())return;const unsigned r=pick(count);need(r!=0,o.getName()+": primitive attribute "+key+" has an unsupported rate or size");
       for(float f:values)need(std::isfinite(f),o.getName()+": invalid primitive attribute "+key);
-      m->prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,r,unsigned(m->primData.size())});m->primData.insert(m->primData.end(),values.begin(),values.end());};
+      const std::vector<float> expanded=r==6?byCorner(values,components):r==3?byFace(values,components):values;
+      m->prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,r,unsigned(m->primData.size())});m->primData.insert(m->primData.end(),expanded.begin(),expanded.end());};
      {const auto& d=get<rdl::FloatVector>(*object,"float_values_0");add(get<rdl::String>(*object,"float_key"),shade::PrimFloat,1,std::vector<float>(d.begin(),d.end()),d.size());}
      {const auto& d=get<rdl::IntVector>(*object,"int_values");std::vector<float> f;for(int i:d)f.push_back(float(i));add(get<rdl::String>(*object,"int_key"),shade::PrimInt,1,f,d.size());}
      {const auto& d=get<rdl::RgbVector>(*object,"color_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.r);f.push_back(c.g);f.push_back(c.b);}add(get<rdl::String>(*object,"color_key"),shade::PrimRgb,3,f,d.size());}
@@ -727,6 +838,7 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
     }
     const auto& ul=o.get<rdl::Vec2fVector>("uv_list");m->uvRate=rate(ul.size());
     m->uvs.reserve(ul.size()*2);for(auto u:ul){need(std::isfinite(u.x)&&std::isfinite(u.y),o.getName()+": invalid uv");m->uvs.push_back(u.x);m->uvs.push_back(u.y);}
+    if(m->uvRate==shade::RateFaceVarying)m->uvs=byCorner(m->uvs,2);
    }
    data=std::move(m);++plan->preparedMeshes;
   }
@@ -734,8 +846,8 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   if(displacementShader)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
  }
  if(gpuTextures(domain)){uint64_t total=0;std::set<texture::File*> files;
-  for(auto* set:{&plan->diffuseMaps,&plan->emissionMaps})for(auto& pair:*set){auto& file=*pair.second.file;if(!files.insert(&file).second)continue;total+=file.decodedBytes;need(total<=64ull<<20,"Aggregate host texture budget");if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());}
-  for(auto& f:plan->textures){auto& file=*f;if(files.insert(&file).second){total+=file.decodedBytes;need(total<=64ull<<20,"Aggregate host texture budget");}if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());plan->textureImages.push_back(&file.pyramid->image);}
+  for(auto* set:{&plan->diffuseMaps,&plan->emissionMaps})for(auto& pair:*set){auto& file=*pair.second.file;if(!files.insert(&file).second)continue;total+=file.decodedBytes;need(total<=(4ull<<30),"Aggregate host texture budget");if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());}
+  for(auto& f:plan->textures){auto& file=*f;if(files.insert(&file).second){total+=file.decodedBytes;need(total<=(4ull<<30),"Aggregate host texture budget");}if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());plan->textureImages.push_back(&file.pyramid->image);}
  }
  if(plan->paths&&plan->randomWalk)plan->walkSequences=walkSequences();
  // The displaced meshes (mesh_displacement.h), their maps' textures read.
