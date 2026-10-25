@@ -90,8 +90,8 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Subdivision surfaces: MoonRay's own OpenSubdiv tessellation (xpu2_geom.dll), Catmull-Clark and bilinear, creases, corners, boundaries, face-varying UVs, uniform and camera-adaptive, parts, reversed | done, within noise (13 cases; N, St, dPds exact); an open grid twice MoonRay's time, open |
 | Geometry sets: only geometry in a GeometrySet is rendered (as MoonRay) | done |
 | Subdivision with displacement, primitive attributes, dicing camera | displacement done (vdp1: Z exact); P and Wp behind a volume's surface fixed, retest pending; attribute and polygon maps in displacement todo |
-| VDB volumes (nearest, linear, quadratic; transforms, shells, alpha; bound maps: gain, colour, anisotropy, velocity and its rate) | done on the CPU lane, within noise (vs1, vs2); quadratic edge residual 0.0027 open; VDB in motion falls back (animated node_xform); on the GPU: deferred |
-| Emissive and heterogeneous volumes (bound attributes), volume light path expressions | emissive done (em1); heterogeneous 5 of 8 (hv1: albedo 0.9989, anisotropy 1.0158, density on subdivision 1.0131 open); volume LPEs done (MoonRay's miss double count reproduced); on the GPU: deferred |
+| VDB volumes (nearest, linear, quadratic; transforms, shells, alpha; bound maps: gain, colour, anisotropy, velocity and its rate) | done on the CPU lane, within noise (vs1, vs2); quadratic edge residual 0.0027 open; VDB in motion falls back (animated node_xform); on the GPU: deferred, matching MoonRay (vdb-sphere 0.0007, floor 0.0006; session 96, after the deferred samples' ring was made for volumes too: CUDA error 700 before) |
+| Emissive and heterogeneous volumes (bound attributes), volume light path expressions | emissive done (em1); heterogeneous 5 of 8 (hv1: albedo 0.9989, anisotropy 1.0158, density on subdivision 1.0131 open); volume LPEs done (MoonRay's miss double count reproduced); on the GPU: heterogeneous deferred; a scene with emissive volumes renders on the CPU lane alone (they light every surface, and the GPU programs do not sample them yet: emit-thin 0.0017, floor 0.0017) |
 | Cutout volumes | todo |
 | Adaptive sampling: XPU2 takes 27% more samples than MoonRay at target error 10 (aov-adaptive scene) | open |
 | Cellular-generation adaptive sampling as default | done (host passes; matches the error trees' images); on the GPU pass chain: todo |
@@ -102,7 +102,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Feature | State |
 |---|---|
 | Classification of every RDL object (support, GPU families), shown in the session's log | done |
-| Deferral: what the GPU programs lack (points, geometry in motion, VDB, heterogeneous and emissive volumes) is a stand-in box on the GPU; a sample meeting one is rendered whole by the CPU lane from its identity | built (GPU build 75), GPU test pending |
+| Deferral: what the GPU programs lack (points, geometry in motion, VDB, heterogeneous and emissive volumes) is a stand-in box on the GPU; a sample meeting one is rendered whole by the CPU lane from its identity | done: the GPU round (session 94-96) matches for points, motion, VDB, cutouts; the volumes defer through the same ring |
 | Cells by suitability: a first-hit probe gives each cell a probability per device of being its efficient owner (families, deferral, the lanes' measured rates); the cells start by comparative advantage before any stealing; deferred samples count as the CPU's in the ownership flips | built (session 76), GPU test pending |
 | One OptiX program for uniform and adaptive frames (half the compile's CPU and memory) | done (build 76) |
 | The GPU program in modules: path tracer, material, maps, lights (direct callables), compiled in parallel | built (GPU build 79: 134k, 85k, 57k, 12k PTX instructions), OptiX timing and GPU test pending |

@@ -608,7 +608,7 @@ int session(const Args& args, const fs::path& directory) {
                 };
                 async::RenderOptions options;
                 options.threads = args.threads ? args.threads : std::max(1u, std::thread::hardware_concurrency());
-                options.mode = gpu ? mode : 0;
+                options.mode = gpu && gpuUsable ? mode : 0;  // a scene the GPU leaves to the CPU (cpuOnly): the CPU alone
                 options.deviceChain = deviceChain;
                 options.cellular = cellular;
                 options.partial = partial;

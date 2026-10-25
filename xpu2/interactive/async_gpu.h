@@ -148,6 +148,9 @@ public:
         if (!plan->filterLists.empty()) return "light filters";
         if (!plan->shadowLinks.empty()) return "shadow linking";
         if (!plan->lobeLightSetBits.empty()) return "lobe light sets";
+        // Emissive volumes light every surface (their emissive regions are light sources, volume_emission.h): a GPU
+        // sample that does not cross one would still miss its light, so none may be the GPU's.
+        if (!plan->emissiveRegions.empty()) return "emissive volumes";
         // Points, geometry in motion and VDB, heterogeneous and emissive volumes are stand-ins (standIn): their
         // samples are deferred to the CPU lane.
         return {};
@@ -157,7 +160,9 @@ public:
         const auto& m = *mesh.data;
         return m.points || !m.steps.empty() || !m.curveSteps.empty();
     }
-    bool standIns() const { return scene_.standInTraversable != 0; }
+    // Whether the GPU hands samples to the CPU lane: stand-in meshes, or volumes its programs do not render (VDB,
+    // heterogeneous, emissive: volumeCrossings defers them), which need the CPU lane and the deferred samples' ring.
+    bool standIns() const { return scene_.standInTraversable != 0 || scene_.defersVolumes; }
     // The samples the GPU deferred since the last call, for the CPU lane.
     void takeDeferred(std::vector<Parked>& out) {
         out.insert(out.end(), deferredOut_.begin(), deferredOut_.end());
@@ -405,6 +410,13 @@ public:
             auto vtop = build(vinput);
             scene_.volumeTraversable = vtop.second;
             scene_.keep.insert(scene_.keep.end(), {boundsBuffer, vtop.first});
+        }
+        // Volumes the GPU's programs do not render: their samples are deferred to the CPU lane too.
+        for (const auto& v : plan->volumes)
+            if (v.kind != volume::KindBase || v.emission.x != 0.0f || v.emission.y != 0.0f || v.emission.z != 0.0f) scene_.defersVolumes = true;
+        if (scene_.defersVolumes && !deferred_) {  // the ring the deferred samples go to (pinned: the host reads it after a launch)
+            deferredCapacity_ = 1u << 22;
+            deferred_ = pinned(size_t(deferredCapacity_) * sizeof(Parked));
         }
         // The stand-ins' tree, and the ring their deferred samples go to (pinned: the host reads it after a launch).
         if (!standIns.empty()) {
@@ -1462,6 +1474,7 @@ private:
     struct Scene {
         std::vector<B> keep;
         U64 traversable = 0, volumeTraversable = 0, standInTraversable = 0;
+        bool defersVolumes = false;  // volumes the GPU defers to the CPU lane (standIns)
         B provSums, provCounts, hostProvSums, hostProvCounts;
         B geometry, materials, lights, meshLights, lightSetBits, lightTree, lightTreeRoots, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
             hostSums,
