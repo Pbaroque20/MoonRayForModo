@@ -47,6 +47,14 @@ class Controls(QtWidgets.QDialog):
                 for item in sorted((i for i in objects if i.type in ('mesh','meshInst')),key=lambda i:i.name.casefold()):
                     row=QtWidgets.QListWidgetItem(item.name,w);row.setData(QtCore.Qt.UserRole,item.id);row.setFlags(row.flags()|QtCore.Qt.ItemIsUserCheckable);row.setCheckState(QtCore.Qt.Unchecked)
                 form.addRow('Cast no shadow onto these objects',w)
+                # MoonRay's shadow rays for this object: whether it casts shadows at all, and how far from a surface a
+                # ray starts, which keeps a surface from shadowing itself (shadow acne) on coarse or far-off geometry.
+                heading=QtWidgets.QLabel('<b>Shadow rays</b>');form.addRow(heading)
+                field('cast_shadows','Casts shadows','bool',True).setToolTip('Off: this object casts no shadow at all, in MoonRay and MoonLightIPR. It is still seen and still lit.')
+                field('shadow_ray_epsilon','Shadow ray offset (0: automatic)','number',0,0,1000).setToolTip(
+                    "How far from this object's surface a shadow ray starts, in scene units. Raise it a little where the object shadows itself in specks or stripes (shadow acne). 0 leaves MoonRay's own.")
+                field('ray_epsilon','Secondary ray offset (0: automatic)','number',0,0,1000).setToolTip(
+                    "The same for reflection, refraction and bounce rays leaving this object. 0 leaves MoonRay's own.")
                 field('motion_topology','Changing topology during shutter','choice','strict',choices=[('Require stable topology','strict'),('Frame-time geometry; no deformation blur','freeze'),('Frame-time points / strands with velocities','velocity')])
                 field('point_id_map','Persistent point ID weight map','text','')
                 field('strand_id_tag','Persistent strand ID tag (4 characters)','text','')
@@ -94,6 +102,14 @@ class Controls(QtWidgets.QDialog):
                 choose=QtWidgets.QPushButton('Choose filter VDB…');choose.clicked.connect(lambda:self._browse('lights','filter_vdb','VDB (*.vdb)'));form.addRow(choose)
                 field('decay_enabled','Enable distance falloff filter','bool',False)
                 for key,label,default in [('near_start','Near start (m)',0),('near_end','Near end (m)',0),('far_start','Far start (m)',10),('far_end','Far end (m)',20)]:field(key,label,'number',default,0)
+                # MoonRay's shadow rays toward this light.
+                heading=QtWidgets.QLabel('<b>Shadow rays</b>');form.addRow(heading)
+                field('min_shadow_distance','Shadows only from this far from the light (0: everywhere)','number',0,0).setToolTip(
+                    'Surfaces nearer the light than this receive no shadow from it, in scene units: what is close to the light is lit as if nothing stood between.')
+                field('max_shadow_distance','No shadows beyond this distance (0: no limit)','number',0,0).setToolTip(
+                    'Surfaces further from the light than this receive no shadow from it, in scene units. 0 leaves shadows at every distance.')
+                field('presence_shadows','Shadows respect presence','choice',2,choices=[('Scene setting',2),('On',1),('Off',0)]).setToolTip(
+                    'On: dissolved and cut-out surfaces cast shadows only as much as they are there. Off: they cast solid shadows from this light, which is quicker. Scene setting: as Render Settings say.')
             pick.currentIndexChanged.connect(lambda _index,c=category:self._select(c))
             self._select(category)
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save|QtWidgets.QDialogButtonBox.Cancel);buttons.accepted.connect(self._accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)

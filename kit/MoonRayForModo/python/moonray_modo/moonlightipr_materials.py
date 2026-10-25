@@ -915,16 +915,16 @@ class Compiler:
 
     def layer(self, channel, blend=0, flags=0, texture=-1, slot=0, value=(0, 0, 0), opacity=1.0, gain=1.0, offset=0.0,
               scale=(1, 1), gamma=1.0, bias=.5, gain_curve=.5, color2=(1, 1, 1), alpha1=1.0, alpha2=1.0,
-              octaves=4, lacunarity=2.0, persistence=.5, pattern=0, settings=(0, 0, 0, 0, 0, 0, .5, .5), rows=IDENTITY_ROWS):
+              octaves=4, lacunarity=2.0, persistence=.5, pattern=0, settings=(0,) * 22 + (.5, .5), rows=IDENTITY_ROWS):
         opacity = float(opacity)
         if not math.isfinite(opacity) or not 0 <= opacity <= 1:
             raise ValueError('Layer opacity must be between zero and one')
         numbers = triple(value) + [opacity, gain, offset, float(scale[0]), float(scale[1]), gamma, bias, gain_curve] + triple(color2) + [
             alpha1, alpha2, octaves, lacunarity, persistence]
         shape = [float(v) for v in settings] + [float(v) for row in rows for v in row]
-        if len(shape) != 20 or not all(math.isfinite(float(v)) for v in numbers + shape):
+        if len(shape) != 36 or not all(math.isfinite(float(v)) for v in numbers + shape):
             raise ValueError('Layer contains a non-finite number')
-        self.layers.append(struct.pack('<3Ii1I19fI20f', channel, blend, flags, texture, slot, *numbers, int(pattern), *shape))
+        self.layers.append(struct.pack('<3Ii1I19fI36f', channel, blend, flags, texture, slot, *numbers, int(pattern), *shape))
 
     def material(self, material, name):
         """Append the material's layers; return its packed record."""
@@ -1105,7 +1105,7 @@ class Compiler:
                 value = solid['color1']
                 extra = dict(color2=solid['color2'], alpha1=float(solid['alpha1']), alpha2=float(solid['alpha2']),
                              pattern=int(solid['pattern']) | (int(solid['type']) << 8),
-                             settings=list(solid['settings'])[:6] + [float(solid['bias']), float(solid['gain'])], rows=solid['rows'])
+                             settings=list(solid['settings']), rows=solid['rows'])
             elif kind == 'constant':
                 value = layer['value']
             elif kind == 'gradient':

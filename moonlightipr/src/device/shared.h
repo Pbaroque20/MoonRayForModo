@@ -82,7 +82,7 @@ struct DeviceLayer {
     // LAYER_PROCEDURAL: Modo's pattern (bits 0-7) and its Type (8-15), its six settings then its bias and gain, and
     // rows that take a point of the world into the texture locator's space (modo_patterns.h, shared with MoonRay).
     unsigned pattern;
-    float settings[8];
+    float settings[24];         // up to 22 of the pattern's own, then its bias and gain
     float rows[12];
 };
 

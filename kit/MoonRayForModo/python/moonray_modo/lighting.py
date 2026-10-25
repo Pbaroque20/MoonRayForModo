@@ -44,6 +44,11 @@ def emit(scene,meshes,environment,lines):
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Light group labels must use letters, numbers and underscores')
             attrs['label']=string(label)
         if kind=='DistantLight':attrs['angular_extent']=number(light.get('angle',.5))
+        # Shadow rays toward this light (Light Links, Emitters and Volumes): where shadows begin and end, and whether
+        # they respect presence. MoonRay's own where left alone.
+        for key in ('min_shadow_distance','max_shadow_distance'):
+            if float(settings.get(key) or 0)>0:attrs[key]=number(float(settings[key]))
+        if int(settings.get('presence_shadows',2)) in (0,1):attrs['presence_shadows']=str(int(settings['presence_shadows']))
         # A sun that shows in the sky as a disc.
         if light.get('camera_visible'):attrs['visible_in_camera']='1'
         # A sun whose disc is drawn apart leaves mirrors to that disc, so that they show it once.

@@ -1271,7 +1271,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         out.lacunarity = layer.lacunarity;
         out.persistence = layer.persistence;
         out.pattern = layer.pattern;
-        std::copy(layer.settings, layer.settings + 8, out.settings);
+        std::copy(layer.settings, layer.settings + 24, out.settings);
         std::copy(layer.rows, layer.rows + 12, out.rows);
         if (layer.gamma != 1.0f || layer.bias != 0.5f || layer.gainCurve != 0.5f) out.flags |= LAYER_CURVES;
         // Coordinates and channels are followed on the GPU without checks.

@@ -566,7 +566,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         layer.lacunarity = in.value<float>();
         layer.persistence = in.value<float>();
         layer.pattern = in.value<uint32_t>();
-        in.floats(layer.settings, 8);
+        in.floats(layer.settings, 24);
         in.floats(layer.rows, 12);
     }
     // Runs of a count and that many images, one per UDIM tile from 1001 on; -1 where one is missing.
