@@ -8,6 +8,7 @@
 #include "aov_crypto.h"
 #include <OpenImageIO/imageio.h>
 #include <array>
+#include <functional>
 #include <sstream>
 
 namespace xpu2::interactive::aov {
@@ -173,11 +174,16 @@ inline void outputValues(const Plan& plan, const Output& out, const async::Rende
     if (out.channels.size() > e.channels) v[e.channels] = 0.0f;  // a resumable closest output's depth (not kept here)
 }
 
-// RenderOutputWriter: every file of the plan. Returns the first error ("" when all were written).
+// RenderOutputWriter: every file of the plan, or with checkpoint each under its checkpoint name (a file without one
+// is left out). written (or none): each file's name once it is written. Returns the first error ("" when all were).
 inline std::string writeOutputs(const Plan& plan, const async::RenderResult& r, unsigned width, unsigned height,
-                                std::vector<std::string>& warnings) {
+                                std::vector<std::string>& warnings, bool checkpoint = false,
+                                const std::function<void(const std::string&)>& written = {}) {
     static const char* const compressions[] = {"none", "zip", "rle", "zips", "piz", "pxr24", "b44", "b44a", "dwaa", "dwab"};
-    for (const File& file : plan.files) {
+    for (const File& planned : plan.files) {
+        if (checkpoint && planned.checkpoint.empty()) continue;
+        File file = planned;
+        if (checkpoint) file.name = planned.checkpoint;
         std::vector<OIIO::ImageSpec> specs;
         for (const Image& image : file.images) {
             int channels = 0;
@@ -236,6 +242,7 @@ inline std::string writeOutputs(const Plan& plan, const async::RenderResult& r, 
             if (!io->write_image(OIIO::TypeDesc::FLOAT, data.data())) return "Cannot write " + file.name + ": " + io->geterror();
         }
         if (!io->close()) return "Cannot write " + file.name + ": " + io->geterror();
+        if (written) written(file.name);
     }
     return "";
 }

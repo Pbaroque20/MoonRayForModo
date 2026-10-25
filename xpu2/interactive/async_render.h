@@ -65,6 +65,10 @@ struct Watch {
     // frame so far, its AOVs resolved as the frame's end resolves them.
     std::function<bool()> previewAov;
     std::function<void(const struct RenderResult& sofar, double fraction)> previewResult;
+    // Checkpoints (Safe Denoising): the frame so far, as its end would make it (Cryptomatte too), every
+    // checkpointSeconds (0 or no checkpoint: none).
+    double checkpointSeconds = 0;
+    std::function<void(struct RenderResult&& sofar)> checkpoint;
 };
 
 // When things happened in a frame, in seconds from its start (TEL-01).
@@ -369,24 +373,38 @@ public:
         std::vector<float> previewRgb;
         std::vector<unsigned char> covered;
         double nextScore = 0;  // important parts first: the pictures score the cells at most once a second
+        // Checkpoints: the next one's time (-1: none), and whether the copy under way is for one.
+        double nextCheckpoint = watch && watch->checkpoint && watch->checkpointSeconds > 0 ? watch->checkpointSeconds : -1;
+        bool checkpointNow = false;
         const double plannedSamples = double(plan_->width) * plan_->height * plan_->spp;
         bool previewOfAov = false;
         auto preview = [&] {
-            if (nextPreview < 0 || (previewState == PreviewIdle && at() < nextPreview)) return;
-            if (previewState == PreviewIdle) previewOfAov = shown && watch->previewAov && watch->previewResult && watch->previewAov();
+            const bool checkpointDue = nextCheckpoint >= 0 && at() >= nextCheckpoint && !draining;
+            if (previewState == PreviewIdle && !checkpointDue && (nextPreview < 0 || at() < nextPreview)) return;
+            if (previewState == PreviewIdle) {
+                previewOfAov = shown && watch->previewAov && watch->previewResult && watch->previewAov();
+                checkpointNow = checkpointDue;
+            }
             if (previewState == PreviewIdle && useGpu) {
-                gpu_->downloadPreview(previewOfAov);
+                gpu_->downloadPreview(previewOfAov || checkpointNow);
                 previewState = PreviewCopying;
                 return;
             }
             if (previewState == PreviewCopying && !gpu_->previewReady()) return;
-            if (previewOfAov) {
+            if (previewOfAov || checkpointNow) {
                 RenderResult sofar;
-                const U64 seen = snapshotResult(film, sofar, adaptive, useGpu ? gpu_ : nullptr);
-                watch->previewResult(sofar, std::min(1.0, double(seen) / plannedSamples));
-                previewState = PreviewIdle;
-                nextPreview = at() + std::max(watch->previewSeconds, 0.5);
-                return;
+                const U64 seen = snapshotResult(film, sofar, adaptive, useGpu ? gpu_ : nullptr, checkpointNow);
+                if (previewOfAov) watch->previewResult(sofar, std::min(1.0, double(seen) / plannedSamples));
+                if (checkpointNow) {
+                    watch->checkpoint(std::move(sofar));
+                    nextCheckpoint = at() + watch->checkpointSeconds;
+                    checkpointNow = false;
+                }
+                if (previewOfAov) {
+                    previewState = PreviewIdle;
+                    nextPreview = at() + std::max(watch->previewSeconds, 0.5);
+                    return;
+                }
             }
             previewRgb.resize(size_t(plan_->width) * plan_->height * 3);
             covered.resize(size_t(plan_->width) * plan_->height);
@@ -703,7 +721,8 @@ public:
 private:
     // The frame so far, as its end would make it: the mean of each pixel's samples, the host's and the GPU's films
     // merged and their AOVs resolved. The samples in it.
-    U64 snapshotResult(HostFilm& film, RenderResult& r, bool adaptive, const GpuLane* gpu) const {
+    // crypto: Cryptomatte's fragments too (a checkpoint's), the host's and the GPU's, finalized.
+    U64 snapshotResult(HostFilm& film, RenderResult& r, bool adaptive, const GpuLane* gpu, bool crypto = false) const {
         std::vector<double> sums, odd, aov, heat;
         std::vector<U32> counts;
         std::vector<float> depths;
@@ -728,6 +747,12 @@ private:
         if (!heat.empty()) {
             r.heat.resize(pixels);
             for (size_t p = 0; p < pixels; ++p) r.heat[p] = float(heat[p] + (gpu && gpu->heat() ? gpu->heat()[p] : 0.0));
+        }
+        if (crypto && !film.crypto().empty()) {
+            r.crypto = std::make_shared<aov::CryptoBuffer>();
+            film.snapshotCrypto(*r.crypto);
+            if (gpu) const_cast<GpuLane*>(gpu)->mergeCrypto(*r.crypto);  // the device's lists, read without being changed
+            r.crypto->finalize(r.counts);
         }
         return seen;
     }

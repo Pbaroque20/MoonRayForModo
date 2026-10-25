@@ -57,7 +57,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | GPU AOV film (atomics, min/max, closest under a lock, heat) | written, to compile |
 | Extra AOVs ('U:' from ExtraAovMap/ListMap, pre- and post-scatter, background U:bg_white) | done, within noise (7 outputs) |
 | Motion vectors | todo (with motion blur) |
-| Deep output, checkpoint and resume | todo |
+| Deep output, checkpoint and resume | checkpoints done (session 97: every checkpoint_interval, each file under its checkpoint_file_name, "Wrote:" lines as MoonRay's, the data file's weight, beauty_aux, alpha_aux and alpha); resume starts the render again; deep todo |
 
 ## MoonRay quirks found (vector mode)
 
@@ -95,7 +95,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Cutout volumes | todo |
 | Adaptive sampling: XPU2 takes 27% more samples than MoonRay at target error 10 (aov-adaptive scene) | open |
 | Cellular-generation adaptive sampling as default | done (host passes; matches the error trees' images); on the GPU pass chain: todo |
-| Checkpoint save and resume | todo |
+| Checkpoint save and resume | saves done (Safe Denoising in the private kit: three whole saves of 27 files on the Modo scene); resume starts again (MoonRay cannot take up XPU2's saves: no progressCheckpointTileSamples; XPU2 does not yet know which samples a save holds) |
 
 ## Devices (the scene indexer, INDEXER.md)
 
@@ -108,3 +108,4 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | The GPU program in modules: path tracer, material, maps, lights (direct callables), compiled in parallel | built (GPU build 79: 134k, 85k, 57k, 12k PTX instructions), OptiX timing and GPU test pending |
 | Volumes and subsurface as continuation callables; modules linked by the scene's families | todo |
 | Scene edits as change sets to both devices (partial rebuilds) | todo |
+| The kit's Denoiser, Smart Render and Safe Denoising with XPU2 previews (guides: albedo and normal; drain on Stop; checkpoints) | done (session 97: the kit's denoising steps on XPU2's beauty and guides, a drain mid-render denoised, Safe saves promoted); Continue starts again |

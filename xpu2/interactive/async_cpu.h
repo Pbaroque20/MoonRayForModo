@@ -1011,6 +1011,20 @@ public:
             lock.clear(std::memory_order_release);
         }
     }
+    // Cryptomatte's fragments so far, consistent tile by tile, taken while workers keep adding (a checkpoint's).
+    void snapshotCrypto(aov::CryptoBuffer& out) {
+        out.like(crypto_);
+        if (crypto_.empty()) return;
+        for (U32 tile = 0; tile < locks_.size(); ++tile) {
+            auto& lock = locks_[tile].flag;
+            while (lock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+            for (U32 p = 0; p < TilePixels; ++p) {
+                const U32 pixel = tilePixel(tile, p, width_, height_);
+                if (pixel != ~0u) out.copyPixel(crypto_, pixel);
+            }
+            lock.clear(std::memory_order_release);
+        }
+    }
     const std::vector<double>& sums() const { return sums_; }
     const std::vector<double>& odd() const { return odd_; }
     const std::vector<U32>& counts() const { return counts_; }

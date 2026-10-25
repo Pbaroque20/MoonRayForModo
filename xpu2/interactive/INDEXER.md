@@ -168,7 +168,10 @@ the first hit, not 5x. And the scene has two materials (its layer gives each of 
 material; the 489 map nodes are inside them), so sorting by material would group threads into at most two sets. The
 GPU profile (XPU2_PROFILE: rays, shadow rays, materials, presence, volume crossings, the rest, as shares of the
 samples' clock ticks) is to say where a bounce's time goes before anything is built; a scene of many materials is to
-be profiled too. Where a sample would stop to be sorted: after the trace of a bounce ray, before its volumes and
+be profiled too. The profile (session 97, 640x360, GPU only): shadow rays 68% of the samples' clock ticks at depth 0
+and 55% at depth 4, rays 4% and 16%, materials 9% and 11%, the rest 20% and 17%. Sorting by material could reach a
+tenth of the time at most: on this scene the lights' shadow rays are the work (two lights, several samples a hit).
+Where a sample would stop to be sorted: after the trace of a bounce ray, before its volumes and
 shading (the loop-carried state: the pending stack, top, radiance, alpha, the Cryptomatte marks and events, the AOV
 values, the backend's texture-miss flag; the camera and time are made again from the sample's identity).
 

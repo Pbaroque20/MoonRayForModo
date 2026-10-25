@@ -286,8 +286,99 @@ struct Scene {
 // What XPU2 does not make yet leaves the scene to MoonRay.
 void checkOutputs(const aov::Plan& plan, bool gpu) {
     cpu::need(!plan.deep, "Deep outputs are not rendered by XPU2 yet");
-    cpu::need(!plan.checkpoint && !plan.resume, "Checkpoint and resume renders are not rendered by XPU2 yet");
+    // Checkpoints are saved (Safe Denoising). A render to be continued from a saved one starts again: MoonRay could not
+    // take up XPU2's saves (they carry no progressCheckpointTileSamples), and XPU2 does not yet know which samples a
+    // save holds (a pixel's may not be its first ones yet).
+    if (plan.resume) std::printf("XPU2: Continue starts this render again (XPU2 does not take up a saved render yet)\n");
 }
+
+// A checkpoint render's saves (Safe Denoising), on a thread of their own so that the render goes on meanwhile: each the
+// frame so far, written to its files' checkpoint names, each file reported as MoonRay reports it ("Wrote: <path>"),
+// which the kit follows. A save asked for while one is being written is let go: the next one is soon.
+class Checkpoints {
+public:
+    Checkpoints() : thread_([this] { loop(); }) {}
+    ~Checkpoints() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_ = true;
+        }
+        wake_.notify_all();
+        thread_.join();
+    }
+    // Before a frame: the plan and display filters its saves use.
+    void frame(const aov::Plan* plan, aov::DisplayFilters* filters, unsigned width, unsigned height) {
+        wait();
+        std::lock_guard<std::mutex> lock(mutex_);
+        plan_ = plan;
+        filters_ = filters;
+        width_ = width;
+        height_ = height;
+    }
+    void save(async::RenderResult&& sofar) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (busy_ || !plan_) return;
+        pending_ = std::move(sofar);
+        busy_ = true;
+        wake_.notify_all();
+    }
+    // Returns once no save is being written (before a frame's own files, or another scene).
+    void wait() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        done_.wait(lock, [&] { return !busy_; });
+    }
+
+private:
+    void loop() {
+        for (;;) {
+            async::RenderResult r;
+            const aov::Plan* plan;
+            aov::DisplayFilters* filters;
+            unsigned width, height;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                wake_.wait(lock, [&] { return stop_ || busy_; });
+                if (stop_) return;
+                r = std::move(pending_);
+                plan = plan_;
+                filters = filters_;
+                width = width_;
+                height = height_;
+            }
+            try {
+                if (filters && !filters->empty()) {
+                    std::vector<std::vector<float>> filtered;
+                    filters->run(*plan, r, filtered);
+                    size_t k = 0;
+                    for (const aov::Output* out : plan->all)
+                        if (out->result == aov::ResultDisplayFilter && k < filtered.size()) r.displayFilters[out->name] = std::move(filtered[k++]);
+                }
+                std::vector<std::string> warnings;
+                const std::string error = aov::writeOutputs(*plan, r, width, height, warnings, true, [](const std::string& name) {
+                    std::printf("Wrote: %s\n", name.c_str());
+                    std::fflush(stdout);
+                });
+                if (!error.empty()) std::printf("XPU2: checkpoint not saved: %s\n", error.c_str());
+            } catch (const std::exception& e) {
+                std::printf("XPU2: checkpoint not saved: %s\n", e.what());
+            }
+            std::fflush(stdout);
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                busy_ = false;
+            }
+            done_.notify_all();
+        }
+    }
+    std::mutex mutex_;
+    std::condition_variable wake_, done_;
+    bool stop_ = false, busy_ = false;
+    async::RenderResult pending_;
+    const aov::Plan* plan_ = nullptr;
+    aov::DisplayFilters* filters_ = nullptr;
+    unsigned width_ = 0, height_ = 0;
+    std::thread thread_;
+};
 
 // The outlines of the work, thirty times a second, from a thread of their own.
 class Outlines {
@@ -440,6 +531,7 @@ int session(const Args& args, const fs::path& directory) {
     bool gpuUsable = true;  // the GPU lane renders the scene (cpuOnly empty)
     ModoSharedImage shared;
     Outlines outlines(envOn("MOONRAY_MODO_BUCKETS", false));
+    Checkpoints checkpoints;  // Safe Denoising's saves
     try {
         scene.load(args.scenes);
     } catch (const std::exception& e) {
@@ -613,7 +705,14 @@ int session(const Args& args, const fs::path& directory) {
                 options.cellular = cellular;
                 options.partial = partial;
                 options.watch = &watch;
+                // Safe Denoising's checkpoints: the frame so far saved every checkpoint_interval minutes.
+                if (scene.plan->aovs && scene.plan->aovs->checkpoint) {
+                    checkpoints.frame(scene.plan->aovs.get(), &scene.displayFilters, width, height);
+                    watch.checkpointSeconds = std::max(1.0, scene.plan->aovs->checkpointMinutes * 60.0);
+                    watch.checkpoint = [&](async::RenderResult&& sofar) { checkpoints.save(std::move(sofar)); };
+                }
                 result = renderer->render(options);
+                checkpoints.wait();  // a save under way is whole before the frame's own files, or another scene
                 if (renderer->deviceRatio() > 0) deviceRatio = renderer->deviceRatio();
                 if (result.seededCells)
                     std::printf("XPU2: cells by suitability: %u of %u the CPU's (%u the GPU would defer), GPU/CPU rate %.2f, probed in %.1f ms\n",

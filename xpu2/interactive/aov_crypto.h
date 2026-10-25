@@ -98,6 +98,18 @@ public:
     }
     bool empty() const { return pixels_.empty(); }
     U32 categories() const { return categories_; }
+    // A buffer of another's shape, empty; and one pixel's fragments copied from it (a checkpoint's copy, taken tile by
+    // tile under the film's locks: HostFilm::snapshotCrypto).
+    void like(const CryptoBuffer& o) {
+        width_ = o.width_;
+        multiPresence_ = o.multiPresence_;
+        categories_ = o.categories_;
+        pixels_.assign(o.pixels_.size(), {});
+    }
+    void copyPixel(const CryptoBuffer& o, size_t pixel) {
+        const size_t n = pixels_.size() / categories_;
+        for (U32 c = 0; c < categories_; ++c) pixels_[c * n + pixel] = o.pixels_[c * n + pixel];
+    }
     // addSampleVector, in every category with its ID.
     void add(size_t pixel, const CryptoEvent& e) {
         if (pixels_.empty()) return;

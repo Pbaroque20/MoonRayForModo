@@ -389,6 +389,7 @@ struct Plan {
     const Output* denoiserAlbedo = nullptr;
     const Output* denoiserNormal = nullptr;
     bool resumable = false, checkpoint = false, resume = false;
+    double checkpointMinutes = 15.0;  // checkpoint_interval: how often a checkpoint render saves its files
     std::vector<std::string> warnings;
     // The rezed aperture (display) and region (data) windows, min x, min y, max x, max y (half open).
     int aperture[4] = {0, 0, 0, 0}, region[4] = {0, 0, 0, 0};
@@ -869,6 +870,7 @@ inline std::shared_ptr<Plan> buildPlan(const rdl::SceneContext& context) {
         p.cryptoMultiPresence = attribute<rdl::Bool>(sv, "cryptomatte_multi_presence", false);
     }
     p.checkpoint = p.resume || attribute<rdl::Bool>(sv, "checkpoint_active", false);
+    p.checkpointMinutes = attribute<rdl::Float>(sv, "checkpoint_interval", 15.0f);
     std::vector<const rdl::RenderOutput*> renderOutputs(context.getAllRenderOutputs().begin(), context.getAllRenderOutputs().end());
     if (!outputOrder().empty()) {
         const auto& order = outputOrder();
