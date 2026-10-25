@@ -6,70 +6,13 @@
       "name": "pattern",
       "type": "Int",
       "default": "0",
-      "flags": "FLAGS_ENUMERABLE",
-      "enum": {
-        "Noise": "0",
-        "Cellular": "1",
-        "Checker": "2",
-        "Grid": "3",
-        "Dots": "4",
-        "Wood": "5",
-        "Weave": "6",
-        "Ripples": "7"
-      },
-      "comment": "Which of Modo procedural textures"
+      "comment": "Which of Modo's procedural textures: its own 0 to 7, Enhance: Modo's from 100"
     },
     "attrType": {
       "name": "type",
       "type": "Int",
       "default": "0",
       "comment": "The pattern's own Type, as Modo numbers it"
-    },
-    "attrSettingA": {
-      "name": "setting_a",
-      "type": "Float",
-      "default": "0.0f",
-      "comment": "The pattern's settings in the order of procedurals.MAP_SETTINGS"
-    },
-    "attrSettingB": {
-      "name": "setting_b",
-      "type": "Float",
-      "default": "0.0f",
-      "comment": "The pattern's settings in the order of procedurals.MAP_SETTINGS"
-    },
-    "attrSettingC": {
-      "name": "setting_c",
-      "type": "Float",
-      "default": "0.0f",
-      "comment": "The pattern's settings in the order of procedurals.MAP_SETTINGS"
-    },
-    "attrSettingD": {
-      "name": "setting_d",
-      "type": "Float",
-      "default": "0.0f",
-      "comment": "The pattern's settings in the order of procedurals.MAP_SETTINGS"
-    },
-    "attrSettingE": {
-      "name": "setting_e",
-      "type": "Float",
-      "default": "0.0f",
-      "comment": "The pattern's settings in the order of procedurals.MAP_SETTINGS"
-    },
-    "attrSettingF": {
-      "name": "setting_f",
-      "type": "Float",
-      "default": "0.0f",
-      "comment": "The pattern's settings in the order of procedurals.MAP_SETTINGS"
-    },
-    "attrBias": {
-      "name": "bias",
-      "type": "Float",
-      "default": "0.5f"
-    },
-    "attrGain": {
-      "name": "gain",
-      "type": "Float",
-      "default": "0.5f"
     },
     "attrColor1": {
       "name": "color1",
@@ -122,6 +65,12 @@
       "type": "Vec4f",
       "default": "Vec4f(0.0f,0.0f,1.0f,0.0f)",
       "comment": "A row of the placement into the locator's space: x, y, z and offset"
+    },
+    "attrSettings": {
+      "name": "settings",
+      "type": "FloatVector",
+      "default": "{}",
+      "comment": "The pattern's settings in the order of procedurals.MAP_SETTINGS or ENHANCE, up to 22; the 23rd and 24th are its bias and gain"
     }
   }
 }

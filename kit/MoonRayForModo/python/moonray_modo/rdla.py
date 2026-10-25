@@ -711,6 +711,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     ('visible_glossy_reflection', reflection), ('visible_mirror_reflection', reflection),
                     ('visible_glossy_transmission', refraction), ('visible_mirror_transmission', refraction)]:
                 lines.append('    [%s] = %s,' % (string(attribute), 'true' if value else 'false'))
+        # How far from this object's surface its shadow and other rays start (Light Links, Emitters and Volumes);
+        # 0 leaves MoonRay's own.
+        for key in ('shadow_ray_epsilon', 'ray_epsilon'):
+            offset = float(emitting.get(key) or 0)
+            if offset > 0:
+                lines.append('    [%s] = %s,' % (string(key), number(offset)))
         for source, attribute, kind in [('uvs', 'uv_list', 'Vec2'), ('normals', 'normal_list', 'Vec3')]:
             values = mesh.get(source, [])
             if source == 'normals' and (subdivision or not mesh.get('smooth', True)):

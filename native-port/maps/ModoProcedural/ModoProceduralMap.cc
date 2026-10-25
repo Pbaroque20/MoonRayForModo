@@ -19,6 +19,9 @@ public:
     void update() override {
         mXform=std::make_unique<Xform>(this,nullptr,nullptr,nullptr);
         mData.mXform=mXform->getIspcXform();
+        // The settings where the ISPC code reads them too; bias and gain 0.5, neutral, unless given.
+        const std::vector<float>& given=get(attrSettings);
+        for(int i=0;i<24;++i) mData.mSettings[i]=i<int(given.size())?given[i]:(i>=22?0.5f:0.0f);
     }
     static void sample(const scene_rdl2::rdl2::Map* self,TLState* tls,const State& state,Color* out) {
         const auto* me=static_cast<const ModoProceduralMap*>(self);
@@ -28,8 +31,9 @@ public:
         else p=me->mXform->transformPoint(ispc::SHADING_SPACE_RENDER,space==1?ispc::SHADING_SPACE_OBJECT:ispc::SHADING_SPACE_WORLD,state,state.getP());
         const Vec4f r0=me->get(attrRow0),r1=me->get(attrRow1),r2=me->get(attrRow2);
         const float x=r0.x*p.x+r0.y*p.y+r0.z*p.z+r0.w,y=r1.x*p.x+r1.y*p.y+r1.z*p.z+r1.w,z=r2.x*p.x+r2.y*p.y+r2.z*p.z+r2.w;
-        const float t=mp_pattern(me->get(attrPattern),me->get(attrType),x,y,z,me->get(attrSettingA),me->get(attrSettingB),me->get(attrSettingC),
-                                 me->get(attrSettingD),me->get(attrSettingE),me->get(attrSettingF),me->get(attrBias),me->get(attrGain));
+        MP_Settings settings;
+        for(int i=0;i<24;++i) settings.v[i]=me->mData.mSettings[i];
+        const float t=mp_pattern(me->get(attrPattern),me->get(attrType),x,y,z,settings);
         if(me->get(attrOutput)==1) {
             const float low=std::min(me->get(attrAlpha1),me->get(attrAlpha2)),high=std::max(me->get(attrAlpha1),me->get(attrAlpha2));
             const float alpha=std::min(high,std::max(low,me->get(attrAlpha1)*t+me->get(attrAlpha2)*(1-t)));

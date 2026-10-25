@@ -188,6 +188,8 @@ def solid(layer, channel, color, is_color, locator_matrix):
     projection): its pattern, Type and settings, its colours, and rows that take a point of the world into the texture
     locator's space. None for a layer of a kind it does not draw."""
     kind = layer.type
+    if kind in ENHANCE:
+        return enhance(layer, channel, color, is_color, locator_matrix)
     if kind not in PATTERNS:
         return None
     from .coordinates import inverse
@@ -195,13 +197,13 @@ def solid(layer, channel, color, is_color, locator_matrix):
     chosen = str(channel(layer, 'type', types[0] if types else ''))
     settings = [float(channel(layer, key, default)) for key, default in MAP_SETTINGS[kind]]
     inv = inverse(locator_matrix)
-    data = {'pattern': PATTERNS[kind], 'type': types.index(chosen) if chosen in types else 0, 'settings': settings + [0.0] * (6 - len(settings)),
-            'bias': float(channel(layer, 'bias', .5)), 'gain': float(channel(layer, 'gain', .5)),
+    data = {'pattern': PATTERNS[kind], 'type': types.index(chosen) if chosen in types else 0,
+            'settings': settings + [0.0] * (22 - len(settings)) + [float(channel(layer, 'bias', .5)), float(channel(layer, 'gain', .5))],
             'color1': color(layer, 'color1', (0, 0, 0)) if is_color else [float(channel(layer, 'value1', 0))] * 3,
             'color2': color(layer, 'color2', (1, 1, 1)) if is_color else [float(channel(layer, 'value2', 1))] * 3,
             'alpha1': float(channel(layer, 'alpha1', 1)), 'alpha2': float(channel(layer, 'alpha2', 1)),
             'rows': [[inv[0], inv[4], inv[8], inv[12]], [inv[1], inv[5], inv[9], inv[13]], [inv[2], inv[6], inv[10], inv[14]]]}
-    if not all(math.isfinite(v) for v in data['settings'] + [v for row in data['rows'] for v in row] + [data['bias'], data['gain']]):
+    if not all(math.isfinite(v) for v in data['settings'] + [v for row in data['rows'] for v in row]):
         raise ValueError('Nonfinite procedural parameter')
     return data
 
@@ -213,4 +215,75 @@ def map_available():
         return (Path(native.default_runtime()) / 'ModoProceduralMap.so').is_file()
     except Exception:
         return False
+
+
+# ---- Enhance: Modo's patterns (the val.*.RJJ texture layers) -------------------------------------------------------
+# Each: its number in modo_patterns.h, the channel that is its Type (its Noise Type, mostly), and its own settings in
+# the order the pattern reads them. Choices among words are given as their place in the list Modo gives.
+NOISE_TYPES = ('Perlin', 'EnhancedPerlin', 'Gradient', 'Value', 'GradientValue', 'Impulse', 'Lattice', 'Bubble')
+CHOICES = {'AxisType': ('XAxis', 'YAxis', 'ZAxis'), 'FlowType': ('Flat', 'Square', 'Inverse'), 'NoiseType': NOISE_TYPES}
+_FBM = ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Absolute', 'Lower', 'Upper')
+ENHANCE = {
+    'val.Noise_Agate.RJJ': (100, 'NoiseType', ('NoiseSeed', 'Absolute', 'Lower', 'Upper')),
+    'val.Noise_Bozo.RJJ': (101, 'NoiseType', _FBM),
+    'val.Noise_Cruddy.RJJ': (102, 'NoiseType', ('NoiseSeed', 'Frequency', 'Magnitude', 'Lower', 'Upper')),
+    'val.Noise_Dented.RJJ': (103, 'NoiseType', ('NoiseSeed', 'Octaves', 'Dentedness', 'Lower', 'Upper')),
+    'val.Noise_Etched.RJJ': (104, 'NoiseType', ('NoiseSeed', 'Octaves', 'Corrosion', 'Lower', 'Upper')),
+    'val.Noise_FlowBozo.RJJ': (105, 'FlowType', ('NoiseSeed', 'Octaves', 'Advection', 'Time', 'Absolute', 'Lower', 'Upper')),
+    'val.Noise_Granite.RJJ': (106, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Fold', 'Lower', 'Upper')),
+    'val.Noise_Hybrid.RJJ': (107, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Offset', 'Heterogeneous', 'Lower', 'Upper')),
+    'val.Noise_Lump.RJJ': (108, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Lower', 'Upper')),
+    'val.Noise_MarbleNoise.RJJ': (109, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Lower', 'Upper')),
+    'val.Noise_MarbleVein.RJJ': (110, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Sharpness', 'Lower', 'Upper')),
+    'val.Noise_MultiFractal.RJJ': (111, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Offset', 'Lower', 'Upper')),
+    'val.Noise_Pebbles.RJJ': (112, 'NoiseType', ('NoiseSeed', 'MinFreq', 'MaxFreq', 'Steps', 'Magnitude', 'Frequency', 'Lower', 'Upper')),
+    'val.Noise_PuffyClouds.RJJ': (113, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Coverage', 'Heterogeneous', 'Lower', 'Upper')),
+    'val.Noise_Ridged.RJJ': (114, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Offset', 'Threshold', 'Lower', 'Upper')),
+    'val.Noise_Scar.RJJ': (115, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Lower', 'Upper')),
+    'val.Noise_Scruffed.RJJ': (116, 'NoiseType', ('NoiseSeed', 'Length', 'Coverage', 'AxisType', 'Lower', 'Upper')),
+    'val.Noise_Strata.RJJ': (117, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Width', 'Magnitude', 'AxisType', 'Lower', 'Upper')),
+    'val.Noise_Stucco.RJJ': (118, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Power', 'Lower', 'Upper')),
+    'val.Noise_VectorBozo.RJJ': (119, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Magnitude', 'Fractalize', 'Lower', 'Upper')),
+    'val.Noise_WrappedfBm.RJJ': (120, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Magnitude', 'Lower', 'Upper')),
+    'val.Noise_fBm.RJJ': (121, 'NoiseType', _FBM),
+}
+
+
+def _setting(layer, channel, name):
+    value = channel(layer, name, 0)
+    if isinstance(value, str):
+        options = CHOICES.get(name, ())
+        return float(options.index(value)) if value in options else 0.0
+    return float(value)
+
+
+def enhance(layer, channel, color, is_color, locator_matrix):
+    """An Enhance: Modo texture as ModoProceduralMap draws it: its pattern, its Noise Type (or other Type), its
+    settings, its Fore and Back colours as the pattern's two (a side set to show the layer beneath it having no
+    alpha), its Bias and Gain, and the placement into its locator's space."""
+    from .coordinates import inverse
+    pattern, kind, names = ENHANCE[layer.type]
+    chosen = channel(layer, kind, '')
+    options = CHOICES.get(kind, NOISE_TYPES)
+    settings = [_setting(layer, channel, name) for name in names]
+    if len(settings) > 22:
+        raise ValueError('Too many settings for the procedural map')
+
+    def side(prefix):
+        if is_color:
+            value = color(layer, prefix + 'GroundColor', (0, 0, 0) if prefix == 'Back' else (1, 1, 1))
+        else:
+            value = [float(channel(layer, prefix + 'Value', 0 if prefix == 'Back' else 1))] * 3
+        alpha = 0.0 if channel(layer, prefix + 'Prev', 0) else float(channel(layer, prefix + 'Alpha', 1))
+        return value, alpha
+    fore, fore_alpha = side('Fore')
+    back, back_alpha = side('Back')
+    inv = inverse(locator_matrix)
+    data = {'pattern': pattern, 'type': options.index(chosen) if chosen in options else 0,
+            'settings': settings + [0.0] * (22 - len(settings)) + [float(channel(layer, 'Bias', .5)), float(channel(layer, 'Gain', .5))],
+            'color1': fore, 'color2': back, 'alpha1': fore_alpha, 'alpha2': back_alpha,
+            'rows': [[inv[0], inv[4], inv[8], inv[12]], [inv[1], inv[5], inv[9], inv[13]], [inv[2], inv[6], inv[10], inv[14]]]}
+    if not all(math.isfinite(v) for v in data['settings'] + [v for row in data['rows'] for v in row]):
+        raise ValueError('Nonfinite procedural parameter')
+    return data
 

@@ -1,6 +1,6 @@
 # python
-"""Command-line test: the named options of each choice setting of Modo's built-in procedural textures (a Noise's
-type, a Grid's, and so on), for writing them as MoonRay map shaders. Writes test-results/cl-export/prep/pattern_choices.json."""
+"""Command-line test: the named options of each choice setting of Modo's procedural textures, built in and Enhance: Modo's (a Noise's
+type, a Grid's, an fBm's Noise Type and so on), for writing them as MoonRay map shaders. Writes test-results/cl-export/prep/pattern_choices.json."""
 import json
 import pathlib
 import traceback
@@ -12,7 +12,11 @@ result = {}
 try:
     lx.eval('scene.new')
     scene = modo.Scene()
-    for kind in ('noise', 'cellular', 'checker', 'grid', 'dots', 'wood', 'weave', 'ripples'):
+    service = lx.service.Scene()
+    texture = service.ItemTypeLookup('textureLayer')
+    kinds = [service.ItemTypeName(service.ItemTypeByIndex(i)) for i in range(service.ItemTypeCount())]
+    kinds = ['noise', 'cellular', 'checker', 'grid', 'dots', 'wood', 'weave', 'ripples'] + sorted(k for k in kinds if k.startswith('val.'))
+    for kind in kinds:
         item = scene.addItem(kind)
         raw = item.internalItem
         found = {}

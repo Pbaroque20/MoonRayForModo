@@ -162,7 +162,7 @@ struct Layer {
     // With the procedural flag: Modo's pattern and its Type, its six settings then its bias and gain, and rows that
     // take a point of the world into the texture locator's space.
     uint32_t pattern = 0;
-    float settings[8] = {0, 0, 0, 0, 0, 0, 0.5f, 0.5f};
+    float settings[24] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.5f, 0.5f};
     float rows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     // With the gradient flag, texture is a 257 x 1 image of the gradient from 0 to 1 and uvSlot
     // the channel whose value looks it up. With the UDIM flag, texture is instead where this

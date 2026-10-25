@@ -2704,8 +2704,9 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
             const float x = layer.rows[0] * position.x + layer.rows[1] * position.y + layer.rows[2] * position.z + layer.rows[3];
             const float y = layer.rows[4] * position.x + layer.rows[5] * position.y + layer.rows[6] * position.z + layer.rows[7];
             const float z = layer.rows[8] * position.x + layer.rows[9] * position.y + layer.rows[10] * position.z + layer.rows[11];
-            const float t = mp_pattern(int(layer.pattern & 255u), int((layer.pattern >> 8) & 255u), x, y, z, layer.settings[0], layer.settings[1],
-                                       layer.settings[2], layer.settings[3], layer.settings[4], layer.settings[5], layer.settings[6], layer.settings[7]);
+            MP_Settings settings;
+            for (int k = 0; k < 24; ++k) settings.v[k] = layer.settings[k];
+            const float t = mp_pattern(int(layer.pattern & 255u), int((layer.pattern >> 8) & 255u), x, y, z, settings);
             value = lerp(vec(layer.color2), vec(layer.value), t);
             mask *= layer.alpha2 + (layer.alpha1 - layer.alpha2) * t;
         } else if (layer.flags & (LAYER_IMAGE | LAYER_UDIM | LAYER_CHECKER | LAYER_NOISE)) {

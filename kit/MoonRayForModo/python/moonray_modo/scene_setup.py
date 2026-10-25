@@ -30,6 +30,20 @@ def configure(scene, values):
     scene['asset_settings']=values['asset_settings']
     from .extra_geometry import attach as attach_geometry
     attach_geometry(scene,values['production'])
+    # An object set to cast no shadow (Light Links, Emitters and Volumes): its meshes and strands are not seen by
+    # shadow rays, in MoonRay and MoonLightIPR alike.
+    from .lighting import owner
+    objects=(values['production'] or {}).get('objects',{})
+    if any(v.get('cast_shadows') is False for v in objects.values()):
+        for key in ('meshes','extra_geometry'):
+            held=[]
+            for geometry in scene.get(key,[]):
+                if objects.get(owner(geometry),{}).get('cast_shadows') is False:
+                    visibility=list(geometry.get('visibility') or [True]*6)
+                    visibility[5]=False
+                    geometry=dict(geometry,visibility=visibility)
+                held.append(geometry)
+            scene[key]=held
     scene['custom_aovs']=values['custom_aovs']
     scene['recovery']=values['recovery']
     # Kept out of a scene that does not ask for it, so that a checkpoint saved before still matches.
