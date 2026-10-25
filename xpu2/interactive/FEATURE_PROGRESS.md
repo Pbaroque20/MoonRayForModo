@@ -55,7 +55,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Display filters (all 18 of MoonRay's, run as MoonRay's own DSOs over XPU2's buffers) | done, within noise (deterministic ones exact) |
 | AOV previews (view.txt) and held keys at a stop (beauty, denoiser guides) | done, to check in Modo |
 | GPU AOV film (atomics, min/max, closest under a lock, heat) | written, to compile |
-| Extra AOVs ('U:' from ExtraAovMap/ListMap, post-scatter) | todo |
+| Extra AOVs ('U:' from ExtraAovMap/ListMap, pre- and post-scatter, background U:bg_white) | done, within noise (7 outputs) |
 | Motion vectors | todo (with motion blur) |
 | Deep output, checkpoint and resume | todo |
 
@@ -76,17 +76,20 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Feature | State |
 |---|---|
 | Perspective camera: film offsets, pixel aspect, stereo eyes (MoonRay's projection matrices, inverted in floats as MoonRay's) | done, within noise |
-| Depth of field: disk, polygon and image bokeh, perspective and orthographic (createDOFRay, modifyForDofOrtho, LensDistribution) | done, mean within 0.1%; lens samples moved from random to Sobol (MoonRay's are stratified), recheck |
+| Depth of field: disk, polygon and image bokeh, perspective and orthographic (createDOFRay, modifyForDofOrtho, LensDistribution) | done, within noise (lens samples on Sobol dimensions 14 and 15) |
 | Orthographic camera (its rays' own origins as texture differentials) | done, within noise |
 | Spherical camera (legacy, ranges, zoom offsets, inside out) | done, within noise |
 | Fisheye camera (all four mappings, three formats; rays outside the field of view add nothing, as vector mode drops them) | done, within noise |
 | DomeMaster3D camera (stereo eyes, zenith mode, flips, parallax; MoonRay never reads its interocular map) | done, within noise |
-| Bake camera (position map from the mesh's UVs as MoonRay's mesh classes rasterize it, UDIM tiles, uv attribute, normal map, four modes) | written; relative bias now measured in render space, recheck |
+| Bake camera (position map from the mesh's UVs as MoonRay's mesh classes rasterize it, UDIM tiles, uv attribute, normal map, four modes) | done, within noise (7 cases, N, Wp and Z too); modes 0 and 2 twice MoonRay's time, open |
 | Aperture and region windows (overscan), sub viewport (render region), resolution divisor, texture blur | done, within noise |
 | Depth AOV: MoonRay takes the least of the camera depth and -volumeT * ray z (volumeT the largest float without a volume), so rays toward the camera's +z give huge negative depths that sum to -inf | reproduced (volume surface depth itself: with volumes) |
-| Camera pixel sample map, medium material | todo |
+| Camera pixel sample map | done, weights exact |
+| Camera medium material and geometry | todo (with volumes) |
 | Motion blur | todo |
-| Subdivision surfaces, displacement on quads and parts | todo |
+| Subdivision surfaces: MoonRay's own OpenSubdiv tessellation (xpu2_geom.dll), Catmull-Clark and bilinear, creases, corners, boundaries, face-varying UVs, uniform and camera-adaptive, parts, reversed | done, within noise (13 cases; N, St, dPds exact); an open grid twice MoonRay's time, open |
+| Geometry sets: only geometry in a GeometrySet is rendered (as MoonRay) | done |
+| Subdivision with displacement, primitive attributes, dicing camera | todo |
 | VDB volumes, cutout volumes | todo |
 | Adaptive sampling: XPU2 takes 27% more samples than MoonRay at target error 10 (aov-adaptive scene) | open |
 | Cellular-generation adaptive sampling as default | todo |

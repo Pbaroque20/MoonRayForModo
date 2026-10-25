@@ -25,7 +25,37 @@ struct MeshAttributes {
     // positions they index; null where nothing reads them.
     const U32* polyVertices = nullptr;
     const V3* positions = nullptr;
+    // A subdivision surface's limit derivatives at its tessellated vertices (OpenSubdivMesh's mSurfaceDpds and
+    // mSurfaceDpdt), interpolated at a hit in place of the triangle's own; null for any other mesh.
+    const V3* dpds = nullptr;
+    const V3* dpdt = nullptr;
+    // Motion blur: the vertices at the shutter's open and at its next time step (MoonRay's mVertices(id, 0) and (id, 1),
+    // which its derivatives and motion read whatever the steps), the shading normals' second time sample (none: still)
+    // and the ray's time. positions1 null: a still mesh.
+    const V3* positions0 = nullptr;
+    const V3* positions1 = nullptr;
+    const V3* normals1 = nullptr;
+    float time = 0.0f;
+    // A moving instance (baked at time steps, which its instance transform moves it between): positions0 and
+    // positions1 the steps about the ray's time, time the place between them, and the motion scaled to the shutter
+    // by the steps' count less one.
+    float motionScale = 1.0f;
+    // A subdivision surface under motion (OpenSubdivMesh::postIntersect): its normals and limit derivatives at the
+    // two time steps about the ray's time (normals, normals1, dpds, dpds1, dpdt, dpdt1) and the place between them
+    // (sampleTime; below zero: the ray's time, between the first two steps, as a polygon mesh's).
+    const V3* dpds1 = nullptr;
+    const V3* dpdt1 = nullptr;
+    float sampleTime = -1.0f;
+    // A toon material's mesh under MOONRAY_MODO_TOON_TERMINATOR (not an instance): its hits record the smooth surface's
+    // offset (State::modoSmoothOffset).
+    bool toonOffset = false;
 };
+// Intersection::setModoSmoothOffset's lift: P moved up to a corner's tangent plane, by the corner's weight.
+X2_HD inline void liftToSmooth(V3& offset, V3 P, V3 corner, V3 n, float weight) {
+    const V3 unit = normalize(n);
+    const float below = dot(P - corner, unit);
+    if (below < 0.0f) offset = offset - unit * (weight * below);
+}
 
 // computeTrianglePartialDerivatives (scene_rdl2 MathUtil.h).
 X2_HD inline float differenceOfProducts(float a, float b, float c, float d) {
@@ -91,15 +121,44 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
     if (m.normalRate != RateNone && m.normals) {
         const U32 i1 = m.normalRate == RateVertex ? ia : prim * 3, i2 = m.normalRate == RateVertex ? ib : prim * 3 + 1,
                   i3 = m.normalRate == RateVertex ? ic : prim * 3 + 2;
-        const V3 n = w * m.normals[i1] + u * m.normals[i2] + v * m.normals[i3];
+        V3 n1 = m.normals[i1], n2 = m.normals[i2], n3 = m.normals[i3];
+        if (m.normals1) {
+            // Two time samples (motion blur): each vertex's normal at the ray's time.
+            const float nt = m.sampleTime >= 0.0f ? m.sampleTime : m.time, s0 = 1.0f - nt;
+            n1 = s0 * n1 + nt * m.normals1[i1];
+            n2 = s0 * n2 + nt * m.normals1[i2];
+            n3 = s0 * n3 + nt * m.normals1[i3];
+        }
+        const V3 n = w * n1 + u * n2 + v * n3;
         const float ln = length(n);
         if (ln > 0) N = n / ln;
-        if (!trianglePartials(m.normals[i1], m.normals[i2], m.normals[i3], st1, st2, st3, st.dNds, st.dNdt)) st.dNds = st.dNdt = V3{0, 0, 0};
+        if (!trianglePartials(n1, n2, n3, st1, st2, st3, st.dNds, st.dNdt)) st.dNds = st.dNdt = V3{0, 0, 0};
     }
-    st.pa = a;
-    st.pb = b;
-    st.pc = c;
-    st.pd = c;
+    // MOONRAY_MODO_TOON_TERMINATOR (TriMesh, QuadMesh and OpenSubdivMesh postIntersect on a DwaToonMaterial): how far
+    // the smooth surface the corner normals describe lies above the flat face at P.
+    st.modoSmoothOffset = V3{0, 0, 0};
+    if (m.toonOffset && m.normalRate != RateNone && m.normals) {
+        const U32 j1 = m.normalRate == RateVertex ? ia : prim * 3, j2 = m.normalRate == RateVertex ? ib : prim * 3 + 1,
+                  j3 = m.normalRate == RateVertex ? ic : prim * 3 + 2;
+        V3 c1 = m.normals[j1], c2 = m.normals[j2], c3 = m.normals[j3];
+        if (m.normals1) {
+            const float nt = m.sampleTime >= 0.0f ? m.sampleTime : m.time, s0 = 1.0f - nt;
+            c1 = s0 * c1 + nt * m.normals1[j1];
+            c2 = s0 * c2 + nt * m.normals1[j2];
+            c3 = s0 * c3 + nt * m.normals1[j3];
+        }
+        V3 offset{0, 0, 0};
+        liftToSmooth(offset, P, a, c1, w);
+        liftToSmooth(offset, P, b, c2, u);
+        liftToSmooth(offset, P, c, c3, v);
+        if (finite3(offset)) st.modoSmoothOffset = offset;
+    }
+    // The polyvertices are the mesh's first time step (mVertices(id)).
+    const bool moving = m.positions0 && m.positions1;
+    st.pa = moving ? m.positions0[ia] : a;
+    st.pb = moving ? m.positions0[ib] : b;
+    st.pc = moving ? m.positions0[ic] : c;
+    st.pd = st.pc;
     st.polyCount = 3;
     if (m.polyVertices && m.positions) {
         const U32* q = m.polyVertices + 4 * size_t(prim);
@@ -111,10 +170,49 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
             st.polyCount = 4;
         }
     }
-    if (!trianglePartials(a, b, c, st1, st2, st3, st.dPds, st.dPdt)) {
+    st.motion = V3{0, 0, 0};
+    if (m.dpds && m.dpdt) {
+        // OpenSubdivMesh::postIntersect: the limit surface's derivatives at the triangle's vertices.
+        st.dPds = w * m.dpds[ia] + u * m.dpds[ib] + v * m.dpds[ic];
+        st.dPdt = w * m.dpdt[ia] + u * m.dpdt[ib] + v * m.dpdt[ic];
+        if (m.dpds1 && m.dpdt1) {
+            // Under motion: each vertex's derivatives lerped between the time steps about the ray's time.
+            const float nt = m.sampleTime >= 0.0f ? m.sampleTime : m.time, s0 = 1.0f - nt;
+            st.dPds = w * (s0 * m.dpds[ia] + nt * m.dpds1[ia]) + u * (s0 * m.dpds[ib] + nt * m.dpds1[ib]) +
+                      v * (s0 * m.dpds[ic] + nt * m.dpds1[ic]);
+            st.dPdt = w * (s0 * m.dpdt[ia] + nt * m.dpdt1[ia]) + u * (s0 * m.dpdt[ib] + nt * m.dpdt1[ib]) +
+                      v * (s0 * m.dpdt[ic] + nt * m.dpdt1[ic]);
+        }
+    } else if (moving) {
+        // TriMesh::postIntersect under motion blur: the derivatives at the first two time steps, lerped to the time.
+        V3 d0[2], d1[2];
+        const V3 a0 = m.positions0[ia], b0 = m.positions0[ib], c0 = m.positions0[ic];
+        const V3 a1 = m.positions1[ia], b1 = m.positions1[ib], c1 = m.positions1[ic];
+        if (!trianglePartials(a0, b0, c0, st1, st2, st3, d0[0], d0[1])) {
+            const Frame f = frame(N);
+            d0[0] = f.x;
+            d0[1] = f.y;
+        }
+        if (!trianglePartials(a1, b1, c1, st1, st2, st3, d1[0], d1[1])) {
+            const Frame f = frame(N);
+            d1[0] = f.x;
+            d1[1] = f.y;
+        }
+        st.dPds = (1.0f - m.time) * d0[0] + m.time * d1[0];
+        st.dPdt = (1.0f - m.time) * d0[1] + m.time * d1[1];
+    } else if (!trianglePartials(a, b, c, st1, st2, st3, st.dPds, st.dPdt)) {
         const Frame f = frame(N);
         st.dPds = f.x;
         st.dPdt = f.y;
+    }
+    if (moving) {
+        // Mesh::computeMotion: the hit's place at the time less and plus sHalfDt (0.01), between its first two time
+        // steps, as a velocity a shutter interval.
+        const V3 open = w * m.positions0[ia] + u * m.positions0[ib] + v * m.positions0[ic];
+        const V3 close = w * m.positions1[ia] + u * m.positions1[ib] + v * m.positions1[ic];
+        const float t0 = m.time - 0.01f, t1 = m.time + 0.01f;
+        const V3 p0 = (1.0f - t0) * open + t0 * close, p1 = (1.0f - t1) * open + t1 * close;
+        st.motion = (p1 - p0) / (2.0f * 0.01f) * m.motionScale;
     }
     st.P = P;
     st.wo = -rayDir;
@@ -139,7 +237,16 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
 //----------------------------------------------------------------------------
 // Materials. A material is a record and its parameters in a pool of floats.
 enum MaterialKind : U32 { MatUsdPreviewSurface = 1, MatDwaBase = 2, MatSwitch = 3 };
-enum MaterialFlags : U32 { MatModoUsdSpecular = 1, MatPolyVertices = 2 };  // MatPolyVertices: its maps read the hit polygon
+// The kit's MoonRay source switches each material record carries (cpu_scene.h, from the environment):
+// MOONRAY_MODO_TOON_TERMINATOR, MOONRAY_MODO_TRANSMISSION_ROUGHNESS, and a DwaToonMaterial under the first (its
+// smooth shadow origins).
+enum MaterialFlags : U32 {
+    MatModoUsdSpecular = 1,
+    MatPolyVertices = 2,
+    MatModoToonTerminator = 4,
+    MatModoTransmissionRoughness = 8,
+    MatModoToonMaterial = 16
+};  // MatPolyVertices: its maps read the hit polygon
 // maps: the material's map program (shade_maps.h), NoMapProgram for none; bindings: its own bound
 // attributes (UsdPreviewSurface; a DwaBase tree's are on its nodes).
 struct MaterialRecord {
@@ -375,7 +482,7 @@ X2_HD inline void scaleTexDerivatives(State& st) {
 X2_HD inline void hitDifferentials(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic, V3 a, V3 b, V3 c,
                                    const surface::Ray& ray, U32 spp, State& st) {
     if (!isExactlyZero(ray.dx) && !isExactlyZero(ray.dy) && spp) {
-        hitTexDerivatives(m, prim, ia, ib, ic, a, b, c, ray, spp, st);
+        if (!(m.dpds && m.dpdt)) hitTexDerivatives(m, prim, ia, ib, ic, a, b, c, ray, spp, st);
         const float scale = 1.f / fminf(sqrtf(float(spp)), 2.f);
         RayDiff d;
         d.dOx = ray.ox * scale;
@@ -385,6 +492,8 @@ X2_HD inline void hitDifferentials(const MeshAttributes& m, U32 prim, U32 ia, U3
         d.valid = 1;
         st.incoming = d;
         transferDifferentials(d, ray.origin, ray.direction, st);
+        // A subdivision surface's: transferAndComputeDerivatives over its limit derivatives, as every MoonRay hit's.
+        if (m.dpds && m.dpdt) differentialTexDerivatives(st);
     } else {
         transferDifferentials(st.incoming, ray.origin, ray.direction, st);
         differentialTexDerivatives(st);
@@ -396,6 +505,21 @@ X2_HD inline void hitDifferentials(const MeshAttributes& m, U32 prim, U32 ia, U3
 // primitive attribute, else the span's share of its curve and v across it; dPds is the tangent (a cubic's from
 // its derivative weights); N faces the ray (always on a linear curve, whose round program's normal MoonRay leaves
 // unused), or is a round cubic's geometric normal. The geometric normal is the shading normal.
+// A place along a span at time t (the shading points'): a linear span's lerp, a cubic's evalCubic.
+X2_HD inline V3 curvePlace(const curves::Set& c, U32 vertex, float u, float t) {
+    if (c.basis == curves::BasisLinear) {
+        const curves::float4 a = curves::shadingPoint(c, vertex, t), b = curves::shadingPoint(c, vertex + 1, t);
+        return V3{a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, a.z + (b.z - a.z) * u};
+    }
+    float w[4];
+    curves::cubicWeights(c.basis, u, w);
+    V3 p{0, 0, 0};
+    for (U32 k = 0; k < 4; ++k) {
+        const curves::float4 q = curves::shadingPoint(c, vertex + k, t);
+        p = p + V3{q.x, q.y, q.z} * w[k];
+    }
+    return p;
+}
 X2_CALL bool curveState(const MeshAttributes& m, U32 span, float u, float v, V3 roundNg, V3 P, V3 rayDir, State& st) {
     const curves::Set& c = m.curve;
     if (span >= c.spanCount) return false;
@@ -420,14 +544,14 @@ X2_CALL bool curveState(const MeshAttributes& m, U32 span, float u, float v, V3 
         st.s = ststart + u * stSpanRange;
         st.t = v * 0.5f + 0.5f;  // v is in (-1,1)
     }
-    const curves::float4 cp0 = curves::point(c, vertex), cp1 = curves::point(c, vertex + 1);
+    const curves::float4 cp0 = curves::shadingPoint(c, vertex, c.time), cp1 = curves::shadingPoint(c, vertex + 1, c.time);
     V3 dPds, dPdt, N;
     const V3 flippedRayDir = normalize(-rayDir);
     const bool rayFacing = c.basis == curves::BasisLinear || !c.round;
     if (c.basis == curves::BasisLinear) {
         dPds = V3{cp1.x - cp0.x, cp1.y - cp0.y, cp1.z - cp0.z};
     } else {
-        const curves::float4 cp[4] = {cp0, cp1, curves::point(c, vertex + 2), curves::point(c, vertex + 3)};
+        const curves::float4 cp[4] = {cp0, cp1, curves::shadingPoint(c, vertex + 2, c.time), curves::shadingPoint(c, vertex + 3, c.time)};
         dPds = curves::cubicTangent(c.basis, cp, u);
     }
     if (rayFacing) {
@@ -460,6 +584,12 @@ X2_CALL bool curveState(const MeshAttributes& m, U32 span, float u, float v, V3 
     if (!st.entering) N = -N;
     st.N = N;
     st.Ng = N;
+    // The motion vector: the hit's place along the span at the times about the ray's (sHalfDt 0.01).
+    st.motion = V3{0, 0, 0};
+    if (c.stepCount > 1) {
+        const V3 p0 = curvePlace(c, vertex, u, c.time - 0.01f), p1 = curvePlace(c, vertex, u, c.time + 0.01f);
+        st.motion = (p1 - p0) / (2.0f * 0.01f);
+    }
     return finite3(st.N) && finite3(st.dPds);
 }
 // A curve hit's differentials (Intersection::transferAndComputeDerivatives over the hit's dPds and dPdt) and
@@ -643,6 +773,8 @@ X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, cons
         if (status != tex::Ready) return status;
     }
     Builder bb(bsdf, st);
+    bb.modoToon = (m.flags & MatModoToonTerminator) != 0;
+    bb.modoTransmissionRoughness = (m.flags & MatModoTransmissionRoughness) != 0;
     if (m.labels != 0xffffffffu) {
         bb.labels = reinterpret_cast<const U32*>(pool + m.labels);
         bsdf.materialLabels = encodeLabel(bb, 0);

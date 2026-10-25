@@ -159,6 +159,9 @@ struct DwaInputs {
 // uniform parameters its update() blended).
 struct DwaUniformParams {
     U32 specularModel, outerSpecularModel, outerSpecularUseBending, subsurface, thinGeometry, preventLightCulling;
+    // diffuse_lightset and specular_lightset (indices into the plan's lobe light sets, ~0u none): the fuzz, diffuse,
+    // subsurface and hair lobes take the first, the rest the second (DwaBaseLayerable). A layered material's are none.
+    U32 diffuseLightSet = 0xffffffffu, specularLightSet = 0xffffffffu;
     U32 hairToonModel[3];  // HairToonMaterial's specular_1..3_model (ToonSpecularSurface or ToonSpecularHair)
 };
 // The settings a DwaBase-family material resolves once (update() and its uniform parameters).
@@ -1073,8 +1076,10 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
     // Fuzz
     if (!isZero(p.fuzz) && st.entering && !isZero(p.fuzzRoughness)) {
         VelvetBRDF fuzz{p.fuzzNormal, clampf(0.05f + p.fuzzRoughness, 0.0f, 1.0f), p.fuzzAlbedo, p.fuzzUseAbsorbingFibers, nullptr};
+        bb.lightSet = u.diffuseLightSet;
         addVelvetBRDF(bb, fuzz, p.fuzz, Physical, DwaLabelFuzz);
     }
+    bb.lightSet = u.specularLightSet;
 
     // Iridescence
     Iridescence iridescence;
@@ -1219,8 +1224,9 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
                                                                p.normalAADial, p.normalDial);
             transmissionRoughnessClamped = fmaxf(transmissionRoughness, minRough);
         }
-        // The Modo override (MOONRAY_MODO_TRANSMISSION_ROUGHNESS) is off in the reference.
-        if (roughnessClamped < Epsilon) {
+        // MOONRAY_MODO_TRANSMISSION_ROUGHNESS: a rough transmission keeps its roughness under a mirror smooth surface.
+        if (roughnessClamped < Epsilon &&
+            (!bb.modoTransmissionRoughness || isZero(transmissionWeight) || transmissionRoughnessClamped < Epsilon)) {
             MirrorBSDF m{N, reflIor, p.transmissionColor, abbeNumber, refrIor, dielectricWeight, transmissionWeight, primaryIri};
             addMirrorBSDF(bb, m, 1.f, Physical, DwaLabelSpecular, DwaLabelSpecularTransmission);
         } else if (isZero(p.anisotropy)) {
@@ -1243,6 +1249,7 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
     }
 
     // Diffuse
+    bb.lightSet = u.diffuseLightSet;
     const bool zeroScatterRadius = isBlack(p.scatteringRadius);
     const Color reflectionAlbedo = p.albedo * diffuseTransmissionAttenuation(p);
     const bool blackAlbedo = isBlack(reflectionAlbedo);
@@ -1281,6 +1288,7 @@ X2_CALL bool createDwaLobes(const DwaParams& p, const DwaUniformParams& u, const
     endAdjacentComponents(bb);
 
     addHairLobes(p, u, st, bb);
+    bb.lightSet = 0xffffffffu;
     return !bb.overflow;
 }
 }}}

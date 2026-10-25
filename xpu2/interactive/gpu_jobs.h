@@ -24,11 +24,21 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     U32 lightTree=0;float lightTreeThreshold=0.5f;
     float presenceThreshold=0.999f,presenceQuality=0.75f;  // presence_threshold, presence_quality
     float volumeTransmittanceThreshold=0.005f,volumeAttenuationFactor=0.65f,volumeContributionFactor=0.65f,volumePhaseAttenuationFactor=0.5f;
+    // volume_quality and volume_shadow_quality, inverted: a heterogeneous volume's steps are its feature size times these.
+    float invVolumeQuality=2.0f,invVolumeShadowQuality=1.0f;
     // The pixels rendered (the sub viewport: min x, min y, max x, max y, half open) and the texture differential
     // scale (PathIntegrator::initPrimaryRay's mTextureDiffScale).
     int viewport[4]={0,0,0x7fffffff,0x7fffffff};float textureDiffScale=1;
     // The camera's pixel sample map (RenderDriver::computeTotalNumSamples): each pixel's own sample count, or none.
-    const U32* pixelSamples=nullptr;};
+    const U32* pixelSamples=nullptr;
+    // Motion blur (enable_motion_blur): each sample at a time in the shutter (0 open, 1 close), bent by the camera's
+    // mb_shutter_bias as Sampler::getPrimarySample bends it.
+    U32 motionBlur=0;float shutterBias=0;
+    // Light filters (light_filter_core.h): whether any light has some at any shading point.
+    U32 lightFilters=0;
+    // The kit's MoonRay source switches the integrator reads (Plan::modoSwitches): 1 MOONRAY_MODO_TOON_ALBEDO, 2
+    // MOONRAY_MODO_FOG_ALPHA, 4 MOONRAY_MODO_CRYPTO_VOLUMES.
+    U32 modoSwitches=0;};
 struct Job {path::Epoch epoch{};U64 sequence=0;U32 count=0,first=0,samples=0,fault=0;U64 delay=0;U32 pixels[Capacity]{};};
 struct Pixel {double sum[4]{};U32 count=0,status=0,pixel=0,pad=0;};
 struct Result {path::Epoch epoch{};U64 sequence=0;U32 count=0,pad=0;Pixel pixels[Capacity]{};};

@@ -143,4 +143,74 @@ private:
     std::vector<char> done_;  // not vector<bool>: regions are written from different threads
 };
 
+// Cellular generations (the preview session's default; MoonRay's trees above are the option). Each adaptive pass is
+// a generation of the image's 8x8 tiles as cells, and a live tile samples all its pixels in the pass. A tile's error
+// is MoonRay's node error over it (areaError of its pixels' summed error: the test MoonRay's trees put to a leaf) over
+// the target. Its own error keeps a tile alive at 1 or more; live neighbours (of its eight) keep it alive down to
+// Survive when at least SurviveNeighbours are alive, and bring a dead tile back from Birth when at least
+// BirthNeighbours are (it takes more to come back than to stay, so tiles do not flicker). A tile with a pixel still
+// missing one of its halves stays alive. The rules decide only where samples go: every sample is MoonRay's estimator,
+// so the image converges to MoonRay's.
+class Cellular {
+public:
+    static constexpr float Survive = 0.5f, Birth = 0.75f;
+    static constexpr int SurviveNeighbours = 3, BirthNeighbours = 5;
+
+    Cellular(int width, int height, float target)
+        : width_(width), height_(height), tilesX_((width + 7) / 8), tilesY_((height + 7) / 8), target_(target),
+          alive_(size_t(tilesX_) * tilesY_, 1), next_(alive_.size(), 0), ratio_(alive_.size(), 0.0f) {}
+
+    // Tiles outside the render region never live (inImage: each tile's pixels in the image).
+    void deadForever(const std::vector<std::uint64_t>& inImage) {
+        dead_.assign(alive_.size(), 0);
+        for (size_t t = 0; t < alive_.size() && t < inImage.size(); ++t)
+            if (!inImage[t]) dead_[t] = 1, alive_[t] = 0;
+    }
+    // The next generation from the image's per-pixel errors (pixelError, width a row); the live tiles' count.
+    size_t update(const float* errors) {
+        for (int ty = 0; ty < tilesY_; ++ty)
+            for (int tx = 0; tx < tilesX_; ++tx) {
+                double sum = 0;
+                int n = 0;
+                bool unknown = false;
+                for (int y = ty * 8; y < std::min(height_, ty * 8 + 8); ++y)
+                    for (int x = tx * 8; x < std::min(width_, tx * 8 + 8); ++x) {
+                        const float e = errors[size_t(y) * size_t(width_) + size_t(x)];
+                        if (e < 0) unknown = true;
+                        else sum += e;
+                        ++n;
+                    }
+                ratio_[size_t(ty) * tilesX_ + tx] = unknown ? 3.4e38f : areaError(float(sum), float(n)) / target_;
+            }
+        size_t live = 0;
+        for (int ty = 0; ty < tilesY_; ++ty)
+            for (int tx = 0; tx < tilesX_; ++tx) {
+                const size_t t = size_t(ty) * tilesX_ + tx;
+                int k = 0;
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int x = tx + dx, y = ty + dy;
+                        if ((dx || dy) && x >= 0 && y >= 0 && x < tilesX_ && y < tilesY_ && alive_[size_t(y) * tilesX_ + x]) ++k;
+                    }
+                const float r = ratio_[t];
+                next_[t] = alive_[t] ? (r >= 1.0f || (r >= Survive && k >= SurviveNeighbours))
+                                     : (r >= 1.0f || (r >= Birth && k >= BirthNeighbours));
+                if (!dead_.empty() && dead_[t]) next_[t] = 0;
+                live += next_[t] ? 1 : 0;
+            }
+        alive_.swap(next_);
+        ++generation_;
+        return live;
+    }
+    bool alive(size_t tile) const { return alive_[tile] != 0; }
+    U32 generation() const { return generation_; }
+
+private:
+    int width_, height_, tilesX_, tilesY_;
+    float target_;
+    std::vector<char> alive_, next_, dead_;
+    std::vector<float> ratio_;
+    U32 generation_ = 0;
+};
+
 }  // namespace xpu2::interactive::async::adaptive

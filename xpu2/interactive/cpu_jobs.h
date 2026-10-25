@@ -16,8 +16,10 @@ inline Config config(const cpu::PlanView& p){auto e=p->source->routing->epoch;Co
   c.volumeOverlapMode=p->volumeOverlapMode;c.volumeTransmittanceThreshold=p->volumeTransmittanceThreshold;
   c.volumeAttenuationFactor=p->volumeAttenuationFactor;c.volumeContributionFactor=p->volumeContributionFactor;
   c.volumePhaseAttenuationFactor=p->volumePhaseAttenuationFactor;
+  c.invVolumeQuality=1.0f/p->volumeQuality;c.invVolumeShadowQuality=1.0f/p->volumeShadowQuality;
   for(int i=0;i<4;++i)c.viewport[i]=p->viewport[i];c.textureDiffScale=p->textureDiffScale;
-  c.pixelSamples=p->pixelSamples.empty()?nullptr:p->pixelSamples.data();}
+  c.pixelSamples=p->pixelSamples.empty()?nullptr:p->pixelSamples.data();
+  c.motionBlur=p->motion.on?1u:0u;c.shutterBias=p->shutterBias;c.lightFilters=p->filterLists.empty()?0u:1u;c.modoSwitches=p->modoSwitches;}
  return c;}
 // Primary ray differentials projected onto the admitted XY plane. MoonRay's
 // non-tessellated triangle without a named ST attribute uses (0,0),(1,0),(1,1).

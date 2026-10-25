@@ -66,6 +66,84 @@ X2_HD inline V3 transformH(const Matrix& m, V3 p) {
 // scene_rdl2 transformPoint: the point (p, 1) times m, w dropped.
 X2_HD inline V3 transformPoint(const Matrix& m, V3 p) { return add(vector(m, p), {m.m[3][0], m.m[3][1], m.m[3][2]}); }
 
+// Motion blur. scene_rdl2's slerp of the identity quaternion toward q (Quaternion.h slerp), its rotation and a
+// translation as a matrix (Mat4(Quaternion, Vector); its last diagonal term in double, as Mat4.h writes it), the
+// row-vector product a * b, and lerp.
+X2_HD inline void slerpFromIdentity(const float q[4], float t, float out[4]) {
+    float angle = 0.0f, sineAngle = 0.0f;
+    const float cosAngle = q[0];
+    if (fabsf(cosAngle) < 1.0f) {
+        angle = acosf(cosAngle);
+        sineAngle = sinf(angle);
+    }
+    if (fabsf(sineAngle) < 0.00001f) {
+        const float a = 1.0f - t;
+        out[0] = a * 1.0f + t * q[0];
+        out[1] = a * 0.0f + t * q[1];
+        out[2] = a * 0.0f + t * q[2];
+        out[3] = a * 0.0f + t * q[3];
+        return;
+    }
+    const float rcpSine = 1.0f / sineAngle, rA = sinf((1.0f - t) * angle) * rcpSine, rB = sinf(t * angle) * rcpSine;
+    out[0] = 1.0f * rA + q[0] * rB;
+    out[1] = 0.0f * rA + q[1] * rB;
+    out[2] = 0.0f * rA + q[2] * rB;
+    out[3] = 0.0f * rA + q[3] * rB;
+}
+X2_HD inline Matrix quaternionMatrix(const float q[4], V3 tr) {
+    const float r = q[0], i = q[1], j = q[2], k = q[3];
+    Matrix m{};
+    m.m[0][0] = 1.0f - 2.0f * (j * j + k * k);
+    m.m[0][1] = 2.0f * (i * j + r * k);
+    m.m[0][2] = 2.0f * (i * k - r * j);
+    m.m[1][0] = 2.0f * (i * j - r * k);
+    m.m[1][1] = 1.0f - 2.0f * (i * i + k * k);
+    m.m[1][2] = 2.0f * (j * k + r * i);
+    m.m[2][0] = 2.0f * (i * k + r * j);
+    m.m[2][1] = 2.0f * (j * k - r * i);
+    m.m[2][2] = float(1.0 - double(2.0f * (i * i + j * j)));
+    m.m[3][0] = tr.x;
+    m.m[3][1] = tr.y;
+    m.m[3][2] = tr.z;
+    m.m[3][3] = 1.0f;
+    return m;
+}
+X2_HD inline Matrix matrixProduct(const Matrix& a, const Matrix& b) {
+    Matrix m{};
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            m.m[i][j] = ((a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j]) + a.m[i][2] * b.m[2][j]) + a.m[i][3] * b.m[3][j];
+    return m;
+}
+X2_HD inline Matrix matrixLerp(const Matrix& a, const Matrix& b, float t) {
+    Matrix m{};
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) m.m[i][j] = (1.0f - t) * a.m[i][j] + t * b.m[i][j];
+    return m;
+}
+// Camera::computeCamera2Render's camera at ray time to camera at the shutter's open (cameraTime2CameraOpen), and
+// computeRender2Camera's camera at the open to camera at ray time (cameraOpen2CameraTime).
+X2_HD inline Matrix cameraTimeToOpen(const Camera& c, float time) {
+    float q[4];
+    slerpFromIdentity(c.closeToOpenRot, time, q);
+    return quaternionMatrix(q, mul(c.closeToOpenTrans, time));
+}
+X2_HD inline Matrix cameraOpenToTime(const Camera& c, float time) {
+    float q[4];
+    slerpFromIdentity(c.openToCloseRot, time, q);
+    return quaternionMatrix(q, mul(c.openToCloseTrans, time));
+}
+// The camera at the ray's time (getMotionBlur): its camera to render (world) space, cameraTime2CameraOpen times the
+// camera at the open; a projective camera's raster to camera lerped between the open's and the close's.
+X2_HD inline Camera cameraAtTime(const Camera& c, float time) {
+    Camera m = c;
+    if (!c.motion) return m;
+    m.timeToOpen = cameraTimeToOpen(c, time);
+    m.cameraToRender = matrixProduct(m.timeToOpen, c.cameraToRender);
+    if (c.type == CameraPerspective || c.type == CameraOrthographic) m.rasterToCamera = matrixLerp(c.rasterToCamera, c.rasterToCamera1, time);
+    return m;
+}
+
 X2_HD inline void camSincos(float a, float* s, float* c) {
 #if defined(__CUDACC__)
     sincosf(a, s, c);
@@ -198,8 +276,17 @@ X2_HD inline CameraResult orthographicRay(const Camera& c, V3 raster, float lens
     const V3 originX = transformPoint(c.cameraToRender, ox), originY = transformPoint(c.cameraToRender, oy);
     v.ox = camSub(originX, v.origin);
     v.oy = camSub(originY, v.origin);
-    if (!normalize(vector(c.cameraToRender, d), v.direction) || !normalize(vector(c.cameraToRender, dx), v.dx) ||
-        !normalize(vector(c.cameraToRender, dy), v.dy))
+    // MoonRay transforms the directions as points (transformH) by the camera at ray time to render space
+    // (computeCamera2Render), so they lean by that matrix's translation: the camera's travel since the shutter's open
+    // under motion blur, and the open's place in render space (the camera at the first motion step) where the two
+    // differ. render2World takes render space's direction to world space.
+    auto direction = [&](V3 a) {
+        const Matrix ct2r = c.motion ? matrixProduct(c.timeToOpen, c.camera2Render) : c.camera2Render;
+        V3 r;
+        if (!normalize(transformH(ct2r, a), r)) r = V3{0, 0, 0};
+        return vector(c.render2World, r);
+    };
+    if (!normalize(direction(d), v.direction) || !normalize(direction(dx), v.dx) || !normalize(direction(dy), v.dy))
         return CameraResult::Fail;
     v.nearT = 0.0f;
     v.farT = c.farClip - c.nearClip;
@@ -529,7 +616,7 @@ X2_HD inline CameraResult bakeRay(const Camera& c, float x, float y, Ray& out) {
 }
 
 // Camera::createRay at raster (x, y) of the region window, with the lens sample (lensU, lensV) on [0, 1)^2.
-X2_HD inline CameraResult cameraSample(const Camera& c, float x, float y, float lensU, float lensV, Ray& out) {
+X2_HD inline CameraResult cameraSampleAt(const Camera& c, float x, float y, float lensU, float lensV, Ray& out) {
     x += c.regionX;
     y += c.regionY;
     switch (c.type) {
@@ -550,6 +637,12 @@ X2_HD inline CameraResult cameraSample(const Camera& c, float x, float y, float 
     case CameraBake: return bakeRay(c, x, y, out);
     default: return CameraResult::Fail;
     }
+}
+// Camera::createRay at the sample's time (shutter open 0, close 1): a still camera as it is, a moving one at that time.
+X2_HD inline CameraResult cameraSample(const Camera& c, float x, float y, float lensU, float lensV, float time, Ray& out) {
+    if (!c.motion) return cameraSampleAt(c, x, y, lensU, lensV, out);
+    const Camera m = cameraAtTime(c, time);
+    return cameraSampleAt(m, x, y, lensU, lensV, out);
 }
 
 }  // namespace xpu2::interactive::surface

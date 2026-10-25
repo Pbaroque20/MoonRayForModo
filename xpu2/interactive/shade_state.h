@@ -44,6 +44,12 @@ struct State {
     V3 dNds{0, 0, 0}, dNdt{0, 0, 0};
     V3 pa{0, 0, 0}, pb{0, 0, 0}, pc{0, 0, 0}, pd{0, 0, 0};
     U32 polyCount = 3;  // the polyvertices: a QuadMesh face's four (pa to pd), else a triangle's three
+    // The hit's motion (StandardAttributes::sMotion, Mesh::computeMotion): its velocity in world units a shutter
+    // interval, zero for anything still.
+    V3 motion{0, 0, 0};
+    // MOONRAY_MODO_TOON_TERMINATOR: on a toon material's mesh, the smooth surface above the flat face at P
+    // (Intersection::mModoSmoothOffset); zero elsewhere.
+    V3 modoSmoothOffset{0, 0, 0};
     RayDiff incoming;        // the ray's differentials (set before shading; a camera ray's are its own)
     bool diffValid = false;  // whether dPdx and dPdy came from differentials
     float minRoughness[2] = {0, 0};

@@ -119,9 +119,29 @@ public:
     }
     // Uploads a scene: acceleration structures, geometry, materials, the
     // resident mip levels and an empty fine-detail cache. Startup work.
+    // What the GPU programs do not render yet (the session then renders the scene on the CPU alone), or empty.
+    static std::string cpuOnly(const cpu::PlanView& plan) {
+        if (!plan->lightMotion.empty()) return "lights in motion";
+        if (!plan->filterLists.empty()) return "light filters";
+        if (!plan->shadowLinks.empty()) return "shadow linking";
+        if (!plan->lobeLightSetBits.empty()) return "lobe light sets";
+        for (const auto& m : plan->meshes) {
+            if (m.data->points) return "points";
+            if (!m.data->curveSteps.empty()) return "curves in motion";
+        }
+        for (const auto& v : plan->volumes) {
+            if (v.kind == volume::KindBaseMapped) return "heterogeneous volumes";
+            if (v.kind != volume::KindBase) return "VDB volumes";
+            if (v.emission.x != 0.0f || v.emission.y != 0.0f || v.emission.z != 0.0f) return "emissive volumes";
+        }
+        for (const auto& m : plan->meshes)
+            if (!m.data->steps.empty()) return m.data->name + " in motion";
+        return {};
+    }
     void prepare(const cpu::PlanView& plan) {
         cpu::need(plan && cpu::isSpatial(plan->domain), "Asynchronous GPU lane requires a spatial plan");
         cpu::need(plan->paths, "The GPU programs carry the path tracer only");
+        {const std::string why = cpuOnly(plan); if (!why.empty()) throw cpu::Unsupported("the GPU leaves " + why + " to the CPU");}
         plan_ = plan;
         scene_ = {};
         std::vector<OptixInstance> instances(plan->meshes.size());
@@ -236,6 +256,14 @@ public:
                 attributes.uvs = reinterpret_cast<const float*>(uvs->pointer);
                 attributes.uvRate = m.uvRate;
                 scene_.keep.push_back(uvs);
+            }
+            if (!m.dpds.empty() && !m.dpdt.empty()) {  // a subdivision surface's limit derivatives
+                auto dpds = upload(m.dpds.data(), m.dpds.size() * sizeof(surface::V3));
+                auto dpdt = upload(m.dpdt.data(), m.dpdt.size() * sizeof(surface::V3));
+                attributes.dpds = reinterpret_cast<const surface::V3*>(dpds->pointer);
+                attributes.dpdt = reinterpret_cast<const surface::V3*>(dpdt->pointer);
+                scene_.keep.push_back(dpds);
+                scene_.keep.push_back(dpdt);
             }
             meshAttributes.push_back(attributes);
             scene_.keep.insert(scene_.keep.end(), {vertices, indices, gas.first});
@@ -911,6 +939,13 @@ private:
         OptixModuleCompileOptions mo{};
         mo.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
         mo.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
+        // XPU2_OPTIX_LEVEL (0 to 3): a test build's lower optimization, compiled in a fraction of the time.
+        if (const char* level = std::getenv("XPU2_OPTIX_LEVEL")) {
+            static const OptixCompileOptimizationLevel levels[4] = {OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_LEVEL_1,
+                                                                   OPTIX_COMPILE_OPTIMIZATION_LEVEL_2, OPTIX_COMPILE_OPTIMIZATION_LEVEL_3};
+            const int l = std::atoi(level);
+            if (l >= 0 && l <= 3) mo.optLevel = levels[l];
+        }
         mo.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
         const OptixPipelineCompileOptions po = pipelineOptions();
         std::mutex mutex;

@@ -257,10 +257,14 @@ struct Builder {
     U32 activeCount = 0, stagedCount = 0;
     float currentMediumIor = 1.0f, currentTransmittance = 1.0f, weightAccum = 0.0f;
     bool thinGeo = false, preventLightCulling = false, inAdjacentBlock = false;
+    // The kit's MoonRay source switches (MaterialFlags): MOONRAY_MODO_TOON_TERMINATOR, MOONRAY_MODO_TRANSMISSION_ROUGHNESS.
+    bool modoToon = false, modoTransmissionRoughness = false;
     bool overflow = false;  // a lobe or Fresnel was dropped: the Bsdf limits were reached
     // The material's label table (aov_plan.h, in the material pool): its count, then the encoded labels of its shader's
     // label 0 (the material's own) and of each lobe label; null when no AOV asks for labels.
     const U32* labels = nullptr;
+    // The light set the lobes now added take (BsdfBuilder's lightSet argument), ~0u none.
+    U32 lightSet = 0xffffffffu;
     X2_HD Builder(Bsdf& b, const State& s) : bsdf(b), state(s) {}
 };
 // aovEncodeLabels: a shader's label (0: the material's own, else its lobe label) as the material's table has it.
@@ -398,6 +402,7 @@ X2_HD inline void finishLobe(Builder& me, U32 lobe, U32 label) {
         return;
     }
     me.bsdf.records[lobe].label = encodeLabel(me, label);
+    me.bsdf.records[lobe].lightSet = me.lightSet;
     if (!addLobe(me.bsdf, lobe)) me.overflow = true;
 }
 // Scale of an additive lobe, or of one placed under the previous lobes.
@@ -773,7 +778,13 @@ X2_CALL void addToonBRDF(Builder& me, const ToonBRDF& c, float weight, U32 behav
     const U32 ramp = me.bsdf.rampCount++;
     rampInit(me.bsdf.ramps[ramp], c.rampNumPoints, c.rampPositions, c.rampColors, c.rampInterpolators, RampRgb);
     U32 lobe = toonLobe(me.bsdf, c.N, c.albedo, c.rampInputScale, ramp, c.extendRamp);
-    preventCulling(me, lobe);
+    if (me.modoToon && lobe != NoIndex) {
+        // MOONRAY_MODO_TOON_TERMINATOR: as if prevent_light_culling were on, and cut off by its shading normal alone.
+        me.bsdf.records[lobe].type = AllDiffuse;
+        me.bsdf.records[lobe].flags |= FlagSpherical | FlagModoToon;
+    } else {
+        preventCulling(me, lobe);
+    }
     lobe = scaleOrPlace(me, lobe, weight, behavior);
     if (isOverB(behavior)) me.weightAccum += weight;
     finishLobe(me, lobe, label);
@@ -846,6 +857,7 @@ X2_CALL void addDiffusion(Builder& me, U32 type, const DiffusionProfile& c, floa
     if (type == BssrdfDipole) initDipole(b, c.N, c.albedo, c.radius);
     else initNormalizedDiffusion(b, c.N, c.albedo, c.radius);
     b.label = encodeLabel(me, label);
+    b.lightSet = me.lightSet;
     b.fresnel = NoIndex;
     b.scale = rgb(weight);
     if (isUnderB(behavior)) {
@@ -876,6 +888,7 @@ X2_CALL void addRandomWalk(Builder& me, const RandomWalkProfile& c, float weight
     }
     initRandomWalk(b, c.N, c.albedo, c.radius, c.resolveSelfIntersections);
     b.label = encodeLabel(me, label);
+    b.lightSet = me.lightSet;
     b.fresnel = NoIndex;
     b.scale = rgb(weight);
     if (isUnderB(behavior)) {

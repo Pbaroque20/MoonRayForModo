@@ -260,13 +260,14 @@ public:
 
 private:
     void loop() {
-        std::vector<U32> tiles, cells;
+        std::vector<U32> tiles, cells, live;
         while (!stop_.load()) {
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (renderer_) {
                     renderer_->activity(tiles, cells);
-                    tell(tiles, cells, renderer_->cellSize());
+                    renderer_->liveTiles(live);
+                    tell(tiles, cells, renderer_->cellSize(), live);
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(33));
@@ -278,7 +279,7 @@ private:
     };
     // In the film's coordinates, which are MoonRay's.
     Rect rect(U32 x0, U32 y0, U32 side) const { return {x0, y0, std::min(x0 + side, width_), std::min(y0 + side, height_)}; }
-    void tell(const std::vector<U32>& tiles, const std::vector<U32>& cells, U32 cellSize) {
+    void tell(const std::vector<U32>& tiles, const std::vector<U32>& cells, U32 cellSize, const std::vector<U32>& live) {
         const U32 tilesX = (width_ + TileSize - 1) / TileSize, cellsX = (width_ + cellSize - 1) / cellSize;
         std::vector<Rect> workers;
         for (U32 t : tiles) workers.push_back(rect(t % tilesX * TileSize, t / tilesX * TileSize, TileSize));
@@ -289,6 +290,26 @@ private:
         // The buckets are the work grid's cells (the cellular rules move workers between them): those the CPU's
         // workers are in, and those the GPU's queued launches hold.
         std::set<Rect> buckets;
+        // An adaptive frame's buckets are its live tiles, the generation being sampled (runs of them along each row
+        // of tiles, so a large image's cells fit the line).
+        for (size_t i = 0; i < live.size() && buckets.size() < 512;) {
+            size_t j = i + 1;
+            while (j < live.size() && live[j] == live[j - 1] + 1 && live[j] / tilesX == live[i] / tilesX) ++j;
+            const U32 x0 = live[i] % tilesX * TileSize, y0 = live[i] / tilesX * TileSize;
+            buckets.insert({x0, y0, std::min((live[j - 1] % tilesX + 1) * TileSize, width_), std::min(y0 + TileSize, height_)});
+            i = j;
+        }
+        if (!live.empty()) {
+            auto line = [&](const char* kind, auto begin, auto end) {
+                std::ostringstream s;
+                s << kind << " " << id_ << " " << width_ << " " << height_;
+                for (auto k = begin; k != end; ++k) s << " " << k->x0 << "," << k->y0 << "," << k->x1 << "," << k->y1;
+                modoProtocolLine(s.str());
+            };
+            line("@@MODO_TILES", buckets.begin(), buckets.end());
+            line("@@MODO_WORKERS", workers.begin(), workers.end());
+            return;
+        }
         for (U32 t : tiles) {
             const U32 x = t % tilesX * TileSize / cellSize * cellSize, y = t / tilesX * TileSize / cellSize * cellSize;
             buckets.insert(rect(x, y, cellSize));
@@ -346,6 +367,8 @@ int session(const Args& args, const fs::path& directory) {
     // (the fastest, its tiles unknown to the host) and the progressive pictures' interval.
     const int mode = std::getenv("XPU2_SESSION_MODE") ? std::atoi(std::getenv("XPU2_SESSION_MODE")) : 2;
     const bool deviceChain = envOn("XPU2_SESSION_CHAIN", false);
+    // Adaptive frames: cellular generations (the default), or MoonRay's error trees (XPU2_SESSION_ADAPTIVE=trees).
+    const bool cellular = !(std::getenv("XPU2_SESSION_ADAPTIVE") && std::string(std::getenv("XPU2_SESSION_ADAPTIVE")) == "trees");
     const double previewSeconds = std::getenv("XPU2_SESSION_PREVIEW_MS") ? std::atof(std::getenv("XPU2_SESSION_PREVIEW_MS")) / 1000.0 : 0.1;
     std::cout << "XPU2 preview session (private test build): " << (mode == 0 ? "CPU only" : mode == 1 ? "GPU only" : "CPU and GPU")
               << ", adaptive passes " << (deviceChain ? "on the GPU" : "on the host") << std::endl;
@@ -360,6 +383,7 @@ int session(const Args& args, const fs::path& directory) {
     std::unique_ptr<async::GpuLane> gpu;
     std::unique_ptr<async::Renderer> renderer;
     cpu::PlanView gpuPlan;
+    bool gpuUsable = true;  // the GPU lane renders the scene (cpuOnly empty)
     ModoSharedImage shared;
     Outlines outlines(envOn("MOONRAY_MODO_BUCKETS", false));
     try {
@@ -418,11 +442,15 @@ int session(const Args& args, const fs::path& directory) {
                                 std::chrono::duration<double>(Clock::now() - made).count());
                 }
                 if (fresh) {
+                    // A scene the GPU programs do not render yet (async::GpuLane::cpuOnly) renders on the CPU alone.
                     if (gpu && gpuPlan != scene.plan) {
-                        gpu->prepare(scene.plan);
+                        const std::string why = async::GpuLane::cpuOnly(scene.plan);
+                        gpuUsable = why.empty();
+                        if (gpuUsable) gpu->prepare(scene.plan);
+                        else std::printf("XPU2: the GPU leaves %s to the CPU; rendering on the CPU alone\n", why.c_str());
                         gpuPlan = scene.plan;
                     }
-                    renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpu.get());
+                    renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
                     std::printf("XPU2: scene ready in %.2f s (%ux%u, %s %u)\n", std::chrono::duration<double>(Clock::now() - began).count(),
                                 scene.plan->width, scene.plan->height, scene.plan->adaptive ? "adaptive, at most" : "uniform,",
                                 scene.plan->spp);
@@ -527,6 +555,7 @@ int session(const Args& args, const fs::path& directory) {
                 options.threads = args.threads ? args.threads : std::max(1u, std::thread::hardware_concurrency());
                 options.mode = gpu ? mode : 0;
                 options.deviceChain = deviceChain;
+                options.cellular = cellular;
                 options.watch = &watch;
                 result = renderer->render(options);
                 if (result.failed) {

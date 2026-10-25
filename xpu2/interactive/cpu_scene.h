@@ -21,6 +21,8 @@
 #include "light_tree_build.h"
 #include "aov_plan.h"
 #include "camera_core.h"
+#include "light_filter_core.h"
+#include "xpu2_geom.h"
 #include <functional>
 #include <set>
 #include <mutex>
@@ -36,6 +38,9 @@ enum class Domain {Planar,DiffuseMesh,PlanarTextures,SurfaceTextures};
 inline bool isSpatial(Domain d){return d==Domain::DiffuseMesh||d==Domain::SurfaceTextures;}
 inline bool gpuTextures(Domain d){return d==Domain::PlanarTextures||d==Domain::SurfaceTextures;}
 struct MeshData {std::string name;std::vector<V3> positions;std::vector<Tri> triangles;std::vector<std::shared_ptr<const ix::Buffer>> signature;
+ // A VDB volume's gate (VdbVolume's bounding mesh): its active voxels' box in index space and the world-to-index map
+ // (rows); its leaf cells' crossings count only where a ray's half-line meets the box.
+ bool gate=false;float gateToIndex[12]={};float gateLo[3]={},gateHi[3]={};
  // The path tracer's shading attributes (shade::MeshAttributes): render-space normals and texture coordinates.
  std::vector<V3> normals;std::vector<float> uvs;unsigned normalRate=shade::RateNone,uvRate=shade::RateNone;
  float worldToObject[12]={1,0,0,0,0,1,0,0,0,0,1,0};
@@ -44,10 +49,46 @@ struct MeshData {std::string name;std::vector<V3> positions;std::vector<Tri> tri
  // MoonRay's polyvertices of each triangle (shade::MeshAttributes::polyVertices), where the wireframe or a polygon map
  // reads them: a QuadMesh face's four vertices, a TriMesh triangle's three and ~0u.
  std::vector<unsigned> polyVertices;
+ // A subdivision surface's limit derivatives at its vertices (OpenSubdivMesh, shade::MeshAttributes::dpds); empty for any
+ // other mesh.
+ std::vector<V3> dpds,dpdt;
+ // Motion blur: the vertices at the shutter's later time steps (positions holds the open's; Embree's time steps, linear
+ // between them) and the shading normals' second time sample (a smooth mesh's from its second step: MoonRay keeps two
+ // normal samples whatever the steps); both empty for a still mesh.
+ std::vector<std::vector<V3>> steps;std::vector<V3> normals1;
+ // Points (RdlPointGeometry, points_core.h) in place of triangles: their count, the centres in positions (and steps)
+ // and each one's radius.
+ unsigned points=0;std::vector<float> pointRadius;
+ // An instancer's instance (MoonRay's instance hits: no toon smooth offset).
+ bool instanced=false;
+ // A moving instance: shaded between its time steps about the ray's time (as the instance transform there moves it),
+ // with its smooth normals at each later step.
+ bool stepShading=false;std::vector<std::vector<V3>> stepNormals;
+ // A subdivision surface under motion: tessellated at each time step (steps), its limit normals (stepNormals) and
+ // derivatives at the later steps.
+ bool subdSteps=false;std::vector<std::vector<V3>> stepDpds,stepDpdt;
  // A curve set in place of triangles (curve_core.h's curves::Set): its type (curves::Basis, BasisNone for a mesh),
  // whether round, the flat cubic programs' quads a span; the control points (x, y, z, radius, render space), the
  // spans (first control point, curve, place along the curve) and each curve's span count.
- unsigned curveBasis=0,curveRound=0,curveSegments=4;std::vector<float> curvePoints;std::vector<unsigned> curveSpans,curveSpanCounts;};
+ unsigned curveBasis=0,curveRound=0,curveSegments=4;std::vector<float> curvePoints;std::vector<unsigned> curveSpans,curveSpanCounts;
+ // Curves under motion blur: the control points at the later time steps, and pointers to them (curves::Set).
+ std::vector<std::vector<float>> curveSteps;std::vector<const float*> curveStepPointers;};
+// A vertex at a time in the shutter: between the two time steps about it, as Embree interpolates them.
+inline V3 positionAt(const MeshData& m,unsigned i,float time){
+ if(m.steps.empty())return m.positions[i];
+ const unsigned n=unsigned(m.steps.size())+1;const float f=time*float(n-1);
+ const unsigned k=std::min(unsigned(std::max(f,0.0f)),n-2);const float u=f-float(k);
+ const V3& a=k?m.steps[k-1][i]:m.positions[i];const V3& b=m.steps[k][i];
+ return V3{(1.0f-u)*a.x+u*b.x,(1.0f-u)*a.y+u*b.y,(1.0f-u)*a.z+u*b.z};}
+// Motion blur's parameters (geom::MotionBlurParams, cpu_scene.h motionParams): on, the shutter's open and close as
+// fractions of the first two motion steps' span, and the steps' times in seconds.
+struct MotionParams {bool on=false;float openDelta=0,closeDelta=0,t0=0,t1=0,dt=0;float shutterOpen=0,shutterClose=0;
+ bool operator==(const MotionParams& o)const{return on==o.on&&openDelta==o.openDelta&&closeDelta==o.closeDelta&&t0==o.t0&&t1==o.t1&&dt==o.dt;}};
+// What the mesh loop renders: a geometry of the layer, or an instancer's instance (instancerItems): its reference,
+// the instancer, the instance's index and name suffix, its transform at the shutter's ends and whether it moves, and
+// the instancer's instance count (its primitive attributes' length).
+struct RenderItem {const rdl::SceneObject* geom;const rdl::SceneObject* instancer=nullptr;int instance=-1;
+ std::string suffix;scene_rdl2::math::Xform3f sample[2];bool moves=false;size_t count=0;};
 // A mesh: its data, its material (~0u: none, a volume alone), and the volume it bounds (volume_core.h; -1: none).
 // visibility: rdl2::Geometry::getVisibilityMask's eight surface bits (camera, shadow, the six lobe types), which a ray's
 // mask must share; singleSided: side_type single (a mesh bounding no volume), its back faces culled.
@@ -57,10 +98,13 @@ struct Mesh {std::shared_ptr<const MeshData> data;unsigned material;int volume=-
 // A plan mesh's curve set (curve_core.h) over its own arrays (host memory).
 inline curves::Set curveSet(const MeshData& m){curves::Set c;if(!m.curveBasis)return c;
  c.points=m.curvePoints.data();c.spans=m.curveSpans.data();c.curveSpans=m.curveSpanCounts.data();c.spanCount=unsigned(m.curveSpans.size()/3);
- c.pointCount=unsigned(m.curvePoints.size()/4);c.basis=m.curveBasis;c.round=m.curveRound;c.segments=m.curveSegments;return c;}
+ c.pointCount=unsigned(m.curvePoints.size()/4);c.basis=m.curveBasis;c.round=m.curveRound;c.segments=m.curveSegments;
+ c.steps=m.curveStepPointers.empty()?nullptr:m.curveStepPointers.data();c.stepCount=1u+unsigned(m.curveStepPointers.size());return c;}
 // A mesh light's tables (light_mesh_build.h) and what they were built from, for reuse by the next plan.
 struct MeshLightEntry {std::string key;std::vector<std::shared_ptr<const ix::Buffer>> signature;std::shared_ptr<lights::MeshLightTables> tables;};
 struct Plan {
+ // The kit's MoonRay source switches the integrator reads (mixed::Config::modoSwitches).
+ unsigned modoSwitches=0;
     CanonicalView source;surface::Camera camera{};unsigned width=0,height=0,spp=0,seed=0,sampling=3;
     surface::Filter filter=surface::Filter::Box;float filterWidth=1;
     Domain domain=Domain::Planar;unsigned surfaceLimit=1;
@@ -96,6 +140,16 @@ struct Plan {
     float worldToRender[12]={1,0,0,0,0,1,0,0,0,0,1,0};
     // The volumes bound to meshes (volume_core.h), and MoonRay's volume scene variables.
     std::vector<volume::Shader> volumes;unsigned maxVolumeDepth=1,volumeIlluminationSamples=4,volumeOverlapMode=0;
+    // VDB grids (volume_grid.h): each read once (shared with the next plan while its file is unchanged), and the
+    // integrator's view of them; volume_quality and volume_shadow_quality.
+    std::vector<std::shared_ptr<struct VdbGridData>> volumeGrids;std::vector<volume::Grid> volumeGridViews;
+    // The render space's origin in world space (an empty shading state's P: CookieLightFilter's map evaluation).
+    V3 renderOrigin{0,0,0};
+    // The mapped volumes' map evaluation (volume_core.h's MapEval, cpu::runVolumeMaps over this plan).
+    volume::MapEval volumeMaps{};
+    float volumeQuality=0.5f,volumeShadowQuality=1.0f;
+    // Emissive volumes as light sources (volume_emission.h): their regions and the distributions' pool.
+    std::vector<volume::Region> emissiveRegions;std::vector<float> emissionPool;
     float volumeTransmittanceThreshold=0.005f,volumeAttenuationFactor=0.65f,volumeContributionFactor=0.65f,volumePhaseAttenuationFactor=0.5f;
     // The DwaBase parameter slots the deepest material tree needs (shade_dwalayer.h); whether a material has glitter
     // (the shading threads then need a glitter scratch, shade_glitter.h).
@@ -118,6 +172,29 @@ struct Plan {
     float textureDiffScale=1;
     // The camera's pixel sample map (uniform sampling): each pixel's sample count, rows from the bottom; empty: none.
     std::vector<unsigned> pixelSamples;
+    // Motion blur (meshMotionSteps, camera_core.h's cameraAtTime) and the camera's shutter bias (the samples' times).
+    MotionParams motion;float shutterBias=0;
+    // The lights moving under motion blur (light_core.h's LightMotion, by light index), and each light's record at the
+    // shutter's close (none: still), which bounds it in the light trees.
+    std::vector<lights::LightMotion> lightMotion;std::vector<std::shared_ptr<const lights::Light>> lightClose;
+    // Light filters (light_filter_core.h): the filters, the distinct filter lists, and each mesh's table of a list a
+    // light (filterTables from meshFilterTable's offset, lights entries, ~0u: no filters; ~0u offset: none at all),
+    // and the cookies' textures.
+    // The materials' lobe light sets (shade::Lobe::lightSet), lightSetWords words each over the lights.
+    std::vector<unsigned> lobeLightSetBits;
+    std::vector<lights::Filter> filters;std::vector<lights::FilterList> filterLists;std::vector<unsigned> filterTables,meshFilterTable;
+    std::vector<std::shared_ptr<lights::ImageData>> filterImages;
+    // Shadow linking (geom::internal::ShadowLinking, by each caster mesh's layer assignment): a mesh's link (~0u: none),
+    // each link the lights it casts no shadow for (lightSetWords words) and the receivers' assignments it casts none on
+    // (or the only ones it does, complemented); each mesh's layer assignment.
+    struct ShadowLink {unsigned lights=0,receivers=0,receiverCount=0,complement=0;};
+    std::vector<ShadowLink> shadowLinks;std::vector<unsigned> meshShadowLink,shadowLinkBits;std::vector<int> shadowReceivers,meshAssignment;
+    // World to MoonRay's render space in doubles (row vectors), and the camera frustums MoonRay tessellates subdivision
+    // surfaces by (PerspectiveCamera::computeFrustum over the render region, at the shutter's open and close: camera to
+    // screen, the six clip planes, the viewport), or a fisheye camera's fishtum (xpu2_geom.h).
+    double world2render[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    std::vector<float> frustumC2S,frustumPlanes;std::vector<int> frustumViewports;
+    bool fishtum=false;float fishtumData[9]={0,0,0,0,0,0,0,0,0};
 };
 using PlanView=std::shared_ptr<const Plan>;
 // What a scene may hold: room for scenes from Modo (an RTX 3090 holds this much several times over).
@@ -148,14 +225,15 @@ inline State state(const rdl::SceneObject& o,const rdl::Attribute& a){
  default:throw Unsupported(o.getName()+" / unknown attribute type");}
 #undef CASE
 }
-inline void attributes(const rdl::SceneObject& obj,const std::set<std::string>& changed,const std::set<std::string>& bindings={}){
+inline void attributes(const rdl::SceneObject& obj,const std::set<std::string>& changed,const std::set<std::string>& bindings={},
+                       const std::set<std::string>& moving={}){
  for(auto i=obj.getSceneClass().beginAttributes();i!=obj.getSceneClass().endAttributes();++i){auto& a=**i;
   // A material's or a geometry's label names it in the AOVs and light path expressions alone (aov_plan.h reads it).
   if(a.getName()=="label"&&(obj.isA<rdl::Material>()||obj.isA<rdl::Geometry>()))continue;
   if(a.getName()=="extra_aovs"&&obj.isA<rdl::Material>())continue;
   std::string why=obj.getName()+" / "+a.getName();
   need(!a.isBindable()||!obj.getBinding(a)||bindings.count(a.getName()),why+": map binding unsupported");
-  auto s=state(obj,a);need(s.stationary,why+": animated value unsupported");
+  auto s=state(obj,a);need(s.stationary||moving.count(a.getName()),why+": animated value unsupported");
   need(s.isDefault||changed.count(a.getName()),why+": nondefault setting unsupported");
  }
 }
@@ -177,6 +255,14 @@ inline rdl::Mat4d rigid(const rdl::SceneObject& obj){
  double det=m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
  need(det>0,obj.getName()+": reflected transform unsupported");return m;
 }
+// A camera at a time in the shutter: its two time steps blended, which MoonRay takes as they come (a rotation blended
+// with another is no longer one: Camera::update only warns of its scale or shear). Affine, not reflected.
+inline void rigidMatrix(const rdl::Mat4d& m,const std::string& name){
+ for(int i=0;i<4;++i)for(int j=0;j<4;++j)need(std::isfinite(m[i][j]),name+": nonfinite transform");
+ // Its blend's float weights sum to one within a float's precision (1 + 3e-8 at a weight of 0.4).
+ need(std::abs(m[0][3])<=1e-6&&std::abs(m[1][3])<=1e-6&&std::abs(m[2][3])<=1e-6&&std::abs(m[3][3]-1)<=1e-6,name+": projective transform unsupported");
+ double det=m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+ need(det>1e-12,name+": reflected or degenerate transform unsupported");}
 inline rdl::Mat4d affine(const rdl::SceneObject& obj){
  auto m=get<rdl::Mat4d>(obj,"node_xform");
  for(int i=0;i<4;++i)for(int j=0;j<4;++j)need(std::isfinite(m[i][j])&&std::abs(m[i][j])<=10000,"Spatial transform bound");
@@ -216,10 +302,29 @@ inline std::vector<float> readPixelSampleMap(const std::string& file,unsigned w,
  need(OIIO::ImageBufAlgo::flip(flipped,source),"Pixel sample map: flip");
  return data;
 }
-inline scene_rdl2::math::Mat4f cameraProjection(const rdl::SceneObject& cam,bool perspective,const std::array<float,4>& window,float interocular){
+// SceneObject::get(key, t): a blurrable value at a shutter time (0 the open, 1 the close), its time steps blended at that
+// time rescaled into the motion steps (SceneContext::computeTimeRescalingCoeffs over the primary camera's shutter with
+// motion blur, the frame's time 0 without).
+struct TimeRescale {float scale=0,offset=0;};
+inline TimeRescale timeRescale(const rdl::SceneVariables& sv,const rdl::SceneObject* camera){
+ const auto& steps=get<rdl::FloatVector>(sv,"motion_steps");TimeRescale r;
+ float open=0.0f,close=0.0f;
+ if(camera&&get<rdl::Bool>(sv,"enable_motion_blur")){open=get<rdl::Float>(*camera,"mb_shutter_open");close=get<rdl::Float>(*camera,"mb_shutter_close");}
+ if(steps.size()>=2&&steps[0]!=steps[1]){const float inv=1.0f/(steps[1]-steps[0]);r.scale=(close-open)*inv;r.offset=(open-steps[0])*inv;}
+ return r;}
+inline thread_local TimeRescale sceneTimeRescale;  // the scene's, set as a plan is prepared
+inline rdl::Mat4d xformAt(const rdl::SceneObject& o,float t){
+ const float ts=sceneTimeRescale.scale*t+sceneTimeRescale.offset;
+ const auto& a=o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN);const auto& b=o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END);
+ return (a*double(1.0f-ts))+(b*double(ts));}
+inline float floatAt(const rdl::SceneObject& o,const char* name,float t){
+ const float ts=sceneTimeRescale.scale*t+sceneTimeRescale.offset;
+ return (o.get<rdl::Float>(name,rdl::TIMESTEP_BEGIN)*(1.0f-ts))+(o.get<rdl::Float>(name,rdl::TIMESTEP_END)*ts);}
+inline scene_rdl2::math::Mat4f cameraProjection(const rdl::SceneObject& cam,bool perspective,const std::array<float,4>& window,float interocular,
+                                                bool shutterClose=false){
  namespace sm=scene_rdl2::math;
  const float minimum=perspective?0.00001f:0.01f;
- const float focal=perspective?sm::max(get<rdl::Float>(cam,"focal"),0.00001f):1.0f;
+ const float focal=perspective?sm::max(floatAt(cam,"focal",shutterClose?1.0f:0.0f),0.00001f):1.0f;
  const float halfFilmWidth=sm::max(get<rdl::Float>(cam,"film_width_aperture"),minimum)*0.5f;
  const float near=sm::max(get<rdl::Float>(cam,"near"),minimum),far=sm::max(get<rdl::Float>(cam,"far"),minimum);
  float offsetX=get<rdl::Float>(cam,"horizontal_film_offset");const float offsetY=get<rdl::Float>(cam,"vertical_film_offset");
@@ -273,7 +378,25 @@ inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables
  const auto ap=sv.getRezedApertureWindow(),rg=sv.getRezedRegionWindow();
  cam.apertureWidth=float(ap.width());cam.apertureHeight=float(ap.height());
  cam.regionX=float(rg.min().x-ap.min().x);cam.regionY=float(rg.min().y-ap.min().y);
- {const auto cm=rigid(camera);for(int i=0;i<4;++i)for(int j=0;j<4;++j)cam.cameraToRender.m[i][j]=float(cm[i][j]);}
+ {// Camera::update: the camera at the shutter's open (computeC2W(0)); render space is the camera at the first motion
+  // step (Scene::updateActiveCamera), mCamera2Render the one into the other.
+  const auto begin=rigid(camera);const sm::Mat4d open=xformAt(camera,0.0f);
+  rigidMatrix(open,name);
+  const sm::Mat4f c2r=sm::toFloat(open*begin.inverse()),r2c=c2r.inverse(),r2w=sm::toFloat(begin);
+  for(int i=0;i<4;++i)for(int j=0;j<4;++j){cam.cameraToRender.m[i][j]=float(open[i][j]);cam.camera2Render.m[i][j]=c2r[i][j];
+   cam.render2Camera.m[i][j]=r2c[i][j];cam.render2World.m[i][j]=r2w[i][j];}}
+ cam.shutterDuration=get<rdl::Float>(camera,"mb_shutter_close")-get<rdl::Float>(camera,"mb_shutter_open");
+ if(get<rdl::Bool>(sv,"enable_motion_blur")){
+  // Camera::update under motion blur: the camera at the shutter's close relative to its open, each way, as a rotation
+  // (Quaternion3f of its rows, made positive) and a translation; computeCamera2Render slerps and lerps them.
+  const sm::Mat4d c2w0=xformAt(camera,0.0f),c2w1=xformAt(camera,1.0f);
+  rigidMatrix(c2w1,name);
+  const sm::Mat4d rel=c2w1*c2w0.inverse();
+  const sm::Mat4f close2open=sm::toFloat(rel),open2close=sm::toFloat(rel.inverse());
+  auto quat=[](const sm::Mat4f& m,float* q){sm::Quaternion3f r(sm::asVec3(m.vx),sm::asVec3(m.vy),sm::asVec3(m.vz));if(r.r<0.f)r*=-1.0f;q[0]=r.r;q[1]=r.i;q[2]=r.j;q[3]=r.k;};
+  quat(close2open,cam.closeToOpenRot);quat(open2close,cam.openToCloseRot);
+  cam.closeToOpenTrans=V3{close2open.vw.x,close2open.vw.y,close2open.vw.z};cam.openToCloseTrans=V3{open2close.vw.x,open2close.vw.y,open2close.vw.z};
+  if(!sm::isEqual(c2w0,c2w1))cam.motion=1;}
  cam.nearClip=get<rdl::Float>(camera,"near");cam.farClip=get<rdl::Float>(camera,"far");
  need(std::isfinite(cam.nearClip)&&std::isfinite(cam.farClip),name+": invalid clipping planes");
  auto fin=[&](float v,const char* what){need(std::isfinite(v),name+": invalid "+std::string(what));return v;};
@@ -289,10 +412,32 @@ inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables
    if(view!=0){interocular=(view==1?0.5f:-0.5f)*get<rdl::Float>(camera,"stereo_interocular_distance");cam.focalPoint={-interocular,0.0f,0.0f};}
   }
   const sm::Mat4f c2s=cameraProjection(camera,perspective,window,interocular);
+  if(perspective){
+   // ProjectiveCamera::updateImpl's render region window and PerspectiveCamera::computeFrustumImpl (the render region's):
+   // the frustums MoonRay's tessellation reads (GeometryManager: the shutter's open and close).
+   const float offX=2*cam.regionX/cam.apertureWidth,offY=2*cam.regionY/cam.apertureHeight;
+   const float wR=2*float(rg.width())/cam.apertureWidth,hR=2*float(rg.height())/cam.apertureHeight;
+   const std::array<float,4> region{-1.0f+offX,invAspect*(-1.0f+offY),-1.0f+offX+wR,invAspect*(-1.0f+offY+hR)};
+   for(int close=0;close<2;++close){
+    const sm::Mat4f c=cameraProjection(camera,true,region,interocular,close==1);
+    for(int i=0;i<4;++i)for(int j=0;j<4;++j)plan.frustumC2S.push_back(c[i][j]);
+    const float planes[6][4]={{c[0][3]-c[0][0],c[1][3]-c[1][0],c[2][3]-c[2][0],c[3][3]-c[3][0]},{c[0][3]+c[0][0],c[1][3]+c[1][0],c[2][3]+c[2][0],c[3][3]+c[3][0]},
+                              {c[0][3]+c[0][1],c[1][3]+c[1][1],c[2][3]+c[2][1],c[3][3]+c[3][1]},{c[0][3]-c[0][1],c[1][3]-c[1][1],c[2][3]-c[2][1],c[3][3]-c[3][1]},
+                              {c[0][3]-c[0][2],c[1][3]-c[1][2],c[2][3]-c[2][2],c[3][3]-c[3][2]},{c[0][3]+c[0][2],c[1][3]+c[1][2],c[2][3]+c[2][2],c[3][3]+c[3][2]}};
+    for(const auto& pl:planes)plan.frustumPlanes.insert(plan.frustumPlanes.end(),pl,pl+4);
+    const int vx=int(cam.regionX),vy=int(cam.regionY);
+    plan.frustumViewports.insert(plan.frustumViewports.end(),{vx,vy,vx+int(rg.width()),vy+int(rg.height())});
+   }
+  }
   sm::Mat4f s2r(sm::one);
   s2r[0][0]=cam.apertureWidth*0.5f;s2r[1][1]=cam.apertureHeight*0.5f;s2r[3][0]=cam.apertureWidth*0.5f;s2r[3][1]=cam.apertureHeight*0.5f;
   const sm::Mat4f rtoc=(c2s*s2r).inverse();
   for(int i=0;i<4;++i)for(int j=0;j<4;++j)cam.rasterToCamera.m[i][j]=fin(rtoc[i][j],"projection");
+  // The projection at the shutter's close (mC1toS, mRtoC1: a perspective camera's focal may move), and camera to
+  // screen at both (the motion vectors').
+  {const sm::Mat4f c2s1=cameraProjection(camera,perspective,window,interocular,true),rtoc1=(c2s1*s2r).inverse();
+   for(int i=0;i<4;++i)for(int j=0;j<4;++j){cam.rasterToCamera1.m[i][j]=fin(rtoc1[i][j],"projection");cam.cameraToScreen0.m[i][j]=c2s[i][j];cam.cameraToScreen1.m[i][j]=c2s1[i][j];}
+   if(get<rdl::Bool>(sv,"enable_motion_blur")&&!sm::isEqual(rtoc,rtoc1))cam.motion=1;}
   // The lens: depth of field with the scene's enable_dof and the camera's dof, its radius from the f-stop.
   if(get<rdl::Bool>(sv,"enable_dof")&&get<rdl::Bool>(camera,"dof")){
    const float focalLength=perspective?get<rdl::Float>(camera,"focal"):1.0f,fstop=get<rdl::Float>(camera,"dof_aperture");
@@ -343,6 +488,10 @@ inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables
   float radialScale=2.0f/diameter;radialScale/=get<rdl::Float>(camera,"zoom");
   cam.k[surface::FishRadialScale]=fin(radialScale,"zoom");
   cam.k[surface::FishHalfFov]=fin(0.5f*degreesToRadians(get<rdl::Float>(camera,"fov")),"field of view");
+  // FisheyeCamera::computeFishtumImpl: what MoonRay's tessellation reads of it.
+  plan.fishtum=true;
+  const float fish[9]={radialScale,1.0f/(radialScale*h),float(cam.mode),w,h,cam.regionX,cam.regionY,cam.regionX+float(rg.width()),cam.regionY+float(rg.height())};
+  std::copy(fish,fish+9,plan.fishtumData);
  }else if(cls=="DomeMaster3DCamera"){
   cam.type=surface::CameraDome;
   const int view=get<rdl::Int>(camera,"stereo_view");need(view>=0&&view<=2,name+": unknown stereo view");cam.mode=view;
@@ -420,6 +569,574 @@ inline void buildBakeMap(Plan::CameraMapData& out,int width,int height,int udim,
   if(quads){tri(0,1,3);tri(2,3,1);}else tri(0,1,2);
  }
 }
+// MoonRay's subdivision surfaces (RdlMeshGeometry with is_subd, its OpenSubdivMesh), tessellated by MoonRay's own code in
+// xpu2_geom.dll (xpu2_geom.h): the very quads MoonRay intersects, each tessellated vertex's limit normal, texture
+// coordinates and derivatives (shaded as OpenSubdivMesh::postIntersect, shade::hitState). The control mesh goes in in
+// MoonRay's render space (the camera's), as the tessellation's camera frustums are; the quads come back to world space.
+struct SubdLibrary{X2SubdTessellateFn tessellate=nullptr;X2SubdFreeFn release=nullptr;X2VdbReadFn vdbRead=nullptr;X2VdbFreeFn vdbFree=nullptr;
+ X2VdbHistogramFn vdbHistogram=nullptr;X2VdbHistogramFreeFn vdbHistogramFree=nullptr;X2VdbHistogramMappedFn vdbHistogramMapped=nullptr;
+ X2VdbVelocityFn vdbVelocity=nullptr;X2PolyTessellateFn polyTessellate=nullptr;X2PolyFreeFn polyRelease=nullptr;};
+inline const SubdLibrary& subdLibrary(){
+ static const SubdLibrary lib=[]{SubdLibrary l;wchar_t path[MAX_PATH];const DWORD n=GetModuleFileNameW(nullptr,path,MAX_PATH);
+  if(n&&n<MAX_PATH)if(HMODULE h=LoadLibraryW((fs::path(path).parent_path()/"xpu2_geom.dll").c_str())){
+   l.tessellate=reinterpret_cast<X2SubdTessellateFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2SubdTessellate")));
+   l.release=reinterpret_cast<X2SubdFreeFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2SubdFree")));
+   l.vdbRead=reinterpret_cast<X2VdbReadFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2VdbRead")));
+   l.vdbFree=reinterpret_cast<X2VdbFreeFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2VdbFree")));
+   l.vdbHistogram=reinterpret_cast<X2VdbHistogramFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2VdbHistogram")));
+   l.vdbHistogramFree=reinterpret_cast<X2VdbHistogramFreeFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2VdbHistogramFree")));
+   l.vdbHistogramMapped=reinterpret_cast<X2VdbHistogramMappedFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2VdbHistogramMapped")));
+   l.vdbVelocity=reinterpret_cast<X2VdbVelocityFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2VdbVelocity")));
+   l.polyTessellate=reinterpret_cast<X2PolyTessellateFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2PolyTessellate")));
+   l.polyRelease=reinterpret_cast<X2PolyFreeFn>(reinterpret_cast<void*>(GetProcAddress(h,"x2PolyFree")));}
+  return l;}();
+ return lib;
+}
+// A tessellated attribute (xpu2_geom.h's X2SubdAttributeOut): its XPU2 key and components, kind (1 constant, 2 a
+// quad's, 3 a vertex's, 4 a quad corner's) and values.
+struct SubdAttribute{unsigned key=0,components=1;int kind=1;std::vector<float> values;};
+struct SubdSurface{std::vector<V3> positions,normals,dpds,dpdt;std::vector<float> st;std::vector<unsigned> quads;std::vector<int> controlFace;
+ std::vector<SubdAttribute> attributes;};
+inline void primitiveAttributes(const rdl::SceneObject& o,struct MeshData& m,size_t uniformCount,size_t vertexCount,size_t varyingCount,size_t faceVaryingCount,
+                                std::vector<std::pair<std::string,unsigned>>* named);
+// scene_rdl2 xfmPoint with an Xform3f made of a Mat4d: (x vx + (y vy + z vz)) + p in floats.
+inline V3 xformPointF(const float m[4][3],const rdl::Vec3f& p){
+ V3 r;for(int c=0;c<3;++c){const float yz=p.y*m[1][c]+p.z*m[2][c];(&r.x)[c]=(p.x*m[0][c]+yz)+m[3][c];}return r;}
+// A displacement for the tessellation (SubdDisplacement): the DLL's callback and its user data.
+struct SubdDisplaceCall{X2SubdDisplaceFn fn=nullptr;void* user=nullptr;};
+// A mesh as the DLL takes it (X2SubdInput, render space), handed to call with its primitive attributes (control, in
+// the input's order) and world to render.
+template<class Call> inline auto withMeshInput(const rdl::SceneObject& o,const rdl::Layer& layer,const Plan& plan,const rdl::Mat4d& objectToWorld,
+                                               const std::vector<V3>* worldVertices,const SubdDisplaceCall& displaceCall,Call&& call,bool reference=false){
+ const auto& v=o.get<rdl::Vec3fVector>("vertex_list");const auto& counts=o.get<rdl::IntVector>("face_vertex_count");const auto& indices=o.get<rdl::IntVector>("vertices_by_index");
+ need(!v.empty()&&!counts.empty()&&!indices.empty(),o.getName()+": an empty mesh");
+ // Procedural::addPrimitive's prim2render (node_xform, then world to render), as floats.
+ rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=plan.world2render[4*i+j];
+ // A shared primitive stays in its own space (its prim to render is one).
+ const rdl::Mat4d identity(scene_rdl2::math::one);
+ const rdl::Mat4d p2r=reference?identity:objectToWorld*w2r;float xf[4][3];for(int i=0;i<4;++i)for(int c=0;c<3;++c)xf[i][c]=float(p2r[i][c]);
+ std::vector<float> vertices;vertices.reserve(v.size()*3);
+ if(worldVertices){
+  // A time step's vertices (meshMotionSteps, world space) to render space.
+  need(worldVertices->size()==v.size(),o.getName()+": a time step's vertices do not match the mesh");
+  float wr[4][3];for(int i=0;i<4;++i)for(int c=0;c<3;++c)wr[i][c]=float(w2r[i][c]);
+  for(const auto& p:*worldVertices){const V3 r=xformPointF(wr,rdl::Vec3f(p.x,p.y,p.z));vertices.insert(vertices.end(),{r.x,r.y,r.z});}}
+ else for(const auto& p:v){need(std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z),o.getName()+": invalid vertex");const V3 r=xformPointF(xf,p);vertices.insert(vertices.end(),{r.x,r.y,r.z});}
+ // Normals as the tessellation's transformAttributes takes them (normals, the inverse transpose), uvs as they are.
+ std::vector<float> normals,uvs;
+ {const auto& nl=o.get<rdl::Vec3fVector>("normal_list");
+  if(!nl.empty()){double M[3][3];for(int i=0;i<3;++i)for(int j=0;j<3;++j)M[i][j]=p2r[i][j];
+   const double det=M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])-M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])+M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+   double inv[3][3];for(int i=0;i<3;++i)for(int j=0;j<3;++j){int a=(j+1)%3,b=(j+2)%3,cc=(i+1)%3,d=(i+2)%3;inv[i][j]=(M[a][cc]*M[b][d]-M[a][d]*M[b][cc])/det;}
+   for(const auto& n:nl)normals.insert(normals.end(),{float(n.x*inv[0][0]+n.y*inv[0][1]+n.z*inv[0][2]),float(n.x*inv[1][0]+n.y*inv[1][1]+n.z*inv[1][2]),float(n.x*inv[2][0]+n.y*inv[2][1]+n.z*inv[2][2])});}
+  for(const auto& u:o.get<rdl::Vec2fVector>("uv_list"))uvs.insert(uvs.end(),{u.x,u.y});}
+ // Each face's layer assignment and part (createPerFaceAssignmentId, the procedural's faceToPart).
+ const auto* geom=o.asA<rdl::Geometry>();const int whole=layer.getAssignmentId(geom,"");
+ std::vector<int> assignment(counts.size(),whole),faceToPart(counts.size(),0);
+ const auto& parts=get<rdl::StringVector>(o,"part_list");const auto& partCounts=get<rdl::IntVector>(o,"part_face_count_list");const auto& partFaces=get<rdl::IntVector>(o,"part_face_indices");
+ {size_t at=0;for(size_t p=0;p<partCounts.size()&&p<parts.size();++p){const int id=layer.getAssignmentId(geom,parts[p]);
+   for(int k=0;k<partCounts[p]&&at<partFaces.size();++k,++at){const int f=partFaces[at];if(f>=0&&size_t(f)<counts.size()){assignment[size_t(f)]=id;faceToPart[size_t(f)]=int(p);}}}}
+ const auto& creaseIndices=get<rdl::IntVector>(o,"subd_crease_indices");const auto& creaseSharp=get<rdl::FloatVector>(o,"subd_crease_sharpnesses");
+ const auto& cornerIndices=get<rdl::IntVector>(o,"subd_corner_indices");const auto& cornerSharp=get<rdl::FloatVector>(o,"subd_corner_sharpnesses");
+ X2SubdInput in{};
+ in.vertices=vertices.data();in.vertexCount=unsigned(v.size());
+ in.faceVertexCount=counts.data();in.faceCount=unsigned(counts.size());in.indices=indices.data();in.indexCount=unsigned(indices.size());
+ in.uvs=uvs.empty()?nullptr:uvs.data();in.uvCount=unsigned(uvs.size()/2);
+ in.normals=normals.empty()?nullptr:normals.data();in.normalCount=unsigned(normals.size()/3);
+ in.creaseIndices=creaseIndices.data();in.creaseIndexCount=unsigned(creaseIndices.size());in.creaseSharpnesses=creaseSharp.data();in.creaseSharpnessCount=unsigned(creaseSharp.size());
+ in.cornerIndices=cornerIndices.data();in.cornerIndexCount=unsigned(cornerIndices.size());in.cornerSharpnesses=cornerSharp.data();in.cornerSharpnessCount=unsigned(cornerSharp.size());
+ in.faceToPart=parts.empty()?nullptr:faceToPart.data();in.partCount=unsigned(parts.size());in.assignmentIds=assignment.data();
+ in.scheme=get<rdl::Int>(o,"subd_scheme");in.boundary=get<rdl::Int>(o,"subd_boundary");in.fvarLinear=get<rdl::Int>(o,"subd_fvar_linear");
+ in.meshResolution=int(get<rdl::Float>(o,"mesh_resolution"));  // RdlMeshGeometry: int meshResolution = its float
+ in.adaptiveError=get<rdl::Float>(o,"adaptive_error");
+ in.singleSided=get<rdl::Int>(o,"side_type")==1?1:0;in.reverseNormals=get<rdl::Bool>(o,"reverse_normals")?1:0;in.leftHanded=0;
+ in.layer=&layer;in.geometry=geom;
+ in.frustumCount=unsigned(plan.frustumViewports.size()/4);in.frustumC2S=plan.frustumC2S.data();in.frustumPlanes=plan.frustumPlanes.data();in.frustumViewports=plan.frustumViewports.data();
+ in.hasFishtum=plan.fishtum?1:0;for(int i=0;i<9;++i)in.fishtum[i]=plan.fishtumData[i];
+ for(int i=0;i<16;++i)in.world2render[i]=plan.world2render[i];
+ // A dicing camera (the scene's, else the geometry's; GeometryManager::getDicingCameraFrustums): a PerspectiveCamera's
+ // own frustums over the render region, their clip planes moved into the main camera's render space by its node
+ // transform, and its world to render; any other camera class leaves the main camera's (MoonRay warns).
+ std::vector<float> dicingC2S,dicingPlanes;std::vector<int> dicingViewports;
+ {const rdl::SceneVariables& sv=o.getSceneClass().getSceneContext()->getSceneVariables();
+  const rdl::SceneObject* dc=get<rdl::SceneObject*>(sv,"dicing_camera");if(!dc)dc=get<rdl::SceneObject*>(o,"dicing_camera");
+  if(dc&&dc->getSceneClass().getName()=="PerspectiveCamera"){namespace sm=scene_rdl2::math;
+   const auto ap=sv.getRezedApertureWindow(),rg=sv.getRezedRegionWindow();
+   const float apW=float(ap.width()),apH=float(ap.height()),regionX=float(rg.min().x-ap.min().x),regionY=float(rg.min().y-ap.min().y),invAspect=apH/apW;
+   float interocular=0.0f;const int view=get<rdl::Int>(*dc,"stereo_view");if(view!=0)interocular=(view==1?0.5f:-0.5f)*get<rdl::Float>(*dc,"stereo_interocular_distance");
+   const float offX=2*regionX/apW,offY=2*regionY/apH,wR=2*float(rg.width())/apW,hR=2*float(rg.height())/apH;
+   const std::array<float,4> region{-1.0f+offX,invAspect*(-1.0f+offY),-1.0f+offX+wR,invAspect*(-1.0f+offY+hR)};
+   const rdl::Mat4d dicingRender2World=dc->get<rdl::Mat4d>("node_xform");
+   const rdl::Mat4d moveInverse=(dicingRender2World*w2r).inverse();
+   for(int close=0;close<2;++close){const sm::Mat4f c=cameraProjection(*dc,true,region,interocular,close==1);
+    for(int i=0;i<4;++i)for(int j=0;j<4;++j)dicingC2S.push_back(c[i][j]);
+    const float planes[6][4]={{c[0][3]-c[0][0],c[1][3]-c[1][0],c[2][3]-c[2][0],c[3][3]-c[3][0]},{c[0][3]+c[0][0],c[1][3]+c[1][0],c[2][3]+c[2][0],c[3][3]+c[3][0]},
+                              {c[0][3]+c[0][1],c[1][3]+c[1][1],c[2][3]+c[2][1],c[3][3]+c[3][1]},{c[0][3]-c[0][1],c[1][3]-c[1][1],c[2][3]-c[2][1],c[3][3]-c[3][1]},
+                              {c[0][3]-c[0][2],c[1][3]-c[1][2],c[2][3]-c[2][2],c[3][3]-c[3][2]},{c[0][3]+c[0][2],c[1][3]+c[1][2],c[2][3]+c[2][2],c[3][3]+c[3][2]}};
+    // Frustum::transformClipPlanes: each plane times the transform's inverse (as a column).
+    for(const auto& pl:planes)for(int i=0;i<4;++i)dicingPlanes.push_back(float(moveInverse[i][0]*pl[0]+moveInverse[i][1]*pl[1]+moveInverse[i][2]*pl[2]+moveInverse[i][3]*pl[3]));
+    const int vx=int(regionX),vy=int(regionY);dicingViewports.insert(dicingViewports.end(),{vx,vy,vx+int(rg.width()),vy+int(rg.height())});}
+   const rdl::Mat4d dicingWorld2Render=dicingRender2World.inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)in.world2render[4*i+j]=dicingWorld2Render[i][j];
+   in.frustumCount=2;in.frustumC2S=dicingC2S.data();in.frustumPlanes=dicingPlanes.data();in.frustumViewports=dicingViewports.data();in.hasFishtum=0;}}
+ in.enableDisplacement=displaceCall.fn?1:0;in.displace=displaceCall.fn;in.displaceUser=displaceCall.user;
+ // Primitive attributes (UserData, processArbitraryData at the control mesh's rate counts: a face uniform, a vertex
+ // varying or vertex, a face-vertex face varying), interpolated by MoonRay's tessellation.
+ MeshData control;std::vector<std::pair<std::string,unsigned>> named;
+ primitiveAttributes(o,control,counts.size(),v.size(),v.size(),indices.size(),&named);
+ std::vector<X2SubdAttribute> attrs;
+ for(size_t k=0;k<control.prims.size();++k){const auto& a=control.prims[k];const unsigned type=named[k].second;
+  need(type!=shade::PrimInt||a.rate==shade::PrimConstant||a.rate==shade::PrimUniform,o.getName()+": an int primitive attribute that varies over a subdivision surface");
+  const int rate=a.rate==shade::PrimConstant?1:a.rate==shade::PrimUniform?2:a.rate==shade::PrimVarying?3:a.rate==shade::PrimFaceVarying?4:5;
+  const size_t n=a.rate==shade::PrimConstant?1:a.rate==shade::PrimUniform?counts.size():a.rate==shade::PrimFaceVarying?indices.size():v.size();
+  attrs.push_back(X2SubdAttribute{named[k].first.c_str(),int(type),rate,unsigned(n),control.primData.data()+a.offset});}
+ in.attributes=attrs.empty()?nullptr:attrs.data();in.attributeCount=unsigned(attrs.size());
+ in.reference=reference?1:0;
+ return call(in,control,reference?identity:w2r);
+}
+inline std::shared_ptr<const SubdSurface> tessellateSubdivision(const rdl::SceneObject& o,const rdl::Layer& layer,const Plan& plan,const rdl::Mat4d& objectToWorld,
+                                                              const std::vector<V3>* worldVertices=nullptr,const SubdDisplaceCall& displaceCall={},bool reference=false){
+ const auto& lib=subdLibrary();need(lib.tessellate&&lib.release,o.getName()+": MoonRay's subdivision (xpu2_geom.dll) did not load");
+ return withMeshInput(o,layer,plan,objectToWorld,worldVertices,displaceCall,[&](X2SubdInput& in,const MeshData& control,const rdl::Mat4d& w2r){
+ X2SubdOutput out{};char error[512]={0};
+ const int made=lib.tessellate(&in,&out,error,sizeof error);
+ need(made!=0,o.getName()+": MoonRay's subdivision failed: "+std::string(error));
+ auto s=std::make_shared<SubdSurface>();
+ // Back to world space: render to world is the camera's node transform (rigid: its vectors turn alone).
+ const rdl::Mat4d r2w=w2r.inverse();
+ auto point=[&](const float* p){return V3{float(p[0]*r2w[0][0]+p[1]*r2w[1][0]+p[2]*r2w[2][0]+r2w[3][0]),float(p[0]*r2w[0][1]+p[1]*r2w[1][1]+p[2]*r2w[2][1]+r2w[3][1]),
+                                          float(p[0]*r2w[0][2]+p[1]*r2w[1][2]+p[2]*r2w[2][2]+r2w[3][2])};};
+ auto vec=[&](const float* p){return V3{float(p[0]*r2w[0][0]+p[1]*r2w[1][0]+p[2]*r2w[2][0]),float(p[0]*r2w[0][1]+p[1]*r2w[1][1]+p[2]*r2w[2][1]),
+                                        float(p[0]*r2w[0][2]+p[1]*r2w[1][2]+p[2]*r2w[2][2])};};
+ try{
+  s->positions.reserve(out.vertexCount);s->normals.reserve(out.vertexCount);s->dpds.reserve(out.vertexCount);s->dpdt.reserve(out.vertexCount);
+  for(unsigned i=0;i<out.vertexCount;++i){s->positions.push_back(point(out.vertices+3*i));s->normals.push_back(vec(out.normals+3*i));
+   s->dpds.push_back(vec(out.dpds+3*i));s->dpdt.push_back(vec(out.dpdt+3*i));}
+  s->st.assign(out.st,out.st+2*size_t(out.vertexCount));s->quads.assign(out.indices,out.indices+4*size_t(out.quadCount));
+  s->controlFace.assign(out.controlFace,out.controlFace+out.quadCount);
+  for(unsigned k=0;k<out.attributeCount;++k){const auto& a=control.prims[k];const auto& r=out.attributes[k];
+   SubdAttribute t;t.key=a.key;t.components=a.components;t.kind=r.kind;t.values.assign(r.values,r.values+size_t(r.count)*a.components);s->attributes.push_back(std::move(t));}
+ }catch(...){lib.release(&out);throw;}
+ lib.release(&out);
+ for(unsigned q:s->quads)need(q<s->positions.size(),o.getName()+": a tessellated index out of bounds");
+ return s;},reference);
+}
+// A displaced polygon mesh as MoonRay's PolyMesh tessellates and displaces it (xpu2_geom.dll's x2PolyTessellate, its
+// QuadMesh or TriMesh), world space: its faces as hit (four corners, a three-cornered face's fourth its third), each
+// one's input face, its vertices at each time step, its shading normals (3: a vertex's, at two time steps when it
+// moves; 4: a face corner's), each face corner's st and its primitive attributes (SubdAttribute's kinds, 2 a face's).
+struct PolySurface{std::vector<V3> positions,normals,normals1;std::vector<std::vector<V3>> steps;int normalKind=0;std::vector<unsigned> faces;
+ std::vector<int> controlFace;std::vector<float> st;bool fourCorners=true;std::vector<SubdAttribute> attributes;};
+inline std::shared_ptr<const PolySurface> tessellatePolygons(const rdl::SceneObject& o,const rdl::Layer& layer,const Plan& plan,const rdl::Mat4d& objectToWorld,
+                                                           const std::vector<std::vector<V3>>* worldSteps,const SubdDisplaceCall& displaceCall,bool reference=false){
+ const auto& lib=subdLibrary();need(lib.polyTessellate&&lib.polyRelease,o.getName()+": MoonRay's polygon tessellation (xpu2_geom.dll) did not load");
+ return withMeshInput(o,layer,plan,objectToWorld,worldSteps?&(*worldSteps)[0]:nullptr,displaceCall,[&](X2SubdInput& in,const MeshData& control,const rdl::Mat4d& w2r){
+  X2PolyInput pin{};pin.mesh=in;pin.smoothNormal=get<rdl::Bool>(o,"smooth_normal")?1:0;pin.stepCount=1;
+  // The later time steps (meshMotionSteps, world space) in render space, as the first.
+  std::vector<float> later;
+  if(worldSteps&&worldSteps->size()>1){float wr[4][3];for(int i=0;i<4;++i)for(int c=0;c<3;++c)wr[i][c]=float(w2r[i][c]);
+   for(size_t k=1;k<worldSteps->size();++k){need((*worldSteps)[k].size()==in.vertexCount,o.getName()+": a time step's vertices do not match the mesh");
+    for(const auto& p:(*worldSteps)[k]){const V3 r=xformPointF(wr,rdl::Vec3f(p.x,p.y,p.z));later.insert(later.end(),{r.x,r.y,r.z});}}
+   pin.stepCount=unsigned(worldSteps->size());pin.stepVertices=later.data();}
+  X2PolyOutput out{};char error[512]={0};
+  need(lib.polyTessellate(&pin,&out,error,sizeof error)!=0,o.getName()+": MoonRay's polygon tessellation failed: "+std::string(error));
+  auto s=std::make_shared<PolySurface>();
+  // Back to world space: render to world is the camera's node transform (rigid: its vectors turn alone).
+  const rdl::Mat4d r2w=w2r.inverse();
+  auto point=[&](const float* p){return V3{float(p[0]*r2w[0][0]+p[1]*r2w[1][0]+p[2]*r2w[2][0]+r2w[3][0]),float(p[0]*r2w[0][1]+p[1]*r2w[1][1]+p[2]*r2w[2][1]+r2w[3][1]),
+                                           float(p[0]*r2w[0][2]+p[1]*r2w[1][2]+p[2]*r2w[2][2]+r2w[3][2])};};
+  auto vec=[&](const float* p){return V3{float(p[0]*r2w[0][0]+p[1]*r2w[1][0]+p[2]*r2w[2][0]),float(p[0]*r2w[0][1]+p[1]*r2w[1][1]+p[2]*r2w[2][1]),
+                                         float(p[0]*r2w[0][2]+p[1]*r2w[1][2]+p[2]*r2w[2][2])};};
+  try{
+   const size_t n=out.vertexCount;s->positions.reserve(n);
+   for(size_t i=0;i<n;++i)s->positions.push_back(point(out.vertices+3*i));
+   for(unsigned t=1;t<out.stepCount;++t){std::vector<V3> step;step.reserve(n);for(size_t i=0;i<n;++i)step.push_back(point(out.vertices+3*(size_t(t)*n+i)));s->steps.push_back(std::move(step));}
+   s->normalKind=out.normalKind;
+   if(out.normalKind==3){for(size_t i=0;i<n;++i)s->normals.push_back(vec(out.normals+3*i));
+    if(out.normalSteps>1)for(size_t i=0;i<n;++i)s->normals1.push_back(vec(out.normals+3*(n+i)));}
+   else if(out.normalKind==4)for(size_t i=0;i<size_t(out.faceCount)*4;++i)s->normals.push_back(vec(out.normals+3*i));
+   s->faces.assign(out.indices,out.indices+4*size_t(out.faceCount));s->controlFace.assign(out.controlFace,out.controlFace+out.faceCount);
+   s->st.assign(out.st,out.st+8*size_t(out.faceCount));s->fourCorners=out.tessellated||out.quadBase;
+   for(unsigned k=0;k<out.attributeCount;++k){const auto& a=control.prims[k];const auto& r=out.attributes[k];
+    SubdAttribute t;t.key=a.key;t.components=a.components;t.kind=r.kind;if(r.values)t.values.assign(r.values,r.values+size_t(r.count)*a.components);s->attributes.push_back(std::move(t));}
+  }catch(...){lib.polyRelease(&out);throw;}
+  lib.polyRelease(&out);
+  for(unsigned q:s->faces)need(q<s->positions.size(),o.getName()+": a tessellated index out of bounds");
+  return s;},reference);
+}
+// An instance of a prototype tessellated in its own space (MoonRay's shared primitive): its vertices, shading normals
+// (by the inverse transpose) and position derivatives moved by the instance's transform; a moving one at the time
+// steps instanceMotionSteps takes (17 when it turns), shaded between them (stepShading) with its normals and
+// derivatives at each; its object space the instance's.
+inline void instanceSurface(MeshData& m,const struct RenderItem& item,const MotionParams& mp);
+// A part of a displaced polygon mesh as the path tracer's mesh: each face's triangles (0 1 3 and, unless its last two
+// corners are one vertex, 2 3 1, as MoonRay's quads intersect), st, normals and attributes at their corners.
+inline std::shared_ptr<MeshData> polygonMesh(const PolySurface& s,const std::vector<unsigned char>* faceMask,const std::string& name,
+                                             std::vector<std::shared_ptr<const ix::Buffer>> signature,const rdl::Mat4d& objectToWorld,bool polyVertices){
+ auto m=std::make_shared<MeshData>();m->name=name;m->signature=std::move(signature);
+ {const auto w=objectToWorld.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+  for(int i=0;i<12;++i)m->worldToObject[i]=float(rows[i]);}
+ m->positions=s.positions;m->steps=s.steps;
+ if(s.normalKind==3){m->normals=s.normals;m->normals1=s.normals1;m->normalRate=shade::RateVertex;}
+ static const unsigned corners[2][3]={{0,1,3},{2,3,1}};
+ std::vector<std::pair<size_t,unsigned>> made;  // each triangle's face and half
+ for(size_t f=0;f<s.controlFace.size();++f){
+  const int cf=s.controlFace[f];if(faceMask&&(cf<0||size_t(cf)>=faceMask->size()||!(*faceMask)[size_t(cf)]))continue;
+  const unsigned* c=s.faces.data()+4*f;
+  for(unsigned half=0;half<2;++half){
+   if(half==1&&c[2]==c[3])continue;
+   const unsigned t[3]={c[corners[half][0]],c[corners[half][1]],c[corners[half][2]]};
+   const V3 a=m->positions[t[0]],b=m->positions[t[1]],cc=m->positions[t[2]];V3 n;
+   if(!surface::normalize(surface::cross(surface::add(b,surface::mul(a,-1)),surface::add(cc,surface::mul(a,-1))),n))continue;
+   m->triangles.push_back({t[0],t[1],t[2]});made.emplace_back(f,half);
+   if(polyVertices){if(s.fourCorners)m->polyVertices.insert(m->polyVertices.end(),{c[0],c[1],c[2],c[3]});else m->polyVertices.insert(m->polyVertices.end(),{c[0],c[1],c[2],~0u});}
+   for(unsigned k:corners[half]){m->uvs.push_back(s.st[8*f+2*k]);m->uvs.push_back(s.st[8*f+2*k+1]);if(s.normalKind==4)m->normals.push_back(s.normals[4*f+k]);}}}
+ need(!m->triangles.empty(),name+": no triangle of any area");
+ m->uvRate=shade::RateFaceVarying;if(s.normalKind==4)m->normalRate=shade::RateFaceVarying;
+ for(const auto& a:s.attributes){if(a.kind==0)continue;const unsigned n=a.components;std::vector<float> values;unsigned rate=shade::PrimConstant;
+  if(a.kind==1)values=a.values;
+  else if(a.kind==2){rate=shade::PrimUniform;for(const auto& t:made)values.insert(values.end(),a.values.begin()+std::ptrdiff_t(t.first*n),a.values.begin()+std::ptrdiff_t((t.first+1)*n));}
+  else{rate=shade::PrimFaceVarying;
+   for(const auto& t:made)for(unsigned k:corners[t.second])values.insert(values.end(),a.values.begin()+std::ptrdiff_t((t.first*4+k)*n),a.values.begin()+std::ptrdiff_t((t.first*4+k+1)*n));}
+  m->prims.push_back(shade::PrimAttr{a.key,n,rate,unsigned(m->primData.size())});m->primData.insert(m->primData.end(),values.begin(),values.end());}
+ return m;
+}
+// A part of a subdivision surface as the path tracer's mesh: its quads' triangles (0 1 3, 2 3 1, as MoonRay's quads
+// intersect), their vertices' limit normals, texture coordinates and derivatives, the quads as polyvertices.
+inline std::shared_ptr<MeshData> subdivisionMesh(const SubdSurface& s,const std::vector<unsigned char>* faceMask,const std::string& name,
+                                                 std::vector<std::shared_ptr<const ix::Buffer>> signature,const rdl::Mat4d& objectToWorld,bool polyVertices){
+ auto m=std::make_shared<MeshData>();m->name=name;m->signature=std::move(signature);
+ {const auto w=objectToWorld.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+  for(int i=0;i<12;++i)m->worldToObject[i]=float(rows[i]);}
+ m->positions=s.positions;m->normals=s.normals;m->normalRate=shade::RateVertex;m->uvs=s.st;m->uvRate=shade::RateVertex;m->dpds=s.dpds;m->dpdt=s.dpdt;
+ std::vector<unsigned> triangleQuads,triangleHalves;  // each triangle's quad and which half of it
+ for(size_t q=0;q<s.controlFace.size();++q){
+  const int f=s.controlFace[q];if(faceMask&&(f<0||size_t(f)>=faceMask->size()||!(*faceMask)[size_t(f)]))continue;
+  const unsigned* c=s.quads.data()+4*q;const unsigned tris[2][3]={{c[0],c[1],c[3]},{c[2],c[3],c[1]}};
+  for(const auto& t:tris){V3 n;const V3 a=m->positions[t[0]],b=m->positions[t[1]],cc=m->positions[t[2]];
+   if(!surface::normalize(surface::cross(surface::add(b,surface::mul(a,-1)),surface::add(cc,surface::mul(a,-1))),n))continue;
+   m->triangles.push_back({t[0],t[1],t[2]});if(polyVertices)m->polyVertices.insert(m->polyVertices.end(),{c[0],c[1],c[2],c[3]});
+   triangleQuads.push_back(unsigned(q));triangleHalves.push_back(&t==&tris[1]?1u:0u);}}
+ need(!m->triangles.empty(),name+": no triangle of any area");
+ for(const auto& a:s.attributes){const unsigned n=a.components;std::vector<float> values;unsigned rate=shade::PrimConstant;
+  if(a.kind==1)values=a.values;
+  else if(a.kind==3){rate=shade::PrimVertex;values=a.values;}
+  else if(a.kind==2){rate=shade::PrimUniform;for(unsigned q:triangleQuads)values.insert(values.end(),a.values.begin()+std::ptrdiff_t(q*n),a.values.begin()+std::ptrdiff_t((q+1)*n));}
+  else{rate=shade::PrimFaceVarying;const unsigned corners[2][3]={{0,1,3},{2,3,1}};
+   for(size_t i=0;i<triangleQuads.size();++i){const unsigned q=triangleQuads[i];
+    for(unsigned c:corners[triangleHalves[i]])values.insert(values.end(),a.values.begin()+std::ptrdiff_t((q*4+c)*n),a.values.begin()+std::ptrdiff_t((q*4+c+1)*n));}}
+  m->prims.push_back(shade::PrimAttr{a.key,n,rate,unsigned(m->primData.size())});m->primData.insert(m->primData.end(),values.begin(),values.end());}
+ return m;
+}
+// Motion blur's parameters (MotionParams, by Plan): motionParams reads them (RenderContext::getMotionBlurParams).
+inline MotionParams motionParams(const rdl::SceneVariables& sv,const rdl::SceneObject* camera){
+ namespace sm=scene_rdl2::math;MotionParams p;p.on=get<rdl::Bool>(sv,"enable_motion_blur");
+ const auto& steps=get<rdl::FloatVector>(sv,"motion_steps");
+ const float open=p.on&&camera?get<rdl::Float>(*camera,"mb_shutter_open"):0.0f,close=p.on&&camera?get<rdl::Float>(*camera,"mb_shutter_close"):0.0f;
+ const float invFps=1.0f/get<rdl::Float>(sv,"fps");
+ p.shutterOpen=open;p.shutterClose=close;
+ if(steps.size()>=2){const float m0=steps[0],m1=steps[1];
+  if(!sm::isEqual(m0,m1)){p.openDelta=(open-m0)/(m1-m0);p.closeDelta=(close-m0)/(m1-m0);}
+  p.t0=m0*invFps;p.t1=m1*invFps;p.dt=p.t1-p.t0;}
+ return p;}
+
+// A mesh's vertices over the shutter, world space (geom::Primitive::transformVertexBuffer and RdlMeshProcedural::
+// getVertexData): the positions, velocities and accelerations its motion_blur_type picks (static without motion blur,
+// which then takes vertex_list_1 where it is given), made into Bezier control points (generateBezierPolygons),
+// resampled over the shutter (generateMotionSamples: two time steps for linear motion, curved_motion_blur_sample_count
+// for curved) and moved by the node transform, lerped to each step's time where it moves (applyTransformation;
+// slerp_xforms falls back). The result's first entry is the shutter's open; one entry: a still mesh.
+// Whether a mesh has motion data or a moving transform (meshMotionSteps then places its vertices).
+inline bool meshHasMotion(const rdl::SceneObject& o){
+ namespace sm=scene_rdl2::math;
+ return !sm::isEqual(sm::toFloat(o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN)),sm::toFloat(o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END)))||
+        !o.get<rdl::Vec3fVector>("vertex_list_1").empty()||!o.get<rdl::Vec3fVector>("velocity_list_0").empty()||
+        !o.get<rdl::Vec3fVector>("velocity_list_1").empty()||!o.get<rdl::Vec3fVector>("accleration_list").empty();}
+inline std::vector<std::vector<V3>> meshMotionSteps(const rdl::SceneObject& o,const MotionParams& mp,const rdl::Mat4d& xform0,const rdl::Mat4d& xform1,
+                                                    bool staticTakesSecond=true,std::vector<float>* radiusScales=nullptr,
+                                                    const std::vector<float>* w0=nullptr,const std::vector<float>* w1=nullptr,
+                                                    std::vector<std::vector<float>>* widths=nullptr){
+ namespace sm=scene_rdl2::math;
+ const auto& pos0=o.get<rdl::Vec3fVector>("vertex_list_0");const auto& pos1=o.get<rdl::Vec3fVector>("vertex_list_1");
+ const auto& vel0=o.get<rdl::Vec3fVector>("velocity_list_0");const auto& vel1=o.get<rdl::Vec3fVector>("velocity_list_1");
+ const auto& acc=o.get<rdl::Vec3fVector>("accleration_list");
+ const size_t n=pos0.size();
+ const bool pos1Valid=pos1.size()==n,vel0Valid=vel0.size()==n,vel1Valid=vel1.size()==n,acc0Valid=acc.size()==n;
+ int type=get<rdl::Int>(o,"motion_blur_type");if(!mp.on)type=0;  // MotionBlurType: static without motion blur
+ int numPos=1,numVel=0,numAcc=0;
+ switch(type){
+ case 0:break;
+ case 1:if(vel0Valid)numVel=1;break;
+ case 2:if(pos1Valid)numPos=2;break;
+ case 3:if(vel0Valid&&acc0Valid){numVel=1;numAcc=1;}break;
+ case 4:if(pos1Valid&&vel0Valid&&vel1Valid){numPos=2;numVel=2;}break;
+ case -1:
+  if(pos1Valid&&vel0Valid&&vel1Valid){numPos=2;numVel=2;}else if(vel0Valid&&acc0Valid){numVel=1;numAcc=1;}
+  else if(pos1Valid)numPos=2;else if(vel0Valid)numVel=1;
+  break;
+ default:break;}
+ using P=sm::Vec3f;
+ std::vector<std::vector<P>> sets;sets.assign(size_t(numPos),std::vector<P>(n));
+ for(size_t i=0;i<n;++i){const auto& p=(pos1Valid&&type==0&&staticTakesSecond)?pos1[i]:pos0[i];sets[0][i]=P(p.x,p.y,p.z);}
+ if(numPos==2)for(size_t i=0;i<n;++i)sets[1][i]=P(pos1[i].x,pos1[i].y,pos1[i].z);
+ // The widths (a curve point's w): the raw steps' as the positions', velocities adding nothing.
+ std::vector<std::vector<float>> ws;
+ if(widths&&w0){ws.push_back((pos1Valid&&type==0&&staticTakesSecond&&w1)?*w1:*w0);if(numPos==2)ws.push_back(w1?*w1:*w0);}
+ const float scale=get<rdl::Float>(o,"velocity_scale");
+ auto velocity=[&](const rdl::Vec3fVector& v,size_t i){return P(v[i].x,v[i].y,v[i].z)*scale;};
+ // generateBezierPolygons.
+ if(numVel>0){
+  std::vector<std::vector<P>> cps;
+  if(numAcc==1&&numVel>=1){
+   cps.assign(3,std::vector<P>(n));
+   for(size_t i=0;i<n;++i){const P p=sets[0][i],v=velocity(vel0,i),a(acc[i].x,acc[i].y,acc[i].z);
+    const P p0=p+mp.t0*v+0.5f*mp.t0*mp.t0*a,p1=p+mp.t1*v+0.5f*mp.t1*mp.t1*a,v0=v+mp.t0*a;
+    cps[0][i]=p0;cps[1][i]=p0+0.5f*(mp.t1-mp.t0)*v0;cps[2][i]=p1;}
+  }else if(numVel==2){
+   cps.assign(4,std::vector<P>(n));const float third=(1.0f/3.0f)*mp.dt;
+   for(size_t i=0;i<n;++i){cps[0][i]=sets[0][i];cps[1][i]=sets[0][i]+third*velocity(vel0,i);cps[2][i]=sets[1][i]-third*velocity(vel1,i);cps[3][i]=sets[1][i];}
+  }else{
+   cps.assign(2,std::vector<P>(n));
+   for(size_t i=0;i<n;++i){const P p=sets[0][i],v=velocity(vel0,i);cps[0][i]=p+mp.t0*v;cps[1][i]=p+mp.t1*v;}
+  }
+  if(!ws.empty()){const auto a0=ws[0],a1=ws.size()>1?ws[1]:ws[0];
+   ws=cps.size()==3?std::vector<std::vector<float>>{a0,a0,a0}:cps.size()==4?std::vector<std::vector<float>>{a0,a0,a1,a1}:std::vector<std::vector<float>>{a0,a0};}
+  sets=std::move(cps);
+ }
+ // generateMotionSamples.
+ int samples=mp.on?std::max(2,std::min(129,get<rdl::Int>(o,"curved_motion_blur_sample_count"))):1;
+ if(samples>2&&(type==1||type==2))samples=2;
+ const float ds0=mp.openDelta,ds1=mp.closeDelta;
+ if(sets.size()==2){
+  for(size_t i=0;i<n;++i){const P p0=sets[0][i],p1=sets[1][i];sets[0][i]=sm::lerp(p0,p1,ds0);sets[1][i]=sm::lerp(p0,p1,ds1);}
+  if(ws.size()==2)for(size_t i=0;i<n;++i){const float a=ws[0][i],b=ws[1][i];ws[0][i]=sm::lerp(a,b,ds0);ws[1][i]=sm::lerp(a,b,ds1);}
+ }else if(sets.size()==3||sets.size()==4){
+  if(!ws.empty()){std::vector<std::vector<float>> wout;wout.assign(size_t(samples),std::vector<float>(n));const float dw=1.0f/float(samples-1);
+   for(int j=0;j<samples;++j){const float u=float(j)*dw,t=sm::lerp(ds0,ds1,u),s=1.0f-t;
+    if(ws.size()==3){const float c0=s*s,c1=2.0f*s*t,c2=t*t;for(size_t i=0;i<n;++i)wout[size_t(j)][i]=c0*ws[0][i]+c1*ws[1][i]+c2*ws[2][i];}
+    else{const float t2=t*t,s2=s*s,c0=s*s2,c1=3.0f*t*s2,c2=3.0f*s*t2,c3=t*t2;
+     for(size_t i=0;i<n;++i)wout[size_t(j)][i]=c0*ws[0][i]+c1*ws[1][i]+c2*ws[2][i]+c3*ws[3][i];}}
+   ws=std::move(wout);}
+  std::vector<std::vector<P>> out;out.assign(size_t(samples),std::vector<P>(n));const float du=1.0f/float(samples-1);
+  for(int j=0;j<samples;++j){const float u=float(j)*du,t=sm::lerp(ds0,ds1,u),s=1.0f-t;
+   if(sets.size()==3){const float c0=s*s,c1=2.0f*s*t,c2=t*t;
+    for(size_t i=0;i<n;++i)out[size_t(j)][i]=c0*sets[0][i]+c1*sets[1][i]+c2*sets[2][i];}
+   else{const float t2=t*t,s2=s*s,c0=s*s2,c1=3.0f*t*s2,c2=3.0f*s*t2,c3=t*t2;
+    for(size_t i=0;i<n;++i)out[size_t(j)][i]=c0*sets[0][i]+c1*sets[1][i]+c2*sets[2][i]+c3*sets[3][i];}}
+  sets=std::move(out);
+ }
+ // applyTransformation: the node transform at each step's time where it moves (GeometryManager's geometry2render:
+ // two samples where its ends differ), as floats.
+ const sm::Mat4f x0=sm::toFloat(xform0),x1=sm::toFloat(xform1);const bool moves=!sm::isEqual(x0,x1);
+ if(moves&&sets.size()==1)sets.push_back(sets[0]);
+ if(!ws.empty()&&ws.size()<sets.size())ws.resize(sets.size(),ws[0]);
+ const size_t steps=sets.size();const float du=steps>1?1.0f/float(steps-1):0.0f;
+ std::vector<std::vector<V3>> result(steps,std::vector<V3>(n));
+ for(size_t j=0;j<steps;++j){const float u=float(j)*du,t=sm::lerp(ds0,ds1,u);
+  const sm::Xform3f p2r=moves?sm::Xform3f(sm::lerp(sm::xform<sm::Xform3f>(x0),sm::xform<sm::Xform3f>(x1),t)):sm::xform<sm::Xform3f>(x0);
+  if(radiusScales)radiusScales->push_back((sm::length(p2r.l.vx)+sm::length(p2r.l.vy)+sm::length(p2r.l.vz))/3.f);
+  for(size_t i=0;i<n;++i){const P q=sm::transformPoint(p2r,sets[j][i]);result[j][i]=V3{q.x,q.y,q.z};
+   need(surface::finite(result[j][i])&&std::abs(q.x)<=10000&&std::abs(q.y)<=10000&&std::abs(q.z)<=10000,"Transformed vertex bound");}}
+ // A mesh with two identical steps is still (motion blur off, or nothing moving).
+ if(steps==2){bool same=true;for(size_t i=0;i<n&&same;++i)same=result[0][i].x==result[1][i].x&&result[0][i].y==result[1][i].y&&result[0][i].z==result[1][i].z;
+  if(same&&(!radiusScales||(*radiusScales)[0]==(*radiusScales)[1])&&(ws.size()<2||ws[0]==ws[1])){
+   result.pop_back();if(radiusScales)radiusScales->pop_back();if(ws.size()==2)ws.pop_back();}}
+ if(widths)*widths=std::move(ws);
+ return result;}
+// MoonRay's light filters (pbr/lightfilter/*.cc update) as the path tracer's records (light_filter_core.h), in world
+// space (world2render the identity), their transforms at the shutter's ends (xformAt). A cookie's map shader and a VDB
+// filter fall back; a combine within a combine falls back.
+// vdbGrid (below): a grid of a VDB file for the plan.
+inline unsigned vdbGrid(Plan& plan,const Plan* previous,const std::string& path,const std::string& name,bool vec3,const std::string& owner);
+struct FilterAdmission {
+ Plan& plan;const rdl::SceneVariables& sv;const Plan* previous;
+ std::map<const rdl::SceneObject*,unsigned> ids;
+ // A map's program and the register of its result (map_admission.h's MapProgramBuilder, set by the plan).
+ std::function<std::pair<unsigned,unsigned>(const rdl::SceneObject&)> mapProgram;
+ // updateTransforms: scene_rdl2's decomposition of the local to render transform at both ends (rod, barn door).
+ void transforms(lights::Filter& f,const rdl::Mat4d& l2w0,const rdl::Mat4d& l2w1){
+  namespace sm=scene_rdl2::math;
+  auto m3=[](const sm::Mat3f& m){lights::M3 r;r.r[0]=V3{m.vx.x,m.vx.y,m.vx.z};r.r[1]=V3{m.vy.x,m.vy.y,m.vy.z};r.r[2]=V3{m.vz.x,m.vz.y,m.vz.z};return r;};
+  sm::Quaternion3f q[2];
+  auto at=[&](const sm::Mat4f& local2Render,int ti){
+   const sm::Xform3f x=sm::xform<sm::Xform3f>(local2Render);sm::Mat3f scale;sm::Quaternion3f rot;sm::decompose(x.l,scale,rot);
+   f.position[ti]=V3{local2Render.vw.x,local2Render.vw.y,local2Render.vw.z};
+   f.local2RenderScale[ti]=m3(scale);
+   if(ti==0){const sm::Xform3f inv=x.inverse();f.render2Local0.r[0]=V3{inv.l.vx.x,inv.l.vx.y,inv.l.vx.z};f.render2Local0.r[1]=V3{inv.l.vy.x,inv.l.vy.y,inv.l.vy.z};
+    f.render2Local0.r[2]=V3{inv.l.vz.x,inv.l.vz.y,inv.l.vz.z};f.render2Local0.r[3]=V3{inv.p.x,inv.p.y,inv.p.z};
+    f.render2LocalRot0=m3(sm::Mat3f(rot).transposed());f.render2LocalScale0=m3(scale.inverse());}
+   const sm::Mat3f r(rot);q[ti]=sm::normalize(sm::Quaternion3f(r.vx,r.vy,r.vz));
+   if(ti==1&&sm::dot(q[0],q[1])<0)q[1]*=-1.f;
+   f.orientation[ti][0]=q[ti].r;f.orientation[ti][1]=q[ti].i;f.orientation[ti][2]=q[ti].j;f.orientation[ti][3]=q[ti].k;};
+  const sm::Mat4f a=sm::toFloat(l2w0),b=sm::toFloat(l2w1);
+  at(a,0);f.position[1]=f.position[0];f.local2RenderScale[1]=f.local2RenderScale[0];
+  for(int k=0;k<4;++k)f.orientation[1][k]=f.orientation[0][k];
+  f.mb=0;
+  if(get<rdl::Bool>(sv,"enable_motion_blur")&&!sm::isEqual(a,b)){
+   at(b,1);
+   if(!sm::isEqual(sm::Vec3f(f.position[0].x,f.position[0].y,f.position[0].z),sm::Vec3f(f.position[1].x,f.position[1].y,f.position[1].z)))f.mb|=lights::FilterMbTranslation;
+   if(!sm::isEqual(q[0],q[1]))f.mb|=lights::FilterMbRotation;
+   bool same=true;for(int i=0;i<3;++i)same=same&&sm::isEqual(sm::Vec3f(f.local2RenderScale[0].r[i].x,f.local2RenderScale[0].r[i].y,f.local2RenderScale[0].r[i].z),
+                                                              sm::Vec3f(f.local2RenderScale[1].r[i].x,f.local2RenderScale[1].r[i].y,f.local2RenderScale[1].r[i].z));
+   if(!same)f.mb|=lights::FilterMbScale;}
+ }
+ static void matrix16(float* out,const scene_rdl2::math::Mat4f& m){for(int i=0;i<4;++i)for(int j=0;j<4;++j)out[4*i+j]=m[i][j];}
+ // CookieLightFilter_v2::computePerspectiveProjectionMatrix and computeOrthoProjectionMatrix (its own projector).
+ static scene_rdl2::math::Mat4f cookieProjection(const rdl::SceneObject& o,bool perspective){
+  namespace sm=scene_rdl2::math;
+  const float filmWidth=std::max(get<rdl::Float>(o,"projector_film_width_aperture"),0.01f),half=filmWidth*0.5f,near=1.0f,far=10000.0f;
+  float par=get<rdl::Float>(o,"projector_pixel_aspect_ratio");if(sm::isEqual(par,0.0f))par=1.0f;
+  sm::Mat4f c2s(sm::zero);
+  if(perspective){
+   const float focal=std::max(floatAt(o,"projector_focal",0.0f),0.1f),factor=near/focal;
+   const float w[4]={(-2.f*half)*factor,(-2.f*half)*factor/par,(2.f*half)*factor,(2.f*half)*factor/par};
+   c2s[0][0]=(2.0f*near)/(w[2]-w[0]);c2s[1][1]=(2.0f*near)/(w[3]-w[1]);c2s[2][0]=(w[2]+w[0])/(w[2]-w[0]);c2s[2][1]=(w[3]+w[1])/(w[3]-w[1]);
+   c2s[2][2]=-(far+near)/(far-near);c2s[2][3]=-1.0f;c2s[3][2]=-(2.0f*far*near)/(far-near);c2s[3][3]=0.0f;
+  }else{
+   const float w[4]={(-2.f*half),(-2.f*half)/par,(2.f*half),(2.f*half)/par};
+   c2s[0][0]=2.0f/(w[2]-w[0]);c2s[1][1]=2.0f/(w[3]-w[1]);c2s[2][2]=-2.0f/(far-near);
+   c2s[3][0]=-(w[2]+w[0])/(w[2]-w[0]);c2s[3][1]=-(w[3]+w[1])/(w[3]-w[1]);c2s[3][2]=-(far+near)/(far-near);c2s[3][3]=1.0f;
+  }
+  return c2s;}
+ unsigned admit(const rdl::SceneObject& o,int depth=0){
+  namespace sm=scene_rdl2::math;
+  auto found=ids.find(&o);if(found!=ids.end())return found->second;
+  const std::string cls=o.getSceneClass().getName(),name=o.getName();
+  {std::set<std::string> all;for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)all.insert((*i)->getName());
+   attributes(o,all,{},{"node_xform","projector_focal"});}
+  lights::Filter f;
+  auto rgb=[&](const char* k){auto c=get<rdl::Rgb>(o,k);return V3{c.r,c.g,c.b};};
+  auto floatRamp=[&](shade::FloatRamp& r,std::vector<float> in,std::vector<float> out,std::vector<int> modes,int defaultMode){
+   if(in.size()!=out.size()||in.size()!=modes.size()){in={0.f,1.f};out={0.f,1.f};modes={defaultMode,defaultMode};}
+   need(in.size()<=shade::RampMaxPoints,name+": a ramp of more than 10 points");
+   std::vector<unsigned> m(modes.begin(),modes.end());shade::rampInit(r,unsigned(in.size()),in.data(),out.data(),m.data());};
+  if(cls=="IntensityLightFilter"){
+   f.kind=lights::FilterIntensity;
+   V3 c=surface::mul(rgb("color"),get<rdl::Float>(o,"intensity")*powf(2.0f,get<rdl::Float>(o,"exposure")));
+   if(get<rdl::Bool>(o,"invert")){if(c.x!=0)c.x=1/c.x;if(c.y!=0)c.y=1/c.y;if(c.z!=0)c.z=1/c.z;}
+   f.color=c;f.pathSelection=unsigned(get<rdl::Int>(o,"light_path_selection"));
+  }else if(cls=="DecayLightFilter"){
+   f.kind=lights::FilterDecay;f.falloffNear=get<rdl::Bool>(o,"falloff_near");f.falloffFar=get<rdl::Bool>(o,"falloff_far");
+   f.nearStart=get<rdl::Float>(o,"near_start");f.nearEnd=std::max(get<rdl::Float>(o,"near_end"),f.nearStart);
+   f.farStart=get<rdl::Float>(o,"far_start");if(f.falloffNear)f.farStart=std::max(f.farStart,f.nearEnd);
+   f.farEnd=std::max(get<rdl::Float>(o,"far_end"),f.farStart);
+  }else if(cls=="ColorRampLightFilter"){
+   f.kind=lights::FilterColorRamp;
+   for(int k=0;k<2;++k){const sm::Mat4f w=sm::toFloat(xformAt(o,float(k)).inverse());
+    for(int i=0;i<4;++i)f.xform[k].r[i]=V3{w[i][0],w[i][1],w[i][2]};}
+   f.useXform=get<rdl::Bool>(o,"use_xform");
+   float begin=get<rdl::Float>(o,"begin_distance"),end=get<rdl::Float>(o,"end_distance");if(begin>=end){begin=0.f;end=1.f;}
+   const auto& cv=o.get<rdl::RgbVector>("colors");const auto& dv=o.get<rdl::FloatVector>("distances");const auto& iv=o.get<rdl::IntVector>("interpolation_types");
+   std::vector<shade::Color> colors;std::vector<float> distances(dv.begin(),dv.end());std::vector<unsigned> modes(iv.begin(),iv.end());
+   for(auto c:cv)colors.push_back(shade::Color{c.r,c.g,c.b});
+   if(distances.size()!=colors.size()||distances.size()!=modes.size()){colors={shade::Color{1,1,1},shade::Color{0,0,0}};distances={0.f,1.f};modes={1,1};}
+   need(distances.size()<=shade::RampMaxPoints,name+": a ramp of more than 10 points");
+   const float scale=end-begin;for(auto& d:distances)d=begin+scale*d;
+   shade::rampInit(f.colorRamp,unsigned(distances.size()),distances.data(),colors.data(),modes.data(),shade::RampRgb);
+   f.intensity=get<rdl::Float>(o,"intensity");f.density=std::min(std::max(get<rdl::Float>(o,"density"),0.f),1.f);
+   f.mode=unsigned(get<rdl::Int>(o,"mode"));f.wrap=unsigned(get<rdl::Int>(o,"wrap_mode"));
+  }else if(cls=="RodLightFilter"){
+   f.kind=lights::FilterRod;transforms(f,xformAt(o,0.0f),xformAt(o,1.0f));
+   const float w=get<rdl::Float>(o,"width"),d=get<rdl::Float>(o,"depth"),h=get<rdl::Float>(o,"height");
+   f.radius=get<rdl::Float>(o,"radius");f.edge=get<rdl::Float>(o,"edge");f.edgeInv=f.edge!=0.0f?1.f/f.edge:1.f;
+   f.color=surface::mul(rgb("color"),get<rdl::Float>(o,"intensity"));
+   f.density=std::min(std::max(get<rdl::Float>(o,"density"),0.f),1.f);f.invert=get<rdl::Bool>(o,"invert");
+   f.boxCorner=V3{std::fabs(w*0.5f),std::fabs(h*0.5f),std::fabs(d*0.5f)};
+   f.render2LocalRotAndScale=lights::m3Mul(f.render2LocalRot0,f.render2LocalScale0);
+   f.radiusEdgeSum=f.radius+f.edge;
+   const auto& in=o.get<rdl::FloatVector>("ramp_in_distances");const auto& out=o.get<rdl::FloatVector>("ramp_out_distances");const auto& modes=o.get<rdl::IntVector>("ramp_interpolation_types");
+   floatRamp(f.ramp,std::vector<float>(in.begin(),in.end()),std::vector<float>(out.begin(),out.end()),std::vector<int>(modes.begin(),modes.end()),int(shade::RampMonotoneCubic));
+  }else if(cls=="BarnDoorLightFilter"){
+   f.kind=lights::FilterBarnDoor;
+   const float filmW=std::max(get<rdl::Float>(o,"projector_width"),0.00001f),filmH=std::max(get<rdl::Float>(o,"projector_height"),0.00001f);
+   const float sizes[4]={get<rdl::Float>(o,"size_left"),get<rdl::Float>(o,"size_bottom"),get<rdl::Float>(o,"size_right"),get<rdl::Float>(o,"size_top")};
+   const float effW=filmW+sizes[0]+sizes[2],effH=filmH+sizes[1]+sizes[3],smallest=std::min(effW,effH);
+   f.radius=get<rdl::Float>(o,"radius")*(smallest*0.5f);f.edge=get<rdl::Float>(o,"edge")*smallest;
+   const float scales[4]={get<rdl::Float>(o,"edge_scale_left"),get<rdl::Float>(o,"edge_scale_bottom"),get<rdl::Float>(o,"edge_scale_right"),get<rdl::Float>(o,"edge_scale_top")};
+   for(int k=0;k<4;++k)f.reciprocalEdgeScales[k]=1.0f/std::max(1e-9f,f.radius+f.edge*scales[k]);
+   f.focalDist=std::max(get<rdl::Float>(o,"projector_focal_distance"),0.1f);
+   sm::Mat4f proj=get<rdl::Int>(o,"projector_type")==0?sm::Mat4f(1.f,0.f,0.f,0.f,0.f,-1.f,0.f,0.f,0.f,0.f,1.f,1.f,0.f,0.f,2.f,0.f)
+                                                       :sm::Mat4f(1.f,0.f,0.f,0.f,0.f,-1.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f,1.f,1.f);
+   const float rotAngle=get<rdl::Float>(o,"rotation")*sm::sPi/180.0f;
+   proj=sm::Mat4f::rotate(sm::Vec4f(0,0,1,0),rotAngle)*proj;
+   matrix16(f.projector2Screen,proj);
+   const float fw=effW-2.f*f.radius,fh=effH-2.f*f.radius,cx=(sizes[2]-sizes[0])*0.5f,cy=(sizes[3]-sizes[1])*0.5f;
+   f.minCorner[0]=cx-fw*0.5f;f.minCorner[1]=cy-fh*0.5f;f.maxCorner[0]=cx+fw*0.5f;f.maxCorner[1]=cy+fh*0.5f;
+   const sm::Mat4d barnRot=sm::Mat4d::rotate(sm::Vec4d(1,0,0,0),sm::sPi);
+   transforms(f,barnRot*xformAt(o,0.0f),barnRot*xformAt(o,1.0f));
+   f.mode=unsigned(get<rdl::Int>(o,"mode"));f.useLightXform=get<rdl::Bool>(o,"use_light_xform");
+   f.preBarnMode=unsigned(get<rdl::Int>(o,"pre_barn_mode"));f.preBarnDist=get<rdl::Float>(o,"pre_barn_distance");
+   f.density=std::min(std::max(get<rdl::Float>(o,"density"),0.f),1.f);f.invert=get<rdl::Bool>(o,"invert");f.color=rgb("color");
+  }else if(cls=="CookieLightFilter_v2"||cls=="CookieLightFilter"){
+   // Cookie v1 (CookieLightFilter.cc): v2's projector and blur, its texture_map a map shader (none: white), its
+   // samples needed only for a blur.
+   const bool v1=cls=="CookieLightFilter";
+   f.kind=v1?lights::FilterCookie:lights::FilterCookie2;f.needsSamples=1;
+   const rdl::SceneObject* projector=get<rdl::SceneObject*>(o,"projector");
+   sm::Mat4d p0,p1,p2s;
+   if(projector){
+    const std::string pc=projector->getSceneClass().getName();
+    need(pc=="PerspectiveCamera"||pc=="OrthographicCamera",name+": the projector has no projection matrix");
+    p0=xformAt(*projector,0.0f);p1=xformAt(*projector,1.0f);
+    p2s=sm::Mat4d(cameraProjection(*projector,pc=="PerspectiveCamera",{-2.f,-2.f,2.f,2.f},0.0f));
+   }else{
+    p0=xformAt(o,0.0f);p1=xformAt(o,1.0f);p2s=sm::Mat4d(cookieProjection(o,get<rdl::Int>(o,"projector_type")==0));
+   }
+   matrix16(f.projectorR2S[0],sm::Mat4f(p0.inverse()*p2s));matrix16(f.projectorR2S[1],sm::Mat4f(p1.inverse()*p2s));
+   f.projectorPos[0]=V3{float(p0[3][0]),float(p0[3][1]),float(p0[3][2])};f.projectorPos[1]=V3{float(p1[3][0]),float(p1[3][1]),float(p1[3][2])};
+   f.projectorDir[0]=V3{-float(p0[2][0]),-float(p0[2][1]),-float(p0[2][2])};f.projectorDir[1]=V3{-float(p1[2][0]),-float(p1[2][1]),-float(p1[2][2])};
+   f.blurNearDistance=get<rdl::Float>(o,"blur_near_distance");f.blurMidpoint=get<rdl::Float>(o,"blur_midpoint");f.blurFarDistance=get<rdl::Float>(o,"blur_far_distance");
+   f.blurNearValue=get<rdl::Float>(o,"blur_near_value");f.blurMidValue=get<rdl::Float>(o,"blur_mid_value");f.blurFarValue=get<rdl::Float>(o,"blur_far_value");
+   f.blurType=unsigned(get<rdl::Int>(o,"blur_type"));f.outside=unsigned(get<rdl::Int>(o,"outside_projection"));
+   f.density=std::min(std::max(get<rdl::Float>(o,"density"),0.f),1.f);f.invert=get<rdl::Bool>(o,"invert");
+   if(v1){f.needsSamples=(f.blurNearValue>0.f||f.blurMidValue>0.f||f.blurFarValue>0.f)?1:0;
+    const rdl::SceneObject* m=get<rdl::SceneObject*>(o,"texture_map");
+    if(m&&m->isA<rdl::Map>()){need(bool(mapProgram),name+": no map programs for a cookie");const auto pr=mapProgram(*m);f.mapProgram=pr.first;f.mapRegister=pr.second;}}
+   const std::string file=v1?std::string():get<rdl::String>(o,"texture");f.fallback=V3{1,1,1};
+   if(!file.empty()){
+    lights::ImageSettings st;st.file=file;st.mapping=lights::MapPlanar;{auto g=get<rdl::Rgb>(o,"gamma");st.gamma[0]=g.r;st.gamma[1]=g.g;st.gamma[2]=g.b;}
+    const std::string key=st.key();std::shared_ptr<lights::ImageData> data;
+    for(auto& old:plan.filterImages)if(old->key==key){data=old;break;}
+    if(!data&&previous)for(auto& old:previous->filterImages)if(old->key==key){data=old;break;}
+    if(!data){try{data=lights::buildImage(st);}catch(const std::exception&){auto c=get<rdl::Rgb>(sv,"fatal_color");f.fallback=V3{c.r,c.g,c.b};}}
+    if(data){if(std::find(plan.filterImages.begin(),plan.filterImages.end(),data)==plan.filterImages.end())plan.filterImages.push_back(data);f.image=&data->view;}
+   }
+  }else if(cls=="CombineLightFilter"){
+   need(depth<16,name+": combine light filters nested beyond sixteen (a cycle?)");
+   f.kind=lights::FilterCombine;f.mode=unsigned(get<rdl::Int>(o,"mode"));
+   std::vector<unsigned> children;
+   for(auto* c:o.get<rdl::SceneObjectVector>("light_filters")){if(!c||!c->isA<rdl::LightFilter>()||!get<rdl::Bool>(*c,"on"))continue;children.push_back(admit(*c,depth+1));}
+   need(children.size()<=lights::FilterMaxChildren,name+": a combine of more than 8 light filters");
+   for(size_t k=0;k<children.size();++k){f.children[k]=children[k];if(plan.filters[children[k]].needsSamples)f.needsSamples=1;}
+   f.childCount=unsigned(children.size());
+  }else if(cls=="VdbLightFilter"){
+   // VdbLightFilter::update: the VDB's space at the shutter's ends, its density grid ("density" by default; one that
+   // cannot be read gives density 1), the remap (sizes that differ: linear 0 to 1; rescaled into the given ranges).
+   f.kind=lights::FilterVdb;
+   auto x34=[](const rdl::Mat4d& m){lights::X34 x;for(int i=0;i<4;++i)x.r[i]=V3{float(m[i][0]),float(m[i][1]),float(m[i][2])};return x;};
+   f.vdbR2V[0]=x34(xformAt(o,0.0f).inverse());f.vdbR2V[1]=x34(xformAt(o,1.0f).inverse());
+   const std::string path=get<rdl::String>(o,"vdb_map");std::string gridName=get<rdl::String>(o,"density_grid_name");if(gridName.empty())gridName="density";
+   f.vdbGrid=volume::NoGrid;
+   if(!path.empty()){std::error_code ec;
+    if(fs::exists(fs::path(path),ec)){
+     try{f.vdbGrid=vdbGrid(plan,previous,path,gridName,false,name);}
+     catch(const std::exception& e){if(std::string(e.what()).find("frustum")!=std::string::npos||std::string(e.what()).find("did not load")!=std::string::npos)throw;f.vdbGrid=volume::NoGrid;}}}
+   f.vdbInterpolation=unsigned(get<rdl::Int>(o,"vdb_interpolation_type"));
+   std::vector<float> in(o.get<rdl::FloatVector>("density_remap_inputs").begin(),o.get<rdl::FloatVector>("density_remap_inputs").end());
+   std::vector<float> out(o.get<rdl::FloatVector>("density_remap_outputs").begin(),o.get<rdl::FloatVector>("density_remap_outputs").end());
+   std::vector<int> modes(o.get<rdl::IntVector>("density_remap_interpolation_types").begin(),o.get<rdl::IntVector>("density_remap_interpolation_types").end());
+   if(in.size()!=out.size()||in.size()!=modes.size()){in={0.f,1.f};out={0.f,1.f};modes={int(shade::RampLinear),int(shade::RampLinear)};}
+   if(get<rdl::Bool>(o,"density_rescale_enable")){
+    float inMin=get<rdl::Float>(o,"density_remap_input_min"),inMax=get<rdl::Float>(o,"density_remap_input_max");
+    float outMin=get<rdl::Float>(o,"density_remap_output_min"),outMax=get<rdl::Float>(o,"density_remap_output_max");
+    if(inMin>=inMax){inMin=0.f;inMax=1.f;}if(outMin>=outMax){outMin=0.f;outMax=1.f;}
+    for(auto& v:in)v=v*(inMax-inMin)+inMin;for(auto& v:out)v=v*(outMax-outMin)+outMin;}
+   floatRamp(f.ramp,in,out,modes,int(shade::RampLinear));
+   f.vdbBlur=get<rdl::Float>(o,"blur_value");f.blurType=unsigned(get<rdl::Int>(o,"blur_type"));f.needsSamples=f.vdbBlur>0.0f?1u:0u;
+   f.invert=get<rdl::Bool>(o,"invert_density")?1u:0u;f.color=rgb("color_tint");
+  }else throw Unsupported(name+": unknown light filter "+cls);
+  const unsigned id=unsigned(plan.filters.size());plan.filters.push_back(f);ids[&o]=id;return id;
+ }
+};
 inline bool admitLightTexture(const rdl::SceneObject& o,lights::Light& l,lights::Mapping mapping,const rdl::SceneVariables& sv,
                               std::vector<std::shared_ptr<lights::ImageData>>& images,const std::vector<std::shared_ptr<lights::ImageData>>* previous){
  l.fallback={1,1,1};l.image=nullptr;l.log2TexelAngle=-1e30f;
@@ -457,7 +1174,7 @@ inline const std::set<std::string>& lightCommonAttributes(){
   "gamma","contrast","saturation","gain","offset","temperature","texture_rotation","texture_translation","texture_coverage",
   "texture_reps_u","texture_reps_v","texture_mirror_u","texture_mirror_v","texture_border_color","min_shadow_distance","max_shadow_distance",
   "visible_diffuse_reflection","visible_diffuse_transmission","visible_glossy_reflection","visible_glossy_transmission","visible_mirror_reflection",
-  "visible_mirror_transmission","presence_shadows"};return s;}
+  "visible_mirror_transmission","presence_shadows","light_filters","ray_termination"};return s;}
 // Light::updatePresenceShadows: on, off, or the scene's enable_presence_shadows.
 inline unsigned lightPresenceShadows(const rdl::SceneObject& o,const rdl::SceneVariables& sv){
  const int v=get<rdl::Int>(o,"presence_shadows");return v==2?(get<rdl::Bool>(sv,"enable_presence_shadows")?1u:0u):v==1?1u:0u;}
@@ -479,12 +1196,13 @@ inline void lightShadowDistances(const rdl::SceneObject& o,lights::Light& l,bool
 }
 inline const std::set<std::string>& clearRadiusAttributes(){static const std::set<std::string> s{"clear_radius","clear_radius_falloff_distance","clear_radius_interpolation_type"};return s;}
 inline bool admitLight(const rdl::SceneObject& o,float sceneScale,lights::Light& out,const rdl::SceneVariables& sv,
-                       std::vector<std::shared_ptr<lights::ImageData>>& images,const std::vector<std::shared_ptr<lights::ImageData>>* previousImages){
+                       std::vector<std::shared_ptr<lights::ImageData>>& images,const std::vector<std::shared_ptr<lights::ImageData>>* previousImages,
+                       float shutterTime=0.0f){
  auto cls=o.getSceneClass().getName();
  // A PortalLight is a RectLight (its rect) that its reference lights the scene through (resolved by the caller).
  const bool portal=cls=="PortalLight";if(portal)cls="RectLight";
  // A label names the light for light path expressions only (light AOVs fall back).
- std::set<std::string> allowed=lightCommonAttributes();allowed.insert({"normalized","apply_scene_scale","sidedness"});
+ std::set<std::string> allowed=lightCommonAttributes();allowed.insert({"normalized","apply_scene_scale","sidedness","mb"});
  if(portal)allowed.insert("light");
  if(cls=="EnvLight")allowed.insert("sample_upper_hemisphere_only");
  if(cls=="RectLight")allowed.insert({"width","height","spread"});else if(cls=="DiskLight")allowed.insert({"radius","spread"});else if(cls=="SphereLight")allowed.insert("radius");
@@ -492,18 +1210,21 @@ inline bool admitLight(const rdl::SceneObject& o,float sceneScale,lights::Light&
  else if(cls=="SpotLight")allowed.insert({"lens_radius","aspect_ratio","focal_plane_distance","outer_cone_angle","inner_cone_angle","angle_falloff_type","black_level"});
  const bool clearRadius=cls=="RectLight"||cls=="DiskLight"||cls=="SphereLight"||cls=="SpotLight"||cls=="CylinderLight";
  if(clearRadius)allowed.insert(clearRadiusAttributes().begin(),clearRadiusAttributes().end());
- attributes(o,allowed);
+ // A light without its mb switch is still under motion blur: its transform at the first time step (Light::update's
+ // local2Render0 alone).
+ attributes(o,allowed,{},{"node_xform"});
  if(!get<rdl::Bool>(o,"on"))return false;
  lights::Light l{};
  auto c=color(get<rdl::Rgb>(o,"color"));float intensity=get<rdl::Float>(o,"intensity"),exposure=get<rdl::Float>(o,"exposure");
  need(surface::finite(intensity)&&intensity>=0&&surface::finite(exposure)&&std::abs(exposure)<=32,o.getName()+": invalid light intensity");
  V3 radiance=surface::mul(c,intensity*std::pow(2.f,exposure));
  l.visibleInCamera=lightVisibleInCamera(o,sv);l.fallback={1,1,1};l.visibilityMask=lightVisibilityMask(o);l.presenceShadows=lightPresenceShadows(o,sv);
+ l.rayTerminator=get<rdl::Bool>(o,"ray_termination")?1u:0u;
  lightShadowDistances(o,l,clearRadius);
  if(cls=="EnvLight"){
   // EnvLight::update: its frame is sLocalOrientation * node_xform orthonormalized (Mat4f::orthonormalize), rows
   // X = -row2, Y = -row0, Z = row1 of the transform; Z is its direction, up for an untransformed light.
-  auto m=get<rdl::Mat4d>(o,"node_xform");
+  auto m=xformAt(o,shutterTime);
   for(int i=0;i<4;++i)for(int j=0;j<4;++j)need(std::isfinite(m[i][j]),o.getName()+": nonfinite light transform");
   const V3 r1{float(-m[0][0]),float(-m[0][1]),float(-m[0][2])},r2{float(m[1][0]),float(m[1][1]),float(m[1][2])};
   V3 x,y;need(surface::normalize(surface::cross(r1,r2),x)&&surface::normalize(surface::cross(r2,x),y),o.getName()+": degenerate light transform");
@@ -516,9 +1237,9 @@ inline bool admitLight(const rdl::SceneObject& o,float sceneScale,lights::Light&
   if(l.image){const float a=std::max(2*lights::Pi/float(l.image->width),lights::Pi/float(l.image->height));l.log2TexelAngle=std::log2(a);}
   out=l;return surface::finite(radiance);
  }
- auto m=get<rdl::Mat4d>(o,"node_xform");
+ auto m=xformAt(o,shutterTime);
  for(int i=0;i<4;++i)for(int j=0;j<4;++j)need(std::isfinite(m[i][j])&&std::abs(m[i][j])<=10000,o.getName()+": light transform bound");
- need(m[0][3]==0&&m[1][3]==0&&m[2][3]==0&&m[3][3]==1,o.getName()+": projective light transform unsupported");
+ need(std::abs(m[0][3])<=1e-6&&std::abs(m[1][3])<=1e-6&&std::abs(m[2][3])<=1e-6&&std::abs(m[3][3]-1)<=1e-6,o.getName()+": projective light transform unsupported");
  // Rows of sRotateX180 * node_xform; Disk and Sphere scale the rotation by their radius first.
  double rows[4][3];
  // The cylinder alone has no sRotateX180 (CylinderLight::update).
@@ -620,6 +1341,7 @@ inline bool admitLight(const rdl::SceneObject& o,float sceneScale,lights::Light&
  out=l;return surface::finite(radiance);
 }
 inline bool isCurves(const std::string& cls){return cls=="RdlCurveGeometry"||cls=="ModoFurGeometry";}
+inline bool isPoints(const std::string& cls){return cls=="RdlPointGeometry";}
 // A geometry's visibility attributes (rdl2::Geometry): the rays that see it. Phase rays (visible_volume) see every
 // geometry here, so one hidden from them falls back.
 inline const std::set<std::string>& geometryVisibilityAttributes(){
@@ -633,17 +1355,220 @@ inline unsigned geometryVisibility(const rdl::SceneObject& o){
 inline bool isLight(const std::string& cls){return cls=="EnvLight"||cls=="RectLight"||cls=="DiskLight"||cls=="SphereLight"||cls=="DistantLight"||cls=="SpotLight"||cls=="CylinderLight"||cls=="MeshLight"||cls=="PortalLight";}
 // A BaseVolume (moonray dso/volume/Base) as volume_core.h shades it: homogeneous (no attribute bound), not emissive;
 // its ramps over the depth a ray travels through it as RampControl builds them.
-inline volume::Shader admitVolume(const rdl::SceneObject& o,unsigned lightSet){
+// A VDB grid (xpu2_geom.dll's x2VdbRead, as geom::internal::VdbVolume reads it), kept as NanoVDB and freed by the DLL.
+struct VdbGridData{X2VdbGrid raw{};std::string key,path,name;std::vector<float> dense;VdbGridData()=default;VdbGridData(const VdbGridData&)=delete;
+ ~VdbGridData(){if(raw.data&&subdLibrary().vdbFree)subdLibrary().vdbFree(&raw);}};
+// A grid of a file for the plan (read once a plan; the previous plan's while the file is unchanged): its index.
+inline unsigned vdbGrid(Plan& plan,const Plan* previous,const std::string& path,const std::string& name,bool vec3,const std::string& owner){
+ std::error_code ec;const auto stamp=fs::last_write_time(fs::path(path),ec);
+ need(!ec,owner+": the VDB file \""+path+"\" cannot be read");
+ const std::string key=path+"|"+name+(vec3?"|vec3|":"|float|")+std::to_string(stamp.time_since_epoch().count());
+ for(size_t i=0;i<plan.volumeGrids.size();++i)if(plan.volumeGrids[i]->key==key)return unsigned(i);
+ std::shared_ptr<VdbGridData> g;
+ if(previous)for(const auto& old:previous->volumeGrids)if(old->key==key){g=old;break;}
+ if(!g){const auto& lib=subdLibrary();need(lib.vdbRead&&lib.vdbFree,owner+": MoonRay's VDB reading (xpu2_geom.dll) did not load");
+  g=std::make_shared<VdbGridData>();g->key=key;g->path=path;g->name=name;char error[512]={0};
+  need(lib.vdbRead(path.c_str(),name.c_str(),vec3?1:0,&g->raw,error,sizeof error)!=0,owner+": "+std::string(error));}
+ need(g->raw.linear!=0,owner+": a VDB grid with a frustum (non-linear) transform is not rendered yet");
+ volume::Grid view;view.data=g->raw.data;view.vec3=vec3?1u:0u;
+ rdl::Mat4d m;for(int i=0;i<4;++i)for(int j=0;j<4;++j)m[i][j]=g->raw.indexToWorld[4*i+j];
+ const rdl::Mat4d inv=m.inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)view.worldToIndex[4*i+j]=inv[i][j];
+ plan.volumeGrids.push_back(std::move(g));plan.volumeGridViews.push_back(view);
+ return unsigned(plan.volumeGrids.size()-1);}
+// Distribution3D over a histogram (x fastest): each row's conditional x, each slice's marginal y, the marginal z, as
+// Distribution1D records in the plan's emission pool (volume_emission.h's dist1D: integral, count, values, cdf).
+inline unsigned emissionDist1D(std::vector<float>& pool,const float* func,int n){
+ const unsigned at=unsigned(pool.size());std::vector<float> cdf(size_t(n)+1);cdf[0]=0;
+ for(int i=1;i<n+1;++i)cdf[size_t(i)]=cdf[size_t(i-1)]+func[i-1]/float(n);
+ const float funcInt=cdf[size_t(n)];
+ if(funcInt==0)for(int i=1;i<n+1;++i)cdf[size_t(i)]=float(i)/float(n);else for(int i=1;i<n+1;++i)cdf[size_t(i)]/=funcInt;
+ pool.push_back(funcInt);pool.push_back(float(n));pool.insert(pool.end(),func,func+n);pool.insert(pool.end(),cdf.begin(),cdf.end());return at;}
+inline volume::Region emissionRegion(std::vector<float>& pool,const std::vector<float>& histogram,const int res[3],const rdl::Mat4d& distToWorld,
+                                     float invUnitVolume,unsigned volumeIndex,unsigned visibility){
+ volume::Region r{};r.volume=volumeIndex;r.visibility=visibility;for(int a=0;a<3;++a)r.res[a]=res[a];r.invUnitVolume=invUnitVolume;
+ const rdl::Mat4d worldToDist=distToWorld.inverse();
+ for(int i=0;i<3;++i)for(int j=0;j<3;++j){r.distToWorld[3*i+j]=float(distToWorld[i][j]);r.worldToDist[3*i+j]=float(worldToDist[i][j]);}
+ for(int j=0;j<3;++j){r.distToWorld[9+j]=float(distToWorld[3][j]);r.worldToDist[9+j]=float(worldToDist[3][j]);}
+ const int nx=res[0],ny=res[1],nz=res[2];
+ std::vector<float> xIntegrals,xyIntegrals;xIntegrals.resize(size_t(ny));xyIntegrals.resize(size_t(nz));
+ r.conditionalX=unsigned(pool.size());
+ std::vector<unsigned> rows;
+ for(int z=0;z<nz;++z)for(int y=0;y<ny;++y){const unsigned at=emissionDist1D(pool,&histogram[size_t(z)*size_t(ny)*size_t(nx)+size_t(y)*size_t(nx)],nx);rows.push_back(at);}
+ r.marginalY=unsigned(pool.size());
+ for(int z=0;z<nz;++z){for(int y=0;y<ny;++y)xIntegrals[size_t(y)]=pool[rows[size_t(z*ny+y)]];
+  const unsigned at=emissionDist1D(pool,xIntegrals.data(),ny);xyIntegrals[size_t(z)]=pool[at];}
+ r.marginalZ=emissionDist1D(pool,xyIntegrals.data(),nz);
+ return r;}
+// Primitive::computeEmissionDistribution for a mesh's volume: about a thousand voxels over the mesh's render-space box,
+// each the shader's emission luminance at its corner (homogeneous here: the same everywhere).
+inline void runVolumeMaps(const void* context,const volume::Shader& s,V3 p,volume::Mapped& m);
+inline void meshEmissionRegion(Plan& plan,const MeshData& mesh,unsigned volumeIndex,unsigned visibility,bool mapped=false){
+ const volume::Shader& s=plan.volumes[volumeIndex];
+ rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=plan.world2render[4*i+j];
+ float lo[3]={3.4e38f,3.4e38f,3.4e38f},hi[3]={-3.4e38f,-3.4e38f,-3.4e38f};
+ for(const auto& p:mesh.positions){const double q[3]={p.x*w2r[0][0]+p.y*w2r[1][0]+p.z*w2r[2][0]+w2r[3][0],p.x*w2r[0][1]+p.y*w2r[1][1]+p.z*w2r[2][1]+w2r[3][1],
+   p.x*w2r[0][2]+p.y*w2r[1][2]+p.z*w2r[2][2]+w2r[3][2]};for(int a=0;a<3;++a){lo[a]=std::min(lo[a],float(q[a]));hi[a]=std::max(hi[a],float(q[a]));}}
+ const float len[3]={hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2]};
+ const float sCubed=len[0]*len[1]*len[2]/1000.0f,sz=std::cbrt(sCubed);
+ need(std::isfinite(sz)&&sz>0.0f,"An emissive volume of no extent");
+ const int res[3]={int(std::ceil(len[0]/sz)),int(std::ceil(len[1]/sz)),int(std::ceil(len[2]/sz))};
+ need(res[0]>0&&res[1]>0&&res[2]>0&&size_t(res[0])*size_t(res[1])*size_t(res[2])<(1u<<24),"An emissive volume's distribution budget");
+ const float e=0.299f*s.emission.x+0.587f*s.emission.y+0.114f*s.emission.z;
+ std::vector<float> histogram(size_t(res[0])*size_t(res[1])*size_t(res[2]),e);
+ if(mapped){const rdl::Mat4d r2w=w2r.inverse();float* h=histogram.data();
+  for(int k=0;k<res[2];++k){const float z=lo[2]+float(k)*sz;for(int j=0;j<res[1];++j){const float y=lo[1]+float(j)*sz;for(int i=0;i<res[0];++i){const float x=lo[0]+float(i)*sz;
+   const V3 pw{float(x*r2w[0][0]+y*r2w[1][0]+z*r2w[2][0]+r2w[3][0]),float(x*r2w[0][1]+y*r2w[1][1]+z*r2w[2][1]+r2w[3][1]),float(x*r2w[0][2]+y*r2w[1][2]+z*r2w[2][2]+r2w[3][2])};
+   volume::Mapped m{s.attenuationColor,s.albedoColor,s.emissionColor,s.intensity,s.factor,s.emissionIntensity,s.g};runVolumeMaps(&plan,s,pw,m);
+   const V3 em=volume::cmax0(volume::scaled(m.emissionColor,m.emissionIntensity));*h++=0.299f*em.x+0.587f*em.y+0.114f*em.z;}}}}
+ rdl::Mat4d distToRender(sz,0,0,0,0,sz,0,0,0,0,sz,0,lo[0],lo[1],lo[2],1);
+ plan.emissiveRegions.push_back(emissionRegion(plan.emissionPool,histogram,res,distToRender*w2r.inverse(),1.0f/sCubed,volumeIndex,visibility));}
+// VdbGeometry with a VdbVolume (geom::internal::VdbVolume, the VdbVolume shader): its density grid and emission grid
+// (each an rdl name of the file), the geometry's interpolation, the shader's opacity gain, colour, incandescence gain
+// and anisotropy; its feature size (cube root of a voxel's render-space volume, VdbVolume::initializePhase2) and its
+// world to grid world transform. Its boundary: the active voxels' index box grown by the quadratic sampler's reach
+// (the density is zero outside), through the grid's and the node's transforms, as a closed mesh facing out.
+inline volume::Shader admitVdbVolume(const rdl::SceneObject& g,const rdl::SceneObject& o,unsigned lightSet,Plan& plan,const Plan* previous,
+                                     std::shared_ptr<MeshData>& box){
+ {std::set<std::string> allowed{"model","interpolation","density_grid","emission_grid","velocity_grid","velocity_scale","velocity_sample_rate",
+   "emission_sample_rate","node_xform","primitive_attributes"};
+  allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(g,allowed);}
+ const std::string cls=o.getSceneClass().getName();
+ need(cls=="VdbVolume",g.getName()+": a "+cls+" on a VDB geometry is not rendered yet");
+ {std::set<std::string> all;for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)all.insert((*i)->getName());attributes(o,all,all);}
+ // Bound attributes: their map program after the maps' admission (admitVdbMaps); a bound incandescence's emissive
+ // region with it (bakeVdbVolume).
+ bool incandescenceBound=false;
+ for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)if((*i)->getName()=="incandescence_gain_mult"&&o.getBinding(**i))incandescenceBound=true;
+ const std::string path=get<rdl::String>(g,"model");need(!path.empty(),g.getName()+": no VDB file");
+ volume::Shader s{};s.kind=volume::KindVdb;s.lightSet=lightSet;s.flags=0;s.bakedGrid=volume::NoGrid;s.program=shade::NoMapProgram;s.mapped=0;
+ for(unsigned k=0;k<volume::MappedCount;++k)s.regs[k]=shade::MapNoRegister;
+ s.densityGrid=vdbGrid(plan,previous,path,get<rdl::String>(g,"density_grid"),false,g.getName());
+ const std::string emissionGrid=get<rdl::String>(g,"emission_grid");
+ s.emissionGrid=emissionGrid.empty()?volume::NoGrid:vdbGrid(plan,previous,path,emissionGrid,true,g.getName());
+ s.interpolation=unsigned(std::min(std::max(get<rdl::Int>(g,"interpolation"),0),2));
+ auto rgb=[&](const char* n){auto c=get<rdl::Rgb>(o,n);need(std::isfinite(c.r)&&std::isfinite(c.g)&&std::isfinite(c.b),o.getName()+": invalid "+n);return V3{c.r,c.g,c.b};};
+ s.gain=rgb("opacity_gain_mult");s.colorMult=rgb("color_mult");s.incandescence=rgb("incandescence_gain_mult");
+ // The same as a mapped volume's base values (mappedAt): extinction gain, albedo, emission.
+ s.attenuationColor=s.gain;s.albedoColor=s.colorMult;s.emissionColor=s.incandescence;s.emissionIntensity=1.0f;s.intensity=1.0f;s.factor=1.0f;
+ {const float a=get<rdl::Float>(o,"anisotropy");need(std::isfinite(a),o.getName()+": invalid anisotropy");s.g=std::min(std::max(a,-1.0f),1.0f);}
+ // A moving geometry (its node transform at the shutter's ends): its grid point at the ray's time.
+ const rdl::Mat4d node=plan.motion.on?xformAt(g,0.0f):affine(g),node1=plan.motion.on?xformAt(g,1.0f):node;
+ s.moving=plan.motion.on&&!(node==node1)?1u:0u;
+ const auto& raw=plan.volumeGrids[s.densityGrid]->raw;
+ // Velocity motion blur: the shutter's times (a frame's fraction of a second), the velocity grid and the density's
+ // padded active box and cells (xpu2_geom.dll's x2VdbVelocity).
+ int activeMin[3]={raw.bboxMin[0],raw.bboxMin[1],raw.bboxMin[2]},activeMax[3]={raw.bboxMax[0],raw.bboxMax[1],raw.bboxMax[2]};
+ const int* cells=raw.blocks;unsigned cellCount=raw.blockCount,cellSize=raw.blockSize;
+ {const std::string velocityName=get<rdl::String>(g,"velocity_grid");const float velocityScale=get<rdl::Float>(g,"velocity_scale");
+  if(plan.motion.on&&!velocityName.empty()&&!scene_rdl2::math::isZero(velocityScale)){
+   const auto& lib=subdLibrary();need(lib.vdbVelocity&&lib.vdbFree,g.getName()+": MoonRay's VDB velocity (xpu2_geom.dll) did not load");
+   const rdl::SceneVariables& sv=g.getSceneClass().getSceneContext()->getSceneVariables();
+   const float dt=1.0f/get<rdl::Float>(sv,"fps"),tOpen=dt*plan.motion.shutterOpen,tRange=dt*plan.motion.shutterClose-tOpen;
+   auto data=std::make_shared<VdbGridData>();data->key="velocity|"+path+"|"+velocityName+"|"+g.getName();X2VdbVelocity v{};char error[512]={0};
+   const int made=lib.vdbVelocity(path.c_str(),velocityName.c_str(),get<rdl::String>(g,"density_grid").c_str(),velocityScale,get<rdl::Float>(g,"velocity_sample_rate"),
+                                  tOpen,tOpen+tRange,&v,error,sizeof error);
+   need(made!=0,g.getName()+": "+std::string(error));
+   if(made==1){data->raw=v.velocity;volume::Grid view;view.data=data->raw.data;view.vec3=1;
+    rdl::Mat4d m;for(int i=0;i<4;++i)for(int j=0;j<4;++j)m[i][j]=data->raw.indexToWorld[4*i+j];
+    const rdl::Mat4d inv=m.inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)view.worldToIndex[4*i+j]=inv[i][j];
+    s.velocityGrid=unsigned(plan.volumeGrids.size());plan.volumeGrids.push_back(std::move(data));plan.volumeGridViews.push_back(view);
+    s.hasVelocity=1;s.tShutterOpen=tOpen;s.tShutterRange=tRange;
+    for(int a=0;a<3;++a){activeMin[a]=v.densityMin[a];activeMax[a]=v.densityMax[a];}
+    const auto& kept=plan.volumeGrids.back()->raw;cells=kept.blocks;cellCount=kept.blockCount;cellSize=kept.blockSize;}}}
+ rdl::Mat4d i2g;for(int i=0;i<4;++i)for(int j=0;j<4;++j)i2g[i][j]=raw.indexToWorld[4*i+j];
+ const rdl::Mat4d i2w=i2g*node;
+ {const double det=i2w[0][0]*(i2w[1][1]*i2w[2][2]-i2w[1][2]*i2w[2][1])-i2w[0][1]*(i2w[1][0]*i2w[2][2]-i2w[1][2]*i2w[2][0])+i2w[0][2]*(i2w[1][0]*i2w[2][1]-i2w[1][1]*i2w[2][0]);
+  s.featureSize=float(std::cbrt(det));need(std::isfinite(s.featureSize)&&s.featureSize>0.0f,g.getName()+": a degenerate VDB transform");}
+ {auto rows=[](const rdl::Mat4d& m,float* out){for(int r=0;r<3;++r){for(int c=0;c<3;++c)out[4*r+c]=float(m[c][r]);out[4*r+3]=float(m[3][r]);}};
+  rows(node.inverse(),s.worldToGrid);rows(node1.inverse(),s.worldToGrid1);rows(node,s.gridToWorld);rows(node1,s.gridToWorld1);}
+ s.visibility=geometryVisibility(g)|0x300u;
+ // Its emissive region (GeometryManager::getEmissiveRegions: secondary visibility and an emission grid): the grid's
+ // active voxels' histogram by xpu2_geom.dll, each voxel's luminance times the shader's emission luminance.
+ const float shaderEmission=0.299f*s.incandescence.x+0.587f*s.incandescence.y+0.114f*s.incandescence.z;
+ if(!incandescenceBound&&s.emissionGrid!=volume::NoGrid&&(s.visibility&0x3fcu)&&!(s.incandescence.x==0&&s.incandescence.y==0&&s.incandescence.z==0)){
+  const auto& lib=subdLibrary();need(lib.vdbHistogram&&lib.vdbHistogramFree,g.getName()+": MoonRay's VDB reading (xpu2_geom.dll) did not load");
+  X2VdbHistogram h{};char error[512]={0};
+  need(lib.vdbHistogram(path.c_str(),emissionGrid.c_str(),shaderEmission,&h,error,sizeof error)!=0,g.getName()+": "+std::string(error));
+  try{
+   const size_t n=size_t(h.res[0])*size_t(h.res[1])*size_t(h.res[2]);
+   if(n>0){need(n<(1u<<26),g.getName()+": an emission grid too large for its distribution");
+    std::vector<float> histogram(h.values,h.values+n);
+    rdl::Mat4d i2p;for(int i=0;i<4;++i)for(int j=0;j<4;++j)i2p[i][j]=h.indexToWorld[4*i+j];
+    const rdl::Mat4d i2w=i2p*node;
+    const double det=i2w[0][0]*(i2w[1][1]*i2w[2][2]-i2w[1][2]*i2w[2][1])-i2w[0][1]*(i2w[1][0]*i2w[2][2]-i2w[1][2]*i2w[2][0])+i2w[0][2]*(i2w[1][0]*i2w[2][1]-i2w[1][1]*i2w[2][0]);
+    const rdl::Mat4d distToIndex(1,0,0,0,0,1,0,0,0,0,1,0,h.pMin[0]-0.5,h.pMin[1]-0.5,h.pMin[2]-0.5,1);
+    plan.emissiveRegions.push_back(emissionRegion(plan.emissionPool,histogram,h.res,distToIndex*i2w,float(1.0/det),unsigned(plan.volumes.size()),s.visibility));}
+  }catch(...){lib.vdbHistogramFree(&h);throw;}
+  lib.vdbHistogramFree(&h);}
+ // The boundary box.
+ // A moving geometry's box: the world box about both ends' (the march's empty stretches add nothing).
+ auto m=std::make_shared<MeshData>();
+ const double lo[3]={activeMin[0]-1.5,activeMin[1]-1.5,activeMin[2]-1.5},hi[3]={activeMax[0]+1.5,activeMax[1]+1.5,activeMax[2]+1.5};
+ auto corner=[&](int i,const rdl::Mat4d& t){const double p[3]={i&1?hi[0]:lo[0],i&2?hi[1]:lo[1],i&4?hi[2]:lo[2]};
+  return V3{float(p[0]*t[0][0]+p[1]*t[1][0]+p[2]*t[2][0]+t[3][0]),float(p[0]*t[0][1]+p[1]*t[1][1]+p[2]*t[2][1]+t[3][1]),float(p[0]*t[0][2]+p[1]*t[1][2]+p[2]*t[2][2]+t[3][2])};};
+ std::vector<Tri> cellTriangles;
+ if(s.moving){const rdl::Mat4d i2w1=i2g*node1;V3 bl{3.4e38f,3.4e38f,3.4e38f},bh{-3.4e38f,-3.4e38f,-3.4e38f};
+  for(int i=0;i<8;++i)for(const V3& w:{corner(i,i2w),corner(i,i2w1)}){bl=V3{std::min(bl.x,w.x),std::min(bl.y,w.y),std::min(bl.z,w.z)};bh=V3{std::max(bh.x,w.x),std::max(bh.y,w.y),std::max(bh.z,w.z)};}
+  for(int i=0;i<8;++i)m->positions.push_back(V3{i&1?bh.x:bl.x,i&2?bh.y:bl.y,i&4?bh.z:bl.z});}
+ else if(cells&&cellCount){
+  // VolumeRayIntersector's march: the runs of leaf cells along the ray (its corner-based index space: a cell from
+  // its origin to origin + size), the union's surface the volume's boundary (a face where a cell meets no cell).
+  std::set<std::array<int,3>> set;for(unsigned c=0;c<cellCount;++c)set.insert({cells[3*c],cells[3*c+1],cells[3*c+2]});
+  std::map<std::array<int,3>,unsigned> vertexIds;
+  auto vertexAt=[&](int x,int y,int z){const std::array<int,3> k{x,y,z};auto it=vertexIds.find(k);if(it!=vertexIds.end())return it->second;
+   const double p[3]={double(x),double(y),double(z)};
+   const V3 w{float(p[0]*i2w[0][0]+p[1]*i2w[1][0]+p[2]*i2w[2][0]+i2w[3][0]),float(p[0]*i2w[0][1]+p[1]*i2w[1][1]+p[2]*i2w[2][1]+i2w[3][1]),
+              float(p[0]*i2w[0][2]+p[1]*i2w[1][2]+p[2]*i2w[2][2]+i2w[3][2])};
+   const unsigned id=unsigned(m->positions.size());m->positions.push_back(w);vertexIds.emplace(k,id);return id;};
+  const int n=int(cellSize);
+  static const int dirs[6][3]={{-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1}};
+  for(const auto& c:set)for(const auto& dv:dirs){
+   if(set.count({c[0]+dv[0]*n,c[1]+dv[1]*n,c[2]+dv[2]*n}))continue;
+   const int axis=dv[0]?0:dv[1]?1:2,u=(axis+1)%3,w=(axis+2)%3;
+   std::array<int,3> q[4];for(int k=0;k<4;++k){q[k]=c;if(dv[axis]>0)q[k][axis]+=n;}
+   q[1][u]+=n;q[2][u]+=n;q[2][w]+=n;q[3][w]+=n;
+   unsigned id[4];for(int k=0;k<4;++k)id[k]=vertexAt(q[k][0],q[k][1],q[k][2]);
+   // Wound to face out of the cell (the box's sense: its normal along dv).
+   const V3 a=m->positions[id[0]],b=m->positions[id[1]],e=m->positions[id[2]];
+   const V3 nrm=surface::cross(surface::add(b,surface::mul(a,-1)),surface::add(e,surface::mul(a,-1)));
+   const V3 out{float(dv[0]*i2w[0][0]+dv[1]*i2w[1][0]+dv[2]*i2w[2][0]),float(dv[0]*i2w[0][1]+dv[1]*i2w[1][1]+dv[2]*i2w[2][1]),
+                float(dv[0]*i2w[0][2]+dv[1]*i2w[1][2]+dv[2]*i2w[2][2])};
+   if(surface::dot(nrm,out)>=0.0f){cellTriangles.push_back({id[0],id[1],id[2]});cellTriangles.push_back({id[0],id[2],id[3]});}
+   else{cellTriangles.push_back({id[0],id[2],id[1]});cellTriangles.push_back({id[0],id[3],id[2]});}}}
+ else for(int i=0;i<8;++i)m->positions.push_back(corner(i,i2w));
+ for(const V3& w:m->positions)need(surface::finite(w)&&std::abs(w.x)<=10000&&std::abs(w.y)<=10000&&std::abs(w.z)<=10000,g.getName()+": a VDB volume out of bounds");
+ static const unsigned faces[12][3]={{0,4,6},{0,6,2},{1,3,7},{1,7,5},{0,1,5},{0,5,4},{2,6,7},{2,7,3},{0,2,3},{0,3,1},{4,5,7},{4,7,6}};
+ if(!cellTriangles.empty()){
+  m->triangles=std::move(cellTriangles);
+  const rdl::Mat4d w2i=i2w.inverse();m->gate=true;
+  for(int r=0;r<3;++r){for(int c=0;c<3;++c)m->gateToIndex[4*r+c]=float(w2i[c][r]);m->gateToIndex[4*r+3]=float(w2i[3][r]);
+   m->gateLo[r]=float(activeMin[r]);m->gateHi[r]=float(activeMax[r]);}}
+ else for(const auto& f:faces)m->triangles.push_back(Tri{f[0],f[1],f[2]});
+ {const auto w=node.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+  for(int i=0;i<12;++i)m->worldToObject[i]=float(rows[i]);}
+ box=std::move(m);
+ return s;}
+// Whether a BaseVolume has bound attributes it reads through maps (BaseVolume's evalColor and evalFloat; its ramps'
+// depths, bindable, are read as values).
+inline bool volumeMapped(const rdl::SceneObject& o){
+ for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i){const rdl::Attribute& a=**i;
+  if(a.isBindable()&&o.getBinding(a)&&a.getName().find("_depth")==std::string::npos)return true;}
+ return false;}
+inline volume::Shader admitVolume(const rdl::SceneObject& o,unsigned lightSet,bool mapped=false){
  need(o.getSceneClass().getName()=="BaseVolume",o.getName()+": only BaseVolume volume shaders are rendered");
  std::set<std::string> all;for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)all.insert((*i)->getName());
- attributes(o,all);
- for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i){const rdl::Attribute& a=**i;
-  need(!a.isBindable()||!o.getBinding(a),o.getName()+": a volume with bound attributes (heterogeneous) is not rendered yet");}
+ attributes(o,all,mapped?all:std::set<std::string>{});
+ if(!mapped)need(!volumeMapped(o),o.getName()+": a volume with bound attributes is admitted by admitMappedVolume");
  auto rgb=[&](const char* n){auto c=get<rdl::Rgb>(o,n);need(std::isfinite(c.r)&&std::isfinite(c.g)&&std::isfinite(c.b),o.getName()+": invalid "+n);return V3{c.r,c.g,c.b};};
  auto f1=[&](const char* n){float f=get<rdl::Float>(o,n);need(std::isfinite(f),o.getName()+": invalid "+n);return f;};
  const V3 emission=rgb("emission_color");const float emissionIntensity=f1("emission_intensity");
- need(emissionIntensity==0.0f||(emission.x==0&&emission.y==0&&emission.z==0),o.getName()+": emissive volumes are not rendered yet");
  volume::Shader s{};
+ // emission(): density times emission_intensity times emission_color (the camera's rays see it; it lights the scene
+ // as an emissive region).
+ s.emission=V3{emission.x*emissionIntensity,emission.y*emissionIntensity,emission.z*emissionIntensity};
+ s.kind=volume::KindBase;s.densityGrid=s.emissionGrid=volume::NoGrid;s.bakedGrid=volume::NoGrid;
+ s.emissionColor=emission;s.emissionIntensity=emissionIntensity;s.program=shade::NoMapProgram;s.mapped=0;
+ for(unsigned k=0;k<volume::MappedCount;++k)s.regs[k]=shade::MapNoRegister;
  s.attenuationColor=rgb("attenuation_color");s.albedoColor=rgb("diffuse_color");
  s.intensity=f1("attenuation_intensity");s.factor=f1("attenuation_factor");
  s.g=std::min(std::max(f1("anisotropy"),-1.0f),1.0f);
@@ -677,6 +1602,183 @@ inline std::vector<std::shared_ptr<const ix::Buffer>> signature(const rdl::Scene
 #include "dwa_admission.h"
 #include "mesh_displacement.h"
 namespace xpu2::interactive::cpu {
+// A BaseVolume with bound attributes (KindBaseMapped): its attenuation colour, intensity and factor, diffuse colour,
+// emission colour and intensity and anisotropy, each bound one a register of one map program, the rest as admitVolume
+// reads them. Its extinction is baked or evaluated at the render origin once the textures are read (bakeVolume).
+inline volume::Shader admitMappedVolume(const rdl::SceneObject& o,unsigned lightSet,Plan& plan,TextureContext& textureContext){
+ volume::Shader s=admitVolume(o,lightSet,true);
+ s.kind=volume::KindBaseMapped;s.featureSize=1.0f;
+ MapProgramBuilder program{plan.materialPool,textureContext};
+ static const char* const names[volume::MappedCount]={"attenuation_color","attenuation_intensity","attenuation_factor","diffuse_color","emission_color",
+                                                     "emission_intensity","anisotropy"};
+ for(unsigned k=0;k<volume::MappedCount;++k){
+  const rdl::Attribute* a=nullptr;for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)if((*i)->getName()==names[k])a=*i;
+  const rdl::SceneObject* bound=a?o.getBinding(*a):nullptr;
+  if(bound){s.regs[k]=program.reg(*bound);s.mapped|=1u<<k;}}
+ need(!program.polyVertices,o.getName()+": a polygon map in a volume is not rendered");
+ s.program=program.finish();
+ s.originAttenuation=(s.flags&volume::MatchAlbedo)?s.albedoColor:s.attenuationColor;s.originIntensity=s.intensity;s.originFactor=s.factor;
+ return s;}
+// A mapped volume's bound values at p (world): its map program on a State with P alone (MoonRay's isect.init and
+// setP), each bound value times its map's colour (evalColor) or the colour's average (evalFloat), unless zero.
+template<class Tex> inline void volumeMapped(const volume::Shader& s,const float* pool,const Tex& textures,const float* worldToRender,V3 p,volume::Mapped& m){
+ if(!s.mapped||s.program==shade::NoMapProgram)return;
+ shade::State st;st.P=p;st.Ng=st.N=st.dPds=st.dPdt=st.wo=V3{0,0,0};st.worldToRender=worldToRender;st.worldToObject=s.worldToGrid;
+ shade::Color regs[shade::MapMaxRegisters];
+ if(shade::runMapProgram(pool,s.program,st,textures,regs)!=tex::Ready)return;
+ auto color=[&](unsigned k,V3& v){if(!(s.mapped>>k&1)||(v.x==0.0f&&v.y==0.0f&&v.z==0.0f))return;const shade::Color c=regs[s.regs[k]];v=V3{v.x*c.x,v.y*c.y,v.z*c.z};};
+ auto scalar=[&](unsigned k,float& f){if(!(s.mapped>>k&1)||shade::isZero(f))return;const shade::Color c=regs[s.regs[k]];f*=(c.x+c.y+c.z)/3.0f;};
+ color(volume::MapAttenuationColor,m.attenuationColor);scalar(volume::MapAttenuationIntensity,m.attenuationIntensity);
+ scalar(volume::MapAttenuationFactor,m.attenuationFactor);color(volume::MapAlbedo,m.albedoColor);color(volume::MapEmissionColor,m.emissionColor);
+ scalar(volume::MapEmissionIntensity,m.emissionIntensity);scalar(volume::MapAnisotropy,m.anisotropy);}
+// A VdbVolume's bound attributes (VdbVolume.cc): opacity_gain_mult, color_mult, incandescence_gain_mult and
+// anisotropy, a register each of one map program.
+inline void admitVdbMaps(volume::Shader& s,const rdl::SceneObject& o,Plan& plan,TextureContext& textureContext){
+ static const std::pair<const char*,unsigned> names[]={{"opacity_gain_mult",volume::MapAttenuationColor},{"color_mult",volume::MapAlbedo},
+                                                       {"incandescence_gain_mult",volume::MapEmissionColor},{"anisotropy",volume::MapAnisotropy}};
+ MapProgramBuilder program{plan.materialPool,textureContext};
+ for(const auto& [name,k]:names){const rdl::Attribute* a=nullptr;
+  for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)if((*i)->getName()==name)a=*i;
+  const rdl::SceneObject* bound=a?o.getBinding(*a):nullptr;if(bound){s.regs[k]=program.reg(*bound);s.mapped|=1u<<k;}}
+ need(!program.polyVertices,o.getName()+": a polygon map in a volume is not rendered");
+ s.program=program.finish();}
+inline void runVolumeMaps(const void* context,const volume::Shader& s,V3 p,volume::Mapped& m){
+ const Plan& plan=*static_cast<const Plan*>(context);
+ const displace::Textures textures{plan.textureImages.data(),unsigned(plan.textureImages.size())};
+ volumeMapped(s,plan.materialPool.data(),textures,plan.worldToRender,p,m);}
+inline volume::Mapped mappedAt(const Plan& plan,const volume::Shader& s,V3 p){
+ volume::Mapped m{s.attenuationColor,s.albedoColor,s.emissionColor,s.intensity,s.factor,s.emissionIntensity,s.g};runVolumeMaps(&plan,s,p,m);return m;}
+// A VdbVolume's bound opacity gain baked (VdbVolume::bakeVolumeShaderDensityMap): a dense grid over the density's
+// active box in its index space at rez (bake_resolution_mode: one, bake_divisions over the box's longest side, or the
+// voxel size over bake_voxel_size), each voxel extinct() of density one with its maps at the voxel's render point (no
+// geometry), read at the nearest voxel; no resolution: a gain of one. Its emissive region with a bound incandescence:
+// the histogram with the emission's luminance at each voxel (x2VdbHistogramMapped).
+inline void bakeVdbVolume(Plan& plan,unsigned volumeIndex,const rdl::SceneObject& geometry,const rdl::SceneObject& shader){
+ volume::Shader& s=plan.volumes[volumeIndex];
+ const rdl::Mat4d node=plan.motion.on?xformAt(geometry,0.0f):affine(geometry);
+ auto toWorld=[&](double x,double y,double z){return V3{float(x*node[0][0]+y*node[1][0]+z*node[2][0]+node[3][0]),float(x*node[0][1]+y*node[1][1]+z*node[2][1]+node[3][1]),
+                                                         float(x*node[0][2]+y*node[1][2]+z*node[2][2]+node[3][2])};};
+ if(s.mapped&(1u<<volume::MapAttenuationColor)){
+  const auto& raw=plan.volumeGrids[s.densityGrid]->raw;
+  rdl::Mat4d i2g;for(int i=0;i<4;++i)for(int j=0;j<4;++j)i2g[i][j]=raw.indexToWorld[4*i+j];
+  double rez[3]={1,1,1};
+  const int mode=get<rdl::Int>(shader,"bake_resolution_mode");
+  if(mode==1){const float maxDivisions=float(std::max(raw.bboxMax[0]-raw.bboxMin[0],std::max(raw.bboxMax[1]-raw.bboxMin[1],raw.bboxMax[2]-raw.bboxMin[2])));
+   const double r=double(float(get<rdl::Int>(shader,"bake_divisions"))/maxDivisions);rez[0]=rez[1]=rez[2]=r;}
+  else if(mode==2){const float voxel=get<rdl::Float>(shader,"bake_voxel_size");for(int a=0;a<3;++a)rez[a]=raw.voxelSize[a]/double(voxel);}
+  if(rez[0]<=0.0||rez[1]<=0.0||rez[2]<=0.0){s.gain=V3{1,1,1};}
+  else{
+   int lo[3],hi[3];for(int a=0;a<3;++a){lo[a]=int(raw.bboxMin[a]*rez[a]);hi[a]=int(raw.bboxMax[a]*rez[a]);}
+   const int dims[3]={hi[0]-lo[0]+1,hi[1]-lo[1]+1,hi[2]-lo[2]+1};
+   need(dims[0]>0&&dims[1]>0&&dims[2]>0&&size_t(dims[0])*size_t(dims[1])*size_t(dims[2])<=(size_t(1)<<26),shader.getName()+": a baked VDB gain beyond the budget");
+   // The baked grid's index to grid: the density's after preScale(1 / rez).
+   const rdl::Mat4d pre(1.0/rez[0],0,0,0,0,1.0/rez[1],0,0,0,0,1.0/rez[2],0,0,0,0,1);const rdl::Mat4d bakedToGrid=pre*i2g;
+   auto data=std::make_shared<VdbGridData>();data->key="baked-vdb|"+shader.getName()+"|"+std::to_string(volumeIndex);
+   data->dense.assign(size_t(dims[0])*size_t(dims[1])*size_t(dims[2])*3,0.0f);
+   const unsigned threads=std::max(1u,std::min(16u,std::thread::hardware_concurrency()));
+   std::vector<std::thread> pool;std::atomic<int> nextSlice{0};std::mutex failLock;std::string failure;
+   for(unsigned t=0;t<threads;++t)pool.emplace_back([&]{
+    try{for(int kk=nextSlice++;kk<dims[2];kk=nextSlice++)for(int jj=0;jj<dims[1];++jj)for(int ii=0;ii<dims[0];++ii){
+     const double ijk[3]={double(ii+lo[0]),double(jj+lo[1]),double(kk+lo[2])};
+     const double pg[3]={ijk[0]*bakedToGrid[0][0]+ijk[1]*bakedToGrid[1][0]+ijk[2]*bakedToGrid[2][0]+bakedToGrid[3][0],
+                         ijk[0]*bakedToGrid[0][1]+ijk[1]*bakedToGrid[1][1]+ijk[2]*bakedToGrid[2][1]+bakedToGrid[3][1],
+                         ijk[0]*bakedToGrid[0][2]+ijk[1]*bakedToGrid[1][2]+ijk[2]*bakedToGrid[2][2]+bakedToGrid[3][2]};
+     const V3 pw=toWorld(double(float(pg[0])),double(float(pg[1])),double(float(pg[2])));
+     const volume::Mapped m=mappedAt(plan,s,pw);
+     const V3 e=volume::cmax0(m.attenuationColor);
+     float* out=data->dense.data()+3*((size_t(kk)*size_t(dims[1])+size_t(jj))*size_t(dims[0])+size_t(ii));out[0]=e.x;out[1]=e.y;out[2]=e.z;}}
+    catch(const std::exception& e){std::lock_guard<std::mutex> l(failLock);if(failure.empty())failure=e.what();}});
+   for(auto& t:pool)t.join();
+   need(failure.empty(),shader.getName()+": "+failure);
+   volume::Grid view;view.dense=data->dense.data();view.vec3=1;for(int a=0;a<3;++a){view.dims[a]=dims[a];view.denseMin[a]=lo[a];}
+   const rdl::Mat4d gridToBaked=bakedToGrid.inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)view.worldToIndex[4*i+j]=gridToBaked[i][j];
+   s.bakedGrid=unsigned(plan.volumeGrids.size());plan.volumeGrids.push_back(std::move(data));plan.volumeGridViews.push_back(view);}}
+ if((s.mapped&(1u<<volume::MapEmissionColor))&&s.emissionGrid!=volume::NoGrid&&(s.visibility&0x3fcu)){
+  const auto& lib=subdLibrary();need(lib.vdbHistogramMapped&&lib.vdbHistogramFree,geometry.getName()+": MoonRay's VDB reading (xpu2_geom.dll) did not load");
+  struct Context{Plan* plan;const volume::Shader* s;decltype(toWorld)* toWorld;};Context ctx{&plan,&s,&toWorld};
+  const X2VdbShaderFn fn=[](void* user,const double* p)->float{auto& c=*static_cast<Context*>(user);
+   const volume::Mapped m=mappedAt(*c.plan,*c.s,(*c.toWorld)(double(float(p[0])),double(float(p[1])),double(float(p[2]))));
+   const V3 e=volume::cmax0(m.emissionColor);return 0.299f*e.x+0.587f*e.y+0.114f*e.z;};
+  X2VdbHistogram h{};char error[512]={0};
+  need(lib.vdbHistogramMapped(get<rdl::String>(geometry,"model").c_str(),get<rdl::String>(geometry,"emission_grid").c_str(),fn,&ctx,&h,error,sizeof error)!=0,
+       geometry.getName()+": "+std::string(error));
+  try{
+   const size_t n=size_t(h.res[0])*size_t(h.res[1])*size_t(h.res[2]);
+   if(n>0){need(n<(1u<<26),geometry.getName()+": an emission grid too large for its distribution");
+    std::vector<float> histogram(h.values,h.values+n);
+    rdl::Mat4d i2p;for(int i=0;i<4;++i)for(int j=0;j<4;++j)i2p[i][j]=h.indexToWorld[4*i+j];
+    const rdl::Mat4d i2w=i2p*node;
+    const double det=i2w[0][0]*(i2w[1][1]*i2w[2][2]-i2w[1][2]*i2w[2][1])-i2w[0][1]*(i2w[1][0]*i2w[2][2]-i2w[1][2]*i2w[2][0])+i2w[0][2]*(i2w[1][0]*i2w[2][1]-i2w[1][1]*i2w[2][0]);
+    const rdl::Mat4d distToIndex(1,0,0,0,0,1,0,0,0,0,1,0,h.pMin[0]-0.5,h.pMin[1]-0.5,h.pMin[2]-0.5,1);
+    plan.emissiveRegions.push_back(emissionRegion(plan.emissionPool,histogram,h.res,distToIndex*i2w,float(1.0/det),volumeIndex,s.visibility));}
+  }catch(...){lib.vdbHistogramFree(&h);throw;}
+  lib.vdbHistogramFree(&h);}}
+// A mapped volume's extinction once the textures are read. On a polygon mesh with a bound attenuation colour, intensity
+// or factor (Primitive::bakeVolumeShaderDensityMap): a dense Vec3 grid over the mesh's local bounds (its render-space
+// bounds through prim to render's inverse), rez voxels along its longest world side (bake_resolution_mode: 100,
+// bake_divisions, or bake_voxel_size), each voxel's extinct() of density one at its index point, read at the nearest
+// voxel; its feature size the grid's largest voxel side. Otherwise (no bound extinction, another geometry, or no
+// resolution) extinct() of MoonRay's empty state: its maps at the render origin.
+inline void bakeVolume(Plan& plan,unsigned volumeIndex,const MeshData& mesh,const rdl::SceneObject& shader,const rdl::Mat4d& nodeXform,bool polygons){
+ namespace sm=scene_rdl2::math;
+ volume::Shader& s=plan.volumes[volumeIndex];
+ rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=plan.world2render[4*i+j];
+ const rdl::Mat4d r2w=w2r.inverse();
+ const bool extinctionMapped=(s.mapped&((1u<<volume::MapAttenuationColor)|(1u<<volume::MapAttenuationIntensity)|(1u<<volume::MapAttenuationFactor)))!=0;
+ int rez=100;
+ {const int mode=get<rdl::Int>(shader,"bake_resolution_mode");if(mode==1)rez=get<rdl::Int>(shader,"bake_divisions");}
+ // Render-space bounds of the vertices (computeAABB), then local and world bounds (transformBBox, in floats).
+ sm::BBox3f renderBox(sm::Vec3f(3.402823466e+38f),sm::Vec3f(-3.402823466e+38f));
+ auto toRender=[&](const V3& p){return sm::Vec3f(float(p.x*w2r[0][0]+p.y*w2r[1][0]+p.z*w2r[2][0]+w2r[3][0]),float(p.x*w2r[0][1]+p.y*w2r[1][1]+p.z*w2r[2][1]+w2r[3][1]),
+                                                  float(p.x*w2r[0][2]+p.y*w2r[1][2]+p.z*w2r[2][2]+w2r[3][2]));};
+ for(const auto& p:mesh.positions)renderBox.extend(toRender(p));
+ for(const auto& step:mesh.steps)for(const auto& p:step)renderBox.extend(toRender(p));
+ const sm::Mat4f primToRender=sm::toFloat(nodeXform*w2r);
+ const sm::BBox3f localBox=sm::transformBBox(primToRender.inverse(),renderBox);
+ const sm::BBox3f worldBox=sm::transformBBox(sm::toFloat(nodeXform),localBox);
+ const sm::Vec3f worldSize=worldBox.upper-worldBox.lower;const float maxSize=std::max(worldSize.x,std::max(worldSize.y,worldSize.z));
+ if(get<rdl::Int>(shader,"bake_resolution_mode")==2)rez=int(std::ceil(maxSize/get<rdl::Float>(shader,"bake_voxel_size")));
+ if(!polygons||!extinctionMapped||rez<=0){
+  // The empty state's P: the render origin.
+  const V3 origin{float(r2w[3][0]),float(r2w[3][1]),float(r2w[3][2])};
+  const volume::Mapped m=mappedAt(plan,s,origin);
+  s.originAttenuation=(s.flags&volume::MatchAlbedo)?m.albedoColor:m.attenuationColor;s.originIntensity=m.attenuationIntensity;s.originFactor=m.attenuationFactor;
+  return;}
+ const sm::Vec3f upper=float(rez)*worldSize/maxSize;
+ const int dims[3]={int(upper.x)+1,int(upper.y)+1,int(upper.z)+1};
+ need(dims[0]>0&&dims[1]>0&&dims[2]>0&&size_t(dims[0])*size_t(dims[1])*size_t(dims[2])<=(size_t(1)<<26),shader.getName()+": a baked volume grid beyond the budget");
+ const sm::Vec3f scale=(localBox.upper-localBox.lower)/upper;
+ // index to render: ((ijk * scale) + localMin) * primToRender, in doubles (createLinearTransform, preTranslate, preScale).
+ rdl::Mat4d l2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)l2r[i][j]=double(primToRender[i][j]);
+ const rdl::Mat4d st(double(scale.x),0,0,0,0,double(scale.y),0,0,0,0,double(scale.z),0,0,0,0,1);
+ const rdl::Mat4d tr(1,0,0,0,0,1,0,0,0,0,1,0,double(localBox.lower.x),double(localBox.lower.y),double(localBox.lower.z),1);
+ const rdl::Mat4d indexToRender=st*tr*l2r;
+ auto g=std::make_shared<VdbGridData>();g->key="baked|"+shader.getName()+"|"+std::to_string(volumeIndex);g->dense.assign(size_t(dims[0])*size_t(dims[1])*size_t(dims[2])*3,0.0f);
+ // Each voxel's extinct() of density one with its maps at the voxel's index point, sliced over the threads.
+ const unsigned threads=std::max(1u,std::min(16u,std::thread::hardware_concurrency()));
+ std::vector<std::thread> pool;std::atomic<int> nextSlice{0};std::mutex failLock;std::string failure;
+ for(unsigned t=0;t<threads;++t)pool.emplace_back([&]{
+  try{for(int k=nextSlice++;k<dims[2];k=nextSlice++)for(int j=0;j<dims[1];++j)for(int i=0;i<dims[0];++i){
+   const double pr[3]={i*indexToRender[0][0]+j*indexToRender[1][0]+k*indexToRender[2][0]+indexToRender[3][0],
+                       i*indexToRender[0][1]+j*indexToRender[1][1]+k*indexToRender[2][1]+indexToRender[3][1],
+                       i*indexToRender[0][2]+j*indexToRender[1][2]+k*indexToRender[2][2]+indexToRender[3][2]};
+   const sm::Vec3f p=sm::Vec3f(float(pr[0]),float(pr[1]),float(pr[2]));
+   const V3 pw{float(p.x*r2w[0][0]+p.y*r2w[1][0]+p.z*r2w[2][0]+r2w[3][0]),float(p.x*r2w[0][1]+p.y*r2w[1][1]+p.z*r2w[2][1]+r2w[3][1]),
+               float(p.x*r2w[0][2]+p.y*r2w[1][2]+p.z*r2w[2][2]+r2w[3][2])};
+   const volume::Mapped m=mappedAt(plan,s,pw);
+   const V3 color=volume::attenuationColorFrom(s,(s.flags&volume::MatchAlbedo)?m.albedoColor:m.attenuationColor,-1.0f);
+   const V3 e=volume::cmax0(volume::scaled(volume::times(volume::scaled(V3{1,1,1},m.attenuationIntensity),color),m.attenuationFactor));
+   float* out=g->dense.data()+3*((size_t(k)*size_t(dims[1])+size_t(j))*size_t(dims[0])+size_t(i));out[0]=e.x;out[1]=e.y;out[2]=e.z;}}
+  catch(const std::exception& e){std::lock_guard<std::mutex> l(failLock);if(failure.empty())failure=e.what();}});
+ for(auto& t:pool)t.join();
+ need(failure.empty(),shader.getName()+": "+failure);
+ // The grid read through the mesh's world to object (the volume's worldToGrid), then object to index.
+ volume::Grid view;view.dense=g->dense.data();view.vec3=1;for(int a=0;a<3;++a)view.dims[a]=dims[a];
+ const rdl::Mat4d objectToIndex=(st*tr).inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)view.worldToIndex[4*i+j]=objectToIndex[i][j];
+ s.densityGrid=unsigned(plan.volumeGrids.size());plan.volumeGrids.push_back(std::move(g));plan.volumeGridViews.push_back(view);
+ // transform->voxelSize(): each index axis's length in render space; the feature size their largest.
+ double fs=0;for(int a=0;a<3;++a)fs=std::max(fs,std::sqrt(indexToRender[a][0]*indexToRender[a][0]+indexToRender[a][1]*indexToRender[a][1]+indexToRender[a][2]*indexToRender[a][2]));
+ s.featureSize=float(fs);}
 // A NormalDisplacement or a tangent-space VectorDisplacement (mesh_displacement.h), its maps in a program of its own.
 inline displace::Shader admitDisplacement(const rdl::SceneObject& o,std::vector<float>& pool,TextureContext& textures,int depth=0){
  const std::string cls=o.getSceneClass().getName();
@@ -710,18 +1812,44 @@ inline displace::Shader admitDisplacement(const rdl::SceneObject& o,std::vector<
   d.heightReg=bound("height");d.multiplierReg=bound("height_multiplier");
  }else if(cls=="VectorDisplacement"){
   attributes(o,{"vector","factor","source_space","tangent_space_style","bound_padding"},{"vector"});
-  need(get<rdl::Int>(o,"source_space")==0,o.getName()+": object-space vector displacement is not rendered yet");
+  const int sourceSpace=get<rdl::Int>(o,"source_space");need(sourceSpace==0||sourceSpace==1,o.getName()+": invalid source space");
   const int style=get<rdl::Int>(o,"tangent_space_style");need(style==0||style==1,o.getName()+": invalid tangent space style");
   const auto v=get<rdl::Vec3f>(o,"vector");d.kind=displace::Shader::Vector;d.vector=V3{v.x,v.y,v.z};need(surface::finite(d.vector),o.getName()+": invalid vector");
-  d.factor=f1("factor");d.style=style;d.vectorReg=bound("vector");
+  d.factor=f1("factor");d.style=style;d.vectorReg=bound("vector");d.objectSpace=sourceSpace;
  }else throw Unsupported(o.getName()+": displacement class "+cls+" is not rendered yet");
  need(!maps.polyVertices&&maps.required.empty(),o.getName()+": polygon and attribute-requiring maps in a displacement are not rendered yet");
  d.program=maps.finish();
  return d;
 }
+// A displaced subdivision surface's displacements (xpu2_geom.dll's callback, subdDisplace): each Displacement of its
+// assignments as XPU2 evaluates it, the material pool and textures its maps read, and render to world space and back
+// (MoonRay displaces in render space, XPU2's displacement takes world space). A failure inside the tessellation is
+// kept and thrown after it (check).
+struct SubdDisplacement{
+ std::map<const void*,displace::Shader> shaders;std::vector<const tex::Image*> images;const float* pool=nullptr;const float* worldToRender=nullptr;
+ rdl::Mat4d w2r,r2w;std::mutex lock;std::string failure;float worldToObject[12]={1,0,0,0,0,1,0,0,0,0,1,0};
+ void check(const rdl::SceneObject& o){need(failure.empty(),o.getName()+": "+failure);}
+};
+inline void subdDisplace(void* user,const void* object,const float* P,const float* N,const float* dPds,const float* dPdt,const float* st,const float* fp,float* out){
+ auto& d=*static_cast<SubdDisplacement*>(user);out[0]=out[1]=out[2]=0.0f;
+ static std::once_flag traced;std::call_once(traced,[&]{std::fprintf(stderr,"xpu2: subdivision displacement at %g %g %g, %zu shaders\n",P[0],P[1],P[2],d.shaders.size());std::fflush(stderr);});
+ const auto it=d.shaders.find(object);if(it==d.shaders.end())return;
+ auto point=[&](const float* q,const rdl::Mat4d& m){return V3{float(q[0]*m[0][0]+q[1]*m[1][0]+q[2]*m[2][0]+m[3][0]),float(q[0]*m[0][1]+q[1]*m[1][1]+q[2]*m[2][1]+m[3][1]),
+                                                      float(q[0]*m[0][2]+q[1]*m[1][2]+q[2]*m[2][2]+m[3][2])};};
+ auto vec=[&](const float* q,const rdl::Mat4d& m){return V3{float(q[0]*m[0][0]+q[1]*m[1][0]+q[2]*m[2][0]),float(q[0]*m[0][1]+q[1]*m[1][1]+q[2]*m[2][1]),
+                                                    float(q[0]*m[0][2]+q[1]*m[1][2]+q[2]*m[2][2])};};
+ try{
+  shade::State s;s.P=point(P,d.r2w);s.N=s.Ng=vec(N,d.r2w);s.dPds=vec(dPds,d.r2w);s.dPdt=vec(dPdt,d.r2w);s.wo=V3{0,0,0};s.displacement=true;
+  s.s=st[0];s.t=st[1];s.dsdx=fp[0];s.dsdy=fp[1];s.dtdx=fp[2];s.dtdy=fp[3];s.worldToRender=d.worldToRender;s.worldToObject=d.worldToObject;
+  const displace::Textures textures{d.images.data(),unsigned(d.images.size())};
+  const V3 w=displace::displacement(it->second,d.pool,s,textures);const float wf[3]={w.x,w.y,w.z};const V3 r=vec(wf,d.w2r);
+  out[0]=r.x;out[1]=r.y;out[2]=r.z;
+ }catch(const std::exception& e){std::lock_guard<std::mutex> g(d.lock);if(d.failure.empty())d.failure=e.what();}
+}
 // UserData primitive attributes (geom/PrimitiveUserData processArbitraryData) at a geometry's rate counts: constant,
 // uniform (a face, or a curve), vertex, varying, face varying; pickRate's guess from the count when the rate is auto.
-inline void primitiveAttributes(const rdl::SceneObject& o,MeshData& m,size_t uniformCount,size_t vertexCount,size_t varyingCount,size_t faceVaryingCount){
+inline void primitiveAttributes(const rdl::SceneObject& o,MeshData& m,size_t uniformCount,size_t vertexCount,size_t varyingCount,size_t faceVaryingCount,
+                                std::vector<std::pair<std::string,unsigned>>* named=nullptr){
  for(auto* object:o.get<rdl::SceneObjectVector>("primitive_attributes")){
   need(object&&object->getSceneClass().getName()=="UserData",o.getName()+": a primitive attribute that is not UserData");
   attributes(*object,{"bool_key","bool_values","int_key","int_values","float_key","float_values_0","float_values_1","string_key","string_values","color_key","color_values_0","color_values_1","vec2f_key","vec2f_values_0","vec2f_values_1","vec3f_key","vec3f_values_0","vec3f_values_1","mat3f_key","mat3f_values_0","mat3f_values_1","mat4f_key","mat4f_values_0","mat4f_values_1","rate"});
@@ -732,7 +1860,8 @@ inline void primitiveAttributes(const rdl::SceneObject& o,MeshData& m,size_t uni
   auto add=[&](const std::string& key,unsigned type,unsigned components,const std::vector<float>& values,size_t count){
    if(key.empty())return;const unsigned r=pick(count);need(r!=0,o.getName()+": primitive attribute "+key+" has an unsupported rate or size");
    for(float f:values)need(std::isfinite(f),o.getName()+": invalid primitive attribute "+key);
-   m.prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,r,unsigned(m.primData.size())});m.primData.insert(m.primData.end(),values.begin(),values.end());};
+   m.prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,r,unsigned(m.primData.size())});m.primData.insert(m.primData.end(),values.begin(),values.end());
+   if(named)named->emplace_back(key,type);};
   {const auto& d=get<rdl::FloatVector>(*object,"float_values_0");add(get<rdl::String>(*object,"float_key"),shade::PrimFloat,1,std::vector<float>(d.begin(),d.end()),d.size());}
   {const auto& d=get<rdl::IntVector>(*object,"int_values");std::vector<float> f;for(int i:d)f.push_back(float(i));add(get<rdl::String>(*object,"int_key"),shade::PrimInt,1,f,d.size());}
   {const auto& d=get<rdl::RgbVector>(*object,"color_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.r);f.push_back(c.g);f.push_back(c.b);}add(get<rdl::String>(*object,"color_key"),shade::PrimRgb,3,f,d.size());}
@@ -745,7 +1874,15 @@ inline bool hasPrim(const MeshData& m,const char* name,unsigned type){const unsi
 // file written by modo_fur_grow, linear curves with a texture coordinate a point). The control points go to render
 // space with their radii scaled as Primitive::applyTransformation scales them; the spans are numbered as
 // LineSegments, BezierSpanChains and BSpline number them; uv_list becomes the "uv" primitive attribute at its rate.
-inline void admitCurves(const rdl::SceneObject& o,const rdl::Mat4d& transform,MeshData& m){
+// instanceMotionSteps (below): a moving instance's steps of its reference.
+inline std::vector<std::vector<V3>> instanceMotionSteps(const rdl::SceneObject& o,const MotionParams& mp,const RenderItem& item,
+                                                       bool staticTakesSecond,std::vector<float>* scales,
+                                                       const std::vector<float>* w0,const std::vector<float>* w1,
+                                                       std::vector<std::vector<float>>* widths);
+inline void admitCurves(const rdl::SceneObject& o,const rdl::Mat4d& transform,MeshData& m,const MotionParams* motion=nullptr,
+                        const RenderItem* item=nullptr){
+ // The raw time steps' radii under motion (screen-space radii make each step's its own): widths for meshMotionSteps.
+ std::vector<float> rawWidth0,rawWidth1;
  const bool fur=o.getSceneClass().getName()=="ModoFurGeometry";
  std::vector<unsigned> counts;std::vector<float> points;  // object space: x, y, z, radius
  int type=0;
@@ -761,8 +1898,10 @@ inline void admitCurves(const rdl::SceneObject& o,const rdl::Mat4d& transform,Me
   m.prims.push_back(shade::PrimAttr{shade::primKey("uv",shade::PrimVec2f),2,shade::PrimVertex,unsigned(m.primData.size())});m.primData.insert(m.primData.end(),across.begin(),across.end());
   m.prims.push_back(shade::PrimAttr{shade::primKey("modo_fine",shade::PrimFloat),1,shade::PrimConstant,unsigned(m.primData.size())});m.primData.push_back(1.0f);
  }else{
-  {std::set<std::string> allowed{"curves_vertex_count","vertex_list_0","radius_list","uv_list","curve_type","curves_subtype","tessellation_rate","node_xform","primitive_attributes"};
-   allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(o,allowed);}
+  {std::set<std::string> allowed{"curves_vertex_count","vertex_list_0","radius_list","uv_list","curve_type","curves_subtype","tessellation_rate","node_xform","primitive_attributes",
+    "vertex_list_1","velocity_list_0","velocity_list_1","accleration_list","velocity_scale","motion_blur_type","curved_motion_blur_sample_count",
+    "use_screen_space_radius"};
+   allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(o,allowed,{},{"node_xform"});}
   type=get<rdl::Int>(o,"curve_type");need(type>=0&&type<=2,o.getName()+": unknown curve type");
   const auto& c=o.get<rdl::IntVector>("curves_vertex_count");const auto& v=o.get<rdl::Vec3fVector>("vertex_list_0");
   for(int n:c){need(n>0,o.getName()+": invalid curve vertex count");counts.push_back(unsigned(n));}
@@ -784,6 +1923,36 @@ inline void admitCurves(const rdl::SceneObject& o,const rdl::Mat4d& transform,Me
   need(radius.size()==vertCount,o.getName()+": radii do not match the curves");
   points.reserve(vertCount*4);for(size_t i=0;i<vertCount;++i){points.push_back(v[i].x);points.push_back(v[i].y);points.push_back(v[i].z);points.push_back(radius[i]);}
   primitiveAttributes(o,m,curves,vertCount,varyingCount,0);
+  // use_screen_space_radius (applyScreenSpaceRadius over the curves): each point's radius times its distance from the
+  // primary camera over the camera's focal, times its min/max distance radius lerped between min_distance and
+  // max_distance (one a curve, a point, or one for all; one each by default).
+  if(get<rdl::Bool>(o,"use_screen_space_radius")){namespace sm=scene_rdl2::math;
+   // Under motion each raw time step (vertex_list_0, vertex_list_1) has radii from its own points.
+   const auto& v1=o.get<rdl::Vec3fVector>("vertex_list_1");
+   const bool second=motion&&motion->on&&v1.size()==vertCount;
+   const rdl::SceneVariables& sv=o.getSceneClass().getSceneContext()->getSceneVariables();
+   const rdl::SceneObject* camera=get<rdl::SceneObject*>(sv,"camera");
+   bool hasFocal=false;if(camera)for(auto i=camera->getSceneClass().beginAttributes();i!=camera->getSceneClass().endAttributes();++i)if((*i)->getName()=="focal")hasFocal=true;
+   if(camera&&hasFocal){
+    const float focal=get<rdl::Float>(*camera,"focal");const rdl::Mat4d cm=camera->get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN);
+    const sm::Vec3f cameraPosition=sm::Vec3f(float(cm[3][0]),float(cm[3][1]),float(cm[3][2]));
+    const sm::Mat4f node=sm::toFloat(o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN));
+    auto values=[&](const char* key){std::vector<float> out(vertCount,1.0f);
+     for(const auto& a:m.prims)if(a.key==shade::primKey(key,shade::PrimFloat)){
+      if(a.rate==shade::PrimConstant)std::fill(out.begin(),out.end(),m.primData[a.offset]);
+      else if(a.rate==shade::PrimUniform){size_t i=0;for(size_t cc=0;cc<curves;++cc)for(unsigned k=0;k<counts[cc];++k)out[i++]=m.primData[a.offset+cc];}
+      else if(a.rate==shade::PrimVertex||a.rate==shade::PrimVarying){for(size_t i=0;i<vertCount&&a.offset+i<m.primData.size();++i)out[i]=m.primData[a.offset+i];}}
+     return out;};
+    const auto minDist=values("min_distance"),maxDist=values("max_distance"),minRadius=values("min_distance_radius"),maxRadius=values("max_distance_radius");
+    auto screen=[&](const sm::Vec3f& local,size_t i,float r){
+     const sm::Vec3f position=sm::transformPoint(node,local);
+     const float distance=sm::distance(position,cameraPosition);
+     const float distT=sm::clamp((distance-minDist[i])/(maxDist[i]-minDist[i]),0.0f,1.0f);
+     const float distFactor=(minRadius[i]*(1.0f-distT))+(maxRadius[i]*distT);
+     return std::max(0.f,r*(distance/focal)*distFactor);};
+    if(second){rawWidth1.resize(vertCount);for(size_t i=0;i<vertCount;++i)rawWidth1[i]=screen(sm::Vec3f(v1[i].x,v1[i].y,v1[i].z),i,points[4*i+3]);}
+    for(size_t i=0;i<vertCount;++i)points[4*i+3]=screen(sm::Vec3f(points[4*i],points[4*i+1],points[4*i+2]),i,points[4*i+3]);
+    if(second){rawWidth0.resize(vertCount);for(size_t i=0;i<vertCount;++i)rawWidth0[i]=points[4*i+3];}}}
   // uv_list, unless the primitive attributes already give "st" or "uv".
   const auto& ul=o.get<rdl::Vec2fVector>("uv_list");
   if(!ul.empty()&&!hasPrim(m,"st",shade::PrimVec2f)&&!hasPrim(m,"uv",shade::PrimVec2f)){
@@ -808,6 +1977,22 @@ inline void admitCurves(const rdl::SceneObject& o,const rdl::Mat4d& transform,Me
   const float r=points[4*i+3]*radiusScale;
   need(std::isfinite(p[0])&&std::isfinite(p[1])&&std::isfinite(p[2])&&std::isfinite(r)&&r>=0&&std::abs(p[0])<=10000&&std::abs(p[1])<=10000&&std::abs(p[2])<=10000,o.getName()+": invalid curve point");
   m.curvePoints.insert(m.curvePoints.end(),{p[0],p[1],p[2],r});}
+ // Under motion blur (Curves::transformPrimitive's transformVertexBuffer): the points at each time step as a mesh's
+ // vertices (the static case keeps vertex_list_0), the radii scaled by each step's transform.
+ // A moving instance: the reference's steps through the instance's transform at each step's time (instanceMotionSteps).
+ if(!fur&&motion&&motion->on&&(meshHasMotion(o)||(item&&item->moves))){
+  std::vector<float> scales;std::vector<std::vector<float>> widths;
+  const std::vector<float>* w0=rawWidth0.empty()?nullptr:&rawWidth0;const std::vector<float>* w1=rawWidth1.empty()?nullptr:&rawWidth1;
+  const auto steps=item?instanceMotionSteps(o,*motion,*item,false,&scales,w0,w1,&widths):
+                   meshMotionSteps(o,*motion,o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN),o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END),false,&scales,w0,w1,&widths);
+  need(steps.size()==scales.size()&&steps[0].size()==vertices&&(widths.empty()||widths.size()==steps.size()),o.getName()+": curve motion steps do not match the points");
+  for(size_t k=0;k<steps.size();++k){std::vector<float> step(points.size());
+   for(size_t i=0;i<vertices;++i){step[4*i]=steps[k][i].x;step[4*i+1]=steps[k][i].y;step[4*i+2]=steps[k][i].z;
+    step[4*i+3]=(widths.empty()?points[4*i+3]:widths[k][i])*scales[k];
+    need(std::isfinite(step[4*i+3])&&step[4*i+3]>=0,o.getName()+": invalid curve point");}
+   if(k==0)m.curvePoints=std::move(step);else m.curveSteps.push_back(std::move(step));}
+  for(const auto& s:m.curveSteps)m.curveStepPointers.push_back(s.data());
+ }
  // The index buffer: a span's first point, its curve, its place along the curve.
  unsigned offset=0;
  for(unsigned chain=0;chain<counts.size();++chain){const unsigned c=counts[chain];
@@ -954,8 +2139,228 @@ inline void reverseSplit(PolygonSplit& s,const rdl::IntVector& counts,const rdl:
 // mesh's own, the "" part (createPerFaceAssignmentId); a face with none is not rendered. Parts whose lists do not add
 // up are ignored, as MoonRay warns and ignores them. One piece an assignment, its faces marked (none: every face).
 struct Piece{int id;std::string suffix;std::vector<unsigned char> faces;};
+// RdlInstancerGeometry (InstanceProceduralLeaf::instanceWithXforms): each instance a reference geometry under the
+// instance's transform, expanded into a mesh of its own. The instance's transform samples are MoonRay's: its
+// xform_list entry (or positions, orientations and scales), at the shutter's close its xform_list_close entry or the
+// entry moved by its velocity, after the reference's own transform where use_reference_xforms asks, then the
+// instancer's node transform at each end (Instance::transformPrimitive's appendXform); under motion the instance moves
+// as MotionTransform::eval has it, its ends decomposed and slerped over the shutter.
+inline void instancerItems(const rdl::SceneObject& o,const rdl::SceneVariables& sv,const MotionParams& mp,std::vector<RenderItem>& items){
+ namespace sm=scene_rdl2::math;
+ {std::set<std::string> allowed{"method","xform_list","xform_list_close","positions","orientations","scales","velocities","evaluation_frame",
+   "ref_indices","disable_indices","use_reference_xforms","use_reference_attributes","references","primitive_attributes","node_xform","instance_level","side_type"};
+  allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(o,allowed,{},{"node_xform"});}
+ const auto& refs=o.get<rdl::SceneObjectVector>("references");need(!refs.empty(),o.getName()+": an instancer with no references");
+ for(auto* r:refs){const std::string rc=r&&r->isA<rdl::Geometry>()?r->getSceneClass().getName():std::string();
+  need(rc=="RdlMeshGeometry"||rc=="RdlCurveGeometry"||rc=="RdlPointGeometry",o.getName()+": an instanced "+(rc.empty()?std::string("object"):rc)+" is not rendered yet");}
+ const int method=get<rdl::Int>(o,"method");need(method==0||method==2,o.getName()+": unknown instancing method");
+ const auto& xforms=o.get<rdl::Mat4dVector>("xform_list");const auto& closes=o.get<rdl::Mat4dVector>("xform_list_close");
+ const auto& positions=o.get<rdl::Vec3fVector>("positions");const auto& orientations=o.get<rdl::Vec4fVector>("orientations");const auto& scales=o.get<rdl::Vec3fVector>("scales");
+ const auto& velocities=o.get<rdl::Vec3fVector>("velocities");const auto& indices=o.get<rdl::IntVector>("ref_indices");const auto& disabled=o.get<rdl::IntVector>("disable_indices");
+ size_t count=method==0?positions.size():xforms.size();
+ need(closes.empty()||(method==2&&closes.size()==xforms.size()),o.getName()+": xform_list_close requires the xform list method and as many entries");
+ const bool affineMotion=mp.on&&!closes.empty();
+ const bool velocity=mp.on&&!velocities.empty()&&velocities.size()==count;
+ float dt0=0,dt1=0;
+ if(velocity){const auto& steps=get<rdl::FloatVector>(sv,"motion_steps");need(steps.size()>=2,o.getName()+": velocities need two motion steps");
+  const float fps=std::max(get<rdl::Float>(sv,"fps"),1.0f),frame=get<rdl::Float>(o,"evaluation_frame");dt0=(steps[0]-frame)/fps;dt1=(steps[1]-frame)/fps;}
+ bool applyIndex=false,groupOnly=false;
+ if(indices.size()==count)applyIndex=true;else if(!indices.empty()&&count==0){applyIndex=groupOnly=true;count=indices.size();}
+ std::set<int> off;for(int i:disabled)if(i<int(count))off.insert(i);
+ const bool useRefXforms=get<rdl::Bool>(o,"use_reference_xforms");
+ const sm::Xform3f p0=sm::xform<sm::Xform3f>(sm::toFloat(o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN)));
+ const sm::Xform3f p1=sm::xform<sm::Xform3f>(sm::toFloat(o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END)));
+ const bool parentMoves=!(p0==p1);
+ for(size_t i=0;i<count;++i){
+  if(off.count(int(i)))continue;
+  std::vector<sm::Xform3f> x;
+  if(groupOnly)x.push_back(sm::Xform3f(sm::Mat3f(sm::one),sm::Vec3f(sm::zero)));
+  else if(method==0){
+   const sm::Vec3f scale=scales.size()==count?scales[i]:sm::Vec3f(sm::one);
+   sm::Quaternion3f orient(sm::one);
+   if(orientations.size()==count&&orientations[i].lengthSqr()>0.0f){orient.i=orientations[i][0];orient.j=orientations[i][1];orient.k=orientations[i][2];orient.r=orientations[i][3];orient=sm::normalize(orient);}
+   const sm::Mat3f sr(sm::Mat3f::scale(scale)*sm::Mat3f(orient));
+   if(velocity){x.emplace_back(sr,positions[i]+velocities[i]*dt0);x.emplace_back(sr,positions[i]+velocities[i]*dt1);}
+   else x.emplace_back(sr,positions[i]);
+  }else if(affineMotion){x.push_back(sm::xform<sm::Xform3f>(sm::toFloat(xforms[i])));x.push_back(sm::xform<sm::Xform3f>(sm::toFloat(closes[i])));}
+  else if(velocity){sm::Xform3f a=sm::xform<sm::Xform3f>(sm::toFloat(xforms[i])),b=a;a.p+=velocities[i]*dt0;b.p+=velocities[i]*dt1;x.push_back(a);x.push_back(b);}
+  else x.push_back(sm::xform<sm::Xform3f>(sm::toFloat(xforms[i])));
+  int index=applyIndex?indices[size_t(i)]:0;if(index>int(refs.size())-1)index=0;
+  const rdl::SceneObject* ref=refs[size_t(index)];
+  if(useRefXforms){
+   const sm::Xform3f r0=sm::xform<sm::Xform3f>(sm::toFloat(ref->get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN)));
+   const sm::Xform3f r1=sm::xform<sm::Xform3f>(sm::toFloat(ref->get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END)));
+   for(size_t j=0;j<x.size();++j)x[j]=(j?r1:r0)*x[j];}
+  // MotionTransform: its two samples (one: both the same) times the instancer's at each end.
+  sm::Xform3f s0=x[0],s1=x.size()>1?x[1]:x[0];
+  s0=s0*p0;s1=s1*(parentMoves?p1:p0);
+  RenderItem item{ref,&o,int(i)};item.count=count;item.suffix="@"+o.getName()+"#"+std::to_string(i);item.sample[0]=s0;item.sample[1]=s1;
+  item.moves=mp.on&&!(s0==s1)&&!(mp.openDelta==0.0f&&mp.closeDelta==0.0f);
+  if(!item.moves&&!(s0==s1)){
+   // A static MotionTransform of two samples: their slerp at the shutter's open delta.
+   sm::XformComponent3f c0,c1;sm::decompose(s0,c0);sm::decompose(s1,c1);if(sm::dot(c0.r,c1.r)<0.0f)c1.r=-c1.r;
+   item.sample[0]=item.sample[1]=sm::slerp(c0,c1,mp.openDelta).combined();}
+  items.push_back(item);}
+}
+// The instance's transform at a time in the shutter (MotionTransform::eval).
+inline scene_rdl2::math::Xform3f instanceXformAt(const RenderItem& item,const MotionParams& mp,float t){
+ namespace sm=scene_rdl2::math;
+ if(!item.moves)return item.sample[0];
+ sm::XformComponent3f c0,c1;sm::decompose(item.sample[0],c0);sm::decompose(item.sample[1],c1);if(sm::dot(c0.r,c1.r)<0.0f)c1.r=-c1.r;
+ return sm::slerp(c0,c1,mp.openDelta+t*(mp.closeDelta-mp.openDelta)).combined();}
+inline rdl::Mat4d instanceMatrix(const RenderItem& item){
+ const auto& x=item.sample[0];
+ return rdl::Mat4d(x.l.vx.x,x.l.vx.y,x.l.vx.z,0,x.l.vy.x,x.l.vy.y,x.l.vy.z,0,x.l.vz.x,x.l.vz.y,x.l.vz.z,0,x.p.x,x.p.y,x.p.z,1);}
+// A moving instance's vertices over the shutter: the reference's own time steps in its space (meshMotionSteps with no
+// transform), each moved by the instance's transform at its time; a turning instance is baked at 17 steps.
+inline std::vector<std::vector<V3>> instanceMotionSteps(const rdl::SceneObject& o,const MotionParams& mp,const RenderItem& item,
+                                                       bool staticTakesSecond=true,std::vector<float>* scales=nullptr,
+                                                       const std::vector<float>* w0=nullptr,const std::vector<float>* w1=nullptr,
+                                                       std::vector<std::vector<float>>* widths=nullptr){
+ namespace sm=scene_rdl2::math;
+ const rdl::Mat4d one(sm::one);
+ std::vector<std::vector<float>> lw;
+ const auto local=meshMotionSteps(o,mp,one,one,staticTakesSecond,nullptr,w0,w1,widths?&lw:nullptr);
+ sm::XformComponent3f c0,c1;sm::decompose(item.sample[0],c0);sm::decompose(item.sample[1],c1);
+ const bool turns=item.moves&&!(c0.r==c1.r||c0.r==-c1.r);
+ const size_t n=std::max<size_t>(local.size(),item.moves?(turns?17:2):1);
+ std::vector<std::vector<V3>> out(n,std::vector<V3>(local[0].size()));
+ for(size_t j=0;j<n;++j){const float u=n>1?float(j)/float(n-1):0.0f;const sm::Xform3f x=instanceXformAt(item,mp,u);
+  const float f=local.size()>1?u*float(local.size()-1):0.0f;const size_t k=std::min<size_t>(size_t(f),local.size()>1?local.size()-2:0);const float w=f-float(k);
+  for(size_t i=0;i<local[0].size();++i){V3 p=local[k][i];if(local.size()>1){const V3& q=local[k+1][i];p=V3{(1-w)*p.x+w*q.x,(1-w)*p.y+w*q.y,(1-w)*p.z+w*q.z};}
+   const sm::Vec3f r=sm::transformPoint(x,sm::Vec3f(p.x,p.y,p.z));out[j][i]=V3{r.x,r.y,r.z};}
+  if(scales)scales->push_back((sm::length(x.l.vx)+sm::length(x.l.vy)+sm::length(x.l.vz))/3.f);
+  if(widths&&!lw.empty()){std::vector<float> step(lw[0].size());
+   for(size_t i=0;i<step.size();++i)step[i]=lw.size()>1?(1-w)*lw[k][i]+w*lw[k+1][i]:lw[0][i];
+   widths->push_back(std::move(step));}}
+ return out;}
+inline void instanceSurface(MeshData& m,const RenderItem& item,const MotionParams& mp){
+ namespace sm=scene_rdl2::math;
+ sm::XformComponent3f c0,c1;sm::decompose(item.sample[0],c0);sm::decompose(item.sample[1],c1);
+ const bool turns=item.moves&&!(c0.r==c1.r||c0.r==-c1.r);
+ const size_t n=item.moves?(turns?17:2):1;
+ const std::vector<V3> p0=m.positions,n0=m.normals,s0=m.dpds,t0=m.dpdt;
+ auto moved=[&](const sm::Xform3f& x,std::vector<V3>& p,std::vector<V3>& nn,std::vector<V3>& ds,std::vector<V3>& dt){
+  const double L[3][3]={{x.l.vx.x,x.l.vx.y,x.l.vx.z},{x.l.vy.x,x.l.vy.y,x.l.vy.z},{x.l.vz.x,x.l.vz.y,x.l.vz.z}};
+  const double det=L[0][0]*(L[1][1]*L[2][2]-L[1][2]*L[2][1])-L[0][1]*(L[1][0]*L[2][2]-L[1][2]*L[2][0])+L[0][2]*(L[1][0]*L[2][1]-L[1][1]*L[2][0]);
+  double inv[3][3];for(int i=0;i<3;++i)for(int j=0;j<3;++j){const int a=(j+1)%3,b=(j+2)%3,cc=(i+1)%3,dd=(i+2)%3;inv[i][j]=(L[a][cc]*L[b][dd]-L[a][dd]*L[b][cc])/det;}
+  p.resize(p0.size());for(size_t i=0;i<p0.size();++i){const sm::Vec3f r=sm::transformPoint(x,sm::Vec3f(p0[i].x,p0[i].y,p0[i].z));p[i]=V3{r.x,r.y,r.z};}
+  // Row vectors: a normal times the inverse's transpose.
+  nn.resize(n0.size());for(size_t i=0;i<n0.size();++i){const V3 v=n0[i];
+   const double r[3]={v.x*inv[0][0]+v.y*inv[0][1]+v.z*inv[0][2],v.x*inv[1][0]+v.y*inv[1][1]+v.z*inv[1][2],v.x*inv[2][0]+v.y*inv[2][1]+v.z*inv[2][2]};
+   const double l=std::sqrt(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]);nn[i]=l>0?V3{float(r[0]/l),float(r[1]/l),float(r[2]/l)}:v;}
+  auto vec=[&](const std::vector<V3>& in,std::vector<V3>& out){out.resize(in.size());
+   for(size_t i=0;i<in.size();++i){const sm::Vec3f r=sm::transformVector(x,sm::Vec3f(in[i].x,in[i].y,in[i].z));out[i]=V3{r.x,r.y,r.z};}};
+  vec(s0,ds);vec(t0,dt);};
+ moved(instanceXformAt(item,mp,0.0f),m.positions,m.normals,m.dpds,m.dpdt);
+ m.steps.clear();m.stepNormals.clear();m.stepDpds.clear();m.stepDpdt.clear();
+ for(size_t j=1;j<n;++j){std::vector<V3> p,nn,ds,dt;moved(instanceXformAt(item,mp,float(j)/float(n-1)),p,nn,ds,dt);
+  m.steps.push_back(std::move(p));if(!n0.empty())m.stepNormals.push_back(std::move(nn));if(!s0.empty())m.stepDpds.push_back(std::move(ds));if(!t0.empty())m.stepDpdt.push_back(std::move(dt));}
+ m.stepShading=n>1;m.instanced=true;
+ const auto w=instanceMatrix(item).inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+ for(int i=0;i<12;++i)m.worldToObject[i]=float(rows[i]);}
+// The instancer's primitive attributes of one instance (its UserData of one value an instance), constant on its mesh.
+inline void instanceAttributes(const rdl::SceneObject& inst,int instance,size_t count,MeshData& m){
+ for(auto* object:inst.get<rdl::SceneObjectVector>("primitive_attributes")){
+  if(!object||object->getSceneClass().getName()!="UserData")continue;
+  auto add=[&](const std::string& key,unsigned type,const std::vector<float>& values,unsigned components){
+   if(key.empty()||values.size()!=count*components)return;
+   m.prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,1u,unsigned(m.primData.size())});
+   m.primData.insert(m.primData.end(),values.begin()+std::ptrdiff_t(size_t(instance)*components),values.begin()+std::ptrdiff_t((size_t(instance)+1)*components));};
+  {const auto& d=get<rdl::FloatVector>(*object,"float_values_0");add(get<rdl::String>(*object,"float_key"),shade::PrimFloat,std::vector<float>(d.begin(),d.end()),1);}
+  {const auto& d=get<rdl::IntVector>(*object,"int_values");std::vector<float> f;for(int v:d)f.push_back(float(v));add(get<rdl::String>(*object,"int_key"),shade::PrimInt,f,1);}
+  {const auto& d=get<rdl::RgbVector>(*object,"color_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.r);f.push_back(c.g);f.push_back(c.b);}add(get<rdl::String>(*object,"color_key"),shade::PrimRgb,f,3);}
+  {const auto& d=get<rdl::Vec2fVector>(*object,"vec2f_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.x);f.push_back(c.y);}add(get<rdl::String>(*object,"vec2f_key"),shade::PrimVec2f,f,2);}
+  {const auto& d=get<rdl::Vec3fVector>(*object,"vec3f_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.x);f.push_back(c.y);f.push_back(c.z);}add(get<rdl::String>(*object,"vec3f_key"),shade::PrimVec3f,f,3);}
+ }}
+// RdlPointGeometry (RdlPointProcedural, geom::Points): its points' centres, world space, over the shutter as a mesh's
+// vertices (meshMotionSteps, whose static case keeps vertex_list_0 for points), and their radii (radius_list: none 0.5,
+// one for all, else one a point; a node transform does not scale them).
+inline void admitPoints(const rdl::SceneObject& o,const MotionParams& mp,MeshData& m,const std::vector<unsigned char>* mask=nullptr,
+                        const rdl::Mat4d* instance=nullptr,const RenderItem* item=nullptr){
+ namespace sm=scene_rdl2::math;
+ {std::set<std::string> allowed{"vertex_list_0","vertex_list_1","velocity_list_0","velocity_list_1","accleration_list","radius_list","velocity_scale",
+   "motion_blur_type","curved_motion_blur_sample_count","node_xform","primitive_attributes","side_type","part_list","part_indices","use_screen_space_radius"};
+  allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(o,allowed,{},{"node_xform"});}
+ const auto& v=o.get<rdl::Vec3fVector>("vertex_list_0");need(!v.empty(),o.getName()+": no points");
+ const auto& r=o.get<rdl::FloatVector>("radius_list");
+ // pickRate over RateCounts{parts, 0, 0, points, 0}: one value, one a part (part_indices), one a point; else 0.5.
+ const auto& parts=get<rdl::StringVector>(o,"part_list");const auto& partIndices=get<rdl::IntVector>(o,"part_indices");
+ m.points=unsigned(v.size());m.pointRadius.resize(v.size());
+ for(size_t i=0;i<v.size();++i){
+  float x=0.5f;
+  if(r.size()==1)x=r[0];
+  else if(!parts.empty()&&r.size()==parts.size()){need(i<partIndices.size()&&partIndices[i]>=0&&size_t(partIndices[i])<r.size(),o.getName()+": a point's part out of range");x=r[size_t(partIndices[i])];}
+  else if(r.size()==v.size())x=r[i];
+  need(std::isfinite(x)&&x>=0,o.getName()+": invalid radius");m.pointRadius[i]=x;}
+ // Points keep vertex_list_0 in their static case (not vertex_list_1, as a mesh's does).
+ // An instance (a shared primitive): its points through the instance's transform, its radii by the transform's mean
+ // axis length (the instance's ray is moved into the points' own space).
+ // A moving instance (or a reference with motion of its own): the reference's steps through the instance's transform
+ // at each step's time; one radius list, so the instance keeps its size over the shutter.
+ std::vector<float> instanceScales;
+ auto steps=item&&(item->moves||meshHasMotion(o))?instanceMotionSteps(o,mp,*item,false,&instanceScales):
+            instance?meshMotionSteps(o,mp,*instance,*instance,false):
+                     meshMotionSteps(o,mp,o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN),o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END),false);
+ for(float s:instanceScales)need(std::abs(s-instanceScales[0])<=1e-6f*std::max(1.0f,instanceScales[0]),o.getName()+": an instance of points scaling over the shutter is not rendered yet");
+ m.positions=std::move(steps[0]);for(size_t k=1;k<steps.size();++k)m.steps.push_back(std::move(steps[k]));
+ if(instance){const rdl::Mat4d& x=*instance;const float s=(float(std::sqrt(x[0][0]*x[0][0]+x[0][1]*x[0][1]+x[0][2]*x[0][2]))+
+   float(std::sqrt(x[1][0]*x[1][0]+x[1][1]*x[1][1]+x[1][2]*x[1][2]))+float(std::sqrt(x[2][0]*x[2][0]+x[2][1]*x[2][1]+x[2][2]*x[2][2])))/3.f;
+  for(auto& r:m.pointRadius)r*=s;}
+ const auto w=(instance?*instance:o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN)).inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+ for(int i=0;i<12;++i)m.worldToObject[i]=float(rows[i]);
+ // Primitive attributes (UserData): constant, or one a point (vertex or varying; RateCounts has no uniform or face
+ // varying for points).
+ primitiveAttributes(o,m,0,v.size(),v.size(),0);
+ // use_screen_space_radius (applyScreenSpaceRadius): each radius times its distance from the primary camera over the
+ // camera's focal, times its min/max distance radius lerped between min_distance and max_distance (each one by default).
+ if(get<rdl::Bool>(o,"use_screen_space_radius")){
+  const rdl::SceneVariables& sv=o.getSceneClass().getSceneContext()->getSceneVariables();
+  const rdl::SceneObject* camera=get<rdl::SceneObject*>(sv,"camera");
+  bool hasFocal=false;if(camera)for(auto i=camera->getSceneClass().beginAttributes();i!=camera->getSceneClass().endAttributes();++i)if((*i)->getName()=="focal")hasFocal=true;
+  if(camera&&hasFocal){
+   const float focal=get<rdl::Float>(*camera,"focal");const rdl::Mat4d cm=camera->get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN);
+   const sm::Vec3f cameraPosition=sm::Vec3f(float(cm[3][0]),float(cm[3][1]),float(cm[3][2]));
+   const sm::Mat4f node=sm::toFloat(o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN));
+   auto values=[&](const char* key){std::vector<float> out(v.size(),1.0f);
+    for(const auto& a:m.prims)if(a.key==shade::primKey(key,shade::PrimFloat)){
+     if(a.rate==shade::PrimConstant)std::fill(out.begin(),out.end(),m.primData[a.offset]);
+     else for(size_t i=0;i<v.size();++i)out[i]=m.primData[a.offset+i];}
+    return out;};
+   const auto minDist=values("min_distance"),maxDist=values("max_distance"),minRadius=values("min_distance_radius"),maxRadius=values("max_distance_radius");
+   for(size_t i=0;i<v.size();++i){
+    const sm::Vec3f position=sm::transformPoint(node,sm::Vec3f(v[i].x,v[i].y,v[i].z));
+    const float distance=sm::distance(position,cameraPosition);
+    const float distT=sm::clamp((distance-minDist[i])/(maxDist[i]-minDist[i]),0.0f,1.0f);
+    const float distFactor=(minRadius[i]*(1.0f-distT))+(maxRadius[i]*distT);
+    m.pointRadius[i]=std::max(0.f,m.pointRadius[i]*(distance/focal)*distFactor);}}}
+ // A part's points alone (createPerPointAssignmentId's points of its assignment).
+ if(mask){std::vector<size_t> keep;for(size_t i=0;i<v.size();++i)if(i<mask->size()&&(*mask)[i])keep.push_back(i);
+  need(!keep.empty(),o.getName()+": a part of no points");
+  auto pick=[&](std::vector<V3>& a){std::vector<V3> b;b.reserve(keep.size());for(size_t i:keep)b.push_back(a[i]);a=std::move(b);};
+  pick(m.positions);for(auto& s:m.steps)pick(s);
+  {std::vector<float> rr;for(size_t i:keep)rr.push_back(m.pointRadius[i]);m.pointRadius=std::move(rr);}
+  std::vector<float> data;
+  for(auto& a:m.prims){const unsigned at=unsigned(data.size());
+   if(a.rate==shade::PrimConstant)data.insert(data.end(),m.primData.begin()+std::ptrdiff_t(a.offset),m.primData.begin()+std::ptrdiff_t(a.offset+a.components));
+   else for(size_t i:keep)data.insert(data.end(),m.primData.begin()+std::ptrdiff_t(a.offset+i*a.components),m.primData.begin()+std::ptrdiff_t(a.offset+(i+1)*a.components));
+   a.offset=at;}
+  m.primData=std::move(data);m.points=unsigned(keep.size());}
+}
 inline std::vector<Piece> meshPieces(const rdl::SceneObject& o,const rdl::Geometry& geom,const rdl::Layer& layer){
  const int whole=layer.getAssignmentId(&geom,"");
+ // Points (createPerPointAssignmentId): each point the assignment of its part_indices' part, the whole's otherwise.
+ if(o.getSceneClass().getName()=="RdlPointGeometry"&&!get<rdl::StringVector>(o,"part_list").empty()){
+  const auto& parts=get<rdl::StringVector>(o,"part_list");const auto& partIndices=get<rdl::IntVector>(o,"part_indices");
+  const size_t points=o.get<rdl::Vec3fVector>("vertex_list_0").size();
+  std::vector<int> id(points,whole);
+  for(size_t i=0;i<partIndices.size()&&i<points;++i){const int p=partIndices[i];if(p>=0&&size_t(p)<parts.size())id[i]=layer.getAssignmentId(&geom,parts[size_t(p)]);}
+  std::vector<Piece> out;std::map<int,size_t> slot;
+  for(size_t i=0;i<points;++i){const int a=id[i];if(a<0)continue;auto it=slot.find(a);
+   if(it==slot.end()){it=slot.emplace(a,out.size()).first;out.push_back({a,"#"+std::to_string(a),std::vector<unsigned char>(points,0)});}
+   out[it->second].faces[i]=1;}
+  if(out.size()==1&&out[0].id==whole&&std::find(id.begin(),id.end(),-1)==id.end())out[0]={whole,"",{}};
+  return out;}
  if(o.getSceneClass().getName()!="RdlMeshGeometry"||get<rdl::StringVector>(o,"part_list").empty())return {{whole,"",{}}};
  const auto& parts=get<rdl::StringVector>(o,"part_list");const auto& counts=get<rdl::IntVector>(o,"part_face_count_list");
  const auto& indices=get<rdl::IntVector>(o,"part_face_indices");const size_t faces=get<rdl::IntVector>(o,"face_vertex_count").size();
@@ -981,10 +2386,11 @@ inline std::vector<Piece> meshPieces(const rdl::SceneObject& o,const rdl::Geomet
 // after it, and MoonRay emits from the faces those steps make. The light's local space is the geometry's world space; its
 // transform (node_xform, no turn) carries it on. A map shader is not read yet; subdivision falls back.
 inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl::Layer& layer,const rdl::SceneVariables& sv,const CanonicalView& frame,
-                           lights::Light& out,std::vector<MeshLightEntry>& tables,const std::vector<MeshLightEntry>* previous){
+                           lights::Light& out,std::vector<MeshLightEntry>& tables,const std::vector<MeshLightEntry>* previous,
+                           const Plan* plan=nullptr){
  std::set<std::string> allowed=lightCommonAttributes();allowed.insert({"normalized","apply_scene_scale","geometry","parts","map_shader"});
  allowed.insert(clearRadiusAttributes().begin(),clearRadiusAttributes().end());
- attributes(o,allowed);
+ attributes(o,allowed,{},{"node_xform"});
  if(!get<rdl::Bool>(o,"on"))return false;
  const rdl::SceneObject* g=get<rdl::SceneObject*>(o,"geometry");
  if(!g||!g->isA<rdl::Geometry>()||layer.contains(g->asA<rdl::Geometry>()))return false;
@@ -993,7 +2399,8 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
  attributes(*g,{"vertex_list_0","face_vertex_count","vertices_by_index","is_subd","node_xform","smooth_normal","normal_list","uv_list","primitive_attributes","mesh_resolution","adaptive_error",
   "part_list","part_face_count_list","part_face_indices","visible_in_camera","visible_shadow","visible_diffuse_reflection","visible_diffuse_transmission","visible_glossy_reflection",
   "visible_glossy_transmission","visible_mirror_reflection","visible_mirror_transmission","label"});
- need(!get<rdl::Bool>(*g,"is_subd"),o.getName()+": a subdivided mesh light falls back");
+ const bool subd=get<rdl::Bool>(*g,"is_subd");
+ need(!subd||plan,o.getName()+": a subdivided mesh light falls back");
  lights::Light l{};
  auto c=color(get<rdl::Rgb>(o,"color"));const float intensity=get<rdl::Float>(o,"intensity"),exposure=get<rdl::Float>(o,"exposure");
  need(surface::finite(intensity)&&intensity>=0&&surface::finite(exposure)&&std::abs(exposure)<=32,o.getName()+": invalid light intensity");
@@ -1001,10 +2408,10 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
  if(radiance.x==0&&radiance.y==0&&radiance.z==0)return false;  // a black light is off
  l.visibleInCamera=lightVisibleInCamera(o,sv);l.fallback={1,1,1};l.filter=0;l.image=nullptr;l.visibilityMask=lightVisibilityMask(o);l.presenceShadows=lightPresenceShadows(o,sv);
  lightShadowDistances(o,l,true);
- // Its transform: node_xform as it is (LocalParamLight with no turn), a uniform scale.
- auto m=get<rdl::Mat4d>(o,"node_xform");
+ // Its transform: node_xform as it is (LocalParamLight with no turn), a uniform scale, at the shutter's open.
+ auto m=xformAt(o,0.0f);
  for(int i=0;i<4;++i)for(int j=0;j<4;++j)need(std::isfinite(m[i][j])&&std::abs(m[i][j])<=10000,o.getName()+": light transform bound");
- need(m[0][3]==0&&m[1][3]==0&&m[2][3]==0&&m[3][3]==1,o.getName()+": projective light transform unsupported");
+ need(std::abs(m[0][3])<=1e-6&&std::abs(m[1][3])<=1e-6&&std::abs(m[2][3])<=1e-6&&std::abs(m[3][3]-1)<=1e-6,o.getName()+": projective light transform unsupported");
  double rows[4][3];for(int i=0;i<4;++i)for(int j=0;j<3;++j)rows[i][j]=m[i][j];
  auto length=[&](int i){return std::sqrt(rows[i][0]*rows[i][0]+rows[i][1]*rows[i][1]+rows[i][2]*rows[i][2]);};
  const double x=length(0),y=length(1),z=length(2);
@@ -1029,6 +2436,28 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
   const auto& v=g->get<rdl::Vec3fVector>("vertex_list");const auto& counts=g->get<rdl::IntVector>("face_vertex_count");const auto& indices=g->get<rdl::IntVector>("vertices_by_index");
   if(v.empty()||counts.empty())return false;
   const auto transform=affine(*g);
+  // The faces its parts keep (below), for a subdivision surface each tessellated quad by its control face.
+  auto keptFaces=[&](){
+   std::vector<unsigned char> keep(counts.size(),parts.empty()?1:0);
+   if(!parts.empty()){
+    const auto& names=get<rdl::StringVector>(*g,"part_list");const auto& partCounts=get<rdl::IntVector>(*g,"part_face_count_list");const auto& partFaces=get<rdl::IntVector>(*g,"part_face_indices");
+    size_t expected=0;for(int k:partCounts)expected+=size_t(std::max(k,0));
+    if(names.size()==partCounts.size()&&expected==partFaces.size()){size_t at=0;
+     for(size_t i=0;i<names.size();++i){const bool listed=std::find(parts.begin(),parts.end(),names[i])!=parts.end();
+      for(int k=0;k<partCounts[i];++k,++at){const int f=partFaces[at];need(f>=0&&size_t(f)<counts.size(),g->getName()+": part face index out of bounds");if(listed)keep[size_t(f)]=1;}}}}
+   return keep;};
+  if(subd){
+   // MoonRay's OpenSubdiv tessellation of the geometry (its quads, world space), as MeshLight::setMesh takes them.
+   const auto s=tessellateSubdivision(*g,layer,*plan,transform);
+   const auto keep=keptFaces();
+   std::vector<unsigned> corners,prims;
+   for(size_t q=0;q*4<s->quads.size();++q){const int f=q<s->controlFace.size()?s->controlFace[q]:-1;
+    if(f<0||size_t(f)>=keep.size()||!keep[size_t(f)])continue;
+    prims.push_back(unsigned(q));for(int k=0;k<4;++k)corners.push_back(s->quads[4*q+size_t(k)]);}
+   for(const auto& p:s->positions)need(surface::finite(p),o.getName()+": invalid mesh light vertex");
+   data=lights::buildMeshLight(s->positions,corners,4u,prims);
+   if(!data)return false;
+  }else{
   std::vector<V3> world;world.reserve(v.size());
   for(auto p:v){V3 q{float(p.x*transform[0][0]+p.y*transform[1][0]+p.z*transform[2][0]+transform[3][0]),float(p.x*transform[0][1]+p.y*transform[1][1]+p.z*transform[2][1]+transform[3][1]),
     float(p.x*transform[0][2]+p.y*transform[1][2]+p.z*transform[2][2]+transform[3][2])};need(surface::finite(q),o.getName()+": invalid mesh light vertex");world.push_back(q);}
@@ -1050,6 +2479,7 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
   for(size_t f=0;(f+1)*stride<=raw.size();++f){prims.push_back(unsigned(f));for(unsigned j=0;j<stride;++j)corners.push_back(raw[f*stride+j]);}
   data=lights::buildMeshLight(world,corners,stride,prims);
   if(!data)return false;  // no faces or no area: MoonRay warns and turns the light off
+  }
  }
  if(std::none_of(tables.begin(),tables.end(),[&](const MeshLightEntry& e){return e.tables==data;}))tables.push_back({key,std::move(sig),data});
  // computeLightRadiance over the faces' area, local units.
@@ -1059,7 +2489,17 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
  l.type=lights::Mesh;l.mesh=&data->view;l.invArea=float(1/area);l.radiance=radiance;
  out=l;return surface::finite(radiance);
 }
-inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false){
+// The plan of a scene (scene admission). With XPU2_SPLIT_UNITS the session's unit sees the declarations alone and
+// xpu2_scene.cc (XPU2_SCENE_UNIT) the definitions, so the admission is compiled once, in its own unit.
+#if defined(XPU2_SPLIT_UNITS)
+#define X2_SPLIT_INLINE
+#else
+#define X2_SPLIT_INLINE inline
+#endif
+X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false);
+X2_SPLIT_INLINE PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false);
+#if !defined(XPU2_SPLIT_UNITS) || defined(XPU2_SCENE_UNIT)
+X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous,Limits limits,const fs::path& assetRoot,Domain domain,bool allowAdaptive,bool paths){
  need(bool(frame),"Missing canonical snapshot");
  const Limits hard{};
  need(limits.vertices>0&&limits.vertices<=hard.vertices&&limits.triangles>0&&limits.triangles<=hard.triangles&&
@@ -1086,11 +2526,11 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   }
  }
  need(verts*sizeof(V3)+tris*sizeof(Tri)<=limits.bytes,"Prepared geometry byte budget");
- attributes(sv,{"resumable_output","checkpoint_active","resume_render","exr_header_attributes","camera","layer","image_width","image_height","pixel_samples","sampling_mode","min_adaptive_samples","max_adaptive_samples","target_adaptive_error","frame","lock_frame_noise","pixel_filter","pixel_filter_width","bsdf_samples","light_samples","max_depth","max_diffuse_depth","enable_dof","enable_motion_blur","sample_clamping_value","shadow_terminator_fix","two_stage_output","russian_roulette_threshold","lights_visible_in_camera","light_sampling_mode","light_sampling_quality","max_glossy_depth","max_mirror_depth","sample_clamping_depth","scene_scale",
+ attributes(sv,{"enable_displacement","dicing_camera","resumable_output","checkpoint_active","resume_render","exr_header_attributes","camera","layer","image_width","image_height","pixel_samples","sampling_mode","min_adaptive_samples","max_adaptive_samples","target_adaptive_error","frame","lock_frame_noise","pixel_filter","pixel_filter_width","bsdf_samples","light_samples","max_depth","max_diffuse_depth","enable_dof","enable_motion_blur","sample_clamping_value","shadow_terminator_fix","two_stage_output","russian_roulette_threshold","lights_visible_in_camera","light_sampling_mode","light_sampling_quality","max_glossy_depth","max_mirror_depth","sample_clamping_depth","scene_scale",
   "max_hair_depth","max_presence_depth","presence_threshold","presence_quality","enable_presence_shadows","roughness_clamping_factor","transparency_threshold","bssrdf_samples","max_subsurface_per_path",
   "enable_subsurface_scattering","max_volume_depth","volume_quality","volume_shadow_quality","volume_illumination_samples",
   "volume_opacity_threshold","volume_overlap_mode","volume_attenuation_factor","volume_contribution_factor","volume_phase_attenuation_factor",
-  // What changes only MoonRay's scheduling, its texture cache's size, or motion blur, which is refused unless off.
+  // What changes only MoonRay's scheduling or its texture cache's size, and motion blur's steps and frame rate.
   "progressive_tile_order","checkpoint_tile_order","batch_tile_order","texture_cache_size","fps","motion_steps","max_geometry_resolution",
   // The windows (rezed: the resolution divisor), the pixels rendered and the texture blur (the path tracer's camera).
   "res","aperture_window","region_window","sub_viewport","debug_pixel","texture_blur",
@@ -1110,7 +2550,7 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   plan->targetError=std::max(0.000001f,get<rdl::Float>(sv,"target_adaptive_error")/10000.0f);
   need(plan->maxSamples<=16384,"Adaptive sample budget");plan->spp=plan->maxSamples;
  }
- need(!get<rdl::Bool>(sv,"enable_motion_blur"),"Motion blur unsupported");need(paths||!get<rdl::Bool>(sv,"enable_dof"),"DOF unsupported");
+ need(paths||!get<rdl::Bool>(sv,"enable_motion_blur"),"Motion blur unsupported");need(paths||!get<rdl::Bool>(sv,"enable_dof"),"DOF unsupported");
  {const auto v=sv.getRezedSubViewport();plan->viewport[0]=v.min().x;plan->viewport[1]=v.min().y;plan->viewport[2]=v.max().x;plan->viewport[3]=v.max().y;
   need(paths||(v.min().x==0&&v.min().y==0&&v.max().x==width&&v.max().y==height),"Sub viewport unsupported");
   need(v.max().x>v.min().x&&v.max().y>v.min().y,"Empty sub viewport");}
@@ -1158,6 +2598,8 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   plan->volumeAttenuationFactor=unit(get<rdl::Float>(sv,"volume_attenuation_factor"));
   plan->volumeContributionFactor=unit(get<rdl::Float>(sv,"volume_contribution_factor"));
   plan->volumePhaseAttenuationFactor=unit(get<rdl::Float>(sv,"volume_phase_attenuation_factor"));
+  {const float q=get<rdl::Float>(sv,"volume_quality"),sq=get<rdl::Float>(sv,"volume_shadow_quality");
+   need(std::isfinite(q)&&q>0.0f&&std::isfinite(sq)&&sq>0.0f,"Invalid volume quality");plan->volumeQuality=q;plan->volumeShadowQuality=sq;}
  }else{
  need(get<rdl::Int>(sv,"bsdf_samples")==1&&get<rdl::Int>(sv,"light_samples")==1,"Primary splitting unsupported");
  if(domain==Domain::SurfaceTextures)need(depth==0&&diffuse==0,"Spatial textures require direct-only transport until secondary derivatives are qualified");
@@ -1176,10 +2618,15 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
  if(!paths)attributes(*camera,{"node_xform","focal","film_width_aperture","near","far","dof_aperture","dof_focus_distance","bokeh_sides","bokeh_angle",
   "bokeh_weight_location","bokeh_weight_strength","mb_shutter_open","mb_shutter_close","mb_shutter_bias"});auto cm=plan->paths?rigid(*camera):translation(*camera);need(plan->paths||cm[3][2]>0,"Camera must face the planar surface from positive Z");
  {const auto w=cm.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
-  for(int i=0;i<12;++i)plan->worldToRender[i]=float(rows[i]);}
+  for(int i=0;i<12;++i)plan->worldToRender[i]=float(rows[i]);
+  for(int i=0;i<4;++i)for(int j=0;j<4;++j)plan->world2render[4*i+j]=w[i][j];}
  // A bake camera's mesh, whose maps are made as it is read.
  const rdl::SceneObject* bakeGeometry=nullptr;
  if(paths){
+  // Motion blur's steps and shutter (motionParams), and the samples' shutter bias.
+  sceneTimeRescale=timeRescale(sv,camera);
+  plan->motion=motionParams(sv,camera);plan->shutterBias=plan->motion.on?get<rdl::Float>(*camera,"mb_shutter_bias"):0.0f;
+  need(std::isfinite(plan->shutterBias),camera->getName()+": invalid shutter bias");
   // The path tracer's camera: every MoonRay camera type, its windows and lens (admitCamera, camera_core.h).
   admitCamera(*camera,sv,*plan,previous.get());
   // The pixel sample map (uniform sampling alone: adaptive sampling takes priority over it).
@@ -1206,10 +2653,27 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
  }
  std::map<std::string,unsigned> materialIds;std::set<const rdl::SceneObject*> allGeometry,setGeometry;const rdl::SceneObject* sky=nullptr;
  std::map<const rdl::SceneObject*,unsigned> lightIds;
+ // The materials' lobe light sets, gathered as they are admitted (dwa_admission.h).
+ std::vector<const rdl::SceneObject*> lobeLightSets;lobeLightSetTable=&lobeLightSets;
+ struct LobeTableGuard{~LobeTableGuard(){lobeLightSetTable=nullptr;}} lobeTableGuard;
+ // Lights moving under motion blur, and their records at the shutter's close.
+ std::map<const rdl::SceneObject*,lights::LightMotion> movingLights;std::map<const rdl::SceneObject*,std::shared_ptr<const lights::Light>> closeLights;
  unsigned outputCount=0;bool beauty=false,alpha=false;
  std::map<const rdl::SceneObject*,texture::Binding> maps;std::shared_ptr<OIIO::TextureSystem> texSystem;
  // The meshes to displace (plan mesh, edge vertex count, shader) once their maps' textures are read.
  struct Displaced{size_t mesh;int edgeVertices;displace::Shader shader;};std::vector<Displaced> displaced;
+ // Each subdivision surface tessellated once, whatever its parts (tessellateSubdivision).
+ std::map<const rdl::SceneObject*,std::shared_ptr<const SubdSurface>> subdCache;
+ // Under motion blur: each time step's tessellation.
+ std::map<const rdl::SceneObject*,std::vector<std::shared_ptr<const SubdSurface>>> subdMotionCache;
+ // Each displaced polygon mesh MoonRay's PolyMesh makes, once whatever its parts (tessellatePolygons).
+ std::map<const rdl::SceneObject*,std::shared_ptr<const PolySurface>> polyCache;
+ // An instancer's prototypes, tessellated once in their own space for every instance (MoonRay's shared primitives).
+ std::map<const rdl::SceneObject*,std::shared_ptr<const SubdSurface>> subdRefCache;std::map<const rdl::SceneObject*,std::shared_ptr<const PolySurface>> polyRefCache;
+ // The mapped volumes (admitMappedVolume), baked once the textures are read (bakeVolume): volume, mesh, shader, the
+ // mesh's node transform, whether a polygon mesh.
+ struct MappedVolume{unsigned volume;size_t mesh;const rdl::SceneObject* shader;rdl::Mat4d nodeXform;bool polygons;const rdl::SceneObject* vdb=nullptr;};
+ std::vector<MappedVolume> mappedVolumes;
  TextureContext textureContext{assetRoot,&texSystem,&plan->textures,previous?&previous->textures:nullptr};
  for(auto& pair:sorted){auto& o=*pair.second;if(paths||o.getSceneClass().getName()!="ImageMap")continue;
   need(!spatial||domain==Domain::SurfaceTextures,"Spatial map derivatives not implemented; use reference");
@@ -1293,19 +2757,42 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    materialIds[o.getName()]=unsigned(plan->materials.size());plan->materials.push_back({color(get<rdl::Rgb>(o,"diffuseColor")),color(get<rdl::Rgb>(o,"emissiveColor"))});
    for(auto name:{"diffuseColor","emissiveColor"}){auto* binding=o.getBinding(*o.getSceneClass().getAttribute(name));if(binding){need(maps.count(binding),"Unsupported material map");(std::string(name)=="diffuseColor"?plan->diffuseMaps:plan->emissionMaps).emplace(materialIds.at(o.getName()),maps.at(binding));}}
   }else if(paths&&cls=="MeshLight"){
-   lights::Light l;if(layerLights.count(&o)&&admitMeshLight(o,get<rdl::Float>(sv,"scene_scale"),layer,sv,frame,l,plan->meshLightTables,previous?&previous->meshLightTables:nullptr)){
+   lights::Light l;if(layerLights.count(&o)&&admitMeshLight(o,get<rdl::Float>(sv,"scene_scale"),layer,sv,frame,l,plan->meshLightTables,previous?&previous->meshLightTables:nullptr,plan.get())){
+    l.rayTerminator=get<rdl::Bool>(o,"ray_termination")?1u:0u;
     if(plan->aovs)l.lpeLabel=plan->aovs->lpeLabel(aov::attribute<rdl::String>(o,"label",""));need(plan->lights.size()<65536,"At most 65536 lights");lightIds[&o]=unsigned(plan->lights.size());plan->lights.push_back(l);}
   }else if(paths&&isLight(cls)){
    lights::Light l;if(layerLights.count(&o)&&admitLight(o,get<rdl::Float>(sv,"scene_scale"),l,sv,plan->lightImages,previous?&previous->lightImages:nullptr)){
-    if(plan->aovs)l.lpeLabel=plan->aovs->lpeLabel(aov::attribute<rdl::String>(o,"label",""));need(plan->lights.size()<65536,"At most 65536 lights");lightIds[&o]=unsigned(plan->lights.size());plan->lights.push_back(l);}
+    if(plan->aovs)l.lpeLabel=plan->aovs->lpeLabel(aov::attribute<rdl::String>(o,"label",""));need(plan->lights.size()<65536,"At most 65536 lights");lightIds[&o]=unsigned(plan->lights.size());plan->lights.push_back(l);
+    if(plan->motion.on&&get<rdl::Bool>(o,"mb")){
+     // LocalParamLight::updateParamAndTransforms: the light at the shutter's close; moving where its transform differs.
+     need(cls!="PortalLight",o.getName()+": a portal in motion is not rendered yet");
+     lights::Light c;std::vector<std::shared_ptr<lights::ImageData>> unused;
+     need(admitLight(o,get<rdl::Float>(sv,"scene_scale"),c,sv,unused,&plan->lightImages,1.0f),o.getName()+": the light is off at the shutter's close");
+     namespace sm=scene_rdl2::math;
+     const bool oriented=l.type==lights::Env||l.type==lights::Distant;
+     const float s0=oriented?1.0f:l.scale,s1=oriented?1.0f:c.scale;
+     auto rotation=[&](const lights::Light& x,float s){std::array<sm::Vec3f,3> r;for(int i=0;i<3;++i)r[size_t(i)]=sm::Vec3f(x.local2Render[i].x/s,x.local2Render[i].y/s,x.local2Render[i].z/s);return r;};
+     const auto r0=rotation(l,s0),r1=rotation(c,s1);
+     lights::LightMotion m;
+     const sm::Vec3f p0(l.position.x,l.position.y,l.position.z),p1(c.position.x,c.position.y,c.position.z);
+     if(!oriented&&!sm::isEqual(p0,p1))m.flags|=lights::MbTranslation;
+     if(!sm::isEqual(r0[0],r1[0])||!sm::isEqual(r0[1],r1[1])||!sm::isEqual(r0[2],r1[2]))m.flags|=lights::MbRotation;
+     if(!oriented&&!sm::isEqual(s0,s1))m.flags|=lights::MbScale;
+     if(m.flags){
+      sm::Quaternion3f q0=sm::normalize(sm::Quaternion3f(r0[0],r0[1],r0[2])),q1=sm::normalize(sm::Quaternion3f(r1[0],r1[1],r1[2]));
+      if(sm::dot(q0,q1)<0)q1*=-1.f;
+      const float qa[4]={q0.r,q0.i,q0.j,q0.k},qb[4]={q1.r,q1.i,q1.j,q1.k};
+      for(int k=0;k<4;++k){m.orientation[0][k]=qa[k];m.orientation[1][k]=qb[k];}
+      m.position[0]=l.position;m.position[1]=c.position;m.scale[0]=s0;m.scale[1]=s1;
+      movingLights[&o]=m;closeLights[&o]=std::make_shared<const lights::Light>(c);}}}
   }else if(cls=="EnvLight"){
    need(!sky,"Multiple environment lights unsupported");sky=&o;attributes(o,{"color","intensity","exposure","sample_upper_hemisphere_only"});need(!get<rdl::Bool>(o,"sample_upper_hemisphere_only"),"Hemisphere environment unsupported");
    auto c=color(get<rdl::Rgb>(o,"color"));float intensity=get<rdl::Float>(o,"intensity"),exposure=get<rdl::Float>(o,"exposure");need(surface::finite(intensity)&&intensity>=0&&surface::finite(exposure)&&std::abs(exposure)<=32,"Invalid light intensity");plan->sky=surface::mul(c,intensity*std::pow(2.f,exposure));need(surface::finite(plan->sky),"Environment radiance overflow");
-  }else if(cls=="RdlMeshGeometry"||(paths&&isCurves(cls))){
+  }else if(cls=="RdlMeshGeometry"||(paths&&isCurves(cls))||(paths&&cls=="RdlInstancerGeometry")||(paths&&isPoints(cls))||(paths&&cls=="VdbGeometry")){
    // The path tracer renders the layer's geometry, as MoonRay does; the rest (left out of the layer) is not rendered.
    if(!meshLightGeometry.count(&o)&&(!paths||layer.contains(o.asA<rdl::Geometry>())))allGeometry.insert(&o);}
   else if(cls=="GeometrySet"){
-   attributes(o,{"geometries"});for(auto* geom:o.asA<rdl::GeometrySet>()->getGeometries())need(setGeometry.insert(geom).second,"Repeated geometry sets unsupported");
+   attributes(o,{"geometries"});for(auto* geom:o.asA<rdl::GeometrySet>()->getGeometries())need(setGeometry.insert(geom).second||paths,"Repeated geometry sets unsupported");
   }else if(cls=="Layer"){
    need(&o==&layer,"Additional layers unsupported");attributes(o,{"geometries","parts","surface_shaders","lightsets","displacements","volume_shaders","lightfiltersets","shadowsets","shadowreceiversets"});
   }else if(cls=="LightSet")attributes(o,{"lights"});
@@ -1315,8 +2802,12 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    attributes(o,{"file_name","result","channel_format","compression"});int result=get<rdl::Int>(o,"result");need(result==0||result==1,"Unsupported AOV");need(get<rdl::Int>(o,"channel_format")==0,"Only float32 outputs supported");++outputCount;(result?alpha:beauty)=true;
   }else if(paths&&(cls=="PerspectiveCamera"||cls=="OrthographicCamera")){
    // Another camera: a projector, read by the maps that name it (ProjectCameraMap_v2).
-  }else if(paths&&cls=="BaseVolume"){
-   // Admitted with the assignment that binds it (admitVolume).
+  }else if(paths&&(cls=="BaseVolume"||cls=="VdbVolume"||cls=="CutoutVolume")){
+   // Admitted with the assignment that binds it (admitVolume, admitMappedVolume, admitVdbVolume).
+  }else if(paths&&(cls=="ShadowSet"||cls=="ShadowReceiverSet")){
+   // Read by the layer's assignments (shadow linking).
+  }else if(paths&&(o.isA<rdl::LightFilter>()||cls=="LightFilterSet")){
+   // Read through the lights that name them and the layer's assignments (FilterAdmission).
   }else if(paths&&cls=="UserData"){
    // Read where a geometry lists it among its primitive attributes.
   }else if(paths&&cls=="Metadata"){
@@ -1328,12 +2819,31 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
  // Portals (Scene::updateLightList): each takes its reference's copy, which then lights no shading point (it
  // leaves the light sets) but is still seen by the camera. A portal whose reference is not a light here is off.
  if(paths){std::vector<lights::Light> kept;std::map<const rdl::SceneObject*,unsigned> keptIds;std::map<unsigned,unsigned> renumber;
+  // The moving lights by their final index (after the portals' renumbering below).
+  auto finishMotion=[&]{plan->lightClose.assign(plan->lights.size(),nullptr);
+   for(auto& pair:movingLights){auto it=lightIds.find(pair.first);if(it==lightIds.end())continue;lights::LightMotion m=pair.second;m.light=it->second;
+    plan->lightMotion.push_back(m);plan->lightClose[it->second]=closeLights.at(pair.first);}};
   for(auto& pair:sorted){auto it=lightIds.find(pair.second);if(it==lightIds.end())continue;lights::Light& l=plan->lights[it->second];
    if(l.type==lights::Portal){auto ref=lightIds.find(get<rdl::SceneObject*>(*pair.second,"light"));if(ref==lightIds.end()||plan->lights[ref->second].type==lights::Portal)continue;l.refIndex=ref->second;}
    renumber[it->second]=unsigned(kept.size());keptIds[pair.second]=unsigned(kept.size());kept.push_back(l);}
   for(auto& l:kept)if(l.type==lights::Portal){l.refIndex=renumber.at(l.refIndex);kept[l.refIndex].hasPortal=1;}
   for(auto& l:kept)if(l.type==lights::Portal){auto copy=std::make_shared<lights::Light>(kept[l.refIndex]);plan->portalRefs.push_back(copy);l.ref=copy.get();}
-  plan->lights=std::move(kept);lightIds=std::move(keptIds);}
+  plan->lights=std::move(kept);lightIds=std::move(keptIds);finishMotion();
+  // The lobe light sets the materials named, over the final lights.
+  {const unsigned words=std::max(1u,unsigned((plan->lights.size()+31)/32));
+   for(const rdl::SceneObject* ls:lobeLightSets){std::vector<unsigned> bits(words,0u);
+    for(auto* light:ls->asA<rdl::LightSet>()->getLights()){auto it=lightIds.find(light);if(it!=lightIds.end())bits[it->second>>5]|=1u<<(it->second&31);}
+    plan->lobeLightSetBits.insert(plan->lobeLightSetBits.end(),bits.begin(),bits.end());}}
+  for(size_t k=0;k<plan->lights.size();++k)plan->lights[k].index=unsigned(k);}
+ // The kit's MoonRay source switches (MoonRay Source Overrides), read from the environment as MoonRay reads them:
+ // every material record carries the shading ones, a DwaToonMaterial's its smooth shadow origins.
+ {auto on=[](const char* n){const char* v=std::getenv(n);return v&&v[0]=='1';};
+  const unsigned global=(on("MOONRAY_MODO_TOON_TERMINATOR")?unsigned(shade::MatModoToonTerminator):0u)|
+                        (on("MOONRAY_MODO_TRANSMISSION_ROUGHNESS")?unsigned(shade::MatModoTransmissionRoughness):0u);
+  for(const auto& [name,index]:materialIds){auto& rec=plan->materialRecords[index];rec.flags|=global;
+   const auto found=sorted.find(name);
+   if(found!=sorted.end()&&found->second->getSceneClass().getName()=="DwaToonMaterial"&&on("MOONRAY_MODO_TOON_TERMINATOR"))rec.flags|=shade::MatModoToonMaterial;}
+  plan->modoSwitches=(on("MOONRAY_MODO_TOON_ALBEDO")?1u:0u)|(on("MOONRAY_MODO_FOG_ALPHA")?2u:0u)|(on("MOONRAY_MODO_CRYPTO_VOLUMES")?4u:0u);}
  // The switches' records: copies of their materials' (a switch's switch first; a material not shaded fails the scene).
  {std::map<const rdl::SceneObject*,int> state;
   std::function<void(const rdl::SceneObject*)> fill=[&](const rdl::SceneObject* s){
@@ -1356,12 +2866,21 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
  // The path tracer's caller writes the outputs it asks for: a beauty, an alpha, or both.
  need((paths||sky)&&(paths?outputCount>=1:outputCount==2&&beauty&&alpha),"One environment and beauty/alpha outputs required");
  for(auto* g:meshLightGeometry)setGeometry.erase(g);
+ // MoonRay's GeometryManager renders the geometry of the scene's geometry sets (collectPrimitives), shaded by the layer:
+ // a mesh of the layer in no set is not rendered.
+ if(paths)for(auto it=allGeometry.begin();it!=allGeometry.end();)it=setGeometry.count(*it)?std::next(it):allGeometry.erase(it);
  need(!allGeometry.empty()&&(paths||allGeometry==setGeometry),"Geometry sets must contain exactly the rendered meshes");
- for(auto& pair:sorted){auto& o=*pair.second;if(!allGeometry.count(&o))continue;
+ // Each mesh's LightFilterSet (none: every filter its lights name), for the light filter tables below.
+ std::vector<const rdl::LightFilterSet*> meshFilterSets;
+ // The render items: each geometry of the layer, and each instance of an instancer (instancerItems).
+ std::vector<RenderItem> items;
+ for(auto& pair:sorted){const rdl::SceneObject& g=*pair.second;if(!allGeometry.count(&g))continue;
+  if(g.getSceneClass().getName()=="RdlInstancerGeometry")instancerItems(g,sv,plan->motion,items);else items.push_back(RenderItem{&g});}
+ for(const RenderItem& item:items){auto& o=*item.geom;
   auto* geom=o.asA<rdl::Geometry>();
   const auto pieces=meshPieces(o,*geom,layer);need(!pieces.empty(),o.getName()+": no assignment in the layer");
   for(const auto& piece:pieces){const int id=piece.id;need(id>=0,o.getName()+": no assignment in the layer");
-  const std::vector<unsigned char>* faceMask=piece.faces.empty()?nullptr:&piece.faces;const std::string meshName=o.getName()+piece.suffix;
+  const std::vector<unsigned char>* faceMask=piece.faces.empty()?nullptr:&piece.faces;const std::string meshName=o.getName()+piece.suffix+item.suffix;
   auto* mat=layer.lookupMaterial(id);auto* lights=layer.lookupLightSet(id);
   // A volume shader: the mesh bounds a volume (with or without a surface of its own).
   const rdl::SceneObject* volumeShader=paths?layer.lookupVolumeShader(id):nullptr;
@@ -1374,22 +2893,84 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    unsigned set=unsigned(plan->lightSetBits.size()/words);
    for(unsigned k=0;k*words<plan->lightSetBits.size();++k)if(std::equal(bits.begin(),bits.end(),plan->lightSetBits.begin()+std::ptrdiff_t(k*words))){set=k;break;}
    if(set*words==plan->lightSetBits.size())plan->lightSetBits.insert(plan->lightSetBits.end(),bits.begin(),bits.end());
-   plan->meshLights.push_back(set);}
+   plan->meshLights.push_back(set);meshFilterSets.push_back(layer.lookupLightFilterSet(id));
+   // Shadow linking (GeometryManager's ShadowLinking setter): the assignment's shadow set and shadow receiver set.
+   plan->meshAssignment.push_back(id);plan->meshShadowLink.push_back(~0u);
+   const rdl::ShadowSet* shadowSet=layer.lookupShadowSet(id);const rdl::ShadowReceiverSet* receiverSet=layer.lookupShadowReceiverSet(id);
+   if(shadowSet||receiverSet){Plan::ShadowLink link;link.lights=unsigned(plan->shadowLinkBits.size());
+    std::vector<unsigned> skip(words,0u);
+    if(shadowSet)for(auto* light:shadowSet->getLights()){auto it=lightIds.find(light);if(it!=lightIds.end())skip[it->second>>5]|=1u<<(it->second&31);}
+    plan->shadowLinkBits.insert(plan->shadowLinkBits.end(),skip.begin(),skip.end());
+    link.receivers=unsigned(plan->shadowReceivers.size());
+    if(receiverSet){link.complement=get<rdl::Bool>(*receiverSet,"complement")?1u:0u;
+     for(auto* so:receiverSet->getGeometries()){const auto* rg=so?so->asA<rdl::Geometry>():nullptr;if(!rg)continue;
+      const int rid=layer.getAssignmentId(rg,"");
+      if(rid!=-1)plan->shadowReceivers.push_back(rid);
+      else for(auto it=layer.begin(rg);it!=layer.end(rg);++it)plan->shadowReceivers.push_back(*it);}}
+    link.receiverCount=unsigned(plan->shadowReceivers.size())-link.receivers;
+    plan->meshShadowLink.back()=unsigned(plan->shadowLinks.size());plan->shadowLinks.push_back(link);}}
   else need(ls.size()==1&&ls[0]==sky,"Per-object light linking unsupported");
-  const rdl::SceneObject* displacementShader=paths?layer.lookupDisplacement(id):nullptr;
-  need((paths||!layer.lookupDisplacement(id))&&(paths||!layer.lookupVolumeShader(id))&&!layer.lookupLightFilterSet(id)&&!layer.lookupShadowSet(id)&&!layer.lookupShadowReceiverSet(id),o.getName()+": displacement/volume/filter/shadow links unsupported");
-  int volumeIndex=-1;
+  const rdl::SceneObject* displacementShader=paths&&get<rdl::Bool>(sv,"enable_displacement")?layer.lookupDisplacement(id):nullptr;
+  const bool subdGeometry=o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd");
+  // Whether any part of the geometry is displaced: MoonRay then tessellates and displaces the mesh whole, each part
+  // read from that one surface (its shared vertices moved by the displaced faces, its smooth normals over them all).
+  bool objectDisplaced=false;
+  if(paths&&get<rdl::Bool>(sv,"enable_displacement"))for(const auto& p:pieces)if(layer.lookupDisplacement(p.id))objectDisplaced=true;
+  // A displaced polygon mesh beyond the triangle port (mesh_displacement.h: triangles alone, tessellated uniformly to
+  // 64 at most, whole, facing as given, without polygon maps): MoonRay's own PolyMesh tessellates and displaces it.
+  bool polyGeometry=false;
+  if(objectDisplaced&&!subdGeometry&&o.getSceneClass().getName()=="RdlMeshGeometry"){
+   const auto& fc=o.get<rdl::IntVector>("face_vertex_count");
+   polyGeometry=item.instancer||std::any_of(fc.begin(),fc.end(),[](int c){return c!=3;})||faceMask||get<rdl::Float>(o,"adaptive_error")>0.0f||get<rdl::Bool>(o,"reverse_normals")||
+    !(get<rdl::Float>(o,"mesh_resolution")<=64.0f)||(mat&&(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices));}
+  need((paths||!layer.lookupDisplacement(id))&&(paths||!layer.lookupVolumeShader(id))&&(paths||!layer.lookupLightFilterSet(id))&&(paths||!layer.lookupShadowSet(id))&&(paths||!layer.lookupShadowReceiverSet(id)),o.getName()+": displacement/volume/filter/shadow links unsupported");
+  int volumeIndex=-1;std::shared_ptr<MeshData> vdbBox;
+  // A CutoutVolume: its indirect volume, held out on camera rays and read with no ray depth (none: no volume at all).
+  const rdl::SceneObject* volumeInner=volumeShader;bool volumeCutout=false;
+  if(volumeShader&&volumeShader->getSceneClass().getName()=="CutoutVolume"){
+   {std::set<std::string> all;for(auto i=volumeShader->getSceneClass().beginAttributes();i!=volumeShader->getSceneClass().endAttributes();++i)all.insert((*i)->getName());
+    attributes(*volumeShader,all);}
+   volumeInner=get<rdl::SceneObject*>(*volumeShader,"indirect_volume");volumeCutout=true;
+   need(!volumeInner||volumeInner->getSceneClass().getName()=="BaseVolume"||volumeInner->getSceneClass().getName()=="VdbVolume",
+        volumeShader->getName()+": a cutout of a "+(volumeInner?volumeInner->getSceneClass().getName():std::string("volume"))+" is not rendered");}
   if(volumeShader){
-   need(!isCurves(o.getSceneClass().getName()),o.getName()+": a volume bound to curves is not rendered");
+   need(!isCurves(o.getSceneClass().getName())&&!isPoints(o.getSceneClass().getName()),o.getName()+": a volume bound to curves or points is not rendered");
    need(plan->volumes.size()<volume::MaxVolumes,"At most 32 volumes");
-   volumeIndex=int(plan->volumes.size());plan->volumes.push_back(admitVolume(*volumeShader,plan->meshLights.back()));
-  }
+   volumeIndex=int(plan->volumes.size());
+   if(o.getSceneClass().getName()=="VdbGeometry"){need(volumeInner,o.getName()+": a VDB geometry under a cutout of no volume");
+    plan->volumes.push_back(admitVdbVolume(o,*volumeInner,plan->meshLights.back(),*plan,previous.get(),vdbBox));
+    admitVdbMaps(plan->volumes.back(),*volumeInner,*plan,textureContext);}
+   else if(!volumeInner){
+    // A cutout of no volume: nothing (extinct, albedo and emission all zero).
+    volume::Shader z{};z.kind=volume::KindBase;z.densityGrid=z.emissionGrid=z.bakedGrid=volume::NoGrid;z.program=shade::NoMapProgram;z.lightSet=plan->meshLights.back();
+    for(unsigned k=0;k<volume::MappedCount;++k)z.regs[k]=shade::MapNoRegister;
+    plan->volumes.push_back(z);plan->volumes.back().visibility=geometryVisibility(o)|0x300u;}
+   else if(volumeInner->getSceneClass().getName()=="BaseVolume"&&volumeMapped(*volumeInner)){
+    plan->volumes.push_back(admitMappedVolume(*volumeInner,plan->meshLights.back(),*plan,textureContext));plan->volumes.back().visibility=geometryVisibility(o)|0x300u;
+    const auto w=affine(o).inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+    for(int i=0;i<12;++i)plan->volumes.back().worldToGrid[i]=float(rows[i]);}
+   else{plan->volumes.push_back(admitVolume(*volumeInner,plan->meshLights.back()));plan->volumes.back().visibility=geometryVisibility(o)|0x300u;}
+   if(volumeCutout){plan->volumes.back().cutout=1;plan->volumes.back().flags|=volume::DepthFixed;}
+   plan->volumes.back().surfaceOpacityThreshold=get<rdl::Float>(*volumeShader,"surface_opacity_threshold");
+   // MOONRAY_MODO_CRYPTO_VOLUMES (modoCryptoVolumesBuild): the geometry's IDs from its primitive attributes, the object's
+   // from the first deep ID name (modo_object_id without one).
+   {const char* sw=std::getenv("MOONRAY_MODO_CRYPTO_VOLUMES");
+    if(sw&&sw[0]=='1'){
+     const std::string key=plan->aovs&&!plan->aovs->cryptoIdAttribute.empty()?plan->aovs->cryptoIdAttribute:std::string("modo_object_id");
+     auto read=[&](const std::string& k,float& value){
+      for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)if((*i)->getName()=="primitive_attributes"){
+       for(auto* u:o.get<rdl::SceneObjectVector>("primitive_attributes"))if(u&&u->getSceneClass().getName()=="UserData"&&get<rdl::String>(*u,"float_key")==k){
+        const auto& f=get<rdl::FloatVector>(*u,"float_values_0");if(!f.empty()){value=f[0];return true;}}}
+      return false;};
+     auto& vs=plan->volumes.back();vs.cryptoValid=read(key,vs.cryptoId)?1u:0u;read("modo_material_id",vs.cryptoMaterialId);read("modo_asset_id",vs.cryptoAssetId);}}
+   plan->volumes.back().lpeLabel=plan->aovs?plan->aovs->lpeLabel(aov::attribute<rdl::String>(*volumeShader,"label","")):-1;
+  }else need(o.getSceneClass().getName()!="VdbGeometry",o.getName()+": a VDB geometry without a volume shader");
   // A displacement (mesh_displacement.h): MoonRay tessellates the mesh uniformly to its mesh resolution (adaptive
   // tessellation needs the camera's frustum, not ported) and displaces it.
   int edgeVertices=0;displace::Shader displacement;
-  if(displacementShader){
-   need(!isCurves(o.getSceneClass().getName()),o.getName()+": a displacement on curves is not rendered");
-   need(get<rdl::Float>(o,"adaptive_error")<=0.0f,o.getName()+": adaptive tessellation is not rendered yet");
+  if(displacementShader&&!polyGeometry){
+   need(!isCurves(o.getSceneClass().getName())&&!isPoints(o.getSceneClass().getName()),o.getName()+": a displacement on curves or points is not rendered");
+   need(subdGeometry||get<rdl::Float>(o,"adaptive_error")<=0.0f,o.getName()+": adaptive tessellation is not rendered yet");
    const float resolution=get<rdl::Float>(o,"mesh_resolution");need(std::isfinite(resolution)&&resolution<=64.0f,o.getName()+": a mesh resolution above 64");
    edgeVertices=std::max(0,std::max(1,int(resolution))-1);
    displacement=admitDisplacement(*displacementShader,plan->materialPool,textureContext);
@@ -1399,23 +2980,113 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;
   // The fur file can change under the same name: fur is read again each time.
   const bool curveGeometry=isCurves(o.getSceneClass().getName());
-  if(previous&&previous->domain==domain&&o.getSceneClass().getName()!="ModoFurGeometry"&&!displacementShader&&&o!=bakeGeometry)for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&
-   old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)){data=old.data;++plan->reusedMeshes;break;}
-  if(!data&&curveGeometry){auto m=std::make_shared<MeshData>();m->name=meshName;m->signature=std::move(sig);const auto transform=affine(o);
+  if(previous&&previous->domain==domain&&!item.instancer&&o.getSceneClass().getName()!="ModoFurGeometry"&&!objectDisplaced&&&o!=bakeGeometry&&
+   !(o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd")&&get<rdl::Float>(o,"adaptive_error")>0.0f))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&
+   old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;break;}
+  if(!data&&vdbBox){
+   // A VDB volume's boundary box (admitVdbVolume), named as the mesh.
+   vdbBox->name=meshName;vdbBox->signature=std::move(sig);data=std::move(vdbBox);++plan->preparedMeshes;}
+  if(!data&&isPoints(o.getSceneClass().getName())){
+   // Points (RdlPointProcedural): their centres through the node transform (and over the shutter), radii as given.
+   auto m=std::make_shared<MeshData>();m->name=meshName;m->signature=std::move(sig);
+   if(item.instancer){
+    const rdl::Mat4d x=instanceMatrix(item);admitPoints(o,plan->motion,*m,faceMask,&x,&item);instanceAttributes(*item.instancer,item.instance,item.count,*m);m->instanced=true;}
+   else admitPoints(o,plan->motion,*m,faceMask);
+   data=std::move(m);++plan->preparedMeshes;}
+  if(!data&&curveGeometry){auto m=std::make_shared<MeshData>();m->name=meshName;m->signature=std::move(sig);
+   // An instance's curves (a shared primitive): through the instance's transform.
+   const auto transform=item.instancer?instanceMatrix(item):affine(o);
    {const auto w=transform.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
     for(int i=0;i<12;++i)m->worldToObject[i]=float(rows[i]);}
-   admitCurves(o,transform,*m);data=std::move(m);++plan->preparedMeshes;}
+   admitCurves(o,transform,*m,&plan->motion,item.instancer?&item:nullptr);
+   if(item.instancer){instanceAttributes(*item.instancer,item.instance,item.count,*m);m->instanced=true;}
+   data=std::move(m);++plan->preparedMeshes;}
   // All geometry attribute/binding identities match before validation is reused.
   // Material/light assignments are checked above for EVERY epoch.
   if(!data){
   if(paths){std::set<std::string> allowed{"vertex_list_0","face_vertex_count","vertices_by_index","is_subd","node_xform","smooth_normal","normal_list","uv_list","primitive_attributes","mesh_resolution","adaptive_error",
-   "part_list","part_face_count_list","part_face_indices","side_type","reverse_normals"};
-   allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(o,allowed);}
+   "part_list","part_face_count_list","part_face_indices","side_type","reverse_normals",
+   "subd_scheme","subd_boundary","subd_fvar_linear","dicing_camera","subd_crease_indices","subd_crease_sharpnesses","subd_corner_indices","subd_corner_sharpnesses",
+   // Motion blur (meshMotionSteps).
+   "vertex_list_1","velocity_list_0","velocity_list_1","accleration_list","velocity_scale","motion_blur_type","curved_motion_blur_sample_count"};
+   allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(o,allowed,{},{"node_xform"});}
   else attributes(o,{"vertex_list_0","face_vertex_count","vertices_by_index","is_subd","node_xform","smooth_normal"});
+  const bool meshMotion=paths&&o.getSceneClass().getName()=="RdlMeshGeometry"&&(meshHasMotion(o)||item.moves);
+  need(paths||!item.instancer||!displacementShader||!get<rdl::Bool>(sv,"enable_displacement"),o.getName()+": a displaced instance is not rendered yet");
+  need(!item.instancer||!(subdGeometry||polyGeometry)||!meshHasMotion(o),o.getName()+": an instanced tessellated mesh of its own motion is not rendered yet");
+  need(!meshMotion||&o!=bakeGeometry,o.getName()+": a baked mesh in motion is not rendered yet");
+  if(paths&&get<rdl::Bool>(o,"is_subd")){
+   // A subdivision surface: MoonRay's own tessellation (tessellateSubdivision), once for all its parts.
+   // A displaced subdivision surface: MoonRay's displaceMesh in the tessellation, each vertex's value from its
+   // assignment's displacement (subdDisplace), the textures its maps read decoded now.
+   SubdDisplacement subdDisplacement;SubdDisplaceCall displaceCall;
+   if(objectDisplaced){
+    for(const auto& p:meshPieces(o,*geom,layer)){const rdl::SceneObject* ds=layer.lookupDisplacement(p.id);
+     if(ds&&!subdDisplacement.shaders.count(ds))subdDisplacement.shaders.emplace(ds,admitDisplacement(*ds,plan->materialPool,textureContext));}
+    for(auto& f:plan->textures){if(!f->pyramid)f->pyramid=std::make_shared<texture::Pyramid>(f->name.string(),f->alpha);subdDisplacement.images.push_back(&f->pyramid->image);}
+    subdDisplacement.pool=plan->materialPool.data();subdDisplacement.worldToRender=plan->worldToRender;
+    for(int i=0;i<4;++i)for(int j=0;j<4;++j)subdDisplacement.w2r[i][j]=plan->world2render[4*i+j];
+    subdDisplacement.r2w=subdDisplacement.w2r.inverse();
+    {const auto w=affine(o).inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+     for(int i=0;i<12;++i)subdDisplacement.worldToObject[i]=float(rows[i]);}
+    displaceCall.fn=&subdDisplace;displaceCall.user=&subdDisplacement;}
+   const auto transform=affine(o);
+   const bool polys=(plan->aovs&&plan->aovs->wireframe)||(mat&&(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices));
+   if(item.instancer){
+    // An instance: the prototype tessellated once in its own space, moved by the instance's transform.
+    auto& surface=subdRefCache[&o];
+    if(!surface){surface=tessellateSubdivision(o,layer,*plan,rdl::Mat4d(scene_rdl2::math::one),nullptr,displaceCall,true);subdDisplacement.check(o);}
+    auto m=subdivisionMesh(*surface,faceMask,meshName,std::move(sig),rdl::Mat4d(scene_rdl2::math::one),polys);
+    instanceSurface(*m,item,plan->motion);instanceAttributes(*item.instancer,item.instance,item.count,*m);
+    data=std::move(m);++plan->preparedMeshes;
+   }else if(meshMotion){
+    // Under motion blur (SubdivisionMesh::transformPrimitive's transformVertexBuffer on the control cage): the cage at
+    // each time step, each tessellated; the steps' tessellations have one topology (uniform tessellation).
+    auto& surfaces=subdMotionCache[&o];
+    if(surfaces.empty()){
+     const auto steps=meshMotionSteps(o,plan->motion,o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN),o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END));
+     for(const auto& step:steps){surfaces.push_back(tessellateSubdivision(o,layer,*plan,transform,&step,displaceCall));subdDisplacement.check(o);}
+     for(size_t k=1;k<surfaces.size();++k)need(surfaces[k]->quads==surfaces[0]->quads&&surfaces[k]->positions.size()==surfaces[0]->positions.size(),
+      o.getName()+": a subdivision surface whose tessellation changes over the shutter is not rendered yet");}
+    auto m=subdivisionMesh(*surfaces[0],faceMask,meshName,std::move(sig),transform,polys);
+    for(size_t k=1;k<surfaces.size();++k){m->steps.push_back(surfaces[k]->positions);m->stepNormals.push_back(surfaces[k]->normals);
+     m->stepDpds.push_back(surfaces[k]->dpds);m->stepDpdt.push_back(surfaces[k]->dpdt);}
+    m->subdSteps=surfaces.size()>1;
+    data=std::move(m);++plan->preparedMeshes;
+   }else{
+   auto& surface=subdCache[&o];if(!surface){surface=tessellateSubdivision(o,layer,*plan,transform,nullptr,displaceCall);subdDisplacement.check(o);}
+   data=subdivisionMesh(*surface,faceMask,meshName,std::move(sig),transform,polys);++plan->preparedMeshes;}
+  }else if(polyGeometry){
+   // A displaced polygon mesh: MoonRay's PolyMesh (tessellatePolygons), once for all its parts and time steps, each
+   // vertex's displacement from its assignment's (subdDisplace), the textures its maps read decoded now.
+   SubdDisplacement polyDisplacement;SubdDisplaceCall displaceCall;
+   for(const auto& p:meshPieces(o,*geom,layer)){const rdl::SceneObject* ds=layer.lookupDisplacement(p.id);
+    if(ds&&!polyDisplacement.shaders.count(ds))polyDisplacement.shaders.emplace(ds,admitDisplacement(*ds,plan->materialPool,textureContext));}
+   for(auto& f:plan->textures){if(!f->pyramid)f->pyramid=std::make_shared<texture::Pyramid>(f->name.string(),f->alpha);polyDisplacement.images.push_back(&f->pyramid->image);}
+   polyDisplacement.pool=plan->materialPool.data();polyDisplacement.worldToRender=plan->worldToRender;
+   for(int i=0;i<4;++i)for(int j=0;j<4;++j)polyDisplacement.w2r[i][j]=plan->world2render[4*i+j];
+   polyDisplacement.r2w=polyDisplacement.w2r.inverse();
+   {const auto w=affine(o).inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+    for(int i=0;i<12;++i)polyDisplacement.worldToObject[i]=float(rows[i]);}
+   displaceCall.fn=&subdDisplace;displaceCall.user=&polyDisplacement;
+   const auto transform=affine(o);
+   const bool polys=(plan->aovs&&plan->aovs->wireframe)||(mat&&(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices));
+   auto& surface=item.instancer?polyRefCache[&o]:polyCache[&o];
+   if(!surface&&item.instancer){surface=tessellatePolygons(o,layer,*plan,rdl::Mat4d(scene_rdl2::math::one),nullptr,displaceCall,true);polyDisplacement.check(o);}
+   if(!surface){std::vector<std::vector<V3>> steps;
+    if(meshMotion)steps=meshMotionSteps(o,plan->motion,o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN),o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END));
+    surface=tessellatePolygons(o,layer,*plan,transform,steps.empty()?nullptr:&steps,displaceCall);polyDisplacement.check(o);}
+   if(item.instancer){
+    // An instance: the prototype tessellated and displaced once in its own space, moved by the instance's transform.
+    auto m=polygonMesh(*surface,faceMask,meshName,std::move(sig),rdl::Mat4d(scene_rdl2::math::one),polys);
+    instanceSurface(*m,item,plan->motion);instanceAttributes(*item.instancer,item.instance,item.count,*m);data=std::move(m);}
+   else data=polygonMesh(*surface,faceMask,meshName,std::move(sig),transform,polys);
+   ++plan->preparedMeshes;
+  }else{
   need(!get<rdl::Bool>(o,"is_subd"),o.getName()+": subdivision unsupported");
   // Supplied normals are the shading normals; on the path tracer a mesh without them smooths its own (PolyMeshCalcNv).
   if(spatial)need(!get<rdl::Bool>(o,"smooth_normal")||paths,"Spatial smooth normals unsupported");
-  auto transform=spatial?affine(o):translation(o);if(!spatial)need(transform[3][2]==0,o.getName()+": only coplanar geometry supported");
+  auto transform=item.instancer?instanceMatrix(item):spatial?affine(o):translation(o);if(!spatial)need(transform[3][2]==0,o.getName()+": only coplanar geometry supported");
    need(paths||!faceMask,o.getName()+": parts are rendered by the path tracer only");
    auto m=std::make_shared<MeshData>();m->name=meshName;m->signature=std::move(sig);
    {const auto w=transform.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
@@ -1425,6 +3096,11 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    for(auto p:v){need(std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z)&&(spatial||p.z==0),"Invalid spatial/planar vertex");
     V3 point{float(p.x*transform[0][0]+p.y*transform[1][0]+p.z*transform[2][0]+transform[3][0]),float(p.x*transform[0][1]+p.y*transform[1][1]+p.z*transform[2][1]+transform[3][1]),float(p.x*transform[0][2]+p.y*transform[1][2]+p.z*transform[2][2]+transform[3][2])};
     need(surface::finite(point)&&(!spatial||(std::abs(point.x)<=10000&&std::abs(point.y)<=10000&&std::abs(point.z)<=10000)),"Transformed vertex bound");m->positions.push_back(point);}
+   if(meshMotion){
+    // Motion blur: the vertices at the shutter's time steps (the first, the open's, in place of the positions).
+    auto steps=item.instancer?instanceMotionSteps(o,plan->motion,item):
+                 meshMotionSteps(o,plan->motion,o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN),o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END));
+    m->positions=std::move(steps[0]);for(size_t k=1;k<steps.size();++k)m->steps.push_back(std::move(steps[k]));}
    PolygonSplit split;
    const bool reversed=paths&&get<rdl::Bool>(o,"reverse_normals");
    if(paths){split=splitPolygons(v,counts,indices,o.getName());
@@ -1464,6 +3140,8 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
      if(split.quads)m->normals=displace::smoothNormals(m->positions,split.quadVertices,4);
      // Over the whole mesh, whatever its parts (MoonRay's normals are the mesh's own).
      else m->normals=displace::smoothNormals(m->positions,split.vertices,3);
+     // A moving mesh's second normal sample, from its second time step.
+     if(!m->steps.empty())m->normals1=split.quads?displace::smoothNormals(m->steps[0],split.quadVertices,4):displace::smoothNormals(m->steps[0],split.vertices,3);
      m->normalRate=shade::RateVertex;}
     if(!nl.empty()){
      // Normals transform by the inverse transpose of the node transform (row vectors: n * inverse(M)^T).
@@ -1496,7 +3174,11 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
      {const auto& d=get<rdl::Vec2fVector>(*object,"vec2f_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.x);f.push_back(c.y);}add(get<rdl::String>(*object,"vec2f_key"),shade::PrimVec2f,2,f,d.size());}
      {const auto& d=get<rdl::Vec3fVector>(*object,"vec3f_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.x);f.push_back(c.y);f.push_back(c.z);}add(get<rdl::String>(*object,"vec3f_key"),shade::PrimVec3f,3,f,d.size());}
     }
-    if(reversed)for(auto& n:m->normals)n=surface::mul(n,-1.0f);
+    if(item.instancer){instanceAttributes(*item.instancer,item.instance,item.count,*m);m->instanced=true;}
+    if(item.instancer&&item.moves&&!m->steps.empty()){m->stepShading=true;
+     if(!m->normals1.empty())for(const auto& step:m->steps)m->stepNormals.push_back(split.quads?displace::smoothNormals(step,split.quadVertices,4):displace::smoothNormals(step,split.vertices,3));}
+    if(reversed){for(auto& n:m->normals)n=surface::mul(n,-1.0f);for(auto& n:m->normals1)n=surface::mul(n,-1.0f);
+     for(auto& s:m->stepNormals)for(auto& n:s)n=surface::mul(n,-1.0f);}
     const auto& ul=o.get<rdl::Vec2fVector>("uv_list");m->uvRate=rate(ul.size());
     m->uvs.reserve(ul.size()*2);for(auto u:ul){need(std::isfinite(u.x)&&std::isfinite(u.y),o.getName()+": invalid uv");m->uvs.push_back(u.x);m->uvs.push_back(u.y);}
     if(m->uvRate==shade::RateFaceVarying)m->uvs=byCorner(m->uvs,2);
@@ -1579,10 +3261,19 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
    }
    data=std::move(m);++plan->preparedMeshes;
   }
-  plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);plan->meshes.push_back({data,mat?materialIds.at(mat->getName()):~0u,volumeIndex,paths?geometryVisibility(o):0xffu,
+  }
+  plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);plan->meshes.push_back({data,mat?materialIds.at(mat->getName()):~0u,volumeIndex,
+   paths?(geometryVisibility(o)&(item.instancer?geometryVisibility(*item.instancer):0xffu)):0xffu,
    paths&&volumeIndex<0&&get<rdl::Int>(o,"side_type")==1,
    plan->aovs?plan->aovs->geomLabel(aov::attribute<rdl::String>(o,"label","")):-1});
-  if(displacementShader)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
+  if(displacementShader&&!subdGeometry&&!polyGeometry)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
+  // An emissive mesh volume lights the scene (an emissive region over its mesh's box).
+  if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindVdb&&plan->volumes[size_t(volumeIndex)].mapped)
+   mappedVolumes.push_back({unsigned(volumeIndex),plan->meshes.size()-1,volumeInner,affine(o),false,&o});
+  if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindBaseMapped)
+   mappedVolumes.push_back({unsigned(volumeIndex),plan->meshes.size()-1,volumeInner,affine(o),o.getSceneClass().getName()=="RdlMeshGeometry"&&!get<rdl::Bool>(o,"is_subd")});
+  if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindBase){const auto& vs=plan->volumes[size_t(volumeIndex)];
+   if(!(vs.emission.x==0&&vs.emission.y==0&&vs.emission.z==0)&&(vs.visibility&0x3fcu))meshEmissionRegion(*plan,*data,unsigned(volumeIndex),vs.visibility);}
   }
  }
  if(gpuTextures(domain)){uint64_t total=0;std::set<texture::File*> files;
@@ -1621,10 +3312,23 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
   plan->materialPool.insert(plan->materialPool.end(),entries.begin(),entries.end());}
  // MoonRay's bake camera bakes a mesh the scene renders (its procedural).
  need(!bakeGeometry||plan->cameraMap,camera->getName()+": the bake camera's mesh is not in the layer");
+ // The mapped volumes' extinction, and the emissive ones' regions from their maps (computeEmissionDistribution).
+ if(!mappedVolumes.empty()){plan->volumeMaps=volume::MapEval{&runVolumeMaps,plan.get()};
+  for(const auto& mv:mappedVolumes){
+   if(mv.vdb){bakeVdbVolume(*plan,mv.volume,*mv.vdb,*mv.shader);continue;}
+   bakeVolume(*plan,mv.volume,*plan->meshes[mv.mesh].data,*mv.shader,mv.nodeXform,mv.polygons);
+   const auto& vs=plan->volumes[mv.volume];
+   const bool emits=(vs.mapped&((1u<<volume::MapEmissionColor)|(1u<<volume::MapEmissionIntensity)))!=0||!(vs.emission.x==0&&vs.emission.y==0&&vs.emission.z==0);
+   if(emits&&(vs.visibility&0x3fcu))meshEmissionRegion(*plan,*plan->meshes[mv.mesh].data,mv.volume,vs.visibility,true);}}
  // The displaced meshes (mesh_displacement.h), their maps' textures read.
  if(!displaced.empty()){const displace::Textures textures{plan->textureImages.data(),unsigned(plan->textureImages.size())};
   for(auto& d:displaced){auto& mesh=plan->meshes[d.mesh];const MeshData& base=*mesh.data;
    auto out=displace::displaceMesh(base,d.edgeVertices,d.shader,plan->materialPool.data(),textures,plan->worldToRender);
+   for(size_t k=0;k<base.steps.size();++k){MeshData step=base;step.positions=base.steps[k];step.steps.clear();step.normals1.clear();
+    auto moved=displace::displaceMesh(step,d.edgeVertices,d.shader,plan->materialPool.data(),textures,plan->worldToRender);
+    need(moved->positions.size()==out->positions.size(),base.name+": a time step's displacement does not match the first");
+    if(k==0)out->normals1=moved->normals;
+    out->steps.push_back(std::move(moved->positions));}
    need(out->positions.size()<=limits.vertices&&out->triangles.size()<=limits.triangles&&!out->triangles.empty(),base.name+": displaced mesh budget");
    plan->bytes+=out->positions.size()*sizeof(V3)+out->triangles.size()*sizeof(Tri);plan->bytes-=base.positions.size()*sizeof(V3)+base.triangles.size()*sizeof(Tri);
    mesh.data=std::move(out);}}
@@ -1634,10 +3338,47 @@ inline PlanView prepare(const rdl::SceneContext& context,const CanonicalView& fr
  if(plan->paths&&plan->lightSamplingMode==1){const unsigned words=plan->lightSetWords;
   for(size_t k=0;k*words<plan->lightSetBits.size();++k){std::vector<unsigned> set;
    for(unsigned i=0;i<plan->lights.size();++i)if(plan->lightSetBits[k*words+(i>>5)]>>(i&31)&1u)set.push_back(i);
-   plan->lightTreeRoots.push_back(lights::buildLightTree(plan->lights,set,plan->lightTree));}}
+   std::vector<const lights::Light*> close(plan->lightClose.size());for(size_t q=0;q<close.size();++q)close[q]=plan->lightClose[q].get();
+   plan->lightTreeRoots.push_back(lights::buildLightTree(plan->lights,set,plan->lightTree,&close));}}
+ // Light filter tables (Scene::buildLightFilterTables): for each mesh, each light's filters, those of the mesh's
+ // LightFilterSet where it has one, the filters on; lists and tables shared where they are the same.
+ if(plan->paths){
+  FilterAdmission filters{*plan,sv,previous.get(),{}};
+  {rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=plan->world2render[4*i+j];const rdl::Mat4d r2w=w2r.inverse();
+   plan->renderOrigin=V3{float(r2w[3][0]),float(r2w[3][1]),float(r2w[3][2])};}
+  filters.mapProgram=[&](const rdl::SceneObject& m){MapProgramBuilder b{plan->materialPool,textureContext};const unsigned reg=b.reg(m);
+   need(!b.polyVertices&&b.required.empty(),m.getName()+": a cookie's map that reads the surface is not rendered");const unsigned program=b.finish();
+   // The textures its maps read, decoded now (the plan's images were gathered before the filters).
+   for(size_t i=plan->textureImages.size();i<plan->textures.size();++i){auto& file=*plan->textures[i];
+    if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string(),file.alpha);plan->textureImages.push_back(&file.pyramid->image);}
+   return std::make_pair(program,reg);};
+  std::vector<const rdl::SceneObject*> lightObjects(plan->lights.size(),nullptr);for(auto& pr:lightIds)lightObjects[pr.second]=pr.first;
+  std::map<std::vector<unsigned>,unsigned> listIds,tableIds;
+  plan->meshFilterTable.assign(plan->meshes.size(),~0u);
+  for(size_t mi=0;mi<plan->meshes.size()&&mi<meshFilterSets.size();++mi){
+   const rdl::LightFilterSet* set=meshFilterSets[mi];std::vector<unsigned> table(plan->lights.size(),~0u);bool any=false;
+   for(size_t li=0;li<lightObjects.size();++li){const rdl::SceneObject* lo=lightObjects[li];if(!lo)continue;
+    std::vector<unsigned> items;
+    for(auto* fo:lo->get<rdl::SceneObjectVector>("light_filters")){
+     if(!fo||!fo->isA<rdl::LightFilter>())continue;const rdl::LightFilter* lf=fo->asA<rdl::LightFilter>();
+     if(set&&!set->contains(lf))continue;if(!get<rdl::Bool>(*fo,"on"))continue;
+     const unsigned id=filters.admit(*fo);if(std::find(items.begin(),items.end(),id)==items.end())items.push_back(id);}
+    if(items.empty())continue;
+    need(items.size()<=lights::FilterMaxList,lo->getName()+": more than 16 light filters");
+    std::sort(items.begin(),items.end());
+    auto it=listIds.find(items);
+    if(it==listIds.end()){lights::FilterList l;for(size_t k=0;k<items.size();++k){l.items[k]=items[k];if(plan->filters[items[k]].needsSamples)l.needsSamples=1;}
+     l.count=unsigned(items.size());it=listIds.emplace(items,unsigned(plan->filterLists.size())).first;plan->filterLists.push_back(l);}
+    table[li]=it->second;any=true;}
+   if(!any)continue;
+   auto it=tableIds.find(table);
+   if(it==tableIds.end()){it=tableIds.emplace(table,unsigned(plan->filterTables.size())).first;plan->filterTables.insert(plan->filterTables.end(),table.begin(),table.end());}
+   plan->meshFilterTable[mi]=it->second;}
+ }
  need(plan->bytes<=limits.bytes,"Prepared geometry budget");return plan;
 }
-inline PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false){
+X2_SPLIT_INLINE PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous,Limits limits,const fs::path& assetRoot,Domain domain,bool allowAdaptive,bool paths){
  return session.inspectPrepared(frame,[&](const rdl::SceneContext& context,CanonicalView exact){return prepare(context,exact,previous,limits,assetRoot,domain,allowAdaptive,paths);});
 }
+#endif
 }

@@ -89,10 +89,30 @@ struct Set {
     const U32* spans = nullptr;      // three words a span
     const U32* curveSpans = nullptr;  // a word a curve
     U32 spanCount = 0, pointCount = 0, basis = BasisNone, round = 0, segments = 4;
+    // Under motion blur: the control points at the later time steps (stepCount - 1 arrays laid out as points), and
+    // the time (0 to 1 over the shutter, the ray's) the points are taken at.
+    const float* const* steps = nullptr;
+    U32 stepCount = 1;
+    float time = 0.0f;
 };
-X2_HD inline float4 point(const Set& c, U32 i) {
-    const float* p = c.points + 4 * size_t(i);
+X2_HD inline float4 stepPoint(const Set& c, U32 k, U32 i) {
+    const float* p = (k ? c.steps[k - 1] : c.points) + 4 * size_t(i);
     return make_float4(p[0], p[1], p[2], p[3]);
+}
+// A control point at the set's time: between the two time steps about it, as Embree interpolates them.
+X2_HD inline float4 point(const Set& c, U32 i) {
+    if (c.stepCount < 2) return stepPoint(c, 0, i);
+    const float f = c.time * float(c.stepCount - 1);
+    U32 k = f > 0.0f ? U32(f) : 0u;
+    if (k > c.stepCount - 2) k = c.stepCount - 2;
+    const float u = f - float(k);
+    return (1.0f - u) * stepPoint(c, k, i) + u * stepPoint(c, k + 1, i);
+}
+// The control point LineSegments' and CubicSpline's postIntersect shade with: the first two time steps lerped to
+// t (whatever the steps).
+X2_HD inline float4 shadingPoint(const Set& c, U32 i, float t) {
+    if (c.stepCount < 2) return stepPoint(c, 0, i);
+    return (1.0f - t) * stepPoint(c, 0, i) + t * stepPoint(c, 1, i);
 }
 X2_HD inline U32 spanVertex(const Set& c, U32 span) { return c.spans[3 * size_t(span)]; }
 X2_HD inline U32 spanCurve(const Set& c, U32 span) { return c.spans[3 * size_t(span) + 1]; }

@@ -372,6 +372,18 @@ inline unsigned glitterTables(std::vector<float>& pool, int seed, float randomne
     pool.insert(pool.end(), t.begin(), t.end());
     return offset;
 }
+// The plan's lobe light sets being gathered (cpu_scene.h sets it as a plan is prepared): a material's light set's
+// index among them, ~0u for none.
+inline thread_local std::vector<const rdl::SceneObject*>* lobeLightSetTable = nullptr;
+inline unsigned lobeLightSetIndex(const rdl::SceneObject* s, const std::string& owner) {
+    if (!s) return ~0u;
+    need(lobeLightSetTable != nullptr && s->getSceneClass().getName() == "LightSet", owner + ": a lobe light set that is not a LightSet");
+    auto& t = *lobeLightSetTable;
+    for (size_t i = 0; i < t.size(); ++i)
+        if (t[i] == s) return unsigned(i);
+    t.push_back(s);
+    return unsigned(t.size() - 1);
+}
 inline shade::DwaRecord admitDwa(const rdl::SceneObject& o, const DwaClass& c, MapProgramBuilder* maps = nullptr,
                                  std::vector<shade::MapBinding>* bindings = nullptr) {
     bool has[KCount] = {};
@@ -437,13 +449,14 @@ inline shade::DwaRecord admitDwa(const rdl::SceneObject& o, const DwaClass& c, M
         need(m->isA<rdl::NormalMap>(), o.getName() + ": " + name(k) + " is not a normal map");
         return maps->reg(*m);
     };
-    for (unsigned k : {KDiffuseLightSet, KSpecularLightSet})
-        need(!obj(k), o.getName() + ": material light sets unsupported");
 
     shade::DwaRecord r{};
     shade::DwaUniforms& u = r.u;
     shade::DwaInputs& in = r.in;
     u.model = c.model;
+    // diffuse_lightset and specular_lightset: the lobes' light sets (lobeLightSetIndex).
+    u.up.diffuseLightSet = lobeLightSetIndex(obj(KDiffuseLightSet), o.getName());
+    u.up.specularLightSet = lobeLightSetIndex(obj(KSpecularLightSet), o.getName());
     const bool metal = c.model == shade::ModelMetal, refractive = c.model == shade::ModelRefractive, fabricModel = c.model == shade::ModelFabric;
     unsigned h = 0;
     auto hint = [&](unsigned bit, bool on) { if (on) h |= bit; };
@@ -891,6 +904,8 @@ inline void blendUniformParameters(const shade::DwaUniformParams& u0, const shad
     }
     if (u0.thinGeometry != u1.thinGeometry) u.thinGeometry = fbThin ? 1 : 0;
     if (u0.preventLightCulling != u1.preventLightCulling) u.preventLightCulling = fbCulling ? 1 : 0;
+    // Blended parameters start with no light sets (initParameters) and blending gives them none.
+    u.diffuseLightSet = u.specularLightSet = ~0u;
 }
 
 struct DwaTreeBuilder {

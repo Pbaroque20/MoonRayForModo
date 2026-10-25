@@ -464,7 +464,9 @@ X2_CALL U32 sampleImageMap(const MapNodeHeader& h, const MapParams& P, const Sta
     V3 texel;
     const U32 status = tex.lookup(texture, b, f, texel);
     if (status != tex::Ready) return status;
-    Color result = q.alpha_only != 0 ? rgb(1.0f) : Color{texel.x, texel.y, texel.z};  // 3-channel textures: alpha one
+    // alpha_only: the texture admitted as its alpha (host_texture.h's (a, a, a): the file's fourth channel, or the
+    // fill MOONRAY_MODO_OPAQUE_ALPHA picks where it has none).
+    Color result = Color{texel.x, texel.y, texel.z};
     if (q.saturation_enabled != 0) applySaturation(q.saturation.x, q.saturation.y, q.saturation.z, result.x, result.y, result.z);
     if (q.contrast_enabled != 0) applyNukeContrast(q.contrast.x, q.contrast.y, q.contrast.z, result.x, result.y, result.z);
     if (q.gamma_enabled != 0) {
@@ -1414,371 +1416,891 @@ X2_HD inline Color sampleWorleyMap(const MapNodeHeader& h, const MapParams& P, c
 #include "shade_mapnodes_more.h"
 namespace xpu2 { namespace interactive { namespace shade {
 // One map's result. Status as tex::lookup's: Ready, Miss (a texture tile is not resident yet) or Invalid.
+// sampleMap's cases, one function each (X2_CALL: out of line on the device, so OptiX compiles them apart).
+template <class Tex>
+X2_CALL U32 sampleMapCaseAxisAngle(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleAxisAngle(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseTransformNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleTransformNormal(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseRgbToLab(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleRgbToLab(P.c(X2_OFF(MapRgbToLabParams, input_color))); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseRandom(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleRandom(P); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseMultiChannelToFloat(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleMultiChannelToFloat(P); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseLayer(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleLayerMap(P, false); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseLayer2(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleLayerMap(P, true); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseHair(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleHairMap(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseHairColumn(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleHairColumn(st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseHairColorPresets(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleHairColorPresets(int(reinterpret_cast<const MapHairColorPresetsParams*>(P.p)->color)); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseToon(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleToon(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCurvature(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleCurvature(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseWireframe(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleWireframe(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseDeformation(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleDeformation(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseDirectional(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleDirectional(P, st, h); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseTransformSpace(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleTransformSpace(P, st, h); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseProjectTriplanarUdim(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleTriplanarUdim(P, st, h); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseExtraAov(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = P.c(X2_OFF(MapExtraAovParams, color)); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseList(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = rgb(1.0f); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseDebug(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleDebug(P, st, h); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseDistortNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleDistortNormal(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseRandomNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleRandomNormal(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseConstantColor(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = reinterpret_cast<const MapConstantColorParams*>(P.p)->color_value; return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseConstantScalar(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = rgb(reinterpret_cast<const MapConstantScalarParams*>(P.p)->scalar_value); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCheckerboard(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapCheckerboardParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    float s = st.s, t = st.t;
+    if (int(q.texture_coordinates) == 1) {
+        const Color uvw = P.c(X2_OFF(Q, input_texture_coordinates));
+        s = uvw.x;
+        t = uvw.y;
+    }
+    float smod = fmodf(s * float(int(q.num_u_tiles)) / 2.0f, 1.0f), tmod = fmodf(t * float(int(q.num_v_tiles)) / 2.0f, 1.0f);
+    if (smod < 0.0f) smod += 1.0f;
+    if (tmod < 0.0f) tmod += 1.0f;
+    out = (smod < 0.5f) == (tmod < 0.5f) ? q.color_A : q.color_B;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseClamp(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapClampParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    Color c = P.c(X2_OFF(Q, input));
+    if (q.clamp != 0) c = clampColor(c, q.clamp_min, q.clamp_max);
+    out = c;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseFloatToRgb(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapFloatToRgbParams;
+    out = Color{P.f(X2_OFF(Q, R)), P.f(X2_OFF(Q, G)), P.f(X2_OFF(Q, B))};
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseRgbToFloat(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapRgbToFloatParams;
+    const Color c = P.c(X2_OFF(Q, input));
+    float v = 0.0f;
+    switch (int(reinterpret_cast<const Q*>(P.p)->mode)) {
+    case 0: v = c.x; break;
+    case 1: v = c.y; break;
+    case 2: v = c.z; break;
+    case 3: v = fminf(fminf(c.x, c.y), c.z); break;
+    case 4: v = fmaxf(fmaxf(c.x, c.y), c.z); break;
+    case 5: v = (c.x + c.y + c.z) / 3.0f; break;
+    case 6: v = c.x + c.y + c.z; break;
+    case 7: v = luminance(c); break;
+    default: out = rgb(0); return tex::Ready;  // MoonRay leaves the sample unset
+    }
+    out = rgb(v);
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseHsvToRgb(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = hsvToRgb(P.c(X2_OFF(MapHsvToRgbParams, input))); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseRgbToHsv(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = rgbToHsv(P.c(X2_OFF(MapRgbToHsvParams, input))); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseRemap(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapRemapParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    const float inMin = P.f(X2_OFF(Q, input_min)), inMax = P.f(X2_OFF(Q, input_max)), outMin = P.f(X2_OFF(Q, output_min)),
+                outMax = P.f(X2_OFF(Q, output_max)), biasAmount = P.f(X2_OFF(Q, midpoint_bias));
+    const Color inMinRGB = P.c(X2_OFF(Q, input_min_RGB)), inMaxRGB = P.c(X2_OFF(Q, input_max_RGB)),
+                outMinRGB = P.c(X2_OFF(Q, output_min_RGB)), outMaxRGB = P.c(X2_OFF(Q, output_max_RGB)),
+                biasRGB = P.c(X2_OFF(Q, midpoint_bias_RGB));
+    const bool applyBias = !isEqual(biasAmount, 0.5f);
+    Color r = input;
+    if (int(q.remap_method) == 0) {
+        if (!isEqual(inMin, outMin) || !isEqual(inMax, outMax)) r = remapUniform(r, inMin, inMax, outMin, outMax, applyBias, biasAmount);
+        else if (applyBias) r = Color{biasf(r.x, biasAmount), biasf(r.y, biasAmount), biasf(r.z, biasAmount)};
+        if (q.clamp != 0) r = clampColor(r, q.clamp_min, q.clamp_max);
+    } else if (int(q.remap_method) == 1) {
+        if (!isEqualColor(inMinRGB, outMinRGB) || !isEqualColor(inMaxRGB, outMaxRGB)) {
+            r = remapRGB(r, inMinRGB, inMaxRGB, outMinRGB, outMaxRGB, biasRGB);
+        } else {
+            r.x = !isEqual(biasRGB.x, 0.5f) ? biasf(r.x, biasRGB.x) : r.x;
+            r.y = !isEqual(biasRGB.y, 0.5f) ? biasf(r.y, biasRGB.y) : r.y;
+            r.z = !isEqual(biasRGB.z, 0.5f) ? biasf(r.z, biasRGB.z) : r.z;
+        }
+        if (q.clamp_RGB != 0)
+            r = Color{clampf(r.x, q.clamp_min_RGB.x, q.clamp_max_RGB.x), clampf(r.y, q.clamp_min_RGB.y, q.clamp_max_RGB.y),
+                      clampf(r.z, q.clamp_min_RGB.z, q.clamp_max_RGB.z)};
+    }
+    out = r;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseBlend(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapBlendParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const float amount = P.f(X2_OFF(Q, blend_amount)), tMin = P.f(X2_OFF(Q, threshold_min)), tMax = P.f(X2_OFF(Q, threshold_max));
+    if (amount <= tMin) {
+        out = P.c(X2_OFF(Q, color_A));
+    } else if (amount >= tMax) {
+        out = P.c(X2_OFF(Q, color_B));
+    } else {
+        const Color a = P.c(X2_OFF(Q, color_A)), b = P.c(X2_OFF(Q, color_B));
+        const float divisor = tMax - tMin;
+        float t = 0.0f;
+        if (divisor > 0.0f) t = (amount - tMin) / divisor;
+        if (int(q.blend_type) == 1) t = t * t * (3 - 2 * t);
+        out = lerp(a, b, t);
+    }
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseColorCorrect(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapColorCorrectParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    Color s = input;
+    const float mix = P.f(X2_OFF(Q, mix));
+    if (q.on == 0 || isZero(mix)) {
+        out = s;
+        return tex::Ready;
+    }
+    if (q.hue_shift_enabled != 0) applyHueShift(P.f(X2_OFF(Q, hue_shift)), s);
+    if (q.saturation_enabled != 0) {
+        const Color sat = q.use_per_channel_saturation != 0
+                              ? Color{P.f(X2_OFF(Q, saturation_r)), P.f(X2_OFF(Q, saturation_g)), P.f(X2_OFF(Q, saturation_b))}
+                              : rgb(P.f(X2_OFF(Q, saturation)));
+        applySaturation(sat.x, sat.y, sat.z, s.x, s.y, s.z);
+    }
+    if (q.contrast_enabled != 0) {
+        const Color con = q.use_per_channel_contrast != 0
+                              ? Color{P.f(X2_OFF(Q, contrast_r)), P.f(X2_OFF(Q, contrast_g)), P.f(X2_OFF(Q, contrast_b))}
+                              : rgb(P.f(X2_OFF(Q, contrast)));
+        applyContrast(con, s);
+    }
+    if (q.gamma_enabled != 0) {
+        const Color g = q.use_per_channel_gamma != 0 ? Color{P.f(X2_OFF(Q, gamma_r)), P.f(X2_OFF(Q, gamma_g)), P.f(X2_OFF(Q, gamma_b))}
+                                                     : rgb(P.f(X2_OFF(Q, gamma)));
+        applyGamma(1.0f / fmaxf(Epsilon, g.x), 1.0f / fmaxf(Epsilon, g.y), 1.0f / fmaxf(Epsilon, g.z), s.x, s.y, s.z);
+    }
+    if (q.gain_offset_enabled != 0) {
+        Color gain, offset;
+        if (q.use_per_channel_gain_offset != 0) {
+            gain = Color{P.f(X2_OFF(Q, gain_r)), P.f(X2_OFF(Q, gain_g)), P.f(X2_OFF(Q, gain_b))};
+            offset = Color{P.f(X2_OFF(Q, offset_r)), P.f(X2_OFF(Q, offset_g)), P.f(X2_OFF(Q, offset_b))};
+        } else {
+            gain = rgb(P.f(X2_OFF(Q, gain)));
+            offset = rgb(P.f(X2_OFF(Q, offset)));
+        }
+        applyGainAndOffset(gain.x, gain.y, gain.z, offset.x, offset.y, offset.z, s.x, s.y, s.z);
+    }
+    if (q.TMI_enabled != 0) {
+        const Color tmi = P.c(X2_OFF(Q, TMI));
+        applyTMI(tmi.x, tmi.y, tmi.z, s.x, s.y, s.z);
+    }
+    s = mixWithInput(input, s, mix);
+    if (q.clamp != 0) s = clampColor(s, q.clamp_min, q.clamp_max);
+    out = s;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCCContrast(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapCCContrastParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    const float mix = P.f(X2_OFF(Q, mix));
+    Color s = input;
+    if (q.on != 0 && !isZero(mix)) {
+        const Color con = q.use_per_channel_contrast != 0
+                              ? Color{P.f(X2_OFF(Q, contrast_r)), P.f(X2_OFF(Q, contrast_g)), P.f(X2_OFF(Q, contrast_b))}
+                              : rgb(P.f(X2_OFF(Q, contrast)));
+        applyContrast(con, s);
+        s = mixWithInput(input, s, mix);
+    }
+    out = s;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCCGainOffset(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapCCGainOffsetParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    const float mix = P.f(X2_OFF(Q, mix));
+    Color s = input;
+    if (q.on != 0 && !isZero(mix)) {
+        Color gain, offset;
+        if (q.use_per_channel_gain_offset != 0) {
+            gain = Color{P.f(X2_OFF(Q, gain_r)), P.f(X2_OFF(Q, gain_g)), P.f(X2_OFF(Q, gain_b))};
+            offset = Color{P.f(X2_OFF(Q, offset_r)), P.f(X2_OFF(Q, offset_g)), P.f(X2_OFF(Q, offset_b))};
+        } else {
+            gain = rgb(P.f(X2_OFF(Q, gain)));
+            offset = rgb(P.f(X2_OFF(Q, offset)));
+        }
+        applyGainAndOffset(gain.x, gain.y, gain.z, offset.x, offset.y, offset.z, s.x, s.y, s.z);
+        s = mixWithInput(input, s, mix);
+    }
+    out = s;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCCGamma(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapCCGammaParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    const float mix = P.f(X2_OFF(Q, mix));
+    Color s = input;
+    if (q.on != 0 && !isZero(mix)) {
+        const Color g = q.use_per_channel_gamma != 0 ? Color{P.f(X2_OFF(Q, gamma_r)), P.f(X2_OFF(Q, gamma_g)), P.f(X2_OFF(Q, gamma_b))}
+                                                     : rgb(P.f(X2_OFF(Q, gamma)));
+        applyGamma(1.0f / fmaxf(Epsilon, g.x), 1.0f / fmaxf(Epsilon, g.y), 1.0f / fmaxf(Epsilon, g.z), s.x, s.y, s.z);
+        s = mixWithInput(input, s, mix);
+    }
+    out = s;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCCHsv(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapCCHsvParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    if (q.on == 0) {
+        out = input;
+        return tex::Ready;
+    }
+    Color hsv = rgbToHsv(input);
+    float h = hsv.x, s = hsv.y, v = hsv.z;
+    const float hueShift = P.f(X2_OFF(Q, hue_shift));
+    if (!isZero(hueShift)) h = fmodf(h + hueShift / 360.f, 1.f);
+    const float sf = P.f(X2_OFF(Q, saturation_factor));
+    if (!isOne(sf)) s = s * sf;
+    const float vf = P.f(X2_OFF(Q, value_factor));
+    if (!isOne(vf)) v = v * vf;
+    hsvContrast(clampf(q.saturation_contrast, -1.f, 1.f), s);
+    hsvContrast(clampf(q.value_contrast, -1.f, 1.f), v);
+    if (!isZero(q.saturation_shift)) s = s + q.saturation_shift;
+    if (!isZero(q.value_shift)) v = v + q.value_shift;
+    Color r = hsvToRgb(Color{h, s, v});
+    if (q.clamp != 0) r = clampColor(r, 0.0f, 1.0f);
+    out = r;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCCHueShift(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapCCHueShiftParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    const float mix = P.f(X2_OFF(Q, mix));
+    Color s = input;
+    if (q.on != 0 && !isZero(mix)) {
+        applyHueShift(P.f(X2_OFF(Q, hue_shift)), s);
+        s = mixWithInput(input, s, mix);
+    }
+    out = s;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCCSaturation(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapCCSaturationParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    const float mix = P.f(X2_OFF(Q, mix));
+    Color s = input;
+    if (q.on != 0 && !isZero(mix)) {
+        const Color sat = q.use_per_channel_saturation != 0
+                              ? Color{P.f(X2_OFF(Q, saturation_r)), P.f(X2_OFF(Q, saturation_g)), P.f(X2_OFF(Q, saturation_b))}
+                              : rgb(P.f(X2_OFF(Q, saturation)));
+        applySaturation(sat.x, sat.y, sat.z, s.x, s.y, s.z);
+        s = mixWithInput(input, s, mix);
+    }
+    out = s;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCCTMI(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapCCTMIParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    const Color input = P.c(X2_OFF(Q, input));
+    const float mix = P.f(X2_OFF(Q, mix));
+    Color s = input;
+    if (q.on != 0 && !isZero(mix)) {
+        const Color tmi = P.c(X2_OFF(Q, TMI));
+        applyTMI(tmi.x, tmi.y, tmi.z, s.x, s.y, s.z);
+        s = mixWithInput(input, s, mix);
+    }
+    out = s;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseSwitchColor(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    int choice = int(P.f(0)) % 64;
+    if (choice < 0) choice = -choice;  // MoonRay's % of a negative index reads before the inputs; refused at admission
+    out = P.c(1 + 3 * U32(choice));
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseSwitchFloat(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    int choice = int(P.f(0)) % 64;
+    if (choice < 0) choice = -choice;
+    out = rgb(P.f(1 + U32(choice)));
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseImage(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    return sampleImageMap(h, P, st, tex, out);
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseProjectTriplanar(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    return sampleTriplanar(h, P, st, tex, out);
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseProjectCamera(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    return sampleProjectCamera(h, P, st, tex, out);
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseProjectPlanarNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    return sampleProjectPlanarNormal(h, P, st, tex, out);
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseRgbToNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = renderToWorldNormal(st.worldToRender, P.c(0)); return tex::Ready;  // its colour, a render-space normal
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseColorCorrectLegacy(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleColorCorrectLegacy(P); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseUVTransform(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleUVTransform(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseSwitchNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    // the chosen input's normal, N where there is none
+    int choice = int(P.f(0));
+    if (choice < 0) choice = 0;
+    const float r = P.p[1 + U32(choice % 64)];
+    out = r >= 0.0f ? P.regs[U32(r)] : st.N;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseCombineNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleCombineNormal(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseImageNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    return sampleImageNormalMap(h, P, st, tex, out);
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseModoTexture(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleModoTexture(P, st, nullptr); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseOp(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleOpMap(P); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseGradient(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleGradientMap(h, P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseRamp(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleRampMap(h, P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseAttribute(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleAttributeMap(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseUsdUVTexture(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    return sampleUsdUVTexture(h, P, st, tex, out);
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseUsdTransform2d(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleUsdTransform2d(P); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseUsdPrimvar(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleUsdPrimvar(P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseProjectPlanar(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleProjection(h, P, st, sizeof(MapProjectPlanarParams) / sizeof(float)); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseProjectSpherical(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleProjection(h, P, st, sizeof(MapProjectSphericalParams) / sizeof(float)); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseProjectCylindrical(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleProjection(h, P, st, sizeof(MapProjectCylindricalParams) / sizeof(float));
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseNoise(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleNoiseMap(h, P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseWorley2(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = sampleWorleyMap(h, P, st); return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseTwoSided(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = st.entering ? P.c(X2_OFF(MapTwoSidedParams, front_color)) : P.c(X2_OFF(MapTwoSidedParams, back_color));
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseOpSqrt(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    out = rgb(0.0f); return tex::Ready;  // MoonRay's OpSqrtMap returns black
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseLOD(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    using Q = MapLODParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    // Camera distance (feature width needs the hit's ray differentials: refused at admission).
+    const float distance = length(st.worldToRender ? xformPoint(st.worldToRender, st.P) : st.P);
+    const float value = saturate((distance - q.start) / (q.stop - q.start));
+    out = lerp(P.c(X2_OFF(Q, near_value)), P.c(X2_OFF(Q, far_value)), value);
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseNormalToRgb(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    // The input normal map's render-space normal (here world space: turned into MoonRay's render space).
+    const int reg = int(reinterpret_cast<const MapNormalToRgbParams*>(P.p)->input_register);
+    const V3 n = reg < 0 ? V3{0, 0, 0} : P.regs[reg];
+    out = st.worldToRender ? xformVector(st.worldToRender, n) : n;
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
+template <class Tex>
+X2_CALL U32 sampleMapCaseModoNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)P; (void)st; (void)tex; (void)out;
+    {
+    if (isZero(length(st.dPds))) {
+        out = st.N;
+        return tex::Ready;
+    }
+    out = normalize(localToGlobal(frame(st.N, normalize(st.dPds)), P.c(X2_OFF(MapModoNormalParams, input))));
+    return tex::Ready;
+    }
+    return tex::Invalid;
+}
 template <class Tex>
 X2_CALL U32 sampleMap(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
     switch (h.kind) {
-    case MapAxisAngle: out = sampleAxisAngle(P, st); return tex::Ready;
-    case MapTransformNormal: out = sampleTransformNormal(P, st); return tex::Ready;
-    case MapRgbToLab: out = sampleRgbToLab(P.c(X2_OFF(MapRgbToLabParams, input_color))); return tex::Ready;
-    case MapRandom: out = sampleRandom(P); return tex::Ready;
-    case MapMultiChannelToFloat: out = sampleMultiChannelToFloat(P); return tex::Ready;
-    case MapLayer: out = sampleLayerMap(P, false); return tex::Ready;
-    case MapLayer2: out = sampleLayerMap(P, true); return tex::Ready;
-    case MapHair: out = sampleHairMap(P, st); return tex::Ready;
-    case MapHairColumn: out = sampleHairColumn(st); return tex::Ready;
-    case MapHairColorPresets: out = sampleHairColorPresets(int(reinterpret_cast<const MapHairColorPresetsParams*>(P.p)->color)); return tex::Ready;
-    case MapToon: out = sampleToon(P, st); return tex::Ready;
-    case MapCurvature: out = sampleCurvature(P, st); return tex::Ready;
-    case MapWireframe: out = sampleWireframe(P, st); return tex::Ready;
-    case MapDeformation: out = sampleDeformation(P, st); return tex::Ready;
-    case MapDirectional: out = sampleDirectional(P, st, h); return tex::Ready;
-    case MapTransformSpace: out = sampleTransformSpace(P, st, h); return tex::Ready;
-    case MapProjectTriplanarUdim: out = sampleTriplanarUdim(P, st, h); return tex::Ready;
-    case MapExtraAov: out = P.c(X2_OFF(MapExtraAovParams, color)); return tex::Ready;
-    case MapList: out = rgb(1.0f); return tex::Ready;
-    case MapDebug: out = sampleDebug(P, st, h); return tex::Ready;
-    case MapDistortNormal: out = sampleDistortNormal(P, st); return tex::Ready;
-    case MapRandomNormal: out = sampleRandomNormal(P, st); return tex::Ready;
-    case MapConstantColor: out = reinterpret_cast<const MapConstantColorParams*>(P.p)->color_value; return tex::Ready;
-    case MapConstantScalar: out = rgb(reinterpret_cast<const MapConstantScalarParams*>(P.p)->scalar_value); return tex::Ready;
-    case MapCheckerboard: {
-        using Q = MapCheckerboardParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        float s = st.s, t = st.t;
-        if (int(q.texture_coordinates) == 1) {
-            const Color uvw = P.c(X2_OFF(Q, input_texture_coordinates));
-            s = uvw.x;
-            t = uvw.y;
-        }
-        float smod = fmodf(s * float(int(q.num_u_tiles)) / 2.0f, 1.0f), tmod = fmodf(t * float(int(q.num_v_tiles)) / 2.0f, 1.0f);
-        if (smod < 0.0f) smod += 1.0f;
-        if (tmod < 0.0f) tmod += 1.0f;
-        out = (smod < 0.5f) == (tmod < 0.5f) ? q.color_A : q.color_B;
-        return tex::Ready;
-    }
-    case MapClamp: {
-        using Q = MapClampParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        Color c = P.c(X2_OFF(Q, input));
-        if (q.clamp != 0) c = clampColor(c, q.clamp_min, q.clamp_max);
-        out = c;
-        return tex::Ready;
-    }
-    case MapFloatToRgb: {
-        using Q = MapFloatToRgbParams;
-        out = Color{P.f(X2_OFF(Q, R)), P.f(X2_OFF(Q, G)), P.f(X2_OFF(Q, B))};
-        return tex::Ready;
-    }
-    case MapRgbToFloat: {
-        using Q = MapRgbToFloatParams;
-        const Color c = P.c(X2_OFF(Q, input));
-        float v = 0.0f;
-        switch (int(reinterpret_cast<const Q*>(P.p)->mode)) {
-        case 0: v = c.x; break;
-        case 1: v = c.y; break;
-        case 2: v = c.z; break;
-        case 3: v = fminf(fminf(c.x, c.y), c.z); break;
-        case 4: v = fmaxf(fmaxf(c.x, c.y), c.z); break;
-        case 5: v = (c.x + c.y + c.z) / 3.0f; break;
-        case 6: v = c.x + c.y + c.z; break;
-        case 7: v = luminance(c); break;
-        default: out = rgb(0); return tex::Ready;  // MoonRay leaves the sample unset
-        }
-        out = rgb(v);
-        return tex::Ready;
-    }
-    case MapHsvToRgb: out = hsvToRgb(P.c(X2_OFF(MapHsvToRgbParams, input))); return tex::Ready;
-    case MapRgbToHsv: out = rgbToHsv(P.c(X2_OFF(MapRgbToHsvParams, input))); return tex::Ready;
-    case MapRemap: {
-        using Q = MapRemapParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        const float inMin = P.f(X2_OFF(Q, input_min)), inMax = P.f(X2_OFF(Q, input_max)), outMin = P.f(X2_OFF(Q, output_min)),
-                    outMax = P.f(X2_OFF(Q, output_max)), biasAmount = P.f(X2_OFF(Q, midpoint_bias));
-        const Color inMinRGB = P.c(X2_OFF(Q, input_min_RGB)), inMaxRGB = P.c(X2_OFF(Q, input_max_RGB)),
-                    outMinRGB = P.c(X2_OFF(Q, output_min_RGB)), outMaxRGB = P.c(X2_OFF(Q, output_max_RGB)),
-                    biasRGB = P.c(X2_OFF(Q, midpoint_bias_RGB));
-        const bool applyBias = !isEqual(biasAmount, 0.5f);
-        Color r = input;
-        if (int(q.remap_method) == 0) {
-            if (!isEqual(inMin, outMin) || !isEqual(inMax, outMax)) r = remapUniform(r, inMin, inMax, outMin, outMax, applyBias, biasAmount);
-            else if (applyBias) r = Color{biasf(r.x, biasAmount), biasf(r.y, biasAmount), biasf(r.z, biasAmount)};
-            if (q.clamp != 0) r = clampColor(r, q.clamp_min, q.clamp_max);
-        } else if (int(q.remap_method) == 1) {
-            if (!isEqualColor(inMinRGB, outMinRGB) || !isEqualColor(inMaxRGB, outMaxRGB)) {
-                r = remapRGB(r, inMinRGB, inMaxRGB, outMinRGB, outMaxRGB, biasRGB);
-            } else {
-                r.x = !isEqual(biasRGB.x, 0.5f) ? biasf(r.x, biasRGB.x) : r.x;
-                r.y = !isEqual(biasRGB.y, 0.5f) ? biasf(r.y, biasRGB.y) : r.y;
-                r.z = !isEqual(biasRGB.z, 0.5f) ? biasf(r.z, biasRGB.z) : r.z;
-            }
-            if (q.clamp_RGB != 0)
-                r = Color{clampf(r.x, q.clamp_min_RGB.x, q.clamp_max_RGB.x), clampf(r.y, q.clamp_min_RGB.y, q.clamp_max_RGB.y),
-                          clampf(r.z, q.clamp_min_RGB.z, q.clamp_max_RGB.z)};
-        }
-        out = r;
-        return tex::Ready;
-    }
-    case MapBlend: {
-        using Q = MapBlendParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const float amount = P.f(X2_OFF(Q, blend_amount)), tMin = P.f(X2_OFF(Q, threshold_min)), tMax = P.f(X2_OFF(Q, threshold_max));
-        if (amount <= tMin) {
-            out = P.c(X2_OFF(Q, color_A));
-        } else if (amount >= tMax) {
-            out = P.c(X2_OFF(Q, color_B));
-        } else {
-            const Color a = P.c(X2_OFF(Q, color_A)), b = P.c(X2_OFF(Q, color_B));
-            const float divisor = tMax - tMin;
-            float t = 0.0f;
-            if (divisor > 0.0f) t = (amount - tMin) / divisor;
-            if (int(q.blend_type) == 1) t = t * t * (3 - 2 * t);
-            out = lerp(a, b, t);
-        }
-        return tex::Ready;
-    }
-    case MapColorCorrect: {
-        using Q = MapColorCorrectParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        Color s = input;
-        const float mix = P.f(X2_OFF(Q, mix));
-        if (q.on == 0 || isZero(mix)) {
-            out = s;
-            return tex::Ready;
-        }
-        if (q.hue_shift_enabled != 0) applyHueShift(P.f(X2_OFF(Q, hue_shift)), s);
-        if (q.saturation_enabled != 0) {
-            const Color sat = q.use_per_channel_saturation != 0
-                                  ? Color{P.f(X2_OFF(Q, saturation_r)), P.f(X2_OFF(Q, saturation_g)), P.f(X2_OFF(Q, saturation_b))}
-                                  : rgb(P.f(X2_OFF(Q, saturation)));
-            applySaturation(sat.x, sat.y, sat.z, s.x, s.y, s.z);
-        }
-        if (q.contrast_enabled != 0) {
-            const Color con = q.use_per_channel_contrast != 0
-                                  ? Color{P.f(X2_OFF(Q, contrast_r)), P.f(X2_OFF(Q, contrast_g)), P.f(X2_OFF(Q, contrast_b))}
-                                  : rgb(P.f(X2_OFF(Q, contrast)));
-            applyContrast(con, s);
-        }
-        if (q.gamma_enabled != 0) {
-            const Color g = q.use_per_channel_gamma != 0 ? Color{P.f(X2_OFF(Q, gamma_r)), P.f(X2_OFF(Q, gamma_g)), P.f(X2_OFF(Q, gamma_b))}
-                                                         : rgb(P.f(X2_OFF(Q, gamma)));
-            applyGamma(1.0f / fmaxf(Epsilon, g.x), 1.0f / fmaxf(Epsilon, g.y), 1.0f / fmaxf(Epsilon, g.z), s.x, s.y, s.z);
-        }
-        if (q.gain_offset_enabled != 0) {
-            Color gain, offset;
-            if (q.use_per_channel_gain_offset != 0) {
-                gain = Color{P.f(X2_OFF(Q, gain_r)), P.f(X2_OFF(Q, gain_g)), P.f(X2_OFF(Q, gain_b))};
-                offset = Color{P.f(X2_OFF(Q, offset_r)), P.f(X2_OFF(Q, offset_g)), P.f(X2_OFF(Q, offset_b))};
-            } else {
-                gain = rgb(P.f(X2_OFF(Q, gain)));
-                offset = rgb(P.f(X2_OFF(Q, offset)));
-            }
-            applyGainAndOffset(gain.x, gain.y, gain.z, offset.x, offset.y, offset.z, s.x, s.y, s.z);
-        }
-        if (q.TMI_enabled != 0) {
-            const Color tmi = P.c(X2_OFF(Q, TMI));
-            applyTMI(tmi.x, tmi.y, tmi.z, s.x, s.y, s.z);
-        }
-        s = mixWithInput(input, s, mix);
-        if (q.clamp != 0) s = clampColor(s, q.clamp_min, q.clamp_max);
-        out = s;
-        return tex::Ready;
-    }
-    case MapCCContrast: {
-        using Q = MapCCContrastParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        const float mix = P.f(X2_OFF(Q, mix));
-        Color s = input;
-        if (q.on != 0 && !isZero(mix)) {
-            const Color con = q.use_per_channel_contrast != 0
-                                  ? Color{P.f(X2_OFF(Q, contrast_r)), P.f(X2_OFF(Q, contrast_g)), P.f(X2_OFF(Q, contrast_b))}
-                                  : rgb(P.f(X2_OFF(Q, contrast)));
-            applyContrast(con, s);
-            s = mixWithInput(input, s, mix);
-        }
-        out = s;
-        return tex::Ready;
-    }
-    case MapCCGainOffset: {
-        using Q = MapCCGainOffsetParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        const float mix = P.f(X2_OFF(Q, mix));
-        Color s = input;
-        if (q.on != 0 && !isZero(mix)) {
-            Color gain, offset;
-            if (q.use_per_channel_gain_offset != 0) {
-                gain = Color{P.f(X2_OFF(Q, gain_r)), P.f(X2_OFF(Q, gain_g)), P.f(X2_OFF(Q, gain_b))};
-                offset = Color{P.f(X2_OFF(Q, offset_r)), P.f(X2_OFF(Q, offset_g)), P.f(X2_OFF(Q, offset_b))};
-            } else {
-                gain = rgb(P.f(X2_OFF(Q, gain)));
-                offset = rgb(P.f(X2_OFF(Q, offset)));
-            }
-            applyGainAndOffset(gain.x, gain.y, gain.z, offset.x, offset.y, offset.z, s.x, s.y, s.z);
-            s = mixWithInput(input, s, mix);
-        }
-        out = s;
-        return tex::Ready;
-    }
-    case MapCCGamma: {
-        using Q = MapCCGammaParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        const float mix = P.f(X2_OFF(Q, mix));
-        Color s = input;
-        if (q.on != 0 && !isZero(mix)) {
-            const Color g = q.use_per_channel_gamma != 0 ? Color{P.f(X2_OFF(Q, gamma_r)), P.f(X2_OFF(Q, gamma_g)), P.f(X2_OFF(Q, gamma_b))}
-                                                         : rgb(P.f(X2_OFF(Q, gamma)));
-            applyGamma(1.0f / fmaxf(Epsilon, g.x), 1.0f / fmaxf(Epsilon, g.y), 1.0f / fmaxf(Epsilon, g.z), s.x, s.y, s.z);
-            s = mixWithInput(input, s, mix);
-        }
-        out = s;
-        return tex::Ready;
-    }
-    case MapCCHsv: {
-        using Q = MapCCHsvParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        if (q.on == 0) {
-            out = input;
-            return tex::Ready;
-        }
-        Color hsv = rgbToHsv(input);
-        float h = hsv.x, s = hsv.y, v = hsv.z;
-        const float hueShift = P.f(X2_OFF(Q, hue_shift));
-        if (!isZero(hueShift)) h = fmodf(h + hueShift / 360.f, 1.f);
-        const float sf = P.f(X2_OFF(Q, saturation_factor));
-        if (!isOne(sf)) s = s * sf;
-        const float vf = P.f(X2_OFF(Q, value_factor));
-        if (!isOne(vf)) v = v * vf;
-        hsvContrast(clampf(q.saturation_contrast, -1.f, 1.f), s);
-        hsvContrast(clampf(q.value_contrast, -1.f, 1.f), v);
-        if (!isZero(q.saturation_shift)) s = s + q.saturation_shift;
-        if (!isZero(q.value_shift)) v = v + q.value_shift;
-        Color r = hsvToRgb(Color{h, s, v});
-        if (q.clamp != 0) r = clampColor(r, 0.0f, 1.0f);
-        out = r;
-        return tex::Ready;
-    }
-    case MapCCHueShift: {
-        using Q = MapCCHueShiftParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        const float mix = P.f(X2_OFF(Q, mix));
-        Color s = input;
-        if (q.on != 0 && !isZero(mix)) {
-            applyHueShift(P.f(X2_OFF(Q, hue_shift)), s);
-            s = mixWithInput(input, s, mix);
-        }
-        out = s;
-        return tex::Ready;
-    }
-    case MapCCSaturation: {
-        using Q = MapCCSaturationParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        const float mix = P.f(X2_OFF(Q, mix));
-        Color s = input;
-        if (q.on != 0 && !isZero(mix)) {
-            const Color sat = q.use_per_channel_saturation != 0
-                                  ? Color{P.f(X2_OFF(Q, saturation_r)), P.f(X2_OFF(Q, saturation_g)), P.f(X2_OFF(Q, saturation_b))}
-                                  : rgb(P.f(X2_OFF(Q, saturation)));
-            applySaturation(sat.x, sat.y, sat.z, s.x, s.y, s.z);
-            s = mixWithInput(input, s, mix);
-        }
-        out = s;
-        return tex::Ready;
-    }
-    case MapCCTMI: {
-        using Q = MapCCTMIParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        const Color input = P.c(X2_OFF(Q, input));
-        const float mix = P.f(X2_OFF(Q, mix));
-        Color s = input;
-        if (q.on != 0 && !isZero(mix)) {
-            const Color tmi = P.c(X2_OFF(Q, TMI));
-            applyTMI(tmi.x, tmi.y, tmi.z, s.x, s.y, s.z);
-            s = mixWithInput(input, s, mix);
-        }
-        out = s;
-        return tex::Ready;
-    }
-    case MapSwitchColor: {
-        int choice = int(P.f(0)) % 64;
-        if (choice < 0) choice = -choice;  // MoonRay's % of a negative index reads before the inputs; refused at admission
-        out = P.c(1 + 3 * U32(choice));
-        return tex::Ready;
-    }
-    case MapSwitchFloat: {
-        int choice = int(P.f(0)) % 64;
-        if (choice < 0) choice = -choice;
-        out = rgb(P.f(1 + U32(choice)));
-        return tex::Ready;
-    }
-    case MapImage: return sampleImageMap(h, P, st, tex, out);
-    case MapProjectTriplanar:
-    case MapProjectTriplanarNormal: return sampleTriplanar(h, P, st, tex, out);
-    case MapProjectCamera:
-    case MapProjectCameraNormal: return sampleProjectCamera(h, P, st, tex, out);
-    case MapProjectPlanarNormal: return sampleProjectPlanarNormal(h, P, st, tex, out);
-    case MapRgbToNormal: out = renderToWorldNormal(st.worldToRender, P.c(0)); return tex::Ready;  // its colour, a render-space normal
-    case MapColorCorrectLegacy: out = sampleColorCorrectLegacy(P); return tex::Ready;
-    case MapUVTransform: out = sampleUVTransform(P, st); return tex::Ready;
-    case MapSwitchNormal: {  // the chosen input's normal, N where there is none
-        int choice = int(P.f(0));
-        if (choice < 0) choice = 0;
-        const float r = P.p[1 + U32(choice % 64)];
-        out = r >= 0.0f ? P.regs[U32(r)] : st.N;
-        return tex::Ready;
-    }
-    case MapCombineNormal: out = sampleCombineNormal(P, st); return tex::Ready;
-    case MapImageNormal: return sampleImageNormalMap(h, P, st, tex, out);
-    case MapModoTexture: out = sampleModoTexture(P, st, nullptr); return tex::Ready;
-    case MapOp: out = sampleOpMap(P); return tex::Ready;
-    case MapGradient: out = sampleGradientMap(h, P, st); return tex::Ready;
-    case MapRamp: out = sampleRampMap(h, P, st); return tex::Ready;
-    case MapAttribute: out = sampleAttributeMap(P, st); return tex::Ready;
-    case MapUsdUVTexture: return sampleUsdUVTexture(h, P, st, tex, out);
-    case MapUsdTransform2d: out = sampleUsdTransform2d(P); return tex::Ready;
-    case MapUsdPrimvar: out = sampleUsdPrimvar(P, st); return tex::Ready;
-    case MapProjectPlanar: out = sampleProjection(h, P, st, sizeof(MapProjectPlanarParams) / sizeof(float)); return tex::Ready;
-    case MapProjectSpherical: out = sampleProjection(h, P, st, sizeof(MapProjectSphericalParams) / sizeof(float)); return tex::Ready;
-    case MapProjectCylindrical:
-        out = sampleProjection(h, P, st, sizeof(MapProjectCylindricalParams) / sizeof(float));
-        return tex::Ready;
-    case MapNoise: out = sampleNoiseMap(h, P, st); return tex::Ready;
-    case MapWorley2:
-    case MapWorley3: out = sampleWorleyMap(h, P, st); return tex::Ready;
-    case MapTwoSided:
-        out = st.entering ? P.c(X2_OFF(MapTwoSidedParams, front_color)) : P.c(X2_OFF(MapTwoSidedParams, back_color));
-        return tex::Ready;
-    case MapOpSqrt: out = rgb(0.0f); return tex::Ready;  // MoonRay's OpSqrtMap returns black
-    case MapLOD: {
-        using Q = MapLODParams;
-        const Q& q = *reinterpret_cast<const Q*>(P.p);
-        // Camera distance (feature width needs the hit's ray differentials: refused at admission).
-        const float distance = length(st.worldToRender ? xformPoint(st.worldToRender, st.P) : st.P);
-        const float value = saturate((distance - q.start) / (q.stop - q.start));
-        out = lerp(P.c(X2_OFF(Q, near_value)), P.c(X2_OFF(Q, far_value)), value);
-        return tex::Ready;
-    }
-    case MapNormalToRgb: {
-        // The input normal map's render-space normal (here world space: turned into MoonRay's render space).
-        const int reg = int(reinterpret_cast<const MapNormalToRgbParams*>(P.p)->input_register);
-        const V3 n = reg < 0 ? V3{0, 0, 0} : P.regs[reg];
-        out = st.worldToRender ? xformVector(st.worldToRender, n) : n;
-        return tex::Ready;
-    }
-    case MapModoNormal: {
-        if (isZero(length(st.dPds))) {
-            out = st.N;
-            return tex::Ready;
-        }
-        out = normalize(localToGlobal(frame(st.N, normalize(st.dPds)), P.c(X2_OFF(MapModoNormalParams, input))));
-        return tex::Ready;
-    }
+    case MapAxisAngle: return sampleMapCaseAxisAngle(h, P, st, tex, out);
+    case MapTransformNormal: return sampleMapCaseTransformNormal(h, P, st, tex, out);
+    case MapRgbToLab: return sampleMapCaseRgbToLab(h, P, st, tex, out);
+    case MapRandom: return sampleMapCaseRandom(h, P, st, tex, out);
+    case MapMultiChannelToFloat: return sampleMapCaseMultiChannelToFloat(h, P, st, tex, out);
+    case MapLayer: return sampleMapCaseLayer(h, P, st, tex, out);
+    case MapLayer2: return sampleMapCaseLayer2(h, P, st, tex, out);
+    case MapHair: return sampleMapCaseHair(h, P, st, tex, out);
+    case MapHairColumn: return sampleMapCaseHairColumn(h, P, st, tex, out);
+    case MapHairColorPresets: return sampleMapCaseHairColorPresets(h, P, st, tex, out);
+    case MapToon: return sampleMapCaseToon(h, P, st, tex, out);
+    case MapCurvature: return sampleMapCaseCurvature(h, P, st, tex, out);
+    case MapWireframe: return sampleMapCaseWireframe(h, P, st, tex, out);
+    case MapDeformation: return sampleMapCaseDeformation(h, P, st, tex, out);
+    case MapDirectional: return sampleMapCaseDirectional(h, P, st, tex, out);
+    case MapTransformSpace: return sampleMapCaseTransformSpace(h, P, st, tex, out);
+    case MapProjectTriplanarUdim: return sampleMapCaseProjectTriplanarUdim(h, P, st, tex, out);
+    case MapExtraAov: return sampleMapCaseExtraAov(h, P, st, tex, out);
+    case MapList: return sampleMapCaseList(h, P, st, tex, out);
+    case MapDebug: return sampleMapCaseDebug(h, P, st, tex, out);
+    case MapDistortNormal: return sampleMapCaseDistortNormal(h, P, st, tex, out);
+    case MapRandomNormal: return sampleMapCaseRandomNormal(h, P, st, tex, out);
+    case MapConstantColor: return sampleMapCaseConstantColor(h, P, st, tex, out);
+    case MapConstantScalar: return sampleMapCaseConstantScalar(h, P, st, tex, out);
+    case MapCheckerboard: return sampleMapCaseCheckerboard(h, P, st, tex, out);
+    case MapClamp: return sampleMapCaseClamp(h, P, st, tex, out);
+    case MapFloatToRgb: return sampleMapCaseFloatToRgb(h, P, st, tex, out);
+    case MapRgbToFloat: return sampleMapCaseRgbToFloat(h, P, st, tex, out);
+    case MapHsvToRgb: return sampleMapCaseHsvToRgb(h, P, st, tex, out);
+    case MapRgbToHsv: return sampleMapCaseRgbToHsv(h, P, st, tex, out);
+    case MapRemap: return sampleMapCaseRemap(h, P, st, tex, out);
+    case MapBlend: return sampleMapCaseBlend(h, P, st, tex, out);
+    case MapColorCorrect: return sampleMapCaseColorCorrect(h, P, st, tex, out);
+    case MapCCContrast: return sampleMapCaseCCContrast(h, P, st, tex, out);
+    case MapCCGainOffset: return sampleMapCaseCCGainOffset(h, P, st, tex, out);
+    case MapCCGamma: return sampleMapCaseCCGamma(h, P, st, tex, out);
+    case MapCCHsv: return sampleMapCaseCCHsv(h, P, st, tex, out);
+    case MapCCHueShift: return sampleMapCaseCCHueShift(h, P, st, tex, out);
+    case MapCCSaturation: return sampleMapCaseCCSaturation(h, P, st, tex, out);
+    case MapCCTMI: return sampleMapCaseCCTMI(h, P, st, tex, out);
+    case MapSwitchColor: return sampleMapCaseSwitchColor(h, P, st, tex, out);
+    case MapSwitchFloat: return sampleMapCaseSwitchFloat(h, P, st, tex, out);
+    case MapImage: return sampleMapCaseImage(h, P, st, tex, out);
+    case MapProjectTriplanar: return sampleMapCaseProjectTriplanar(h, P, st, tex, out);
+    case MapProjectTriplanarNormal: return sampleMapCaseProjectTriplanar(h, P, st, tex, out);
+    case MapProjectCamera: return sampleMapCaseProjectCamera(h, P, st, tex, out);
+    case MapProjectCameraNormal: return sampleMapCaseProjectCamera(h, P, st, tex, out);
+    case MapProjectPlanarNormal: return sampleMapCaseProjectPlanarNormal(h, P, st, tex, out);
+    case MapRgbToNormal: return sampleMapCaseRgbToNormal(h, P, st, tex, out);
+    case MapColorCorrectLegacy: return sampleMapCaseColorCorrectLegacy(h, P, st, tex, out);
+    case MapUVTransform: return sampleMapCaseUVTransform(h, P, st, tex, out);
+    case MapSwitchNormal: return sampleMapCaseSwitchNormal(h, P, st, tex, out);
+    case MapCombineNormal: return sampleMapCaseCombineNormal(h, P, st, tex, out);
+    case MapImageNormal: return sampleMapCaseImageNormal(h, P, st, tex, out);
+    case MapModoTexture: return sampleMapCaseModoTexture(h, P, st, tex, out);
+    case MapOp: return sampleMapCaseOp(h, P, st, tex, out);
+    case MapGradient: return sampleMapCaseGradient(h, P, st, tex, out);
+    case MapRamp: return sampleMapCaseRamp(h, P, st, tex, out);
+    case MapAttribute: return sampleMapCaseAttribute(h, P, st, tex, out);
+    case MapUsdUVTexture: return sampleMapCaseUsdUVTexture(h, P, st, tex, out);
+    case MapUsdTransform2d: return sampleMapCaseUsdTransform2d(h, P, st, tex, out);
+    case MapUsdPrimvar: return sampleMapCaseUsdPrimvar(h, P, st, tex, out);
+    case MapProjectPlanar: return sampleMapCaseProjectPlanar(h, P, st, tex, out);
+    case MapProjectSpherical: return sampleMapCaseProjectSpherical(h, P, st, tex, out);
+    case MapProjectCylindrical: return sampleMapCaseProjectCylindrical(h, P, st, tex, out);
+    case MapNoise: return sampleMapCaseNoise(h, P, st, tex, out);
+    case MapWorley2: return sampleMapCaseWorley2(h, P, st, tex, out);
+    case MapWorley3: return sampleMapCaseWorley2(h, P, st, tex, out);
+    case MapTwoSided: return sampleMapCaseTwoSided(h, P, st, tex, out);
+    case MapOpSqrt: return sampleMapCaseOpSqrt(h, P, st, tex, out);
+    case MapLOD: return sampleMapCaseLOD(h, P, st, tex, out);
+    case MapNormalToRgb: return sampleMapCaseNormalToRgb(h, P, st, tex, out);
+    case MapModoNormal: return sampleMapCaseModoNormal(h, P, st, tex, out);
     default: return tex::Invalid;
     }
 }

@@ -69,7 +69,18 @@ struct Camera {Matrix rasterToCamera,cameraToRender; float nearClip,farClip;
     unsigned dof=0,bokeh=0;int bokehSides=0;float lensRadius=0,focusDistance=0,bokehAngle=0;
     const void* bokehImage=nullptr;
     unsigned flags=0;int mode=0;float k[12]={0,0,0,0,0,0,0,0,0,0,0,0};
-    const void* map=nullptr;};
+    const void* map=nullptr;
+    // Motion blur (Camera::update, camera_core.h's cameraAtTime): the camera at the shutter's close relative to its
+    // open, as a rotation (quaternion r, i, j, k) and a translation each way, the projection at the close
+    // (ProjectiveCamera's mRtoC1), camera to screen at the open and close (mC0toS, mC1toS, for motion vectors) and the
+    // shutter's length (motion vectors are per frame). motion is 0 without motion blur. timeToOpen is filled by
+    // cameraAtTime: the camera at the ray's time to the camera at the open. camera2Render and render2Camera are MoonRay's
+    // (Camera::update; render space is the camera at the first motion step, the camera is at the shutter's open: the
+    // identity unless they differ), render2World render space's to world space.
+    unsigned motion=0;float closeToOpenRot[4]={1,0,0,0},openToCloseRot[4]={1,0,0,0};
+    V3 closeToOpenTrans{0,0,0},openToCloseTrans{0,0,0};
+    Matrix rasterToCamera1{},cameraToScreen0{},cameraToScreen1{},timeToOpen{},camera2Render{},render2Camera{},render2World{};
+    float shutterDuration=0;};
 // mask: rdl2's VisibilityType bits of the ray (CAMERA, SHADOW, a lobe type's), which a geometry's visibility must share.
 // ox, oy: the auxiliary rays' origins less the ray's (an orthographic or bake camera's; zero for rays from one point).
 struct Ray {V3 origin,direction,dx,dy;float nearT,farT;unsigned mask=0xffffffffu;V3 ox{0,0,0},oy{0,0,0};};

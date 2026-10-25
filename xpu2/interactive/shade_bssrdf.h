@@ -13,6 +13,7 @@ enum BssrdfType : U32 { BssrdfNormalizedDiffusion = 0, BssrdfDipole = 1, BssrdfR
 struct BssrdfRecord {
     U32 type = BssrdfNone;
     U32 label = 0;  // its AOV label ids (shade_lobes.h encodedLabel)
+    U32 lightSet = 0xffffffffu;  // its light set (the exits' lobes inherit it), ~0u none
     V3 N;
     Color scale;
     U32 fresnel;  // the multiple-transmission Fresnel of the layers above (NoIndex: none)

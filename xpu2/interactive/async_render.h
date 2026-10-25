@@ -35,6 +35,9 @@ struct RenderOptions {
     // Adaptive frames with a GPU: make every pass on the device (the pass chain),
     // or, false, on the host between the GPU's passes.
     bool deviceChain = true;
+    // Adaptive frames: cellular generations decide which tiles sample each pass (adaptive::Cellular; the passes are
+    // made on the host), or, false, MoonRay's error trees.
+    bool cellular = false;
     // A preview session's watch over the frame (none: the frame runs to its end).
     struct Watch* watch = nullptr;
 };
@@ -185,6 +188,12 @@ public:
     }
     ~Renderer() { timeEndPeriod(1); }
 
+    // An adaptive frame's live tiles, the pass being sampled (cellular frames: its generation's cells). Empty
+    // between frames and in uniform frames.
+    void liveTiles(std::vector<U32>& tiles) const {
+        std::lock_guard<std::mutex> lock(activityMutex_);
+        tiles = live_;
+    }
     // What the frame's workers are on, for a host's outlines of the work, from any thread: each CPU worker's tile
     // (8 pixels a side), and the work grid's cells that the GPU's queued launches hold. Empty between frames.
     void activity(std::vector<U32>& cpuTiles, std::vector<U32>& gpuCells) const {
@@ -222,12 +231,16 @@ public:
         RetryQueue retries;
         const U32 itemsPerChunk = gridOptions.samplesPerChunk * TilePixels;
         if (useGpu) gpu_->begin(gridOptions.samplesPerChunk, adaptive);
-        Adaptive state(*plan_, gridOptions.samplesPerChunk);
+        Adaptive state(*plan_, gridOptions.samplesPerChunk, o.cellular);
+        state.onGeneration = [this](const std::vector<U32>& tiles) {
+            std::lock_guard<std::mutex> lock(activityMutex_);
+            live_ = tiles;
+        };
         if (adaptive) {
             const unsigned trees = o.treeThreads != ~0u ? o.treeThreads : std::max(1u, std::min(o.threads, 16u) - 1);
             if (!pool_ || pool_->size() != trees) pool_ = std::make_unique<Pool>(trees);
             state.start = Clock::now();
-            if (useGpu && o.deviceChain && gpu_->hasChain()) state.startChain(*gpu_, tileOrder(gridOptions.cellSize));
+            if (useGpu && o.deviceChain && !o.cellular && gpu_->hasChain()) state.startChain(*gpu_, tileOrder(gridOptions.cellSize));
             else state.generateReady(grid, useGpu ? gpu_ : nullptr);
         }
 
@@ -278,6 +291,7 @@ public:
                 std::lock_guard<std::mutex> lock(r.activityMutex_);
                 r.activeLane_ = nullptr;
                 r.gpuFlights_.clear();
+                r.live_.clear();
             }
         } quiet{*this};
         // The queued launches' cells: one list a launch, oldest first, as long as the GPU's queue.
@@ -638,6 +652,10 @@ private:
         U32 samplesPerChunk, tiles, tilesX;
         std::vector<adaptive::Pass> passes;
         adaptive::Regions regions;
+        bool cellular;
+        adaptive::Cellular cells;
+        // Each generated pass's live tiles (cellular frames: the cells; trees: the tiles with samples).
+        std::function<void(const std::vector<U32>&)> onGeneration;
         PassTables tables;
         std::vector<U32> planned;    // samples each pixel will have once generated passes finish
         std::vector<U64> expected;   // samples of each generated pass
@@ -656,10 +674,12 @@ private:
         std::vector<U32> counts;
         std::vector<float> errors;
 
-        Adaptive(const cpu::Plan& p, U32 spc)
+        Adaptive(const cpu::Plan& p, U32 spc, bool cellularRules = false)
             : plan(p), samplesPerChunk(spc), tiles(((p.width + 7) / 8) * ((p.height + 7) / 8)), tilesX((p.width + 7) / 8),
               passes(p.adaptive ? adaptive::schedule(p.maxSamples) : std::vector<adaptive::Pass>{}),
               regions(int(p.width), int(p.height), p.adaptive ? p.targetError : 1.f),
+              cellular(cellularRules && p.adaptive),
+              cells(p.adaptive ? int(p.width) : 1, p.adaptive ? int(p.height) : 1, p.adaptive ? p.targetError : 1.f),
               planned(p.adaptive ? size_t(p.width) * p.height : 0, 0u) {
             if (!p.adaptive) return;
             cpu::need(passes.size() <= MaxPasses, "Adaptive pass budget");
@@ -667,6 +687,7 @@ private:
             for (U32 tile = 0; tile < tiles; ++tile)
                 for (U32 q = 0; q < TilePixels; ++q)
                     if (tilePixel(tile, q, p.width, p.height, p.viewport) != ~0u) inImage[tile] |= 1ull << q;
+            if (cellular) cells.deadForever(inImage);
             for (U32 s = 0; s < PassSlots; ++s) {
                 tables.masks[s].assign(tiles, 0);
                 tables.bases[s].assign(planned.size(), 0);
@@ -698,7 +719,7 @@ private:
             for (U32 tile = 0; tile < tiles; ++tile) {
                 std::uint64_t active = inImage[tile];
                 if (!uniform && passes[j].start < plan.maxSamples)
-                    active &= regions.sampleArea(int(tile % tilesX) * 8, int(tile / tilesX) * 8);
+                    active &= cellular ? (cells.alive(tile) ? ~std::uint64_t(0) : 0) : regions.sampleArea(int(tile % tilesX) * 8, int(tile / tilesX) * 8);
                 else if (!uniform)
                     active = 0;
                 masks[tile] = active;
@@ -713,6 +734,12 @@ private:
                     list.push_back({tile, (j << PassShift) | off, std::min(samplesPerChunk, size - off), grid.cellOf(tile)});
             }
             expected.push_back(samples);
+            if (onGeneration) {
+                std::vector<U32> live;
+                for (U32 tile = 0; tile < tiles; ++tile)
+                    if (masks[tile]) live.push_back(tile);
+                onGeneration(live);
+            }
             tables.cpuDone[j].store(0, std::memory_order_relaxed);
             trace.push_back({samples, at()});
             ++generated;
@@ -819,12 +846,16 @@ private:
         }
         void rebuild(const float* e, Pool& pool) {
             const auto began = Clock::now();
-            pool.run(unsigned(regions.count()), [&](unsigned i) { regions.update(i, e); });
+            if (cellular) {
+                stop = cells.update(e) == 0;
+            } else {
+                pool.run(unsigned(regions.count()), [&](unsigned i) { regions.update(i, e); });
+                stop = regions.done();
+            }
             treeSeconds += std::chrono::duration<double>(Clock::now() - began).count();
             trace[generated - 1].trees = at();
             evaluated = generated;
             ++treeUpdates;
-            stop = regions.done();
         }
         // Every pass that will run has gone out and completed.
         bool finished(GpuLane* gpu) const {
@@ -885,6 +916,7 @@ private:
     mutable std::mutex activityMutex_;
     const CpuLane* activeLane_ = nullptr;
     std::deque<std::vector<U32>> gpuFlights_;
+    std::vector<U32> live_;  // liveTiles()
     U32 cellSize_ = 64;
 };
 

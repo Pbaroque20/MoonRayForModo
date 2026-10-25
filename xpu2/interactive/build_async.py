@@ -19,7 +19,7 @@ HEADERS = ('async_gpu_abi.h', 'async_adaptive_core.h', 'async_integrator.h', 'li
            'texture_core.h', 'surface_core.h', 'sample_stream.h', 'path_stage.h', 'shade_math.h', 'shade_tables.h',
            'shade_fresnel.h', 'shade_color.h', 'shade_lobes.h', 'shade_lobes_eval.h', 'shade_hair.h', 'shade_flakes.h', 'shade_glitter.h', 'shade_glitter_tables.h', 'shade_state.h', 'shade_builder.h',
            'shade_colorcorrect.h', 'shade_dwabase.h', 'shade_dwalayer.h', 'shade_maps.h', 'shade_noise.h', 'shade_bssrdf.h', 'shade_mapnodes.h', 'shade_mapnodes_more.h', 'curve_core.h', 'curve_embree.h', 'volume_core.h', 'shade_material.h',
-           'dwa_admission.h', 'map_admission.h', 'aov_core.h', 'aov_material.h', 'aov_state.h', 'aov_crypto.h', 'camera_core.h')
+           'dwa_admission.h', 'map_admission.h', 'aov_core.h', 'aov_material.h', 'aov_state.h', 'aov_crypto.h', 'camera_core.h', 'light_filter_core.h', 'volume_grid.h', 'volume_emission.h')
 FAST_FLAGS = ['--std=c++17', '--gpu-architecture=compute_75', '--fmad=true', '--prec-div=true',
               '--prec-sqrt=true', '--ftz=false', '-DXPU2_PATHS_ONLY']
 
@@ -40,10 +40,16 @@ def build_all(source, runtime, out):
                                                               FAST_FLAGS + ['-DXPU2_ADAPTIVE=1'])
         # The adaptive pass chain's CUDA kernels, beside the adaptive program.
         chain, report['cuda_build_chain'] = compile_ptx(source, out / 'adaptive', 'async_adaptive.cu', HEADERS, FAST_FLAGS)
+        # The probe shares the session's render outputs (aov_plan.h, aov_display.h): MoonRay's light path
+        # expressions and display filter buffers, as build_session.py.
         include = [source / 'toolchain/xpu/optix-dev/include',
-                   source / 'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include']
+                   source / 'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include',
+                   source / 'upstream/openmoonray/moonray/moonray/lib/rendering/lpe',
+                   source / 'upstream/openmoonray/moonray/moonray/lib/rendering/displayfilter',
+                   source / 'build/native-renderer-avx/moonray/lib/rendering/displayfilter']
         exe, report['native_build'] = build(source, HERE / 'async_probe.cc', out / 'native',
-                                            [runtime / 'libembree4.dll', '-lcfgmgr32', '-lwinmm'],
+                                            [runtime / 'libembree4.dll', runtime / 'librendering_lpe.dll', runtime / 'librendering_displayfilter.dll',
+                                             '-lcfgmgr32', '-lwinmm'],
                                             ['-I' + str(v) for v in include])
         # MoonRay's sampler tables (a random walk's sequences) beside the GPU program.
         sampler = source / 'upstream/openmoonray/moonray/moonray/lib/rendering/pbr/sampler'

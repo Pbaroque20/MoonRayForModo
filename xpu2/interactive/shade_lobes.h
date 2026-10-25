@@ -72,7 +72,8 @@ enum LobeKind : U32 {
 };
 enum ShadowTerminatorFix : U32 { StfOff = 0, StfCustom, StfSineCompensation, StfGGX, StfCosineCompensation };
 enum MicrofacetDistribution : U32 { Beckmann = 0, GGXDistribution = 1 };
-enum LobeFlags : U32 { FlagSpherical = 1, FlagHair = 2, FlagIgnoresIncomingDifferentials = 4 };
+// FlagModoToon: a toon lobe under MOONRAY_MODO_TOON_TERMINATOR (BsdfToon: cut off by the shading normal alone).
+enum LobeFlags : U32 { FlagSpherical = 1, FlagHair = 2, FlagIgnoresIncomingDifferentials = 4, FlagModoToon = 8 };
 
 struct Slice {
     V3 Ng, wo;
@@ -203,6 +204,9 @@ struct IridescenceParams {
 
 struct Lobe {
     U32 kind = KindLambert, type = 0, flags = 0;
+    // Its light set (BsdfLobe::getLightSet: the lights it alone sees, an index into the plan's lobe light sets), or
+    // ~0u for every light.
+    U32 lightSet = 0xffffffffu;
     // label: its AOV label ids as aovEncodeLabels makes them (encodedLabel), 0 for none.
     U32 fresnel = NoIndex, child = NoIndex, label = 0;
     Color scale{1, 1, 1};

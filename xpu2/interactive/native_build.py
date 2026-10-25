@@ -10,6 +10,45 @@ ROOT=HERE.parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 from xpu2_rdl_index_probe import block
 
+def build_units(source,units,out,extra_libraries=(),extra_flags=()):
+    """Several units: each preprocessed and compiled at once (-c), then linked into probe.exe."""
+    source,out=Path(source).resolve(),Path(out).resolve()
+    units=[Path(u).resolve() for u in units]
+    out.mkdir(exist_ok=False)
+    compiler=source/'toolchain/msys64/ucrt64/bin/g++.exe'
+    root=source/'build/native-avx'
+    ninja=(root/'build.ninja').read_text(encoding='utf-8')
+    c=block(ninja,'build scene-rdl2/cmd/rdl2_cmd/rdl2_print/CMakeFiles/rdl2_print.dir/rdl2_print.cc.obj:')
+    l=block(ninja,'build bin/rdl2_print.exe:')
+    flags=shlex.split(' '.join(c[k] for k in ('DEFINES','FLAGS','INCLUDES')))
+    flags+=list(extra_flags)
+    flags+=['-I'+str(compiler.parent.parent/'include'),'-fno-fast-math','-ffp-contract=off']
+    libs=[str((root/v).resolve()) if not v.startswith('-') else v for v in shlex.split(l['LINK_LIBRARIES'])]
+    libs += [str(compiler.parent.parent/'lib'/n) for n in ('libOpenImageIO.dll.a','libOpenImageIO_Util.dll.a')]
+    libs += [str(v) if str(v).startswith('-') else str(Path(v).resolve()) for v in extra_libraries]
+    held={v:sha(Path(v)) for v in libs if not v.startswith('-')}
+    env=environment(compiler.parent,out)
+    def run_all(commands,label):
+        procs=[(name,subprocess.Popen([str(compiler),*flags,*cmd],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,
+                                      creationflags=subprocess.CREATE_NO_WINDOW)) for name,cmd in commands]
+        failed=[]
+        for name,proc in procs:
+            text,_=proc.communicate(timeout=1800)
+            (out/(name+'.log')).write_text(text or '',encoding='utf-8')
+            if proc.returncode:failed.append(name+': '+(text or '')[-500:])
+        if failed:raise RuntimeError(label+' failed: '+' | '.join(failed))
+    pre={u:out/(u.stem+'.ii') for u in units}
+    obj={u:out/(u.stem+'.o') for u in units}
+    run_all([(u.stem+'-preprocess',['-E',str(u),'-o',str(pre[u])]) for u in units],'preprocess')
+    run_all([(u.stem+'-compile',['-c',str(pre[u]),'-o',str(obj[u])]) for u in units],'compile')
+    exe=out/'probe.exe'
+    link=subprocess.run([str(compiler),*flags,*[str(obj[u]) for u in units],'-o',str(exe),*libs],env=env,capture_output=True,text=True,
+                        timeout=900,creationflags=subprocess.CREATE_NO_WINDOW)
+    (out/'link.log').write_text(link.stdout+link.stderr,encoding='utf-8')
+    if link.returncode:raise RuntimeError('link failed: '+link.stderr[-500:])
+    if any(sha(Path(p))!=v for p,v in held.items()):raise RuntimeError('Link library drift')
+    return exe,{'libraries':held,'compiler_sha256':sha(compiler),'preprocessed_sha256':{u.name:sha(pre[u]) for u in units},'executable_sha256':sha(exe)}
+
 def build(source,unit,out,extra_libraries=(),extra_flags=()):
     source,out,unit=map(lambda x:Path(x).resolve(),(source,out,unit))
     out.mkdir(exist_ok=False)

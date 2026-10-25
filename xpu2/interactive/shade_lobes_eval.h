@@ -547,7 +547,8 @@ X2_CALL Color evalToon(const Bsdf& b, const Lobe& l, const Slice& s, V3 wi, floa
     if (l.fresnel != NoIndex) cosThetaWo = fmaxf(dot(N, s.wo), 0.0f);
     const Color ramp = l.toon.ramp < b.rampCount ? rampEval(b.ramps[l.toon.ramp], (1.0f - cosThetaWi) / l.toon.rampInputScale) : rgb(0);
     const Color albedo = clamp(l.toon.albedo * ramp, 0.0f, 1.0f);
-    const float Gs = shadowTerminatorFix(s, N, wi);  // MOONRAY_MODO_TOON_TERMINATOR is off in the reference
+    // MOONRAY_MODO_TOON_TERMINATOR: cut off by the shading normal alone, not faded by the faces'.
+    const float Gs = (l.flags & FlagModoToon) ? (cosThetaWi > 0.0f ? 1.0f : 0.0f) : shadowTerminatorFix(s, N, wi);
     return Gs * albedo * scaleAndFresnel(b, l, cosThetaWo) * OneOverTwoPi;
 }
 X2_HD inline V3 toonRotateVector(V3 v, V3 axis, float theta) {

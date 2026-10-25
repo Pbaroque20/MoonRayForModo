@@ -17,7 +17,7 @@ import subprocess
 from pathlib import Path
 
 from build_async import HEADERS
-from native_build import build
+from native_build import build, build_units
 from reference_runtime import sha, verify
 
 HERE = Path(__file__).resolve().parent
@@ -44,6 +44,11 @@ def closure(objdump, runtime, roots):
     return sorted(seen.values())
 
 
+def sha_text(text):
+    import hashlib
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:32]
+
+
 def build_session(source, runtime, async_build, out, cpu_test=False):
     source, runtime, async_build, out = (Path(p).resolve() for p in (source, runtime, async_build, out))
     out.mkdir(parents=True, exist_ok=False)
@@ -55,7 +60,8 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
     # A CPU test (XPU2_SESSION_MODE=0) never loads the GPU programs: their sources may have moved on.
     if drift and not cpu_test:
         raise RuntimeError('The GPU programs are made from sources changed since that build: ' + ', '.join(drift))
-    files = list(HERE.glob('*.h')) + [HERE / n for n in ('xpu2_session.cc', 'build_session.py', 'native_build.py')]
+    files = list(HERE.glob('*.h')) + [HERE / n for n in ('xpu2_session.cc', 'xpu2_scene.cc', 'xpu2_cpu.cc', 'build_session.py', 'native_build.py',
+                                                         'xpu2_geom.cc', 'build_geom.py')]
     files += sorted((HERE.parents[1] / 'native-port').glob('modo_*.h'))
     held = {str(p): sha(p) for p in files}
     report = {'status': 'incomplete', 'source_hashes': held, 'async_build': str(async_build),
@@ -68,13 +74,39 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
                    source / 'upstream/openmoonray/moonray/moonray/lib/rendering/lpe',
                    source / 'upstream/openmoonray/moonray/moonray/lib/rendering/displayfilter',
                    source / 'build/native-renderer-avx/moonray/lib/rendering/displayfilter']
-        exe, report['native_build'] = build(source, HERE / 'xpu2_session.cc', out / 'native',
-                                            [runtime / 'libembree4.dll', runtime / 'librendering_lpe.dll', runtime / 'librendering_displayfilter.dll',
-                                             '-lcfgmgr32', '-lwinmm'],
-                                            ['-I' + str(v) for v in include])
+        # MoonRay's own subdivision surface tessellation (xpu2_geom.cc), built with MoonRay's flags on its own thread
+        # beside the session's units, or taken from the cache when its sources and build script are unchanged.
+        import threading
+        from build_geom import build_geom
+        key = sha_text('|'.join(sha(HERE / n) for n in ('xpu2_geom.cc', 'xpu2_geom.h', 'build_geom.py')) + '|' + str(source))
+        cached = out.parent / 'geom-cache' / key
+        geom_result = {}
+
+        def make_geom():
+            if (cached / 'xpu2_geom.dll').is_file():
+                shutil.copytree(cached, out / 'geom')
+                geom_result.update(json.loads((out / 'geom' / 'build.json').read_text(encoding='utf-8')), cached=str(cached))
+                return
+            geom_result.update(build_geom(source, out / 'geom'))
+            if geom_result.get('status') == 'passed':
+                shutil.copytree(out / 'geom', cached, dirs_exist_ok=True)
+        geom_thread = threading.Thread(target=make_geom)
+        geom_thread.start()
+        try:
+            exe, report['native_build'] = build_units(source, [HERE / 'xpu2_session.cc', HERE / 'xpu2_scene.cc', HERE / 'xpu2_cpu.cc'], out / 'native',
+                                                      [runtime / 'libembree4.dll', runtime / 'librendering_lpe.dll',
+                                                       runtime / 'librendering_displayfilter.dll', '-lcfgmgr32', '-lwinmm'],
+                                                      ['-I' + str(v) for v in include] + ['-DXPU2_SPLIT_UNITS'])
+        finally:
+            geom_thread.join()
+        geom = geom_result
+        report['geom_build'] = geom
+        if geom['status'] != 'passed':
+            raise RuntimeError('xpu2_geom.dll failed to build: ' + geom.get('error', '')[-500:])
         rt = out / 'runtime-xpu2'
         (rt / 'adaptive').mkdir(parents=True)
         shutil.copyfile(exe, rt / 'moonray_xpu2.exe')
+        shutil.copyfile(out / 'geom' / 'xpu2_geom.dll', rt / 'xpu2_geom.dll')
         for name in ('async_gpu.ptx', 'adaptive/async_gpu.ptx', 'adaptive/async_adaptive.ptx',
                      'bc_1D_integrator_points_4096_sequences_of_1024.bin',
                      'ppd_2D_integrator_points_4096_sequences_of_1024.bin'):
@@ -88,7 +120,7 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
         filters = sorted(runtime.glob('*DisplayFilter.so'))
         for p in filters:
             shutil.copyfile(p, rt / p.name)
-        libraries = closure(objdump, runtime, [exe] + proxies + filters)
+        libraries = closure(objdump, runtime, [exe] + proxies + filters + [out / 'geom' / 'xpu2_geom.dll'])
         for p in libraries:
             shutil.copyfile(p, rt / p.name)
         for name in ('MOONRAY_LICENSE.txt', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'RANDOM123_LICENSE.txt', 'ISPC_MATH_LICENSE.txt'):

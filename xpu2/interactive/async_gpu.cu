@@ -96,9 +96,24 @@ struct DeviceTextures {
 };
 
 struct GpuBackend {
+    // The sample's time in the shutter (async_integrator.h sets it): every ray is traced at it.
+    float time = 0.0f;
+    __device__ void setTime(float t) { time = t; }
+    // Shadow linking is not on the GPU yet (async_gpu.h leaves a scene with it to the CPU).
+    U32 shadowReceiver = ~0u;
+    __device__ void shadowFor(U32, U32 receiver) { shadowReceiver = receiver; }
+    __device__ bool castsShadow(U32, bool) const { return true; }
+    // Lobe light sets are not on the GPU yet (async_gpu.h leaves a scene with them to the CPU).
+    U32 exitLightSet = ~0u;
+    __device__ bool inLobeSet(U32, U32) const { return true; }
+    // Light filters are not on the GPU yet (async_gpu.h leaves a scene with them to the CPU).
+    __device__ const lights::Filter* filters() const { return nullptr; }
+    __device__ surface::V3 filterMap(U32, U32, float, float) const { return surface::V3{1, 1, 1}; }
+    __device__ float filterVdb(U32, U32, surface::V3) const { return 1.0f; }
+    __device__ const lights::FilterList* filterList(U32, U32) const { return nullptr; }
     __device__ resume::Hit trace(const surface::Ray& ray) {
         unsigned instance = ~0u, primitive = 0;
-        optixTrace(params.traversable, f3(ray.origin), f3(ray.direction), ray.nearT, ray.farT, 0.f, ray.mask & 0xffu,
+        optixTrace(params.traversable, f3(ray.origin), f3(ray.direction), ray.nearT, ray.farT, time, ray.mask & 0xffu,
                    OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_CULL_BACK_FACING_TRIANGLES, 0, 1, 0, instance, primitive);
         resume::Hit h;
         if (instance == ~0u || instance >= params.config->meshes) return h;
@@ -234,7 +249,7 @@ struct GpuBackend {
     // Unoccluded between near and far (a shadow ray from a curve skips its epsilon).
     __device__ bool visible(surface::V3 o, surface::V3 d, float near, float distance) {
         unsigned occluded = 1, unused = 0;
-        optixTrace(params.traversable, f3(o), f3(d), near, distance, 0.f, 2u,  // SHADOW
+        optixTrace(params.traversable, f3(o), f3(d), near, distance, time, 2u,  // SHADOW
                    OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT |
                        OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
                    0, 1, 1, occluded, unused);
@@ -261,6 +276,8 @@ struct GpuBackend {
     // The volumes, and a ray's crossings of their meshes past tnear, nearest first (the instances of visibility 2),
     // each entering or leaving by the triangle's geometric normal; repeats at one distance dropped.
     __device__ const volume::Shader* volumes() const { return params.volumes; }
+    __device__ volume::Grids volumeGrids() const { return volume::Grids{}; }  // VDB volumes are the CPU's
+    __device__ volume::Regions emissiveRegions() const { return volume::Regions{}; }  // so are emissive volumes
     __device__ const float* walkSequences() const { return params.walkSequences; }
     __device__ U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max, U32 mask) {
         if (!params.volumeTraversable) return 0;
@@ -268,7 +285,7 @@ struct GpuBackend {
         float t = tnear;
         for (U32 k = 0; k < 4 * max && n < max; ++k) {
             unsigned instance = ~0u, primitive = 0;
-            optixTrace(params.volumeTraversable, f3(o), f3(d), t, __int_as_float(0x7f800000), 0.f, mask & 0xffu, OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0,
+            optixTrace(params.volumeTraversable, f3(o), f3(d), t, __int_as_float(0x7f800000), time, mask & 0xffu, OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0,
                        instance, primitive);
             if (instance == ~0u || instance >= params.config->meshes) break;
             const auto m = params.geometry[instance];

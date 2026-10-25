@@ -105,6 +105,9 @@ def main():
     args += ['-out', str(session / 'main.exr'), '-exec_mode', a.mode, '-info']
     if a.threads:
         args += ['-threads', str(a.threads)]
+    if os.environ.get('XPU2_HARNESS_GDB'):
+        # Debugging: the session under gdb, its backtrace on a fault in the log.
+        args = [os.environ['XPU2_HARNESS_GDB'], '-batch', '-ex', 'set pagination off', '-ex', 'run', '-ex', 'bt 40', '-ex', 'info registers rip', '--args'] + args
     began = time.monotonic()
     proc = subprocess.Popen(args, cwd=session, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             creationflags=subprocess.CREATE_NO_WINDOW)

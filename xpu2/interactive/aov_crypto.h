@@ -10,8 +10,10 @@
 // fragment's samples. Vector mode records no reflected or refracted Cryptomatte: those blocks stay empty.
 #pragma once
 #include "aov_state.h"
+#if !defined(__CUDACC_RTC__)
 #include <algorithm>
 #include <vector>
+#endif
 
 namespace xpu2::interactive::aov {
 

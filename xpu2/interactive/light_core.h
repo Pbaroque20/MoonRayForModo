@@ -57,7 +57,10 @@ struct MeshLightData {
 // One light, in render space. Linear parts are stored as rows, as MoonRay's
 // row-vector transforms are: a local vector v maps to v.x row0 + v.y row1 + v.z row2.
 struct Light {
-    U32 type, sidedness, pad0, pad1;
+    U32 type, sidedness, index;  // index: its place among the scene's lights (shadow linking's)
+    // A ray termination light (ray_termination): its light samples are never occluded, and a BSDF sample meets it only
+    // from a lobe whose bounces have ended (PathIntegratorMultiSampler's FORCE_NOT_OCCLUDED).
+    U32 rayTerminator;
     V3 radiance;
     V3 position, direction;  // local origin; local +Z, unit (MoonRay getPosition, getDirection)
     V3 local2Render[3];      // with scale
@@ -107,6 +110,76 @@ struct Light {
     U32 visibilityMask;
     U32 presenceShadows;  // its shadow rays gather the presence of what they pass (Light::updatePresenceShadows)
 };
+
+// A light under motion blur (its mb switch; LocalParamLight::updateParamAndTransforms, EnvLight's and DistantLight's
+// orientations): its record holds the shutter's open; this, what has moved by the close: its position (MbTranslation),
+// its orientation (MbRotation: quaternions r, i, j, k at both ends, the close's sign agreeing with the open's) and its
+// scale (MbScale). light is its index among the lights.
+enum : U32 { MbTranslation = 1u, MbRotation = 2u, MbScale = 4u };
+struct LightMotion {
+    U32 light = 0, flags = 0;
+    V3 position[2];
+    float orientation[2][4];
+    float scale[2];
+};
+// scene_rdl2's quaternion slerp (Quaternion.h) and Mat3(Quaternion)'s rows (its last diagonal term in double).
+X2_HD inline void lightSlerp(const float a[4], const float b[4], float t, float out[4]) {
+    float angle = 0.0f, sineAngle = 0.0f;
+    const float cosAngle = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+    if (fabsf(cosAngle) < 1.0f) {
+        angle = acosf(cosAngle);
+        sineAngle = sinf(angle);
+    }
+    if (fabsf(sineAngle) < 0.00001f) {
+        for (int k = 0; k < 4; ++k) out[k] = (1.0f - t) * a[k] + t * b[k];
+        return;
+    }
+    const float rcpSine = 1.0f / sineAngle, rA = sinf((1.0f - t) * angle) * rcpSine, rB = sinf(t * angle) * rcpSine;
+    for (int k = 0; k < 4; ++k) out[k] = a[k] * rA + b[k] * rB;
+}
+X2_HD inline void quaternionRows(const float q[4], V3 rows[3]) {
+    const float r = q[0], i = q[1], j = q[2], k = q[3];
+    rows[0] = V3{1.0f - 2.0f * (j * j + k * k), 2.0f * (i * j + r * k), 2.0f * (i * k - r * j)};
+    rows[1] = V3{2.0f * (i * j - r * k), 1.0f - 2.0f * (i * i + k * k), 2.0f * (j * k + r * i)};
+    rows[2] = V3{2.0f * (i * k + r * j), 2.0f * (j * k - r * i), float(1.0 - double(2.0f * (i * i + j * j)))};
+}
+// The light at a time in the shutter (slerpPointLocal2Render and its kin, getPosition, getDirection): its frame made of
+// the slerped orientation, the lerped scale and the lerped position, as the record's matrices. What does not move keeps
+// the open's (the record's own, mLocal2RenderRot[0] and the rest); the derived constants (area, radii) stay the open's.
+X2_HD inline Light lightAtTime(const Light& base, const LightMotion& m, float time) {
+    Light l = base;
+    const bool oriented = base.type == Env || base.type == Distant;
+    const float s0 = oriented ? 1.0f : base.scale;
+    const float s = (m.flags & MbScale) ? (1.0f - time) * m.scale[0] + time * m.scale[1] : s0;
+    V3 R[3];
+    if (m.flags & MbRotation) {
+        float q[4];
+        lightSlerp(m.orientation[0], m.orientation[1], time, q);
+        quaternionRows(q, R);
+    } else {
+        for (int i = 0; i < 3; ++i) R[i] = surface::mul(base.local2Render[i], 1.0f / s0);
+    }
+    if (oriented) {
+        if (m.flags & MbRotation) {
+            for (int i = 0; i < 3; ++i) l.local2Render[i] = R[i];
+            l.direction = R[2];
+        }
+        return l;
+    }
+    const V3 T = (m.flags & MbTranslation) ? surface::add(surface::mul(m.position[0], 1.0f - time), surface::mul(m.position[1], time))
+                                           : base.position;
+    for (int i = 0; i < 3; ++i) l.local2Render[i] = surface::mul(R[i], s);
+    l.render2LocalRot[0] = V3{R[0].x, R[1].x, R[2].x};
+    l.render2LocalRot[1] = V3{R[0].y, R[1].y, R[2].y};
+    l.render2LocalRot[2] = V3{R[0].z, R[1].z, R[2].z};
+    for (int i = 0; i < 3; ++i) l.render2Local[i] = surface::mul(l.render2LocalRot[i], 1.0f / s);
+    l.position = T;
+    if (m.flags & MbRotation) l.direction = R[2];
+    l.planeOffset = -surface::dot(l.direction, l.position);
+    l.scale = s;
+    if (base.type == Cylinder && (m.flags & MbRotation)) l.axis = R[1];
+    return l;
+}
 
 // Where a light sample or a BSDF ray meets the light (LightIntersection).
 struct Hit {

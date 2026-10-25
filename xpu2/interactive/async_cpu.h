@@ -8,6 +8,7 @@
 // parity pipeline (deadline_pipeline.h) keeps the exact shared test.
 #pragma once
 #include "async_grid.h"
+#include "points_core.h"
 #include "cpu_jobs.h"
 #include <chrono>
 #include <condition_variable>
@@ -20,7 +21,8 @@ namespace xpu2::interactive::async {
 // Curves on the CPU: an Embree user geometry whose spans run MoonRay XPU's GPU programs (curve_core.h), so the CPU
 // finds what the GPU finds.
 inline void curveBounds(const RTCBoundsFunctionArguments* args) {
-    const auto& c = *static_cast<const curves::Set*>(args->geometryUserPtr);
+    curves::Set c = *static_cast<const curves::Set*>(args->geometryUserPtr);
+    if (c.stepCount > 1) c.time = float(args->timeStep) / float(c.stepCount - 1);
     float lower[3], upper[3];
     curves::spanBounds(c, args->primID, lower, upper);
     args->bounds_o->lower_x = lower[0];
@@ -32,8 +34,9 @@ inline void curveBounds(const RTCBoundsFunctionArguments* args) {
 }
 inline void curveIntersect(const RTCIntersectFunctionNArguments* args) {
     if (args->N != 1 || !args->valid[0]) return;
-    const auto& c = *static_cast<const curves::Set*>(args->geometryUserPtr);
     auto* rh = reinterpret_cast<RTCRayHit*>(args->rayhit);
+    curves::Set c = *static_cast<const curves::Set*>(args->geometryUserPtr);
+    c.time = rh->ray.time;
     curves::Hit h;
     if (!curves::intersectSpan(c, args->primID, {rh->ray.org_x, rh->ray.org_y, rh->ray.org_z}, {rh->ray.dir_x, rh->ray.dir_y, rh->ray.dir_z},
                                rh->ray.tnear, rh->ray.tfar, h))
@@ -48,13 +51,45 @@ inline void curveIntersect(const RTCIntersectFunctionNArguments* args) {
     rh->hit.geomID = args->geomID;
     rh->hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
 }
+// A user geometry's occluding hit through the occlusion test's argument filter (shadow linking's linkFilter), as
+// Embree runs it on its own geometries' hits: rejected, no hit.
+inline bool occlusionAccepted(const RTCOccludedFunctionNArguments* args, float t, surface::V3 Ng, float u, float v) {
+    auto* ray = reinterpret_cast<RTCRay*>(args->ray);
+    RTCHit hit{};
+    hit.Ng_x = Ng.x;
+    hit.Ng_y = Ng.y;
+    hit.Ng_z = Ng.z;
+    hit.u = u;
+    hit.v = v;
+    hit.primID = args->primID;
+    hit.geomID = args->geomID;
+    hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+    const float far = ray->tfar;
+    ray->tfar = t;
+    int valid = -1;
+    RTCFilterFunctionNArguments f;
+    f.valid = &valid;
+    f.geometryUserPtr = args->geometryUserPtr;
+    f.context = args->context;
+    f.ray = reinterpret_cast<RTCRayN*>(args->ray);
+    f.hit = reinterpret_cast<RTCHitN*>(&hit);
+    f.N = 1;
+    rtcInvokeOccludedFilterFromGeometry(args, &f);
+    if (valid == 0) {
+        ray->tfar = far;
+        return false;
+    }
+    return true;
+}
 inline void curveOccluded(const RTCOccludedFunctionNArguments* args) {
     if (args->N != 1 || !args->valid[0]) return;
-    const auto& c = *static_cast<const curves::Set*>(args->geometryUserPtr);
     auto* ray = reinterpret_cast<RTCRay*>(args->ray);
+    curves::Set c = *static_cast<const curves::Set*>(args->geometryUserPtr);
+    c.time = ray->time;
     curves::Hit h;
     if (curves::intersectSpan(c, args->primID, {ray->org_x, ray->org_y, ray->org_z}, {ray->dir_x, ray->dir_y, ray->dir_z}, ray->tnear,
-                              ray->tfar, h))
+                              ray->tfar, h) &&
+        occlusionAccepted(args, h.t, h.Ng, h.u, h.v))
         ray->tfar = -INFINITY;
 }
 // A curve hit worked out again from its span, as the GPU lane does: its distance, coordinates and normal, the
@@ -72,12 +107,12 @@ inline bool curveHit(const curves::Set& c, const surface::Ray& ray, resume::Hit&
     const U32 first = curves::spanVertex(c, out.prim);
     float radius;
     if (c.basis == curves::BasisLinear) {
-        radius = curves::point(c, first).w * (1.0f - h.u) + curves::point(c, first + 1).w * h.u;
+        radius = curves::shadingPoint(c, first, c.time).w * (1.0f - h.u) + curves::shadingPoint(c, first + 1, c.time).w * h.u;
     } else {
         float w[4];
         curves::cubicWeights(c.basis, h.u, w);
-        radius = w[0] * curves::point(c, first).w + w[1] * curves::point(c, first + 1).w + w[2] * curves::point(c, first + 2).w +
-                 w[3] * curves::point(c, first + 3).w;
+        radius = w[0] * curves::shadingPoint(c, first, c.time).w + w[1] * curves::shadingPoint(c, first + 1, c.time).w +
+                 w[2] * curves::shadingPoint(c, first + 2, c.time).w + w[3] * curves::shadingPoint(c, first + 3, c.time).w;
     }
     out.epsilon = 1.5f * radius;
     return shade::finite3(out.point) && out.epsilon > 0.0f;
@@ -93,6 +128,50 @@ inline void backFaceCullingFilter(const RTCFilterFunctionNArguments* args) {
                         RTCRayN_dir_z(args->ray, args->N, i) * RTCHitN_Ng_z(args->hit, args->N, i);
         if (d >= 0.0f) valid[i] = 0;
     }
+}
+
+// Points (points_core.h) as user geometry: each one's box over its time steps, and MoonRay's sphere test at the ray's
+// time.
+inline void pointBounds(const RTCBoundsFunctionArguments* args) {
+    const auto& m = *static_cast<const cpu::MeshData*>(args->geometryUserPtr);
+    const unsigned k = args->timeStep;
+    const surface::V3 p = k ? m.steps[k - 1][args->primID] : m.positions[args->primID];
+    const float r = m.pointRadius[args->primID];
+    args->bounds_o->lower_x = p.x - r;
+    args->bounds_o->lower_y = p.y - r;
+    args->bounds_o->lower_z = p.z - r;
+    args->bounds_o->upper_x = p.x + r;
+    args->bounds_o->upper_y = p.y + r;
+    args->bounds_o->upper_z = p.z + r;
+}
+inline void pointIntersect(const RTCIntersectFunctionNArguments* args) {
+    if (args->N != 1 || !args->valid[0]) return;
+    const auto& m = *static_cast<const cpu::MeshData*>(args->geometryUserPtr);
+    auto* rh = reinterpret_cast<RTCRayHit*>(args->rayhit);
+    float t;
+    surface::V3 Ng;
+    if (!points::intersect(cpu::positionAt(m, args->primID, rh->ray.time), m.pointRadius[args->primID], {rh->ray.org_x, rh->ray.org_y, rh->ray.org_z},
+                           {rh->ray.dir_x, rh->ray.dir_y, rh->ray.dir_z}, rh->ray.tnear, rh->ray.tfar, t, Ng))
+        return;
+    rh->ray.tfar = t;
+    rh->hit.u = rh->hit.v = 0.0f;
+    rh->hit.Ng_x = Ng.x;
+    rh->hit.Ng_y = Ng.y;
+    rh->hit.Ng_z = Ng.z;
+    rh->hit.primID = args->primID;
+    rh->hit.geomID = args->geomID;
+    rh->hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+}
+inline void pointOccluded(const RTCOccludedFunctionNArguments* args) {
+    if (args->N != 1 || !args->valid[0]) return;
+    const auto& m = *static_cast<const cpu::MeshData*>(args->geometryUserPtr);
+    auto* ray = reinterpret_cast<RTCRay*>(args->ray);
+    float t;
+    surface::V3 Ng;
+    if (points::intersect(cpu::positionAt(m, args->primID, ray->time), m.pointRadius[args->primID], {ray->org_x, ray->org_y, ray->org_z},
+                          {ray->dir_x, ray->dir_y, ray->dir_z}, ray->tnear, ray->tfar, t, Ng) &&
+        occlusionAccepted(args, t, Ng, 0.0f, 0.0f))
+        ray->tfar = -INFINITY;
 }
 
 // Embree scene for the fast lanes. Mesh i is geometry i, as in the plan. Each geometry's mask is its visibility.
@@ -112,15 +191,32 @@ struct CpuScene {
         cpu::need(plan && cpu::isSpatial(plan->domain), "Asynchronous renderer requires a spatial plan");
         scene = rtcNewScene(device->handle);
         cpu::need(scene, "Embree scene failure");
-        rtcSetSceneFlags(scene, RTC_SCENE_FLAG_ROBUST);
+        rtcSetSceneFlags(scene, plan->shadowLinks.empty() ? RTC_SCENE_FLAG_ROBUST : RTC_SCENE_FLAG_ROBUST | RTC_SCENE_FLAG_FILTER_FUNCTION_IN_ARGUMENTS);
         rtcSetSceneBuildQuality(scene, RTC_BUILD_QUALITY_HIGH);
         curveSets.resize(plan->meshes.size());
         for (unsigned i = 0; i < plan->meshes.size(); ++i) {
             const auto& m = *plan->meshes[i].data;
+            if (m.points) {
+                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_USER);
+                cpu::need(g, "Embree geometry failure");
+                if (!m.steps.empty()) rtcSetGeometryTimeStepCount(g, unsigned(m.steps.size()) + 1);
+                rtcSetGeometryUserPrimitiveCount(g, m.points);
+                rtcSetGeometryUserData(g, const_cast<cpu::MeshData*>(&m));
+                rtcSetGeometryBoundsFunction(g, pointBounds, nullptr);
+                rtcSetGeometryIntersectFunction(g, pointIntersect);
+                rtcSetGeometryOccludedFunction(g, pointOccluded);
+                rtcSetGeometryMask(g, plan->meshes[i].visibility);
+                rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
+                rtcCommitGeometry(g);
+                rtcAttachGeometryByID(scene, g, i);
+                rtcReleaseGeometry(g);
+                continue;
+            }
             if (m.curveBasis) {
                 curveSets[i] = cpu::curveSet(m);
                 RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_USER);
                 cpu::need(g, "Embree geometry failure");
+                if (curveSets[i].stepCount > 1) rtcSetGeometryTimeStepCount(g, curveSets[i].stepCount);
                 rtcSetGeometryUserPrimitiveCount(g, curveSets[i].spanCount);
                 rtcSetGeometryUserData(g, &curveSets[i]);
                 rtcSetGeometryBoundsFunction(g, curveBounds, nullptr);
@@ -144,15 +240,26 @@ struct CpuScene {
                 }
                 RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
                 cpu::need(g, "Embree geometry failure");
-                auto* v = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, sizeof(surface::V3),
-                                                  m.positions.size());
+                // A moving mesh's time steps over the shutter (MeshData::steps), linear between them as MoonRay's.
+                const unsigned steps = unsigned(m.steps.size()) + 1;
+                if (steps > 1) rtcSetGeometryTimeStepCount(g, steps);
+                void* v = nullptr;
+                for (unsigned k = 0; k < steps; ++k) {
+                    const std::vector<surface::V3>& src = k ? m.steps[k - 1] : m.positions;
+                    void* slot = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, k, RTC_FORMAT_FLOAT3, sizeof(surface::V3), src.size());
+                    if (!slot) {
+                        rtcReleaseGeometry(g);
+                        throw cpu::Unsupported("Embree allocation failure");
+                    }
+                    std::memcpy(slot, src.data(), src.size() * sizeof(surface::V3));
+                    if (!k) v = slot;
+                }
                 auto* t = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, sizeof(cpu::Tri),
                                                   m.triangles.size());
                 if (!v || !t) {
                     rtcReleaseGeometry(g);
                     throw cpu::Unsupported("Embree allocation failure");
                 }
-                std::memcpy(v, m.positions.data(), m.positions.size() * sizeof(surface::V3));
                 std::memcpy(t, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
                 rtcSetGeometryMask(g, plan->meshes[i].visibility);
                 if (pass == 0 && plan->meshes[i].singleSided) {
@@ -176,8 +283,75 @@ struct CpuScene {
     CpuScene(const CpuScene&) = delete;
 };
 
+struct CpuBackend;
+// The CPU lane's sample (integrate over CpuBackend). With XPU2_SPLIT_UNITS it is compiled in xpu2_cpu.cc alone.
+#if defined(XPU2_SPLIT_UNITS)
+SampleStatus integrateCpu(const mixed::Config& c, U32 pixel, U32 index, CpuBackend& backend, Radiance& out);
+#else
+inline SampleStatus integrateCpu(const mixed::Config& c, U32 pixel, U32 index, CpuBackend& backend, Radiance& out);
+#endif
 struct CpuBackend {
     const CpuScene& s;
+    // The sample's time in the shutter (async_integrator.h sets it): every ray is traced at it, and the lights moving
+    // under motion blur are taken at it (their records at that time, in moved).
+    float time = 0.0f;
+    std::vector<lights::Light> moved;
+    void setTime(float t) {
+        time = t;
+        const auto& plan = *s.plan;
+        if (plan.lightMotion.empty()) return;
+        if (moved.size() != plan.lights.size()) moved = plan.lights;
+        for (const auto& m : plan.lightMotion) moved[m.light] = lights::lightAtTime(plan.lights[m.light], m, t);
+    }
+    // A mesh's vertex at that time, and a moving mesh's time steps for its shading (shade::MeshAttributes).
+    surface::V3 vertex(const cpu::MeshData& m, U32 i) const { return cpu::positionAt(m, i, time); }
+    void motion(const cpu::MeshData& m, shade::MeshAttributes& a) const {
+        if (m.steps.empty()) return;
+        if (m.subdSteps) {
+            // OpenSubdivMesh::postIntersect: normals and derivatives between the time steps about the ray's time; the
+            // motion vector and polyvertices from the first two steps (Mesh::computeMotion).
+            const unsigned n = unsigned(m.steps.size()) + 1;
+            const float f = time * float(n - 1);
+            const unsigned k = std::min(unsigned(std::max(f, 0.0f)), n - 2);
+            a.positions0 = m.positions.data();
+            a.positions1 = m.steps[0].data();
+            a.time = time;
+            a.normals = k ? m.stepNormals[k - 1].data() : m.normals.data();
+            a.normals1 = m.stepNormals[k].data();
+            a.dpds = k ? m.stepDpds[k - 1].data() : m.dpds.data();
+            a.dpds1 = m.stepDpds[k].data();
+            a.dpdt = k ? m.stepDpdt[k - 1].data() : m.dpdt.data();
+            a.dpdt1 = m.stepDpdt[k].data();
+            a.sampleTime = f - float(k);
+            return;
+        }
+        if (m.stepShading) {
+            const unsigned n = unsigned(m.steps.size()) + 1;
+            const float f = time * float(n - 1);
+            const unsigned k = std::min(unsigned(std::max(f, 0.0f)), n - 2);
+            a.positions0 = k ? m.steps[k - 1].data() : m.positions.data();
+            a.positions1 = m.steps[k].data();
+            if (!m.stepNormals.empty()) {
+                a.normals = k ? m.stepNormals[k - 1].data() : m.normals.data();
+                a.normals1 = m.stepNormals[k].data();
+            }
+            // A tessellated prototype's instance: its limit derivatives at the steps about the ray's time as well.
+            if (!m.stepDpds.empty()) {
+                a.dpds = k ? m.stepDpds[k - 1].data() : m.dpds.data();
+                a.dpds1 = m.stepDpds[k].data();
+                a.dpdt = k ? m.stepDpdt[k - 1].data() : m.dpdt.data();
+                a.dpdt1 = m.stepDpdt[k].data();
+                a.sampleTime = f - float(k);
+            }
+            a.time = f - float(k);
+            a.motionScale = float(n - 1);
+            return;
+        }
+        a.positions0 = m.positions.data();
+        a.positions1 = m.steps[0].data();
+        a.normals1 = m.normals1.empty() ? nullptr : m.normals1.data();
+        a.time = time;
+    }
     resume::Hit trace(const surface::Ray& ray) const {
         RTCRayHit h{};
         h.ray.org_x = ray.origin.x;
@@ -189,6 +363,7 @@ struct CpuBackend {
         h.ray.tnear = ray.nearT;
         h.ray.tfar = ray.farT;
         h.ray.mask = ray.mask;
+        h.ray.time = time;
         h.hit.geomID = RTC_INVALID_GEOMETRY_ID;
         RTCIntersectArguments args;
         rtcInitIntersectArguments(&args);
@@ -198,13 +373,34 @@ struct CpuBackend {
         out.geom = h.hit.geomID;
         out.prim = h.hit.primID;
         const auto& mesh = *s.plan->meshes[out.geom].data;
+        if (mesh.points) {
+            // The sphere again, from the ray (Points::postIntersect's P on it, Ng from the centre); new rays leave
+            // just off it.
+            float t;
+            surface::V3 Ng;
+            if (!points::intersect(cpu::positionAt(mesh, out.prim, time), mesh.pointRadius[out.prim], ray.origin, ray.direction, ray.nearT,
+                                   ray.farT, t, Ng))
+                return resume::Hit{};
+            out.t = t;
+            out.u = out.v = 0.0f;
+            out.point = surface::add(ray.origin, surface::mul(ray.direction, t));
+            surface::V3 n;
+            if (!surface::normalize(Ng, n)) return resume::Hit{};
+            out.normal = surface::dot(n, ray.direction) > 0.0f ? surface::mul(n, -1.0f) : n;
+            const float eps = 1e-5f * fmaxf(1.0f, fmaxf(fabsf(out.point.x), fmaxf(fabsf(out.point.y), fabsf(out.point.z))));
+            out.origin = surface::add(out.point, surface::mul(out.normal, eps));
+            out.below = surface::add(out.point, surface::mul(out.normal, -eps));
+            return out;
+        }
         if (mesh.curveBasis) {
-            if (!curveHit(s.curveSets[out.geom], ray, out)) return resume::Hit{};
+            curves::Set c = s.curveSets[out.geom];
+            c.time = time;
+            if (!curveHit(c, ray, out)) return resume::Hit{};
             return out;
         }
         const auto t = mesh.triangles[out.prim];
         // Shared reconstruction of distance, coordinates and the offset origin.
-        if (!resume::geometryHit(out, ray, mesh.positions[t.a], mesh.positions[t.b], mesh.positions[t.c]))
+        if (!resume::geometryHit(out, ray, vertex(mesh, t.a), vertex(mesh, t.b), vertex(mesh, t.c)))
             out.normal = {};
         return out;
     }
@@ -235,9 +431,24 @@ struct CpuBackend {
         return resume::Hit{};
     }
     // A hit's geometric shading state and differentials, its material not run.
+    // A point set's shading attributes (its primitive attributes and time steps).
+    shade::MeshAttributes pointAttributes(const cpu::MeshData& data) const {
+        shade::MeshAttributes attributes;
+        for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = data.worldToObject[k];
+        attributes.prims = data.prims.empty() ? nullptr : data.prims.data();
+        attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
+        attributes.primCount = unsigned(data.prims.size());
+        motion(data, attributes);
+        return attributes;
+    }
     bool surfaceState(const resume::Hit& h, const surface::Ray& ray, shade::State& st) const {
         const auto& plan = *s.plan;
         const auto& data = *plan.meshes[h.geom].data;
+        if (data.points) {
+            if (!points::state(pointAttributes(data), h.prim, h.normal, h.point, ray.direction, st)) return false;
+            st.geom = h.geom;
+            return true;
+        }
         if (data.curveBasis) {
             const shade::MeshAttributes attributes = curveAttributes(data, h.geom);
             if (!shade::curveState(attributes, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return false;
@@ -251,11 +462,14 @@ struct CpuBackend {
         attributes.uvs = data.uvs.empty() ? nullptr : data.uvs.data();
         attributes.normalRate = data.normalRate;
         attributes.uvRate = data.uvRate;
-        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], h.u,
+        attributes.dpds = data.dpds.empty() ? nullptr : data.dpds.data();
+        attributes.dpdt = data.dpdt.empty() ? nullptr : data.dpdt.data();
+        motion(data, attributes);
+        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), h.u,
                              h.v, h.point, ray.direction, st))
             return false;
         st.geom = h.geom;
-        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], ray,
+        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), ray,
                                 st.pixelSamples ? st.pixelSamples : plan.spp, st);
         return true;
     }
@@ -268,6 +482,8 @@ struct CpuBackend {
         attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
         attributes.primCount = unsigned(data.prims.size());
         attributes.curve = s.curveSets[geom];
+        attributes.curve.time = time;
+        attributes.time = time;
         return attributes;
     }
     // A shadow ray's hit: its material's presence alone (presence shadows). Host RAM holds every texture: no misses.
@@ -278,7 +494,9 @@ struct CpuBackend {
         presence = 1.0f;
         if (mesh.material >= plan.materialRecords.size()) return tex::Ready;
         shade::State st;
-        if (data.curveBasis) {
+        if (data.points) {
+            if (!points::state(pointAttributes(data), h.prim, h.normal, h.point, ray.direction, st)) return tex::Ready;
+        } else if (data.curveBasis) {
             const shade::MeshAttributes attributes = curveAttributes(data, h.geom);
             if (!shade::curveState(attributes, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return tex::Ready;
         } else {
@@ -288,11 +506,14 @@ struct CpuBackend {
             attributes.uvs = data.uvs.empty() ? nullptr : data.uvs.data();
             attributes.normalRate = data.normalRate;
             attributes.uvRate = data.uvRate;
+            attributes.dpds = data.dpds.empty() ? nullptr : data.dpds.data();
+            attributes.dpdt = data.dpdt.empty() ? nullptr : data.dpdt.data();
             for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = data.worldToObject[k];
             attributes.prims = data.prims.empty() ? nullptr : data.prims.data();
             attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
             attributes.primCount = unsigned(data.prims.size());
-            if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], h.u,
+            motion(data, attributes);
+            if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), h.u,
                                  h.v, h.point, ray.direction, st))
                 return tex::Ready;
         }
@@ -310,6 +531,16 @@ struct CpuBackend {
         const auto& plan = *s.plan;
         const auto& mesh = plan.meshes[h.geom];
         const auto& data = *mesh.data;
+        if (data.points) {
+            if (!points::state(pointAttributes(data), h.prim, h.normal, h.point, ray.direction, st)) return tex::Invalid;
+            st.geom = h.geom;
+            st.worldToRender = plan.worldToRender;
+            st.worldToObject = data.worldToObject;
+            if (mesh.material >= plan.materialRecords.size()) return tex::Invalid;
+            const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
+            return shade::shadeMaterial(plan.materialRecords[mesh.material], plan.materialPool.data(), st, textures, bsdf, presence,
+                                        scratch().dwaSlots, &scratch().glitter);
+        }
         if (data.curveBasis) {
             const shade::MeshAttributes attributes = curveAttributes(data, h.geom);
             if (!shade::curveState(attributes, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return tex::Invalid;
@@ -328,13 +559,18 @@ struct CpuBackend {
         attributes.uvs = data.uvs.empty() ? nullptr : data.uvs.data();
         attributes.normalRate = data.normalRate;
         attributes.uvRate = data.uvRate;
+        attributes.dpds = data.dpds.empty() ? nullptr : data.dpds.data();
+        attributes.dpdt = data.dpdt.empty() ? nullptr : data.dpdt.data();
         for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = data.worldToObject[k];
         attributes.prims = data.prims.empty() ? nullptr : data.prims.data();
         attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
         attributes.primCount = unsigned(data.prims.size());
         attributes.polyVertices = data.polyVertices.empty() ? nullptr : data.polyVertices.data();
         attributes.positions = data.positions.data();
-        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], h.u,
+        attributes.toonOffset = !data.instanced && mesh.material < plan.materialRecords.size() &&
+                                (plan.materialRecords[mesh.material].flags & shade::MatModoToonMaterial) != 0;
+        motion(data, attributes);
+        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), h.u,
                              h.v, h.point, ray.direction, st))
             return tex::Invalid;
         st.geom = h.geom;
@@ -342,7 +578,7 @@ struct CpuBackend {
         st.worldToObject = data.worldToObject;
         if (mesh.material >= plan.materialRecords.size()) return tex::Invalid;
         const auto& record = plan.materialRecords[mesh.material];
-        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, data.positions[t.a], data.positions[t.b], data.positions[t.c], ray,
+        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), ray,
                                 st.pixelSamples ? st.pixelSamples : plan.spp, st);
         // Host RAM holds every level of every texture, so the CPU never misses.
         const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
@@ -375,8 +611,17 @@ struct CpuBackend {
         ray.tnear = near;
         ray.tfar = distance;
         ray.mask = 2u;  // SHADOW
+        ray.time = time;
         RTCOccludedArguments args;
         rtcInitOccludedArguments(&args);
+        LinkContext link;
+        if (!s.plan->shadowLinks.empty()) {
+            rtcInitRayQueryContext(&link.base);
+            link.backend = this;
+            args.context = &link.base;
+            args.filter = linkFilter;
+            args.flags = RTC_RAY_QUERY_FLAG_INVOKE_ARGUMENT_FILTER;
+        }
         rtcOccluded1(s.scene, &ray, &args);
         return ray.tfar >= 0;
     }
@@ -394,7 +639,74 @@ struct CpuBackend {
     }
     shade::Bsdf& bsdf() const { return scratch().bsdf; }
     paths::Pending* pending() const { return scratch().pending; }
-    const lights::Light& light(U32 i) const { return s.plan->lights[i]; }
+    const lights::Light& light(U32 i) const { return moved.empty() ? s.plan->lights[i] : moved[i]; }
+    // Shadow linking (skipOcclusionFilter, accumulateRayPresence): the light a shadow ray goes to and the mesh it
+    // leaves (its receiver), and whether a mesh shadows it: not for a light in its shadow set, nor on a receiver its
+    // receiver set leaves out (the occlusion test's; presence shadows read the lights alone).
+    U32 shadowLight = ~0u, shadowReceiver = ~0u;
+    void shadowFor(U32 light, U32 receiver) {
+        shadowLight = light;
+        shadowReceiver = receiver;
+    }
+    bool castsShadow(U32 caster, bool receivers) const {
+        const auto& plan = *s.plan;
+        if (caster >= plan.meshShadowLink.size() || plan.meshShadowLink[caster] == ~0u) return true;
+        const auto& link = plan.shadowLinks[plan.meshShadowLink[caster]];
+        if (shadowLight != ~0u && (plan.shadowLinkBits[link.lights + (shadowLight >> 5)] >> (shadowLight & 31) & 1u)) return false;
+        if (!receivers) return true;
+        const int receiver = shadowReceiver < plan.meshAssignment.size() ? plan.meshAssignment[shadowReceiver] : -1;
+        bool in = false;
+        for (U32 k = 0; k < link.receiverCount && !in; ++k) in = plan.shadowReceivers[link.receivers + k] == receiver;
+        return link.complement ? in : !in;
+    }
+    struct LinkContext {
+        RTCRayQueryContext base;
+        const CpuBackend* backend;
+    };
+    static void linkFilter(const RTCFilterFunctionNArguments* args) {
+        if (args->valid[0] == 0) return;
+        const auto* ctx = reinterpret_cast<const LinkContext*>(args->context);
+        const U32 geom = RTCHitN_geomID(args->hit, args->N, 0);
+        if (!ctx->backend->castsShadow(geom, true)) args->valid[0] = 0;
+    }
+    // A lobe light set's lights (the plan's lobe light sets; ~0u: every light), and the subsurface exits' set (their
+    // Bssrdf's, set as a hit's subsurface is taken).
+    U32 exitLightSet = ~0u;
+    bool inLobeSet(U32 set, U32 i) const {
+        if (set == ~0u) return true;
+        const auto& plan = *s.plan;
+        const U32 words = plan.lightSetWords ? plan.lightSetWords : 1u;
+        return (plan.lobeLightSetBits[size_t(set) * words + (i >> 5)] >> (i & 31) & 1u) != 0;
+    }
+    // The light filters (light_filter_core.h), and a light's list at a mesh's shading points (null: none).
+    const lights::Filter* filters() const { return s.plan->filters.data(); }
+    // A cookie's map shader at (s, t) (CookieLightFilter::sampleMapShader): a state at the render origin, no normal.
+    // A VDB light filter's density at p (its grid's world space), 1 without a grid (OpenVdbSampler not made).
+    float filterVdb(U32 grid, U32 mode, surface::V3 p) const {
+        if (grid == volume::NoGrid) return 1.0f;
+        return volume::sampleFloat(volumeGrids(), grid, p, mode);
+    }
+    surface::V3 filterMap(U32 program, U32 reg, float st0, float st1) const {
+        const auto& plan = *s.plan;
+        shade::State st;
+        st.P = plan.renderOrigin;
+        st.Ng = st.N = st.dPds = st.dPdt = st.wo = surface::V3{0, 0, 0};
+        st.s = st0;
+        st.t = st1;
+        st.worldToRender = plan.worldToRender;
+        shade::Color regs[shade::MapMaxRegisters];
+        const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
+        if (shade::runMapProgram(plan.materialPool.data(), program, st, textures, regs) != tex::Ready) return surface::V3{1, 1, 1};
+        return surface::V3{regs[reg].x, regs[reg].y, regs[reg].z};
+    }
+    const lights::FilterList* filterList(U32 geom, U32 light) const {
+        const auto& plan = *s.plan;
+        if (geom >= plan.meshFilterTable.size()) return nullptr;
+        const U32 table = plan.meshFilterTable[geom];
+        if (table == ~0u) return nullptr;
+        const U32 list = plan.filterTables[table + light];
+        return list == ~0u ? nullptr : &plan.filterLists[list];
+    }
     U32 lightSet(U32 geom) const { return s.plan->meshLights[geom]; }
     const lights::TreeNode* treeNodes() const { return s.plan->lightTree.data(); }
     int treeRoot(U32 set) const { return set < s.plan->lightTreeRoots.size() ? s.plan->lightTreeRoots[set] : -1; }
@@ -403,12 +715,41 @@ struct CpuBackend {
     // intersectVolumes over the whole ray): whether each enters (the ray against the mesh's geometric normal) or
     // leaves; repeats at the same distance dropped, as MoonRay's interval filter drops Embree's.
     const volume::Shader* volumes() const { return s.plan->volumes.data(); }
+    volume::Grids volumeGrids() const {
+        return volume::Grids{s.plan->volumeGridViews.data(), U32(s.plan->volumeGridViews.size()), s.plan->volumeMaps.run ? &s.plan->volumeMaps : nullptr,
+                             time};
+    }
+    volume::Regions emissiveRegions() const {
+        return volume::Regions{s.plan->emissiveRegions.data(), U32(s.plan->emissiveRegions.size()), s.plan->emissionPool.data()};
+    }
     // MoonRay's integrator sequences for the random walk (cpu_scene.h walkSequences), null when not loaded.
     const float* walkSequences() const { return s.plan->walkSequences ? s.plan->walkSequences->data() : nullptr; }
+    // Whether a ray's half-line from tnear meets a VDB volume's gate box (MeshData::gate): the slab test in index space.
+    static bool gatePasses(const cpu::MeshData& m, surface::V3 o, surface::V3 d, float tnear) {
+        const float* w = m.gateToIndex;
+        const float oi[3] = {w[0] * o.x + w[1] * o.y + w[2] * o.z + w[3], w[4] * o.x + w[5] * o.y + w[6] * o.z + w[7],
+                             w[8] * o.x + w[9] * o.y + w[10] * o.z + w[11]};
+        const float di[3] = {w[0] * d.x + w[1] * d.y + w[2] * d.z, w[4] * d.x + w[5] * d.y + w[6] * d.z, w[8] * d.x + w[9] * d.y + w[10] * d.z};
+        float t0 = -INFINITY, t1 = INFINITY;
+        for (int a = 0; a < 3; ++a) {
+            if (di[a] == 0.0f) {
+                if (oi[a] < m.gateLo[a] || oi[a] > m.gateHi[a]) return false;
+                continue;
+            }
+            float ta = (m.gateLo[a] - oi[a]) / di[a], tb = (m.gateHi[a] - oi[a]) / di[a];
+            if (ta > tb) std::swap(ta, tb);
+            t0 = fmaxf(t0, ta);
+            t1 = fminf(t1, tb);
+        }
+        return t0 <= t1 && t1 >= tnear;
+    }
     U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max, U32 mask) const {
         if (!s.volumes) return 0;
         U32 n = 0;
         float t = tnear;
+        // The gated meshes met so far and whether the ray passed each's gate (a VDB's box: one test a ray).
+        U32 gateGeom[4], gateCount = 0;
+        bool gateOpen[4];
         for (U32 k = 0; k < 4 * max && n < max; ++k) {
             RTCRayHit h{};
             h.ray.org_x = o.x;
@@ -420,12 +761,31 @@ struct CpuBackend {
             h.ray.tnear = t;
             h.ray.tfar = INFINITY;
             h.ray.mask = mask;
+            h.ray.time = time;
             h.hit.geomID = RTC_INVALID_GEOMETRY_ID;
             RTCIntersectArguments args;
             rtcInitIntersectArguments(&args);
             rtcIntersect1(s.volumes, &h, &args);
             if (h.hit.geomID == RTC_INVALID_GEOMETRY_ID) break;
             const float th = h.ray.tfar;
+            const cpu::MeshData& md = *s.plan->meshes[h.hit.geomID].data;
+            if (md.gate) {
+                U32 g = 0;
+                while (g < gateCount && gateGeom[g] != h.hit.geomID) ++g;
+                bool open;
+                if (g < gateCount) open = gateOpen[g];
+                else {
+                    open = gatePasses(md, o, d, tnear);
+                    if (gateCount < 4) {
+                        gateGeom[gateCount] = h.hit.geomID;
+                        gateOpen[gateCount++] = open;
+                    }
+                }
+                if (!open) {
+                    t = th + fmaxf(1e-6f, th * 1e-6f);
+                    continue;
+                }
+            }
             const U32 v = U32(s.plan->meshes[h.hit.geomID].volume);
             const U32 flags = d.x * h.hit.Ng_x + d.y * h.hit.Ng_y + d.z * h.hit.Ng_z < 0.0f ? volume::Entry : volume::Exit;
             if (!(n > 0 && x[n - 1].t == th && x[n - 1].volume == v && x[n - 1].flags == flags)) x[n++] = volume::Crossing{th, v, flags};
@@ -744,7 +1104,7 @@ inline U64 renderChunk(const CpuScene& scene, const mixed::Config& config, const
             }
             const U32 index = base[p] + first + s;
             const auto began = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-            const SampleStatus status = integrate(config, pixels[p], index, backend, r);
+            const SampleStatus status = integrateCpu(config, pixels[p], index, backend, r);
             if (status == SampleStatus::Skip) {  // no camera ray: taken, nothing added
                 ++skipped;
                 continue;
@@ -898,7 +1258,7 @@ private:
                             r.aovDepth = retryDepth.data();
                             r.aovBackup = retryBackup.data();
                         }
-                        const SampleStatus status = integrate(config_, retry[i].pixel, retry[i].index, backend, r);
+                        const SampleStatus status = integrateCpu(config_, retry[i].pixel, retry[i].index, backend, r);
                         if (status == SampleStatus::Skip) continue;
                         if (status != SampleStatus::Done) {
                             counters.failures.fetch_add(1, std::memory_order_relaxed);
@@ -965,4 +1325,14 @@ private:
     std::atomic<unsigned> idle_{0}, parked_{0};
 };
 
+// integrateCpu: its definition
+#if !defined(XPU2_SPLIT_UNITS) || defined(XPU2_CPU_UNIT)
+#if defined(XPU2_SPLIT_UNITS)
+SampleStatus integrateCpu(const mixed::Config& c, U32 pixel, U32 index, CpuBackend& backend, Radiance& out) {
+#else
+inline SampleStatus integrateCpu(const mixed::Config& c, U32 pixel, U32 index, CpuBackend& backend, Radiance& out) {
+#endif
+    return integrate(c, pixel, index, backend, out);
+}
+#endif
 }  // namespace xpu2::interactive::async

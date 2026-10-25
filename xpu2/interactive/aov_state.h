@@ -2,6 +2,7 @@
 // hit, in MoonRay's render space (the camera's space at its first motion step; XPU2 shades in world space).
 #pragma once
 #include "aov_core.h"
+#include "camera_core.h"
 #include "shade_state.h"
 
 namespace xpu2::interactive::aov {
@@ -16,6 +17,11 @@ struct StateContext {
     // the least of with the camera's: volumeT is sMaxValue where the ray met no volume surface, so a ray toward the
     // camera's +z (an inside-out spherical camera's, a fisheye's past 90 degrees) gives a depth of -sMaxValue * z.
     float volumeZ = 3.402823466e38f;
+    // The camera and the sample's time, with motion blur (motionBlur): depth is taken in the camera's space at that
+    // time (computeRender2Camera), and motion vectors from it (CPP_computeMotion).
+    const surface::Camera* camera = nullptr;
+    float time = 0.0f;
+    U32 motionBlur = 0;
 };
 X2_HD inline V3 renderPointOf(const float* m, V3 p) {
     if (!m) return p;
@@ -23,6 +29,43 @@ X2_HD inline V3 renderPointOf(const float* m, V3 p) {
               m[8] * p.x + m[9] * p.y + m[10] * p.z + m[11]};
 }
 X2_HD inline V3 renderVectorOf(const float* m, V3 v) { return m ? shade::xformVector(m, v) : v; }
+// Render space (the camera's at the first motion step) to the camera's space at a time (computeRender2Camera: render
+// to camera, then cameraOpen2CameraTime with motion blur); null camera: the identity.
+X2_HD inline surface::Matrix renderToCameraAt(const StateContext& c, float time) {
+    if (c.camera) return c.motionBlur ? surface::matrixProduct(c.camera->render2Camera, surface::cameraOpenToTime(*c.camera, time)) : c.camera->render2Camera;
+    surface::Matrix m{};
+    m.m[0][0] = m.m[1][1] = m.m[2][2] = m.m[3][3] = 1.0f;
+    return m;
+}
+// Camera::computeZDistance: a projective camera's camera space -z at the sample's time, any other's ray distance.
+X2_HD inline float cameraDepth(const StateContext& c, V3 P) {
+    const V3 p = renderPointOf(c.worldToRender, P);
+    if (!c.projective) return c.tHit;
+    if (!c.camera) return -p.z;
+    const surface::Matrix m = renderToCameraAt(c, c.time);
+    return -(((p.x * m.m[0][2] + p.y * m.m[1][2]) + p.z * m.m[2][2]) + m.m[3][2]);
+}
+// CPP_computeMotion: the hit's screen space motion, a frame's worth: its place half a hundredth of the shutter either
+// side of the time, moved by its own velocity, through the camera's projection at those times (a non-projective
+// camera's camera space).
+X2_HD inline void motionVector(const shade::State& st, const StateContext& c, float* d) {
+    d[0] = d[1] = 0.0f;
+    if (!c.camera) return;
+    const float halfDt = 0.01f;
+    const V3 p = renderPointOf(c.worldToRender, st.P), dp = renderVectorOf(c.worldToRender, st.motion);
+    const V3 p0 = surface::add(p, surface::mul(dp, -halfDt)), p1 = surface::add(p, surface::mul(dp, halfDt));
+    const surface::Camera& cam = *c.camera;
+    surface::Matrix s0 = renderToCameraAt(c, c.time - halfDt), s1 = renderToCameraAt(c, c.time + halfDt);
+    if (cam.type == surface::CameraPerspective || cam.type == surface::CameraOrthographic) {
+        const surface::Matrix c0 = c.motionBlur ? surface::matrixLerp(cam.cameraToScreen0, cam.cameraToScreen1, c.time - halfDt) : cam.cameraToScreen0;
+        const surface::Matrix c1 = c.motionBlur ? surface::matrixLerp(cam.cameraToScreen0, cam.cameraToScreen1, c.time + halfDt) : cam.cameraToScreen0;
+        s0 = surface::matrixProduct(s0, c0);
+        s1 = surface::matrixProduct(s1, c1);
+    }
+    const V3 n0 = surface::transformH(s0, p0), n1 = surface::transformH(s1, p1);
+    d[0] = (n1.x - n0.x) / (2.0f * halfDt) / cam.shutterDuration;
+    d[1] = (n1.y - n0.y) / (2.0f * halfDt) / cam.shutterDuration;
+}
 
 // sampleWireframe: one where the hit lies within half a pixel's width of its polygon's edge (every hit on a curve).
 X2_HD inline float wireframe(const shade::State& st, V3 cameraPosition) {
@@ -67,10 +110,11 @@ X2_HD inline void stateValue(U32 schema, const shade::State& st, const StateCont
     case StateDtdy: d[0] = st.dtdy * w; break;
     case StateWireframe: d[0] = wireframe(st, c.cameraPosition) * w; break;
     case StateWp: put3(st.P); break;
-    case StateDepth: d[0] = fminf(c.projective ? -renderPointOf(c.worldToRender, st.P).z : c.tHit, c.volumeZ) * w; break;
+    case StateDepth: d[0] = fminf(cameraDepth(c, st.P), c.volumeZ) * w; break;
     case StateMotion:
-        // computeMotion: the screen-space motion of the point and the camera, none for a still scene.
-        d[0] = d[1] = 0.0f;
+        motionVector(st, c, d);
+        d[0] *= w;
+        d[1] *= w;
         break;
     default: break;
     }

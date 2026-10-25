@@ -24,7 +24,19 @@ inline void admittedPath(const std::filesystem::path& path,const std::filesystem
  auto rel=std::filesystem::weakly_canonical(path).lexically_relative(std::filesystem::canonical(root));
  need(!rel.empty()&&!rel.is_absolute()&&*rel.begin()!="..","Texture outside frozen asset root");
 }
-// alpha: the texture's alpha as each texel's three channels (ImageMap's alpha_only; 1 where the file has none).
+// MOONRAY_MODO_OPAQUE_ALPHA (BasicTexture, UdimTexture): a missing channel is filled with one (opaque), else with
+// OpenImageIO's fill, zero. Read once, as MoonRay reads it.
+inline bool modoOpaqueAlpha(){static const bool on=[]{const char* v=std::getenv("MOONRAY_MODO_OPAQUE_ALPHA");return v&&v[0]=='1';}();return on;}
+// A texel as MoonRay's TextureSampler looks up four channels (gray_to_rgb): a grey image's channel in red, green and
+// blue, a grey and alpha image's (alpha channel 1) grey in all three and its alpha fourth, and any channel the file
+// lacks the fill.
+inline void texelChannels(const float* d,int n,int alphaChannel,surface::V3& c,float& a){
+ const float fill=modoOpaqueAlpha()?1.0f:0.0f;
+ if(n==1){c={d[0],d[0],d[0]};a=fill;}
+ else if(n==2){if(alphaChannel==1){c={d[0],d[0],d[0]};a=d[1];}else{c={d[0],d[1],fill};a=fill;}}
+ else{c={d[0],d[1],d[2]};a=n>3?d[3]:fill;}}
+// alpha: the texture's alpha as each texel's three channels (ImageMap's alpha_only; texelChannels' where the file has
+// none).
 struct Pyramid {
  tex::Image image;std::vector<std::vector<surface::V3>> tiles;
  std::vector<std::vector<const surface::V3*>> pages;uint64_t bytes=0;
@@ -33,8 +45,9 @@ struct Pyramid {
    unsigned w=spec.width,h=spec.height,nx=(w+tex::Tile-1)/tex::Tile,ny=(h+tex::Tile-1)/tex::Tile;std::vector<float> decoded(size_t(w)*h*spec.nchannels);
    need(in->read_image(0,int(level),0,spec.nchannels,OIIO::TypeDesc::FLOAT,decoded.data()),"Stored mip decode");pages.emplace_back(nx*ny,nullptr);auto& page=pages.back();
    for(unsigned y=0;y<ny;++y)for(unsigned x=0;x<nx;++x){unsigned tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);tiles.emplace_back(tw*th);auto& tile=tiles.back();
-    for(unsigned j=0;j<th;++j)for(unsigned i=0;i<tw;++i){size_t idx=(size_t(y*tex::Tile+j)*w+x*tex::Tile+i)*spec.nchannels;surface::V3 c{decoded[idx],decoded[idx+1],decoded[idx+2]};
-     if(alpha){const float a=spec.nchannels>3?decoded[idx+3]:1.0f;c={a,a,a};}need(surface::finite(c)&&c.x>=0&&c.y>=0&&c.z>=0,"Invalid TX sample");tile[j*tw+i]=c;}
+    for(unsigned j=0;j<th;++j)for(unsigned i=0;i<tw;++i){size_t idx=(size_t(y*tex::Tile+j)*w+x*tex::Tile+i)*spec.nchannels;surface::V3 c;float a;
+     texelChannels(&decoded[idx],spec.nchannels,spec.alpha_channel,c,a);
+     if(alpha)c={a,a,a};need(surface::finite(c)&&c.x>=0&&c.y>=0&&c.z>=0,"Invalid TX sample");tile[j*tw+i]=c;}
     page[y*nx+x]=tile.data();bytes+=tile.size()*sizeof(surface::V3);
    }image.levels[level]={w,h,page.data()};++image.count;
   }need(image.count&&image.levels[image.count-1].width==1&&image.levels[image.count-1].height==1,"Software mip level bound");
@@ -51,7 +64,7 @@ struct File {
   try{LARGE_INTEGER bytes{};need(GetFileSizeEx(lock,&bytes)&&bytes.QuadPart>0&&bytes.QuadPart<=(1ll<<30),"Texture file budget");
    auto in=OIIO::ImageInput::open(path.string());need(bool(in),"TX open failed");
    int w=0,h=0;for(int level=0;level<32;++level){if(!in->seek_subimage(0,level))break;const auto& spec=in->spec();
-    need(spec.depth==1&&spec.x==0&&spec.y==0&&spec.z==0&&spec.full_x==0&&spec.full_y==0&&spec.full_width==spec.width&&spec.full_height==spec.height&&spec.width>0&&spec.height>0&&spec.tile_width>0&&spec.tile_height>0&&spec.nchannels>=3&&spec.nchannels<=4&&spec.channelformats.empty()&&!spec.deep,"Unsupported TX layout");
+    need(spec.depth==1&&spec.x==0&&spec.y==0&&spec.z==0&&spec.full_x==0&&spec.full_y==0&&spec.full_width==spec.width&&spec.full_height==spec.height&&spec.width>0&&spec.height>0&&spec.tile_width>0&&spec.tile_height>0&&spec.nchannels>=1&&spec.nchannels<=4&&spec.channelformats.empty()&&!spec.deep,"Unsupported TX layout");
     if(level==0){eightBit=spec.format==OIIO::TypeDesc::UINT8;need(eightBit||spec.format==OIIO::TypeDesc::HALF||spec.format==OIIO::TypeDesc::FLOAT,"Unsupported TX format");}
     else need(spec.width==std::max(1,w/2)&&spec.height==std::max(1,h/2),"Invalid stored mip pyramid");
     w=spec.width;h=spec.height;decodedBytes+=uint64_t(w)*h*spec.nchannels*4;need(decodedBytes<=(2ull<<30),"Decoded texture budget");++levels;

@@ -339,12 +339,18 @@ struct Builder {
 
 // LightTree::build over a light set's bounded lights (indices into lights; mesh lights are left out), appended to
 // out. Returns the root's index, or -1 when the set has no such light.
-inline int buildLightTree(const std::vector<Light>& lights, const std::vector<U32>& set, std::vector<TreeNode>& out) {
+// A light moving under motion blur (close: its record at the shutter's close, or null) is bounded over both ends
+// (getBounds' isMb extension).
+inline int buildLightTree(const std::vector<Light>& lights, const std::vector<U32>& set, std::vector<TreeNode>& out,
+                          const std::vector<const Light*>* close = nullptr) {
     using namespace treebuild;
     std::vector<Item> items;
     for (U32 i : set) {
         const Light& l = lights[i];
-        if (inTree(l)) items.push_back(item(l, int(i)));
+        if (!inTree(l)) continue;
+        Item it = item(l, int(i));
+        if (close && i < close->size() && (*close)[i]) it.bounds.extend(item(*(*close)[i], int(i)).bounds);
+        items.push_back(it);
     }
     if (items.empty()) return -1;
     Builder b{items, {}, {}};

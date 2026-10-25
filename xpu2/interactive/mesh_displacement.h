@@ -308,6 +308,7 @@ struct Shader {
     V3 vector{0, 0, 0};
     float factor = 1;
     int style = 0;  // 0 TNB (green up), 1 TBN
+    int objectSpace = 0;  // VectorDisplacement's source_space: 0 tangent, 1 object
     int operation = 0;  // Combine: 0 add, 1 the larger, 2 the smaller (by length)
     float scale1 = 1, scale2 = 1;
     std::shared_ptr<const Shader> input1, input2;
@@ -352,6 +353,19 @@ inline V3 displacement(const Shader& d, const float* pool, const shade::State& s
     V3 v = d.vector;
     if (d.vectorReg != shade::MapNoRegister) v = V3{regs[d.vectorReg].x, regs[d.vectorReg].y, regs[d.vectorReg].z};
     v = v * d.factor;
+    if (d.objectSpace) {
+        // Object to world: the inverse of the state's world to object (its rows' linear part), applied to the vector.
+        if (!st.worldToObject) return v;
+        const float* w = st.worldToObject;
+        const double a = w[0], b = w[1], c = w[2], e = w[4], f = w[5], g = w[6], h = w[8], i = w[9], j = w[10];
+        const double det = a * (f * j - g * i) - b * (e * j - g * h) + c * (e * i - f * h);
+        if (det == 0.0) return v;
+        const double inv[9] = {(f * j - g * i) / det, (c * i - b * j) / det, (b * g - c * f) / det,
+                               (g * h - e * j) / det, (a * j - c * h) / det, (c * e - a * g) / det,
+                               (e * i - f * h) / det, (b * h - a * i) / det, (a * f - b * e) / det};
+        return V3{float(inv[0] * v.x + inv[1] * v.y + inv[2] * v.z), float(inv[3] * v.x + inv[4] * v.y + inv[5] * v.z),
+                  float(inv[6] * v.x + inv[7] * v.y + inv[8] * v.z)};
+    }
     const shade::Frame f = shade::frame(st.N, shade::normalize(st.dPds));
     return d.style == 0 ? shade::localToGlobal(f, V3{v.x, v.z, v.y}) : shade::localToGlobal(f, v);
 }

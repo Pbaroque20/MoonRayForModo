@@ -42,31 +42,39 @@ X2_HD inline Color conductorPbrValidity(Color reflectivity) {
     return pbrLerp(pbrInvalid(), pbrValid(), (value - invalid) / (valid - invalid));
 }
 
-// A Fresnel's property flags (Fresnel_init's).
-X2_HD inline U32 fresnelFlags(const shade::FresnelPool& pool, U32 index, int depth = 0) {
-    if (index >= pool.count || depth > 8) return 0;
-    const shade::Fresnel& f = pool.items[index];
-    switch (f.kind) {
+// A Fresnel's property flags (Fresnel_init's) and Fresnel_getProperty, walked without recursion (OptiX rejects a
+// recursive call graph) as shade::fresnelChain: the one-minus wrappers down to their base, and a multiple
+// transmission's members each such a chain.
+X2_HD inline U32 fresnelBaseFlags(U32 kind) {
+    switch (kind) {
     case shade::FresnelSchlick:
     case shade::FresnelDielectric:
     case shade::FresnelLayeredDielectric: return FresnelColor | FresnelFactor;
     case shade::FresnelConductor: return FresnelColor;
-    case shade::FresnelOneMinus: return fresnelFlags(pool, f.top, depth + 1);
-    case shade::FresnelOneMinusRough:
-    case shade::FresnelOneMinusRoughSchlick: return fresnelFlags(pool, f.top, depth + 1) | FresnelRoughness;
     case shade::FresnelOneMinusVelvet: return FresnelRoughness;
-    case shade::FresnelMultipleTransmission: {
-        U32 flags = 0;
-        for (U32 i = 0; i < f.count && i < shade::MaxMultipleFresnels; ++i) flags |= fresnelFlags(pool, f.list[i], depth + 1);
-        return flags;
-    }
     default: return 0;
     }
 }
-// Fresnel_getProperty (an unhandled property writes nothing, as MoonRay's).
-X2_HD inline void fresnelProperty(const shade::FresnelPool& pool, U32 index, U32 property, float* dest, int depth = 0) {
-    if (index >= pool.count || depth > 8) return;
-    const shade::Fresnel& f = pool.items[index];
+X2_HD inline U32 fresnelChainFlags(const shade::FresnelPool& pool, U32 index, U32& base) {
+    U32 flags = 0;
+    for (int n = 0; index < pool.count && shade::fresnelWraps(pool.items[index].kind) && n < 9; ++n) {
+        if (pool.items[index].kind != shade::FresnelOneMinus) flags |= FresnelRoughness;
+        index = pool.items[index].top;
+    }
+    base = index;
+    return index < pool.count ? flags | fresnelBaseFlags(pool.items[index].kind) : flags;
+}
+X2_HD inline U32 fresnelFlags(const shade::FresnelPool& pool, U32 index) {
+    U32 base = ~0u, member = ~0u;
+    U32 flags = fresnelChainFlags(pool, index, base);
+    if (base < pool.count && pool.items[base].kind == shade::FresnelMultipleTransmission) {
+        const shade::Fresnel& f = pool.items[base];
+        for (U32 i = 0; i < f.count && i < shade::MaxMultipleFresnels; ++i) flags |= fresnelChainFlags(pool, f.list[i], member);
+    }
+    return flags;
+}
+// A base Fresnel's property (an unhandled property writes nothing, as MoonRay's).
+X2_HD inline void fresnelBaseProperty(const shade::Fresnel& f, U32 property, float* dest) {
     switch (f.kind) {
     case shade::FresnelSchlick:
         if (property == FresnelColor) {
@@ -88,34 +96,47 @@ X2_HD inline void fresnelProperty(const shade::FresnelPool& pool, U32 index, U32
             dest[2] = (1.0f - f.b.z) * f.weight;
         }
         break;
-    case shade::FresnelOneMinus:
-        fresnelProperty(pool, f.top, property, dest, depth + 1);
-        if (property == FresnelColor)
-            for (int c = 0; c < 3; ++c) dest[c] = 1.0f - dest[c];
-        break;
-    case shade::FresnelOneMinusRough:
-    case shade::FresnelOneMinusRoughSchlick:
-        if (property == FresnelRoughness) {
-            dest[0] = dest[1] = sqrtf(f.f0);
-        } else {
-            fresnelProperty(pool, f.top, property, dest, depth + 1);
-            if (property == FresnelColor)
-                for (int c = 0; c < 3; ++c) dest[c] = 1.0f - dest[c];
-        }
-        break;
     case shade::FresnelOneMinusVelvet:
         if (property == FresnelRoughness) dest[0] = dest[1] = f.f0;
         break;
-    case shade::FresnelMultipleTransmission: {
+    default: break;
+    }
+}
+// The wrappers: a one-minus inverts its top's colour; a rough one-minus answers roughness itself (sqrt of its
+// roughness), else as the plain one-minus. The base's property comes from `base`.
+template <class Base>
+X2_HD inline void fresnelChainProperty(const shade::FresnelPool& pool, U32 index, U32 property, float* dest, const Base& base) {
+    U32 n = 0;
+    while (index < pool.count && shade::fresnelWraps(pool.items[index].kind) && n < 9) {
+        const shade::Fresnel& w = pool.items[index];
+        if (w.kind != shade::FresnelOneMinus && property == FresnelRoughness) {
+            dest[0] = dest[1] = sqrtf(w.f0);
+            return;
+        }
+        ++n;
+        index = w.top;
+    }
+    if (index < pool.count) base(pool.items[index], index);
+    if (property == FresnelColor)
+        for (; n; --n)
+            for (int c = 0; c < 3; ++c) dest[c] = 1.0f - dest[c];
+}
+X2_HD inline void fresnelProperty(const shade::FresnelPool& pool, U32 index, U32 property, float* dest) {
+    fresnelChainProperty(pool, index, property, dest, [&](const shade::Fresnel& f, U32 at) {
+        if (f.kind != shade::FresnelMultipleTransmission) {
+            fresnelBaseProperty(f, property, dest);
+            return;
+        }
         // MultipleTransmissionFresnel_compute*Property, its average taken (and written) inside its loop as MoonRay's is.
         const U32 n = f.count < shade::MaxMultipleFresnels ? f.count : shade::MaxMultipleFresnels;
-        const U32 flags = fresnelFlags(pool, index, depth);
+        const U32 flags = fresnelFlags(pool, at);
         const float inv = n ? 1.0f / float(n) : 0.0f;
         float avg[3] = {0, 0, 0};
         for (U32 i = 0; i < n; ++i) {
             if (flags & property) {
                 float tmp[3] = {0, 0, 0};
-                fresnelProperty(pool, f.list[i], property, tmp, depth + 1);
+                fresnelChainProperty(pool, f.list[i], property, tmp,
+                                     [&](const shade::Fresnel& g, U32) { fresnelBaseProperty(g, property, tmp); });
                 for (int c = 0; c < 3; ++c) avg[c] += tmp[c];
             }
             if (property == FresnelFactor) {
@@ -128,10 +149,7 @@ X2_HD inline void fresnelProperty(const shade::FresnelPool& pool, U32 index, U32
                 if (property == FresnelColor) dest[2] = avg[2];
             }
         }
-        break;
-    }
-    default: break;
-    }
+    });
 }
 // Fresnel_computePbrValidity.
 X2_HD inline Color fresnelPbrValidity(const shade::FresnelPool& pool, U32 index) {
