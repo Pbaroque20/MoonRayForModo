@@ -8,6 +8,7 @@ The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## Coming next
 
+- **Light filters on MoonRay lights list at once**: a filter attached or detached shows in "attached light filters" straight away, not once the light is selected again; choosing one there says it detaches it, "(choose to detach)".
 - **Previews on texture nodes** in the graph editor: each texture node shows what it makes, rendered by MoonRay in the background and kept until something feeding it changes (View > Previews on Texture Nodes).
 - **Toon lines apart from the shading**: a Toon display filter's Output Mode gives its ink lines alone, white on black, or its shading without them; add one of each to composite the lines yourself. A MoonRay Source Override in Preferences, on by default.
 - **Clearcoat Bump Strength** is followed, in MoonRay and in MoonLightIPR: at 0 the coat stays smooth over a bumpy or normal-mapped surface.

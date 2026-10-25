@@ -248,7 +248,8 @@ def register():
         def cmd_NotifyAddClient(self,argidx,client):
             if not getattr(self,'_notifications',None):
                 self._notifications=lxu.command.NotifierHost()
-                self._notifications.add('select.event','item +v')
+                # Value, enabled state and the list itself (+t): a popup's choices change with the selected item.
+                self._notifications.add('select.event','item +vdt')
             self._notifications.add_client(client)
         def cmd_NotifyRemoveClient(self,client):
             if getattr(self,'_notifications',None):self._notifications.rem_client(client)
@@ -324,6 +325,16 @@ def register():
                 for item in items:item.channel(channel).set(value)
         return Pick
 
+    def relist(items):
+        """Select the items again as they were, which has the popups that follow them list what they now hold: what
+        was just attached or detached showed only once the item was chosen again."""
+        try:
+            import modo
+            scene=modo.Scene();before=list(scene.selected)
+            scene.select(before or items)
+        except Exception:
+            pass
+
     def held_names(item,channel):
         return [part.strip() for part in text(item,channel).split(',') if part.strip()]
 
@@ -351,6 +362,7 @@ def register():
                 for item in items:
                     held=held_names(item,channel)
                     if added not in held:item.channel(channel).set(', '.join(held+[added]))
+                relist(items)
         return Append
 
     def remove_command(name,channel):
@@ -361,7 +373,7 @@ def register():
                 for item in chosen(name):names+=[n for n in held_names(item,channel) if n not in names]
                 return names
             def arg_UIValueHints(self,index):
-                return _same(Popup,[('choose','(choose)')]+[('item%d'%i,label) for i,label in enumerate(self.held())])
+                return _same(Popup,[('choose','(choose to detach)')]+[('item%d'%i,label) for i,label in enumerate(self.held())])
             def basic_Enable(self,msg):return bool(self.held())
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
@@ -370,8 +382,10 @@ def register():
                 names=self.held();index=self.dyna_Int(0)-1
                 if index<0:return
                 if index>=len(names):raise ValueError('That item is no longer attached')
-                for item in chosen(name):
+                items=chosen(name)
+                for item in items:
                     item.channel(channel).set(', '.join(n for n in held_names(item,channel) if n!=names[index]))
+                relist(items)
         return Remove
 
     def browse_command(name,channel,label):
