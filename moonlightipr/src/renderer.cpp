@@ -14,13 +14,18 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 namespace moonlightipr {
@@ -316,14 +321,18 @@ struct Renderer::Impl {
     // The kernel made for these features, where it is beside the full one (MoonLightIPRKernel_fNN.ptx); the full one
     // where it is not, or where MOONLIGHTIPR_FULL_KERNEL is set. Only the pipeline is made again: meshes, their
     // acceleration structures and every buffer stay as they are.
+    std::string variantPath(unsigned features) const {
+        const size_t dot = kernelPath.rfind(".ptx");
+        char suffix[16];
+        std::snprintf(suffix, sizeof(suffix), "_f%02u", features);
+        return dot == std::string::npos ? kernelPath : kernelPath.substr(0, dot) + suffix + kernelPath.substr(dot);
+    }
+
     void specialize(unsigned features) {
         if (std::getenv("MOONLIGHTIPR_FULL_KERNEL")) features = FEATURE_ALL;
         std::string path = kernelPath;
         if (features != FEATURE_ALL) {
-            const size_t dot = kernelPath.rfind(".ptx");
-            char suffix[16];
-            std::snprintf(suffix, sizeof(suffix), "_f%02u", features);
-            const std::string candidate = dot == std::string::npos ? kernelPath : kernelPath.substr(0, dot) + suffix + kernelPath.substr(dot);
+            const std::string candidate = variantPath(features);
             if (std::ifstream(candidate).good()) path = candidate;
             else features = FEATURE_ALL;
         }
@@ -332,6 +341,44 @@ struct Renderer::Impl {
         destroyPipeline();
         createPipeline(path);
         kernelFeatures = features;
+    }
+
+    // Runs OptiX's compile tasks on a pool of threads until none is left: each task may give more to run.
+    static OptixResult runCompileTasks(OptixTask first) {
+        std::deque<OptixTask> pending{first};
+        std::mutex lock;
+        std::condition_variable changed;
+        unsigned running = 0;
+        OptixResult failed = OPTIX_SUCCESS;
+        const unsigned count = std::max(1u, std::thread::hardware_concurrency());
+        std::vector<std::thread> workers;
+        for (unsigned w = 0; w < count; ++w) {
+            workers.emplace_back([&]() {
+                for (;;) {
+                    OptixTask task;
+                    {
+                        std::unique_lock<std::mutex> held(lock);
+                        changed.wait(held, [&]() { return !pending.empty() || running == 0 || failed != OPTIX_SUCCESS; });
+                        if (pending.empty() || failed != OPTIX_SUCCESS) return;
+                        task = pending.front();
+                        pending.pop_front();
+                        ++running;
+                    }
+                    OptixTask more[16];
+                    unsigned made = 0;
+                    const OptixResult result = optixTaskExecute(task, more, 16, &made);
+                    {
+                        std::lock_guard<std::mutex> held(lock);
+                        if (result != OPTIX_SUCCESS) failed = result;
+                        for (unsigned i = 0; i < made; ++i) pending.push_back(more[i]);
+                        --running;
+                    }
+                    changed.notify_all();
+                }
+            });
+        }
+        for (std::thread& worker : workers) worker.join();
+        return failed;
     }
 
     void createPipeline(const std::string& ptxPath) {
@@ -353,8 +400,17 @@ struct Renderer::Impl {
 
         char log[4096];
         size_t logSize = sizeof(log);
-        const OptixResult compiled = optixModuleCreateFromPTX(context, &moduleOptions, &pipelineOptions,
-            ptx.data(), ptx.size(), log, &logSize, &module);
+        // Compiled in parallel, on every processor thread: OptiX splits the work into tasks, each of which may give more.
+        // On one thread a kernel took a minute or more the first time (a cache keeps it after that).
+        OptixTask first = nullptr;
+        OptixResult compiled = optixModuleCreateFromPTXWithTasks(context, &moduleOptions, &pipelineOptions,
+            ptx.data(), ptx.size(), log, &logSize, &module, &first);
+        if (compiled == OPTIX_SUCCESS) compiled = runCompileTasks(first);
+        if (compiled == OPTIX_SUCCESS) {
+            OptixModuleCompileState state = OPTIX_MODULE_COMPILE_STATE_FAILED;
+            optixModuleGetCompilationState(module, &state);
+            if (state != OPTIX_MODULE_COMPILE_STATE_COMPLETED) compiled = OPTIX_ERROR_INVALID_PTX;
+        }
         if (compiled != OPTIX_SUCCESS) throw std::runtime_error(std::string("MoonLightIPR device program rejected: ") + log);
 
         // OptiX's own test of a ray against a curve; its options must be those the curves are built with.
@@ -821,8 +877,28 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     options.logCallbackFunction = &logCallback;
     options.logCallbackLevel = 2;
     ML_CHECK(optixDeviceContextCreate(nullptr, &options, &impl->context));
+    // Compiled kernels kept in a cache of MoonLightIPR's own, with room for all of them: a kernel takes a minute or more
+    // to compile, and in OptiX's shared cache, filled by MoonRay's XPU mode and other programs, they were turned out
+    // and compiled again, the session waiting at its start each time. OPTIX_CACHE_PATH, where set, has the last word.
+    if (!std::getenv("OPTIX_CACHE_PATH")) {
+        if (const char* local = std::getenv("LOCALAPPDATA")) {
+            const std::string folder = std::string(local) + "\\MoonRayForModo\\OptixCache";
+            std::error_code ignored;
+            std::filesystem::create_directories(folder, ignored);
+            if (optixDeviceContextSetCacheLocation(impl->context, folder.c_str()) == OPTIX_SUCCESS)
+                optixDeviceContextSetCacheDatabaseSizes(impl->context, size_t(3) << 30, size_t(4) << 30);
+        }
+    }
     impl->kernelPath = ptxPath;
-    impl->createPipeline(ptxPath);
+    // Begun on the kernel with none of the heavy features, the quickest to compile, until a scene asks for more
+    // (specialize): begun on the full one, every session waited on its compiling, a minute and a half the first time.
+    const std::string plain = impl->variantPath(0);
+    if (!std::getenv("MOONLIGHTIPR_FULL_KERNEL") && std::ifstream(plain).good()) {
+        impl->createPipeline(plain);
+        impl->kernelFeatures = 0;
+    } else {
+        impl->createPipeline(ptxPath);
+    }
     // MoonRay's defaults, including its sample_clamping_value.
     impl->params.maxDepth = 4;
     impl->params.maxDiffuseDepth = impl->params.maxGlossyDepth = 2;
@@ -1134,8 +1210,10 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         if (m.toonDiffuse || m.toonSpecular) features |= FEATURE_TOON;
         if (m.fuzz > 0.0f) features |= FEATURE_FUZZ;
     }
-    for (size_t i = 0; i < layerCount; ++i)
+    for (size_t i = 0; i < layerCount; ++i) {
         if (layers[i].channel == CHANNEL_SUBSURFACE || layers[i].channel == CHANNEL_SUBSURFACE_COLOR) features |= FEATURE_SUBSURFACE;
+        if (layers[i].flags & LAYER_PROCEDURAL) features |= FEATURE_PROCEDURAL;
+    }
     impl->specialize(features);
     std::vector<DeviceMaterial> table(count);
     std::transform(materials, materials + count, table.begin(), toDevice);

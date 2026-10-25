@@ -70,7 +70,14 @@ def register():
                     except Exception:return True
                 # What a denoiser does is greyed while the Denoiser is Off: it is off everywhere then.
                 if entry['key'] in NEEDS_DENOISER:
-                    try:return scene_settings.complete(properties.scene_settings())['denoising'].get('engine','off')!='off'
+                    try:
+                        denoising=scene_settings.complete(properties.scene_settings())['denoising']
+                        if denoising.get('engine','off')=='off':return False
+                        # Smart Render and Safe Denoising are one or the other: each is greyed while the other is on.
+                        if entry['key']=='smart_render':return not denoising.get('safe')
+                    except Exception:return True
+                if entry['key']=='denoise_safe':
+                    try:return scene_settings.complete(properties.scene_settings())['denoising'].get('smart','off')=='off'
                     except Exception:return True
                 return True
             def arg_UIValueHints(self,index):return _same(Hints,WATCHED,labels)
