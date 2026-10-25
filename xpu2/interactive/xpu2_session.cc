@@ -21,6 +21,7 @@
 #include "../../native-port/modo_shared_image.h"
 #include <OpenImageIO/imageio.h>
 #include "aov_write.h"
+#include "entity_classes.h"
 #include "aov_display.h"
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
@@ -194,6 +195,15 @@ struct Scene {
         source->setDsoPath(dso.string());
         for (const auto& f : files) readInto(*source, f);
         canonical.reset(new CanonicalSession(dso.string(), {3301, 0, 0, 0}));
+        // The scene indexer's classification of every object (entity_classes.h).
+        canonical->classifier([](const rdl::SceneObject& o) {
+            const classes::Class c = classes::classify(o);
+            Decision d;
+            d.support = c.support;
+            d.evidence = c.reason;
+            d.families = c.families;
+            return d;
+        });
         epoch = 0;
         changed = true;
     }
@@ -207,6 +217,7 @@ struct Scene {
         ++epoch;
         const fs::path folder = staging / ("frame-" + std::to_string(++frames));
         auto frame = canonical->prepare(*source, folder, {3301, epoch, epoch, epoch});
+        logClasses(*frame->routing);
         // The outputs in the order the scene declared them (the canonical copy holds them by name).
         aov::outputOrder().clear();
         for (const rdl::RenderOutput* ro : source->getAllRenderOutputs()) aov::outputOrder().push_back(ro->getName());
@@ -225,6 +236,25 @@ struct Scene {
         if (!lastFolder.empty()) fs::remove_all(lastFolder, ignored);
         lastFolder = folder;
         changed = false;
+    }
+    // The classification's summary for the log: objects by class, the GPU families the scene's objects need on
+    // each side, the objects that send the scene to MoonRay.
+    static void logClasses(const Snapshot& s) {
+        size_t counts[3] = {0, 0, 0};
+        uint64_t gpu = 0, cpuOnly = 0;
+        std::vector<std::string> fallbacks;
+        for (auto it = s.decisions.begin(); it != s.decisions.end(); ++it) {
+            const Decision& d = it->second;
+            ++counts[static_cast<unsigned>(d.support)];
+            if (d.support == Support::Both) gpu |= d.families;
+            if (d.support == Support::Cpu) cpuOnly |= d.families & ~classes::GpuFamilies;
+            if (d.support == Support::Fallback && fallbacks.size() < 4) fallbacks.push_back(d.evidence);
+        }
+        std::fprintf(stderr, "XPU2 classes: %zu both, %zu CPU only, %zu fall back; mode %s; GPU families %llx, CPU-only families %llx%s%s\n",
+                     counts[2], counts[1], counts[0], s.mode == Mode::Fallback ? "fallback" : s.mode == Mode::NativeCpu ? "cpu" : "mixed",
+                     (unsigned long long)gpu, (unsigned long long)cpuOnly, fallbacks.empty() ? "" : "; first: ",
+                     fallbacks.empty() ? "" : fallbacks[0].c_str());
+        std::fflush(stderr);
     }
     // Textures anywhere on the system drive (the asset root bounds what a texture path may be).
     static fs::path assetRoot() {

@@ -25,6 +25,8 @@ class CanonicalSession {
     SnapshotBudget budget_;
     std::optional<Router::Pending> pending_;
     const ri::rdl::SceneContext *source_=nullptr,*pendingSource_=nullptr;
+    // The classification of an RDL object (entity_classes.h through the session); none: every object falls back.
+    std::function<Decision(const ri::rdl::SceneObject&)> classify_;
     static ix::Bytes retain(ix::Kind,ix::Field,const ix::Bytes& bytes){return bytes;}
     bool current(const CanonicalView& frame) const {
         // Router's thread check also protects these coordinator-owned fields.
@@ -36,6 +38,8 @@ public:
     CanonicalSession(const CanonicalSession&)=delete;
     CanonicalSession& operator=(const CanonicalSession&)=delete;
     CanonicalView acquire() const {router_.acquire();return active_;}
+    // Set before the first scene: the router classifies every object then, and each changed one after.
+    void classifier(std::function<Decision(const ri::rdl::SceneObject&)> classify) {router_.acquire();classify_=std::move(classify);}
     RetainedUsage retainedUsage() {router_.acquire();return budget_.usage();}
     const ri::rdl::SceneContext& replica() const {return replica_.context();}
 
@@ -51,8 +55,11 @@ public:
         // all attributes on that boundary; normal edits remain incremental.
         auto captured=ri::capture(source,base,source_!=&source);
         std::set<std::string> present,removed;
-        for(auto i=source.beginSceneObject();i!=source.endSceneObject();++i)
-            present.insert(ri::objectId(i->second->getName()));
+        std::map<std::string,const ri::rdl::SceneObject*> objects;
+        for(auto i=source.beginSceneObject();i!=source.endSceneObject();++i){
+            const std::string id=ri::objectId(i->second->getName());
+            present.insert(id);objects[id]=i->second;
+        }
         for(const auto& group:base->kinds)if(group.first!=ix::Kind::Attribute)
             for(const auto& id:group.second)if(!present.count(id)){
                 removed.insert(id);
@@ -60,8 +67,12 @@ public:
                 removed.insert(attributes.begin(),attributes.end());
             }
         auto candidate=index_.prepare(base,captured.edits,removed,retain);
-        // No native support has been qualified. Unknown always routes to fallback.
-        auto routed=router_.prepare(candidate,epoch,0);
+        // Each changed object classified (unknown ones fall back); without a classifier everything falls back.
+        Classify classify;
+        if(classify_)classify=[&](const std::string& id,const ix::View&){
+            const auto it=objects.find(id);
+            return it==objects.end()?Decision{}:classify_(*it->second);};
+        auto routed=router_.prepare(candidate,epoch,0,classify);
         // Backpressure before touching the native replica or writing any files.
         // Candidate construction is separately bounded by SceneIndex limits.
         budget_.admit(candidate.view());
@@ -94,7 +105,13 @@ public:
     // The caller acknowledges ONLY after its fallback adapter accepts the frozen
     // input. This file-level adapter does not claim GPU allocations are ready.
     bool acknowledge(const CanonicalView& frame) {
-        return current(frame) && router_.acknowledge(*pending_,Backend::Fallback);
+        if(!current(frame))return false;
+        // The backends the routed mode asks for: fallback, the CPU lane, or both lanes.
+        const Mode mode=pending_->view()->mode;
+        if(mode==Mode::Fallback)return router_.acknowledge(*pending_,Backend::Fallback);
+        bool ok=router_.acknowledge(*pending_,Backend::Cpu);
+        if(mode==Mode::NativeMixed)ok=router_.acknowledge(*pending_,Backend::Gpu)&&ok;
+        return ok;
     }
     bool publish(const CanonicalView& frame) {
         if(!current(frame)||!router_.commit(*pending_))return false;

@@ -1,7 +1,7 @@
 """Render feature test scenes with XPU2 and MoonRay through the session harness, and compare.
 
 feature_compare.py <folder of case .rdla with OUTPUT placeholders> <xpu2 exe> <cases...> [--samples N] [--mode xpu2mode] [--moonray-mode vectorized]
-Each case: XPU2, MoonRay (frame 0) and MoonRay (frame 1, the noise floor). Prints block error and mean ratio of XPU2
+Each case: XPU2 and MoonRay (frame 0); the noise floor XPU2 frame 1 against frame 0 (--floor frame: MoonRay frame 1). Prints block error and mean ratio of XPU2
 and of MoonRay frame 1 against MoonRay frame 0, and writes <case>-compare.png (XPU2 | MoonRay | difference x8)."""
 import argparse
 import json
@@ -26,7 +26,7 @@ p.add_argument('--samples', type=int, default=16)
 p.add_argument('--mode', default='0')
 p.add_argument('--moonray-mode', default='vectorized')
 p.add_argument('--threads', type=int, default=0)
-p.add_argument('--floor', choices=('aux', 'frame'), default='aux')
+p.add_argument('--floor', choices=('xpu2', 'frame'), default='xpu2')
 a = p.parse_args()
 folder = a.folder.resolve()
 results = {}
@@ -34,15 +34,14 @@ for case in a.cases:
     text = (folder / (case + '.rdla')).read_text(encoding='utf-8')
     text = re.sub(r'\["pixel_samples"\]=\d+', '["pixel_samples"]=%d' % a.samples, text)
     runs = {'xpu2': (a.xpu2, '0', 'xpu'), 'moonray': (MOONRAY, '0', a.moonray_mode), 'moonray1': (MOONRAY, '1', a.moonray_mode)}
-    if a.floor == 'aux':
+    if a.floor == 'xpu2':
+        # The noise floor from XPU2's own second frame (one MoonRay render a case, cached): two renders' difference.
         del runs['moonray1']
+        runs['xpu2f1'] = (a.xpu2, '1', 'xpu')
     for name, (exe, frame, mode) in runs.items():
         out = folder / ('%s-%s.exr' % (case, name))
         scene = folder / ('%s-%s.rdla' % (case, name))
         scene_text = text.replace('OUTPUT', out.as_posix()).replace('["frame"]=0', '["frame"]=%s' % frame)
-        if name == 'moonray' and a.floor == 'aux':
-            # MoonRay's odd-sample half image beside the beauty (its adaptive sampler's beauty aux).
-            scene_text = scene_text.replace('RenderOutput("/beauty") {', 'RenderOutput("/x2aux") { ["file_name"]="%s", ["result"]=12 }\nRenderOutput("/beauty") {' % out.as_posix(), 1)
         scene.write_text(scene_text, encoding='utf-8')
         if out.exists():
             out.unlink()
@@ -68,19 +67,16 @@ for case in a.cases:
             results.setdefault(case, {})['fallback'] = rep['fallback']
         results.setdefault(case, {})[name + '_seconds'] = rep.get('seconds')
     xo, mo, m1 = (folder / ('%s-%s.exr' % (case, n)) for n in ('xpu2', 'moonray', 'moonray1'))
-    if a.floor == 'aux' and mo.exists():
-        # A second frame's statistics from the one render R and its odd half H: R + sqrt(2) (R - H) differs from R as
-        # an independent render does (the halves' difference has four times a render's variance).
+    x1 = folder / ('%s-xpu2f1.exr' % case)
+    floor_ok = m1.exists() if a.floor == 'frame' else x1.exists()
+    if xo.exists() and mo.exists() and floor_ok:
         env = {'PATH': str(RT), 'SYSTEMROOT': r'C:\Windows'}
-        r_rgb, h_rgb = folder / ('%s-r.exr' % case), folder / ('%s-h.exr' % case)
-        subprocess.run([str(TOOL), str(mo), '--ch', 'R,G,B', '-o', str(r_rgb)], capture_output=True, env=env)
-        subprocess.run([str(TOOL), str(mo), '--ch', 'R=__beautyAux__.R,G=__beautyAux__.G,B=__beautyAux__.B', '-o', str(h_rgb)], capture_output=True, env=env)
-        if m1.exists():
-            m1.unlink()
-        subprocess.run([str(TOOL), str(r_rgb), str(r_rgb), str(h_rgb), '--sub', '--mulc', '1.41421356', '--add', '-o', str(m1)], capture_output=True, env=env)
-    if xo.exists() and mo.exists() and m1.exists():
-        cmp = subprocess.run([sys.executable, str(S / 'block_cmp.py'), str(TOOL), str(mo), str(xo), str(m1)], capture_output=True, text=True,
-                             env={'PATH': str(RT), 'SYSTEMROOT': r'C:\Windows'}).stdout
+        if a.floor == 'frame':
+            cmp = subprocess.run([sys.executable, str(S / 'block_cmp.py'), str(TOOL), str(mo), str(xo), str(m1)], capture_output=True, text=True, env=env).stdout
+        else:
+            cmp = subprocess.run([sys.executable, str(S / 'block_cmp.py'), str(TOOL), str(mo), str(xo)], capture_output=True, text=True, env=env).stdout
+            floor = subprocess.run([sys.executable, str(S / 'block_cmp.py'), str(TOOL), str(xo), str(x1)], capture_output=True, text=True, env=env).stdout
+            cmp = cmp.strip() + '\n' + floor.strip().replace(x1.name, 'floor (XPU2 frame 1 vs 0)')
         results[case]['compare'] = cmp.strip().splitlines()
         png = folder / ('%s-compare.png' % case)
         subprocess.run([str(TOOL), str(xo), '--colorconvert', 'linear', 'sRGB', str(mo), '--colorconvert', 'linear', 'sRGB',

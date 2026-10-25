@@ -6,7 +6,10 @@
 #include <windows.h>
 #include <cuda.h>
 #include <optix.h>
+// OptiX's function table is defined once: in the session's unit when the session is split (XPU2_SPLIT_UNITS).
+#if !defined(XPU2_SPLIT_UNITS) || (!defined(XPU2_SCENE_UNIT) && !defined(XPU2_CPU_UNIT))
 #include <optix_function_table_definition.h>
+#endif
 #include <optix_stubs.h>
 #include <optix_stack_size.h>
 #include "cpu_jobs.h"

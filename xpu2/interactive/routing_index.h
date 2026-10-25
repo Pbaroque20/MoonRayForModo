@@ -21,8 +21,10 @@ struct Epoch {
 };
 struct Decision {
     Support support = Support::Fallback;
-    // Nonempty conformance identity required before a feature can be native.
+    // Nonempty conformance identity required before a feature can be native (a fallback's: why not).
     std::string evidence;
+    // The GPU feature families the entity needs (entity_classes.h's Family bits).
+    uint64_t families = 0;
 };
 struct Snapshot {
     ix::View scene;

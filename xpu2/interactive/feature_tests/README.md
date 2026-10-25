@@ -3,10 +3,10 @@
 The scripts that check XPU2's features against MoonRay, scene by scene (kept from the 2026-10-24 feature round).
 
 - `make_*_scenes.py <folder> [...]`: writes a feature's test scenes (`.rdla` with an `OUTPUT` placeholder).
-- `feature_compare.py <folder> <moonray_xpu2.exe> <cases...> [--moonray-mode scalar] [--floor aux|frame]`: renders each
+- `feature_compare.py <folder> <moonray_xpu2.exe> <cases...> [--moonray-mode scalar] [--floor xpu2|frame]`: renders each
   case with XPU2 (the session harness, `XPU2_SESSION_MODE` 0 for the CPU) and MoonRay, and prints the 8x8 block error
-  and mean ratio against MoonRay beside MoonRay's own noise (`--floor frame`: a second MoonRay frame; `aux`: from the
-  one render's odd-sample half image, still being validated).
+  and mean ratio against MoonRay beside the noise floor (by default XPU2 frame 1 against frame 0, one XPU2 render; `--floor frame`: a second MoonRay frame,
+  for AOV comparisons).
 - `runq.py`: a render queue shared by every running script (`RUNQ_SLOTS`, two by default) and a cache of MoonRay
   references keyed by scene, frame, mode and MoonRay build (`refcache/`); `seed_refcache.py` fills it from renders
   already on disk.
