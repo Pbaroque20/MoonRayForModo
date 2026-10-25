@@ -13,7 +13,11 @@ using U64L = unsigned long long;
 constexpr U32 Slots = 4;  // launches whose claim counters may be live at once
 // The GPU profile's stages (XPU2_PROFILE): rays, shadow rays, the material callables, presence, volume crossings, and
 // whole samples (the rest of a sample's time is the path tracer's own: lights, lobes, AOVs).
-enum ProfileStage : U32 { ProfileTrace = 0, ProfileShadow, ProfileShade, ProfilePresence, ProfileVolumes, ProfileSample, ProfileStages };
+enum ProfileStage : U32 {
+    ProfileTrace = 0, ProfileShadow, ProfileShade, ProfilePresence, ProfileVolumes, ProfileSample,
+    // Counts, not clock ticks: every shadow ray, every ray traced for a hit; light samples' and BSDF samples' shadow
+    // rays, and those a bounce stood for (async_integrator.h RayCount).
+    ProfileCountShadow, ProfileCountTrace, ProfileCountNee, ProfileCountBsdf, ProfileCountHeld, ProfileStages };
 
 // A sample parked by a texture miss in the GPU's bounded queue (TEXWAIT). It
 // runs again on the GPU once its tile is resident, with the same identity.

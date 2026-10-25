@@ -115,6 +115,9 @@ struct GpuBackend {
     __device__ void tock(U32 stage, long long from) {
         if (params.profile) prof[stage] += (unsigned long long)(clock64() - from);
     }
+    __device__ void countRay(U32 kind) {
+        if (params.profile) ++prof[ProfileCountNee + kind];
+    }
     // Each sample starts here (async_integrator.h): its time, and no texture miss or deferral yet.
     __device__ void setTime(float t) {
         time = t;
@@ -147,6 +150,7 @@ struct GpuBackend {
     __device__ const lights::FilterList* filterList(U32, U32) const { return nullptr; }
     __device__ __noinline__ resume::Hit trace(const surface::Ray& ray) {
         const long long from = tick();
+        if (params.profile) ++prof[ProfileCountTrace];
         const resume::Hit h = traceSurfaces(ray);
         // A stand-in before the hit (or anywhere along a ray that hits nothing) defers the sample.
         if (params.standInTraversable &&
@@ -319,6 +323,7 @@ struct GpuBackend {
     // Unoccluded between near and far (a shadow ray from a curve skips its epsilon).
     __device__ bool visible(surface::V3 o, surface::V3 d, float near, float distance) {
         const long long from = tick();
+        if (params.profile) ++prof[ProfileCountShadow];
         unsigned occluded = 1, unused = 0;
         optixTrace(params.traversable, f3(o), f3(d), near, distance, time, 2u,  // SHADOW
                    OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT |

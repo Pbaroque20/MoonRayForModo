@@ -38,7 +38,10 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     U32 lightFilters=0;
     // The kit's MoonRay source switches the integrator reads (Plan::modoSwitches): 1 MOONRAY_MODO_TOON_ALBEDO, 2
     // MOONRAY_MODO_FOG_ALPHA, 4 MOONRAY_MODO_CRYPTO_VOLUMES.
-    U32 modoSwitches=0;};
+    U32 modoSwitches=0;
+    // Bounce-ray reuse (async_integrator.h): the ray visibility bits (rdl2 VisibilityType) of the bounces whose rays
+    // meet exactly the occluders a shadow ray meets, every mesh visible to both or to neither; 0: no reuse.
+    U32 shadowReuse=0;};
 struct Job {path::Epoch epoch{};U64 sequence=0;U32 count=0,first=0,samples=0,fault=0;U64 delay=0;U32 pixels[Capacity]{};};
 struct Pixel {double sum[4]{};U32 count=0,status=0,pixel=0,pad=0;};
 struct Result {path::Epoch epoch{};U64 sequence=0;U32 count=0,pad=0;Pixel pixels[Capacity]{};};

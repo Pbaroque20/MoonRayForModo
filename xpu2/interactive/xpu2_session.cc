@@ -737,6 +737,17 @@ int session(const Args& args, const fs::path& directory) {
                                 100 * result.gpuProfile[async::ProfileShade] / all, 100 * result.gpuProfile[async::ProfilePresence] / all,
                                 100 * result.gpuProfile[async::ProfileVolumes] / all, 100 * (all - double(inStages)) / all);
                 }
+                if (result.gpuProfile[async::ProfileCountTrace] && result.gpuSamples) {
+                    // The GPU profile's rays a sample: shadow rays (light samples', BSDF samples', the rest: subsurface,
+                    // volumes), those a bounce stood for, and rays traced for hits.
+                    const double n = double(result.gpuSamples);
+                    const auto& g = result.gpuProfile;
+                    std::printf("XPU2 profile: a sample's rays: %.2f shadow (%.2f light samples', %.2f BSDF samples', %.2f others), %.2f stood for "
+                                "by bounces, %.2f for hits\n",
+                                g[async::ProfileCountShadow] / n, g[async::ProfileCountNee] / n, g[async::ProfileCountBsdf] / n,
+                                (double(g[async::ProfileCountShadow]) - g[async::ProfileCountNee] - g[async::ProfileCountBsdf]) / n,
+                                g[async::ProfileCountHeld] / n, g[async::ProfileCountTrace] / n);
+                }
                 if (result.provisional)
                     std::printf("XPU2: %llu provisional samples (textures read a level up while their tiles landed), rendered again in full: "
                                 "%llu on the GPU, %llu on the CPU\n",

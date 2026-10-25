@@ -601,6 +601,7 @@ struct CpuBackend {
     // Unoccluded up to distance (a shadow ray toward a light).
     bool visible(surface::V3 o, surface::V3 d, float distance) const { return visible(o, d, 0.0f, distance); }
     // Unoccluded between near and far (a shadow ray from a curve skips its epsilon).
+    void countRay(U32) const {}  // the GPU profile's ray counts (XPU2_PROFILE): none on the CPU
     bool visible(surface::V3 o, surface::V3 d, float near, float distance) const {
         RTCRay ray{};
         ray.org_x = o.x;

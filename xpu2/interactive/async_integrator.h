@@ -221,7 +221,15 @@ struct Pending {
     // must be in to light it.
     U32 parentSets[8];
     U32 parentSetCount = 0;
+    // Bounce-ray reuse: the light its BSDF sample reached (~0u: none held), that light's contribution, and the shadow
+    // ray's end: settled when this ray is traced, reached unless it meets something nearer.
+    U32 heldLight = ~0u;
+    float heldFar = 0.0f;
+    V3 held{0, 0, 0};
 };
+// The rays the GPU profile counts by kind (XPU2_PROFILE): light samples' shadow rays, BSDF samples' shadow rays, and
+// those a bounce stood for (bounce-ray reuse).
+enum RayCount : U32 { RayCountNee = 0, RayCountBsdf, RayCountHeld };
 // allLightSetsContain and a lobe's own set (isLightActive, integrateLightSetSample).
 template <class Backend>
 X2_HD inline bool lobeSeesLight(const Backend& backend, const Pending& pv, U32 lobeSet, U32 light) {
@@ -1759,6 +1767,20 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                                fromCamera ? camera.ox : V3{0, 0, 0}, fromCamera ? camera.oy : V3{0, 0, 0}};
         const resume::Hit hit = backend.trace(ray);
         if (backend.deferred()) return SampleStatus::Defer;
+        // Bounce-ray reuse: the light this ray's BSDF sample reached is reached unless the ray met something short of
+        // the shadow ray's end; its light event as the BSDF sample's own (addDirectVisibleBsdfLobeSampleContributionBundled).
+        if (pv.heldLight != ~0u) {
+            const float kept = hit.geom != ~0u && hit.t < pv.heldFar ? lightShadowKept(backend.light(pv.heldLight), pv.heldFar) : 1.0f;
+            if (kept > 0.0f) radiance += kept < 1.0f ? pv.held * kept : pv.held;
+            if (lpeOn) {
+                if (kept >= 1.0f) {
+                    const Color through = pv.held;
+                    aov::light(at, aovs, aovDepths, pv.held, &through, aov::PrefixUnoccluded, pv.lpeLight);
+                } else {
+                    aov::light(at, aovs, aovDepths, pv.held, nullptr, aov::PrefixUnoccluded, pv.lpeLight);
+                }
+            }
+        }
         // The volumes the ray passes on its way (computeRadianceVolume): their light, and the throughput through them.
         const U32 volumeDepthBefore = pv.volumeDepth;
         V3 volumeAlphaT{1, 1, 1}, volumeMinT{0, 0, 0};
@@ -1977,6 +1999,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
             if (top >= MaxPending) return SampleStatus::Error;
             const float totalPresence = (1.0f - pv.totalPresence) * presence;
             Pending through = pv;
+            through.heldLight = ~0u;  // settled at this hit, where its shadow ray would have stopped (bounce-ray reuse)
             through.origin = hit.below;
             through.nearT = hit.epsilon;  // from a curve: on from the hit, past its epsilon
             // The differentials go on through it (transferred to the hit, a camera ray's scaled).
@@ -2345,6 +2368,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     kept = 1.0f - rayPresence(c, backend, shadowOrigin, wi, shadowNear, shadowFar, pv.depth,
                                               shade::luminance(pv.T) < 1.0f - c.presenceQuality, ps);
                 } else {
+                    backend.countRay(RayCountNee);
                     kept = backend.visible(shadowOrigin, wi, shadowNear, shadowFar) ? 1.0f : lightShadowKept(L, shadowFar);
                 }
                 Color tr{1, 1, 1};
@@ -2528,11 +2552,26 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 }
                 float shadowNear = start, shadowFar = 0.0f;
                 float kept = 0.0f;
+                // Whether the bounce goes on (pushed below): its indirect light, under the transparency threshold.
+                float opacity = pv.accumOpacity;
+                bool opaqueEnough = true;
+                if (mirror && (lobe.type & shade::Transmission)) {
+                    const float transparency = (f.x + f.y + f.z) / 3.0f;
+                    opacity = pv.accumOpacity + (1 - transparency) * (1 - pv.accumOpacity);
+                    opaqueEnough = !(opacity > c.transparencyThreshold);
+                }
+                const bool bounces = lobeIndirect && !shade::isExactlyZero(indirect) && shade::finite3(indirect) && opaqueEnough;
+                // Bounce-ray reuse: the light reached is settled when the bounce is traced, which stands for its shadow ray.
+                bool held = false;
                 if (lightHit && !shade::isBlack(direct) && shade::finite3(direct)) {
                     const lights::Light& L = backend.light(lightIndex);
                     lightShadowSpan(L, lightDistance, shadowNear, shadowFar);
                     backend.shadowFor(lightIndex, hit.geom);
-                    if (forceUnoccluded) {
+                    held = bounces && top < MaxPending && !forceUnoccluded && !L.presenceShadows && lobeMask && (c.shadowReuse & lobeMask) == lobeMask &&
+                           !c.volumeCount && shadowNear == start && shadowFrom.x == origin.x && shadowFrom.y == origin.y && shadowFrom.z == origin.z;
+                    if (held) {
+                        backend.countRay(RayCountHeld);
+                    } else if (forceUnoccluded) {
                         kept = 1.0f;
                     } else if (L.presenceShadows) {
                         sample::Identity sid = bid;
@@ -2541,12 +2580,13 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                         kept = 1.0f - rayPresence(c, backend, shadowFrom, wi, shadowNear, shadowFar, pv.depth,
                                                   shade::luminance(pv.T) < 1.0f - c.presenceQuality, ps);
                     } else {
+                        backend.countRay(RayCountBsdf);
                         kept = backend.visible(shadowFrom, wi, shadowNear, shadowFar) ? 1.0f : lightShadowKept(L, shadowFar);
                     }
                 }
                 const Color directBefore = direct;
                 Color tr{1, 1, 1};
-                if (kept > 0.0f) {
+                if (kept > 0.0f && !held) {
                     if (kept < 1.0f) direct = direct * kept;
                     if (c.volumeCount) {
                         sample::Identity tid = bid;
@@ -2557,8 +2597,9 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     }
                     radiance += direct;
                 }
-                // LPE: the light the sample reached (addDirectVisibleBsdfLobeSampleContributionBundled).
-                if (lpeOn && lightHit && !shade::isBlack(directBefore) && shade::finite3(directBefore)) {
+                // LPE: the light the sample reached (addDirectVisibleBsdfLobeSampleContributionBundled; held: when the
+                // bounce is traced).
+                if (lpeOn && !held && lightHit && !shade::isBlack(directBefore) && shade::finite3(directBefore)) {
                     const int state = aov::lpeNext(at, aov::lpeScatter(at, pv.lpe, lobe.type, lobeLpeLabel(lobe)), aov::LpeLight,
                                                    backend.light(lightIndex).lpeLabel);
                     const bool presenceShadows = backend.light(lightIndex).presenceShadows;
@@ -2570,14 +2611,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                         aov::light(at, aovs, aovDepths, directBefore, nullptr, aov::PrefixUnoccluded, state);
                     }
                 }
-                if (!lobeIndirect || shade::isExactlyZero(indirect) || !shade::finite3(indirect)) continue;
-                // Transparency threshold (mirror transmission lobes accumulate opacity).
-                float opacity = pv.accumOpacity;
-                if (mirror && (lobe.type & shade::Transmission)) {
-                    const float transparency = (f.x + f.y + f.z) / 3.0f;
-                    opacity = pv.accumOpacity + (1 - transparency) * (1 - pv.accumOpacity);
-                    if (opacity > c.transparencyThreshold) continue;
-                }
+                if (!bounces) continue;  // its indirect light, under the transparency threshold (mirror transmission lobes accumulate opacity)
                 if (top >= MaxPending) {
                     stackFull = true;
                     return;
@@ -2619,6 +2653,11 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 }
                 child.minRoughness[0] = shade::clampf(child.minRoughness[0], pv.minRoughness[0], 1.0f);
                 child.minRoughness[1] = shade::clampf(child.minRoughness[1], pv.minRoughness[1], 1.0f);
+                if (held) {  // bounce-ray reuse: the light reached, settled when this bounce is traced
+                    child.heldLight = lightIndex;
+                    child.heldFar = shadowFar;
+                    child.held = directBefore;
+                }
                 // The post scatter extra AOVs (aovAccumPostScatterExtraAovs): each one's value times the sample's
                 // throughput, through its 'U:' event after the scattering.
                 if (lpeOn && bsdf.extraPost)

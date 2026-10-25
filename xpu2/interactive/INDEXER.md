@@ -175,6 +175,29 @@ Where a sample would stop to be sorted: after the trace of a bounce ray, before 
 shading (the loop-carried state: the pending stack, top, radiance, alpha, the Cryptomatte marks and events, the AOV
 values, the backend's texture-miss flag; the camera and time are made again from the sample's identity).
 
+## 10. Shadow rays: a bounce stands for its BSDF sample's shadow ray
+
+What can be cut without changing MoonRay's estimator: not the light samples, the BSDF samples, their weights or a
+Russian roulette (each changes the picture's noise); shadow rays of a sample with no contribution are skipped already,
+as MoonRay skips them. A BSDF sample that reaches a light and goes on as a bounce traces two rays the same way from the
+same point: the shadow ray, then the bounce. The bounce's nearest hit answers the shadow ray's question (occluded
+exactly when it is nearer than the shadow ray's end), so the light's contribution is held on the bounce (Pending::held)
+and settled when it is traced, in both lanes. Not where the two could differ: presence shadows, ray termination
+lights, shadow linking, a minimum shadow distance, a toon shadow origin, volumes, or a bounce type whose occluders are
+not the shadow rays' (Config::shadowReuse, from the meshes' visibility; XPU2_SESSION_SHADOW_REUSE=0 turns it off).
+
+The Modo scene (session 98, 640x360, GPU only, beauty): shadow rays a sample 12.21 to 6.01 (light samples' 5.28,
+BSDF samples' 6.93 to 0.73), rays for hits 7.20 either way; 5.01 s to 4.76 s. The bounces got dearer: shadow rays went
+from 55% of the samples' clock ticks to 38%, rays for hits from 16% to 28%: a shadow ray traced the same way just
+before had brought the acceleration structure's nodes into the caches. Full size, both lanes, every output: 19.8 s to
+18.7 s. The pictures with and without it agree to rounding (21 outputs within 0.0005, mean ratio 1.0000).
+
+The GPU round on session 98 found one place it did not: a bounce that meets a surface of partial presence goes on
+through it as a copy of itself, and the copy settled the held light a second time (sw-textures, presence maps: block
+error 0.0033 to 0.0116, mean ratio 1.0007). The light is settled at the first surface the bounce meets, where its
+shadow ray would have stopped (presence shadows off: a shadow ray sees no presence), and the ray going on through it
+holds nothing (session 99).
+
 ## Order
 
 1. Classifier from the admission rules, with the GPU capability table; decisions shown in the session's log.

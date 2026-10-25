@@ -19,7 +19,12 @@ inline Config config(const cpu::PlanView& p){auto e=p->source->routing->epoch;Co
   c.invVolumeQuality=1.0f/p->volumeQuality;c.invVolumeShadowQuality=1.0f/p->volumeShadowQuality;
   for(int i=0;i<4;++i)c.viewport[i]=p->viewport[i];c.textureDiffScale=p->textureDiffScale;
   c.pixelSamples=p->pixelSamples.empty()?nullptr:p->pixelSamples.data();
-  c.motionBlur=p->motion.on?1u:0u;c.shutterBias=p->shutterBias;c.lightFilters=p->filterLists.empty()?0u:1u;c.modoSwitches=p->modoSwitches;}
+  c.motionBlur=p->motion.on?1u:0u;c.shutterBias=p->shutterBias;c.lightFilters=p->filterLists.empty()?0u:1u;c.modoSwitches=p->modoSwitches;
+  // Bounce-ray reuse: the bounce ray types each mesh is as visible to as to shadow rays (2); none with shadow linking,
+  // whose occluders depend on the light.
+  const char* reuse=std::getenv("XPU2_SESSION_SHADOW_REUSE");
+  if(p->shadowLinks.empty()&&!(reuse&&reuse[0]=='0')){U32 mask=0;for(U32 b=4;b;b<<=1){bool same=true;
+    for(const auto& m:p->meshes)if(((m.visibility&2u)!=0)!=((m.visibility&b)!=0)){same=false;break;}if(same)mask|=b;}c.shadowReuse=mask;}}
  return c;}
 // Primary ray differentials projected onto the admitted XY plane. MoonRay's
 // non-tessellated triangle without a named ST attribute uses (0,0),(1,0),(1,1).
