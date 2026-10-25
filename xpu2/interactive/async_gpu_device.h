@@ -109,6 +109,12 @@ static __device__ bool curveHit(const curves::Set& c, const surface::Ray& ray, r
 struct GpuBackend {
     // The sample's time in the shutter (async_integrator.h sets it): every ray is traced at it.
     float time = 0.0f;
+    // The GPU profile (XPU2_PROFILE): this thread's clock ticks in each stage, added to the launch's as it leaves.
+    unsigned long long prof[ProfileStages] = {};
+    __device__ long long tick() const { return params.profile ? clock64() : 0; }
+    __device__ void tock(U32 stage, long long from) {
+        if (params.profile) prof[stage] += (unsigned long long)(clock64() - from);
+    }
     // Each sample starts here (async_integrator.h): its time, and no texture miss or deferral yet.
     __device__ void setTime(float t) {
         time = t;
@@ -140,11 +146,13 @@ struct GpuBackend {
     __device__ float filterVdb(U32, U32, surface::V3) const { return 1.0f; }
     __device__ const lights::FilterList* filterList(U32, U32) const { return nullptr; }
     __device__ __noinline__ resume::Hit trace(const surface::Ray& ray) {
+        const long long from = tick();
         const resume::Hit h = traceSurfaces(ray);
         // A stand-in before the hit (or anywhere along a ray that hits nothing) defers the sample.
         if (params.standInTraversable &&
             standInBetween(ray.origin, ray.direction, ray.nearT, h.geom != ~0u && h.t > ray.nearT ? h.t : ray.farT))
             deferFlag = true;
+        tock(ProfileTrace, from);
         return h;
     }
     __device__ resume::Hit traceSurfaces(const surface::Ray& ray) {
@@ -282,28 +290,35 @@ struct GpuBackend {
     // program is built whole (no XPU2_MATERIAL_MODULE).
     __device__ unsigned shadeMaterial(const shade::MaterialRecord& m, const shade::State& st, const DeviceTextures& textures,
                                       shade::Bsdf& bsdf, float& presence) {
+        const long long from = tick();
 #if XPU2_MATERIAL_MODULE
-        return optixDirectCall<unsigned, const shade::MaterialRecord*, const float*, const shade::State*, const DeviceTextures*,
-                               shade::Bsdf*, float*, shade::DwaParams*, shade::GlitterScratch*>(
+        const unsigned status = optixDirectCall<unsigned, const shade::MaterialRecord*, const float*, const shade::State*, const DeviceTextures*,
+                                                shade::Bsdf*, float*, shade::DwaParams*, shade::GlitterScratch*>(
             CallShade, &m, params.materialPool, &st, &textures, &bsdf, &presence, dwaSlots(), glitter());
 #else
-        return shade::shadeMaterial(m, params.materialPool, st, textures, bsdf, presence, dwaSlots(), glitter());
+        const unsigned status = shade::shadeMaterial(m, params.materialPool, st, textures, bsdf, presence, dwaSlots(), glitter());
 #endif
+        tock(ProfileShade, from);
+        return status;
     }
     __device__ unsigned materialPresence(const shade::MaterialRecord& m, const shade::State& st, const DeviceTextures& textures,
                                          float& presence) {
+        const long long from = tick();
 #if XPU2_MATERIAL_MODULE
-        return optixDirectCall<unsigned, const shade::MaterialRecord*, const float*, const shade::State*, const DeviceTextures*, float*>(
-            CallPresence, &m, params.materialPool, &st, &textures, &presence);
+        const unsigned status = optixDirectCall<unsigned, const shade::MaterialRecord*, const float*, const shade::State*, const DeviceTextures*,
+                                                float*>(CallPresence, &m, params.materialPool, &st, &textures, &presence);
 #else
-        return shade::materialPresence(m, params.materialPool, st, textures, presence);
+        const unsigned status = shade::materialPresence(m, params.materialPool, st, textures, presence);
 #endif
+        tock(ProfilePresence, from);
+        return status;
     }
     __device__ bool visible(surface::V3 o, surface::V3 d) { return visible(o, d, __int_as_float(0x7f800000)); }
     // Unoccluded up to distance (a shadow ray toward a light).
     __device__ bool visible(surface::V3 o, surface::V3 d, float distance) { return visible(o, d, 0.0f, distance); }
     // Unoccluded between near and far (a shadow ray from a curve skips its epsilon).
     __device__ bool visible(surface::V3 o, surface::V3 d, float near, float distance) {
+        const long long from = tick();
         unsigned occluded = 1, unused = 0;
         optixTrace(params.traversable, f3(o), f3(d), near, distance, time, 2u,  // SHADOW
                    OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT |
@@ -311,6 +326,7 @@ struct GpuBackend {
                    0, 1, 1, occluded, unused);
         // Unoccluded by what the GPU renders: a stand-in on the way could occlude it, so the CPU decides.
         if (occluded == 0 && params.standInTraversable && standInBetween(o, d, near, distance)) deferFlag = true;
+        tock(ProfileShadow, from);
         return occluded == 0;
     }
     __device__ shade::Bsdf& bsdf() {
@@ -339,6 +355,7 @@ struct GpuBackend {
     __device__ const float* walkSequences() const { return params.walkSequences; }
     __device__ U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max, U32 mask) {
         if (!params.volumeTraversable) return 0;
+        const long long from = tick();
         U32 n = 0;
         float t = tnear;
         for (U32 k = 0; k < 4 * max && n < max; ++k) {
@@ -364,6 +381,7 @@ struct GpuBackend {
             if (!(n > 0 && x[n - 1].t == h.t && x[n - 1].volume == v && x[n - 1].flags == flags)) x[n++] = volume::Crossing{h.t, v, flags};
             t = h.t + fmaxf(1e-6f, h.t * 1e-6f);
         }
+        tock(ProfileVolumes, from);
         return n;
     }
     __device__ U32 lightSet(U32 geom) const { return params.meshLights[geom]; }

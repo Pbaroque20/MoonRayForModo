@@ -626,6 +626,18 @@ int session(const Args& args, const fs::path& directory) {
                                 "fine-detail tiles loaded %llu, evicted %llu\n",
                                 result.timeline.gridEmpty, result.seconds, (unsigned long long)result.launches, result.gpuItemsPerSecond,
                                 (unsigned long long)result.parkedRun, (unsigned long long)result.fineLoaded, (unsigned long long)result.fineEvicted);
+                if (result.gpuProfile[async::ProfileSample]) {
+                    // The GPU profile (XPU2_PROFILE): each stage's share of the samples' time on the GPU.
+                    const double all = double(result.gpuProfile[async::ProfileSample]);
+                    const unsigned long long inStages = result.gpuProfile[async::ProfileTrace] + result.gpuProfile[async::ProfileShadow] +
+                                         result.gpuProfile[async::ProfileShade] + result.gpuProfile[async::ProfilePresence] +
+                                         result.gpuProfile[async::ProfileVolumes];
+                    std::printf("XPU2 profile: rays %.1f%%, shadow rays %.1f%%, materials %.1f%%, presence %.1f%%, volume crossings %.1f%%, "
+                                "the rest (lights, lobes, AOVs, the path tracer) %.1f%%\n",
+                                100 * result.gpuProfile[async::ProfileTrace] / all, 100 * result.gpuProfile[async::ProfileShadow] / all,
+                                100 * result.gpuProfile[async::ProfileShade] / all, 100 * result.gpuProfile[async::ProfilePresence] / all,
+                                100 * result.gpuProfile[async::ProfileVolumes] / all, 100 * (all - double(inStages)) / all);
+                }
                 if (result.provisional)
                     std::printf("XPU2: %llu provisional samples (textures read a level up while their tiles landed), rendered again in full: "
                                 "%llu on the GPU, %llu on the CPU\n",

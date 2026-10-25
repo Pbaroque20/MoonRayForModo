@@ -661,6 +661,7 @@ public:
         memset32(scene_.provSums->pointer, 0, pixels * 8);
         memset32(scene_.provCounts->pointer, 0, pixels);
         partial_ = partial;
+        std::fill(profile_, profile_ + ProfileStages, 0ull);
         refineHead_ = 0;
         refinesOut_.clear();
         memset32(state_->pointer, 0, sizeof(DeviceState) / 4);
@@ -771,6 +772,7 @@ public:
         out.refinesRun = f.refines;
         out.samples = f.samples;
         out.errors = state.errors;
+        std::copy(state.profile, state.profile + ProfileStages, profile_);  // the frame's so far
         if (state.exceptionIndex && !exceptionLogged_) {
             exceptionLogged_ = true;
             std::fprintf(stderr, "XPU2: OptiX exception %d at launch index %u\n", int(state.exceptionCode), state.exceptionIndex - 1);
@@ -908,6 +910,8 @@ public:
     bool tileResident(U32 tile) const { return tile && tile < fine_.tileSlot.size() && fine_.tileSlot[tile] != NoSlot; }
     void landTiles() { commitTiles(); }
     bool partial() const { return partial_; }
+    // The GPU profile (XPU2_PROFILE): the frame's clock ticks in each stage (ProfileStage), as of the last launch collected.
+    const U64L* profile() const { return profile_; }
     // The chunks a launch with refineCount provisional samples may take without overflowing their ring.
     U32 chunkRoom(U32 refineCount) const {
         if (!partial_) return options_.maxChunksPerLaunch;
@@ -1775,6 +1779,7 @@ private:
         p.deferredCapacity = deferredCapacity_ ? deferredCapacity_ : 1u;
         p.state = reinterpret_cast<DeviceState*>(state_->pointer);
         p.partial = partial_ ? 1u : 0u;
+        p.profile = std::getenv("XPU2_PROFILE") ? 1u : 0u;
         p.refineCapacity = refineCapacity_;
         p.lowFlags = reinterpret_cast<U32*>(lowFlags_->pointer);
         p.provSums = reinterpret_cast<double*>(scene_.provSums->pointer);
@@ -1880,6 +1885,7 @@ private:
     // place in it and those read but not yet taken; each launch slot's provisional samples to render again.
     bool partial_ = false;
     bool exceptionLogged_ = false;  // the diagnostic's first exception logged
+    U64L profile_[ProfileStages] = {};
     B lowFlags_, refines_;
     U32 refineCapacity_ = 1u << 22;
     U64 refineHead_ = 0;

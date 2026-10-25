@@ -110,6 +110,8 @@ struct RenderResult {
     // Partial shading: provisional samples the GPU made (one again each time one rendered again still read a coarser
     // level), and those rendered again in full on the GPU and on the CPU.
     U64 provisional = 0, refinedGpu = 0, refinedCpu = 0;
+    // The GPU profile (XPU2_PROFILE): clock ticks in each stage (ProfileStage), summed over the GPU's threads.
+    U64 gpuProfile[ProfileStages] = {};
     // The cells by suitability of a grid's first frame on both devices (device_suit.h): cells, those the CPU took
     // (of them, those the GPU would mostly defer), the lanes' rate ratio used, the probe's time.
     U32 seededCells = 0, seededCpuCells = 0, seededDeferCells = 0;
@@ -676,6 +678,7 @@ public:
         // The lanes' rate ratio for the next grid's seeding.
         if (useGpu && useCpu && !drained && gpuRate > 0 && result.cpuSamplesPerSecond > 0) deviceRatio_ = gpuRate / result.cpuSamplesPerSecond;
         if (useGpu) {
+            std::copy(gpu_->profile(), gpu_->profile() + ProfileStages, result.gpuProfile);
             result.fineLoaded = gpu_->fineLoaded();
             result.fineEvicted = gpu_->fineEvicted();
         }

@@ -162,6 +162,16 @@ threads then run their different materials' maps one after another. MoonRay XPU 
 queue at a time (on the CPU); XPU2 is to do the same on the GPU: a bounce's hits written out, sorted by material, and
 shaded in order, with the path's state in memory between the stages (a wavefront), exactly as the megakernel shades.
 
+On hold (2026-10-25). Those timings came from the launches that did not fill the GPU (section 7). With full launches
+(session 96, the same scene, 640x360, beauty only): depth 0 1.24 s, 1 3.43 s, 2 4.72 s, 4 5.01 s; a bounce costs 1.8x
+the first hit, not 5x. And the scene has two materials (its layer gives each of its two meshes one layered subsurface
+material; the 489 map nodes are inside them), so sorting by material would group threads into at most two sets. The
+GPU profile (XPU2_PROFILE: rays, shadow rays, materials, presence, volume crossings, the rest, as shares of the
+samples' clock ticks) is to say where a bounce's time goes before anything is built; a scene of many materials is to
+be profiled too. Where a sample would stop to be sorted: after the trace of a bounce ray, before its volumes and
+shading (the loop-carried state: the pending stack, top, radiance, alpha, the Cryptomatte marks and events, the AOV
+values, the backend's texture-miss flag; the camera and time are made again from the sample's identity).
+
 ## Order
 
 1. Classifier from the admission rules, with the GPU capability table; decisions shown in the session's log.

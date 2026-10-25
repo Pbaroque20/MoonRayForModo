@@ -11,6 +11,9 @@ namespace xpu2::interactive::async {
 
 using U64L = unsigned long long;
 constexpr U32 Slots = 4;  // launches whose claim counters may be live at once
+// The GPU profile's stages (XPU2_PROFILE): rays, shadow rays, the material callables, presence, volume crossings, and
+// whole samples (the rest of a sample's time is the path tracer's own: lights, lobes, AOVs).
+enum ProfileStage : U32 { ProfileTrace = 0, ProfileShadow, ProfileShade, ProfilePresence, ProfileVolumes, ProfileSample, ProfileStages };
 
 // A sample parked by a texture miss in the GPU's bounded queue (TEXWAIT). It
 // runs again on the GPU once its tile is resident, with the same identity.
@@ -51,6 +54,8 @@ struct DeviceState {
     U32 refineClaimed[Slots];
     // A diagnostic build's first OptiX exception (XPU2_OPTIX_EXCEPTIONS): its code and its launch index, plus one.
     U32 exceptionCode, exceptionIndex;
+    // The GPU profile (XPU2_PROFILE): clock ticks in each stage, summed over the frame's threads.
+    U64L profile[ProfileStages];
 };
 constexpr U32 NoPass = ~0u;
 
@@ -184,6 +189,7 @@ struct LaunchParams {
     // provisional samples in pinned host memory (refines), and those this launch renders again in full first
     // (refineIn, refineInCount of them, in pinned host memory).
     U32 partial, refineCapacity;
+    U32 profile, pad3;  // the GPU profile on (XPU2_PROFILE)
     U32* lowFlags;
     double* provSums;
     U32* provCounts;

@@ -214,6 +214,12 @@ static __device__ __noinline__ void run(GpuBackend& backend, U32 pixel, U32 inde
         r.cryptoCapacity = params.cryptoEvents;
     }
     const long long began = params.heat ? clock64() : 0;
+    const long long sampleFrom = backend.tick();
+    struct Whole {  // the GPU profile: the whole sample, however it ends
+        GpuBackend& b;
+        long long from;
+        __device__ ~Whole() { b.tock(ProfileSample, from); }
+    } whole{backend, sampleFrom};
     U32* mark = params.partial ? params.lowFlags + optixGetLaunchIndex().x : nullptr;
     if (mark) *mark = 0u;
     const SampleStatus status = integrate(*params.config, pixel, index, backend, r);
@@ -404,4 +410,7 @@ extern "C" __global__ void __raygen__async() {
     bool chain;
     const Refine* old;
     while (feed.next(pixel, index, tries, pass, chain, old)) run(backend, pixel, index, tries, pass, chain, old);
+    if (params.profile)  // the thread's profile into the launch's, once
+        for (U32 k = 0; k < ProfileStages; ++k)
+            if (backend.prof[k]) atomicAdd(&params.state->profile[k], backend.prof[k]);
 }
