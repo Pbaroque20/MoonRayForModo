@@ -19,7 +19,7 @@ file(GLOB deviceHeaders CONFIGURE_DEPENDS src/device/*.h)
 add_custom_command(OUTPUT "${MOONLIGHTIPR_PTX}"
   COMMAND "${PYTHON_EXECUTABLE}" "${ROOT}/tools/compile_moonlightipr_ptx.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/device/kernel.cu" "${MOONLIGHTIPR_PTX}"
-  DEPENDS src/device/kernel.cu ${deviceHeaders} "${ROOT}/tools/compile_moonlightipr_ptx.py"
+  DEPENDS src/device/kernel.cu ${deviceHeaders} "${ROOT}/tools/compile_moonlightipr_ptx.py" "${ROOT}/native-port/maps/ModoProcedural/modo_patterns.h"
   VERBATIM)
 add_custom_target(moonlightipr_ptx DEPENDS "${MOONLIGHTIPR_PTX}")
 

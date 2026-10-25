@@ -19,7 +19,8 @@ ALL = 31
 def main():
     source, folder = Path(sys.argv[1]), Path(sys.argv[2])
     folder.mkdir(parents=True, exist_ok=True)
-    sources = [source] + sorted(source.parent.glob('*.h')) + [ROOT / 'tools/compile_moonlightipr_ptx.py']
+    # The procedural patterns the kernel shares with MoonRay's ModoProceduralMap count among its sources too.
+    sources = [source] + sorted(source.parent.glob('*.h')) + [ROOT / 'tools/compile_moonlightipr_ptx.py', ROOT / 'native-port/maps/ModoProcedural/modo_patterns.h']
     newest = max(path.stat().st_mtime for path in sources)
     wanted = [features for features in range(ALL) if not (folder / ('MoonLightIPRKernel_f%02d.ptx' % features)).is_file()
               or (folder / ('MoonLightIPRKernel_f%02d.ptx' % features)).stat().st_mtime < newest]

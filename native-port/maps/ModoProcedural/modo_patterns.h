@@ -10,6 +10,7 @@
 
 #if defined(ISPC)
 #define MP_FUNC static inline
+#define MP_HEAVY static inline
 #define MP_FLOOR(x) floor(x)
 #define MP_SQRT(x) sqrt(x)
 #define MP_ABS(x) abs(x)
@@ -19,6 +20,9 @@
 #define MP_MAX(x, y) max(x, y)
 #elif defined(__CUDACC__)
 #define MP_FUNC static __device__ __forceinline__
+// Called rather than copied into every caller: copied, the patterns made each MoonLightIPR kernel nine times its size,
+// which the graphics driver then took minutes to compile before the first picture.
+#define MP_HEAVY static __device__ __noinline__
 #define MP_FLOOR(x) floorf(x)
 #define MP_SQRT(x) sqrtf(x)
 #define MP_ABS(x) fabsf(x)
@@ -29,6 +33,7 @@
 #else
 #include <cmath>
 #define MP_FUNC static inline
+#define MP_HEAVY static inline
 #define MP_FLOOR(x) std::floor(x)
 #define MP_SQRT(x) std::sqrt(x)
 #define MP_ABS(x) std::fabs(x)
@@ -83,7 +88,7 @@ MP_FUNC float mp_gradient(unsigned int h, float x, float y, float z) {
     float v = k < 4 ? y : ((k == 12 || k == 14) ? x : z);
     return (((k & 1) != 0) ? -u : u) + (((k & 2) != 0) ? -v : v);
 }
-MP_FUNC float mp_noise(float x, float y, float z, int seed) {
+MP_HEAVY float mp_noise(float x, float y, float z, int seed) {
     float fx = MP_FLOOR(x), fy = MP_FLOOR(y), fz = MP_FLOOR(z);
     int ix = (int)fx, iy = (int)fy, iz = (int)fz;
     x = x - fx; y = y - fy; z = z - fz;
@@ -97,7 +102,7 @@ MP_FUNC float mp_noise(float x, float y, float z, int seed) {
 }
 
 // Noise over several frequencies: each ratio times finer and ampRatio times weaker. turbulent adds their sizes.
-MP_FUNC float mp_fractal(float x, float y, float z, int octaves, float ratio, float ampRatio, int turbulent, int seed) {
+MP_HEAVY float mp_fractal(float x, float y, float z, int octaves, float ratio, float ampRatio, int turbulent, int seed) {
     float sum = 0.0f, amplitude = 1.0f, weight = 0.0f, frequency = 1.0f;
     for (int i = 0; i < octaves; i++) {
         float n = mp_noise(x * frequency, y * frequency, z * frequency, seed + i * 7);
@@ -110,7 +115,7 @@ MP_FUNC float mp_fractal(float x, float y, float z, int octaves, float ratio, fl
 }
 
 // Modo's Noise: simple (type 0), fractal (1) or turbulence (2).
-MP_FUNC float mp_noise_pattern(int type, float x, float y, float z, float freqs, float freqRatio, float ampRatio) {
+MP_HEAVY float mp_noise_pattern(int type, float x, float y, float z, float freqs, float freqRatio, float ampRatio) {
     int octaves = type == 0 ? 1 : (int)MP_MAX(1.0f, MP_MIN(16.0f, freqs));
     float ratio = MP_MAX(1.0f, freqRatio), weaker = MP_MAX(0.0f, ampRatio);
     if (type == 2) return mp_clamp01(1.6f * mp_fractal(x, y, z, octaves, ratio, weaker, 1, 11));
@@ -119,7 +124,7 @@ MP_FUNC float mp_noise_pattern(int type, float x, float y, float z, float freqs,
 
 // One frequency of Modo's Cellular, a cell a unit across: a point in each cell, round (type 0) within the cell's
 // width of its point, angular (1) further than the gap from the cell's edge, each cell darkened by chance by variation.
-MP_FUNC float mp_cells(float x, float y, float z, int round, float width, float soft, float variation, int seed) {
+MP_HEAVY float mp_cells(float x, float y, float z, int round, float width, float soft, float variation, int seed) {
     float cx = MP_FLOOR(x), cy = MP_FLOOR(y), cz = MP_FLOOR(z);
     float first = 9.0f, second = 9.0f;
     int nx = 0, ny = 0, nz = 0;
@@ -139,7 +144,7 @@ MP_FUNC float mp_cells(float x, float y, float z, int round, float width, float 
     float inside = round != 0 ? mp_step(0.5f * width - first, 0.0f, soft) : mp_step(0.5f * (second - first), 0.5f * (1.0f - width), soft);
     return inside * (1.0f - mp_clamp01(variation) * mp_random(nx, ny, nz, seed + 13));
 }
-MP_FUNC float mp_cellular(int type, float x, float y, float z, float cellWidth, float transWidth, float freqs, float freqRatio,
+MP_HEAVY float mp_cellular(int type, float x, float y, float z, float cellWidth, float transWidth, float freqs, float freqRatio,
                           float ampRatio, float variation) {
     float width = mp_clamp01(cellWidth), soft = 0.25f * MP_MAX(0.0f, transWidth);
     float total = 0.0f, weight = 0.0f, amplitude = 1.0f, frequency = 1.0f;
@@ -180,13 +185,13 @@ MP_FUNC float mp_grid_distance(int type, float x, float y, float z) {
     float dx = MP_ABS(tx - 0.5f), dy = MP_ABS(ty - 0.5f);
     return MP_ABS(MP_MAX(dx, dx * 0.5f + dy * 0.75f) - 0.5f);
 }
-MP_FUNC float mp_grid(int type, float x, float y, float z, float lineWidth, float transWidth) {
+MP_HEAVY float mp_grid(int type, float x, float y, float z, float lineWidth, float transWidth) {
     float half = 0.5f * mp_clamp01(lineWidth), soft = 0.5f * MP_MAX(0.0f, transWidth);
     return 1.0f - mp_step(mp_grid_distance(type, x, y, z), half, soft);
 }
 
 // Modo's Dots: on squares (type 0), a hexagonal lattice (1) or cubes (2), dotWidth of a cell across.
-MP_FUNC float mp_dots(int type, float x, float y, float z, float dotWidth, float transWidth) {
+MP_HEAVY float mp_dots(int type, float x, float y, float z, float dotWidth, float transWidth) {
     float d;
     if (type == 1) {
         float ry = y * 2.0f;
@@ -203,7 +208,7 @@ MP_FUNC float mp_dots(int type, float x, float y, float z, float dotWidth, float
 
 // Modo's Wood: rings round the locator's Y axis, ringScale apart, bent by a slow wander and roughened by a grain
 // that runs along Y. Dark at the start of a ring, easing to light across it, as a year's growth does.
-MP_FUNC float mp_wood(float x, float y, float z, float ringScale, float wave, float waveScale, float grain, float grainScale) {
+MP_HEAVY float mp_wood(float x, float y, float z, float ringScale, float wave, float waveScale, float grain, float grainScale) {
     float scale = MP_MAX(0.001f, waveScale), fine = MP_MAX(0.001f, grainScale);
     float wander = mp_noise(x / scale, y / scale, z / scale, 3) * MP_MAX(0.0f, wave);
     float ring = mp_fract(MP_SQRT(x * x + z * z) / MP_MAX(0.001f, ringScale) + wander);
@@ -214,7 +219,7 @@ MP_FUNC float mp_wood(float x, float y, float z, float ringScale, float wave, fl
 
 // Modo's Weave: yarns a unit apart across the locator's X and Y, over and under by turns, highest along their middle
 // and where they pass over.
-MP_FUNC float mp_weave(float x, float y, float yarnWidth, float roundness) {
+MP_HEAVY float mp_weave(float x, float y, float yarnWidth, float roundness) {
     float cx = MP_FLOOR(x), cy = MP_FLOOR(y);
     float fx = x - cx, fy = y - cy;
     float width = MP_MAX(0.05f, mp_clamp01(yarnWidth));
@@ -228,7 +233,7 @@ MP_FUNC float mp_weave(float x, float y, float yarnWidth, float roundness) {
 }
 
 // Modo's Ripples: rings spreading from sources scattered through each unit cube, their crests added up.
-MP_FUNC float mp_ripples(float x, float y, float z, float sources, float wavelength, float phase) {
+MP_HEAVY float mp_ripples(float x, float y, float z, float sources, float wavelength, float phase) {
     int count = (int)MP_MAX(1.0f, MP_MIN(64.0f, sources));
     float length = MP_MAX(0.01f, wavelength), total = 0.0f;
     float fx = mp_fract(x), fy = mp_fract(y), fz = mp_fract(z);
@@ -255,7 +260,7 @@ MP_FUNC float mp_gain(float t, float g) {
 // Their Noise Type: Perlin 0, EnhancedPerlin 1, Gradient 2, Value 3, GradientValue 4, Impulse 5, Lattice 6, Bubble 7.
 
 // Smooth value noise, about -1 to 1: a random number at each whole point, eased between.
-MP_FUNC float mp_value_noise(float x, float y, float z, int seed) {
+MP_HEAVY float mp_value_noise(float x, float y, float z, int seed) {
     float fx = MP_FLOOR(x), fy = MP_FLOOR(y), fz = MP_FLOOR(z);
     int ix = (int)fx, iy = (int)fy, iz = (int)fz;
     float u = mp_smooth(x - fx), v = mp_smooth(y - fy), w = mp_smooth(z - fz);
@@ -267,7 +272,7 @@ MP_FUNC float mp_value_noise(float x, float y, float z, int seed) {
 }
 
 // Sparse convolution: a few impulses of random strength scattered through each cell, each a smooth bump.
-MP_FUNC float mp_impulse_noise(float x, float y, float z, int seed) {
+MP_HEAVY float mp_impulse_noise(float x, float y, float z, int seed) {
     float cx = MP_FLOOR(x), cy = MP_FLOOR(y), cz = MP_FLOOR(z), total = 0.0f;
     for (int k = -1; k <= 1; k++) {
         for (int j = -1; j <= 1; j++) {
@@ -285,7 +290,7 @@ MP_FUNC float mp_impulse_noise(float x, float y, float z, int seed) {
 }
 
 // Bubbles: high at the middle of each cell's point, falling to the cells' edges.
-MP_FUNC float mp_bubble_noise(float x, float y, float z, int seed) {
+MP_HEAVY float mp_bubble_noise(float x, float y, float z, int seed) {
     float cx = MP_FLOOR(x), cy = MP_FLOOR(y), cz = MP_FLOOR(z), first = 9.0f;
     for (int k = -1; k <= 1; k++) {
         for (int j = -1; j <= 1; j++) {
@@ -301,7 +306,7 @@ MP_FUNC float mp_bubble_noise(float x, float y, float z, int seed) {
 }
 
 // One of Enhance: Modo's noise bases, about -1 to 1.
-MP_FUNC float mp_basis(int type, float x, float y, float z, int seed) {
+MP_HEAVY float mp_basis(int type, float x, float y, float z, int seed) {
     if (type == 3 || type == 6) return mp_value_noise(x, y, z, seed);
     if (type == 4) return 0.5f * (mp_noise(x, y, z, seed) + mp_value_noise(x, y, z, seed + 101));
     if (type == 5) return mp_impulse_noise(x, y, z, seed);
@@ -312,7 +317,7 @@ MP_FUNC float mp_basis(int type, float x, float y, float z, int seed) {
 
 // Fractal sums, as Musgrave writes them: octaves of the basis, each lacunarity times finer and lacunarity to the -h
 // weaker. absolute adds the bases' sizes. Returned about -1 to 1 (0 to 1 with absolute).
-MP_FUNC float mp_fbm(int type, float x, float y, float z, int seed, float octaves, float lacunarity, float h, int absolute) {
+MP_HEAVY float mp_fbm(int type, float x, float y, float z, int seed, float octaves, float lacunarity, float h, int absolute) {
     float sum = 0.0f, weight = 0.0f, frequency = 1.0f;
     float lac = MP_MAX(1.01f, lacunarity);
     int count = (int)MP_MAX(1.0f, MP_MIN(12.0f, octaves));
@@ -339,7 +344,7 @@ typedef struct {
 
 // Enhance: Modo's Noise patterns, 100 on, in the order of their names. Each reads its settings as listed beside it
 // (procedurals.ENHANCE has the same lists), its Noise Type being type.
-MP_FUNC float mp_enhance_noise(int pattern, int type, float x, float y, float z, MP_Settings s) {
+MP_HEAVY float mp_enhance_noise(int pattern, int type, float x, float y, float z, MP_Settings s) {
     int seed = (int)s.v[0];
     float t = 0.0f;
     if (pattern == 100) {
@@ -491,9 +496,201 @@ MP_FUNC float mp_enhance_noise(int pattern, int type, float x, float y, float z,
     return t;
 }
 
+// Cells: a point scattered in each unit cube, jitter of the cube from its middle. what is 0 to 3 for the distance to
+// the nearest to the fourth nearest point, 4 for the second less the first (0 on the cells' edges), 5 for the nearest
+// cell's own random number.
+MP_HEAVY float mp_worley(float x, float y, float z, int seed, float jitter, int what) {
+    float cx = MP_FLOOR(x), cy = MP_FLOOR(y), cz = MP_FLOOR(z);
+    float d1 = 9.0f, d2 = 9.0f, d3 = 9.0f, d4 = 9.0f;
+    int nx = 0, ny = 0, nz = 0;
+    float spread = mp_clamp01(jitter);
+    for (int k = -1; k <= 1; k++) {
+        for (int j = -1; j <= 1; j++) {
+            for (int i = -1; i <= 1; i++) {
+                int a = (int)cx + i, b = (int)cy + j, c = (int)cz + k;
+                float px = (float)a + 0.5f + spread * (mp_random(a, b, c, seed) - 0.5f);
+                float py = (float)b + 0.5f + spread * (mp_random(a, b, c, seed + 1) - 0.5f);
+                float pz = (float)c + 0.5f + spread * (mp_random(a, b, c, seed + 2) - 0.5f);
+                float d = MP_SQRT((x - px) * (x - px) + (y - py) * (y - py) + (z - pz) * (z - pz));
+                if (d < d1) { d4 = d3; d3 = d2; d2 = d1; d1 = d; nx = a; ny = b; nz = c; }
+                else if (d < d2) { d4 = d3; d3 = d2; d2 = d; }
+                else if (d < d3) { d4 = d3; d3 = d; }
+                else if (d < d4) d4 = d;
+            }
+        }
+    }
+    if (what == 0) return d1;
+    if (what == 1) return d2;
+    if (what == 2) return d3;
+    if (what == 3) return d4;
+    if (what == 4) return d2 - d1;
+    return mp_random(nx, ny, nz, seed + 5);
+}
+
+// Cells over several frequencies, each lacunarity times finer and lacunarity to the -h weaker.
+MP_HEAVY float mp_worley_fractal(float x, float y, float z, int seed, float jitter, int what, float octaves, float lacunarity, float h) {
+    float sum = 0.0f, weight = 0.0f, frequency = 1.0f;
+    int count = (int)MP_MAX(1.0f, MP_MIN(8.0f, octaves));
+    for (int i = 0; i < count; i++) {
+        float amplitude = MP_POW(frequency, -h);
+        sum = sum + amplitude * mp_worley(x * frequency, y * frequency, z * frequency, seed + 19 * i, jitter, what);
+        weight = weight + amplitude;
+        frequency = frequency * MP_MAX(1.01f, lacunarity);
+    }
+    return weight > 0.0f ? sum / weight : 0.0f;
+}
+
+// Enhance: Modo's Organic patterns, 130 on, in the order of their names; the settings each reads are beside it
+// (procedurals.ENHANCE). type is its Noise Type, Cell Order (F1 0 to F4 3) or Shape, as it has.
+MP_HEAVY float mp_enhance_organic(int pattern, int type, float x, float y, float z, MP_Settings s) {
+    int seed = (int)s.v[0];
+    float t = 0.0f;
+    if (pattern == 130) {
+        // ArtDeco: seed, octaves, frequency, increment, power, lower, upper, regions. Cells in sweeping bands.
+        float f = s.v[7] != 0.0f ? mp_worley(x, y, z, seed, 1.0f, 5) : mp_worley_fractal(x, y, z, seed, 1.0f, 0, MP_MAX(1.0f, s.v[1]), s.v[2], s.v[3]);
+        t = mp_range(MP_POW(mp_clamp01(f), MP_MAX(0.05f, s.v[4])), s.v[5], s.v[6]);
+    } else if (pattern == 131) {
+        // Blister: levels, lower, upper. Raised bubbles of several sizes.
+        float best = 0.0f, scale = 1.0f;
+        int count = (int)MP_MAX(1.0f, MP_MIN(6.0f, s.v[0]));
+        for (int i = 0; i < count; i++) {
+            best = MP_MAX(best, 0.5f + 0.5f * mp_bubble_noise(x * scale, y * scale, z * scale, 41 + 7 * i));
+            scale = scale * 2.0f;
+        }
+        t = mp_range(best, s.v[1], s.v[2]);
+    } else if (pattern == 132) {
+        // Branches: branches, width, seed, octaves, magnitude, scale, detail, full 3D, lower, upper. Branching lines
+        // where the noise crosses its middle, as many as branches.
+        int bseed = (int)s.v[2];
+        float sc = MP_MAX(0.01f, s.v[5]);
+        float bz = s.v[7] != 0.0f ? z * sc : 0.0f;
+        float n = mp_fbm(type, x * sc * MP_MAX(1.0f, s.v[0]) * 0.5f, y * sc * MP_MAX(1.0f, s.v[0]) * 0.5f, bz, bseed, s.v[3], 2.0f, 1.0f - 0.5f * mp_clamp01(s.v[6]), 0);
+        n = n + s.v[4] * 0.2f * mp_basis(type, x * sc * 4.0f, y * sc * 4.0f, bz * 4.0f, bseed + 9);
+        t = mp_range(1.0f - mp_clamp01(MP_ABS(n) / MP_MAX(0.005f, s.v[1] * 0.25f)), s.v[8], s.v[9]);
+    } else if (pattern == 133) {
+        // Caustic: seed, octaves, frequency, increment, lower, upper. Bright light gathered into a net.
+        float wx = mp_fbm(type, x, y, z, seed + 1, s.v[1], s.v[2], s.v[3], 0) * 0.4f;
+        float e = mp_worley(x * 2.0f + wx, y * 2.0f - wx, z * 2.0f + wx, seed, 1.0f, 4);
+        t = mp_range(MP_POW(1.0f - mp_clamp01(e * 3.0f), 4.0f), s.v[4], s.v[5]);
+    } else if (pattern == 134 || pattern == 135 || pattern == 137) {
+        // Cellular: seed, octaves, frequency, increment, fractalize, lower, upper, regions. Cheesy: seed, octaves,
+        // frequency, increment, lower, upper, regions. Crackle: as Cellular. type is the Cell Order.
+        int fractal = pattern == 135 ? 1 : (s.v[4] != 0.0f ? 1 : 0);
+        float octaves = fractal != 0 ? s.v[1] : 1.0f;
+        int last = pattern == 135 ? 6 : 7;
+        float lower = pattern == 135 ? s.v[4] : s.v[5], upper = pattern == 135 ? s.v[5] : s.v[6];
+        float v;
+        if (s.v[last] != 0.0f) v = mp_worley(x, y, z, seed, 1.0f, 5);
+        else if (pattern == 137) v = mp_clamp01(mp_worley_fractal(x, y, z, seed, 1.0f, 4, octaves, s.v[2], s.v[3]) * 2.0f);
+        else if (pattern == 135) v = mp_step(mp_worley_fractal(x, y, z, seed, 1.0f, type, octaves, s.v[2], s.v[3]), 0.35f, 0.04f);
+        else v = mp_clamp01(mp_worley_fractal(x, y, z, seed, 1.0f, type, octaves, s.v[2], s.v[3]));
+        t = mp_range(v, lower, upper);
+    } else if (pattern == 136) {
+        // Concrete: seed, lower, upper. A cloudy grey with fine specks of grit.
+        float cloud = mp_unit(mp_fbm(type, x * 2.0f, y * 2.0f, z * 2.0f, seed, 5.0f, 2.0f, 0.6f, 0));
+        float grit = mp_step(mp_random((int)MP_FLOOR(x * 60.0f), (int)MP_FLOOR(y * 60.0f), (int)MP_FLOOR(z * 60.0f), seed + 3), 0.85f, 0.0f);
+        t = mp_range(mp_clamp01(0.8f * cloud + 0.2f * grit), s.v[1], s.v[2]);
+    } else if (pattern == 138) {
+        // Dirt: seed, frequency 1, magnitude 1, frequency 2, magnitude 2, lower, upper. Grime at two sizes.
+        float a = mp_fbm(type, x * s.v[1], y * s.v[1], z * s.v[1], seed, 4.0f, 2.0f, 0.5f, 0) * s.v[2];
+        float b = mp_fbm(type, x * s.v[3], y * s.v[3], z * s.v[3], seed + 7, 3.0f, 2.0f, 0.5f, 0) * s.v[4];
+        t = mp_range(mp_clamp01(0.5f + 0.5f * a + 0.25f * b), s.v[5], s.v[6]);
+    } else if (pattern == 139) {
+        // Disturbed: seed, distance, frequency, angle, lower, upper. Noise pushed aside and turned by noise.
+        float push = mp_basis(type, x * s.v[2], y * s.v[2], z * s.v[2], seed + 5) * s.v[1] * 0.25f;
+        float turn = s.v[3] * MP_PI * mp_basis(type, x, y, z, seed + 6);
+        float rx = x * MP_COS(turn) - y * (MP_COS(turn - 0.5f * MP_PI));
+        float ry = x * (MP_COS(turn - 0.5f * MP_PI)) + y * MP_COS(turn);
+        t = mp_range(mp_unit(mp_basis(type, (rx + push) * s.v[2], (ry - push) * s.v[2], z * s.v[2], seed)), s.v[4], s.v[5]);
+    } else if (pattern == 140 || pattern == 144) {
+        // EasyWood: seed, octaves, magnitude, scale, detail, lower, upper. HardWood: seed, graininess, ringiness,
+        // lower, upper. Rings round the locator's Y axis, wandering with noise.
+        float ringScale = pattern == 140 ? MP_MAX(0.01f, s.v[3]) : MP_MAX(0.1f, s.v[2]);
+        float wander = pattern == 140 ? s.v[2] * 0.3f * mp_fbm(type, x * s.v[4], y * s.v[4] * 0.2f, z * s.v[4], seed, s.v[1], 2.0f, 0.5f, 0)
+                                      : 0.3f * mp_fbm(type, x, y * 0.2f, z, seed, 3.0f, 2.0f, 0.5f, 0);
+        float r = MP_SQRT(x * x + z * z) * ringScale + wander;
+        float grain = pattern == 144 ? s.v[1] * mp_basis(type, x * 40.0f, y * 2.0f, z * 40.0f, seed + 3) : 0.0f;
+        float ring = pattern == 140 ? mp_fract(r) : 0.5f + 0.5f * MP_COS(2.0f * MP_PI * r);
+        float lower = pattern == 140 ? s.v[5] : s.v[3], upper = pattern == 140 ? s.v[6] : s.v[4];
+        t = mp_range(mp_clamp01(ring + grain), lower, upper);
+    } else if (pattern == 141) {
+        // Electric: seed, octaves, frequency, increment, width, lower, upper. Bright forks where the noise crosses 0.
+        float n = mp_fbm(type, x, y, z, seed, MP_MAX(1.0f, s.v[1]), s.v[2], s.v[3], 0);
+        t = mp_range(mp_clamp01(1.0f - MP_ABS(n) / MP_MAX(0.005f, s.v[4] * 0.25f)), s.v[5], s.v[6]);
+    } else if (pattern == 142 || pattern == 143) {
+        // Fire: seed, flame height, magnitude, fragmentation, detail, speed, time, lower, upper. FireWall: seed,
+        // octaves, frequency, increment, height, lower, upper. Flames rising up the locator's Y axis, licked by
+        // noise that moves up with time.
+        float rise = pattern == 142 ? s.v[5] * s.v[6] : 0.0f;
+        float flicker;
+        float height;
+        if (pattern == 142) {
+            float f = MP_MAX(0.01f, s.v[3] * 0.1f);
+            flicker = s.v[2] * mp_fbm(type, x * f, (y - rise) * f, z * f, seed, MP_MAX(1.0f, s.v[4] * 2.0f), 2.0f, 0.5f, 1);
+            height = MP_MAX(0.01f, s.v[1]);
+        } else {
+            flicker = mp_fbm(type, x, y, z, seed, s.v[1], s.v[2], s.v[3], 1);
+            height = MP_MAX(0.01f, s.v[4]);
+        }
+        float v = mp_clamp01(1.0f - y / height + flicker - 0.3f);
+        float lower = pattern == 142 ? s.v[7] : s.v[5], upper = pattern == 142 ? s.v[8] : s.v[6];
+        t = mp_range(v, lower, upper);
+    } else if (pattern == 145 || pattern == 150) {
+        // Membrane and Wires: seed, octaves, frequency, increment, jitter, grout, bevel, lower, upper. Cells parted
+        // by grout and rounded by a bevel; Wires is the grout itself.
+        float e = 0.5f * mp_worley_fractal(x, y, z, seed, s.v[4], 4, s.v[1], s.v[2], s.v[3]);
+        float grout = MP_MAX(0.0f, s.v[5]) * 0.5f;
+        float v = mp_smooth((e - grout) / MP_MAX(0.001f, s.v[6] * 0.5f));
+        if (e < grout) v = 0.0f;
+        if (pattern == 150) v = 1.0f - v;
+        t = mp_range(v, s.v[7], s.v[8]);
+    } else if (pattern == 146) {
+        // Minky: seed, octaves, frequency, increment, power, lower, upper, regions. A soft pile, cell by cell.
+        float f = s.v[7] != 0.0f ? mp_worley(x, y, z, seed, 1.0f, 5) : 1.0f - mp_clamp01(mp_worley_fractal(x, y, z, seed, 1.0f, type, s.v[1], s.v[2], s.v[3]));
+        t = mp_range(MP_POW(mp_clamp01(f), MP_MAX(0.05f, s.v[4])), s.v[5], s.v[6]);
+    } else if (pattern == 147) {
+        // Scatter (type: Spheres 0, Cubes 1, Diamonds 2): seed, distribution, spread, scale, smooth, lower, upper.
+        // A shape in some of the cells, as many as distribution says, moved about by spread.
+        float cx = MP_FLOOR(x), cy = MP_FLOOR(y), cz = MP_FLOOR(z), best = 0.0f;
+        float radius = 0.5f * MP_MAX(0.0f, s.v[3]);
+        float soft = MP_MAX(0.001f, s.v[4] * radius);
+        for (int k = -1; k <= 1; k++) {
+            for (int j = -1; j <= 1; j++) {
+                for (int i = -1; i <= 1; i++) {
+                    int a = (int)cx + i, b = (int)cy + j, c = (int)cz + k;
+                    if (mp_random(a, b, c, seed + 7) > mp_clamp01(s.v[1])) continue;
+                    float dx = MP_ABS(x - ((float)a + 0.5f + s.v[2] * (mp_random(a, b, c, seed) - 0.5f)));
+                    float dy = MP_ABS(y - ((float)b + 0.5f + s.v[2] * (mp_random(a, b, c, seed + 1) - 0.5f)));
+                    float dz = MP_ABS(z - ((float)c + 0.5f + s.v[2] * (mp_random(a, b, c, seed + 2) - 0.5f)));
+                    float d = type == 1 ? MP_MAX(MP_MAX(dx, dy), dz) : (type == 2 ? (dx + dy + dz) * 0.7f : MP_SQRT(dx * dx + dy * dy + dz * dz));
+                    best = MP_MAX(best, 1.0f - mp_smooth((d - radius + soft) / soft));
+                }
+            }
+        }
+        t = mp_range(best, s.v[5], s.v[6]);
+    } else if (pattern == 148) {
+        // SinBlob: seed, lower, upper. Waves bending through each other into soft blobs.
+        float o = (float)(seed % 97) * 0.13f;
+        float a = MP_COS(3.0f * x + o + 2.0f * MP_COS(2.0f * y - o));
+        float b = MP_COS(3.0f * y - o + 2.0f * MP_COS(2.0f * z + o));
+        float c = MP_COS(3.0f * z + o + 2.0f * MP_COS(2.0f * x));
+        t = mp_range(mp_clamp01(0.5f + (a + b + c) / 6.0f), s.v[1], s.v[2]);
+    } else if (pattern == 149) {
+        // Veins: seed, octaves, veininess, lower, upper. Thin veins where the noise crosses its middle.
+        float n = mp_fbm(type, x, y, z, seed, s.v[1], 2.0f, 0.5f, 0);
+        t = mp_range(MP_POW(1.0f - mp_clamp01(MP_ABS(n) * 2.0f), MP_MAX(0.5f, s.v[2] * 8.0f)), s.v[3], s.v[4]);
+    } else if (pattern == 151) {
+        // WormVein: seed, lo, hi, lower, upper. Worm-like bands where the noise lies between lo and hi.
+        float n = mp_unit(mp_fbm(type, x, y, z, seed, 4.0f, 2.0f, 0.5f, 0));
+        float lo = MP_MIN(s.v[1], s.v[2]), hi = MP_MAX(s.v[1], s.v[2]);
+        t = mp_range(mp_step(n, lo, 0.01f) * (1.0f - mp_step(n, hi, 0.01f)), s.v[3], s.v[4]);
+    }
+    return t;
+}
+
 // A pattern at a point of the locator's space, with its bias and gain: how much of the first colour there is.
 // Modo's own patterns read s.v[0] to s.v[5] (procedurals.MAP_SETTINGS); Enhance: Modo's (100 on) read theirs.
-MP_FUNC float mp_pattern(int pattern, int type, float x, float y, float z, MP_Settings s) {
+MP_HEAVY float mp_pattern(int pattern, int type, float x, float y, float z, MP_Settings s) {
     float t = 0.0f;
     if (pattern == MP_NOISE) t = mp_noise_pattern(type, x, y, z, s.v[0], s.v[1], s.v[2]);
     else if (pattern == MP_CELLULAR) t = mp_cellular(type, x, y, z, s.v[0], s.v[1], s.v[2], s.v[3], s.v[4], s.v[5]);
@@ -504,6 +701,7 @@ MP_FUNC float mp_pattern(int pattern, int type, float x, float y, float z, MP_Se
     else if (pattern == MP_WEAVE) t = mp_weave(x, y, s.v[0], s.v[1]);
     else if (pattern == MP_RIPPLES) t = mp_ripples(x, y, z, s.v[0], s.v[1], s.v[2]);
     else if (pattern >= 100 && pattern < 130) t = mp_enhance_noise(pattern, type, x, y, z, s);
+    else if (pattern >= 130 && pattern < 160) t = mp_enhance_organic(pattern, type, x, y, z, s);
     return mp_gain(mp_bias(t, s.v[22]), s.v[23]);
 }
 

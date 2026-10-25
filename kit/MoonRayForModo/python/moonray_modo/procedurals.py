@@ -221,7 +221,8 @@ def map_available():
 # Each: its number in modo_patterns.h, the channel that is its Type (its Noise Type, mostly), and its own settings in
 # the order the pattern reads them. Choices among words are given as their place in the list Modo gives.
 NOISE_TYPES = ('Perlin', 'EnhancedPerlin', 'Gradient', 'Value', 'GradientValue', 'Impulse', 'Lattice', 'Bubble')
-CHOICES = {'AxisType': ('XAxis', 'YAxis', 'ZAxis'), 'FlowType': ('Flat', 'Square', 'Inverse'), 'NoiseType': NOISE_TYPES}
+CHOICES = {'AxisType': ('XAxis', 'YAxis', 'ZAxis'), 'FlowType': ('Flat', 'Square', 'Inverse'), 'NoiseType': NOISE_TYPES,
+           'CellOrder': ('F1', 'F2', 'F3', 'F4'), 'Shape': ('Spheres', 'Cubes', 'Diamonds')}
 _FBM = ('NoiseSeed', 'Octaves', 'Frequency', 'Increment', 'Absolute', 'Lower', 'Upper')
 ENHANCE = {
     'val.Noise_Agate.RJJ': (100, 'NoiseType', ('NoiseSeed', 'Absolute', 'Lower', 'Upper')),
@@ -246,6 +247,29 @@ ENHANCE = {
     'val.Noise_VectorBozo.RJJ': (119, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Magnitude', 'Fractalize', 'Lower', 'Upper')),
     'val.Noise_WrappedfBm.RJJ': (120, 'NoiseType', ('NoiseSeed', 'Octaves', 'Frequency', 'Magnitude', 'Lower', 'Upper')),
     'val.Noise_fBm.RJJ': (121, 'NoiseType', _FBM),
+    # The Organic family, 130 on.
+    'val.Organic_ArtDeco.RJJ': (130, None, ('Seed', 'Octaves', 'Frequency', 'Increment', 'Power', 'Lower', 'Upper', 'Regions')),
+    'val.Organic_Blister.RJJ': (131, None, ('Levels', 'Lower', 'Upper')),
+    'val.Organic_Branches.RJJ': (132, 'NoiseType', ('Branches', 'Width', 'Seed', 'Octaves', 'Magnitude', 'Scale', 'Detail', 'Full3D', 'Lower', 'Upper')),
+    'val.Organic_Caustic.RJJ': (133, 'NoiseType', ('Seed', 'Octaves', 'Frequency', 'Increment', 'Lower', 'Upper')),
+    'val.Organic_Cellular.RJJ': (134, 'CellOrder', ('Seed', 'Octaves', 'Frequency', 'Increment', 'Fractalize', 'Lower', 'Upper', 'Regions')),
+    'val.Organic_Cheesy.RJJ': (135, 'CellOrder', ('Seed', 'Octaves', 'Frequency', 'Increment', 'Lower', 'Upper', 'Regions')),
+    'val.Organic_Concrete.RJJ': (136, 'NoiseType', ('Seed', 'Lower', 'Upper')),
+    'val.Organic_Crackle.RJJ': (137, None, ('Seed', 'Octaves', 'Frequency', 'Increment', 'Fractalize', 'Lower', 'Upper', 'Regions')),
+    'val.Organic_Dirt.RJJ': (138, 'NoiseType', ('Seed', 'Frequency1', 'Magnitude1', 'Frequency2', 'Magnitude2', 'Lower', 'Upper')),
+    'val.Organic_Disturbed.RJJ': (139, 'NoiseType', ('Seed', 'Distance', 'Frequency', 'Angle', 'Lower', 'Upper')),
+    'val.Organic_EasyWood.RJJ': (140, 'NoiseType', ('Seed', 'Octaves', 'Magnitude', 'Scale', 'Detail', 'Lower', 'Upper')),
+    'val.Organic_Electric.RJJ': (141, 'NoiseType', ('Seed', 'Octaves', 'Frequency', 'Increment', 'Width', 'Lower', 'Upper')),
+    'val.Organic_Fire.RJJ': (142, 'NoiseType', ('Seed', 'FlameHeight', 'Magnitude', 'Fragmentation', 'Detail', 'Speed', 'Time', 'Lower', 'Upper')),
+    'val.Organic_FireWall.RJJ': (143, 'NoiseType', ('Seed', 'Octaves', 'Frequency', 'Increment', 'Height', 'Lower', 'Upper')),
+    'val.Organic_HardWood.RJJ': (144, 'NoiseType', ('Seed', 'Graininess', 'Ringiness', 'Lower', 'Upper')),
+    'val.Organic_Membrane.RJJ': (145, None, ('Seed', 'Octaves', 'Frequency', 'Increment', 'Jitter', 'Grout', 'Bevel', 'Lower', 'Upper')),
+    'val.Organic_Minky.RJJ': (146, 'CellOrder', ('Seed', 'Octaves', 'Frequency', 'Increment', 'Power', 'Lower', 'Upper', 'Regions')),
+    'val.Organic_Scatter.RJJ': (147, 'Shape', ('Seed', 'Distrib', 'Spread', 'Scale', 'Smooth', 'Lower', 'Upper')),
+    'val.Organic_SinBlob.RJJ': (148, None, ('Seed', 'Lower', 'Upper')),
+    'val.Organic_Veins.RJJ': (149, 'NoiseType', ('Seed', 'Octaves', 'Veininess', 'Lower', 'Upper')),
+    'val.Organic_Wires.RJJ': (150, None, ('Seed', 'Octaves', 'Frequency', 'Increment', 'Jitter', 'Grout', 'Bevel', 'Lower', 'Upper')),
+    'val.Organic_WormVein.RJJ': (151, 'NoiseType', ('Seed', 'Lo', 'Hi', 'Lower', 'Upper')),
 }
 
 
@@ -263,8 +287,8 @@ def enhance(layer, channel, color, is_color, locator_matrix):
     alpha), its Bias and Gain, and the placement into its locator's space."""
     from .coordinates import inverse
     pattern, kind, names = ENHANCE[layer.type]
-    chosen = channel(layer, kind, '')
-    options = CHOICES.get(kind, NOISE_TYPES)
+    chosen = channel(layer, kind, '') if kind else ''
+    options = CHOICES.get(kind, NOISE_TYPES) if kind else ()
     settings = [_setting(layer, channel, name) for name in names]
     if len(settings) > 22:
         raise ValueError('Too many settings for the procedural map')
